@@ -33,6 +33,7 @@
     "@t3-factory/domain-validation": "workspace:*",
     "effect": "4.1.2",
     "fs-ext": "2.1.1",
+    "lucide-react": "1.59.0",
     "smol-toml": "1.9.1"
   },
   "devDependencies": {

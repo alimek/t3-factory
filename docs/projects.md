@@ -10,6 +10,10 @@ repository path and icon supplied by T3. It displays T3 emoji, monogram and Luci
 icons with their configured color. When no explicit icon is set, a supported
 repository image from T3’s `faviconPath` is displayed for local, available projects.
 Missing or unreadable images fall back to a folder.
+Lucide icons retain the full name and alias catalog supplied by the pinned library.
+Factory serves only the requested icon's geometry from its backend; the browser bundle
+contains the interface's statically imported icons, not the dynamic catalog. This requires
+no external icon service and preserves the configured color and folder fallback.
 Its choices show the same details with a vertically centered check
 on the right of the current selection and an accent background; unavailable
 projects remain selectable for history. Search by project name or repository
@@ -77,6 +81,7 @@ current project availability and authorization, retain Host/origin checks and us
 | `PUT /api/projects/selection` | Select a saved project ID or clear with null |
 | `GET /api/projects/:id/readiness` | Check project readiness |
 | `GET` / `HEAD /api/projects/:id/favicon` | Read an authorized repository image |
+| `GET /api/icons/lucide/:name` | Read one Lucide icon's geometry through the normal client authorization and protocol checks |
 
 Discovery refreshes at startup, periodically and on explicit checks. Incomplete pagination,
 invalid results or changed authorization fail the refresh, rather than reporting an empty

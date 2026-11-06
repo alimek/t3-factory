@@ -1,13 +1,11 @@
 import type { FactoryProject } from "@t3-factory/contracts";
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { FolderIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ProjectLucideIcon from "./project-lucide-icon.tsx";
 
 type IconData = NonNullable<FactoryProject["projectIcon"]>;
 type IconColor = Extract<IconData, { kind: "lucide" | "monogram" }>["color"];
-const ProjectLucideIcon = lazy(() =>
-  import("./project-lucide-icon.tsx").catch(() => ({ default: FolderFallback })),
-);
 
 const colors: Record<IconColor, string> = {
   gray: "text-muted-foreground",
@@ -72,11 +70,7 @@ function IconContent({
       </span>
     );
   if (icon?.kind === "lucide") {
-    return (
-      <Suspense key={icon.name} fallback={<FolderFallback />}>
-        <ProjectLucideIcon name={icon.name} />
-      </Suspense>
-    );
+    return <ProjectLucideIcon key={icon.name} name={icon.name} />;
   }
   if (faviconUrl) return <ProjectFavicon key={faviconUrl} url={faviconUrl} />;
   return <FolderFallback />;

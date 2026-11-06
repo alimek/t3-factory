@@ -1,4 +1,5 @@
 import { OfflineError, protocolHeaders, transport, unreachableHeader } from "./transport.ts";
+import type { LucideIconData } from "lucide-react";
 import type {
   ClientAccessGrant,
   ClientScope,
@@ -86,6 +87,8 @@ const put = <A>(path: string, body: unknown) => jsonRequest<A>("PUT", path, body
 const patch = <A>(path: string, body: unknown) => jsonRequest<A>("PATCH", path, body);
 
 export const api = {
+  getLucideIcon: (name: string) =>
+    request<LucideIconData>(`/api/icons/lucide/${encodeURIComponent(name)}`),
   listRunNavigation: () => request<readonly RunNavigationEntry[]>("/api/run-navigation"),
   snoozeRun: (id: string) =>
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/snooze`, { method: "POST" }),

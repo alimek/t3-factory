@@ -31,6 +31,7 @@ import {
 } from "./http-support.ts";
 import { listen, type Surface } from "./listener.ts";
 import { remoteAccessController } from "./remote-listener.ts";
+import { lucideIconResponse } from "./lucide-icons.ts";
 
 const defaultUiDirectory = fileURLToPath(new URL("../../frontend/dist/", import.meta.url));
 const contentTypes: Record<string, string> = {
@@ -114,6 +115,11 @@ const fromId =
 /** First match wins, so literal paths precede parameter routes within each resource. */
 function apiRoutes(factory: Factory): readonly ApiRoute[] {
   return [
+    {
+      method: "GET",
+      path: /^\/api\/icons\/lucide\/([^/]+)$/,
+      handle: ({ id }) => Effect.promise(() => lucideIconResponse(id)),
+    },
     ...runResponseRoutes(factory),
     ...runRoutes(factory),
     ...reportingRoutes(factory),
