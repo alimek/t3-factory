@@ -46,7 +46,7 @@ Host; failures return HTTP 403 before any operation. Factory sends no CORS heade
 mutation and DNS rebinding.
 
 This listener is the **host-local** surface: it answers only requests whose socket peer is loopback (others get 403 `host_only`), even when bound to `0.0.0.0`. Other devices use secure remote access
-(approved, revocable clients over TLS on a separate listener) enabled in **Settings → Devices & access** or `"remoteAccess": { "enabled": true }`; see [desktop and approved clients](desktop-and-clients.md) and [desktop release](desktop-release.md).
+(approved, revocable clients over TLS on a separate listener) enabled in **Settings → Devices & access** or `"remoteAccess": { "enabled": true }`; see [desktop and approved clients](desktop-and-clients.md) and [Release](release.md).
 
 ## Development and production commands
 
@@ -107,7 +107,7 @@ Controlled tests exercise real SQLite and simulated T3; they do not establish li
 | Network filesystems | Unsupported for Factory storage |
 
 `fs-ext` is a native addon needing Python and a C/C++ toolchain (for example Xcode Command Line Tools). The Runner requires working local-filesystem `flock` semantics; never unlink
-a live `.runner.lock`. The desktop declares macOS 13 or later, which is not a test matrix ([desktop release](desktop-release.md)).
+a live `.runner.lock`. The desktop declares macOS 13 or later, which is not a test matrix ([Release](release.md)).
 
 ### Current execution contract
 

@@ -26,7 +26,8 @@ export default {
   appId: "dev.t3factory.desktop",
   productName: "T3 Factory",
   // electron-builder's default ${version} drops SemVer build metadata.
-  artifactName: `\${productName}-${factoryBuild.version}-\${arch}.\${ext}`,
+  // Match GitHub's download names so update metadata and checksums use the same URLs.
+  artifactName: `T3.Factory-${factoryBuild.version}-\${arch}.\${ext}`,
   copyright: "T3 Factory",
   directories: { app: "stage", output: "release", buildResources: "resources" },
   files: ["build/**/*", "!build/**/*.map", "package.json"],

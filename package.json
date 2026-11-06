@@ -1,5 +1,6 @@
 {
   "name": "t3-factory",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",

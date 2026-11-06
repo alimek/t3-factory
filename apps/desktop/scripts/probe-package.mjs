@@ -5,7 +5,7 @@
 // ~/.t3-factory, Keychain (mock keychain) or login items, and starts no T3 workload.
 //
 //   node apps/desktop/scripts/probe-package.mjs <report.json>
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { existsSync, openSync } from "node:fs";
 import { arch, release, tmpdir } from "node:os";
@@ -134,7 +134,9 @@ const provenance = {
   date: new Date().toISOString(),
   host: { platform: process.platform, arch: arch(), kernel: release() },
   artifact: built,
-  signed: false,
+  signed:
+    spawnSync("codesign", ["--verify", "--deep", "--strict", "-R=anchor apple generic", built])
+      .status === 0,
   source: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim(),
   environment: clean,
 };
