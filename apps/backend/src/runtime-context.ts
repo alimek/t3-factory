@@ -5,6 +5,7 @@ import type { BlockRow, RunRow } from "./runner-types.ts";
 import type { RuntimeContextReply } from "./runtime-types.ts";
 import type { openRootCommands } from "./run-coordinator-commands.ts";
 import type { openRunnerObservation } from "./runner-observation.ts";
+import type { makeRunLanes } from "./runner-lanes.ts";
 import { nativeCallId, contextCaller } from "./runtime-caller.ts";
 import { runTarget } from "./runner-utils.ts";
 
@@ -14,6 +15,7 @@ export function openRuntimeContext(
   t3: T3Adapter,
   rootCommands: ReturnType<typeof openRootCommands>,
   observeWorker: ReturnType<typeof openRunnerObservation>["observe"],
+  serialObservation: ReturnType<typeof makeRunLanes>["serial"],
   liveContextId: () => Effect.Effect<string | null, unknown>,
   getRun: (
     id: string,
@@ -68,16 +70,19 @@ export function openRuntimeContext(
     }
     return matches.length === 1 ? matches[0]! : { code: "UNBOUND_CALLER" };
   });
+  /** The caller holds the drive lane; root retention may advance the generation before worker evidence. */
   const workerContext = Effect.fn(function* (
     caller: ContextCaller,
   ): Effect.fn.Return<RuntimeContextReply, unknown> {
-    yield* rootCommands.observe(caller.run);
+    const before = yield* database.row(caller.run.id);
+    if (before) yield* rootCommands.observe(before);
+    const run = yield* database.row(caller.run.id);
     const [block] = yield* database.transaction(
       (sql) =>
         sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${caller.run.id} AND thread_id=${caller.threadId}`,
     );
-    if (block && caller.run.gate_open && !caller.run.closed_at)
-      yield* observeWorker(caller.run, block, yield* liveContextId());
+    if (block && run && run.gate_open && !run.closed_at)
+      yield* observeWorker(run, block, yield* liveContextId());
     const [worker] = yield* database.transaction(
       (sql) =>
         sql<{
@@ -95,7 +100,9 @@ export function openRuntimeContext(
     if ("code" in call) return call;
     const caller = yield* findCaller(call);
     if ("code" in caller) return caller;
-    if (caller.threadId !== caller.rootThreadId) return yield* workerContext(caller);
+    // Share the drive lane: sibling context reads must not invalidate each other's evidence.
+    if (caller.threadId !== caller.rootThreadId)
+      return yield* serialObservation(caller.run.id, () => workerContext(caller));
     const detail = yield* getRun(caller.run.id);
     return detail.ok
       ? { code: "CONTEXT", role: "run-coordinator", run: runContext(detail.value) }

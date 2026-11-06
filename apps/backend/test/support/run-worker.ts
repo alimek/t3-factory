@@ -182,11 +182,21 @@ export async function revisitedWorker(c: TestContext) {
   return f;
 }
 
+/** Direct native replies omit senderThreadId; overrides exercise rejection at the public boundary. */
 export async function workerNativeReply(
   c: TestContext,
   reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
 ) {
   const f = await waitingWorker(c);
+  supplyWorkerReply(f, reply);
+  return f;
+}
+
+/** Publish native reply evidence independently of the backend's observation lifetime. */
+export function supplyWorkerReply(
+  f: Awaited<ReturnType<typeof waitingWorker>>,
+  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
+) {
   const prior = f.t3.executionObservations.get("thread-2")!;
   f.t3.executionObservations.set("thread-2", {
     ...prior,
@@ -218,7 +228,6 @@ export async function workerNativeReply(
       },
     ],
   };
-  return f;
 }
 
 function workerTurnSelection(f: Awaited<ReturnType<typeof directWorker>>, runId: string) {

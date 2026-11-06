@@ -25,24 +25,26 @@ export function openRunnerObservation(
         blockId: block.block_id,
       });
   }
+  /** Reading inside the mutation lane prevents a stale caller from reverting report correlation. */
+  function bindCurrent(runRow: RunRow, blockId: string) {
+    return serial(runRow.id, () =>
+      database.transaction((sql) =>
+        Effect.gen(function* () {
+          const [current] =
+            yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${blockId}`;
+          if (current && !(yield* row(runRow.id))?.closed_at) bind(runRow, current);
+          return current;
+        }),
+      ),
+    );
+  }
   function observe(runRow: RunRow, block: BlockRow, contextId: string | null) {
     return Effect.gen(function* () {
-      yield* serial(runRow.id, () =>
-        Effect.gen(function* () {
-          if (!(yield* row(runRow.id))?.closed_at) bind(runRow, block);
-        }),
-      );
-      yield* observeCoordinator(database, t3, runRow, block, contextId);
+      const current = yield* bindCurrent(runRow, block.block_id);
+      if (!current) return;
+      yield* observeCoordinator(database, t3, runRow, current, contextId);
       // Restore/update trusted correlation only after the exact execution has committed.
-      return yield* serial(runRow.id, () =>
-        database.transaction((sql) =>
-          Effect.gen(function* () {
-            const [current] =
-              yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
-            if (current && !(yield* row(runRow.id))?.closed_at) bind(runRow, current);
-          }),
-        ),
-      );
+      yield* bindCurrent(runRow, block.block_id);
     });
   }
   return { observe };

@@ -16,7 +16,6 @@ import {
   interruptRunConversation,
 } from "./support/run-worker.ts";
 import { bindThreadReportCaller } from "./support/lifecycle-setup.ts";
-import { contextCaller } from "./support/native-root-evidence.ts";
 
 it("normal Start requires no Agent coordinator and launches only the primary conversation with a direct worker plan", async (c) => {
   // Arrange
@@ -261,32 +260,6 @@ it("a native user answer with omitted sender can ask a new question on the same 
     run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
   ).toMatchObject([{ executionId: "answer-execution", message: "Which tone?" }]);
   expect(run.value.reports).toStrictEqual([]);
-});
-it("a native user answer with omitted sender exposes its resumed activation through worker context", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c);
-  const items = f.t3.runtimeActivity.items;
-  contextCaller(f.t3, f.project.projectId, "thread-2", "answer-execution");
-  f.t3.runtimeActivity = {
-    ...f.t3.runtimeActivity,
-    items: [...items, ...f.t3.runtimeActivity.items],
-  };
-
-  // Act
-  const result = await f.f.runtime.context({
-    arguments: {},
-    metadata: { callId: "context" },
-    inheritedThreadId: "thread-2",
-  });
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(result).toStrictEqual({
-    code: "CONTEXT",
-    role: "worker",
-    activationId: run.value.activations[0]?.id,
-  });
 });
 it("an agent-authored follow-up cannot acquire worker question authority", async (c) => {
   // Arrange

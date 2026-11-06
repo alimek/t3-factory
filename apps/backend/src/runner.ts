@@ -187,7 +187,15 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
     recoverRunCoordinator: rootRecovery.recoverRunCoordinator,
-    runtimeContext: openRuntimeContext(database, t3, rootCommands, observe, liveContextId, getRun),
+    runtimeContext: openRuntimeContext(
+      database,
+      t3,
+      rootCommands,
+      observe,
+      drives.serial,
+      liveContextId,
+      getRun,
+    ),
     reportBindings: (key: string, threadId?: string, discover = false) =>
       Effect.gen(function* () {
         if (!discover) return yield* reportBindings(key, threadId);
