@@ -3,7 +3,7 @@ import { prepared } from "./prepared-runner.ts";
 import { directWorker } from "./run-worker.ts";
 
 /** Two Flow input targets: the first worker command rides on the Run conversation launch. */
-async function twoTargetStart(c: TestContext) {
+export async function twoTargetStart(c: TestContext) {
   const fixture = await prepared(c);
   const first = fixture.flow.graph.blocks[0]!;
   const flow = await fixture.f.updateFlow(fixture.flow.id, {

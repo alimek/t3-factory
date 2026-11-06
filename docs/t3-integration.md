@@ -238,9 +238,15 @@ verified local subtasks before reporting; completed receipts must name the exact
 that work ended. Unknown, foreign, remote or incomplete command evidence holds the report with an explicit worker problem.
 Unfinished native tool items hold only the current observation; their provisional output is never saved as command evidence.
 
+A native reply resumes a waiting activation only with positive public `createdBy: "user"` attribution, local visibility,
+the worker's own `sourceThreadId` and an exact `runId` matching a later worker execution. `senderThreadId` may be omitted or
+null; a sender thread, foreign or inherited messages, and missing actor provenance grant no authority. Message text never
+establishes identity.
+
 ### Run context
 
 `factory_context()` gives the primary Run conversation the captured Flow and a purpose-built current-state projection (no worker
 request keys or executable plans). The exact primary conversation can keep reading after Stop or closure (gate, Stop request,
 closure time and outcome) with no descendant discovery, and the read triggers no work. A Block worker's call returns only its own
 activation once native evidence binds it, otherwise `BINDING_PENDING`; neither grants work, and neither is a model polling protocol.
+The worker context read observes its own reply continuation before looking up the activation; it dispatches no work.

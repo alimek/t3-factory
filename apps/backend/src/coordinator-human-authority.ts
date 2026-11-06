@@ -22,13 +22,14 @@ export async function nativeHumanReplies(t3: T3Adapter, run: RunRow, threadId: s
   return replies;
 }
 
+/** An omitted sender thread is valid native metadata, but never substitutes for positive user attribution. */
 function isNativeUserReply(
   item: import("./adapters/t3.ts").RuntimeActivity["items"][number],
   threadId: string,
 ) {
   return (
     item.createdBy === "user" &&
-    item.senderThreadId === null &&
+    (item.senderThreadId === undefined || item.senderThreadId === null) &&
     item.visibility === "local" &&
     item.sourceThreadId === threadId &&
     item.type !== "dynamic_tool" &&

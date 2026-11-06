@@ -50,7 +50,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Stopped · Earlier navigation experiment | Confirmed stopped in Settled | Inspect Stop evidence and Run again |
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
-| Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form) |
+| Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form); native reply continuation is covered by controlled backend fixtures |
 
 Fresh or reset homes install a disposable Codex reporting target before creating Runs, so Settings shows Installed for it; real harness homes are never configured. Seed Runs use `run-worker-v1` with
 `explicit-mcp-v2`: the simulator consumes the exact Factory-issued commands and publishes decoded native acceptance, ancestry and execution evidence, workers report through the public runtime boundary,
