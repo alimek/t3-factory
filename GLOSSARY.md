@@ -4,6 +4,9 @@ T3 Factory lets users compose and run their own software development workflows.
 
 ## Language
 
+**Release**:
+One T3 Factory product version, identified by a `vX.Y.Z` tag on a fixed commit and published only by the controlled `publish` job. macOS packaging is part of the Release; see [Release](docs/release.md).
+
 **Project**:
 A local repository represented by a T3 project, providing the context for Tasks and Runs. Independent local clones are distinct projects even when they share a remote repository.
 

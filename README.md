@@ -42,7 +42,7 @@ specific build, harness and permissions. The current Run coordinator/worker life
 still needs further live qualification. See the [support limits](docs/installation.md#compatibility-and-support-limits).
 
 The macOS Apple Silicon desktop app can be built from source. A developer package is
-not a signed, notarized public release; see [desktop distribution](docs/desktop-release.md).
+not a signed, notarized public release; see [Release](docs/release.md).
 
 ## Requirements
 

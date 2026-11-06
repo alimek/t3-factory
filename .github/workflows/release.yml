@@ -1,0 +1,256 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag to rebuild and publish (vX.Y.Z)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: Release PR and cut
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: release-please
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  source:
+    name: Resolve release source
+    needs: release-please
+    if: >-
+      !cancelled() && needs.release-please.result != 'failure' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      needs.release-please.outputs.release_created == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Listing draft releases requires push access; this job runs no repository code.
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCHED_TAG: ${{ inputs.tag }}
+          CUT_TAG: ${{ needs.release-please.outputs.tag }}
+          CUT_SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          tag=${CUT_TAG:-$DISPATCHED_TAG}
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag must look like vX.Y.Z, got '$tag'."
+            exit 1
+          fi
+          releases=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name == \"$tag\") | {draft, target: .target_commitish}" | jq -s .)
+          if [[ "$(jq length <<<"$releases")" != 1 ]]; then
+            echo "::error::Expected exactly one release for $tag, found $(jq length <<<"$releases")."
+            exit 1
+          fi
+          if [[ "$(jq -r '.[0].draft' <<<"$releases")" != true ]]; then
+            echo "::error::$tag is already published; published releases are never rebuilt or replaced."
+            exit 1
+          fi
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+          if [[ "$(jq -r '.[0].target' <<<"$releases")" != "$sha" ]]; then
+            echo "::error::The $tag draft does not target the tagged commit $sha."
+            exit 1
+          fi
+          if [[ -n "$CUT_SHA" && "$CUT_SHA" != "$sha" ]]; then
+            echo "::error::$tag points to $sha, not the release commit $CUT_SHA."
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-macos:
+    name: Build macOS
+    needs: source
+    if: ${{ !cancelled() && needs.source.result == 'success' }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    concurrency:
+      group: release-build-${{ needs.source.outputs.tag }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ needs.source.outputs.tag }}
+      RELEASE_SHA: ${{ needs.source.outputs.sha }}
+      RELEASE_VERSION: ${{ needs.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - name: Check release source
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          for manifest in package.json apps/desktop/package.json; do
+            version=$(node -p "require('./$manifest').version")
+            if [[ "$version" != "$RELEASE_VERSION" ]]; then
+              echo "::error::$manifest has version $version, expected $RELEASE_VERSION for $RELEASE_TAG."
+              exit 1
+            fi
+          done
+          mkdir -p .e2e/release
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Check controlled UI journeys
+        run: |
+          pnpm exec e2e-web install chromium
+          pnpm exec e2e run --trace on --output .e2e/release/journeys
+      - name: Build, sign and notarize
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          FACTORY_UPDATE_GITHUB_OWNER: ${{ github.repository_owner }}
+          FACTORY_UPDATE_GITHUB_REPO: ${{ github.event.repository.name }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_CONTENT APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing release secret: $name"
+              exit 1
+            fi
+          done
+          export APPLE_API_KEY="$RUNNER_TEMP/factory-notary-key.p8"
+          (umask 077; printf '%s' "$APPLE_API_KEY_CONTENT" > "$APPLE_API_KEY")
+          pnpm desktop:package:release
+      - name: Verify packaged application
+        run: |
+          app='apps/desktop/release/mac-arm64/T3 Factory.app'
+          codesign --verify --deep --strict --verbose=2 -R='anchor apple generic' "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          pnpm desktop:probe "$PWD/.e2e/release/packaged-probe.json"
+          hdiutil verify apps/desktop/release/*.dmg
+          unzip -t apps/desktop/release/*.zip
+      - name: Collect release downloads
+        run: |
+          downloads=.e2e/release/downloads
+          mkdir -p "$downloads"
+          cp apps/desktop/release/*.{dmg,zip,blockmap} apps/desktop/release/latest-mac.yml "$downloads/"
+          cd "$downloads"
+          shasum -a 256 -- * > SHA256SUMS.txt
+      - name: Keep downloads for qualification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ needs.source.outputs.tag }}
+          path: .e2e/release/downloads/
+          if-no-files-found: error
+      - name: Keep verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-evidence-${{ needs.source.outputs.tag }}
+          include-hidden-files: true
+          path: |
+            .e2e/release/
+            !.e2e/release/downloads/
+      - name: Remove notarization key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-notary-key.p8"
+
+  publish:
+    name: Publish release
+    needs: [source, build-macos]
+    if: ${{ !cancelled() && needs.build-macos.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    concurrency:
+      group: release-publish-${{ needs.source.outputs.tag }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.source.outputs.tag }}
+      RELEASE_SHA: ${{ needs.source.outputs.sha }}
+      RELEASE_VERSION: ${{ needs.source.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ needs.source.outputs.tag }}
+          path: downloads
+      - name: Verify downloads
+        working-directory: downloads
+        run: |
+          base="T3.Factory-$RELEASE_VERSION-arm64"
+          printf '%s\n' "$base.dmg" "$base.dmg.blockmap" "$base.zip" "$base.zip.blockmap" \
+            SHA256SUMS.txt latest-mac.yml | sort > ../expected-files.txt
+          ls -1 | sort > ../actual-files.txt
+          diff -u ../expected-files.txt ../actual-files.txt
+          sha256sum --check --strict SHA256SUMS.txt
+          test "$(awk '{print $2}' SHA256SUMS.txt | sort)" = "$(grep -v '^SHA256SUMS.txt$' ../expected-files.txt)"
+          grep -qx "version: $RELEASE_VERSION" latest-mac.yml
+      - name: Check release is still an unchanged draft
+        run: |
+          release=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | {id, draft, target: .target_commitish}" | jq -s .)
+          test "$(jq length <<<"$release")" = 1
+          if [[ "$(jq -r '.[0].draft' <<<"$release")" != true ]]; then
+            echo "::error::$RELEASE_TAG was published outside this job; its assets are not changed."
+            exit 1
+          fi
+          test "$(jq -r '.[0].target' <<<"$release")" = "$RELEASE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$RELEASE_SHA"
+          echo "RELEASE_ID=$(jq -r '.[0].id' <<<"$release")" >> "$GITHUB_ENV"
+      - name: Upload the complete asset set
+        run: |
+          # Only assets of a still-draft release left by an earlier failed attempt are removed.
+          for asset in $(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --jq '.[].id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset"
+          done
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" downloads/*
+      - name: Verify uploaded assets
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
+            --jq '.[] | "\(.digest | sub("^sha256:"; ""))  \(.name)"' | sort -k2 > uploaded.txt
+          (cd downloads && sha256sum -- *) | sort -k2 > local.txt
+          diff -u local.txt uploaded.txt
+      - name: Publish
+        run: |
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .tag_name <<<"$release")" = "$RELEASE_TAG"
+          jq -r '.assets[] | "\(.digest | sub("^sha256:"; ""))  \(.name)"' <<<"$release" | sort -k2 > published.txt
+          diff -u local.txt published.txt
+          jq -r '"Published release: " + .html_url' <<<"$release" >> "$GITHUB_STEP_SUMMARY"

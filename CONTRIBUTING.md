@@ -77,6 +77,12 @@ workloads or change real harness configuration as part of routine verification.
 
 ## Opening a pull request
 
+PR titles must use Conventional Commits: squash merge uses the PR title as the commit
+that drives versioning and `CHANGELOG.md`. While on 0.x, `feat` increments the minor
+version, `fix` increments the patch version, and a breaking `!` increments the minor
+version before 1.0. A `Release-As: X.Y.Z` footer in a commit on `main` overrides the
+version. The **PR title** check validates titles; see [Release](docs/release.md).
+
 Use the PR template to explain the concrete problem, resulting behavior, checks run,
 documentation impact and any migration or intentional compatibility break. Link the
 issue when applicable and identify anything still unverified. Review your diff against

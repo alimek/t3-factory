@@ -1,7 +1,7 @@
 # Desktop and approved clients
 
 An Electron application for **macOS on Apple Silicon (arm64) only**, plus approved-client access for desktop and browser clients. Execution, report, Human, uncertainty and Stop
-semantics are unchanged; see [Runs](runs.md). Packaging and release qualification are in [desktop release](desktop-release.md).
+semantics are unchanged; see [Runs](runs.md). Packaging and release qualification are in [Release](release.md).
 
 ## Installation roles
 

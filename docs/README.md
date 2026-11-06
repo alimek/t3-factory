@@ -24,7 +24,7 @@ New here? Start with the [project overview and demo](../README.md),
 - [Frontend design system](design-system.md)
 - [Testing policy and UI verification](testing.md)
 - [Quality gates](quality-gates.md)
-- [Desktop release](desktop-release.md)
+- [Release](release.md)
 - [Issue tracker](agents/issue-tracker.md), [triage labels](agents/triage-labels.md) and [domain documentation](agents/domain.md)
 
 Read the relevant topic before changing behavior and update it in the same change. [AGENTS.md](../AGENTS.md) records documentation maintenance and contribution instructions.
