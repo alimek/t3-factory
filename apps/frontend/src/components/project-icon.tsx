@@ -2,7 +2,6 @@ import type { FactoryProject } from "@t3-factory/contracts";
 import { useState } from "react";
 import { FolderIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import ProjectLucideIcon from "./project-lucide-icon.tsx";
 
 type IconData = NonNullable<FactoryProject["projectIcon"]>;
 type IconColor = Extract<IconData, { kind: "lucide" | "monogram" }>["color"];
@@ -70,7 +69,7 @@ function IconContent({
       </span>
     );
   if (icon?.kind === "lucide") {
-    return <ProjectLucideIcon key={icon.name} name={icon.name} />;
+    return <FolderFallback />;
   }
   if (faviconUrl) return <ProjectFavicon key={faviconUrl} url={faviconUrl} />;
   return <FolderFallback />;

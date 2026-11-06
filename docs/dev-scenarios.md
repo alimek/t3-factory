@@ -34,6 +34,10 @@ data ([testing policy](testing.md)). Native T3 links in simulated Runs are fixtu
 The Atlas demo repository has three saved Agents (product engineer, code reviewer, accessibility reviewer), four ready Flows (focused change, build/review/decision, parallel review, parallel review from
 one prompt) and an incomplete release-checklist Flow, all with a saved Run coordinator except the draft. Seeded Run titles start with `Demo ·`.
 
+The Atlas project has no explicit icon. Open the Run composer and its project picker
+to check the frontend's local folder fallback when T3 supplies no icon. Supplied emoji,
+monograms and repository images are covered by controlled fixtures rather than this seed.
+
 | Run title after prefix | Initial state | Useful interaction |
 | --- | --- | --- |
 | Working · Improve the project picker | Open, one working Agent | Inspect block details; Stop; launch another Run |
