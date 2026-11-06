@@ -16,6 +16,7 @@ import {
   interruptRunConversation,
 } from "./support/run-worker.ts";
 import { bindThreadReportCaller } from "./support/lifecycle-setup.ts";
+import { contextCaller } from "./support/native-root-evidence.ts";
 
 it("normal Start requires no Agent coordinator and launches only the primary conversation with a direct worker plan", async (c) => {
   // Arrange
@@ -205,7 +206,7 @@ it("Stop retains the primary and worker tree until native completion is confirme
   expect(f.t3.treeStops.map((s) => s.threadId)).toContain("thread-1");
   expect(f.t3.launches.size).toBe(1);
 });
-it("a verified native user answer grants only its exact worker continuation report authority", async (c) => {
+it("a native user answer with omitted sender binds its exact continuation and settles the question before accepting its final", async (c) => {
   // Arrange
   const f = await workerNativeReply(c);
 
@@ -218,10 +219,133 @@ it("a verified native user answer grants only its exact worker continuation repo
   assert(run.ok);
   expect(run.value.reports[0]?.executionId).toBe("answer-execution");
   expect(run.value.reports[0]?.activationId).toBe(run.value.activations[0]?.id);
+  expect(run.value.executions.find((e) => e.executionId === "answer-execution")?.activationId).toBe(
+    run.value.activations[0]?.id,
+  );
+  expect(run.value.attention.find((a) => a.id === f.question.id)).toMatchObject({
+    settledAt: expect.any(String),
+    settlementReason: "completed",
+  });
+});
+it("a native user answer with explicit null sender retains worker report authority", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c, { senderThreadId: null });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+});
+it("a native user answer with omitted sender can ask a new question on the same activation", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c);
+
+  // Act
+  const result = await f.f.runtime.submit({
+    arguments: { key: "next-question", status: "waiting", message: "Which tone?" },
+    metadata: { callId: "worker-report" },
+  });
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.executions.find((e) => e.executionId === "answer-execution")?.activationId).toBe(
+    run.value.activations[0]?.id,
+  );
+  expect(run.value.attention.find((a) => a.id === f.question.id)?.settledAt).toEqual(
+    expect.any(String),
+  );
+  expect(
+    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
+  ).toMatchObject([{ executionId: "answer-execution", message: "Which tone?" }]);
+  expect(run.value.reports).toStrictEqual([]);
+});
+it("a native user answer with omitted sender exposes its resumed activation through worker context", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c);
+  const items = f.t3.runtimeActivity.items;
+  contextCaller(f.t3, f.project.projectId, "thread-2", "answer-execution");
+  f.t3.runtimeActivity = {
+    ...f.t3.runtimeActivity,
+    items: [...items, ...f.t3.runtimeActivity.items],
+  };
+
+  // Act
+  const result = await f.f.runtime.context({
+    arguments: {},
+    metadata: { callId: "context" },
+    inheritedThreadId: "thread-2",
+  });
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(result).toStrictEqual({
+    code: "CONTEXT",
+    role: "worker",
+    activationId: run.value.activations[0]?.id,
+  });
 });
 it("an agent-authored follow-up cannot acquire worker question authority", async (c) => {
   // Arrange
-  const f = await workerNativeReply(c, "agent");
+  const f = await workerNativeReply(c, { createdBy: "agent" });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("UNBOUND_ACTIVATION");
+});
+it("a follow-up without actor provenance cannot acquire worker question authority", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c);
+  const { createdBy: _actor, ...reply } = f.t3.runtimeActivity.items.at(-1)!;
+  f.t3.runtimeActivity = {
+    ...f.t3.runtimeActivity,
+    items: [f.t3.runtimeActivity.items[0]!, reply],
+  };
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("UNBOUND_ACTIVATION");
+});
+it("a user-authored message forwarded from another thread cannot acquire worker question authority", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c, { senderThreadId: "thread-1" });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("UNBOUND_ACTIVATION");
+});
+it("a user-authored message sourced from another thread cannot acquire worker question authority", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c, { sourceThreadId: "foreign-thread" });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("UNBOUND_ACTIVATION");
+});
+it("an inherited user message cannot acquire worker question authority", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c, { visibility: "inherited" });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("UNBOUND_ACTIVATION");
+});
+it("a native user answer for a different execution cannot authorize the reporting execution", async (c) => {
+  // Arrange
+  const f = await workerNativeReply(c, { runId: "other-execution" });
 
   // Act
   const result = await f.f.runtime.submit(workerFinal());

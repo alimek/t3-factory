@@ -182,7 +182,10 @@ export async function revisitedWorker(c: TestContext) {
   return f;
 }
 
-export async function workerNativeReply(c: TestContext, actor: "user" | "agent" = "user") {
+export async function workerNativeReply(
+  c: TestContext,
+  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
+) {
   const f = await waitingWorker(c);
   const prior = f.t3.executionObservations.get("thread-2")!;
   f.t3.executionObservations.set("thread-2", {
@@ -210,8 +213,8 @@ export async function workerNativeReply(c: TestContext, actor: "user" | "agent" 
         text: "Public audience.",
         visibility: "local",
         sourceThreadId: "thread-2",
-        createdBy: actor,
-        senderThreadId: actor === "user" ? null : "thread-1",
+        createdBy: "user",
+        ...reply,
       },
     ],
   };

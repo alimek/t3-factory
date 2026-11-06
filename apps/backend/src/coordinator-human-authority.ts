@@ -28,7 +28,7 @@ function isNativeUserReply(
 ) {
   return (
     item.createdBy === "user" &&
-    item.senderThreadId === null &&
+    (item.senderThreadId === undefined || item.senderThreadId === null) &&
     item.visibility === "local" &&
     item.sourceThreadId === threadId &&
     item.type !== "dynamic_tool" &&

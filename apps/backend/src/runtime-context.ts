@@ -1,9 +1,10 @@
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
-import type { RunRow } from "./runner-types.ts";
+import type { BlockRow, RunRow } from "./runner-types.ts";
 import type { RuntimeContextReply } from "./runtime-types.ts";
 import type { openRootCommands } from "./run-coordinator-commands.ts";
+import type { openRunnerObservation } from "./runner-observation.ts";
 import { nativeCallId, contextCaller } from "./runtime-caller.ts";
 import { runTarget } from "./runner-utils.ts";
 
@@ -12,6 +13,7 @@ export function openRuntimeContext(
   database: RunnerDatabase,
   t3: T3Adapter,
   rootCommands: ReturnType<typeof openRootCommands>,
+  observeWorker: ReturnType<typeof openRunnerObservation>["observe"],
   liveContextId: () => Effect.Effect<string | null, unknown>,
   getRun: (
     id: string,
@@ -70,6 +72,12 @@ export function openRuntimeContext(
     caller: ContextCaller,
   ): Effect.fn.Return<RuntimeContextReply, unknown> {
     yield* rootCommands.observe(caller.run);
+    const [block] = yield* database.transaction(
+      (sql) =>
+        sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${caller.run.id} AND thread_id=${caller.threadId}`,
+    );
+    if (block && caller.run.gate_open && !caller.run.closed_at)
+      yield* observeWorker(caller.run, block, yield* liveContextId());
     const [worker] = yield* database.transaction(
       (sql) =>
         sql<{
