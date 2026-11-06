@@ -1,0 +1,28 @@
+{
+  "name": "@t3-factory/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "T3 Factory desktop application for macOS on Apple Silicon",
+  "type": "module",
+  "main": "build/main.js",
+  "scripts": {
+    "build": "node scripts/bundle.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "stage": "node scripts/stage.mjs",
+    "start": "node scripts/stage.mjs && electron stage",
+    "package": "node scripts/package.mjs"
+  },
+  "dependencies": {
+    "@t3-factory/backend": "workspace:*",
+    "@t3-factory/contracts": "workspace:*",
+    "@t3-factory/domain-validation": "workspace:*",
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.1",
+    "@t3-factory/frontend": "workspace:*",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2"
+  }
+}

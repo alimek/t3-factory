@@ -1,0 +1,248 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
+
+/* The application is dark-only; `.dark` on <html> enables the shadcn dark variants. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens from the T3 Factory Figma file (quYma33EdiIQnYOzyVj7Tp): the Foundations
+ * page and the variables bound in the Flow Canvas editor (node 58:7044). Components bind
+ * to these semantic names; do not hardcode colors in UI code.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --background: #09090b; /* bg/canvas */
+  --foreground: #fafafa; /* text/primary */
+  --sidebar: #0c0c0e; /* bg/sidebar */
+  --sidebar-foreground: #fafafa;
+  --sidebar-accent: #18181b; /* nav-active */
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #27272a;
+  --sidebar-ring: #818cf8;
+  --card: #18181b; /* bg/elevated */
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --muted: #121214; /* bg/muted */
+  --muted-foreground: #a1a1aa; /* text/secondary */
+  --subtle-foreground: #71717a; /* text/tertiary: section labels only */
+  --emphasis-foreground: #d4d4d8; /* zinc-300: secondary values and summaries */
+  --accent: #1c1c1f; /* bg/subtle: hover and pressed fills */
+  --accent-foreground: #fafafa;
+  --secondary: #1c1c1f;
+  --secondary-foreground: #fafafa;
+
+  /* Brand */
+  --primary: #6366f1; /* brand/indigo */
+  --primary-hover: #4f46e5;
+  --primary-foreground: #ffffff;
+  --brand-soft: rgb(99 102 241 / 0.14); /* tinted tiles and tags */
+  --brand-soft-border: rgb(99 102 241 / 0.6);
+  --link: #818cf8; /* indigo-400 */
+  --brand-cyan: #22d3ee;
+
+  /* Lines */
+  --border: #27272a; /* border/default */
+  --border-strong: #3f3f46; /* zinc-700: floating panels, Human blocks */
+  --border-hover: #52525b; /* zinc-600: hovered blocks, unchecked boxes */
+  --input: #27272a;
+  --ring: #818cf8; /* focus ring */
+
+  /* Status */
+  --destructive: #ef4444;
+  --success: #22c55e;
+  --attention: #f59e0b;
+  --status-working: #22d3ee;
+  --status-waiting: #818cf8;
+  --status-stopped: #a1a1aa;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 8px;
+  --radius-xl: 12px; /* floating configuration panel */
+
+  /* Elevation */
+  --shadow-floating: 0 4px 6px rgb(0 0 0 / 0.4); /* canvas controls */
+  --shadow-panel: 0 2px 6px rgb(0 0 0 / 0.35), 0 16px 40px rgb(0 0 0 / 0.55);
+  --shadow-lift: 0 14px 14px rgb(0 0 0 / 0.6); /* a block being moved */
+
+  /* Motion (E01 interaction spec): panel open/close and in-place content changes. */
+  --ease-panel-in: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-panel-out: cubic-bezier(0.4, 0, 1, 1);
+  --duration-panel-in: 180ms;
+  --duration-panel-out: 140ms;
+  --duration-fast: 100ms;
+}
+
+/* Only this non-interactive strip drags the native window. Product controls,
+   dialogs and canvases remain outside the draggable region. */
+.desktop-titlebar {
+  display: flex;
+  height: 48px;
+  flex-shrink: 0;
+  align-items: center;
+  padding-left: 96px;
+  background: var(--sidebar);
+  user-select: none;
+  pointer-events: auto;
+  -webkit-app-region: drag;
+}
+
+.desktop-titlebar-floating {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 280px;
+}
+
+/* Keep the native window controls outside the inset Studio dialog. */
+html[data-desktop="true"] [data-studio] {
+  top: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-panel-in: 100ms;
+    --duration-panel-out: 100ms;
+  }
+}
+
+/* Workspace canvases keep their final geometry throughout the short fade. */
+[data-presentation="workspace"][data-state="open"] {
+  animation: workspace-dialog-in 120ms ease-out;
+}
+
+[data-presentation="workspace"][data-state="closed"] {
+  animation: workspace-dialog-out 100ms ease-in;
+}
+
+@keyframes workspace-dialog-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes workspace-dialog-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-presentation="workspace"][data-state] {
+    animation: none;
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Figma text styles: Label/Caption 10, helper 11, Body 12.5, Title 13. */
+  /* Figma letter spacing: Text/Label (0.5) and Text/Section (0.6). */
+  --tracking-label: 0.5px;
+  --tracking-section: 0.6px;
+  --tracking-heading: -0.4px; /* launch composer heading */
+
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-overline: 10.5px; /* panel section headings */
+  --text-overline--line-height: 14px;
+  --text-xs: 11px;
+  --text-xs--line-height: 16px;
+  --text-label: 11.5px; /* panel field labels */
+  --text-label--line-height: 16px;
+  --text-sm: 12.5px;
+  --text-sm--line-height: 18px;
+  --text-base: 13px;
+  --text-base--line-height: 20px;
+  --text-title: 15px; /* modal and Settings section titles (R07c/R07d) */
+  --text-title--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-heading: 22px; /* launch composer heading (R01) */
+  --text-heading--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-emphasis-foreground: var(--emphasis-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-border: var(--brand-soft-border);
+  --color-link: var(--link);
+  --color-brand-cyan: var(--brand-cyan);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-hover: var(--border-hover);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-attention: var(--attention);
+  --color-status-working: var(--status-working);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-stopped: var(--status-stopped);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-floating: var(--shadow-floating);
+  --shadow-panel: var(--shadow-panel);
+  --shadow-lift: var(--shadow-lift);
+
+  --ease-panel-in: var(--ease-panel-in);
+  --ease-panel-out: var(--ease-panel-out);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply m-0 bg-background font-sans text-sm text-foreground antialiased;
+    font-synthesis: none;
+  }
+  /* User-authored names can contain long unbroken strings. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    overflow-wrap: anywhere;
+  }
+}

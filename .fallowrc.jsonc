@@ -1,0 +1,64 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "minimumVersion": "3.38.1",
+  "failOnParseError": true,
+  "entry": [
+    // Only files executed by path that fallow cannot discover from package.json scripts,
+    // Vitest or `new URL(..., import.meta.url)` references.
+    // e2e journeys and the app server e2e.config.ts launches by path.
+    "tests/*.e2e.ts",
+    "tests/support/server.ts",
+    // Desktop: Electron loads the preload and utility-process entries by path, and
+    // electron-builder reads its configuration file by name.
+    "apps/desktop/src/backend-host.ts",
+    "apps/desktop/src/preload.ts",
+    "apps/desktop/electron-builder.config.mjs",
+  ],
+  "rules": {
+    // Treat every enabled advisory rule as an error, including direct `fallow` runs.
+    "unused-dev-dependencies": "error",
+    "unused-optional-dependencies": "error",
+    "unused-store-members": "error",
+    "unprovided-injects": "error",
+    "unrendered-components": "error",
+    "unused-component-props": "error",
+    "unused-component-emits": "error",
+    "unused-component-inputs": "error",
+    "unused-component-outputs": "error",
+    "unused-svelte-events": "error",
+    "unused-effect-layers": "error",
+    "unused-tagged-errors": "error",
+    "unproduced-catch-tags": "error",
+    "unused-server-actions": "error",
+    "unused-load-data-keys": "error",
+    "css-token-drift": "error",
+    "css-duplicate-block": "error",
+    "css-selector-complexity": "error",
+    "css-dead-surface": "error",
+    "css-broken-reference": "error",
+    "type-only-dependencies": "error",
+    "test-only-dependencies": "error",
+    "dev-dependencies-in-production": "error",
+    "re-export-cycle": "error",
+    "package-cycle": "error",
+    "stale-suppressions": "error",
+    "unused-catalog-entries": "error",
+    "empty-catalog-groups": "error",
+    "unused-dependency-overrides": "error",
+    "policy-violation": "error",
+    "invalid-client-export": "error",
+    "mixed-client-server-barrel": "error",
+    "misplaced-directive": "error",
+    "weakened-tests": "error",
+    "added-suppression": "error",
+    "test-only-branch": "error",
+
+    // CRAP weighs complexity by test coverage. Without coverage data fallow estimates it
+    // statically, so every frontend function with cyclomatic >= 5 fails (the UI is covered by
+    // e2e journeys, which the estimate cannot see) and the testing policy rejects tests written
+    // to raise coverage. Cyclomatic and cognitive complexity still gate at their defaults.
+    "complexity-crap": "off",
+    // A fallow-ignore comment must say why the finding is wrong: `-- <reason>` after the token.
+    "require-suppression-reason": "error",
+  },
+}

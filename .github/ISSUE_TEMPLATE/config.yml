@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/alimek/t3-factory/security/advisories/new
+    about: Report vulnerabilities privately; see SECURITY.md if the form is unavailable.
+  - name: Documentation and support
+    url: https://github.com/alimek/t3-factory/blob/main/SUPPORT.md
+    about: Installation, compatibility limits and where to ask for help.

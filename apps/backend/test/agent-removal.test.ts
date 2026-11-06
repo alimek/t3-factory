@@ -1,0 +1,88 @@
+import { assert, expect, it } from "@effect/vitest";
+import { sampleAgentInput } from "./support/domain-setup.ts";
+import { prepared } from "./support/prepared-runner.ts";
+
+it("removing an unused Agent deletes the definition", async (c) => {
+  // Arrange
+  const { f } = await prepared(c);
+  const saved = await f.createAgent(sampleAgentInput());
+  assert(saved.ok);
+
+  // Act
+  const removed = await f.removeAgent(saved.value.id);
+
+  // Assert
+  assert(removed.ok);
+  const missing = await f.getAgent(saved.value.id);
+  assert(!missing.ok);
+  expect(missing.error.code).toBe("not_found");
+});
+
+it("removing an Agent referenced by a saved Flow is rejected and keeps the definition", async (c) => {
+  // Arrange
+  const { f, agent } = await prepared(c);
+
+  // Act
+  const removed = await f.removeAgent(agent.id);
+
+  // Assert
+  assert(!removed.ok);
+  expect(removed.error.code).toBe("conflict");
+  expect(removed.error.message).toMatch(/saved Flows/i);
+  assert((await f.getAgent(agent.id)).ok);
+});
+
+it("removing an Agent after its Flow was removed preserves the Run snapshot", async (c) => {
+  // Arrange
+  const { f, input, flow, agent } = await prepared(c);
+  const started = await f.startRun(input);
+  assert(started.ok);
+  assert((await f.removeFlow(flow.id)).ok);
+
+  // Act
+  const removed = await f.removeAgent(agent.id);
+
+  // Assert
+  assert(removed.ok);
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.snapshot.agents.some((item) => item.id === agent.id)).toBe(true);
+  assert(!(await f.getAgent(agent.id)).ok);
+});
+
+it("removing a Flow preserves its active Run snapshot and shared Agent", async (c) => {
+  // Arrange
+  const { f, input, flow, agent } = await prepared(c);
+  const started = await f.startRun(input);
+  assert(started.ok);
+  await f.reconcileRuns();
+
+  // Act
+  const removed = await f.removeFlow(flow.id);
+
+  // Assert
+  assert(removed.ok);
+  const missing = await f.getFlow(flow.id);
+  assert(!missing.ok);
+  expect(missing.error.code).toBe("not_found");
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.closedAt).toBe(null);
+  expect(run.value.stopRequestedAt).toBe(null);
+  expect(run.value.snapshot).toStrictEqual(started.value.snapshot);
+  assert((await f.getAgent(agent.id)).ok);
+});
+
+it("saving a removed Flow rejects the edit instead of recreating the definition", async (c) => {
+  // Arrange
+  const { f, flow } = await prepared(c);
+  assert((await f.removeFlow(flow.id)).ok);
+
+  // Act
+  const saved = await f.updateFlow(flow.id, { ...flow, expectedRevision: flow.revision });
+
+  // Assert
+  assert(!saved.ok);
+  expect(saved.error.code).toBe("not_found");
+  expect(await f.listFlows()).toStrictEqual({ ok: true, value: [] });
+});

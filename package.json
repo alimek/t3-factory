@@ -1,0 +1,41 @@
+{
+  "name": "t3-factory",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
+    "test": "pnpm --filter @t3-factory/backend --filter @t3-factory/frontend test",
+    "start": "pnpm --filter @t3-factory/backend start",
+    "dev": "node scripts/dev.mjs",
+    "dev:prod": "node scripts/dev.mjs --production-data",
+    "db:reset": "node --conditions=factory-source scripts/dev/server.ts --reset",
+    "test:e2e": "e2e run",
+    "desktop:package": "pnpm build && pnpm --filter @t3-factory/desktop package",
+    "desktop:package:release": "pnpm build && pnpm --filter @t3-factory/desktop package --release",
+    "desktop:probe": "node apps/desktop/scripts/probe-package.mjs",
+    "e2e:screenshots": "pnpm build && e2e run tests/screenshots.e2e.ts --trace on --output .e2e/screenshots",
+    "e2e:explore": "e2e explore --config e2e.explore.config.ts",
+    "format": "vp fmt",
+    "format:check": "vp fmt --check",
+    "lint": "vp lint",
+    "fallow": "fallow --fail-on-issues",
+    "prepare": "vp config --no-agent",
+    "check": "pnpm format:check && pnpm fallow && pnpm build && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@e2e-dev/web": "0.15.4",
+    "@types/node": "24.10.1",
+    "concurrently": "10.0.6",
+    "e2e": "0.22.0",
+    "fallow": "3.38.1",
+    "typescript": "5.9.3",
+    "vite-plus": "1.4.0"
+  },
+  "engines": {
+    "node": "24.21.0",
+    "pnpm": "12.14.0"
+  },
+  "packageManager": "pnpm@12.14.0"
+}

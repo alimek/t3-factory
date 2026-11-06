@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "customConditions": ["factory-source"]
+  },
+  "include": ["e2e*.config.ts", "tests/**/*.ts", "scripts/dev/**/*.ts"]
+}

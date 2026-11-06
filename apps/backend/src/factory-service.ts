@@ -1,0 +1,184 @@
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import type { FactoryOperations, Result } from "@t3-factory/contracts";
+import type { EffectOperations } from "./effect-operations.ts";
+import type { FactoryOptions } from "./factory-options.ts";
+import { makeConnection } from "./connection.ts";
+import { makeProjects } from "./projects.ts";
+import { makeDefinitions } from "./definitions.ts";
+import * as RuntimeSetup from "./runtime-setup.ts";
+import * as ReportingInstaller from "./reporting-installation.ts";
+import type { T3Adapter } from "./adapters/t3.ts";
+import { createRuntime, type RuntimeReports } from "./runtime.ts";
+import type { acquireRunnerOwner } from "./runner-owner.ts";
+import { makeRunner } from "./runner.ts";
+import { makeClientAccess } from "./client-access.ts";
+import { failure } from "./result.ts";
+
+/** Public Effect service shared by HTTP, background workers and controlled-clock tests. */
+export class FactoryService extends Context.Service<
+  FactoryService,
+  EffectOperations<FactoryOperations> & {
+    readonly runtime: RuntimeReports;
+    readonly setRuntimeBackendUrl: (url: string) => void;
+  }
+>()("factory/FactoryService") {}
+
+type FactoryEffectOperations = EffectOperations<FactoryOperations>;
+
+const guard = <A>(operation: Effect.Effect<Result<A>, unknown>): Effect.Effect<Result<A>> =>
+  operation.pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.interrupt
+        : Effect.succeed(failure("internal", "Factory could not complete the operation.")),
+    ),
+  );
+
+/** Sanitizes every public operation's defects into an `internal` Result; interruption still propagates. */
+function guardOperations(operations: FactoryEffectOperations): FactoryEffectOperations {
+  const guarded: Record<string, unknown> = {};
+  for (const [name, operation] of Object.entries(operations) as [
+    string,
+    (...args: unknown[]) => Effect.Effect<Result<unknown>, unknown>,
+  ][])
+    guarded[name] = (...args: unknown[]) => guard(operation(...args));
+  return guarded as FactoryEffectOperations;
+}
+
+/** Composition root: wires domain modules to one T3 adapter and delegates each public operation. */
+export const makeFactoryService = (
+  options: FactoryOptions,
+  owner: Awaited<ReturnType<typeof acquireRunnerOwner>>,
+  t3: T3Adapter,
+) =>
+  Effect.gen(function* () {
+    const intervalMs = options.connectionRetryMs ?? 5_000;
+    const connection = yield* makeConnection(t3, intervalMs);
+    const projects = yield* makeProjects(t3, connection, intervalMs);
+    yield* projects.recheckProjects();
+    const definitions = yield* makeDefinitions(t3, connection);
+    const clients = yield* makeClientAccess;
+    let runtimeBackendUrl = options.runtimeBackendUrl ?? "http://127.0.0.1:4310";
+    const reportingContext = yield* Layer.build(
+      ReportingInstaller.ReportingInstallerLayer(
+        dirname(options.databasePath),
+        options.reportingStateDirectory ??
+          process.env.FACTORY_T3_STATE_DIRECTORY ??
+          join(homedir(), ".t3", "userdata"),
+        connection.getConnection,
+        () => runtimeBackendUrl,
+        options.bridgeRuntime,
+      ),
+    );
+    const reporting = Context.get(reportingContext, ReportingInstaller.ReportingInstaller);
+    const setupContext = yield* Layer.build(
+      RuntimeSetup.RuntimeSetupLayer(
+        {
+          getReportingInstallations: reporting.getReportingInstallations,
+          getConnection: connection.getConnection,
+          recheckConnection: connection.recheckConnection,
+          listProjects: projects.listProjects,
+          recheckProjects: projects.recheckProjects,
+          getAgent: definitions.getAgent,
+          getAgentCapabilities: definitions.getAgentCapabilities,
+        },
+        t3,
+      ),
+    );
+    const setup = Context.get(setupContext, RuntimeSetup.RuntimeSetup);
+    let runner: Effect.Success<ReturnType<typeof makeRunner>>;
+    const runtimeReports = createRuntime(
+      t3,
+      () =>
+        connection
+          .getConnection()
+          .pipe(
+            Effect.map((c) =>
+              c.ok && c.value.state === "ready" ? (c.value.authorizationContext?.id ?? null) : null,
+            ),
+          ),
+      (binding, report, retryOnly) => runner.consumeRuntimeReport(binding, report, retryOnly),
+      (binding) => runner.refreshRuntimeBinding(binding),
+      (threadId) => runner.isClosedThread(threadId),
+      (key, threadId, discover) => runner.reportBindings(key, threadId, discover),
+      (input) => runner.runtimeContext(input),
+    );
+    // A literal without spreads: guardOperations and the Promise facade expose exactly these keys.
+    const operations: FactoryEffectOperations = {
+      createFlow: definitions.createFlow,
+      validateFlow: definitions.validateFlow,
+      updateFlow: definitions.updateFlow,
+      removeFlow: definitions.removeFlow,
+      listFlows: definitions.listFlows,
+      getFlow: definitions.getFlow,
+      getAgentCapabilities: definitions.getAgentCapabilities,
+      listAgents: definitions.listAgents,
+      getAgent: definitions.getAgent,
+      createAgent: definitions.createAgent,
+      updateAgent: definitions.updateAgent,
+      duplicateAgent: definitions.duplicateAgent,
+      removeAgent: definitions.removeAgent,
+      getReportingInstallations: () => reporting.getReportingInstallations(),
+      installReporting: (input) => reporting.installReporting(input),
+      answerHumanOccurrence: (id, input) => runner.answerHumanOccurrence(id, input),
+      listAttention: () => runner.listAttention(),
+      replyCoordinatorQuestion: (id, input) => runner.replyCoordinatorQuestion(id, input),
+      recoverRunCoordinator: (id, executionId) => runner.recoverRunCoordinator(id, executionId),
+      requestReport: (id) => runner.requestReport(id),
+      stopRun: (id) => runner.stopRun(id),
+      getRunCreationPolicy: () => runner.getRunCreationPolicy(),
+      startRun: (i) => runner.startRun(i),
+      listRunNavigation: () => runner.listRunNavigation(),
+      renameRun: (id, input) => runner.renameRun(id, input),
+      snoozeRun: (id) => runner.snoozeRun(id),
+      restoreRun: (id) => runner.restoreRun(id),
+      markRunWokeSeen: (id) => runner.markRunWokeSeen(id),
+      getRun: (id) => runner.getRun(id),
+      listRuns: (id) => runner.listRuns(id),
+      listTasks: (id) => runner.listTasks(id),
+      updateTask: (id, input) => runner.updateTask(id, input),
+      reconcileRuns: () => runner.reconcileRuns(),
+      recheckRuntime: (i) => setup.recheckRuntime(i),
+      listProjects: () => projects.listProjects(),
+      recheckProjects: () => projects.recheckProjects(),
+      addRepository: (input) => projects.addRepository(input),
+      selectProject: (input) => projects.selectProject(input),
+      getProjectReadiness: (id) => projects.getProjectReadiness(id),
+      getProjectFavicon: (id) => projects.getProjectFavicon(id),
+      getConnection: () => connection.getConnection(),
+      configureConnection: (input) => connection.configureConnection(input),
+      recheckConnection: () => connection.recheckConnection(),
+      authorizeConnection: () => connection.authorizeConnection(),
+      openConnectionAuthorization: () => connection.openConnectionAuthorization(),
+      requestClientAccess: (input) => clients.requestClientAccess(input),
+      getClientAccess: (credential) => clients.getClientAccess(credential),
+      authenticateClient: (credential) => clients.authenticateClient(credential),
+      listClients: () => clients.listClients(),
+      approveClient: (id) => clients.approveClient(id),
+      denyClient: (id) => clients.denyClient(id),
+      revokeClient: (id) => clients.revokeClient(id),
+      getHostLifecycle: () => clients.getHostLifecycle(),
+    };
+    const factory: FactoryService["Service"] = {
+      ...guardOperations(operations),
+      runtime: runtimeReports,
+      setRuntimeBackendUrl: (url) => {
+        runtimeBackendUrl = url;
+      },
+    };
+    runner = yield* makeRunner(
+      { ...factory, getFlow: definitions.getFlowForSnapshot },
+      t3,
+      owner,
+      runtimeReports,
+      intervalMs,
+      (projectId, agent) => setup.recheckSnapshot(projectId, agent),
+    );
+    yield* runner.initialize();
+    return factory;
+  });

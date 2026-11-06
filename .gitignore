@@ -1,0 +1,27 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.env
+.env.*
+!.env.example
+# Local data overrides must never be committed.
+.t3-factory/
+*.sqlite
+*.sqlite-*
+
+.e2e/
+
+# Desktop bundle, staged Electron app and packaged artifacts.
+apps/desktop/build/
+apps/desktop/stage/
+apps/desktop/release/
+
+# Local credentials, TLS material and diagnostic output.
+.local/
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+.DS_Store

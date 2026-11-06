@@ -1,0 +1,21 @@
+packages:
+  - apps/*
+  - packages/*
+# Keep plugins on the Vite implementation bundled with Vite+.
+allowBuilds:
+  fs-ext: true
+  # The desktop bundler's platform binary check.
+  esbuild: true
+  # Windows installer tooling pulled in by electron-builder; macOS builds never run it.
+  electron-winstaller: false
+overrides:
+  vite@*: npm:@voidzero-dev/vite-plus-core@1.4.0
+  # GHSA-g3hv-75wg-m249: upgrade affected desktop build-tool dependencies only.
+  app-builder-lib>minimatch: 11.0.4
+  "@electron/universal>minimatch": 11.0.4
+# These plugins declare upstream Vite versions; the core alias has Vite+'s version.
+peerDependencyRules:
+  allowedVersions:
+    "@tailwindcss/vite>vite": "1.4.0"
+    "@vitejs/plugin-react>vite": "1.4.0"
+    "vitest>vite": "1.4.0"

@@ -1,0 +1,288 @@
+import { assert, expect, it } from "@effect/vitest";
+import { ControlledT3 } from "./support/controlled-t3.ts";
+import { factoryHarness } from "./support/factory.ts";
+import { flowInput, flowWithAgent, validationFlow } from "./support/domain-setup.ts";
+
+it("an incomplete graph draft saves with the Flow input connection outstanding", async (context) => {
+  // Arrange
+  const { factory, created, unconnectedGraph } = await flowWithAgent(context);
+
+  // Act
+  const draft = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    graph: unconnectedGraph,
+  });
+
+  // Assert
+  assert(draft.ok);
+  expect(draft.value.revision).toBe(2);
+  expect(draft.value.readiness.ready).toBe(false);
+  expect(draft.value.readiness.issues[0]?.code).toBe("flow_input_required");
+  expect(draft.value.readiness.issues[0]?.path).toBe("graph.flowInput.targetBlockIds");
+});
+
+it("connecting the Flow input to an Agent makes a saved graph draft ready", async (context) => {
+  // Arrange
+  const { factory, created, unconnectedGraph } = await flowWithAgent(context);
+  assert(
+    (
+      await factory.updateFlow(created.value.id, {
+        name: created.value.name,
+        expectedRevision: 1,
+        graph: unconnectedGraph,
+      })
+    ).ok,
+  );
+
+  // Act
+  const ready = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 2,
+    graph: { ...unconnectedGraph, flowInput: flowInput("coder") },
+  });
+
+  // Assert
+  assert(ready.ok);
+  expect(ready.value.readiness.ready).toBe(true);
+});
+
+it("updateFlow rejects a stale editor with conflict and leaves the saved revision", async (context) => {
+  // Arrange
+  const { factory, created, unconnectedGraph } = await flowWithAgent(context);
+  assert(
+    (
+      await factory.updateFlow(created.value.id, {
+        name: created.value.name,
+        expectedRevision: 1,
+        graph: unconnectedGraph,
+      })
+    ).ok,
+  );
+  const ready = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 2,
+    graph: { ...unconnectedGraph, flowInput: flowInput("coder") },
+  });
+  assert(ready.ok);
+
+  // Act
+  const stale = await factory.updateFlow(created.value.id, {
+    name: "Stale",
+    expectedRevision: 2,
+    graph: unconnectedGraph,
+  });
+
+  // Assert
+  assert(!stale.ok);
+  expect(stale.error.code).toBe("conflict");
+  expect(await factory.getFlow(created.value.id)).toStrictEqual(ready);
+});
+
+it("validateFlow reports a missing agent reference before save", async (context) => {
+  // Arrange
+  const { factory, block } = await validationFlow(context);
+  const graph = { flowInput: flowInput("a"), blocks: [block], connections: [] };
+
+  // Act
+  const missing = await factory.validateFlow({
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(missing.ok);
+  expect(missing.value.issues[0]?.code).toBe("agent_required");
+});
+
+it("updateFlow rejects duplicate block ids", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = { flowInput: flowInput("a"), blocks: [block, block], connections: [] };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  assert(result.error.issues.some((issue) => issue.code === "invalid_block_id"));
+});
+
+it("updateFlow rejects block prompt overrides", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [{ ...block, prompt: "override" }],
+    connections: [],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  assert(result.error.issues.some((issue) => issue.code === "block_overrides_forbidden"));
+});
+
+it("updateFlow rejects dangling connections", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [block],
+    connections: [{ sourceBlockId: "a", exitId: "e", targetBlockId: "absent" }],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  assert(result.error.issues.some((issue) => issue.code === "invalid_connection"));
+});
+
+it("updateFlow rejects assessment-fail exits that omit required correction feedback", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [
+      {
+        ...block,
+        exits: [{ ...block.exits[0], name: "renamed", outcome: "assessment-fail" as const }],
+      },
+    ],
+    connections: [],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  assert(result.error.issues.some((issue) => issue.code === "correction_feedback_required"));
+});
+
+it("updateFlow rejects a Flow input target that is not in the graph", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = { flowInput: flowInput("absent"), blocks: [block], connections: [] };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues[0]?.code).toBe("invalid_flow_input_target");
+  expect(result.error.issues[0]?.path).toBe("graph.flowInput.targetBlockIds.0");
+});
+
+it("updateFlow rejects a Human step as a Flow input target", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const { agentId: _agentId, ...fields } = block;
+  const human = { ...fields, id: "review", kind: "human" as const, name: "Review" };
+  const graph = { flowInput: flowInput("review"), blocks: [block, human], connections: [] };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues[0]?.code).toBe("invalid_flow_input_target");
+});
+
+it("concurrent Flow edits allow exactly one successful revision advance", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const input = {
+    name: "Validation",
+    expectedRevision: 1,
+    graph: { flowInput: flowInput("a"), blocks: [block], connections: [] },
+  };
+  assert((await factory.updateFlow(created.value.id, input)).ok);
+
+  // Act
+  const raced = await Promise.all([
+    factory.updateFlow(created.value.id, { ...input, name: "One", expectedRevision: 2 }),
+    factory.updateFlow(created.value.id, { ...input, name: "Two", expectedRevision: 2 }),
+  ]);
+
+  // Assert
+  expect(raced.filter((r) => r.ok).length).toBe(1);
+  expect(raced.filter((r) => !r.ok && r.error.code === "conflict").length).toBe(1);
+});
+
+it("readiness identifies unfinished and unreachable blocks without rejecting draft saves", async (context) => {
+  // Arrange
+  const factory = await (await factoryHarness(context)).open({ t3: new ControlledT3() });
+  const created = await factory.createFlow({ name: "Incomplete work" });
+  assert(created.ok);
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    graph: {
+      flowInput: flowInput("entry"),
+      connections: [],
+      blocks: [
+        {
+          id: "entry",
+          kind: "agent",
+          agentId: null,
+          name: "Worker",
+          position: { x: 0, y: 0 },
+          exits: [],
+        },
+        {
+          id: "human",
+          kind: "human",
+          name: "",
+          position: { x: 400, y: 0 },
+          exits: [
+            { id: "custom", name: "", description: "", outcome: "custom", requiresFeedback: true },
+          ],
+        },
+      ],
+    },
+  });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.readiness.ready).toBe(false);
+  expect(result.value.readiness.issues.map((i) => [i.code, i.path])).toStrictEqual([
+    ["agent_required", "graph.blocks.0.agentId"],
+    ["exit_required", "graph.blocks.0.exits"],
+    ["block_name_required", "graph.blocks.1.name"],
+    ["exit_name_required", "graph.blocks.1.exits.0.name"],
+    ["unreachable_block", "graph.blocks.1"],
+  ]);
+  expect(result.value.revision).toBe(2);
+});

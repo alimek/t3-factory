@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible problem in T3 Factory.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. For security vulnerabilities, follow SECURITY.md.
+        Remove credentials, private prompts, paths and device identifiers from all shared material.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and how it affects your workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest reproduction, ideally using the simulated demo and dummy data.
+      placeholder: |
+        1. Start Factory with...
+        2. Open...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Installation or mode
+      options:
+        - Simulated demo (pnpm dev)
+        - Source production (pnpm start or pnpm dev:prod)
+        - Desktop server
+        - Approved desktop or browser client
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and environment
+      description: Include Factory commit/build, OS and architecture, browser, Node/pnpm (source), and T3/harness versions if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Optional short error excerpt or sanitized image. Do not attach databases, credentials, complete data homes or unreviewed traces.

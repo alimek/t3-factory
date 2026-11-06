@@ -1,0 +1,169 @@
+import type * as Effect from "effect/Effect";
+import type {
+  HumanOccurrence,
+  Result,
+  RunBlock,
+  RunDetail,
+  RunSnapshot,
+  RuntimeReadiness,
+} from "@t3-factory/contracts";
+import type { T3Target } from "./adapters/t3.ts";
+import type { RuntimeBinding } from "./runtime-types.ts";
+
+export type RunRow = {
+  id: string;
+  task_id: string;
+  task_title: string;
+  project_id: string;
+  title: string;
+  input: string;
+  request_fingerprint: string;
+  snapshot_json: string;
+  context_id: string;
+  workspace_root: string;
+  gate_open: number;
+  stop_requested_at: string | null;
+  generation: number;
+  started_at: string;
+  closed_at: string | null;
+  outcome: RunDetail["outcome"];
+  endpoint: string;
+  environment_id: string;
+  t3_project_id: string;
+};
+
+export type BlockRow = {
+  run_id: string;
+  block_id: string;
+  name: string;
+  state: RunBlock["state"];
+  thread_id: string | null;
+  execution_id: string | null;
+  link: string | null;
+  engine_status: string | null;
+  report_status: RunBlock["reportStatus"];
+  problem: string | null;
+  pending_request_count: number | null;
+  observed_at: string | null;
+  freshness: RunBlock["freshness"];
+};
+
+export type IntentRow = {
+  cause: string;
+  id: string;
+  run_id: string;
+  block_id: string;
+  kind: string;
+  report_id: string | null;
+  occurrence_id: string | null;
+  source_block_id: string | null;
+  exit_id: string | null;
+  result_json: string | null;
+  target_json: string;
+  request_key: string;
+  payload_json: string | null;
+  fingerprint: string;
+  context_id: string;
+  retry_scope: string | null;
+  state: string;
+  reserved_at: string | null;
+  problem: string | null;
+};
+
+export type ReportRow = {
+  activation_id: string | null;
+  result_message: string | null;
+  id: string;
+  block_id: string;
+  execution_id: string;
+  report_key: string;
+  fingerprint: string;
+  status: "waiting" | "finished";
+  exit_id: string | null;
+  recipients_json: string;
+  acknowledgement_json: string;
+  accepted_at: string;
+  completion_eligible_at: string | null;
+  final_contract: number;
+  pending_message: string | null;
+};
+
+export type ExecutionRow = {
+  binding_id: string;
+  activation_id: string | null;
+  block_id: string;
+  execution_id: string;
+  engine_status: string | null;
+  report_status: RunBlock["reportStatus"];
+  observed_at: string | null;
+  ordinal: number | null;
+  problem: string | null;
+  native_request_count: number | null;
+  first_work_at: string | null;
+  end_work_at: string | null;
+};
+
+export type HumanRow = {
+  id: string;
+  run_id: string;
+  block_id: string;
+  incoming_intent_id: string;
+  state: HumanOccurrence["state"];
+  pending_context: string | null;
+  appeared_at: string;
+  settled_at: string | null;
+  exit_id: string | null;
+  answer_fingerprint: string | null;
+};
+
+export type TaskRunRow = {
+  id: string;
+  input: string;
+  started_at: string;
+  closed_at: string | null;
+  outcome: RunDetail["outcome"];
+  stop_requested_at: string | null;
+  snapshot_json: string;
+};
+
+export type TaskRow = { id: string; title: string; project_id: string; created_at: string };
+
+export type ReportRunRow = Pick<
+  RunRow,
+  | "id"
+  | "endpoint"
+  | "environment_id"
+  | "t3_project_id"
+  | "workspace_root"
+  | "gate_open"
+  | "closed_at"
+  | "context_id"
+  | "snapshot_json"
+> & { token: string };
+
+export type StoredTarget = T3Target & {
+  threadId?: string;
+};
+
+/** A dispatch precondition either holds with its value or names the operation's problem. */
+export type Checked<A> =
+  | { readonly ok: true; readonly value: A }
+  | { readonly ok: false; readonly problem: string };
+
+export type RunnerDrive = (
+  id: string,
+  phase?: "observe" | "dispatch" | "both",
+) => Effect.Effect<void, unknown>;
+export interface RunnerLifecycle {
+  isClosed(): boolean;
+  drive: RunnerDrive;
+  fork: (effect: Effect.Effect<unknown, unknown>) => Effect.Effect<void>;
+  getRun(id: string): Effect.Effect<Result<RunDetail>, unknown>;
+}
+export interface RunnerOptions {
+  bindings: { bind(binding: RuntimeBinding): void; unbind(threadId: string): void };
+  checkSnapshot: (
+    projectId: string,
+    agent: RunSnapshot["agents"][number],
+  ) => Effect.Effect<Result<RuntimeReadiness>, unknown>;
+}
