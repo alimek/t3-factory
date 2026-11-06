@@ -62,7 +62,7 @@ A maintainer qualifies the downloaded Actions artifact as described below, then 
 
 ### Retry and rejected qualification
 
-Use **Re-run failed jobs** in the same run, or manually dispatch **Release** from `main` with `tag` naming an existing draft. Both paths rebuild and publish the same tag and commit; neither bumps the version nor moves the tag. A re-run of `build-macos` replaces that run's artifacts, so qualify the artifact of the latest successful build attempt. After publication nothing is overwritten: a fix needs a new commit and a new version.
+Neither retry path bumps the version or moves the tag; both use the same tag and commit. **Re-run failed jobs** in the same run reruns only what failed: when only `publish` failed, it reuses the artifact from that run's successful build, which is the artifact already qualified. When `build-macos` reruns, it replaces that run's artifacts, so qualify the new artifact. Manually dispatching **Release** from `main` with `tag` naming an existing draft starts a new run with a new build that needs its own qualification. After publication nothing is overwritten: a fix needs a new commit and a new version.
 
 If qualification fails, decline the approval. The draft and tag remain, and the next Release PR proposes the next version. That version number is consumed; reusing it requires deleting the draft and tag, a destructive maintainer decision.
 
@@ -98,7 +98,9 @@ The workflow requires a public repository and uses its GitHub Releases as the up
 
 ### Maintainer qualification
 
-Review generated notes, artifact hashes and verification evidence from the workflow before approving `publish`. Qualify the downloaded Actions artifact on a clean Mac for the first Release. For later Releases, also verify an update from the previous signed Release on disposable data, including Cancel, ordinary Quit, server restart and reconciliation, and client reconnect. Keep hashes and results; never probe a production installation. Complete the applicable packaged, clean-user and live-integration checks below and record unverified cases explicitly. CI's Gatekeeper assessment on the build runner proves neither clean-user installation nor updates between signed Releases.
+Review generated notes, artifact hashes and verification evidence from the workflow before approving `publish`; the evidence includes the packaged probe report for exactly this build. Before approval, install the downloaded artifact on a clean Mac. For later Releases, also install it over the previous signed Release on disposable data and verify data and bridge preservation, server restart and reconciliation, and client reconnect. Keep hashes and results; never probe a production installation. Complete the applicable packaged, clean-user and live-integration checks below and record unverified cases explicitly. CI's Gatekeeper assessment on the build runner proves neither clean-user installation nor updates between signed Releases.
+
+The in-app update path cannot be qualified before approval: a previous signed build reads only published GitHub Releases, and the candidate stays a draft without assets until `publish`. Verify an update from the previous signed Release through the app (download, Cancel, ordinary Quit, **Install and restart**) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so an update defect is fixed by a new version.
 
 Recipients install the first signed DMG manually; developer packages cannot bootstrap into this channel. Release builds check on launch and every six hours, and from the footer or Application settings. The first click
 downloads and **Install and restart** opens a native confirmation; ordinary Quit never installs. Server installation needs action on that host and warns about open Runs; a client update affects only that client.
@@ -106,7 +108,7 @@ Compatible protocol ranges let clients and server update independently.
 
 ## Packaged verification and limits
 
-Run `pnpm desktop:probe /absolute/report.json` against a newly staged package. The probe uses disposable application data and a mock keychain and checks package startup, role selection, backend lifecycle and runtime
+For a Release, `build-macos` runs the probe against the exact package it uploads and keeps the report in `release-evidence-<tag>`. Locally, `pnpm desktop:probe /absolute/report.json` probes the package in `apps/desktop/release/mac-arm64/`, so run it right after packaging that checkout; it does not read a downloaded artifact. The probe uses disposable application data and a mock keychain and checks package startup, role selection, backend lifecycle and runtime
 bridge packaging; keep its report with the release artifacts. Controlled browser journeys cover approved-client transport and updater UI ([UI verification](testing.md)).
 
 Acceptance procedures use a disposable application copy, HOME, desktop profile and data home with a minimal PATH and a mock keychain unless real Keychain persistence is under test; never touch a production installation or
