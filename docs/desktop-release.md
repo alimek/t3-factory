@@ -16,7 +16,7 @@ pnpm --filter @t3-factory/desktop start   # stage, then run the shell from sourc
 ```
 
 `pnpm build` (and the quality gate) bundles `apps/desktop/build/` without native rebuild or network. Packaging rebuilds the native `fs-ext` addon for Electron in isolation; the workspace's Node binary must remain untouched so source operation and tests still work. Packaging needs Xcode Command Line Tools and network access for Electron
-headers; output lands in `apps/desktop/release/` as `T3 Factory-<version>-arm64.dmg`, `-arm64.zip` (Squirrel.Mac input) and blockmaps.
+headers; output lands in `apps/desktop/release/` as `T3.Factory-<version>-arm64.dmg`, `-arm64.zip` (Squirrel.Mac input) and blockmaps. Filenames match GitHub's release download names so update metadata and checksums remain valid after upload.
 
 ## Build identity and assets
 
@@ -46,7 +46,27 @@ encryption and embedded asar integrity are on, and the app loads only from asar.
 
 ## Release and update flow
 
-There is no release CI: merging neither changes the version nor publishes. A release is a manual maintainer operation on macOS arm64:
+Merging neither changes the version nor publishes. Maintainers can build locally on macOS arm64 or manually run **Desktop release** in GitHub Actions from `main`. The workflow uses the committed desktop version and exact dispatched commit; it does not increment versions or publish the draft.
+
+### GitHub Actions setup
+
+Configure these repository secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `CSC_LINK` | Base64-encoded Developer ID Application `.p12`, exported with its private key |
+| `CSC_KEY_PASSWORD` | Password chosen when exporting that `.p12` |
+| `APPLE_API_KEY` | Complete contents of the App Store Connect team API key `.p8` file; CI writes it to a temporary file for electron-builder |
+| `APPLE_API_KEY_ID` | That API key's Key ID |
+| `APPLE_API_ISSUER` | The team's Issuer ID |
+
+Developer ID requires active Apple Developer Program membership. The Account Holder can create a **Developer ID Application** certificate through Xcode's account settings. For notarization, create a team API key with the **Developer** role in **App Store Connect → Users and Access → Integrations → App Store Connect API**. Keep the exported certificate, private key and API key outside the repository; CI removes its temporary API key even when a step fails.
+
+The workflow requires a public repository and uses its GitHub Releases as the update feed. It runs the quality gate, controlled browser journeys, signing/notarization, signature and stapled-ticket validation, Gatekeeper assessment, the disposable packaged probe and archive checks. Missing signing or notarization secrets fail the build. Downloads, SHA-256 checksums and verification evidence are retained as an Actions artifact; successful builds also create or replace the corresponding draft's generated notes and assets. A published release or a tag pointing to a different commit is refused. Re-running against an existing draft replaces files with matching names, including the first unsigned preview's files.
+
+Review the generated notes and complete the remaining clean-Mac, live-integration and upgrade qualification below before publishing the draft. CI's Gatekeeper assessment takes place on the build runner and does not prove a clean-user installation or an update from a previous signed release.
+
+### Maintainer qualification
 
 1. Provision the public release-assets repository or HTTPS feed and configure signing, notarization and the same feed for every release build.
 2. On the release commit set `apps/desktop/package.json` to the intended numeric version (later releases must be higher; tagging as `v<version>` is a separate Git step).
