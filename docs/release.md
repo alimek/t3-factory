@@ -6,7 +6,7 @@ A Release is one T3 Factory product version, identified by a `vX.Y.Z` tag on a f
 
 release-please owns the product version in root `package.json`, using manifest mode with a single component at repository root (`.`) and release type `node`. `.release-please-manifest.json` records the last released version. Its `extra-files` configuration keeps `apps/desktop/package.json` equal to the root version; the desktop package remains the build identity input. The Release PR maintains root `CHANGELOG.md`. Do not edit versions by hand.
 
-Conventional Commit PR titles supply the versioning input: squash merges use the PR title as the commit title, and the **PR title** workflow check validates titles on pull requests. `feat` increments the minor version and `fix` increments the patch version while the product is on 0.x; a breaking `!` increments the minor version before 1.0. A `Release-As: X.Y.Z` footer in a commit on `main` overrides the version. See [contributing](../CONTRIBUTING.md#opening-a-pull-request).
+Conventional Commit PR titles supply the versioning input: squash merges use the PR title as the commit title, and the **PR title** workflow check validates titles on pull requests. `feat` increments the minor version and `fix` increments the patch version while the product is on 0.x; a breaking `!` increments the minor version before 1.0. A `Release-As: X.Y.Z` footer, added to the squash commit message when merging, overrides the version. See [contributing](../CONTRIBUTING.md#opening-a-pull-request).
 
 ## Toolchain and commands
 
@@ -87,7 +87,7 @@ Developer ID requires active Apple Developer Program membership. The Account Hol
 Also configure:
 
 - A GitHub environment named **release** with required reviewer(s) for the `publish` approval.
-- Squash merge commit titles set to **Default to PR title**. The default **commit or PR title** uses a single commit's message instead, bypassing the intended versioning input.
+- Squash as the only merge method (repository settings and the main ruleset), with the PR title as commit title and a blank commit message. The default **commit or PR title** would use a single commit's message instead, and a PR body in the commit could add unintended changelog entries: release-please also reads Conventional Commit lines and footers in the commit body.
 - **Allow GitHub Actions to create and approve pull requests** in Actions settings, so release-please can open the Release PR with `GITHUB_TOKEN`. `pull_request` runs for PRs opened or updated by `GITHUB_TOKEN` require a maintainer's manual **Approve and run** before the required **Quality gate** runs. A GitHub App token would avoid that approval but is not configured.
 - **PR title** as a required check in the main ruleset, alongside the normal required checks.
 - **Immutable releases**, required for the guarantee that published files are never overwritten; see the [publication boundary](#publication-boundary).
