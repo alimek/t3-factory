@@ -11,28 +11,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  prepare:
+    name: Prepare release
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-15
-    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-          cache: pnpm
-      - name: Check release source
+      - name: Prepare draft for release source
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(uname -m)" = arm64
           test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = false
           version=$(node -p 'JSON.parse(require("node:fs").readFileSync("apps/desktop/package.json", "utf8")).version')
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -40,7 +40,46 @@ jobs:
           if git show-ref --verify --quiet "refs/tags/$tag"; then
             test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
           fi
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | .draft")
+          if [[ -n "$existing" && "$existing" != true ]]; then
+            echo '::error::A published release cannot be replaced. Increase the desktop version.'
+            exit 1
+          fi
+          mkdir -p .e2e/release
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > .e2e/release/notes.md
+          if [[ "$existing" = true ]]; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "T3 Factory $tag" \
+              --prerelease=false --notes-file .e2e/release/notes.md
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "T3 Factory $tag" \
+              --draft --notes-file .e2e/release/notes.md
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build macOS
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Check build host
+        run: |
+          test "$(uname -m)" = arm64
           mkdir -p .e2e/release
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
@@ -79,28 +118,13 @@ jobs:
       - name: Hash release downloads
         working-directory: apps/desktop/release
         run: shasum -a 256 -- *.dmg *.zip *.blockmap latest-mac.yml > SHA256SUMS.txt
-      - name: Prepare GitHub draft
+      - name: Attach downloads to prepared release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .draft")
-          if [[ -n "$existing" && "$existing" != true ]]; then
-            echo '::error::A published release cannot be replaced. Increase the desktop version.'
-            exit 1
-          fi
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$RELEASE_TAG" -f target_commitish="$GITHUB_SHA" \
-            --jq .body > .e2e/release/notes.md
-          if [[ "$existing" = true ]]; then
-            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" --title "T3 Factory $RELEASE_TAG" \
-              --prerelease=false --notes-file .e2e/release/notes.md
-          else
-            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" --title "T3 Factory $RELEASE_TAG" \
-              --draft --notes-file .e2e/release/notes.md
-          fi
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$GITHUB_SHA"
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber \
             apps/desktop/release/*.dmg apps/desktop/release/*.zip \
             apps/desktop/release/*.blockmap apps/desktop/release/latest-mac.yml \

@@ -48,6 +48,8 @@ encryption and embedded asar integrity are on, and the app loads only from asar.
 
 Merging neither changes the version nor publishes. Maintainers can build locally on macOS arm64 or manually run **Desktop release** in GitHub Actions from `main`. The workflow uses the committed desktop version and exact dispatched commit; it does not increment versions or publish the draft.
 
+The release workflow has two dependent jobs: **Prepare release** creates or updates the draft and generated notes for `v<version>`, then **Build macOS** builds that exact commit and attaches verified downloads to the same draft. The dependency starts the build explicitly: GitHub does not trigger Actions for draft-release creation, and release events produced by `GITHUB_TOKEN` do not start another workflow. If building fails, the release stays a draft; review the Actions result before publishing.
+
 ### GitHub Actions setup
 
 Configure these repository secrets under **Settings → Secrets and variables → Actions**:
@@ -62,7 +64,7 @@ Configure these repository secrets under **Settings → Secrets and variables �
 
 Developer ID requires active Apple Developer Program membership. The Account Holder can create a **Developer ID Application** certificate through Xcode's account settings. For notarization, create a team API key with the **Developer** role in **App Store Connect → Users and Access → Integrations → App Store Connect API**. Keep the exported certificate, private key and API key outside the repository; CI removes its temporary API key even when a step fails.
 
-The workflow requires a public repository and uses its GitHub Releases as the update feed. It runs the quality gate, controlled browser journeys, signing/notarization, signature and stapled-ticket validation, Gatekeeper assessment, the disposable packaged probe and archive checks. Missing signing or notarization secrets fail the build. Downloads, SHA-256 checksums and verification evidence are retained as an Actions artifact; successful builds also create or replace the corresponding draft's generated notes and assets. A published release or a tag pointing to a different commit is refused. Re-running against an existing draft replaces files with matching names, including the first unsigned preview's files.
+The workflow requires a public repository and uses its GitHub Releases as the update feed. It runs the quality gate, controlled browser journeys, signing/notarization, signature and stapled-ticket validation, Gatekeeper assessment, the disposable packaged probe and archive checks. Missing signing or notarization secrets fail the build. Downloads, SHA-256 checksums and verification evidence are retained as an Actions artifact; successful builds upload the assets only while the prepared release is still a draft targeting the same commit. A published release or a tag pointing to a different commit is refused. Re-running against an existing draft replaces generated notes and files with matching names, including the first unsigned preview's files.
 
 Review the generated notes and complete the remaining clean-Mac, live-integration and upgrade qualification below before publishing the draft. CI's Gatekeeper assessment takes place on the build runner and does not prove a clean-user installation or an update from a previous signed release.
 
