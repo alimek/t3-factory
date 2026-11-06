@@ -62,13 +62,13 @@ A maintainer qualifies the downloaded Actions artifact as described below, then 
 
 ### Retry and rejected qualification
 
-Use **Re-run failed jobs** in the same run, or manually dispatch **Release** from `main` with `tag` naming an existing draft. Both paths rebuild and publish the same tag and commit; neither bumps the version nor moves the tag. After publication nothing is overwritten: a fix needs a new commit and a new version.
+Use **Re-run failed jobs** in the same run, or manually dispatch **Release** from `main` with `tag` naming an existing draft. Both paths rebuild and publish the same tag and commit; neither bumps the version nor moves the tag. A re-run of `build-macos` replaces that run's artifacts, so qualify the artifact of the latest successful build attempt. After publication nothing is overwritten: a fix needs a new commit and a new version.
 
 If qualification fails, decline the approval. The draft and tag remain, and the next Release PR proposes the next version. That version number is consumed; reusing it requires deleting the draft and tag, a destructive maintainer decision.
 
 ### Publication boundary
 
-Publish only through the controlled `publish` job. Actions cannot disable the GitHub UI **Publish release** button on a draft. Because assets are uploaded only at the very end by `publish`, premature manual publication exposes a release with no or incomplete files rather than files being replaced; `publish` then refuses because the release is no longer a draft. The window between upload and `draft=false` cannot be closed. The repository's immutable releases setting protects tags and assets only after publication and does not guarantee completeness of a prematurely published release.
+Publish only through the controlled `publish` job. Actions cannot disable the GitHub UI **Publish release** button on a draft. Assets are uploaded only at the very end by `publish`, so manual publication before that job starts exposes a release with no files, and `publish` then refuses because the release is no longer a draft. `publish` checks the draft state before it removes leftover assets and uploads; a manual publication after that check can still meet an in-progress removal or upload. With immutable releases enabled, GitHub rejects asset changes once the release is published, so the job fails instead of replacing files, but the published release may be incomplete. Neither the window between the check and the upload nor the one between upload and `draft=false` can be closed from Actions.
 
 ### GitHub Actions setup
 
@@ -90,8 +90,9 @@ Also configure:
 - Squash merge commit titles set to **Default to PR title**. The default **commit or PR title** uses a single commit's message instead, bypassing the intended versioning input.
 - **Allow GitHub Actions to create and approve pull requests** in Actions settings, so release-please can open the Release PR with `GITHUB_TOKEN`. `pull_request` runs for PRs opened or updated by `GITHUB_TOKEN` require a maintainer's manual **Approve and run** before the required **Quality gate** runs. A GitHub App token would avoid that approval but is not configured.
 - **PR title** as a required check in the main ruleset, alongside the normal required checks.
+- **Immutable releases**, required for the guarantee that published files are never overwritten; see the [publication boundary](#publication-boundary).
 
-Immutable releases and a tag ruleset protecting `v*` from update and deletion are recommended prerequisites for release integrity, subject to the [publication boundary](#publication-boundary).
+A tag ruleset protecting `v*` from update and deletion is recommended so tags stay fixed while a Release is still a draft.
 
 The workflow requires a public repository and uses its GitHub Releases as the update feed. `latest-mac.yml` and the `T3.Factory-<version>-arm64.dmg` / `T3.Factory-<version>-arm64.zip` filenames match GitHub download names so metadata remains valid after upload.
 
