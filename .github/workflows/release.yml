@@ -161,6 +161,25 @@ jobs:
           pnpm desktop:probe "$PWD/.e2e/release/packaged-probe.json"
           hdiutil verify apps/desktop/release/*.dmg
           unzip -t apps/desktop/release/*.zip
+      - name: Check downloads contain the probed application
+        run: |
+          # Same CDHash and an intact deep seal mean each archive ships the verified, probed bundle.
+          cdhash() { codesign --display --verbose=4 "$1" 2>&1 | sed -n 's/^CDHash=//p'; }
+          expected=$(cdhash 'apps/desktop/release/mac-arm64/T3 Factory.app')
+          test -n "$expected"
+          unpacked="$RUNNER_TEMP/release-zip"
+          mounted="$RUNNER_TEMP/release-dmg"
+          ditto -x -k apps/desktop/release/*.zip "$unpacked"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mounted" apps/desktop/release/*.dmg
+          trap 'hdiutil detach "$mounted"' EXIT
+          for app in "$unpacked/T3 Factory.app" "$mounted/T3 Factory.app"; do
+            codesign --verify --deep --strict --verbose=2 -R='anchor apple generic' "$app"
+            xcrun stapler validate "$app"
+            if [[ "$(cdhash "$app")" != "$expected" ]]; then
+              echo "::error::$app differs from the probed application."
+              exit 1
+            fi
+          done
       - name: Collect release downloads
         run: |
           downloads=.e2e/release/downloads

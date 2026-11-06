@@ -6,7 +6,7 @@ A Release is one T3 Factory product version, identified by a `vX.Y.Z` tag on a f
 
 release-please owns the product version in root `package.json`, using manifest mode with a single component at repository root (`.`) and release type `node`. `.release-please-manifest.json` records the last released version. Its `extra-files` configuration keeps `apps/desktop/package.json` equal to the root version; the desktop package remains the build identity input. The Release PR maintains root `CHANGELOG.md`. Do not edit versions by hand.
 
-Conventional Commit PR titles supply the versioning input: squash merges use the PR title as the commit title, and the **PR title** workflow check validates titles on pull requests. `feat` increments the minor version and `fix` increments the patch version while the product is on 0.x; a breaking `!` increments the minor version before 1.0. A `Release-As: X.Y.Z` footer, added to the squash commit message when merging, overrides the version. See [contributing](../CONTRIBUTING.md#opening-a-pull-request).
+Conventional Commit PR titles supply the versioning input: squash merges use the PR title as the commit title, and the **PR title** workflow check validates titles on pull requests. `feat` increments the minor version and `fix` increments the patch version while the product is on 0.x; a breaking `!` increments the minor version before 1.0. To override the version, add a `Release-As: X.Y.Z` footer to the squash commit message when merging an ordinary change PR; the Release PR then proposes that version. Adding it when merging the Release PR has no effect, because that PR already fixed the version. See [contributing](../CONTRIBUTING.md#opening-a-pull-request).
 
 ## Toolchain and commands
 
@@ -108,7 +108,7 @@ Compatible protocol ranges let clients and server update independently.
 
 ## Packaged verification and limits
 
-For a Release, `build-macos` runs the probe against the exact package it uploads and keeps the report in `release-evidence-<tag>`. Locally, `pnpm desktop:probe /absolute/report.json` probes the package in `apps/desktop/release/mac-arm64/`, so run it right after packaging that checkout; it does not read a downloaded artifact. The probe uses disposable application data and a mock keychain and checks package startup, role selection, backend lifecycle and runtime
+For a Release, `build-macos` runs the probe against the unpacked application it built and keeps the report in `release-evidence-<tag>`; it then checks that the application inside both the ZIP and the mounted DMG has an intact deep signature, a stapled ticket and the same code directory hash as the probed application, so the downloads ship the probed bundle. Locally, `pnpm desktop:probe /absolute/report.json` probes the package in `apps/desktop/release/mac-arm64/`, so run it right after packaging that checkout; it does not read a downloaded artifact. The probe uses disposable application data and a mock keychain and checks package startup, role selection, backend lifecycle and runtime
 bridge packaging; keep its report with the release artifacts. Controlled browser journeys cover approved-client transport and updater UI ([UI verification](testing.md)).
 
 Acceptance procedures use a disposable application copy, HOME, desktop profile and data home with a minimal PATH and a mock keychain unless real Keychain persistence is under test; never touch a production installation or
