@@ -5,7 +5,7 @@ import type { CoordinationSaved } from "./coordinator-evidence-saved.ts";
 import type { RetainLocal } from "./coordinator-local-observations.ts";
 import { retainedSelection } from "./coordinator-selection.ts";
 import type { BlockRow, RunRow } from "./runner-types.ts";
-import { runTarget } from "./runner-utils.ts";
+import { checkoutWorkspace, runTarget } from "./runner-utils.ts";
 
 /** Factory launched this worker itself. The self marker is not T3 parentage. */
 export async function factoryOwnedSelection(
@@ -30,7 +30,7 @@ export async function factoryOwnedSelection(
       identity.threadId !== block.thread_id ||
       identity.projectId !== run.t3_project_id ||
       identity.parentThreadId !== null ||
-      identity.workspaceRoot !== run.workspace_root ||
+      !checkoutWorkspace(identity.workspaceRoot, run.workspace_root) ||
       identity.providerInstanceId !== expected.providerInstanceId ||
       identity.model !== expected.modelId
     )

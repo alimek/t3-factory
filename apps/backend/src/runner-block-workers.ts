@@ -16,7 +16,14 @@ import { recoverOperation } from "./runner-effects.ts";
 import { launchPayload } from "./runner-handoffs.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
-import { fingerprint, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
+import {
+  checkoutWorkspace,
+  fingerprint,
+  intactPayload,
+  runTarget,
+  unverified,
+  verified,
+} from "./runner-utils.ts";
 import { scopedThreadHref } from "./thread-link.ts";
 import { now } from "./time.ts";
 import { newId } from "./ids.ts";
@@ -235,7 +242,8 @@ function launchMatches(payload: LaunchPayload, run: RunRow, candidate: LaunchCan
   return (
     candidate.projectId === run.t3_project_id &&
     candidate.parentThreadId === null &&
-    candidate.workspaceRoot === run.workspace_root &&
+    payload.workspaceStrategy.type === "root" &&
+    checkoutWorkspace(candidate.workspaceRoot, run.workspace_root) &&
     candidate.interactionMode === "default" &&
     candidate.providerInstanceId === payload.modelSelection.instanceId &&
     candidate.model === payload.modelSelection.model &&

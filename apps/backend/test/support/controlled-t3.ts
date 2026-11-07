@@ -116,6 +116,8 @@ export class ControlledT3 implements T3Adapter {
   }
   rejectLaunch = false;
   discoverAvailable = true;
+  /** Live root-strategy threads report the project checkout as a null worktree. */
+  reportCheckoutWorkspace = false;
   omitCandidateOptions = false;
   readonly extraCandidates: LaunchCandidate[] = [];
   async discoverLaunchCandidates(
@@ -141,7 +143,7 @@ export class ControlledT3 implements T3Adapter {
       threadId,
       projectId: launch.payload.projectId,
       parentThreadId: null,
-      workspaceRoot: target.workspaceRoot,
+      workspaceRoot: this.reportCheckoutWorkspace ? null : target.workspaceRoot,
       providerInstanceId: launch.payload.modelSelection.instanceId,
       model: launch.payload.modelSelection.model,
       executions: observation.recentRuns.map((run) => ({

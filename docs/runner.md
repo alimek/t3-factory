@@ -70,8 +70,9 @@ and no SQL transaction spans T3 I/O. Shutdown releases ownership without request
 An uncertain worker launch is never replayed, including with the same key. While Factory
 is running, recovery searches the same T3 environment and project for the saved title,
 then binds only a uniquely verified thread and its exact execution. A missing parent, a
-non-string parent, or a missing workspace withholds the search; neither is treated as a
-top-level worker at the project root. The first search is
+non-string parent, or a missing workspace withholds the search. T3 reports a project-checkout
+thread with a null workspace, and that null matches a root-strategy launch. Any other
+workspace must equal the Run's project root. The first search is
 immediate; each completed search that does not bind waits longer, from 1 second doubling
 up to 60 seconds. Empty, delayed, ambiguous or incomplete evidence stays unresolved.
 Model options must be readable; otherwise live recovery can remain pending. A matching

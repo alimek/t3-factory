@@ -179,6 +179,18 @@ it("a worker that fails after reporting cannot release downstream work", async (
   expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
   expect(f.t3.sends.size).toBe(0);
 });
+it("a worker on the project checkout can still report", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  f.t3.reportCheckoutWorkspace = true;
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+});
+
 it("a foreign thread cannot report a worker final", async (c) => {
   // Arrange
   const f = await directWorker(c);
@@ -314,6 +326,22 @@ it("Stop keeps a saved running descendant after it leaves the worker native acti
   assert(run.ok);
   expect(run.value.closedAt).toBeNull();
   expect(f.t3.treeStops.map((stop) => stop.threadId)).toContain("thread-3");
+});
+
+it("Stop interrupts a root-strategy worker whose thread has no worktree", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  f.t3.reportCheckoutWorkspace = true;
+  assert((await f.f.stopRun(f.runId)).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.closedAt).toBeNull();
+  expect(f.t3.treeStops.map((stop) => stop.threadId)).toContain("thread-1");
 });
 
 it("Stop retains the primary and worker tree until native completion is confirmed", async (c) => {

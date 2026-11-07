@@ -111,6 +111,85 @@ it("an explicit top-level parent in the list is accepted without another read", 
   });
 });
 
+it("a null worktree is the project checkout and a missing workspace stays unproven", () => {
+  // Arrange
+  const checkout = {
+    thread: {
+      threadId: "thread-1",
+      projectId: "project-1",
+      parentThreadId: null,
+      worktreePath: null,
+      providerInstanceId: "codex-main",
+      model: "gpt-6.1-sol",
+    },
+    recentRuns: [execution()],
+  };
+  const { worktreePath: _worktree, ...thread } = {
+    threadId: "thread-1",
+    projectId: "project-1",
+    parentThreadId: null,
+    worktreePath: "/repo",
+    providerInstanceId: "codex-main",
+    model: "gpt-6.1-sol",
+  };
+
+  // Act
+  const identity = threadIdentityRead(checkout, "thread-1");
+
+  // Assert
+  expect(identity.workspaceRoot).toBeNull();
+  expect(() => threadIdentityRead({ thread, recentRuns: [execution()] }, "thread-1")).toThrow(
+    /workspace/i,
+  );
+});
+
+it("a listed null worktree stays a project-checkout candidate", async () => {
+  // Arrange
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [thread({ parentThreadId: null, workspaceRoot: null })],
+        nextCursor: null,
+      };
+    reads += 1;
+    return thread({ parentThreadId: null, workspaceRoot: "/other" });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(0);
+  expect(found).toMatchObject({
+    available: true,
+    candidates: [{ workspaceRoot: null, parentThreadId: null }],
+  });
+});
+
+it("a non-string workspace withholds the launch search", async () => {
+  // Arrange
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [thread({ parentThreadId: null, workspaceRoot: 4 })],
+        nextCursor: null,
+      };
+    reads += 1;
+    return thread({ parentThreadId: null });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(0);
+  expect(found).toEqual({ available: false });
+});
+
 it("a live thread read proves identity from the nested thread and its worktree", () => {
   // Arrange
   const body = {

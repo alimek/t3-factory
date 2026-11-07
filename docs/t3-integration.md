@@ -167,8 +167,10 @@ source timestamp. Unsupported, unavailable or mismatched exact reads report **In
 ### Native delegation evidence
 
 Factory-launched workers are top-level threads. A title is not ownership: recovery binds
-only when parentage, project, workspace, interaction mode, provider, model, options and one
-execution are all present. A missing or non-string parent withholds the search. Descendants
+only when parentage, project, interaction mode, provider, model, options and one
+execution are all present. A missing or non-string parent or workspace withholds the search.
+A null workspace is the project checkout and matches a root-strategy launch; any other path
+must equal the Run's project root. Descendants
 a worker starts later are not report authorities. Native activity can prove an invocation
 was issued without proving parentage or an empty descendant set.
 Task fingerprints compare normalized intent, not JSON property order. Provider and model

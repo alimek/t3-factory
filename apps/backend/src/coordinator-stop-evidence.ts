@@ -8,7 +8,7 @@ import {
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { DelegationActivity } from "./adapters/delegation-activity.ts";
 import type { RunRow } from "./runner-types.ts";
-import { runTarget, isTerminal } from "./runner-utils.ts";
+import { checkoutWorkspace, runTarget, isTerminal } from "./runner-utils.ts";
 
 export interface StopMember {
   threadId: string;
@@ -174,7 +174,7 @@ async function factoryOwnedMember(
       identity.threadId !== member.threadId ||
       identity.projectId !== run.t3_project_id ||
       identity.parentThreadId !== null ||
-      identity.workspaceRoot !== run.workspace_root
+      !checkoutWorkspace(identity.workspaceRoot, run.workspace_root)
     )
       return false;
     const observation = await t3.readExecution(runTarget(run), member.threadId);

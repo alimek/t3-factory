@@ -37,7 +37,7 @@ export function threadIdentityRead(value: unknown, threadId: string): ThreadIden
     threadId,
     projectId: requiredString(body.projectId),
     parentThreadId: body.parentThreadId === null ? null : requiredString(body.parentThreadId),
-    workspaceRoot: typeof body.workspaceRoot === "string" ? body.workspaceRoot : null,
+    workspaceRoot: requiredWorkspace(body),
     providerInstanceId: requiredString(body.providerInstanceId),
     model: requiredString(body.model),
     executions: runs.map(executionIdentity),
@@ -151,6 +151,15 @@ function copiedWorkspace(body: Record<string, unknown>, thread: Record<string, u
   return {};
 }
 
+/** Explicit null is T3's project checkout. A missing or non-string workspace stays unproven. */
+function requiredWorkspace(body: Record<string, unknown>) {
+  if (!("workspaceRoot" in body)) throw Error("Thread workspace evidence is unavailable");
+  const workspace = body.workspaceRoot;
+  if (workspace === null) return null;
+  if (typeof workspace === "string" && workspace.length > 0) return workspace;
+  throw Error("Thread workspace evidence is unavailable");
+}
+
 function launchEvidenceGap(thread: Record<string, unknown>) {
   return (
     !("parentThreadId" in thread) ||
@@ -164,12 +173,17 @@ function provenLaunchEvidence(detail: Record<string, unknown>) {
   return (
     !launchEvidenceGap(detail) &&
     provenParent(detail.parentThreadId) &&
+    knownWorkspace(detail.workspaceRoot) &&
     typeof detail.projectId === "string" &&
     detail.projectId.length > 0
   );
 }
 
 function provenParent(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.length > 0);
+}
+
+function knownWorkspace(value: unknown): value is string | null {
   return value === null || (typeof value === "string" && value.length > 0);
 }
 

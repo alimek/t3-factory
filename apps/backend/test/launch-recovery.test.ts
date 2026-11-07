@@ -71,6 +71,38 @@ it("two candidates with the expected title stay unresolved", async (c) => {
   expect(run.value.blocks[0]?.recovery).toBe("pending");
 });
 
+it("a root-strategy worker reported on the project checkout is recovered", async (c) => {
+  // Arrange
+  const fixture = await uncertainLaunch(c);
+  const launch = [...fixture.t3.launches.values()][0]!;
+  fixture.t3.launches.clear();
+  fixture.t3.extraCandidates.push({
+    ...foreignCandidate(launch, fixture.project.workspaceRoot),
+    workspaceRoot: null,
+    threadId: launch.reference.threadId,
+    link: launch.reference.link,
+    executions: [
+      {
+        runId: launch.reference.runId,
+        providerInstanceId: launch.payload.modelSelection.instanceId,
+        model: launch.payload.modelSelection.model,
+        status: launch.reference.status,
+      },
+    ],
+  });
+
+  // Act
+  await fixture.f.reconcileRuns();
+
+  // Assert
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(fixture.t3.launches.size).toBe(0);
+  expect(run.value.blocks[0]?.threadId).toBe(launch.reference.threadId);
+  expect(run.value.blocks[0]?.executionId).toBe(launch.reference.runId);
+  expect(run.value.blocks[0]?.recovery).toBeNull();
+});
+
 it("a mismatched worker is not bound and is not replaced with another launch", async (c) => {
   // Arrange
   const fixture = await uncertainLaunch(c);
