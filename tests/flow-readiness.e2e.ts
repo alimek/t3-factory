@@ -1,12 +1,19 @@
 import { repairCodexReporting } from "./support/agents.ts";
 import assert from "node:assert/strict";
-import { beforeEach, test } from "@e2e-dev/web";
+import { afterEach, beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { openComposerWithFlow } from "./support/composer.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 
 beforeEach(async ({ browser }) => {
   await browser.setViewport({ width: 1440, height: 1100 });
+});
+
+afterEach(async ({ app }) => {
+  const restored = await fetch(new URL("/__fixture/readiness/restore", app.baseUrl), {
+    method: "POST",
+  });
+  assert(restored.ok);
 });
 
 test("Start names every blocked Agent including later branches and succeeds after repair", async ({
@@ -91,8 +98,4 @@ test("a launch contract blocker points to the connection without blaming Agents"
   await app.screenshot("connection-only-blocker");
   await expect(screen.getByRole("link", "Open Studio → Agents", { exact: true })).toHaveCount(0);
   expect(await runsTitled(app.baseUrl, "UI unsupported launch contract")).toHaveLength(0);
-  const restored = await fetch(new URL("/__fixture/readiness/restore-launch", app.baseUrl), {
-    method: "POST",
-  });
-  assert(restored.ok);
 });

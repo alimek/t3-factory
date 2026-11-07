@@ -330,8 +330,12 @@ const fixtureRoutes: Record<string, () => unknown> = {
   "/__fixture/readiness/unsupported-launch"() {
     t3.launchSupported = false;
   },
-  "/__fixture/readiness/restore-launch"() {
+  async "/__fixture/readiness/restore"() {
     t3.launchSupported = true;
+    const targets = requireSuccess(await factory.getReportingInstallations());
+    const codex = targets.find((target) => target.instances.includes("codex-main"));
+    assert(codex);
+    requireSuccess(await factory.installReporting({ targetId: codex.id }));
   },
   async "/__fixture/readiness/report"() {
     const summary = requireSuccess(await factory.listRunNavigation()).find(
