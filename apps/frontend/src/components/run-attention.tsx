@@ -42,9 +42,9 @@ function attentionExplanation(kind: RunAttention["kind"]) {
     case "conversation-waiting":
       return "The Agent is waiting for your reply. Answer in its T3 thread; its reply turn continues this step.";
     case "missing-report":
-      return "This execution ended without a report. Request report in Factory to start a separate assessment turn when eligible.";
+      return "No report was accepted for this completed execution. Check any report rejection below before requesting a separate assessment turn.";
     case "report-problem":
-      return "Factory could not accept or completely read this execution’s report. Investigate in T3.";
+      return "A report or its work evidence needs attention. Inspect the recorded reason and the worker in T3.";
     case "execution-failed":
       return "T3 execution did not complete successfully. Continue in T3 to investigate.";
   }
@@ -240,7 +240,7 @@ function PendingMatter({
           Thread-level observation; questions and permission approvals may be grouped.
         </p>
       )}
-      {item.kind === "conversation-waiting" && item.message && (
+      {(item.kind === "conversation-waiting" || item.kind === "report-problem") && item.message && (
         <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">
           {item.message}
         </p>
@@ -276,14 +276,18 @@ function PendingMatter({
 }
 
 function ProblemDetail({ run, item }: { run: RunDetail; item: RunAttention }) {
-  const detail = recordedProblem(run, item);
+  const detail = item.kind === "report-problem" && item.message ? null : recordedProblem(run, item);
   return (
     <p className="text-sm text-muted-foreground">
       {attentionLabel(item.kind)}
       {item.executionId ? ` · execution ${item.executionId}` : ""}.{" "}
       {item.kind === "missing-report"
         ? "This stays unresolved until an explicit report or successful linked recovery is accepted and confirmed. Recovery never starts automatically."
-        : "This stays unresolved until T3 reports progress."}
+        : item.kind === "report-problem"
+          ? item.message
+            ? "A corrected accepted report or confirmed linked recovery settles this rejection; execution progress alone does not."
+            : "Inspect the recorded work evidence in T3."
+          : "Inspect the failed execution in T3; report recovery does not retry work."}
       {detail ? ` ${detail}` : ""}
     </p>
   );
@@ -298,6 +302,9 @@ function SettledMatter({ run, item }: { run: RunDetail; item: RunAttention }) {
         <AttentionChip presentation={attentionPresentation(item.kind)} />
         <h3 className="truncate text-2xs font-medium text-muted-foreground">{item.blockName}</h3>
       </div>
+      {item.kind === "report-problem" && item.message && (
+        <p className="whitespace-pre-wrap">{item.message}</p>
+      )}
       {exit && <p>Selected exit: {exit}</p>}
       <p>Settled: {item.settlementReason}</p>
       {reply && (
@@ -491,11 +498,20 @@ function RequestReport({
         execution: {recovery.sourceExecutionId}. Worker work is preserved; no automatic retry.
       </p>
     );
+  const block = run.blocks.find((b) => b.blockId === item.blockId);
+  if (!run.gateOpen || block?.executionId !== item.executionId) return null;
   if (
-    !run.gateOpen ||
-    run.blocks.find((b) => b.blockId === item.blockId)?.executionId !== item.executionId
+    block.engineStatus !== "completed" ||
+    block.freshness !== "fresh" ||
+    block.problem !== "missing-report" ||
+    block.pendingRequestCount !== 0
   )
-    return null;
+    return (
+      <p className="text-sm">
+        Report recovery waits for fresh evidence that the worker, delegated work, queues and native
+        requests are quiet. No assessment turn has been started.
+      </p>
+    );
   async function submit() {
     setBusy(true);
     setError("");

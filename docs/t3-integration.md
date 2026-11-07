@@ -276,6 +276,11 @@ authority. `factory_report` and `factory_context` are not exposed.
 
 The [Runner report contract](runner.md#report-acceptance) defines immutable activation results, non-final conversation waiting, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
 
+Report rejections return `code`, a static `reason` and a safe `next` step. A proven
+current worker rejection also appears in Run attention. Caller-correlation failures
+return guidance only: they cannot create attention on an unproven Run. Neither path
+retries work or grants activation authority.
+
 ### Worker reporting
 
 Factory-launched Block workers hold activation-scoped reporting authority. There is no Run conversation. Waiting and reply turns use the same worker. A final also needs the fresh activation-scoped provider/model proof
