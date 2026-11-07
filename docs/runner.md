@@ -106,7 +106,10 @@ handoffs are durable before the acknowledgement is returned.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
   The user replies in the same worker thread; a verified later worker execution resumes
-  the activation and reports for itself. Within one execution waiting → finished is allowed
+  the activation and reports for itself. Settling that question does not end the activation:
+  further verified user replies on the same worker retain report authority until its final
+  result, including after a reply turn omitted its report. A later accepted report settles
+  earlier missing-report attention within that activation. Within one execution waiting → finished is allowed
   with a fresh key, while finished → waiting conflicts.
 - Earlier waiting history does not prevent closure once the activation has a final result
   and all completion checks pass. A latest waiting report keeps it open. An incoming
