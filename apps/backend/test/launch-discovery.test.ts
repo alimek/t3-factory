@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { discoverLaunches } from "../src/launch-discovery.ts";
+import { discoverLaunches, threadIdentityRead } from "../src/launch-discovery.ts";
 
 const title = "Factory #1 · 1 Entry";
 
@@ -109,6 +109,136 @@ it("an explicit top-level parent in the list is accepted without another read", 
     available: true,
     candidates: [{ parentThreadId: null }],
   });
+});
+
+it("a live thread read proves identity from the nested thread and its worktree", () => {
+  // Arrange
+  const body = {
+    thread: {
+      threadId: "thread-1",
+      projectId: "project-1",
+      parentThreadId: null,
+      worktreePath: "/repo",
+      providerInstanceId: "codex-main",
+      model: "gpt-6.1-sol",
+    },
+    recentRuns: [execution()],
+  };
+
+  // Act
+  const identity = threadIdentityRead(body, "thread-1");
+
+  // Assert
+  expect(identity).toMatchObject({
+    threadId: "thread-1",
+    projectId: "project-1",
+    parentThreadId: null,
+    workspaceRoot: "/repo",
+    providerInstanceId: "codex-main",
+    model: "gpt-6.1-sol",
+    executions: [{ runId: "execution-1", providerInstanceId: "codex-main", model: "gpt-6.1-sol" }],
+  });
+});
+
+it("a nested thread read supplies the project, parent and workspace the list omitted", async () => {
+  // Arrange
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [
+          {
+            threadId: "thread-1",
+            title,
+            interactionMode: "default",
+            providerInstanceId: "codex-main",
+            model: "gpt-6.1-sol",
+            options: { reasoning: "low" },
+            recentRuns: [execution()],
+          },
+        ],
+        nextCursor: null,
+      };
+    reads += 1;
+    return {
+      thread: {
+        threadId: "thread-1",
+        title,
+        projectId: "project-from-thread",
+        parentThreadId: null,
+        worktreePath: "/repo",
+        providerInstanceId: "codex-main",
+        model: "gpt-6.1-sol",
+      },
+      recentRuns: [execution()],
+    };
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(1);
+  expect(found).toMatchObject({
+    available: true,
+    candidates: [
+      { projectId: "project-from-thread", parentThreadId: null, workspaceRoot: "/repo" },
+    ],
+  });
+});
+
+it("a missing project id stays unproven when the thread read also omits it", async () => {
+  // Arrange
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [
+          {
+            threadId: "thread-1",
+            title,
+            parentThreadId: null,
+            workspaceRoot: "/repo",
+            interactionMode: "default",
+            providerInstanceId: "codex-main",
+            model: "gpt-6.1-sol",
+            options: { reasoning: "low" },
+            recentRuns: [execution()],
+          },
+        ],
+        nextCursor: null,
+      };
+    return thread({ projectId: undefined });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(found).toEqual({ available: false });
+});
+
+it("a non-string project id withholds the launch search", async () => {
+  // Arrange
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [thread({ projectId: 4, parentThreadId: null })],
+        nextCursor: null,
+      };
+    reads += 1;
+    return thread({ projectId: "project-1" });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(0);
+  expect(found).toEqual({ available: false });
 });
 
 it("another titled thread that omits its parent does not withhold a proved worker", async () => {

@@ -70,7 +70,8 @@ for await (const line of createInterface({ input: process.stdin })) {
         method: "POST",
         headers: { "content-type": "application/json", "X-Factory-Request": "1" },
         body: JSON.stringify({
-          arguments: m.params.arguments,
+          arguments:
+            m.params.arguments ?? (m.params.name === "factory_update_block" ? undefined : {}),
           metadata: m.params._meta ?? {},
           inheritedThreadId: process.env.T3CODE_THREAD_ID,
         }),

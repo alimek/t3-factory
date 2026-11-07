@@ -113,8 +113,8 @@ type BoundWorker = {
 function parseToolCall(input: unknown): ToolCall | RuntimeReply {
   if (!input || typeof input !== "object") return { code: "INVALID_ARGUMENT" };
   const envelope = input as Record<string, unknown>;
-  const args = envelope.arguments;
-  if (!args || typeof args !== "object" || Array.isArray(args) || Object.keys(args).length)
+  const args = envelope.arguments ?? {};
+  if (typeof args !== "object" || Array.isArray(args) || Object.keys(args).length)
     return { code: "INVALID_ARGUMENT" };
   const callId = nativeCallId(envelope.metadata);
   if (!callId || typeof envelope.inheritedThreadId !== "string" || !envelope.inheritedThreadId)

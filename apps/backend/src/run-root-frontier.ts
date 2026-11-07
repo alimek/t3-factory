@@ -37,12 +37,13 @@ export function rootFrontier(
       ),
     );
     if (!coordinators.length) {
+      // A saved descendant can leave the current native page and still be running.
       const workers = await Effect.runPromise(
         database.transaction(
           (sql) =>
             sql<{
               thread_id: string;
-            }>`SELECT thread_id FROM run_thread_bindings WHERE run_id=${run.id} AND role='worker'`,
+            }>`SELECT thread_id FROM run_thread_bindings WHERE run_id=${run.id} AND role IN ('worker','descendant')`,
         ),
       );
       return {

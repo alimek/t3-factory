@@ -62,6 +62,21 @@ it("factory_get_block returns the bound worker visit without a model-supplied id
   expect(result).not.toHaveProperty("retryAfterMs");
 });
 
+it("factory_get_block accepts a call that omits arguments", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    metadata: { callId: "block-call" },
+    inheritedThreadId: "thread-1",
+  });
+
+  // Assert
+  expect(result).toMatchObject({ code: "BLOCK", state: "working" });
+});
+
 it("factory_get_run returns the caller Run and each Block without routing authority", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");

@@ -12,7 +12,7 @@ export async function discoverLaunches(
     const threads = await listProjectThreads(call, projectId);
     const candidates: LaunchCandidate[] = [];
     for (const thread of threads) {
-      const candidate = await candidateFor(call, thread, projectId, title);
+      const candidate = await candidateFor(call, thread, title);
       if (candidate === "incomplete") return { available: false };
       if (candidate) candidates.push(candidate);
     }
@@ -24,7 +24,7 @@ export async function discoverLaunches(
 
 /** Exact thread identity for a Factory-launched worker. Missing fields stay unproven. */
 export function threadIdentityRead(value: unknown, threadId: string): ThreadIdentityRead {
-  const body = asObject(value);
+  const body = flattenThreadRead(value);
   if (body.threadId !== threadId) throw Error("Thread identity mismatch");
   if (!("parentThreadId" in body)) throw Error("Thread parent evidence is unavailable");
   const runs = Array.isArray(body.recentRuns)
@@ -75,17 +75,16 @@ async function listProjectThreads(call: Call, projectId: string) {
 async function candidateFor(
   call: Call,
   thread: Record<string, unknown>,
-  projectId: string,
   title: string,
 ): Promise<LaunchCandidate | "incomplete" | undefined> {
   const detail = await evidenceFor(call, thread, title);
   if (detail === "incomplete" || !detail) return detail;
   const executions = executionList(detail);
   if (!executions) return "incomplete";
-  return candidateFrom(detail, projectId, title, executions);
+  return candidateFrom(detail, title, executions);
 }
 
-/** A title match with a missing parent, workspace or execution list is read before it can count. */
+/** A title match with a missing parent, workspace, project or execution list is read before it can count. */
 async function evidenceFor(call: Call, thread: Record<string, unknown>, title: string) {
   const named = await ensureTitle(call, thread);
   if (typeof named.title !== "string" || named.title !== title) return undefined;
@@ -103,17 +102,71 @@ async function ensureTitle(call: Call, thread: Record<string, unknown>) {
 async function readThread(call: Call, thread: Record<string, unknown>) {
   const threadId = requiredString(thread.threadId);
   return {
-    ...asObject(await call("t3_thread_read", { threadId, runLimit: 50 })),
+    ...flattenThreadRead(await call("t3_thread_read", { threadId, runLimit: 50 })),
     ...thread,
   };
 }
 
+/** Live `t3_thread_read` nests identity under `thread` and names the workspace `worktreePath`. */
+function flattenThreadRead(value: unknown): Record<string, unknown> {
+  const body = asObject(value);
+  const thread = nestedThread(body.thread);
+  if (!thread) return body;
+  return {
+    ...thread,
+    ...body,
+    threadId: firstDefined(body.threadId, thread.threadId),
+    projectId: firstDefined(body.projectId, thread.projectId),
+    providerInstanceId: firstDefined(body.providerInstanceId, thread.providerInstanceId),
+    model: firstDefined(body.model, thread.model),
+    interactionMode: firstDefined(body.interactionMode, thread.interactionMode),
+    title: typeof body.title === "string" ? body.title : thread.title,
+    options: firstDefined(body.options, body.modelOptions, thread.options, thread.modelOptions),
+    recentRuns: firstDefined(body.recentRuns, body.runs, thread.recentRuns),
+    runs: firstDefined(body.runs, thread.runs),
+    ...copiedParent(body, thread),
+    ...copiedWorkspace(body, thread),
+  };
+}
+
+function nestedThread(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function firstDefined(...values: unknown[]) {
+  return values.find((value) => value !== undefined);
+}
+
+function copiedParent(body: Record<string, unknown>, thread: Record<string, unknown>) {
+  if ("parentThreadId" in body) return { parentThreadId: body.parentThreadId };
+  if ("parentThreadId" in thread) return { parentThreadId: thread.parentThreadId };
+  return {};
+}
+
+function copiedWorkspace(body: Record<string, unknown>, thread: Record<string, unknown>) {
+  if ("workspaceRoot" in body) return { workspaceRoot: body.workspaceRoot };
+  if ("worktreePath" in thread) return { workspaceRoot: thread.worktreePath };
+  if ("workspaceRoot" in thread) return { workspaceRoot: thread.workspaceRoot };
+  return {};
+}
+
 function launchEvidenceGap(thread: Record<string, unknown>) {
-  return !("parentThreadId" in thread) || !("workspaceRoot" in thread) || !executionList(thread);
+  return (
+    !("parentThreadId" in thread) ||
+    !("workspaceRoot" in thread) ||
+    !("projectId" in thread) ||
+    !executionList(thread)
+  );
 }
 
 function provenLaunchEvidence(detail: Record<string, unknown>) {
-  return !launchEvidenceGap(detail) && provenParent(detail.parentThreadId);
+  return (
+    !launchEvidenceGap(detail) &&
+    provenParent(detail.parentThreadId) &&
+    typeof detail.projectId === "string" &&
+    detail.projectId.length > 0
+  );
 }
 
 function provenParent(value: unknown): value is string | null {
@@ -124,10 +177,6 @@ function executionList(detail: Record<string, unknown>) {
   if (Array.isArray(detail.recentRuns)) return detail.recentRuns;
   if (Array.isArray(detail.runs)) return detail.runs;
   return null;
-}
-
-function textOr(value: unknown, fallback: string) {
-  return typeof value === "string" ? value : fallback;
 }
 
 function optionalText(value: unknown) {
@@ -141,13 +190,12 @@ function parentThread(value: unknown) {
 
 function candidateFrom(
   detail: Record<string, unknown>,
-  projectId: string,
   title: string,
   executions: readonly unknown[],
 ): LaunchCandidate {
   return {
     title,
-    projectId: textOr(detail.projectId, projectId),
+    projectId: requiredString(detail.projectId),
     parentThreadId: parentThread(detail.parentThreadId),
     workspaceRoot: optionalText(detail.workspaceRoot),
     interactionMode: optionalText(detail.interactionMode),

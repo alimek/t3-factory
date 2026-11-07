@@ -1,7 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
 import { workerWithUnavailableRun } from "./support/run-worker-isolation.ts";
 import { completedWorkerRecovery } from "./support/run-worker-recovery.ts";
-import { workerWithLostDescendantEvidence } from "./support/run-worker-evidence.ts";
+import {
+  workerWithDroppedDescendant,
+  workerWithLostDescendantEvidence,
+} from "./support/run-worker-evidence.ts";
 import {
   workerStart,
   directWorker,
@@ -298,6 +301,21 @@ it("a descendant discovered by a failed assessment still holds a worker final af
     expect.objectContaining({ threadId: "thread-3", role: "descendant" }),
   );
 });
+it("Stop keeps a saved running descendant after it leaves the worker native activity", async (c) => {
+  // Arrange
+  const f = await workerWithDroppedDescendant(c);
+  assert((await f.f.stopRun(f.runId)).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.closedAt).toBeNull();
+  expect(f.t3.treeStops.map((stop) => stop.threadId)).toContain("thread-3");
+});
+
 it("Stop retains the primary and worker tree until native completion is confirmed", async (c) => {
   // Arrange
   const f = await directWorker(c);
