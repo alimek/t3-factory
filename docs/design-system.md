@@ -21,16 +21,16 @@ parallel stylesheets, global element styling or per-screen color palettes.
 
 ## Components and interaction
 
-Reuse the existing shadcn primitives and their variants. Tune a shared variant when the
-same design rule applies across screens; avoid repeated call-site overrides and styled
-wrapper elements used only to compensate for a primitive.
+Use shared shadcn/ui primitives and their variants for interactive controls instead of
+raw HTML controls at call sites. Keep native semantics inside the shared primitives.
+Tune a shared variant when the same design rule applies across screens; avoid repeated
+call-site overrides and styled wrapper elements used only to compensate for a primitive.
 
 Every control needs a visible label or accessible name. Icon-only buttons also need a
 tooltip. Preserve meaningful accessible names used by the UI verification journeys.
-Use native selects for inline choices, and radio-style menus for project and Flow
-selection and for Agent execution settings, where an unavailable choice stays visible,
-disabled, with its reason. Long menus must stay within the viewport and scroll their choices without
-hiding search or actions.
+Unavailable choices in Agent execution settings stay visible and disabled, with their reason.
+Long menus must stay within the viewport and scroll their choices without hiding search
+or actions.
 
 Settings and Studio use the same dialog conventions. The Run shell stays mounted behind
 them, while hidden content is inert. Unsaved-change guards and keyboard behavior are
