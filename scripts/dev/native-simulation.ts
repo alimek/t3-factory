@@ -133,7 +133,12 @@ function publish(t3: ControlledT3, threadId: string, runId: string, wire: object
   });
 }
 
-function delegate(t3: ControlledT3, parentThreadId: string, parentRunId: string, input: Plan) {
+export function delegateNativeWork(
+  t3: ControlledT3,
+  parentThreadId: string,
+  parentRunId: string,
+  input: Plan,
+) {
   const parent = t3.executionObservations.get(parentThreadId)!;
   const n = t3.childEvidence.size + 1;
   const threadId = `demo-native-${n}`,
@@ -234,7 +239,7 @@ function startIssuedTurn(t3: ControlledT3, threadId: string, runId: string) {
 function executeMessage(t3: ControlledT3, threadId: string, runId: string, message: string) {
   if (!startIssuedTurn(t3, threadId, runId)) return;
   if (isRootCommand(message))
-    delegate(t3, threadId, runId, JSON.parse(message.split("\n").at(-1)!));
+    delegateNativeWork(t3, threadId, runId, JSON.parse(message.split("\n").at(-1)!));
 }
 
 function isRootCommand(message: string) {

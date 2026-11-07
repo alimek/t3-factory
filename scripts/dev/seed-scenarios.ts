@@ -1,4 +1,5 @@
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
+import { delegateNativeWork } from "./native-simulation.ts";
 import {
   executionBlock,
   failScenarioExecution,
@@ -199,11 +200,34 @@ export async function seedScenarios(
   await waitingForReview(context, flows.review, true);
   await parallelScenario(context, flows.parallel);
   await parallelStartScenario(context, flows.parallelStart);
-  await startScenario(
+  const working = await startScenario(
     context,
     flows.simple,
     "working",
     "Working · Improve the project picker",
     "Add a concise empty state to the Atlas project picker, including a hint to open an existing repository.",
+  );
+  const worker = executionBlock(working);
+  delegateNativeWork(context.t3, worker.threadId, worker.executionId, {
+    target: {
+      providerInstanceId: "codex-main",
+      model: "gpt-6.1-sol",
+      options: { reasoning: "high" },
+    },
+    mode: "async",
+    isolation: "shared",
+    clientRequestId: "demo-project-picker-child",
+    task: "Implement the empty state and return the result to the parent worker.",
+  });
+  await reconcileUntil(
+    context,
+    working.id,
+    (run) =>
+      run.blocks.some(
+        (block) =>
+          block.blockId === worker.blockId &&
+          block.engineStatus === "completed" &&
+          block.state === "working",
+      ) && run.threadBindings.some((binding) => binding.role === "descendant"),
   );
 }
