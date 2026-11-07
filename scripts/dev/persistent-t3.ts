@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { advanceNative, finishNativeTurn, recordRoot } from "./native-simulation.ts";
 import { readFileSync } from "node:fs";
 import { writeState } from "./write-state.ts";
@@ -28,6 +29,11 @@ export class PersistentT3 extends ControlledT3 {
       models: [{ id: "composer-2", label: "Composer 2" }],
     });
     if (restore) this.restore();
+  }
+
+  protected override launchIds(_n: number) {
+    const threadId = randomUUID();
+    return { threadId, runId: `run:thread:${threadId}:ordinal:1` };
   }
 
   private restore() {

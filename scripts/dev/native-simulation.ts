@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { delegationActivity } from "../../apps/backend/src/adapters/delegation-activity.ts";
 import { nativeDelegation } from "../../apps/backend/test/support/native-delegation.ts";
 import type { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
@@ -141,8 +142,8 @@ export function delegateNativeWork(
 ) {
   const parent = t3.executionObservations.get(parentThreadId)!;
   const n = t3.childEvidence.size + 1;
-  const threadId = `demo-native-${n}`,
-    runId = `demo-execution-${n}`;
+  const threadId = randomUUID(),
+    runId = `run:thread:${threadId}:ordinal:1`;
   const template = nativeDelegation();
   publish(t3, parentThreadId, parentRunId, {
     ...template,

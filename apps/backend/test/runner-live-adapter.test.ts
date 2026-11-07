@@ -90,7 +90,12 @@ it("Start rejects a schema requiring runtime mode before accepting work", async 
 
   // Assert
   assert(!blocked.ok);
-  expect(blocked.error.message).toMatch(/omit/);
+  expect(blocked.error.issues).toContainEqual(
+    expect.objectContaining({
+      code: "launch_unsupported",
+      message: expect.stringMatching(/omit/),
+    }),
+  );
   expect(await f.listRuns(input.projectId)).toStrictEqual({ ok: true, value: [] });
   expect(await f.listTasks(input.projectId)).toStrictEqual({ ok: true, value: [] });
 });

@@ -645,21 +645,38 @@ function StartNotice({ model }: { model: Composer }) {
       <Notice
         tone="critical"
         icon={TriangleAlert}
-        title="T3 rejected the start"
+        title="Start was not accepted"
         action={
-          draft.remedy === "reporting" ? (
-            <NoticeSettingsLink selection={{ tab: "runtime" }}>
-              Open Settings → Agent reporting
-            </NoticeSettingsLink>
-          ) : (
-            <NoticeStudioLink selection={{ tab: "agents" }}>Open Studio → Agents</NoticeStudioLink>
-          )
+          <div className="flex min-w-0 flex-col gap-2">
+            {draft.issues.length > 0 && (
+              <ul aria-label="Start blockers" className="list-disc space-y-1 pl-4 text-foreground">
+                {draft.issues.map((issue, index) => (
+                  <li key={`${issue.path}:${issue.code}:${index}`} className="break-words">
+                    {issue.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {draft.remedy === "reporting" && (
+              <NoticeSettingsLink selection={{ tab: "runtime" }}>
+                Open Settings → Agent reporting
+              </NoticeSettingsLink>
+            )}
+            {(draft.remedy !== "reporting" ||
+              draft.issues.some((issue) => issue.code !== "reporting_installation")) && (
+              <NoticeStudioLink selection={{ tab: "agents" }}>
+                Open Studio → Agents
+              </NoticeStudioLink>
+            )}
+            {draft.issues.some((issue) => issue.path.includes("connection")) && (
+              <NoticeSettingsLink selection={{ tab: "connection" }}>
+                Open T3 connection settings
+              </NoticeSettingsLink>
+            )}
+          </div>
         }
       >
-        {draft.error} No Run was created;{" "}
-        {draft.remedy === "reporting"
-          ? "install or repair Factory MCP in Agent reporting, then Start again."
-          : "change the Agent or Flow, then Start again."}
+        {draft.error} Your draft is kept. Fix every listed blocker, then Start again.
       </Notice>
     );
   }

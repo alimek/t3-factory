@@ -89,6 +89,9 @@ export class ControlledT3 implements T3Adapter {
       explanation: "Controlled durable replay lifetime",
     };
   }
+  protected launchIds(n: number) {
+    return { threadId: `thread-${n}`, runId: `execution-${n}` };
+  }
   async launchThread(
     _target: T3Endpoint,
     payload: import("../../src/adapters/t3.ts").LaunchPayload,
@@ -99,14 +102,14 @@ export class ControlledT3 implements T3Adapter {
     if (accepted && JSON.stringify(accepted.payload) !== JSON.stringify(payload))
       throw Error("Key conflict");
     if (!accepted) {
-      const n = this.launches.size + 1;
+      const { threadId, runId } = this.launchIds(this.launches.size + 1);
       accepted = {
         payload,
         reference: {
           projectId: payload.projectId,
-          threadId: `thread-${n}`,
-          runId: `execution-${n}`,
-          link: `t3://threads/thread-${n}`,
+          threadId,
+          runId,
+          link: `t3://threads/${threadId}`,
           status: "running",
         },
       };

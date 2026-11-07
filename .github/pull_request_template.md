@@ -9,7 +9,8 @@
 ## UI screenshots
 
 <!-- Required for UI changes: embed Before and After screenshots of the affected views.
-Otherwise write N/A. Follow .agents/skills/verify-t3-factory/SKILL.md#evidence. -->
+Use ### Before and ### After headings with embedded HTTPS images; the UI evidence check
+only verifies their presence. Otherwise write N/A. Follow .agents/skills/verify-t3-factory/SKILL.md#evidence. -->
 
 ## Scope and contracts
 

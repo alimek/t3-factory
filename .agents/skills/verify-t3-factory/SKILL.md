@@ -61,10 +61,26 @@ Use exact accessible names for deterministic paths. For variable flows use
 ## Evidence
 
 Every PR that touches UI must include before/after screenshots of the affected views.
+Before capture, name the user action, affected states and representative data. Use
+persisted simulator/scenario data for long identities and multiple descendants;
+read the public API to confirm those values and links. Capture the rendered app
+without replacing DOM text, API responses or CSS for evidence.
 Capture the baseline from the PR base revision and the verified result in the same
 viewport; use comparable states and explain differences in the PR. Keep both sets
 separately under `.e2e/`, upload them as PR attachments and embed them in the PR body's
-**UI screenshots** section.
+**UI screenshots** section under `### Before` and `### After`.
+Record the base/head commit, viewport, scenario and command alongside the images.
+Capture After only after the last application edit; rebuild and repeat the affected
+journey if the UI changes afterward. Inspect both image sets yourself, including
+long text and each descendant link. The **UI evidence attachments** CI check only
+checks for embedded HTTPS images, not their content, provenance or comparability.
+Human review still owns those judgments.
+
+For Flow readiness, inspect every referenced Agent, including later branches.
+Start's existing preflight reports all Agent blockers; fix every cause and retry.
+Report configuration checks, accepted Start and accepted Block result separately.
+Controlled fixtures prove these local stages, not live harness tool visibility or
+model execution.
 
 `pnpm e2e:screenshots` saves named PNGs for Flows, Agents, Runs, Agent reporting,
 and a Flow before saving and after reload under `.e2e/screenshots/results/`.

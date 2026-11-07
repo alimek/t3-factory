@@ -41,6 +41,10 @@ GitHub ruleset setting; adding a workflow alone does not enable that requirement
 
 Run `pnpm check` from the repository root for the same sequence locally.
 
+For frontend changes, **UI evidence attachments** also checks the PR body's Before
+and After image links. It does not inspect image content or prove the final UI;
+follow the [verification evidence requirements](../.agents/skills/verify-t3-factory/SKILL.md#evidence).
+
 When running `pnpm lint` or `pnpm typecheck` separately in a fresh checkout,
 run `pnpm build` first: workspace package exports resolve to generated `dist`
 declarations. Missing declarations can otherwise produce cascading type and

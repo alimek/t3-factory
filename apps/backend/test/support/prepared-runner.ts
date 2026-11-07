@@ -89,3 +89,48 @@ export async function prepared(c: TestContext) {
     },
   };
 }
+
+/** Entry remains ready while a later provider disappears from T3. */
+export async function preparedBlockedFlow(c: TestContext) {
+  const setup = await prepared(c);
+  const { f, t3, flow, agent } = setup;
+  t3.controlledProviders.push({
+    ...t3.controlledProviders[0]!,
+    providerInstanceId: "later-provider",
+  });
+  const later = [];
+  for (const name of ["Code reviewer", "Accessibility reviewer"]) {
+    const created = await f.createAgent({
+      name,
+      prompt: agent.prompt,
+      execution: { ...agent.execution, providerInstanceId: "later-provider" },
+    });
+    assert(created.ok);
+    later.push(created.value);
+  }
+  const blocks = later.map((definition, index) => ({
+    ...flow.graph.blocks[0]!,
+    id: `later-${index}`,
+    name: definition.name,
+    agentId: definition.id,
+  }));
+  assert(
+    (
+      await f.updateFlow(flow.id, {
+        name: flow.name,
+        expectedRevision: flow.revision,
+        graph: {
+          ...flow.graph,
+          blocks: [...flow.graph.blocks, ...blocks],
+          connections: blocks.map((block) => ({
+            sourceBlockId: "worker",
+            exitId: "done",
+            targetBlockId: block.id,
+          })),
+        },
+      })
+    ).ok,
+  );
+  t3.controlledProviders.pop();
+  return setup;
+}

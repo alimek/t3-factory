@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { listAgentDefinitions } from "./support/agents.ts";
+import { listAgentDefinitions, repairCodexReporting } from "./support/agents.ts";
 
 test("reporting problems are visible before Start and clear after repairing the provider", async ({
   app,
@@ -51,12 +51,7 @@ test("reporting problems are visible before Start and clear after repairing the 
   await app.open(`/studio/agents/${worker.id}`);
   await screen.getByRole("link", "Open Agent reporting").tap();
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
-  await screen
-    .getByRole("article")
-    .filter({ has: screen.getByRole("heading", "Codex", { exact: true }) })
-    .getByRole("button", "Repair installation", { exact: true })
-    .tap();
-  await screen.getByRole("button", "Close", { exact: true }).tap();
+  await repairCodexReporting(screen);
 
   // Assert
   await expect(screen.getByRole("link", "Settings, Connected", { exact: true })).toBeVisible();
