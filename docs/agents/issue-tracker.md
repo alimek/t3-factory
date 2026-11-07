@@ -27,11 +27,12 @@ file and pass `--body-file`.
 Before claiming work, read the issue's comments and linked PRs, then use
 `t3_thread_search` by issue number and topic and `t3_thread_read` for relevant
 active threads. No assignee or PR means ownership is unknown, not that nobody is
-working. Use the thread's current state to detect overlapping work; coordinate
-only with the relevant owner. If T3 tools are unavailable, report that limit and
-obtain ownership confirmation from the user or known owner before claiming an
-unassigned issue. An explicit task assignment supplies that confirmation for its
-scope. Claim an available issue before implementation.
+working. Search is not exhaustive and skips subagent threads. Use the thread's
+current state to detect overlapping work; coordinate only with the relevant
+owner. If discovery is inconclusive or T3 tools are unavailable, report that limit
+and obtain ownership confirmation from the user or known owner before claiming
+an unassigned issue. An explicit task assignment supplies that confirmation for
+its scope. Claim an available issue before implementation.
 
 For long work, keep one short checkpoint in ignored
 `.e2e/checkpoints/<task-key>.md` in the task's worktree. Use a stable thread
