@@ -13,7 +13,7 @@ import {
   type ServerOptions,
 } from "@t3-factory/backend/server";
 import { prepared } from "./prepared-runner.ts";
-import { installFirstReportingTarget } from "./reporting.ts";
+import { installFirstReportingTarget, reportingFixture } from "./reporting.ts";
 
 interface Reply<A = unknown> {
   readonly status: number;
@@ -300,6 +300,21 @@ export async function remotePrepared(context: TestContext) {
   await installFirstReportingTarget(server.factory);
   const laptop = await server.approved("Laptop");
   return { ...fixture, server, laptop };
+}
+
+/** An approved client and an unconfigured, disposable Codex home on its Factory server. */
+export async function remoteReporting(context: TestContext) {
+  const fixture = await reportingFixture(context, "codex");
+  await fixture.factory.close();
+  const server = await remoteServer(context, {
+    home: fixture.harness.processHome,
+    ...fixture.options,
+    connectionRetryMs: 60_000,
+  });
+  const targets = await server.factory.getReportingInstallations();
+  assert(targets.ok);
+  const laptop = await server.approved("Laptop");
+  return { server, laptop, target: targets.value[0]!, config: fixture.config, home: fixture.home };
 }
 
 /** A real Factory listener whose certificate names a different host, used by desktop trust tests. */

@@ -20,8 +20,9 @@ and **Reauthorize** replaces a working grant. Reconnecting never opens a browser
 
 An [approved remote client](desktop-and-clients.md) may use **Open authorization on server** for the endpoint already saved on the
 host; consent still happens in the host's browser and the consent URL, state, verifier and tokens never reach the
-client. A remote client cannot save or edit the endpoint, reauthorize, reset a working connection or manage reporting
-installation (those routes answer `host_only`). Opening is serialized with checks: Factory rechecks first, does nothing
+client. A remote client cannot save or edit the endpoint, reauthorize or reset a working connection
+(those routes answer `host_only`). Agent reporting installation is available remotely as described below.
+Opening is serialized with checks: Factory rechecks first, does nothing
 for a ready or incompatible connection, waits for an in-flight callback exchange and opens the host browser at most
 once every five seconds.
 
@@ -112,7 +113,9 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   workload.
 - Desktop and source servers register the same URL, so switching between them needs no
   Repair. Harness configuration is written only on an explicit action.
-  Approved remote clients see this screen read-only
+  Approved remote clients can install, repair and reinstall through the same screen. The server
+  resolves the selected configuration home and writes its own harness files and skill; the client
+  sends only the discovered target's identifier. The MCP URL remains the server's loopback address
   ([client access](desktop-and-clients.md#connecting-a-client)).
 
 ## Reporting readiness

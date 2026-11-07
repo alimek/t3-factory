@@ -51,7 +51,11 @@ test("reporting problems are visible before Start and clear after repairing the 
   await app.open(`/studio/agents/${worker.id}`);
   await screen.getByRole("link", "Open Agent reporting").tap();
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
-  await screen.getByRole("button", "Repair installation", { exact: true }).tap();
+  await screen
+    .getByRole("article")
+    .filter({ hasText: "codex-main" })
+    .getByRole("button", "Repair installation", { exact: true })
+    .tap();
   await screen.getByRole("button", "Close", { exact: true }).tap();
 
   // Assert

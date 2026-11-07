@@ -221,13 +221,13 @@ function HostConnectionControls({ operation }: { operation: Operation }) {
 }
 
 /** Approved remote clients see host setup, but only the host changes it. */
-export function HostSetupNotice() {
+function HostSetupNotice() {
   if (useClientScope() !== "remote") return null;
   return (
     <Notice tone="info" icon={Info} title="Managed on the Factory host">
-      The T3 address, its authorization and Agent reporting live on the server computer and are
-      changed there. This device shows their current status; when T3 needs approval it can open
-      authorization in the host’s browser.
+      The T3 address and its authorization live on the server computer and are changed there. This
+      device shows their current status; when T3 needs approval it can open authorization in the
+      host’s browser.
     </Notice>
   );
 }
