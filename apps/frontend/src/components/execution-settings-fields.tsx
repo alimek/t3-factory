@@ -50,9 +50,8 @@ function initialExecution(
   capabilities: AgentCapabilities | null,
 ): AgentExecutionSettings {
   if (saved) return saved;
-  const provider =
-    capabilities?.providers.find((entry) => entry.reporting.supported) ??
-    capabilities?.providers[0];
+  // A provider without Factory reporting cannot run, so it is never preselected.
+  const provider = capabilities?.providers.find((entry) => entry.reporting.supported);
   const model = provider?.models[0];
   return {
     environmentId: capabilities?.environments[0]?.environmentId ?? "",
