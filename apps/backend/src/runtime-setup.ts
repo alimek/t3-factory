@@ -1,4 +1,5 @@
 import { explicitReadiness } from "./explicit-readiness.ts";
+import { isReportingDriver } from "./reporting-drivers.ts";
 import * as Semaphore from "effect/Semaphore";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
@@ -78,11 +79,11 @@ function validatedHarness(
   const provider = capabilities.providers.find(
     (p) => p.providerInstanceId === agent.execution.providerInstanceId,
   );
-  if (!provider || !["codex", "claudeAgent"].includes(provider.driverKind))
+  if (!provider || !isReportingDriver(provider.driverKind))
     blocked(
       "harness_unsupported",
       "agent.execution.providerInstanceId",
-      "This harness has no supported Factory reporting adapter.",
+      "This harness has no supported Factory reporting adapter. Settings → Agent reporting lists every provider and, where Factory cannot install it, the MCP entry to add.",
     );
   const settingsStatus = agentSettingsStatus(agent.execution, capabilities);
   if (

@@ -69,6 +69,7 @@ import {
   type EvidenceCall,
 } from "./coordination-evidence.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
+import { isReportingDriver } from "../reporting-drivers.ts";
 import { parseProviderCapabilities } from "./t3-capabilities.ts";
 import {
   listenOAuthCallback,
@@ -1637,7 +1638,7 @@ export class LiveT3Adapter implements T3Adapter {
     )?.inputSchema;
     const supported =
       inspection.state === "ready" &&
-      (driverKind === undefined || ["codex", "claudeAgent"].includes(driverKind)) &&
+      (driverKind === undefined || isReportingDriver(driverKind)) &&
       supportsReportReads(schema);
     return {
       supported,

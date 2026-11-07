@@ -79,7 +79,7 @@ export function prepareCoordinatorHandoff(
             threadId: prior.thread_id,
             mode: "queue",
             clientRequestId: intent.request_key,
-            message: workerTurn(message),
+            message: workerTurn(message, intent.request_key),
           };
           yield* sql`UPDATE run_delegations SET accepted_json=${prior.accepted_json} WHERE activation_id=${plan.activationId}`;
           yield* sql`INSERT INTO coordinator_revisits(activation_id,original_activation_id) VALUES(${plan.activationId},${prior.original_id})`;

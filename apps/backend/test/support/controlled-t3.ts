@@ -1,5 +1,6 @@
 import type { AgentEnvironment, AgentProviderCapability } from "@t3-factory/contracts";
 import { LaunchRejected } from "../../src/adapters/t3.ts";
+import { isReportingDriver } from "../../src/reporting-drivers.ts";
 import type {
   AuthorizationResumption,
   T3Adapter,
@@ -422,8 +423,7 @@ export class ControlledT3 implements T3Adapter {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     return {
       supported:
-        this.reportSupported &&
-        (driverKind === undefined || ["codex", "claudeAgent"].includes(driverKind)),
+        this.reportSupported && (driverKind === undefined || isReportingDriver(driverKind)),
       explanation: "Controlled public structured-report support",
     };
   }

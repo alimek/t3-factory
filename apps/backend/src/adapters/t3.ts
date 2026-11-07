@@ -36,6 +36,7 @@ export interface RuntimeActivity {
     readonly senderThreadId?: string | null;
     readonly itemId: string;
     readonly type: string;
+    readonly status?: string;
     readonly runId: string;
     readonly text: string | null;
     readonly visibility?: string;

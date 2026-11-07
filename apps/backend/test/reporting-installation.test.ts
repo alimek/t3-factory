@@ -140,6 +140,45 @@ it("default provider homes resolve from the user home without explicit homePath"
   );
 });
 
+it("Cursor and Grok homes are installable and other drivers only show the MCP entry", async (context) => {
+  // Arrange
+  const home = await isolatedUserHome(context);
+  const { factory, state } = await reportingFixture(context);
+  await mkdir(join(home, ".grok"));
+  await writeFile(
+    join(state, "settings.json"),
+    JSON.stringify({
+      providerInstances: {
+        cursor: { driver: "cursor", config: {} },
+        grok: { driver: "grok", config: {} },
+        pi: { driver: "pi", config: {} },
+      },
+    }),
+  );
+  const targets = await factory.getReportingInstallations();
+  assert(targets.ok);
+  const cursor = targets.value.find((target) => target.provider === "cursor");
+  const grok = targets.value.find((target) => target.provider === "grok");
+  const pi = targets.value.find((target) => target.provider === "pi");
+
+  // Act
+  const installed = await factory.installReporting({ targetId: cursor!.id });
+
+  // Assert
+  assert(installed.ok);
+  expect(installed.value.status).toBe("installed");
+  expect(cursor!.path).toBe(join(home, ".cursor", "mcp.json"));
+  expect(
+    JSON.parse(await readFile(cursor!.path!, "utf8")).mcpServers["factory-runtime"].command,
+  ).toBe("/usr/bin/env");
+  expect(grok!.path).toBe(join(await realpath(join(home, ".grok")), "config.toml"));
+  expect(grok!.status).toBe("not-installed");
+  expect(pi!.path).toBe(null);
+  expect(pi!.message).toMatch(/factory-runtime/);
+  expect(pi!.message).toMatch(/\/usr\/bin\/env/);
+  expect(pi!.actions).toStrictEqual({ install: false, repair: false, reinstall: false });
+});
+
 it("a different execution host never receives a local installation target", async (context) => {
   // Arrange
   const { factory, state } = await reportingFixture(context);

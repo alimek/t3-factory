@@ -67,7 +67,7 @@ the current one and keep mismatches unresolved: reauthorization is never permiss
 
 Agents report Block results by calling `factory_update_block` on a Factory MCP bridge
 installed in their harness configuration. Factory correlates the native tool call with the exact execution, returns a durable acknowledgement and never parses assistant text.
-Repair also installs the `$factory-block` skill next to the bridge for Codex and Claude. The worker's first message starts with `$factory-block`.
+Repair also installs the `$factory-block` skill next to the bridge. The worker's first message starts with `$factory-block` and, when Factory minted one, includes a Factory tool ref.
 
 ### Installation actions
 
@@ -193,14 +193,14 @@ and retains existing selections, including false and unavailable values.
 ## Reporting installation
 
 The installer needs authorized same-user loopback T3, accessible local state and a matching environment identity; `FACTORY_T3_STATE_DIRECTORY` overrides state discovery, and standard homes assume
-Factory and T3 share an OS user and home. Drivers: `codex` and `claudeAgent`. Home resolution uses the trimmed non-empty persisted `config.homePath`, then the last provider environment entry
-(`CODEX_HOME` / `CLAUDE_CONFIG_DIR`), then the same-user default (`~/.codex/config.toml`; `~/.claude.json`, or `<dir>/.claude.json` for an explicit Claude directory). Tilde paths are expanded; relative
+Factory and T3 share an OS user and home. Installed drivers: `codex`, `claudeAgent`, `cursor` and `grok`. Other drivers stay blocked at Start. Agent reporting still lists them with the stdio `factory-runtime` command and args to add by hand once Factory can tie that harness's calls to a Run. Home resolution for Codex, Claude and Grok uses the trimmed non-empty persisted `config.homePath`, then the last provider environment entry
+(`CODEX_HOME`, `CLAUDE_CONFIG_DIR` or `GROK_HOME`), then the same-user default (`~/.codex/config.toml`, `~/.claude.json` or `<dir>/.claude.json`, `~/.grok/config.toml`). Cursor always uses `~/.cursor/mcp.json`; the Cursor SDK reads that path from the OS home and ignores a provider `homePath`. Tilde paths are expanded; relative
 paths are refused. Factory's own environment never redirects discovery and T3's inherited host variables are unobservable, so an undisclosed override needs manual verification. Managed setup,
 shadow homes, custom launch arguments and policy profiles need review; do not switch setup modes to satisfy the installer. Installer support does not qualify live Claude workloads.
 
-Codex installs `mcp_servers.factory-runtime` (TOML) and Claude `mcpServers.factory-runtime` (JSON). Conflicting or modified entries, symlink/special/hard-linked files and unsupported TOML
+Codex and Grok install `mcp_servers.factory-runtime` (TOML). Claude and Cursor install `mcpServers.factory-runtime` (JSON). Conflicting or modified entries, symlink/special/hard-linked files and unsupported TOML
 structures are refused; unrelated content is preserved. Installation refuses detected conflicting edits; arbitrary external editors are outside its transaction.
-Installation proves configuration, not effective native trust or visibility under higher-priority project policy.
+Installation proves configuration, not effective native trust or visibility under higher-priority project policy. A missing Cursor directory is created on install.
 
 The stable bridge is `reporting/factory-runtime.mjs` in the data home beside `connection.json`; source and built operation use the same asset. A changed backend address or outdated bridge requires
 explicit reinstall, and moving the data home requires reviewing its old registration. The source launcher needs POSIX `/usr/bin/env` and `node` on the harness PATH; the desktop supplies its bundled
@@ -208,11 +208,13 @@ runtime. After repair, cached harness processes may need a fresh MCP session. Se
 
 ## Bridge and caller correlation
 
-The bridge exposes `factory_get_block()`, read-only `factory_get_run()`, and
-`factory_update_block({ to, exit?, message })`. `to` is `waiting` or `finished`. Host-only
-ingress accepts neither approved-client credentials nor model-supplied Run or Block identity.
-The bridge holds no T3 credentials or database. A globally visible tool, a title match or a
-subagent is not report authority. `factory_report` and `factory_context` are not installed.
+The bridge exposes `factory_get_block({ ref? })`, read-only `factory_get_run({ ref? })`, and
+`factory_update_block({ to, exit?, message, ref? })`. `to` is `waiting` or `finished`. `ref` is the
+Factory tool ref from that worker's message. It disambiguates simultaneous calls and is not Run or
+Block authority. Host-only ingress accepts neither approved-client credentials nor model-supplied
+Run or Block identity. The bridge holds no T3 credentials or database. A globally visible tool, a
+title match or a subagent is not report authority. `factory_report` and `factory_context` are not
+installed.
 
 - **Bindings.** Open-Run work is tied to saved thread, project, exact execution and
   authorization references. Confirmed closure ends authority for new reports; retained
@@ -220,10 +222,16 @@ subagent is not report authority. `factory_report` and `factory_context` are not
   conflicts and a new report on a closed thread returns `RUN_CLOSED`.
 - **Correlation.** A public native item ID is a locator, not identity. Acceptance needs
   exactly one matching `dynamic_tool` call, the `factory-runtime` namespace, project and
-  exact execution, active for a new report. Supported Codex/Claude attribution uses the
+  exact execution, active for a new report. Codex and Claude attribution uses the
   native call ID (`callId` or `claudecode/toolUseId`) and item suffix `:native-item:<id>`.
+  Cursor and Grok do not send that id. Factory instead requires exactly one in-flight
+  (`pending` or `running`) factory tool on a bound thread whose recorded arguments equal the
+  call, including `ref` when the model sent one. Cursor stores those arguments as `input`.
+  Grok stores them as `input.tool_input`, and names the tool `factory-runtime__<tool>`.
   An inherited thread hint only narrows candidates. Missing, ambiguous, truncated, stale
   or foreign evidence rejects the call; unavailable candidates cannot simply be ignored.
+  Native delegation evidence remains Codex and Claude only. A Cursor or Grok worker can
+  report its own Block; Factory does not decode native child delegation from those harnesses.
   Fresh observations do not replace the durable gate check at acceptance.
 - **Installation freshness.** An edited or outdated bridge needs **Repair** and a fresh
   harness session. The `$factory-block` skill is part of installation readiness. A missing

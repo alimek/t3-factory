@@ -153,7 +153,7 @@ function registered(
   entry: BridgeEntry,
   replacing?: BridgeEntry,
 ) {
-  if (target.provider === "codex") {
+  if (target.provider === "codex" || target.provider === "grok") {
     // Replace only the exact block Factory appended, keeping comments and formatting.
     if (replacing && !before.includes(tomlEntry(replacing)))
       throw Error(
@@ -184,8 +184,9 @@ function configChange(
   migrate = false,
 ) {
   const { current, previous } = bridgeEntries(bridge, runtime);
-  const config = target.provider === "codex" ? parse(before) : record(JSON.parse(before || "{}"));
-  const key = target.provider === "codex" ? "mcp_servers" : "mcpServers";
+  const toml = target.provider === "codex" || target.provider === "grok";
+  const config = toml ? parse(before) : record(JSON.parse(before || "{}"));
+  const key = toml ? "mcp_servers" : "mcpServers";
   const existing = record(config[key] ?? {})["factory-runtime"];
   if (existing === undefined) return registered(target, before, config, current);
   const saved = record(existing);
@@ -284,6 +285,8 @@ const openReportingInstallation = Effect.fn(function* (
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          return Effect.succeed(withReportingInstallationActions(target));
         return Effect.succeed(
           withReportingInstallationActions(
             {
@@ -306,9 +309,17 @@ const openReportingInstallation = Effect.fn(function* (
       Result<readonly ReportingInstallation[]>,
       never
     > {
+      const entry = bridgeEntries(bridge, runtime).current;
+      const manual = `Factory has no installer for this provider and cannot accept its reports yet. When support exists, add a stdio MCP server named factory-runtime with command ${entry.command} and args ${JSON.stringify(entry.args)} in the file this harness reads for user MCP servers, then start a fresh session.`;
       return {
         ok: true,
-        value: yield* Effect.forEach(yield* targets(), inspect, { concurrency: "unbounded" }),
+        value: yield* Effect.forEach(
+          (yield* targets()).map((target) =>
+            target.path || target.instances.length === 0 ? target : { ...target, message: manual },
+          ),
+          inspect,
+          { concurrency: "unbounded" },
+        ),
       };
     }),
     installReporting: (input: unknown) =>
@@ -364,7 +375,12 @@ const openReportingInstallation = Effect.fn(function* (
                     JSON.stringify({ endpoint: endpoint() }),
                   ),
                 );
-                if (after !== before) yield* boundary(() => replace(target.path!, before, after));
+                if (after !== before) {
+                  yield* boundary(() =>
+                    mkdir(dirname(target.path!), { recursive: true, mode: 0o700 }),
+                  );
+                  yield* boundary(() => replace(target.path!, before, after));
+                }
                 const checked = yield* inspect(target);
                 if (checked.status !== "installed") throw Error(checked.message);
                 return { ok: true, value: checked };

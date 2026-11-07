@@ -66,7 +66,11 @@ export function RuntimeSettings() {
               ? "Claude"
               : target.provider === "codex"
                 ? "Codex"
-                : target.provider}
+                : target.provider === "cursor"
+                  ? "Cursor"
+                  : target.provider === "grok"
+                    ? "Grok"
+                    : target.provider}
           </h3>
           <p role="status" className="text-sm font-medium">
             {labels[target.status]}

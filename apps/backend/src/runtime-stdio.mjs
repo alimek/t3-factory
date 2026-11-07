@@ -16,6 +16,11 @@ const tools = [
           description: "Exact configured exit name or ID from this Block's captured Flow.",
         },
         message: { type: "string" },
+        ref: {
+          type: "string",
+          description:
+            "Factory tool ref from the thread message, when one is present. Not a Run or Block id.",
+        },
       },
       required: ["to"],
       additionalProperties: false,
@@ -25,12 +30,32 @@ const tools = [
     name: "factory_get_block",
     description:
       "Read the caller's Block. BINDING_PENDING grants nothing; wait retryAfterMs and call again. Subagents are not callers.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        ref: {
+          type: "string",
+          description:
+            "Factory tool ref from the thread message, when one is present. Not a Run or Block id.",
+        },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: "factory_get_run",
     description: "Read the caller's Run. This grants no routing authority.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    inputSchema: {
+      type: "object",
+      properties: {
+        ref: {
+          type: "string",
+          description:
+            "Factory tool ref from the thread message, when one is present. Not a Run or Block id.",
+        },
+      },
+      additionalProperties: false,
+    },
   },
 ];
 const toolPaths = {

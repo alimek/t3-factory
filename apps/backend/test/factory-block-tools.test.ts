@@ -62,6 +62,56 @@ it("factory_get_block returns the bound worker visit without a model-supplied id
   expect(result).not.toHaveProperty("retryAfterMs");
 });
 
+it("factory_get_block binds a Cursor call from the in-flight timeline item", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  seedTool(
+    fixture.t3,
+    fixture.project.projectId,
+    "mcp__factory-runtime__factory_get_block",
+    "call-cursor",
+    {
+      status: "running",
+      itemId: "turn-item:provider:cursor:native-item:call-cursor",
+      text: JSON.stringify({
+        toolName: "mcp__factory-runtime__factory_get_block",
+        input: { ref: "ref-cursor" },
+      }),
+    },
+  );
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: { ref: "ref-cursor" } });
+
+  // Assert
+  expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
+});
+
+it("factory_get_block binds a Grok call from tool_input on the in-flight item", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  seedTool(
+    fixture.t3,
+    fixture.project.projectId,
+    "factory-runtime__factory_get_block",
+    "call-grok",
+    {
+      status: "pending",
+      itemId: "turn-item:provider:grok:native-item:call-grok",
+      text: JSON.stringify({
+        toolName: "factory-runtime__factory_get_block",
+        input: { tool_name: "factory-runtime__factory_get_block", tool_input: { ref: "ref-grok" } },
+      }),
+    },
+  );
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: { ref: "ref-grok" } });
+
+  // Assert
+  expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
+});
+
 it("factory_get_block accepts a call that omits arguments", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
