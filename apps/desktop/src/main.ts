@@ -60,6 +60,8 @@ let tray: Tray | null = null;
 /** Set only after the local user confirmed and the backend stopped in order. */
 let quitting = false;
 let installingUpdate = false;
+/** An approved client's install request was accepted and starts on the next tick. */
+let serverInstallAccepted = false;
 
 const updateChannel = (): UpdateChannel => store.get().updateChannel ?? buildChannel();
 
@@ -293,12 +295,16 @@ async function runServerUpdate(action: ServerUpdateAction): Promise<OperationRes
     return { ok: true, value: null };
   }
   if (state !== "downloaded") return refused("No downloaded server update is ready to install.");
-  if (installingUpdate) return refused("The server update is already being installed.");
+  if (installingUpdate || serverInstallAccepted)
+    return refused("The server update is already being installed.");
+  // Accepted before the deferred start, so a concurrent request is refused, not failed.
+  serverInstallAccepted = true;
   // Answer the client before the backend begins its orderly shutdown.
   // A failed start is published as the updater's error, which the waiting client reads.
   setImmediate(
     () =>
       void installUpdate().then((result) => {
+        serverInstallAccepted = false;
         if (!result.ok) updates.fail(result.message);
       }),
   );
