@@ -1,7 +1,14 @@
 import { assert, expect, it } from "@effect/vitest";
 import { uncertainLaunch } from "./support/lost-launch.ts";
-import { directWorker, workerFinal } from "./support/run-worker.ts";
+import {
+  directWorker,
+  reportedWorker,
+  revisitReportingWorker,
+  workerFinal,
+  workerNativeReply,
+} from "./support/run-worker.ts";
 import type { ControlledT3 } from "./support/controlled-t3.ts";
+import { bindThreadReportCaller } from "./support/lifecycle-setup.ts";
 
 const BLOCK_TOOL = "mcp__factory-runtime__factory_get_block";
 const RUN_TOOL = "mcp__factory-runtime__factory_get_run";
@@ -12,18 +19,20 @@ function seedTool(
   toolName: string,
   callId: string,
   item: Record<string, unknown> = {},
+  worker = { threadId: "thread-1", executionId: "execution-1" },
 ) {
+  bindThreadReportCaller(t3, projectId, worker.threadId, worker.executionId, callId);
   t3.runtimeActivity = {
-    thread: { threadId: "thread-1", projectId, activeRunId: "execution-1" },
+    thread: { threadId: worker.threadId, projectId, activeRunId: worker.executionId },
     items: [
       {
         visibility: "local",
-        sourceThreadId: "thread-1",
+        sourceThreadId: worker.threadId,
         textTruncated: false,
         nextTextOffset: null,
         itemId: `t:native-item:${callId}`,
         type: "dynamic_tool",
-        runId: "execution-1",
+        runId: worker.executionId,
         text: JSON.stringify({ toolName }),
         ...item,
       },
@@ -62,6 +71,24 @@ it("factory_get_block returns the bound worker visit without a model-supplied id
   expect(result).not.toHaveProperty("retryAfterMs");
 });
 
+it("a worker can retrieve its assigned inputs with a native call id and no inherited thread hint", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    arguments: {},
+    metadata: { callId: "block-call" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "BLOCK",
+    inputs: { input: "Improve search\nKeep it accessible." },
+  });
+});
+
 it("factory_get_block binds a Cursor call from the in-flight timeline item", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
@@ -85,6 +112,123 @@ it("factory_get_block binds a Cursor call from the in-flight timeline item", asy
 
   // Assert
   expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
+});
+
+it("native call lookup without a thread hint still rejects a subagent caller", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call", {
+    subagentId: "subagent-1",
+  });
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    arguments: {},
+    metadata: { callId: "block-call" },
+  });
+
+  // Assert
+  expect(result).toStrictEqual({ code: "FOREIGN_CALLER" });
+});
+
+it("a user reply can read its Block before the next periodic worker observation", async (c) => {
+  // Arrange
+  const fixture = await workerNativeReply(c);
+  const reply = fixture.t3.runtimeActivity.items.at(-1)!;
+  seedTool(
+    fixture.t3,
+    fixture.project.projectId,
+    BLOCK_TOOL,
+    "block-call",
+    {},
+    {
+      threadId: "thread-1",
+      executionId: "answer-execution",
+    },
+  );
+  fixture.t3.runtimeActivity = {
+    ...fixture.t3.runtimeActivity,
+    items: [...fixture.t3.runtimeActivity.items, reply],
+  };
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    arguments: {},
+    metadata: { callId: "block-call" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
+});
+
+it("a downstream worker retrieves its incoming result and the Block that produced it", async (c) => {
+  // Arrange
+  const fixture = await reportedWorker(c);
+  assert((await fixture.f.reconcileRuns()).ok);
+  seedTool(
+    fixture.t3,
+    fixture.project.projectId,
+    BLOCK_TOOL,
+    "block-call",
+    {},
+    {
+      threadId: "thread-2",
+      executionId: "execution-2",
+    },
+  );
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    arguments: {},
+    metadata: { callId: "block-call" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "BLOCK",
+    inputs: {
+      input: fixture.input.input,
+      results: [
+        {
+          blockId: "worker",
+          blockName: "Entry worker",
+          exitName: "Done",
+          message: workerFinal().arguments.message,
+          threadLink: expect.any(String),
+        },
+      ],
+    },
+  });
+});
+
+it("a revisit reads only the result that activated it rather than its own newer result", async (c) => {
+  // Arrange
+  const fixture = await revisitReportingWorker(c);
+  assert((await fixture.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  seedTool(
+    fixture.t3,
+    fixture.project.projectId,
+    BLOCK_TOOL,
+    "block-call",
+    {},
+    {
+      threadId: "thread-1",
+      executionId: fixture.workerExecutionId,
+    },
+  );
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    arguments: {},
+    metadata: { callId: "block-call" },
+  });
+
+  // Assert
+  expect(result.code).toBe("BLOCK");
+  expect(result.inputs?.results).toMatchObject([{ reportId: run.value.reports[0]?.id }]);
+  expect(result.inputs?.results).toHaveLength(1);
 });
 
 it("factory_get_block binds a Grok call from tool_input on the in-flight item", async (c) => {
@@ -136,7 +280,6 @@ it("factory_get_run returns the caller Run and each Block without routing author
   const result = await fixture.f.runtime.run({
     arguments: {},
     metadata: { callId: "run-call" },
-    inheritedThreadId: "thread-1",
   });
 
   // Assert

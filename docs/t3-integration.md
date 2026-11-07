@@ -249,6 +249,10 @@ installed.
   or over 262144 characters. Unavailable candidates cannot simply be ignored.
   Native delegation evidence remains Codex and Claude only. A Cursor or Grok worker can
   report its own Block; Factory does not decode native child delegation from those harnesses.
+  Block and Run reads can locate a Codex or Claude call by its native call ID when the
+  harness omits the inherited thread hint. Exactly one proven local call is still required.
+  A read from a renewed execution refreshes observation before comparing the saved binding;
+  it does not wait for the periodic sweep or grant report authority.
   Fresh observations do not replace the durable gate check at acceptance.
 - **Installation freshness.** An edited or outdated bridge needs **Repair** and a fresh
   harness session. The `$factory-block` skill is part of installation readiness. A missing
@@ -277,7 +281,17 @@ establishes identity.
 ### Block and Run reads
 
 `factory_get_block()` returns the caller's Block visit, reason, exits, inputs and allowed transitions once the worker is bound.
-Before that, a proven native call during an in-flight launch returns `{ code: "BINDING_PENDING", retryAfterMs: 500 }` and no
+Before binding, a proven native call during an in-flight launch returns `{ code: "BINDING_PENDING", retryAfterMs: 500 }` and no
 Block payload. An unseen call id is `UNBOUND_CALLER`. A subagent is `FOREIGN_CALLER`. Neither wait grants authority.
+
+The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
+through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source
+`blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. Other visits' reports and unrelated graph neighbors
+are not inputs to that visit. Flow-input visits have no incoming result.
+
+The result message is plain text: it can describe decisions, include artifact URLs or give repository paths. No output schema
+declaration is required, and Factory does not automatically fetch linked artifacts. An Agent's prompt can specify an expected
+format when the next step needs one; the reporting contract's message requirements still apply.
+
 `factory_get_run()` returns the Run number, title, input, state and each Block's state and latest result. It grants no routing
 authority. Arguments contain no Run or Block id; the caller comes from verified native execution metadata.
