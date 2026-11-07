@@ -73,7 +73,8 @@ Record the base/head commit, viewport, scenario and command alongside the images
 Capture After only after the last application edit; rebuild and repeat the affected
 journey if the UI changes afterward. Inspect both image sets yourself, including
 long text and each descendant link. The **UI evidence attachments** CI check only
-checks for embedded HTTPS images, not their content, provenance or comparability.
+checks for embedded HTTPS images outside comments and code, not their content,
+provenance or comparability.
 Human review still owns those judgments.
 
 For Flow readiness, inspect every referenced Agent, including later branches.

@@ -662,13 +662,23 @@ function StartNotice({ model }: { model: Composer }) {
                 Open Settings → Agent reporting
               </NoticeSettingsLink>
             )}
-            {(draft.remedy !== "reporting" ||
-              draft.issues.some((issue) => issue.code !== "reporting_installation")) && (
+            {(draft.issues.length === 0 ||
+              draft.issues.some(
+                (issue) =>
+                  issue.path.startsWith("agents.") && issue.code !== "reporting_installation",
+              )) && (
               <NoticeStudioLink selection={{ tab: "agents" }}>
                 Open Studio → Agents
               </NoticeStudioLink>
             )}
-            {draft.issues.some((issue) => issue.path.includes("connection")) && (
+            {draft.issues.some((issue) => issue.path.startsWith("graph.")) && (
+              <NoticeStudioLink selection={{ tab: "flows", flowId: draft.flowId }}>
+                Open Studio → Flows
+              </NoticeStudioLink>
+            )}
+            {draft.issues.some(
+              (issue) => issue.path.includes("connection") || issue.code === "project_connection",
+            ) && (
               <NoticeSettingsLink selection={{ tab: "connection" }}>
                 Open T3 connection settings
               </NoticeSettingsLink>

@@ -1,9 +1,13 @@
 import { repairCodexReporting } from "./support/agents.ts";
 import assert from "node:assert/strict";
-import { test } from "@e2e-dev/web";
+import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { openComposerWithFlow } from "./support/composer.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
+
+beforeEach(async ({ browser }) => {
+  await browser.setViewport({ width: 1440, height: 1100 });
+});
 
 test("Start names every blocked Agent including later branches and succeeds after repair", async ({
   app,
@@ -11,7 +15,6 @@ test("Start names every blocked Agent including later branches and succeeds afte
   browser,
 }) => {
   // Arrange
-  await browser.setViewport({ width: 1440, height: 1100 });
   await openComposerWithFlow(app, screen, "Demo · Parallel review");
   await screen.getByLabel("Initial prompt", { exact: false }).fill("UI whole Flow readiness");
   const broken = await fetch(new URL("/__fixture/reporting/break", app.baseUrl), {
@@ -59,4 +62,37 @@ test("Start names every blocked Agent including later branches and succeeds afte
   expect(run.reports[0]?.completionEligibleAt).not.toBe(null);
   expect(run.activations).toHaveLength(3);
   await app.screenshot("whole-flow-result-accepted");
+});
+
+test("a launch contract blocker points to the connection without blaming Agents", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await openComposerWithFlow(app, screen, "Demo · Parallel review");
+  await screen
+    .getByLabel("Initial prompt", { exact: false })
+    .fill("UI unsupported launch contract");
+  const unsupported = await fetch(new URL("/__fixture/readiness/unsupported-launch", app.baseUrl), {
+    method: "POST",
+  });
+  assert(unsupported.ok);
+
+  // Act
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("list", "Start blockers")).toContainText(
+    "T3 launch contract is unsupported",
+  );
+  await expect(
+    screen.getByRole("link", "Open T3 connection settings", { exact: true }),
+  ).toBeVisible();
+  await app.screenshot("connection-only-blocker");
+  await expect(screen.getByRole("link", "Open Studio → Agents", { exact: true })).toHaveCount(0);
+  expect(await runsTitled(app.baseUrl, "UI unsupported launch contract")).toHaveLength(0);
+  const restored = await fetch(new URL("/__fixture/readiness/restore-launch", app.baseUrl), {
+    method: "POST",
+  });
+  assert(restored.ok);
 });

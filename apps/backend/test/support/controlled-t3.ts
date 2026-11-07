@@ -86,7 +86,9 @@ export class ControlledT3 implements T3Adapter {
     return {
       supported: this.launchSupported,
       retryScope: this.retryScope,
-      explanation: "Controlled durable replay lifetime",
+      explanation: this.launchSupported
+        ? "Controlled durable replay lifetime"
+        : "T3 launch contract is unsupported. Recheck the T3 connection.",
     };
   }
   protected launchIds(n: number) {

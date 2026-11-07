@@ -327,6 +327,12 @@ async function approvedBrowserCookie() {
 }
 
 const fixtureRoutes: Record<string, () => unknown> = {
+  "/__fixture/readiness/unsupported-launch"() {
+    t3.launchSupported = false;
+  },
+  "/__fixture/readiness/restore-launch"() {
+    t3.launchSupported = true;
+  },
   async "/__fixture/readiness/report"() {
     const summary = requireSuccess(await factory.listRunNavigation()).find(
       (run) => run.title === "UI whole Flow readiness",

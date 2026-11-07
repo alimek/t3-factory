@@ -265,6 +265,7 @@ export function createRunDraft(
   }
   function show(saved: SavedRunDraft | undefined) {
     currentId = saved?.id;
+    issues = [];
     error = saved?.submission && !inFlight.has(saved.id) ? unknownOutcome : "";
     if (saved) {
       const { projectId, flowId, input } = saved;
@@ -310,6 +311,7 @@ export function createRunDraft(
     if (find(currentId)?.submission) return;
     current = { ...current, ...change };
     error = "";
+    issues = [];
     if (change.projectId !== undefined || change.flowId !== undefined) {
       rememberChoice("project", current.projectId);
       rememberChoice("flow", current.flowId);
@@ -355,6 +357,7 @@ export function createRunDraft(
       currentId = undefined;
       current = { ...current, input: "" };
       error = "";
+      issues = [];
     }
     commit(server, id, () => undefined);
     publish();
