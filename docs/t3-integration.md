@@ -85,9 +85,11 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   homes, unsupported providers and remote hosts show diagnostics only; unknown or remote homes
   get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
-  Discovery for same-user loopback T3 covers standard homes (`~/.codex`, `~/.claude.json`) and
-  explicit `homePath` or persisted `CODEX_HOME` / `CLAUDE_CONFIG_DIR` values. Factory's own
-  environment, relative paths and T3's inherited host environment are not consulted.
+  Discovery for same-user loopback T3 covers standard homes (`~/.codex/config.toml`,
+  `~/.claude.json`, `~/.grok/config.toml`) and explicit `homePath` or persisted `CODEX_HOME`,
+  `CLAUDE_CONFIG_DIR` or `GROK_HOME` values. Cursor always uses `~/.cursor/mcp.json` and ignores
+  `homePath`. Factory's own environment, relative paths and T3's inherited host environment are
+  not consulted.
   Details and limits are in [Compatibility](t3-integration.md#reporting-installation).
 - **Installed** describes configuration only; it does not prove current live tool visibility or
   attribution, so runtime evidence stays **UNVERIFIED** even after a valid report. Fresh harness
