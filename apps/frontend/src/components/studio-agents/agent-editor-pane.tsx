@@ -3,7 +3,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
 import { validateCreateAgent, validateUpdateAgent } from "@t3-factory/domain-validation";
 import { fieldLabelClass } from "@/components/page";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CircleAlert, CheckCircle2 } from "lucide-react";
+import { SettingsLink } from "../app-link.tsx";
+import { agentReportingStatus, useReportingState } from "../../reporting-state.tsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,6 +156,9 @@ export function AgentEditorPane(props: AgentEditorProps) {
               settings={settings}
               saving={saving}
             />
+            {settings.execution.providerInstanceId && (
+              <AgentReportingNotice providerId={settings.execution.providerInstanceId} />
+            )}
             <div className="grid gap-1.5">
               <Label htmlFor="agent-prompt" className={fieldLabelClass}>
                 Prompt
@@ -187,6 +193,33 @@ export function AgentEditorPane(props: AgentEditorProps) {
         </div>
       </form>
     </>
+  );
+}
+
+function AgentReportingNotice({ providerId }: { providerId: string }) {
+  const status = agentReportingStatus(providerId, useReportingState());
+  return (
+    <Alert
+      role="status"
+      aria-label="Agent reporting status"
+      variant={status.state === "attention" ? "attention" : "neutral"}
+    >
+      {status.state === "installed" ? (
+        <CheckCircle2 aria-hidden className="text-success" />
+      ) : (
+        <CircleAlert aria-hidden />
+      )}
+      <AlertTitle>{status.label}</AlertTitle>
+      <AlertDescription>
+        {status.message && <p>{status.message}</p>}
+        {status.state === "attention" && (
+          <p>This provider cannot start a Run until reporting is configured.</p>
+        )}
+        {status.state !== "checking" && (
+          <SettingsLink selection={{ tab: "runtime" }}>Open Agent reporting</SettingsLink>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }
 
