@@ -90,9 +90,6 @@ export function ChoiceMenu({
               value={choice.id}
               disabled={choice.disabled}
               indicatorPosition="right"
-              aria-label={[choice.label, choice.badge, choice.description]
-                .filter(Boolean)
-                .join(". ")}
               className="my-0.5 rounded-md py-2 data-[state=checked]:bg-brand-soft"
             >
               <span className="grid min-w-0 flex-1 gap-0.5">
