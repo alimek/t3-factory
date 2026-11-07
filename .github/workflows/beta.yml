@@ -98,18 +98,43 @@ jobs:
           grep -qx "version: $RELEASE_VERSION" beta-mac.yml
       - name: Create draft prerelease
         run: |
-          notes=(--generate-notes)
-          if [[ -n "$PREVIOUS_TAG" ]]; then notes+=(--notes-start-tag "$PREVIOUS_TAG"); fi
-          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
-            --target "$RELEASE_SHA" --title "T3 Factory $RELEASE_VERSION" "${notes[@]}"
-          echo "RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\" and .draft) | .id")" >> "$GITHUB_ENV"
+          # The id has to come from the create response. A draft has no git tag yet, and
+          # listing releases can miss it; verification then requests releases//assets.
+          payload=$(jq -n \
+            --arg tag_name "$RELEASE_TAG" \
+            --arg target_commitish "$RELEASE_SHA" \
+            --arg name "T3 Factory $RELEASE_VERSION" \
+            '{tag_name:$tag_name, target_commitish:$target_commitish, name:$name, draft:true, prerelease:true}')
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            body=$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$RELEASE_SHA" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              --jq .body)
+            payload=$(jq --arg body "$body" '. + {body:$body}' <<<"$payload")
+          else
+            payload=$(jq '. + {generate_release_notes:true}' <<<"$payload")
+          fi
+          release=$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input - <<<"$payload")
+          release_id=$(jq -r .id <<<"$release")
+          if [[ ! "$release_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::Draft prerelease response did not include a release id."
+            exit 1
+          fi
+          echo "RELEASE_ID=$release_id" >> "$GITHUB_ENV"
+          jq -r .html_url <<<"$release"
       - name: Upload and verify assets
         run: |
+          if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::RELEASE_ID is missing, so uploaded assets cannot be checked."
+            exit 1
+          fi
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" downloads/*
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
-            --jq '.[] | "\(.digest | sub("^sha256:"; ""))  \(.name)"' | sort -k2 > uploaded.txt
-          (cd downloads && sha256sum -- *) | sort -k2 > local.txt
+            --jq '.[] | "\(.digest | sub("^sha256:"; ""))  \(.name)"' > uploaded.txt
+          sort -k2 -o uploaded.txt uploaded.txt
+          (cd downloads && sha256sum -- *) > local.txt
+          sort -k2 -o local.txt local.txt
           diff -u local.txt uploaded.txt
       - name: Publish
         run: |
