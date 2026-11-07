@@ -91,6 +91,7 @@ async function prepareWorkerRuns() {
           ...seed,
           requestId: `ui-worker:${seed.requestId}`,
           input: seed.input.replace(/^Demo · /, "UI worker · "),
+          title: seed.title.replace(/^Demo · /, "UI worker · "),
         });
       },
     },

@@ -79,7 +79,7 @@ The executor of a flow's declared transitions and conditions. Agent results dete
 A packaged workflow or set of instructions guiding an agent's work.
 
 **Task**:
-A concrete matter to work on within a project, such as a coding change, an idea to discuss, or a specification to investigate. It groups the history of Runs addressing that matter, potentially through different Flows.
+A concrete matter to work on within a project, such as a coding change, an idea to discuss, or a specification to investigate. Each Start creates a new Task for its Run; Tasks recorded by earlier releases can still hold several Runs.
 
 **Run**:
 One execution of a selected flow for a task in a project, with its own editable title
@@ -142,13 +142,19 @@ pending. Resnoozing accounts for existing attention identities so they cannot
 repeatedly wake the same Run.
 
 **Run closure**:
-The permanent local confirmation of a Run's finished or stopped outcome, backed by a recorded observed frontier and an unchanged local generation. Closure releases the Task's active Run slot; it is not an atomic cutoff of later T3 activity or a quality guarantee.
+The permanent local confirmation of a Run's finished or stopped outcome, backed by a recorded observed frontier and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required
-initial prompt. It preserves the in-app draft and opens from New Run or a Flow's
-Start Run; opening it does not start execution. Start always uses the current saved
-Flow and Agent definitions.
+initial prompt. It edits one Run draft at a time and opens a fresh composition from
+New Run or a Flow's Start Run; opening it does not start execution. Start always uses
+the current saved Flow and Agent definitions.
+
+**Run draft**:
+A client-local composition saved in browser storage while its prompt has a
+non-whitespace character: the exact prompt, Project/Flow references, title and
+creation time. It has no Task, Run or snapshot until Start is accepted, which removes
+it; the Run keeps its title and creation time. Not to be confused with an unsaved Flow draft in Studio.
 
 **Request report**:
 An explicit user operation starting one additional Agent turn on the same thread

@@ -2,20 +2,78 @@ import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
 import { siblingRuns } from "./support/navigation.ts";
 
-it("a Run takes its bounded title from the first non-empty prompt line", async (c) => {
+it("a Start with an over-long title creates no Run", async (c) => {
   // Arrange
   const { f, input } = await prepared(c);
-  const prompt = " \n\t\r\n  " + "x".repeat(501) + "\nFull input retained";
 
   // Act
-  const result = await f.startRun({ ...input, input: prompt });
+  const result = await f.startRun({ ...input, title: "x".repeat(501) });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("validation");
+  expect(result.error.issues.map((issue) => issue.path)).toStrictEqual(["title"]);
+  expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
+});
+
+it("a Start with a non-canonical creation time creates no Run", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+
+  // Act
+  const result = await f.startRun({ ...input, createdAt: "2026-11-07 08:00" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("validation");
+  expect(result.error.issues.map((issue) => issue.path)).toStrictEqual(["createdAt"]);
+  expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
+});
+
+it("a started draft keeps its chosen title and creation order after restart", async (c) => {
+  // Arrange
+  const { h, f, t3, input } = await prepared(c);
+  const newer = await f.startRun({
+    ...input,
+    requestId: "newer-draft",
+    title: "Newer draft",
+    createdAt: "2026-11-07T09:00:00.000Z",
+  });
+  assert(newer.ok);
+  const older = await f.startRun({
+    ...input,
+    title: "  Chosen draft title  ",
+    createdAt: "2026-11-07T08:00:00.000Z",
+  });
+  assert(older.ok);
+  await f.close();
+  const restarted = await h.open({ t3, connectionRetryMs: 60_000 });
+  c.onTestFinished(() => restarted.close());
+
+  // Act
+  const result = await restarted.listRunNavigation();
 
   // Assert
   assert(result.ok);
-  const navigation = await f.listRunNavigation();
-  assert(navigation.ok);
-  expect(navigation.value[0]?.title).toBe("x".repeat(500));
-  expect(result.value.input).toBe(prompt);
+  expect(result.value.map(({ id, title, createdAt }) => ({ id, title, createdAt }))).toStrictEqual([
+    { id: newer.value.id, title: "Newer draft", createdAt: "2026-11-07T09:00:00.000Z" },
+    { id: older.value.id, title: "Chosen draft title", createdAt: "2026-11-07T08:00:00.000Z" },
+  ]);
+  expect(older.value.startedAt).not.toBe("2026-11-07T08:00:00.000Z");
+});
+
+it("Runs created at the same time are ordered by their Start request keys", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+  assert((await f.startRun({ ...input, requestId: "b-draft" })).ok);
+  assert((await f.startRun({ ...input, requestId: "a-draft" })).ok);
+
+  // Act
+  const result = await f.listRunNavigation();
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.map((entry) => entry.creationKey)).toStrictEqual(["a-draft", "b-draft"]);
 });
 
 it("renaming a Run trims its title without changing its sibling or its Task", async (c) => {
@@ -64,7 +122,6 @@ it("global navigation keeps creation order and only confirmed whole-Run closure"
   expect(result.value[0]?.outcome).toBe(null);
   assert(result.value[0]?.stopRequestedAt);
   expect(result.value[1]?.outcome).toBe("stopped");
-  expect(result.value[1]?.createdAt).toBe(first.startedAt);
 });
 
 it("snoozing an open Run leaves execution, attention and history unchanged", async (c) => {

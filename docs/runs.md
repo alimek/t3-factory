@@ -2,18 +2,28 @@
 
 ## Starting
 
-Open **New Run (+)** (`/runs/new`; the Flow editor's **Start Run** opens it with its saved Flow selected). Choose an
+Open **New Run (+)** (`/runs/new`; the Flow editor's **Start Run** opens a fresh composition with its saved Flow selected). Choose an
 available project, a global ready Flow and a required initial prompt. Factory checks the project and connection, the graph,
 every referenced Agent's settings, reporting installation and explicit-call API compatibility before accepting Start.
 Failures explain recovery and keep the draft.
 
-- **Task and Run.** Each Start creates a new Task (named from the first non-empty input line) and its Run. Each Run has its own
-  title, from its first non-empty prompt line, limited to 500 characters.
-- **Idempotency.** A stable request key belongs to one composer submission. Retrying an accepted request returns the same Run,
-  even after a lost response or restart; reusing the key with changed content conflicts. An unknown response keeps the
+- **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
+  else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes
+  the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
+  title (after trimming) or a creation time not in `Date.toISOString()` form (for example `2026-11-07T08:00:00.000Z`),
+  and creates nothing.
+- **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
+  records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
+  even after a lost response or restart; reusing the key with changed content, including title or creation time, conflicts. An unknown response keeps the
   submitted fields read-only and offers **Check same request**; only confirmed success clears the prompt and opens the Run.
-- **Active slot.** One non-closed Run (including unresolved work or an in-progress Stop) occupies its Task's slot. Different
-  Tasks run concurrently in the shared project checkout.
+  The submitted request is saved in browser storage before it is sent, so reloading or reopening the client during an
+  in-flight or unknown Start offers the same check instead of a fresh request. It is kept with its draft, so each draft has its
+  own pending request, and per selected Factory server (a desktop client never checks it against another server); it is
+  removed after a confirmed acceptance or rejection. When
+  storage is blocked, the unknown-outcome notice says the request survives only while the window stays open.
+- **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Runs
+  work concurrently in the shared project checkout. A Run stays open, including unresolved work or an in-progress Stop,
+  until its closure is recorded.
 - **Snapshot.** The Run keeps immutable input, the full Flow graph and each referenced Agent's prompt, settings, revision and
   labels. Later edits affect only future Runs.
 - **Launch.** Factory launches one top-level worker per Agent block visit, using that Agent's saved provider, model and
@@ -23,10 +33,20 @@ Failures explain recovery and keep the draft.
   Factory works in the project root with no isolated worktrees, omits `runtimeMode` and leaves execution permissions to T3
   and its OAuth grant, so effective autonomy is not guaranteed by Factory. Use a repository you are willing to let agents
   change.
-- **Composer.** Project and Flow choices are remembered locally; the prompt stays in memory across in-app navigation. Each
-  blocking condition is a notice with a recovery action, and fields that cause it are marked. The Project picker keeps
-  searchable paths, **Recheck projects** and **Add repository**; unavailable references stay visible in history but cannot be
-  selected for a new Run.
+- **Composer.** Project and Flow choices are remembered locally per selected Factory server, like drafts. Each blocking condition is a notice with a recovery action, and
+  fields that cause it are marked. The Project picker keeps searchable paths, **Recheck projects** and **Add repository**;
+  unavailable references stay visible in history but cannot be selected for a new Run.
+- **Drafts.** Typing a prompt with a non-whitespace character creates a Run draft; clearing it to whitespace removes the draft.
+  Drafts save silently while typing, without a T3 connection or ready choices, and the current composition is restored after a
+  reload or reopening the client. A draft keeps the exact prompt and Project/Flow references only; Start resolves the current
+  saved Flow and Agents. Drafts live in browser storage per client and selected Factory server; tabs sharing a profile share
+  them, and the last save wins, except that another tab's unresolved Start is never overwritten or removed: the stale tab
+  reopens that draft instead. If storage is blocked the composer says the draft lasts only while the window is open.
+  **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
+  Flow editor's **Start Run** does the same with its Flow. A selected Project or Flow is cleared only when a fresh catalog read
+  confirms it is gone; a failed read changes nothing. Confirmed Start removes the draft and opens its Run; a confirmed
+  rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
+  survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
 ## Execution canvas
 
@@ -54,17 +74,26 @@ Engine termination alone never completes a Run: whole-Run completion is only a r
 
 ## Run list
 
-The shell sidebar lists Runs globally, newest created first (id ascending breaks ties); opening, renaming and closing never
-change that key. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
+The shell sidebar lists Runs globally, newest created first, with equal creation times in ascending creation-key order;
+opening, renaming and closing never change either. Run drafts join the main list in the same order with a **Draft** indicator once you leave the New Run view
+(Settings and Studio open over it and do not count); a draft row reopens it in the composer, and editing never moves it.
+A draft's creation key is its id, and its Start sends that id as the request key, which becomes the Run's creation key. With
+the draft's title and creation time, the Run therefore replaces the draft row in place, also among entries created at the same
+time. Runs created before drafts carried a creation time use their start time and Run id. Creation times come from the
+client's clock. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
 stale) and chips. Missing projects keep readable history; an unavailable open Run stays open.
 
 - **Needs input**: a pending Human occurrence, native T3 question/permission or an Agent's conversation-waiting report.
   **Problem**: a pending missing report, execution failure or report problem. Both can show. Stale observations or an unavailable
   project are not Problems and opening a Run clears no chip.
 - **Settled** (collapsed, with a count) holds only Runs with recorded Finished or Stopped closure. **Snoozed** sits above it.
-  Case-insensitive title search reveals matching entries in every group; Escape or × clears it.
-- **Rename** changes that Run's title only (trimmed, non-empty, ≤500 characters). Row menu: hover/focus/select, Shift+F10,
-  F2 renames; closed rows offer Rename only.
+  Case-insensitive title search reveals matching entries in every group, including drafts (titled from the first non-empty
+  prompt line, or **Untitled draft**); Escape or × clears it.
+- **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
+  Row menu: hover/focus/select, Shift+F10, F2 renames; closed rows offer Rename only. Draft rows offer Rename and
+  **Discard**, which removes the draft from this browser at once without confirmation; discarding the open draft leaves an
+  empty composition with the same choices. While a draft's Start is in flight or its outcome is unknown, both are
+  unavailable: the draft keeps its exact request until **Check same request** settles it.
 - A closed Run is read-only history and is never reopened or relaunched. To work on the matter again, start a **New Run**: it
   uses the current saved Flow and Agent definitions, not an earlier Run's snapshot.
 
@@ -124,7 +153,7 @@ acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
 A Run closes **Finished** only when every Block visit has its worker's accepted final result, every Human step is answered, no
 delivery, launch, handoff or send is outstanding, and fresh observations of every worker and
 their descendants show completed work, no queued work, no native attention and no Problem. Never-visited branches need not run.
-A report or T3 completion alone, or incomplete coverage, keeps the Run open and its Task slot occupied.
+A report or T3 completion alone, or incomplete coverage, keeps the Run open.
 
 Run detail shows the **recorded observed frontier**: exact executions, statuses, queue and native counts with their separate read
 times. T3 reads are not an atomic cutoff, so direct T3 activity can arrive before local closure; completion does not certify result
@@ -143,7 +172,7 @@ unresolved and keeps Stop uncertain. Factory cancels queued turns and requests t
 workers and their descendants; the recorded execution reference is not a T3 fence.
 
 **Stop requested / Uncertain Stop** means terminal state and empty queue and native coverage are not yet confirmed, or a pre-Stop
-operation is unresolved. An acknowledgement is insufficient; the Run keeps its slot through restart and reconciles automatically.
+operation is unresolved. An acknowledgement is insufficient; the Run stays open through restart and reconciles automatically.
 Confirmed **Stopped** shows the frontier and settles remaining Problems and native matters as cancelled-on-Stop. Stop does not roll back
 edits or prevent new direct T3 chats; closing Factory or a browser tab is not Stop.
 
@@ -152,7 +181,7 @@ edits or prevent new direct T3 chats; closing Factory or a browser tab is not St
 History stays readable when T3 is unavailable. On startup Factory restores bindings and reconciles open Runs before dispatching, then
 observes periodically (no Resume button). Missing or incomplete observations stay stale and keep the last known facts. An uncertain
 launch or send replays only with the saved key and body under the same authorization context and a verified replay scope; otherwise it
-stays unresolved and keeps the slot (see [Runner](runner.md#ownership-and-restart)). One backend owns a database; another
+stays unresolved and keeps the Run open (see [Runner](runner.md#ownership-and-restart)). One backend owns a database; another
 fails startup. Shutdown does not Stop the Run or interrupt T3; reopening the same data home observes accepted work.
 
 ## Completed stages in T3

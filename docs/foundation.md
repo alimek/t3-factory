@@ -18,8 +18,8 @@ and restricted OAuth credentials live outside project repositories.
 - Start atomically captures the Run input, full Flow graph and referenced Agent prompts,
   settings, labels and revisions. Later definition changes cannot rewrite history.
   External skill files are not frozen.
-- Each Task permits one non-closed Run, including uncertain work or Stop in progress.
-  Each Start creates a new Task, Run and threads; closed Runs are never reopened.
+- Each Start creates a new Task, Run and threads; a Task never has more than one
+  non-closed Run, and closed Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
@@ -86,8 +86,13 @@ Browser storage is optional: blocked or malformed storage must leave in-memory p
 usable and must not turn a confirmed Start into an unknown outcome. Shortcut schema
 changes must migrate or explicitly invalidate saved preferences under the
 [current-contract policy](../AGENTS.md#one-current-contract). The composer retains an
-unknown Start's identical key and payload for an explicit check; only confirmed success
-clears its prompt. Backend idempotency remains authoritative.
+unknown Start's identical key and payload for an explicit check, across reloads when
+storage allows; only confirmed success clears its prompt. Run drafts are client-local
+preparation in browser storage, never backend records, and blocked storage shows that a
+draft lasts only while the window is open. Client-local state that belongs
+to a server is scoped by that server: browsers are isolated by origin, while the desktop
+renderer shares one origin and names its role and selected server. Backend idempotency
+remains authoritative.
 
 The UI must work over plain HTTP on a LAN or Tailscale address as well as loopback.
 Browser APIs requiring a secure context must not be the only way to generate identifiers.

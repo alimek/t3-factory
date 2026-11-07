@@ -19,7 +19,7 @@ rule; reload uses the browser's leave warning). Agent edits are guarded independ
 | Agent list | `/studio/agents` (`/settings/agents`) |
 | Opened or new Agent | `/studio/agents/:agentId` (`new` creates; `/settings/agents/:agentId`) |
 
-The Flow editor's **Start Run** leaves Studio and opens the composer with that Flow selected. Direct Studio links remember the last Run or composer and restore it on close, also when browser storage is
+The Flow editor's **Start Run** leaves Studio and opens a fresh composition with that Flow selected; unfinished Run drafts stay saved. Direct Studio links remember the last Run or composer and restore it on close, also when browser storage is
 unavailable; a fresh session opens `/runs/new`. `/settings` and `/settings/connection` open the connection dialog and `/settings/skills` redirects to `/studio/flows`. Routing is described in
 [Application foundation](foundation.md#ui-routes).
 

@@ -16,7 +16,7 @@ use older/newer peers owned and cleaned up by the same fixture process.
 | Canvas viewport | `tests/canvas-viewport.e2e.ts` | Authoring refits on resize; an arranged Run preserves manual pan/zoom through resize and polling |
 | Flow authoring | `tests/flow-authoring.e2e.ts` | Connections, loop/fan-out, readiness and durable saving |
 | Settings and shortcuts | `tests/keyboard-shortcuts.e2e.ts` | Palette selection and Settings preserving the composer draft |
-| Current Run lifecycle | `tests/run-worker.e2e.ts` | Worker settings, launch/observe, exact question link and reply, handoff, Human correction and Stop/closure |
+| Current Run lifecycle | `tests/run-worker.e2e.ts` | Worker settings, launch/observe, Run draft saved, listed after leaving, reopened after reload and started once in place with its title and creation order, lost-response Start recovered after reload, exact question link and reply, handoff, Human correction and Stop/closure |
 | Remote access | `tests/remote-access.e2e.ts` | Approval, revocation, offline state, compatibility and the client + server upgrade review |
 | Remote connection | `tests/remote-connection.e2e.ts` | Host authorization and automatic connection status |
 

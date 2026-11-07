@@ -19,7 +19,7 @@ run by `pnpm test`) for
 **business logic** only:
 
 - domain rules and validation of untrusted input;
-- state transitions (Flow drafts and revisions, Run lifecycle, Task slots);
+- state transitions (Flow drafts and revisions, Run lifecycle);
 - Runner, report, handoff, Human-answer and Stop semantics;
 - important decisions whose failure would break a user workflow or a component
   contract, including races, recovery and security boundaries.

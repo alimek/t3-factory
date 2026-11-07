@@ -17,6 +17,13 @@ import type {
 
 export const TASK_TITLE_LIMIT = 500;
 
+/** Run navigation compares creation times as text, so only `Date.toISOString()` output is valid. */
+export function isCanonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const time = Date.parse(value);
+  return !Number.isNaN(time) && new Date(time).toISOString() === value;
+}
+
 const PROJECT_ICON_COLORS = new Set<ProjectIconColor>([
   "gray",
   "red",
