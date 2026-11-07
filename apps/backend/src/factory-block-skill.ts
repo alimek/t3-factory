@@ -10,7 +10,7 @@ description: Work one Factory Block from factory_get_block and report only throu
 
 You are one Block in a Factory Run. Factory owns routing, Stop, and closure.
 
-1. Call \`factory_get_block\` before other work. If the reply is \`BINDING_PENDING\`, wait \`retryAfterMs\` and call it again. That reply grants no authority.
+1. Call \`factory_get_block\` before other work. If the reply is \`BINDING_PENDING\`, wait \`retryAfterMs\` and call it again. That reply grants no authority. When the message gives a Factory tool ref, pass that exact string as \`ref\` on every Factory tool call. \`ref\` only tells Factory which in-flight call is yours. It is not a Run or Block id.
 2. Work from this Agent's prompt and the returned inputs: the original Run input, incoming results, and feedback.
 3. Call \`factory_update_block\` with \`to: "waiting"\` and a nonempty \`message\` when you need a user reply. Do not send an exit.
 4. Call \`factory_update_block\` exactly once with \`to: "finished"\`, one configured exit, and a message when that exit requires feedback.

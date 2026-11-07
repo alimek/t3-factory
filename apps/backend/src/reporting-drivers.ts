@@ -1,15 +1,36 @@
 import type { AgentProviderReporting } from "@t3-factory/contracts";
 
-/**
- * Harness drivers whose native tool calls carry a call id Factory can correlate with one
- * execution (`callId` or `claudecode/toolUseId`). Other drivers need their own correlation
- * before Factory can accept their reports.
- */
-export const REPORTING_DRIVERS = ["codex", "claudeAgent"] as const;
+/** Harnesses whose Block reports Factory can accept. */
+export const REPORTING_DRIVERS = ["codex", "claudeAgent", "cursor", "grok"] as const;
 export type ReportingDriver = (typeof REPORTING_DRIVERS)[number];
+
+/**
+ * Cursor and Grok do not send a native call id. Their in-flight timeline item is the
+ * locator: Cursor records the tool arguments directly, Grok nests them under `tool_input`.
+ */
+export const ACTIVITY_REPORTING_DRIVERS = ["cursor", "grok"] as const;
 
 export const isReportingDriver = (driverKind: unknown): driverKind is ReportingDriver =>
   REPORTING_DRIVERS.some((driver) => driver === driverKind);
+
+export function reportingHome(driver: Exclude<ReportingDriver, "cursor">): {
+  readonly envName: string;
+  /** `null` means the config file sits in the OS home, not a subdirectory. */
+  readonly defaultDirectory: string | null;
+  readonly file: string;
+  readonly toml: boolean;
+} {
+  if (driver === "grok")
+    return { envName: "GROK_HOME", defaultDirectory: ".grok", file: "config.toml", toml: true };
+  if (driver === "codex")
+    return { envName: "CODEX_HOME", defaultDirectory: ".codex", file: "config.toml", toml: true };
+  return {
+    envName: "CLAUDE_CONFIG_DIR",
+    defaultDirectory: null,
+    file: ".claude.json",
+    toml: false,
+  };
+}
 
 export function providerReporting(driverKind: unknown): AgentProviderReporting {
   return isReportingDriver(driverKind)
@@ -20,6 +41,6 @@ export function providerReporting(driverKind: unknown): AgentProviderReporting {
     : {
         supported: false,
         explanation:
-          "Factory reporting is not available for this provider yet. Agents need a Codex or Claude provider to run in a Flow.",
+          "Factory reporting is not available for this provider yet. Settings → Agent reporting shows the MCP entry to add once support exists.",
       };
 }

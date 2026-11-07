@@ -32,8 +32,11 @@ const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
 /** The installed Block skill plus the turn the worker should act on. */
-export function workerTurn(body: string) {
-  return `$factory-block\n\n${body}`;
+export function workerTurn(body: string, ref?: string) {
+  const token = ref
+    ? `\n\nFactory tool ref: ${ref}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`
+    : "";
+  return `$factory-block\n\n${body}${token}`;
 }
 
 /** Stable title saved with the launch. Later Block renames do not change recovery's target. */
@@ -58,7 +61,7 @@ export function workerLaunchPayload(
   return {
     ...payload,
     title: workerTitle(number, index, block.name),
-    message: workerTurn(agent.prompt),
+    message: workerTurn(agent.prompt, key),
   };
 }
 
@@ -114,7 +117,7 @@ export function entryMessagesTooLong(definitions: RunDefinitions) {
     const agent = definitions.agents.find(
       (entry) => block?.kind === "agent" && entry.id === block.agentId,
     );
-    return !!agent && workerTurn(agent.prompt).length > 120000;
+    return !!agent && workerTurn(agent.prompt, "0".repeat(36)).length > 120000;
   });
 }
 
