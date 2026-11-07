@@ -316,8 +316,7 @@ function RemoteConnectionActions({
       </div>
       <p className="text-2xs tracking-label text-subtle-foreground">
         Opening authorization shows T3’s consent page in a browser on the Factory host; approve
-        there. From this device you can’t change the T3 address, replace a working authorization or
-        manage Agent reporting.
+        there. From this device you can’t change the T3 address or replace a working authorization.
       </p>
     </>
   );

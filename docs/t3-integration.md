@@ -94,8 +94,8 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   address (a changed `port` or `FACTORY_PORT`). An application upgrade needs no Repair; a fresh
   harness session sees the new tools. Any other `factory-runtime` entry, including a command
   entry from an earlier stdio bridge, is a conflict to remove by hand. Conflicts, inaccessible
-  homes, unsupported providers and remote hosts show diagnostics only; unknown or remote homes
-  get manual-setup guidance.
+  homes, unsupported providers and remote T3 hosts show diagnostics only; unknown homes and homes
+  on those hosts get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
   Studio's Agent list and editor show the selected provider's reporting installation status, including the actual
   diagnostic and **Open Agent reporting** for repair. Changing the provider updates the editor's status before saving.
