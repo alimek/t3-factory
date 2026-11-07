@@ -186,12 +186,6 @@ export function ExecutionSettingsFields({
           unavailableLabel={`Saved provider (${availability})`}
         />
       </div>
-      {selectedProvider && !selectedProvider.reporting.supported && (
-        <p role="status" className="text-xs text-attention">
-          {selectedProvider.reporting.explanation} Start is blocked until you choose another
-          provider.
-        </p>
-      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <CapabilityField
           id={`${role}-model`}
