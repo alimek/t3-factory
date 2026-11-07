@@ -70,7 +70,8 @@ T3 settlement or active-list behavior.
 - **Captured Flow revision.** Open **Demo · Working · Improve the project picker**: the canvas badge reads **Flow revision**
   with no note. Edit and save its Flow in Studio, then return: the badge adds **Flow edited since** and the canvas and block
   exits still show the captured revision. Remove that Flow and return: the badge reads **Flow removed since** and the Run
-  stays readable. A failed Flow read never shows a removal. `db:reset` restores the Flow.
+  stays readable. Only a `not_found` Flow read sets that note; other read failures keep the last known note.
+  `db:reset` restores the Flow.
 - **Pending Start recovery.** The seed has no lost-response state; the worker E2E journey drops Start's response after the server accepts it. By hand, set the
   browser's network to offline, press **Start** for **Demo · Focused change** in Atlas (the outcome is unknown), reload, restore the network and press
   **Check same request**: exactly one Run opens. Pending Starts are browser-local and not reset by `db:reset`.
