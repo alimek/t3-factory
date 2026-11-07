@@ -11,7 +11,8 @@ which sets `core.hooksPath` to `.vite-hooks/_` (generated, ignored by Git). Chec
 it with `pnpm exec vp hooks status`; run `pnpm exec vp hooks enable` if a fresh
 clone or worktree does not trigger the hook.
 
-The hook stops at the first failure, in this order (cheap static checks first):
+The hook first checks attribution in the commits being pushed, then runs
+`pnpm check`. It stops at the first failure (cheap static checks first):
 
 | Step | Command             | Catches                                                                                                                                 |
 | ---- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,8 +32,9 @@ UI or a user journey; see [testing policy](testing.md#behavior-tests-vs-e2e-jour
 
 ## CI and manual checks
 
-`pnpm check` is the single gate command, used by the pre-push hook and
-`.github/workflows/quality.yml`. CI runs on pull requests and pushes to `main`,
+`pnpm check` is the working-tree gate command, used by the pre-push hook and
+`.github/workflows/quality.yml`. CI also checks commit attribution and PR squash
+input. It runs on pull requests (including title/body edits) and pushes to `main`,
 with the repository's pinned Node and pnpm versions and a frozen lockfile.
 The job's check name is **Quality gate**. Requiring that check before merge is a
 GitHub ruleset setting; adding a workflow alone does not enable that requirement.
@@ -51,6 +53,39 @@ cognitive complexity 15 per function, no duplicated blocks); see `.fallowrc.json
 
 Use `pnpm fallow` for JSON or SARIF reports too: bare fallow does not enforce
 rule exit codes in these formats. Health recommendations are advisory, not rule warnings.
+
+### Git identity and squash input
+
+Use the configured Git identity. `pnpm check:git-attribution --range <base-sha>
+<head-sha>` checks a specific range without changing commits or Git configuration.
+The pre-push hook checks every ref update, including new branches, excluding
+commits already reachable from that remote's `main` or the ref's previous tip.
+Fetch the remote's `main` before pushing; a missing remote-tracking `main` fails
+the check rather than scanning all history.
+
+CI checks PR head commits not reachable from its base, plus the PR title and body
+as possible squash input. A push to `main` checks only commits introduced since
+the event's previous tip, including the final squash message. Existing history
+is outside these ranges; there is no findings baseline or suppression for new
+commits. A push event without a previous main tip fails because it cannot establish
+that range.
+
+The deterministic check rejects `Co-Authored-By` trailers, known agent names or
+domains in author/committer identities, and attribution lines such as “Generated
+with” followed by an agent name. Mentioning an agent in normal technical prose
+is allowed. It recognizes Claude/Anthropic, Cursor, Codex, Copilot, ChatGPT/OpenAI,
+Gemini and Grok. It does not prove that an arbitrary identity belongs to a human.
+
+The only trailer exception is the exact existing `github-actions[bot]` identity
+on `chore(main): release X.Y.Z` commits authored by that account (or its Release
+PR). This preserves release-please automation; agent attribution still fails
+there. Release Please's own generated PR footer is allowed.
+
+GitHub's default squash title/body settings and manual merge-message overrides
+are outside repository code. Keep the final message free of attribution too:
+CI can validate PR fields before merge and the actual message after a main push,
+but cannot inspect an unsaved override in the merge dialog. Require **Quality
+gate** in branch protection for the CI check to block merges.
 
 ## Static correctness policy
 

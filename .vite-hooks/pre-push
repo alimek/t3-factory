@@ -3,6 +3,8 @@
 # Never bypass it with --no-verify; fix the failure instead.
 set -eu
 
+node scripts/check-git-attribution.mjs --pre-push "$1"
+
 # Git exports repository variables (GIT_DIR, GIT_INDEX_FILE, ...) to hooks. Tests spawn
 # git and the backend inspects repositories, so clear them to keep checks hermetic.
 for var in $(git rev-parse --local-env-vars); do unset "$var"; done
