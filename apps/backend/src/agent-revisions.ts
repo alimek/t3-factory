@@ -1,18 +1,10 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { AgentExecutionSettings } from "@t3-factory/contracts";
+import type { AgentExecutionSettings, RunDefinitions } from "@t3-factory/contracts";
 import { newId } from "./ids.ts";
 
 /** A saved Agent revision as Studio and Start read it; settings availability is derived separately. */
-export type AgentRevision = {
-  id: string;
-  name: string;
-  prompt: string;
-  revision: number;
-  execution: AgentExecutionSettings;
-  createdAt: string;
-  updatedAt: string;
-};
+export type AgentRevision = RunDefinitions["agents"][number];
 
 type RevisionRow = {
   agent_id: string;
@@ -59,14 +51,14 @@ export const readCurrentAgents = Effect.fnUntraced(function* (
 /** The Agent revisions a Run froze at Start, in the order its Flow first places them. */
 export const readRunAgentRevisions = Effect.fnUntraced(function* (
   sql: SqlClient.SqlClient,
-  run: { id: string; flowRevisionId: string },
+  run: { id: string; flow_revision_id: string },
 ) {
   const rows = yield* sql<RevisionRow>`SELECT r.*, a.created_at FROM run_agent_revisions f
     JOIN agent_revisions r ON r.id = f.agent_revision_id
     JOIN agents a ON a.id = r.agent_id
     WHERE f.run_id = ${run.id}
     ORDER BY (SELECT min(ordinal) FROM flow_revision_blocks
-      WHERE flow_revision_id = ${run.flowRevisionId} AND agent_id = f.agent_id)`;
+      WHERE flow_revision_id = ${run.flow_revision_id} AND agent_id = f.agent_id)`;
   return rows.map(toRevision);
 });
 

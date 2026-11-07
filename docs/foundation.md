@@ -70,11 +70,7 @@ the schema. Flow graphs and Run definitions are not stored as JSON: Flow and Age
 are relational rows that Runs reference, so changing their shape is an ordinary SQL migration
 over current and historical revisions. Such a migration converts every revision in place under
 the guard rule below; it never appends, renumbers or drops revisions, because Runs reference
-them. The upgrade from `v0.2.0` turned each current Flow and Agent into a revision under its
-existing number and each stored Run snapshot into the revisions its Run references (a
-definition edited or removed after Start became that earlier revision again, under a removed
-identity if needed), then dropped the snapshots; nothing beyond stored data was invented.
-A JSON shape change needs a migration that rewrites stored data and a
+them. A JSON shape change needs a migration that rewrites stored data and a
 [frozen-fixture upgrade test](../apps/backend/test/fixtures/README.md). Preserve records by
 converting them to the current shape unless the user explicitly accepts discarding the
 affected data. An accepted removal still needs a migration and an upgrade test proving

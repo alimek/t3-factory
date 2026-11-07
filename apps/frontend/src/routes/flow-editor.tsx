@@ -602,10 +602,8 @@ function RemoveFlowAction({
     try {
       await api.removeFlow(flowId);
     } catch (e) {
-      if (!(e instanceof ApiError && e.detail.code === "not_found")) {
-        setError(e instanceof Error ? e.message : "Could not remove Flow.");
-        return;
-      }
+      setError(e instanceof Error ? e.message : "Could not remove Flow.");
+      return;
     } finally {
       setRemoving(false);
     }

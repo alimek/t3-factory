@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { BlockExit, FlowBlock, FlowDraft, FlowGraph } from "@t3-factory/contracts";
+import type { BlockExit, FlowBlock, FlowGraph, RunDefinitions } from "@t3-factory/contracts";
 import { newId } from "./ids.ts";
 
 /** A saved Flow revision as Studio and Start read it; readiness is derived separately. */
-export type FlowRevision = Omit<FlowDraft, "readiness">;
+export type FlowRevision = RunDefinitions["flow"];
 
 type RevisionRow = {
   id: string;

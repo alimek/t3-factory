@@ -203,11 +203,7 @@ export const makeDefinitions = (
       removeFlow(id) {
         return provideSql<void>(
           Effect.gen(function* () {
-            const now = yield* currentTime;
-            const removed = yield* sql<{
-              id: string;
-            }>`UPDATE flows SET removed_at=${now} WHERE id=${id} AND removed_at IS NULL RETURNING id`;
-            if (!removed.length) return flowNotFound();
+            yield* sql`UPDATE flows SET removed_at=${yield* currentTime} WHERE id=${id} AND removed_at IS NULL`;
             return { ok: true as const, value: undefined };
           }),
         );

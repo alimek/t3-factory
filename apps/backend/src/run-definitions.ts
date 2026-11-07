@@ -11,10 +11,7 @@ export const readRunDefinitions = Effect.fnUntraced(function* (
 ) {
   const definitions: RunDefinitions = {
     flow: yield* readFlowRevision(sql, run.flow_revision_id),
-    agents: yield* readRunAgentRevisions(sql, {
-      id: run.id,
-      flowRevisionId: run.flow_revision_id,
-    }),
+    agents: yield* readRunAgentRevisions(sql, run),
   };
   return definitions;
 });

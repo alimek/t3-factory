@@ -64,7 +64,7 @@ T3 settlement or active-list behavior.
 ## Manual checks by area
 
 - **Studio and canvases.** Seeded Agents cover selection, summaries and saved Flow usage: edit a name and select another Agent (Keep editing preserves the draft, Discard opens the other), create a temporary
-  Agent to try deletion (an Agent referenced by a saved Flow cannot be deleted), and search and select Flows in the Run composer. Unsaved drafts survive cancelled navigation. For Auto-arrange, overlap
+  Agent to try removal (an Agent referenced by a saved Flow cannot be removed), and search and select Flows in the Run composer. Unsaved drafts survive cancelled navigation. For Auto-arrange, overlap
   blocks in the build/review/decision or parallel-review Flow, arrange, save and reload; working, Human-wait and correction Runs exercise local arrangement without editing the captured Flow revision. On both canvases
   ordinary scroll pans while pinch or **Mod**+wheel zooms at the pointer (20%–200%) and **+**/**−** zoom around the center; synthetic-event tests cover both, and real trackpad calibration is a manual check.
 - **Pending Start recovery.** The seed has no lost-response state; the worker E2E journey drops Start's response after the server accepts it. By hand, set the

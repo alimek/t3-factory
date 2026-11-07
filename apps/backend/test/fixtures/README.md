@@ -3,7 +3,7 @@
 Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). Do not retain
 intermediate implementation snapshots, source archives or historical application builds, and do not replace them with compressed blobs or generated historical data.
 
-[`migration-data-upgrade.test.ts`](../migration-data-upgrade.test.ts) opens the capture through the current Factory and checks client access, current definitions, absence of removed definitions, and retention of a closed and an active Run with their captured definitions in one upgrade.
+[`migration-data-upgrade.test.ts`](../migration-data-upgrade.test.ts) opens the capture through the current Factory and checks client access, current definitions, absence of removed definitions, and retention of a closed and an active Run with their captured definitions in one upgrade, and that the active Run's running worker recovers against its captured Agent settings rather than the edited Agent.
 Restoration uses disposable SQLite; business assertions use public operations. Tests need no old source, compiler subprocess, Git history or network.
 
 Retain genuine schema, migration ledger, snapshots, keys, payloads, fingerprints and provenance. Never relabel a capture as another revision, rewrite its migration metadata or edit current state to

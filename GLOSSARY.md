@@ -91,6 +91,10 @@ A concrete matter to work on within a project, such as a coding change, an idea 
 One execution of a selected flow for a task in a project, with its own editable title
 and global navigation entry.
 
+**Captured definitions**:
+The Flow revision a Run started with and the Agent revision of every Agent that Flow references, frozen at Start. Every read and later activation of the Run uses them; later saves and removals affect only future Runs.
+_Avoid_: Run snapshot.
+
 **Run timeline**:
 The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, and closure. Each Run has its own timeline, distinct from conversations in its T3 threads.
 

@@ -73,17 +73,19 @@ it("removing a Flow preserves its active Run definitions and shared Agent", asyn
   assert((await f.getAgent(agent.id)).ok);
 });
 
-it("saving a removed Flow rejects the edit instead of recreating the definition", async (c) => {
+it("a removed Flow rejects saves without being recreated and removing it again succeeds", async (c) => {
   // Arrange
   const { f, flow } = await prepared(c);
   assert((await f.removeFlow(flow.id)).ok);
 
   // Act
   const saved = await f.updateFlow(flow.id, { ...flow, expectedRevision: flow.revision });
+  const removedAgain = await f.removeFlow(flow.id);
 
   // Assert
   assert(!saved.ok);
   expect(saved.error.code).toBe("not_found");
+  expect(removedAgain).toStrictEqual({ ok: true, value: undefined });
   expect(await f.listFlows()).toStrictEqual({ ok: true, value: [] });
 });
 

@@ -51,9 +51,9 @@ Availability is separate from verified execution support. Omitted thinking-optio
 appends nothing and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
 
-**Deleting.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
-rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at deletion time even if the usage count is stale, while removed Flows and Runs never block
-deletion. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Runs keep the Agent revision they started with, and deleting an absent or removed definition succeeds.
+**Removing.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
+rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at removal time even if the usage count is stale, while removed Flows and Runs never block
+removal. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Runs keep the Agent revision they started with, and removing an absent or removed Agent succeeds.
 
 See [T3 integration](t3-integration.md) for authorization and capability reads.
 
@@ -109,8 +109,8 @@ revision N** (another explicit save, which can conflict again). There is no auto
 ### Removing a Flow
 
 **Remove** in Flow details removes the editable definition from Studio and the Run composer after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
-the Flow list, also when another view already removed it. Runs, their captured revisions, shared Agents and T3 threads are unaffected: active Runs continue, Run canvases show the revision each Run started with, and
-removal is not Stop. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a deleted Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
+the Flow list, also when another view already removed it: removing an absent or removed Flow succeeds. Runs, their captured revisions, shared Agents and T3 threads are unaffected: active Runs continue, Run canvases show the revision each Run started with, and
+removal is not Stop. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
 Flow.
 
 ## Validation contract
