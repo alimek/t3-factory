@@ -13,7 +13,7 @@ it("a native report remains attributable after a long reused conversation", asyn
   expect(result.code).toBe("ACCEPTED");
   const detail = await f.getRun(runId);
   assert(detail.ok);
-  expect(detail.value.reports).toMatchObject([{ executionId: "execution-2", key: "final" }]);
+  expect(detail.value.reports).toMatchObject([{ executionId: "execution-1", key: "finished" }]);
 });
 
 it("an inherited native item cannot grant reporting authority in a long conversation", async (c) => {

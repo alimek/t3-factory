@@ -30,6 +30,28 @@ export function rootFrontier(
   stopping = false,
 ) {
   return Effect.tryPromise(async () => {
+    const coordinators = await Effect.runPromise(
+      database.transaction(
+        (sql) =>
+          sql<{ id: string }>`SELECT run_id AS id FROM run_coordinators WHERE run_id=${run.id}`,
+      ),
+    );
+    if (!coordinators.length) {
+      // A saved descendant can leave the current native page and still be running.
+      const workers = await Effect.runPromise(
+        database.transaction(
+          (sql) =>
+            sql<{
+              thread_id: string;
+            }>`SELECT thread_id FROM run_thread_bindings WHERE run_id=${run.id} AND role IN ('worker','descendant')`,
+        ),
+      );
+      return {
+        frontier: [],
+        complete: true,
+        trustedThreads: workers.map((worker) => worker.thread_id),
+      };
+    }
     const ledger = rootLedger(database, run);
     const { root, operationsClear } = await rootControl(database, run, ledger, stopping);
     if (root.state === "cancelled" && !root.thread_id && stopping)

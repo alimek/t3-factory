@@ -12,7 +12,12 @@ import type { RunnerDatabase } from "./runner-database.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { BlockRow, ReportRow, ReportRunRow, RunnerLifecycle } from "./runner-types.ts";
 import { fingerprint, rejected } from "./runner-utils.ts";
-import type { RuntimeBinding, RuntimeReply, RuntimeReport } from "./runtime-types.ts";
+import {
+  acceptedTransition,
+  type RuntimeBinding,
+  type RuntimeReply,
+  type RuntimeReport,
+} from "./runtime-types.ts";
 import { now } from "./time.ts";
 function reportRetry(
   sql: SqlClient.SqlClient,
@@ -37,7 +42,11 @@ function reportRoute(snapshot: RunSnapshot, blockId: string, report: RuntimeRepo
     (candidate) => candidate.name === report.exit || candidate.id === report.exit,
   );
   const exit = matches[0];
-  if (report.exit !== undefined && matches.length !== 1) return rejected("INVALID_EXIT");
+  if (report.status === "finished" && matches.length !== 1)
+    return {
+      ok: false as const,
+      reply: { code: "INVALID_EXIT", allowedExits: block.exits.map((exit) => exit.name) },
+    };
   if (exit?.requiresFeedback && !report.message?.trim()) return rejected("FEEDBACK_REQUIRED");
   const recipients = exit
     ? snapshot.flow.graph.connections
@@ -47,6 +56,19 @@ function reportRoute(snapshot: RunSnapshot, blockId: string, report: RuntimeRepo
   if (recipients.some((id) => !snapshot.flow.graph.blocks.some((block) => block.id === id)))
     return rejected("INVALID_RECIPIENT");
   return { ok: true as const, exitId: exit?.id ?? null, recipients };
+}
+/** A changed report names the Block's current state and the transitions still open from it. */
+function conflictDetail(reply: RuntimeReply, block: BlockRow, runRow: ReportRunRow): RuntimeReply {
+  if (reply.code !== "KEY_CONFLICT" && reply.code !== "FINAL_CONFLICT") return reply;
+  const snapshot = JSON.parse(runRow.snapshot_json) as RunSnapshot;
+  const flowBlock = snapshot.flow.graph.blocks.find((entry) => entry.id === block.block_id);
+  return {
+    ...reply,
+    state: block.state,
+    allowedTransitions:
+      reply.code === "KEY_CONFLICT" && block.state === "working" ? ["waiting", "finished"] : [],
+    allowedExits: flowBlock?.kind === "agent" ? flowBlock.exits.map((exit) => exit.name) : [],
+  };
 }
 /** A waiting report is non-final: it never selects an exit and must say what the worker needs. */
 function waitingRejection(report: RuntimeReport) {
@@ -115,13 +137,23 @@ export function openRunnerReports(
     return Effect.gen(function* () {
       const id = yield* newId,
         time = yield* now;
-      const reply = {
-        code: "ACCEPTED",
-        reportId: id,
-        blockId: binding.blockId,
-        executionId: binding.runId,
-        acceptedAt: time,
-      };
+      const state =
+        block.problem === "execution-failed"
+          ? block.state
+          : block.engine_status !== "completed"
+            ? "working"
+            : report.status;
+      const reply = acceptedTransition(
+        {
+          code: "ACCEPTED",
+          reportId: id,
+          blockId: binding.blockId,
+          executionId: binding.runId,
+          acceptedAt: time,
+        },
+        report.status,
+        state,
+      );
       const recipients = JSON.stringify(route.recipients);
       yield* sql`INSERT INTO runtime_reports(id,run_id,block_id,execution_id,report_key,fingerprint,status,exit_id,recipients_json,pending_message,acknowledgement_json,accepted_at,final_contract) VALUES(${id},${binding.factoryRunId},${binding.blockId},${binding.runId},${report.key},${content},${report.status},${route.exitId},${recipients},${route.recipients.length ? (report.message ?? "") : null},${JSON.stringify(reply)},${time},${report.status === "finished" ? 1 : 0})`;
       yield* sql`UPDATE runtime_reports SET activation_id=(SELECT activation_id AS id FROM run_executions WHERE run_id=${binding.factoryRunId} AND thread_id=${binding.threadId} AND execution_id=${binding.runId}),result_message=${report.message ?? null} WHERE id=${id}`;
@@ -136,12 +168,6 @@ export function openRunnerReports(
       });
       yield* sql`UPDATE run_executions SET report_status=${report.status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${binding.factoryRunId} AND thread_id=${binding.threadId} AND execution_id=${binding.runId}`;
       // An explicit report cannot erase an engine failure.
-      const state =
-        block.problem === "execution-failed"
-          ? block.state
-          : block.engine_status !== "completed"
-            ? "working"
-            : report.status;
       yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${binding.factoryRunId} AND block_id=${binding.blockId}`;
       yield* attention(
         sql,
@@ -175,9 +201,9 @@ export function openRunnerReports(
               if (protocol) return protocol;
               const content = reportFingerprint(report);
               const rejection = yield* workerReport(sql, binding, report, content);
-              if (rejection) return rejection;
+              if (rejection) return conflictDetail(rejection, block, runRow);
               const priorReply = yield* reportRetry(sql, binding, report.key, content);
-              if (priorReply) return priorReply;
+              if (priorReply) return conflictDetail(priorReply, block, runRow);
               if (!runRow.gate_open || runRow.closed_at) return { code: "RUN_CLOSED" };
               if (retryOnly || block.execution_id !== binding.runId)
                 return { code: "STALE_EXECUTION" };

@@ -32,7 +32,6 @@ type FlowRow = {
   name: string;
   revision: number;
   graph_json: string;
-  coordinator_json: string;
   created_at: string;
   updated_at: string;
 };
@@ -67,20 +66,13 @@ const toAgent = (row: AgentRow, capabilities: AgentCapabilities | null): AgentDe
     settingsStatus: agentSettingsStatus(execution, capabilities),
   };
 };
-const toDraft = (
-  row: FlowRow,
-  capabilities: AgentCapabilities,
-  agentIds?: ReadonlySet<string>,
-): FlowDraft => {
-  const coordinator = JSON.parse(row.coordinator_json) as AgentExecutionSettings | null;
+const toDraft = (row: FlowRow, agentIds?: ReadonlySet<string>): FlowDraft => {
   const graph = JSON.parse(row.graph_json) as FlowGraph;
   return {
     id: row.id,
     name: row.name,
     revision: row.revision,
     graph,
-    coordinator,
-    ...(coordinator ? { coordinatorStatus: agentSettingsStatus(coordinator, capabilities) } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     readiness: flowReadiness(graph, agentIds),
@@ -123,16 +115,6 @@ export const makeDefinitions = (
         ),
       );
     });
-    function flowOperation<A>(
-      operation: (
-        capabilities: AgentCapabilities,
-      ) => Effect.Effect<Result<A>, unknown, SqlClient.SqlClient>,
-    ) {
-      return Effect.gen(function* () {
-        const capabilities = yield* loadCapabilities();
-        return yield* provideSql(operation(capabilities));
-      });
-    }
     /** Agent reads and writes report settings availability against capabilities loaded before SQL runs. */
     function agentOperation<A>(
       operation: (
@@ -180,20 +162,18 @@ export const makeDefinitions = (
       createFlow(input) {
         const validated = validateCreateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
-        return flowOperation((capabilities) =>
+        return provideSql(
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
             const id = yield* newId;
             const now = yield* currentTime;
-            const coordinator = validated.value.coordinator ?? null;
-            const coordinatorJson = JSON.stringify(coordinator);
             const graph: FlowGraph = {
               blocks: [],
               connections: [],
               flowInput: { position: NEW_FLOW_INPUT_POSITION, targetBlockIds: [] },
             };
-            yield* sql`INSERT INTO flows (id, name, revision, graph_json, coordinator_json, created_at, updated_at)
-          VALUES (${id}, ${validated.value.name}, 1, ${JSON.stringify(graph)}, ${coordinatorJson}, ${now}, ${now})`;
+            yield* sql`INSERT INTO flows (id, name, revision, graph_json, created_at, updated_at)
+          VALUES (${id}, ${validated.value.name}, 1, ${JSON.stringify(graph)}, ${now}, ${now})`;
             return {
               ok: true as const,
               value: {
@@ -201,10 +181,6 @@ export const makeDefinitions = (
                 name: validated.value.name,
                 revision: 1,
                 graph,
-                coordinator,
-                ...(coordinator
-                  ? { coordinatorStatus: agentSettingsStatus(coordinator, capabilities) }
-                  : {}),
                 createdAt: now,
                 updatedAt: now,
                 readiness: flowReadiness(graph),
@@ -230,7 +206,7 @@ export const makeDefinitions = (
       updateFlow(id, input) {
         const validated = validateUpdateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
-        return flowOperation((capabilities) =>
+        return provideSql(
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
             return yield* sql.withTransaction(
@@ -262,24 +238,18 @@ export const makeDefinitions = (
                     },
                   };
                 const now = yield* currentTime;
-                const coordinatorJson =
-                  validated.value.coordinator === undefined
-                    ? row.coordinator_json
-                    : JSON.stringify(validated.value.coordinator);
-                yield* sql`UPDATE flows SET coordinator_json = ${coordinatorJson}, name = ${validated.value.name}, graph_json = ${JSON.stringify(validated.value.graph)}, revision = revision + 1, updated_at = ${now} WHERE id = ${id} AND revision = ${validated.value.expectedRevision}`;
+                yield* sql`UPDATE flows SET name = ${validated.value.name}, graph_json = ${JSON.stringify(validated.value.graph)}, revision = revision + 1, updated_at = ${now} WHERE id = ${id} AND revision = ${validated.value.expectedRevision}`;
                 const agents = yield* sql<{ id: string }>`SELECT id FROM agents`;
                 return {
                   ok: true as const,
                   value: toDraft(
                     {
                       ...row,
-                      coordinator_json: coordinatorJson,
                       name: validated.value.name,
                       graph_json: JSON.stringify(validated.value.graph),
                       revision: row.revision + 1,
                       updated_at: now,
                     },
-                    capabilities,
                     new Set(agents.map((a) => a.id)),
                   ),
                 };
@@ -301,7 +271,7 @@ export const makeDefinitions = (
         );
       },
       listFlows() {
-        return flowOperation((capabilities) =>
+        return provideSql(
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
             const rows = yield* sql<FlowRow>`SELECT * FROM flows ORDER BY created_at DESC, id ASC`;
@@ -309,13 +279,13 @@ export const makeDefinitions = (
             const agentIds = new Set(agents.map((a) => a.id));
             return {
               ok: true as const,
-              value: rows.map((row) => toDraft(row, capabilities, agentIds)),
+              value: rows.map((row) => toDraft(row, agentIds)),
             };
           }),
         );
       },
       getFlow(id) {
-        return flowOperation((capabilities) =>
+        return provideSql(
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
             const [row] = yield* sql<FlowRow>`SELECT * FROM flows WHERE id = ${id}`;
@@ -331,7 +301,7 @@ export const makeDefinitions = (
             const agents = yield* sql<{ id: string }>`SELECT id FROM agents`;
             return {
               ok: true as const,
-              value: toDraft(row, capabilities, new Set(agents.map((a) => a.id))),
+              value: toDraft(row, new Set(agents.map((a) => a.id))),
             };
           }),
         );
@@ -490,9 +460,7 @@ export const makeDefinitions = (
       getFlowForSnapshot: (id: string) =>
         operations.getFlow(id).pipe(
           Effect.map((result) => {
-            if (!result.ok) return result;
-            const { coordinatorStatus: _status, ...flow } = result.value;
-            return { ok: true as const, value: flow };
+            return result;
           }),
         ),
       createFlow: (...args: Parameters<typeof operations.createFlow>) =>

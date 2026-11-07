@@ -1,14 +1,11 @@
 import { observeRootControl } from "./run-control-observation.ts";
 import * as Effect from "effect/Effect";
-import { recoveredRootFailures } from "./run-control-recovery-proof.ts";
 import type { T3Adapter, SendPayload } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
-import type { RunRow, RunnerLifecycle } from "./runner-types.ts";
+import type { RunRow } from "./runner-types.ts";
 import { runTarget } from "./runner-utils.ts";
-import { newId } from "./ids.ts";
 import { failure } from "./result.ts";
 import { recoverOperation } from "./runner-effects.ts";
-import { rootCommandMessage } from "./run-coordinator-commands.ts";
 
 type Recovery = {
   run_id: string;
@@ -54,11 +51,7 @@ function rootRecoveryFrontier(
   });
 }
 
-export function openRunControlRecovery(
-  database: RunnerDatabase,
-  t3: T3Adapter,
-  lifecycle: RunnerLifecycle,
-) {
+export function openRunControlRecovery(database: RunnerDatabase, t3: T3Adapter) {
   function dispatch(run: RunRow, recovery: Recovery) {
     return recoverOperation(
       Effect.gen(function* () {
@@ -133,100 +126,14 @@ export function openRunControlRecovery(
     });
   }
   function recoverRunCoordinator(runId: string, sourceExecutionId: string) {
-    return Effect.gen(function* () {
-      const run = yield* database.row(runId);
-      if (!run) return failure("conflict", "This Run has no control recovery authority.");
-      const recovered = yield* database.transaction((sql) => recoveredRootFailures(sql, runId));
-      if (recovered.some((r) => r.executionId === sourceExecutionId))
-        return yield* lifecycle.getRun(runId);
-      const owned = yield* database.transaction(
-        (sql) =>
-          sql`SELECT run_id FROM run_coordinators WHERE run_id=${runId} AND execution_id=${sourceExecutionId} UNION SELECT run_id FROM run_coordinator_commands WHERE run_id=${runId} AND parent_execution_id=${sourceExecutionId} UNION SELECT run_id FROM run_control_recoveries WHERE run_id=${runId} AND json_extract(acknowledgement_json,'$.runId')=${sourceExecutionId}`,
-      );
-      if (!owned.length)
-        return failure("conflict", "This execution has no Factory control authority.");
-      const [prior] = yield* database.transaction(
-        (sql) =>
-          sql<Recovery>`SELECT * FROM run_control_recoveries WHERE run_id=${runId} AND source_execution_id=${sourceExecutionId}`,
-      );
-      if (prior) {
-        yield* dispatch(run, prior);
-        return yield* lifecycle.getRun(runId);
-      }
-      const [root] = yield* database.transaction(
-        (sql) =>
-          sql<{
-            thread_id: string;
-          }>`SELECT thread_id FROM run_coordinators WHERE run_id=${runId} AND state='acknowledged'`,
-      );
-      if (!root?.thread_id || !run.gate_open || run.closed_at)
-        return failure(
-          "conflict",
-          "Run control recovery requires an open acknowledged primary conversation.",
-        );
-      const activity = yield* recoverOperation(
-        rootRecoveryFrontier(database, t3, run, root.thread_id, sourceExecutionId),
-        () => Effect.succeed(null),
-      );
-      if (!activity)
-        return failure(
-          "conflict",
-          "Fresh exact failed, cancelled or interrupted execution, queue and native evidence is required.",
-        );
-      const commands = yield* database.transaction(
-        (sql) =>
-          sql<{
-            activation_id: string;
-            invocation_json: string;
-            accepted_json: string | null;
-            state: string;
-            problem: string | null;
-          }>`SELECT activation_id,invocation_json,accepted_json,state,problem FROM run_coordinator_commands WHERE run_id=${runId} AND parent_execution_id=${sourceExecutionId}`,
-      );
-      const retainedNative = yield* database.transaction(
-        (sql) =>
-          sql`SELECT source_key FROM run_coordinator_obligations WHERE run_id=${runId} AND json_extract(evidence_json,'$.parentRunId')=${sourceExecutionId}`,
-      );
-      const unissued = commands.filter((c) => c.state === "issued" && c.accepted_json === null);
-      if (
-        unissued.length > 1 ||
-        unissued.some((c) => c.problem !== null) ||
-        (unissued.length > 0 && retainedNative.length > 0) ||
-        (unissued.length > 0 && sourceHasNativeWork(activity, sourceExecutionId))
-      )
-        return failure(
-          "conflict",
-          "Issued or uncertain native work cannot be replayed or rebound.",
-        );
-      const key = yield* newId;
-      const payload: SendPayload = {
-        environmentId: run.environment_id,
-        threadId: root.thread_id,
-        mode: "queue",
-        clientRequestId: key,
-        message:
-          "Explicit Factory control recovery. Preserve all accepted Block results; do not repeat or replace issued work. " +
-          (unissued[0]
-            ? rootCommandMessage(JSON.parse(unissued[0].invocation_json))
-            : "No new Block work is authorized. Read current Factory context and end this turn."),
-      };
-      const accepted = yield* database.mutate(runId, (sql) =>
-        Effect.gen(function* () {
-          if (!(yield* database.runHeldUnderContext(sql, run, true))) return false;
-          const [current] = yield* sql<{
-            generation: number;
-          }>`SELECT generation FROM runs WHERE id=${runId}`;
-          if (current?.generation !== run.generation) return false;
-          yield* sql`INSERT INTO run_control_recoveries(run_id,source_execution_id,thread_id,activation_id,request_key,payload_json) VALUES(${runId},${sourceExecutionId},${root.thread_id},${unissued[0]?.activation_id ?? null},${key},${JSON.stringify(payload)}) ON CONFLICT DO NOTHING`;
-          yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runId}`;
-          return true;
-        }),
-      );
-      if (!accepted)
-        return failure("conflict", "Run changed before control recovery was accepted.");
-      yield* reconcile(run);
-      return yield* lifecycle.getRun(runId);
-    });
+    void runId;
+    void sourceExecutionId;
+    return Effect.succeed(
+      failure(
+        "conflict",
+        "Factory no longer recovers a Run conversation. Each Block worker is launched directly.",
+      ),
+    );
   }
   return { recoverRunCoordinator, reconcile };
 }
@@ -269,18 +176,6 @@ function pendingControlProof(
   });
 }
 
-function sourceHasNativeWork(
-  activity: Awaited<ReturnType<T3Adapter["readDelegationActivity"]>>,
-  executionId: string,
-) {
-  return [
-    ...activity.invocations,
-    ...(activity.followups ?? []),
-    ...(activity.remoteTasks ?? []),
-    ...(activity.taskResults ?? []),
-    ...(activity.commands ?? []),
-  ].some((i) => i.parentRunId === executionId);
-}
 function rootSourceCurrent(
   observation: Awaited<ReturnType<T3Adapter["readExecution"]>>,
   run: RunRow,

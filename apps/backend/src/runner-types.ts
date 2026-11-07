@@ -24,6 +24,7 @@ export type RunRow = {
   gate_open: number;
   stop_requested_at: string | null;
   generation: number;
+  number: number;
   started_at: string;
   closed_at: string | null;
   outcome: RunDetail["outcome"];
@@ -68,6 +69,8 @@ export type IntentRow = {
   state: string;
   reserved_at: string | null;
   problem: string | null;
+  recovery_attempt: number;
+  recovery_not_before: string | null;
 };
 
 export type ReportRow = {

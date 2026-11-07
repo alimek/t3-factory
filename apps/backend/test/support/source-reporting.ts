@@ -120,8 +120,8 @@ export async function sourceReportingFixture(context: TestContext, artifact: "mi
       const rpc = await reportingClient(context, join(home, ".claude.json"), home);
       return () =>
         rpc("tools/call", {
-          name: "factory_report",
-          arguments: { key: "isolated", status: "finished" },
+          name: "factory_update_block",
+          arguments: { to: "finished" },
           _meta: { callId: "source-call" },
         });
     },

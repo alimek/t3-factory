@@ -126,7 +126,7 @@ function invocationInput(value: Record<string, unknown>): DelegationInput {
   };
 }
 /** Same full normalization used by native activity decoding, including omitted selectors. */
-export function delegationFingerprint(value: Record<string, unknown>) {
+function delegationFingerprint(value: Record<string, unknown>) {
   const known = new Set([
     "clientRequestId",
     "task",

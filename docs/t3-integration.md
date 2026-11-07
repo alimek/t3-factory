@@ -65,8 +65,9 @@ the current one and keep mismatches unresolved: reauthorization is never permiss
 
 ## Agent reporting
 
-Agents report Block results by calling the `factory_report` tool of a Factory MCP bridge
-installed in their harness configuration. Runs use `explicit-mcp-v2`: Factory correlates the native tool call with the exact execution, returns a durable acknowledgement and never parses assistant text.
+Agents report Block results by calling `factory_update_block` on a Factory MCP bridge
+installed in their harness configuration. Factory correlates the native tool call with the exact execution, returns a durable acknowledgement and never parses assistant text.
+Repair also installs the `$factory-block` skill next to the bridge for Codex and Claude. The worker's first message starts with `$factory-block`.
 
 ### Installation actions
 
@@ -97,9 +98,8 @@ discovered configuration home, with a global **Recheck installation**.
 ## Reporting readiness
 
 Start and runtime readiness check the real connection, the available project, the selected
-environment/provider/model/options, the public T3 interface and the installed bridge. For
-`run-worker-v1` Runs this covers the Flow's Run coordinator and each Agent's worker settings and
-reporting harnesses. Missing or unavailable selections or installation block Start with the actual conflict explanation. Readiness never
+environment/provider/model/options, the public T3 interface and the installed bridge. Readiness
+covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. Readiness never
 launches diagnostic work, answers approvals or substitutes settings.
 
 A final result is immutable; a worker's handoffs stay held until fresh source completion and
@@ -135,11 +135,13 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 
 ## Execution operations
 
-- **Launch.** The primary conversation uses the saved provider, model and options, explicit
-  project/environment, project-root workspace and exact first message and request key.
-  Workers come from its native delegation. Launch omits `runtimeMode`; if the public schema
-  requires it, Start fails with `launch_unsupported`. Unknown acceptance cannot be replayed
-  without independent continuity and key-retention proof, absent by default.
+- **Launch.** Each Agent Block's first visit is its own top-level thread. It uses that
+  Agent's saved provider, model and options, the explicit project and environment, the
+  project-root workspace, and the exact first message and request key. There is no Run
+  conversation and no native-delegation launch. Launch omits `runtimeMode`; if the public
+  schema requires it, Start fails with `launch_unsupported`. An uncertain launch is searched
+  for and is not replayed. A definitive rejection is an error. Unknown send acceptance
+  cannot be replayed without independent continuity and key-retention proof, absent by default.
 - **Observation.** Active/latest identities, public execution ordinals and source timestamps
   distinguish renewed work from earlier executions. Native attention includes permissions
   as well as questions; an incomplete listing cannot prove the absence of either.
@@ -164,9 +166,13 @@ source timestamp. Unsupported, unavailable or mismatched exact reads report **In
 
 ### Native delegation evidence
 
-Worker ownership requires the exact native command and independent evidence of child
-identity, parent/project scope, creation provenance and execution selection. Native activity
-can prove an invocation was issued without proving parentage or an empty descendant set.
+Factory-launched workers are top-level threads. A title is not ownership: recovery binds
+only when parentage, project, interaction mode, provider, model, options and one
+execution are all present. A missing or non-string parent or workspace withholds the search.
+A null workspace is the project checkout and matches a root-strategy launch; any other path
+must equal the Run's project root. Descendants
+a worker starts later are not report authorities. Native activity can prove an invocation
+was issued without proving parentage or an empty descendant set.
 Task fingerprints compare normalized intent, not JSON property order. Provider and model
 are observable; model options are not independently exposed by child evidence.
 
@@ -202,10 +208,11 @@ runtime. After repair, cached harness processes may need a fresh MCP session. Se
 
 ## Bridge and caller correlation
 
-The bridge exposes `factory_report(key, status, exit?, message?)` and the read-only
-`factory_context()`. Host-only report/context ingress accepts neither approved-client
-credentials nor model-supplied Run identity. The bridge holds no T3 credentials or database.
-A globally visible tool is not report authority.
+The bridge exposes `factory_get_block()`, read-only `factory_get_run()`, and
+`factory_update_block({ to, exit?, message })`. `to` is `waiting` or `finished`. Host-only
+ingress accepts neither approved-client credentials nor model-supplied Run or Block identity.
+The bridge holds no T3 credentials or database. A globally visible tool, a title match or a
+subagent is not report authority. `factory_report` and `factory_context` are not installed.
 
 - **Bindings.** Open-Run work is tied to saved thread, project, exact execution and
   authorization references. Confirmed closure ends authority for new reports; retained
@@ -219,21 +226,20 @@ A globally visible tool is not report authority.
   or foreign evidence rejects the call; unavailable candidates cannot simply be ignored.
   Fresh observations do not replace the durable gate check at acceptance.
 - **Installation freshness.** An edited or outdated bridge needs **Repair** and a fresh
-  harness session. Worker instructions include the reporting and waiting obligations;
-  no mandatory reporting skill is needed.
+  harness session. The `$factory-block` skill is part of installation readiness. A missing
+  or outdated skill is repairable and blocks Start.
 - **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
   is `INVALID_EXIT`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.
 
 ## Reporting authority
 
-The [Runner report contract](runner.md#report-acceptance) defines `explicit-mcp-v2`: immutable activation results, non-final conversation waiting, held handoffs and manual Request report. Worker prompts carry these obligations inline; no mandatory reporting skill is needed.
+The [Runner report contract](runner.md#report-acceptance) defines immutable activation results, non-final conversation waiting, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
 
-### Worker reporting (`run-worker-v1`, instruction version 5)
+### Worker reporting
 
-Native Block workers hold activation-scoped reporting authority; the Run conversation issues native commands but never reports a Block
-result. Waiting and reply turns use the same worker conversation. A final also needs the fresh activation-scoped provider/model proof
-described in [Runner](runner.md#run-owned-conversation-and-worker-tree). A worker may cancel or interrupt its own independently
+Factory-launched Block workers hold activation-scoped reporting authority. There is no Run conversation. Waiting and reply turns use the same worker. A final also needs the fresh activation-scoped provider/model proof
+described in [Runner](runner.md#owned-workers). A worker may cancel or interrupt its own independently
 verified local subtasks before reporting; completed receipts must name the exact known task or thread, and cancellation never proves
 that work ended. Unknown, foreign, remote or incomplete command evidence holds the report with an explicit worker problem.
 Unfinished native tool items hold only the current observation; their provisional output is never saved as command evidence.
@@ -243,10 +249,10 @@ the worker's own `sourceThreadId` and an exact `runId` matching a later worker e
 null; a sender thread, foreign or inherited messages, and missing actor provenance grant no authority. Message text never
 establishes identity.
 
-### Run context
+### Block and Run reads
 
-`factory_context()` gives the primary Run conversation the captured Flow and a purpose-built current-state projection (no worker
-request keys or executable plans). The exact primary conversation can keep reading after Stop or closure (gate, Stop request,
-closure time and outcome) with no descendant discovery, and the read triggers no work. A Block worker's call returns only its own
-activation once native evidence binds it, otherwise `BINDING_PENDING`; neither grants work, and neither is a model polling protocol.
-The worker context read observes its own reply continuation before looking up the activation; it dispatches no work.
+`factory_get_block()` returns the caller's Block visit, reason, exits, inputs and allowed transitions once the worker is bound.
+Before that, a proven native call during an in-flight launch returns `{ code: "BINDING_PENDING", retryAfterMs: 500 }` and no
+Block payload. An unseen call id is `UNBOUND_CALLER`. A subagent is `FOREIGN_CALLER`. Neither wait grants authority.
+`factory_get_run()` returns the Run number, title, input, state and each Block's state and latest result. It grants no routing
+authority. Arguments contain no Run or Block id; the caller comes from verified native execution metadata.

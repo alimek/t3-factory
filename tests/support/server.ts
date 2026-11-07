@@ -307,8 +307,7 @@ const fixtureRoutes: Record<string, () => unknown> = {
   async "/__fixture/worker/report"() {
     const current = requireSuccess(await factory.getRun(releasing.id));
     const accepted = await report(context, current, "worker", {
-      key: "ui-release",
-      status: "finished",
+      to: "finished",
       exit: "review",
       message: "The project picker change is ready for review.",
     });
@@ -349,8 +348,7 @@ const fixtureRoutes: Record<string, () => unknown> = {
     requireSuccess(await factory.reconcileRuns());
     const replying = requireSuccess(await factory.getRun(waiting.id));
     const accepted = await report(context, replying, "worker", {
-      key: "ui-answer",
-      status: "finished",
+      to: "finished",
       exit: "done",
       message: "Used the requested concise wording and Clear filters label.",
     });

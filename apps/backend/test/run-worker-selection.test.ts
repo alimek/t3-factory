@@ -9,10 +9,17 @@ import {
 it("restoring the thread model cannot release work whose exact execution selection contradicts the captured Agent", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
-  const child = f.t3.childEvidence.get("thread-2")!;
-  f.t3.childEvidence.set("thread-2", {
-    ...child,
-    execution: { ...child.execution!, providerInstanceId: "other-provider", model: "other-model" },
+  const [key, launch] = [...f.t3.launches.entries()][0]!;
+  f.t3.launches.set(key, {
+    ...launch,
+    payload: {
+      ...launch.payload,
+      modelSelection: {
+        ...launch.payload.modelSelection,
+        instanceId: "other-provider",
+        model: "other-model",
+      },
+    },
   });
 
   // Act
@@ -29,11 +36,13 @@ it("restoring the thread model cannot release work whose exact execution selecti
 it("a native worker answer on a substituted thread model cannot freeze an immutable final", async (c) => {
   // Arrange
   const f = await workerNativeReply(c);
-  const key = JSON.stringify(["thread-2", "answer-execution"]);
-  const child = f.t3.childEvidence.get(key)!;
-  f.t3.childEvidence.set(key, {
-    ...child,
-    thread: { ...child.thread!, model: "other-model" },
+  const [key, launch] = [...f.t3.launches.entries()][0]!;
+  f.t3.launches.set(key, {
+    ...launch,
+    payload: {
+      ...launch.payload,
+      modelSelection: { ...launch.payload.modelSelection, model: "other-model" },
+    },
   });
 
   // Act
@@ -65,13 +74,13 @@ it("a revisit final with independently verified captured settings belongs to its
 it("native work issued after a worker final holds release and preserves the accepted result", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
-  const activity = f.t3.delegationActivities.get("thread-2")!;
-  f.t3.delegationActivities.set("thread-2", {
+  const activity = f.t3.delegationActivities.get("thread-1")!;
+  f.t3.delegationActivities.set("thread-1", {
     ...activity,
     commands: [
       {
         itemId: "after-final-launch",
-        parentRunId: "execution-2",
+        parentRunId: "execution-1",
         fingerprint: "after-final",
         envelope: JSON.stringify({ toolName: "t3-code.t3_thread_launch" }),
         references: [],

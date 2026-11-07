@@ -28,8 +28,6 @@ export type Result<A> =
 
 export interface CreateFlowInput {
   readonly name: string;
-  /** Omitted or null: explicitly unconfigured. */
-  readonly coordinator?: AgentExecutionSettings | null;
 }
 
 export type ExitOutcome = "completion" | "assessment-ok" | "assessment-fail" | "custom";
@@ -66,8 +64,6 @@ export interface FlowGraph {
 }
 export interface UpdateFlowInput {
   readonly name: string;
-  /** Omitted: preserve the saved choice. Null: deliberately clear it. */
-  readonly coordinator?: AgentExecutionSettings | null;
   readonly expectedRevision: number;
   readonly graph: FlowGraph;
 }
@@ -78,10 +74,6 @@ export interface FlowReadiness {
 }
 
 export interface FlowDraft {
-  /** Run coordinator: the settings for the Run conversation that dispatches Block workers. */
-  readonly coordinator: AgentExecutionSettings | null;
-  /** Live projection only; never persisted in the definition. */
-  readonly coordinatorStatus?: AgentExecutionSettingsStatus;
   readonly id: string;
   readonly name: string;
   readonly revision: number;
@@ -470,10 +462,9 @@ export interface TaskSummary {
   } | null;
   readonly runs: readonly TaskRunEntry[];
 }
-/** The only execution contract: one Run conversation with direct Block workers. */
-export type ExecutionContract = "run-worker-v1";
+/** Factory can accept a Start. The server no longer publishes a coordinator contract. */
 export interface RunCreationPolicy {
-  readonly executionContract: ExecutionContract;
+  readonly ready: true;
 }
 export interface CoordinatorEvidence {
   readonly version: 1;
@@ -538,10 +529,6 @@ export interface RunThreadBinding {
   readonly parentBindingId: string | null;
 }
 export interface RunSnapshot {
-  readonly executionContract: ExecutionContract;
-  readonly coordinationInstructionVersion: 5;
-  /** Explicit `factory_report` calls: one immutable final per execution, plus non-final waiting. */
-  readonly reportingProtocol: "explicit-mcp-v2";
   readonly flow: FlowDraft;
   readonly agents: readonly AgentDefinition[];
 }
@@ -558,6 +545,8 @@ export interface RunBlock {
   readonly pendingRequestCount: number | null;
   readonly observedAt: string | null;
   readonly freshness: "unknown" | "fresh" | "stale";
+  /** An unresolved Factory launch for this Block. Title search has not bound a worker. */
+  readonly recovery: "pending" | null;
 }
 /** The bounded observed frontier that justified permanent local closure. */
 export interface RunClosure {
@@ -639,6 +628,8 @@ export interface RunCoordinationActions {
   })[];
 }
 export interface RunDetail extends RunSummary {
+  /** Durable sequence used in worker titles. Assigned when the Run is accepted. */
+  readonly number: number;
   readonly coordinationActions: RunCoordinationActions;
   /** Root work is Run-owned, never a Block execution or reporting binding. */
   readonly rootWork: readonly {
