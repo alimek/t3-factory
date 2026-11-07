@@ -12,7 +12,17 @@ reviews:
   review_status: true
   collapse_walkthrough: true
   sequence_diagrams: false
-  suggested_labels: false
+  suggested_labels: true
+  auto_apply_labels: true
+  labeling_instructions:
+    - label: bug
+      instructions: "Fixes incorrect existing behavior (fix: PR title)."
+    - label: enhancement
+      instructions: "Adds a new feature or user-visible capability (feat: PR title)."
+    - label: documentation
+      instructions: "Changes only documentation, with no runtime code change."
+    - label: accessibility
+      instructions: "Removes a barrier for people with disabilities."
   suggested_reviewers: false
   abort_on_close: true
   finishing_touches:
