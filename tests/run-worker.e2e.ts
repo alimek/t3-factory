@@ -177,7 +177,7 @@ test("reloading a waiting worker retains its exact question link", async ({
   // Assert
   const input = screen.getByRole("region", "Needs input");
   await expect(input).toContainText("preferred tone");
-  await expect(input).toContainText("Worker ·");
+  await expect(input).toContainText("Worker");
   await expect(input.getByRole("link", "Open in T3", { exact: true })).toHaveAttribute(
     "href",
     question.link!,

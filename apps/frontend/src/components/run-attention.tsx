@@ -224,7 +224,7 @@ function PendingMatter({
   return (
     <article
       className={cn(
-        "flex flex-col gap-2 rounded-lg border p-4",
+        "flex min-w-0 flex-col gap-2 rounded-lg border p-4",
         presentation === "needs-input"
           ? "border-status-waiting/40 bg-status-waiting/6"
           : "border-destructive/40 bg-destructive/8",
@@ -241,7 +241,9 @@ function PendingMatter({
         </p>
       )}
       {item.kind === "conversation-waiting" && item.message && (
-        <p className="text-sm whitespace-pre-wrap text-muted-foreground">{item.message}</p>
+        <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">
+          {item.message}
+        </p>
       )}
       {item.kind === "execution-failed" && binding?.role === "worker" && (
         <p className="text-sm">
@@ -253,9 +255,18 @@ function PendingMatter({
         <RequestReport run={run} item={item} onUpdated={onUpdated} />
       )}
       {binding && (
-        <p className="text-xs text-muted-foreground">
-          {bindingRole[binding.role]} · {binding.threadId} · {item.executionId}
-        </p>
+        <dl className="flex flex-col gap-0.5 text-2xs leading-4 text-muted-foreground">
+          <div className="flex gap-2">
+            <dt className="w-14 shrink-0">{bindingRole[binding.role]}</dt>
+            <dd className="min-w-0 font-mono break-all">{binding.threadId}</dd>
+          </div>
+          {item.executionId && (
+            <div className="flex gap-2">
+              <dt className="w-14 shrink-0">Execution</dt>
+              <dd className="min-w-0 font-mono break-all">{item.executionId}</dd>
+            </div>
+          )}
+        </dl>
       )}
       <ObservationLine freshness={item.freshness} unavailable={observationUnavailable} />
       {item.kind === "human" && <PendingHuman run={run} item={item} onUpdated={onUpdated} />}
