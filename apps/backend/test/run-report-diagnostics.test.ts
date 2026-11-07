@@ -1,0 +1,227 @@
+import { rejectedWorkerReport, recoveringRejectedWorker } from "./support/run-worker-recovery.ts";
+import { finishNativeTurn } from "../../../scripts/dev/native-simulation.ts";
+import { assert, expect, it } from "@effect/vitest";
+import {
+  directWorker,
+  finishWorker,
+  missingWorkerReport,
+  workerFinal,
+} from "./support/run-worker.ts";
+import { continuedWorker } from "./support/run-worker-continuation.ts";
+
+it("a rejected worker report explains the rejection without changing execution state or retaining its message", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+
+  // Act
+  const result = await f.f.runtime.submit({
+    ...workerFinal(),
+    arguments: { to: "finished", exit: "unknown", message: "PRIVATE_REPORT_CONTENT" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "INVALID_EXIT",
+    reason: expect.any(String),
+    next: expect.any(String),
+  });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "working",
+    engineStatus: "running",
+    problem: null,
+  });
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "report-problem",
+      executionId: "execution-1",
+      settledAt: null,
+      message: expect.stringContaining("INVALID_EXIT"),
+    }),
+  );
+  expect(JSON.stringify(run.value)).not.toContain("PRIVATE_REPORT_CONTENT");
+  expect(run.value.reports).toStrictEqual([]);
+  expect(f.t3.sends.size).toBe(0);
+});
+
+it("an unbound activation reports the missing authority and a safe next step", async (c) => {
+  // Arrange
+  const f = await continuedWorker(c, { createdBy: "agent", creationSource: "mcp" });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "UNBOUND_ACTIVATION",
+    reason: expect.stringContaining("activation"),
+    next: expect.stringContaining("Do not repeat"),
+  });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "report-problem",
+      executionId: "continuation-execution",
+      settledAt: null,
+      message: expect.stringContaining("UNBOUND_ACTIVATION"),
+    }),
+  );
+  expect(run.value.reports).toStrictEqual([]);
+});
+
+it("a corrected accepted report settles its rejection Problem", async (c) => {
+  // Arrange
+  const f = await rejectedWorkerReport(c);
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "report-problem",
+      settledAt: expect.any(String),
+      settlementReason: "report-accepted",
+    }),
+  );
+  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
+
+it("a rejected report remains explained after completion and backend restart", async (c) => {
+  // Arrange
+  const f = await rejectedWorkerReport(c);
+  finishWorker(f);
+  await f.f.reconcileRuns();
+  await f.f.close();
+
+  // Act
+  const factory = await f.h.open({ t3: f.t3 });
+
+  // Assert
+  const run = await factory.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "report-problem",
+      settledAt: null,
+      message: expect.stringContaining("INVALID_EXIT"),
+    }),
+  );
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({ kind: "missing-report", settledAt: null }),
+  );
+  expect(f.t3.sends.size).toBe(0);
+});
+
+it("Request report refuses a stale missing-report Problem while delegated settlement is pending", async (c) => {
+  // Arrange
+  const f = await missingWorkerReport(c);
+  f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", "execution-1"]), {
+    threadId: "thread-1",
+    runId: "execution-1",
+    state: "pending",
+    status: "completed",
+    resultRun: null,
+    queueCoverage: "unobserved",
+    nativeRequestCoverage: "unobserved",
+  });
+
+  // Act
+  const result = await f.f.requestReport(f.missing.id);
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("conflict");
+  expect(f.t3.sends.size).toBe(0);
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.recoveries).toStrictEqual([]);
+});
+
+it("repeated rejected reports keep one pending diagnostic without launching work", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  const invalid = { ...workerFinal(), arguments: { to: "finished", exit: "unknown" } };
+  assert((await f.f.runtime.submit(invalid)).code === "INVALID_EXIT");
+
+  // Act
+  const result = await f.f.runtime.submit(invalid);
+
+  // Assert
+  expect(result.code).toBe("INVALID_EXIT");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(
+    run.value.attention.filter((a) => a.kind === "report-problem" && !a.settledAt),
+  ).toHaveLength(1);
+  expect(f.t3.sends.size).toBe(0);
+});
+
+it("a foreign report call cannot create a Problem on the worker's Run", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  f.t3.runtimeActivity = {
+    ...f.t3.runtimeActivity,
+    items: [{ ...f.t3.runtimeActivity.items[0]!, visibility: "inherited" }],
+  };
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("FOREIGN_CALLER");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention).toStrictEqual([]);
+  expect(run.value.reports).toStrictEqual([]);
+});
+
+it("successful linked recovery settles the original rejection while preserving its diagnostic history", async (c) => {
+  // Arrange
+  const f = await recoveringRejectedWorker(c);
+  assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  finishNativeTurn(f.t3, "thread-1", f.executionId);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "report-problem",
+      settledAt: expect.any(String),
+      message: expect.stringContaining("INVALID_EXIT"),
+    }),
+  );
+  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+  expect(run.value.outcome).toBe("finished");
+});
+
+it("accepting a recovery report cannot settle the original rejection before recovery completes", async (c) => {
+  // Arrange
+  const f = await recoveringRejectedWorker(c);
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "report-problem",
+      executionId: f.sourceExecutionId,
+      settledAt: null,
+    }),
+  );
+  expect(run.value.recoveries[0]?.settledAt).toBeNull();
+  expect(run.value.closedAt).toBeNull();
+});

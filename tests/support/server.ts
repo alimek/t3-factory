@@ -327,6 +327,9 @@ async function approvedBrowserCookie() {
 }
 
 const fixtureRoutes: Record<string, () => unknown> = {
+  async "/__fixture/reporting/remove-registration"() {
+    await rm(join(home, "reporting-codex", "config.toml"));
+  },
   async "/__fixture/reporting/break"() {
     await rm(join(home, "reporting-codex", "skills", "factory-block", "SKILL.md"));
   },

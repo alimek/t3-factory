@@ -257,7 +257,6 @@ function reportingRoutes(factory: Factory): readonly ApiRoute[] {
     {
       method: "POST",
       path: /^\/api\/reporting\/install$/,
-      hostOnly: true,
       body: standardBody,
       handle: ({ input }) =>
         Effect.map(
@@ -522,10 +521,7 @@ function admission(
     if (!client.ok) return resultResponse(client);
     return route.hostOnly
       ? resultResponse(
-          failure(
-            "host_only",
-            "Complete T3 and reporting setup on the Factory host; approved clients cannot change it.",
-          ),
+          failure("host_only", "This operation is available only on the Factory host."),
         )
       : undefined;
   });

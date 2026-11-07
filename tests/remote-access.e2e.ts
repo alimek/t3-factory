@@ -55,6 +55,49 @@ test("revoking an approved browser profile replaces the product with the revoked
   await app.screenshot("remote-revoked");
 });
 
+test("an approved browser installs Factory MCP on the server and retains it after reload", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  await remoteFixture(app, "reporting/remove-registration");
+  await openApproved(app, "/settings/runtime");
+  const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
+  await expect(codex.getByRole("status")).toHaveText("Not installed");
+  await expect(codex.getByRole("button", "Install Factory MCP", { exact: true })).toBeEnabled();
+  await app.screenshot("remote-reporting-install-available");
+
+  // Act
+  await codex.getByRole("button", "Install Factory MCP", { exact: true }).tap();
+
+  // Assert
+  await expect(codex.getByRole("status")).toHaveText("Installed");
+  await browser.reload();
+  await expect(codex.getByRole("status")).toHaveText("Installed");
+  await expect(codex.getByRole("button", "Reinstall Factory MCP")).toBeEnabled();
+  await app.screenshot("remote-reporting-installed");
+});
+
+test("an approved browser repairs the server's Factory MCP installation", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await remoteFixture(app, "reporting/break");
+  await openApproved(app, "/settings/runtime");
+  const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
+  await expect(codex.getByRole("status")).toHaveText("Needs attention");
+
+  // Act
+  await codex.getByRole("button", "Repair installation", { exact: true }).tap();
+
+  // Assert
+  await expect(codex.getByRole("status")).toHaveText("Installed");
+  await app.screenshot("remote-reporting-repaired");
+});
+
 test("a lost server connection marks the last observed view offline and disables actions", async ({
   app,
   screen,

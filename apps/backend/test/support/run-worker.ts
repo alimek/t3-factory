@@ -168,8 +168,11 @@ export async function waitingWorker(c: TestContext) {
   )!;
   return { ...f, question };
 }
-export async function missingWorkerReport(c: TestContext) {
-  const f = await directWorker(c);
+export async function missingWorkerReport(
+  c: TestContext,
+  worker?: Awaited<ReturnType<typeof directWorker>>,
+) {
+  const f = worker ?? (await directWorker(c));
   finishWorker(f);
   await f.f.reconcileRuns();
   const run = await f.f.getRun(f.runId);

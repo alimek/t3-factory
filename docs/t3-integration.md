@@ -20,8 +20,9 @@ and **Reauthorize** replaces a working grant. Reconnecting never opens a browser
 
 An [approved remote client](desktop-and-clients.md) may use **Open authorization on server** for the endpoint already saved on the
 host; consent still happens in the host's browser and the consent URL, state, verifier and tokens never reach the
-client. A remote client cannot save or edit the endpoint, reauthorize, reset a working connection or manage reporting
-installation (those routes answer `host_only`). Opening is serialized with checks: Factory rechecks first, does nothing
+client. A remote client cannot save or edit the endpoint, reauthorize or reset a working connection
+(those routes answer `host_only`). Agent reporting installation is available remotely as described below.
+Opening is serialized with checks: Factory rechecks first, does nothing
 for a ready or incompatible connection, waits for an in-flight callback exchange and opens the host browser at most
 once every five seconds.
 
@@ -93,8 +94,8 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   address (a changed `port` or `FACTORY_PORT`). An application upgrade needs no Repair; a fresh
   harness session sees the new tools. Any other `factory-runtime` entry, including a command
   entry from an earlier stdio bridge, is a conflict to remove by hand. Conflicts, inaccessible
-  homes, unsupported providers and remote hosts show diagnostics only; unknown or remote homes
-  get manual-setup guidance.
+  homes, unsupported providers and remote T3 hosts show diagnostics only; unknown homes and homes
+  on those hosts get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
   Studio's Agent list and editor show the selected provider's reporting installation status, including the actual
   diagnostic and **Open Agent reporting** for repair. Changing the provider updates the editor's status before saving.
@@ -112,7 +113,9 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   workload.
 - Desktop and source servers register the same URL, so switching between them needs no
   Repair. Harness configuration is written only on an explicit action.
-  Approved remote clients see this screen read-only
+  Approved remote clients can install, repair and reinstall through the same screen. The server
+  resolves the selected configuration home and writes its own harness files and skill; the client
+  sends only the discovered target's identifier. The MCP URL remains the server's loopback address
   ([client access](desktop-and-clients.md#connecting-a-client)).
 
 ## Reporting readiness
@@ -165,6 +168,8 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 - **Observation.** Active/latest identities, public execution ordinals and source timestamps
   distinguish renewed work from earlier executions. Native attention includes permissions
   as well as questions; an incomplete listing cannot prove the absence of either.
+  Local system notification metadata also identifies automatic worker continuations;
+  Factory does not infer continuation authority from notification text.
 - **Send.** Work targets an exact thread with `mode: queue`, a stable request key and fixed
   message. Returned thread/message/execution references must match. Send replay requires its
   own continuity proof; launch replay support is insufficient.
@@ -270,6 +275,11 @@ authority. `factory_report` and `factory_context` are not exposed.
 ## Reporting authority
 
 The [Runner report contract](runner.md#report-acceptance) defines immutable activation results, non-final conversation waiting, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
+
+Report rejections return `code`, a static `reason` and a safe `next` step. A proven
+current worker rejection also appears in Run attention. Caller-correlation failures
+return guidance only: they cannot create attention on an unproven Run. Neither path
+retries work or grants activation authority.
 
 ### Worker reporting
 

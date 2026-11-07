@@ -173,6 +173,19 @@ Before finishing a test change:
    changed test meets this checklist and the checks pass, or report the concrete
    external blocker.
 
+## Local development acceptance
+
+Use the isolated [verification fixture](../.agents/skills/verify-t3-factory/SKILL.md) for automated regression checks and destructive exploration. A user's explicitly chosen `dev:prod` installation is a live
+acceptance environment: use it for the requested interaction, preserving unrelated data and work. Existing use of that installation does not authorize new diagnostic model workloads, OAuth changes or resets;
+live qualification still follows the [bounded runbook](installation.md#bounded-live-verification).
+
+For a browser UI change, verify the checkout and server being exercised and use its Vite URL. On one computer this is loopback; across computers use the server's development address as described in
+[installation](installation.md#live-production-data). Check the action, reload and retained state. A check from the server alone does not prove that the other device can connect. Record untested topology as
+unverified. Keep private addresses and execution evidence outside Git.
+
+For client approval, revocation, TLS, offline recovery or protocol changes, exercise the approved-client HTTPS listener; Vite's host-local proxy does not prove those boundaries. For desktop behavior,
+use a current desktop build. Report the tested UI/build and transport so browser acceptance is not mistaken for desktop or cross-device evidence.
+
 ## UI verification
 
 The pinned [e2e](https://e2e.tester.army/) runner drives the built web UI against a real temporary SQLite backend and `ControlledT3`, validating Factory behavior without live OAuth or paid T3 workloads. The
