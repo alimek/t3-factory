@@ -72,7 +72,6 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
         {block?.name ?? activation.blockId} · Visit {visit} ·{" "}
         {activationStateLabel(run, activation)}
       </h3>
-      <p className="text-muted-foreground">Activation {activation.id}</p>
       {report && <RetainedResult run={run} report={report} />}
       {!run.stopRequestedAt &&
         activation.problem &&
@@ -85,12 +84,7 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
       {run.threadBindings
         .filter((b) => b.blockId === activation.blockId)
         .map((binding) => (
-          <div key={binding.id} className="flex flex-col gap-1">
-            <BindingLink binding={binding} />
-            <span className="text-muted-foreground">
-              {bindingRole[binding.role]} · {binding.threadId}
-            </span>
-          </div>
+          <BindingLink key={binding.id} binding={binding} />
         ))}
       {run.remoteWork
         .filter((w) => w.activationId === activation.id)
