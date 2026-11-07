@@ -182,6 +182,7 @@ export function createRunDraft(
   let currentId: string | undefined;
   let error = "";
   let saveFailed = false;
+  const unsaved = new Map<string, SavedRunDraft | undefined>();
   const inFlight = new Set<string>();
   let draft: Readonly<RunDraft> = snapshot();
   const listeners = new Set<() => void>();
@@ -216,9 +217,8 @@ export function createRunDraft(
     id: string,
     change: (saved: SavedRunDraft | undefined) => SavedRunDraft | undefined,
   ) {
-    // After a failed write the stored list is stale and would drop drafts kept only in memory.
-    const stored = scope === server && saveFailed ? undefined : readSaved(scope)?.drafts;
-    const latest = stored ?? (scope === server ? drafts : []);
+    const stored = readSaved(scope)?.drafts;
+    const latest = scope === server ? (stored ? withUnsaved(stored) : drafts) : (stored ?? []);
     const previous = latest.find((d) => d.id === id) ?? (scope === server ? find(id) : undefined);
     const next = change(previous);
     const others = latest.filter((d) => d.id !== id);
@@ -230,8 +230,17 @@ export function createRunDraft(
     if (scope === server) {
       drafts = result;
       saveFailed = !saved;
+      if (saved) unsaved.clear();
+      else unsaved.set(id, next);
     }
     return saved;
+  }
+  /** Overlays this tab's changes that failed to save onto other tabs' stored drafts. */
+  function withUnsaved(stored: readonly SavedRunDraft[]) {
+    if (unsaved.size === 0) return stored;
+    const kept = stored.filter((d) => !unsaved.has(d.id));
+    const local = [...unsaved.values()].filter((d) => d !== undefined);
+    return [...kept, ...local].toSorted(byCreation);
   }
   function find(id: string | undefined) {
     return drafts.find((d) => d.id === id);
@@ -247,6 +256,7 @@ export function createRunDraft(
   function selectServer(next: string) {
     if (next === server) return;
     server = next;
+    unsaved.clear();
     const saved = readSaved(next);
     drafts = saved?.drafts ?? [];
     const restored = find(saved?.current);
@@ -392,7 +402,7 @@ export function createRunDraft(
     if (server === undefined) return;
     const saved = readSaved(server);
     if (!saved) return;
-    drafts = saved.drafts;
+    drafts = withUnsaved(saved.drafts);
     const latest = find(currentId);
     if (latest) {
       const { projectId, flowId, input } = latest;

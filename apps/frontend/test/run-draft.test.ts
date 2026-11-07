@@ -462,6 +462,33 @@ it("drafts kept only in memory after a failed save survive editing another draft
   expect(draft.getDrafts().map(draftTitle)).toContain("Unsaved second");
 });
 
+it("a recovered save keeps drafts another tab saved while this tab's writes failed", (context) => {
+  // Arrange
+  const setup = composer(context);
+  const write = setup.storage.setItem.getMockImplementation();
+  assert(write);
+  let blocked = true;
+  setup.storage.setItem.mockImplementation((key, value) => {
+    if (blocked) throw new Error("Quota exceeded");
+    write(key, value);
+  });
+  setup.draft.openFresh();
+  setup.draft.edit({ input: "Unsaved here" });
+  blocked = false;
+  const other = reopen(setup).draft;
+  other.openFresh();
+  other.edit({ input: "Other tab" });
+  other.leave();
+
+  // Act
+  setup.draft.leave();
+
+  // Assert
+  expect(reopen(setup).draft.getDrafts().map(draftTitle)).toEqual(
+    expect.arrayContaining(["Other tab", "Unsaved here"]),
+  );
+});
+
 it("validation settles Start and keeps the prompt available for correction", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);
