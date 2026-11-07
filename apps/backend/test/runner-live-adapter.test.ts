@@ -5,6 +5,66 @@ import { launchFixture } from "./support/launch-fixture.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
+import { capturedWorker, completedWireWorker } from "./support/worker-contract.ts";
+
+it("a captured checkout worker retains exact execution identity from its nested thread read", async (c) => {
+  // Arrange
+  const { adapter, endpoint } = await capturedWorker(c);
+
+  // Act
+  const observation = await adapter.readExecution({ endpoint }, "thread-1");
+
+  // Assert
+  expect(observation).toMatchObject({
+    threadId: "thread-1",
+    projectId: "project-fixture",
+    workspaceRoot: null,
+    activeRunId: null,
+    latestRunId: "execution-7",
+    pendingRequestCount: 0,
+    recentRuns: [
+      {
+        runId: "execution-7",
+        ordinal: 7,
+        status: "completed",
+        sourceAt: "2026-11-07T16:12:35.082Z",
+      },
+      { runId: "execution-4", ordinal: 4, status: "completed" },
+      { runId: "execution-2", ordinal: 2, status: "completed" },
+    ],
+  });
+});
+
+it("a worker resumed after repeated replies and delegation releases one handoff after restart", async (c) => {
+  // Arrange
+  const f = await completedWireWorker(c);
+
+  // Act
+  const reopened = await f.h.open({ t3: f.t3 });
+
+  // Assert
+  const run = await reopened.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.activations.map((a) => a.blockId)).toStrictEqual(["worker", "parallel-block"]);
+  expect(run.value.reports).toMatchObject([
+    {
+      status: "finished",
+      executionId: "continuation-execution",
+      activationId: run.value.activations[0]?.id,
+      completionEligibleAt: expect.any(String),
+      recipients: ["parallel-block"],
+    },
+  ]);
+  expect(run.value.attention).toContainEqual(
+    expect.objectContaining({
+      kind: "conversation-waiting",
+      settledAt: expect.any(String),
+    }),
+  );
+  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+  expect(f.t3.launches.size).toBe(2);
+  expect(f.t3.sends.size).toBe(0);
+});
 
 it("launch support permits an absent runtime mode without inventing replay proof", async (c) => {
   // Arrange
@@ -25,11 +85,11 @@ it("Start rejects a schema requiring runtime mode before accepting work", async 
   const { f, t3, input } = await prepared(c);
   t3.inspectLaunchSupport = () => adapter.inspectLaunchSupport({ endpoint: external.endpoint });
 
+  // Act
   const blocked = await f.startRun(input);
 
-  // Act
-  assert(!blocked.ok);
   // Assert
+  assert(!blocked.ok);
   expect(blocked.error.message).toMatch(/omit/);
   expect(await f.listRuns(input.projectId)).toStrictEqual({ ok: true, value: [] });
   expect(await f.listTasks(input.projectId)).toStrictEqual({ ok: true, value: [] });

@@ -1,8 +1,7 @@
 import type { TestContext } from "@effect/vitest";
 import { authorizedLiveOAuth } from "./boundaries-setup.ts";
 
-/** Sanitized installed Codex dynamic_tool shape; identities are opaque fixture values.
- * Source/version and the limits of this transport reconstruction are in the evidence doc. */
+/** Synthetic Codex dynamic_tool reconstruction, not a retained live capture; see fixtures/README.md. */
 export function nativeDelegation() {
   return {
     toolName: "t3-code.delegate_task",
