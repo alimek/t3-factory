@@ -154,7 +154,7 @@ the current saved Flow and Agent definitions.
 A client-local composition saved in browser storage while its prompt has a
 non-whitespace character: the exact prompt, Project/Flow references, title and
 creation time. It has no Task, Run or snapshot until Start is accepted, which removes
-it. Not to be confused with an unsaved Flow draft in Studio.
+it; the Run keeps its title and creation time. Not to be confused with an unsaved Flow draft in Studio.
 
 **Request report**:
 An explicit user operation starting one additional Agent turn on the same thread

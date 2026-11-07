@@ -466,6 +466,10 @@ export interface StartRunInput {
   readonly projectId: string;
   readonly flowId: string;
   readonly input: string;
+  /** The draft's chosen title; stored trimmed as the Run title. */
+  readonly title: string;
+  /** When the draft was created, as `Date.toISOString()` output; it orders Run navigation. */
+  readonly createdAt: string;
 }
 export interface TaskRunEntry {
   readonly stopRequestedAt: string | null;

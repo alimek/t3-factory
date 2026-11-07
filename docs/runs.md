@@ -7,10 +7,12 @@ available project, a global ready Flow and a required initial prompt. Factory ch
 every referenced Agent's settings, reporting installation and explicit-call API compatibility before accepting Start.
 Failures explain recovery and keep the draft.
 
-- **Task and Run.** Each Start creates a new Task (named from the first non-empty input line) and its Run. Each Run has its own
-  title, from its first non-empty prompt line, limited to 500 characters.
+- **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
+  else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes
+  the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
+  title (after trimming) or a creation time that is not a UTC ISO 8601 timestamp, and creates nothing.
 - **Idempotency.** A stable request key belongs to one composer submission. Retrying an accepted request returns the same Run,
-  even after a lost response or restart; reusing the key with changed content conflicts. An unknown response keeps the
+  even after a lost response or restart; reusing the key with changed content, including title or creation time, conflicts. An unknown response keeps the
   submitted fields read-only and offers **Check same request**; only confirmed success clears the prompt and opens the Run.
   The submitted request is saved in browser storage before it is sent, so reloading or reopening the client during an
   in-flight or unknown Start offers the same check instead of a fresh request. It is kept with its draft, so each draft has its
@@ -69,7 +71,10 @@ Engine termination alone never completes a Run: whole-Run completion is only a r
 
 The shell sidebar lists Runs globally, newest created first (id ascending breaks ties); opening, renaming and closing never
 change that key. Run drafts join the main list in the same order with a **Draft** indicator once you leave the New Run view
-(Settings and Studio open over it and do not count); a draft row reopens it in the composer, and editing never moves it. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
+(Settings and Studio open over it and do not count); a draft row reopens it in the composer, and editing never moves it.
+A started draft's Run keeps the draft's title and creation time, so it replaces the draft row in place. Only among entries
+created in the same millisecond can it shift, because the tie-break changes from the draft id to the Run id. Creation times come
+from the client's clock. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
 stale) and chips. Missing projects keep readable history; an unavailable open Run stays open.
 
 - **Needs input**: a pending Human occurrence, native T3 question/permission or an Agent's conversation-waiting report.

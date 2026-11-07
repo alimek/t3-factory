@@ -76,6 +76,8 @@ it("Check same request sends the identical key and payload after a lost response
     projectId: "project",
     flowId: "flow",
     input: "Do the work",
+    title: "Do the work",
+    createdAt: "2026-11-07T08:00:00.000Z",
   });
   expect(runId).toBe("accepted-run");
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false, busy: false });
@@ -167,6 +169,28 @@ it("drafts are listed newest first and editing one does not move it", (context) 
 
   // Assert
   expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Second", "First, edited later"]);
+});
+
+it("Start submits the draft's bounded first-line title and its original creation time", async (context) => {
+  // Arrange
+  const { draft, startRun } = composer(context);
+  vi.setSystemTime(new Date("2026-11-07T08:05:00Z"));
+  const prompt = " \n\t\r\n  " + "x".repeat(501) + "\nFull input retained";
+  draft.edit({ input: prompt });
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[0]?.[0]).toStrictEqual({
+    requestId: expect.any(String),
+    projectId: "project",
+    flowId: "flow",
+    input: prompt,
+    title: "x".repeat(500),
+    createdAt: "2026-11-07T08:00:00.000Z",
+  });
 });
 
 it("an accepted Start removes its draft instead of listing it beside the Run", async (context) => {
