@@ -1,4 +1,36 @@
-# Released upgrade fixture
+# Test fixtures
+
+## T3 worker activity provenance
+
+[`t3-worker-activity.ts`](t3-worker-activity.ts) is a reduced, anonymized `t3_thread_read`
+response read on 2026-11-07 from an existing Factory-launched Codex worker. No new
+model workload was started. The native delegation item was also read by exact item
+ID with `maxCharsPerItem: 50000` to obtain its complete envelope. The T3 build version
+was not recorded; this sample establishes response shapes, not provider qualification.
+
+The sample retains the nested thread, null checkout workspace, newest-first execution
+ordinals, a failed Factory read, a direct user reply with omitted `senderThreadId`,
+native delegation and a continuation notification with null actor/source metadata.
+Only three executions and four activity items are retained; their original positions
+and pagination metadata remain. Identifiers, links, provider-instance identity,
+task title, task text and message text were replaced with public fixture values.
+Delegation selections, omitted input options/request key, empty returned options,
+statuses, timestamps, metadata omissions and explicit nulls were preserved.
+This is a reviewed test input, not a transcript or a complete lifecycle replay.
+
+`support/worker-contract.ts` composes a **synthetic** lifecycle from these wire shapes
+and controlled native progress: waiting, a reportless user reply, another reply,
+delegation, notification continuation, accepted final and handoff after restart.
+It changes execution identities/statuses and adds an in-flight Factory call. Those
+states were not captured live. Reads use the real HTTP/SDK adapter against local
+OAuth/MCP fixtures; launches and settlement use `ControlledT3`. Existing #43/#45/#49
+tests retain the separate rejection, race and closure regressions. This fixture adds
+the wire-to-lifecycle seam without replacing those tests or proving live harness support.
+
+Other adapter helpers (`launch-fixture`, `boundaries-setup`, `native-delegation`)
+construct synthetic transport responses. They are not captured live sessions.
+
+## Released upgrade fixture
 
 Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). Do not retain
 intermediate implementation snapshots, source archives or historical application builds, and do not replace them with compressed blobs or generated historical data.
