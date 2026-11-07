@@ -40,7 +40,8 @@ Failures explain recovery and keep the draft.
   Drafts save silently while typing, without a T3 connection or ready choices, and the current composition is restored after a
   reload or reopening the client. A draft keeps the exact prompt and Project/Flow references only; Start resolves the current
   saved Flow and Agents. Drafts live in browser storage per client and selected Factory server; tabs sharing a profile share
-  them, and the last save wins. If storage is blocked the composer says the draft lasts only while the window is open.
+  them, and the last save wins, except that another tab's unresolved Start is never overwritten or removed: the stale tab
+  reopens that draft instead. If storage is blocked the composer says the draft lasts only while the window is open.
   **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
   Flow editor's **Start Run** does the same with its Flow. A selected Project or Flow is cleared only when a fresh catalog read
   confirms it is gone; a failed read changes nothing. Confirmed Start removes the draft and opens its Run; a confirmed

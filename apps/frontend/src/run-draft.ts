@@ -219,7 +219,10 @@ export function createRunDraft(
   ) {
     const latest = latestDrafts(scope);
     const previous = latest.find((d) => d.id === id) ?? (scope === server ? find(id) : undefined);
-    const next = change(previous);
+    // Another tab's unresolved Start must survive this tab's stale edit, rename or discard.
+    const unseenStart = scope === server && !!previous?.submission && !find(id)?.submission;
+    if (unseenStart) show(previous);
+    const next = unseenStart ? previous : change(previous);
     const others = latest.filter((d) => d.id !== id);
     const result = next ? [...others, next].toSorted(byCreation) : others;
     if (scope !== server)

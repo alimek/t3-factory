@@ -505,6 +505,34 @@ it("opening New Run keeps a draft another tab saved before this tab synced", (co
   expect(reopen(setup).draft.getDrafts().map(draftTitle)).toContain("Other tab");
 });
 
+it("clearing the prompt in a stale tab keeps another tab's unresolved Start", async (context) => {
+  // Arrange
+  const setup = composer(context);
+  setup.startRun.mockRejectedValueOnce(new TypeError("Response lost"));
+  await reopen(setup).draft.start();
+
+  // Act
+  setup.draft.edit({ input: "  " });
+
+  // Assert
+  expect(reopen(setup).draft.getSnapshot()).toMatchObject({ pending: true, input: "Do the work" });
+});
+
+it("discarding in a stale tab keeps another tab's unresolved Start", async (context) => {
+  // Arrange
+  const setup = composer(context);
+  const { draftId } = setup.draft.getSnapshot();
+  assert(draftId);
+  setup.startRun.mockRejectedValueOnce(new TypeError("Response lost"));
+  await reopen(setup).draft.start();
+
+  // Act
+  setup.draft.discard(draftId);
+
+  // Assert
+  expect(reopen(setup).draft.getSnapshot()).toMatchObject({ pending: true, input: "Do the work" });
+});
+
 it("validation settles Start and keeps the prompt available for correction", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);
