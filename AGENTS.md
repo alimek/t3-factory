@@ -32,6 +32,7 @@ scenario catalog in the same change. Keep verification artifacts in ignored
 
 ### UI verification
 
+For UI changes, follow the [design system](docs/design-system.md).
 For UI changes, exploration, or application screenshots, use [verify-t3-factory](.agents/skills/verify-t3-factory/SKILL.md). It runs the isolated e2e fixture and defines evidence requirements. The e2e runner's own reference (writing tests, MCP, debugging) is printed by `pnpm exec e2e guide [topic]` for the installed version.
 
 ### Quality gates
