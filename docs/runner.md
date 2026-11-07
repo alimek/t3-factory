@@ -247,6 +247,12 @@ closed Run may still display a stored conversation.
 - Closure needs every retained exact execution, complete bounded descendant coverage,
   empty queues, no native requests and settled aggregate work. Each sweep may discover
   at most 100 new members; unread members remain obligations.
+- A provider-native subagent may be projected as an idle thread with an explicit zero
+  run count, null active/latest pointers and no public executions. After verifying its
+  lineage and scope, Factory checks its queue and native requests independently and
+  requires the owning worker's exact aggregate completion before releasing the result.
+  Missing metadata or a running native thread stays unresolved. No child execution or
+  execution-scoped Settled receipt is invented for this projection.
 - Factory does not recover a Run conversation or issue root commands. A failed worker
   execution stays a Problem; Factory does not launch a replacement worker for it.
 - Unknown peer membership or inaccessible remote work keeps Stop uncertain. Peer work

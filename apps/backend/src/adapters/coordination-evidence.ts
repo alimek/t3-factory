@@ -42,6 +42,9 @@ export interface ChildEvidence {
   readonly execution: ChildExecution | null;
   /** Public detail and exact runs omit options. Native acceptance is separate evidence. */
   readonly optionsCoverage: "unavailable";
+  /** Provider-native projection with explicit idle status and no public runs.
+   * Not completion: the owning worker's aggregate settlement is still required. */
+  readonly runlessNativeIdle?: true;
   readonly problem?: string;
 }
 const object = (value: unknown): Record<string, unknown> => {
@@ -137,6 +140,7 @@ export async function readChildEvidence(
 ): Promise<ChildEvidence> {
   let thread: ChildThread | null = null;
   let execution: ChildExecution | null = null;
+  let runlessNativeIdle = false;
   let problem: string | undefined;
   try {
     const body = object(
@@ -152,6 +156,16 @@ export async function readChildEvidence(
       throw Error("Child thread identity was substituted.");
     thread = observed;
     execution = await childExecution(call, target, body.recentRuns);
+    const native = object(body.thread);
+    runlessNativeIdle =
+      relationship(observed) === "provider-native" &&
+      observed.createdBy === "agent" &&
+      native.status === "idle" &&
+      native.runCount === 0 &&
+      observed.activeRunId === null &&
+      observed.latestRunId === null &&
+      Array.isArray(body.recentRuns) &&
+      body.recentRuns.length === 0;
   } catch (error) {
     problem = failure(error);
   }
@@ -163,6 +177,7 @@ export async function readChildEvidence(
     scopeMatches:
       thread?.projectId === target.projectId && thread.parentThreadId === target.parentThreadId,
     optionsCoverage: "unavailable",
+    ...(runlessNativeIdle ? { runlessNativeIdle: true as const } : {}),
     ...(problem ? { problem } : {}),
   };
 }

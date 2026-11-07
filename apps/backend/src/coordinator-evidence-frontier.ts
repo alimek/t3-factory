@@ -51,6 +51,7 @@ async function memberRead(
   localExecutions: readonly LocalExecution[],
   recovered: CoordinationSaved["recoveredFailures"] = [],
   executions: CoordinationSaved["executions"] = [],
+  runlessNativeIdle = false,
 ): Promise<MemberObservation> {
   const target = runTarget(run);
   // Recent pages cannot discharge an older saved execution obligation after restart.
@@ -86,32 +87,41 @@ async function memberRead(
     native.projectId !== run.t3_project_id
   )
     throw Error("Coordinator member scope changed.");
+  const requestsClear =
+    queue.queuedRunIds.length === 0 &&
+    queue.nextCursor === null &&
+    native.pendingRequestCount === 0 &&
+    observation.pendingRequestCount === 0;
   return {
     threadId,
     parentThreadId,
     role,
     observation,
-    requestsClear:
-      queue.queuedRunIds.length === 0 &&
-      queue.nextCursor === null &&
-      native.pendingRequestCount === 0 &&
-      observation.pendingRequestCount === 0,
-    clear:
-      !observation.activeRunId &&
-      !!observation.latestRunId &&
-      observation.recentRuns.some((r) => r.runId === observation.latestRunId) &&
-      new Set(observation.recentRuns.map((r) => r.runId)).size === observation.recentRuns.length &&
-      observation.recentRuns.every(
-        (r) =>
-          r.status === "completed" ||
-          (r.status === "failed" &&
-            recovered.some((e) => e.threadId === threadId && e.executionId === r.runId)),
-      ) &&
-      queue.queuedRunIds.length === 0 &&
-      queue.nextCursor === null &&
-      native.pendingRequestCount === 0 &&
-      observation.pendingRequestCount === 0,
+    requestsClear,
+    clear: requestsClear && memberExecutionsComplete(observation, recovered, runlessNativeIdle),
   };
+}
+
+function memberExecutionsComplete(
+  observation: ExecutionObservation,
+  recovered: NonNullable<CoordinationSaved["recoveredFailures"]>,
+  runlessNativeIdle: boolean,
+) {
+  const { activeRunId, latestRunId, recentRuns, threadId } = observation;
+  if (activeRunId) return false;
+  // Native projections have no execution to finish; aggregate settlement still gates release.
+  if (runlessNativeIdle && latestRunId === null && recentRuns.length === 0) return true;
+  return (
+    !!latestRunId &&
+    recentRuns.some((r) => r.runId === latestRunId) &&
+    new Set(recentRuns.map((r) => r.runId)).size === recentRuns.length &&
+    recentRuns.every(
+      (r) =>
+        r.status === "completed" ||
+        (r.status === "failed" &&
+          recovered.some((e) => e.threadId === threadId && e.executionId === r.runId)),
+    )
+  );
 }
 function retainExecutionOrder(
   observation: ExecutionObservation,
@@ -229,6 +239,7 @@ async function readCandidate(
     localExecutions,
     [],
     executions,
+    child.runlessNativeIdle === true,
   );
   const consistent =
     child.execution === null ||
