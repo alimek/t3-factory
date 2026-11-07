@@ -28,7 +28,8 @@ wrapper elements used only to compensate for a primitive.
 Every control needs a visible label or accessible name. Icon-only buttons also need a
 tooltip. Preserve meaningful accessible names used by the UI verification journeys.
 Use native selects for inline choices, and radio-style menus for project and Flow
-selection. Long menus must stay within the viewport and scroll their choices without
+selection and for Agent execution settings, where an unavailable choice stays visible,
+disabled, with its reason. Long menus must stay within the viewport and scroll their choices without
 hiding search or actions.
 
 Settings and Studio use the same dialog conventions. The Run shell stays mounted behind

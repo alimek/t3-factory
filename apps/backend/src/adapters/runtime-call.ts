@@ -1,3 +1,4 @@
+import { REPORTING_DRIVERS } from "../reporting-drivers.ts";
 import type { RuntimeActivity, T3Adapter, T3Endpoint } from "./t3.ts";
 
 /** Native IDs are locators only. Callers still validate every item's namespace and provenance. */
@@ -8,7 +9,7 @@ export async function readNativeRuntimeCall(
   callId: string,
 ): Promise<readonly RuntimeActivity[] | null> {
   const reads = await Promise.allSettled(
-    ["codex", "claudeAgent"].map(async (driver) => {
+    REPORTING_DRIVERS.map(async (driver) => {
       const itemId = `turn-item:provider:${driver}:native-item:${callId}`;
       const page = await t3.readRuntimeActivity(target, threadId, undefined, itemId);
       return { itemId, page };

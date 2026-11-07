@@ -146,11 +146,18 @@ export interface AgentModelCapability {
   readonly options?: readonly AgentModelOptionDescriptor[];
 }
 
+/** Whether Factory can accept Block reports from this provider's harness. */
+export interface AgentProviderReporting {
+  readonly supported: boolean;
+  readonly explanation: string;
+}
+
 export interface AgentProviderCapability {
   readonly providerInstanceId: string;
   readonly displayName: string | null;
   readonly driverKind: string;
   readonly models: readonly AgentModelCapability[];
+  readonly reporting: AgentProviderReporting;
 }
 
 export interface AgentCapabilities {
@@ -196,7 +203,8 @@ export interface ReportingInstallation {
   readonly provider: string;
   readonly instances: readonly string[];
   readonly path: string | null;
-  readonly status: "not-installed" | "installed" | "needs-attention";
+  /** `unsupported`: the provider has no Factory reporting yet; there is nothing to install. */
+  readonly status: "not-installed" | "installed" | "needs-attention" | "unsupported";
   readonly message: string;
   readonly runtimeEvidence: "UNVERIFIED" | "ACCEPTED_REPORT";
   readonly actions: ReportingInstallationActions;

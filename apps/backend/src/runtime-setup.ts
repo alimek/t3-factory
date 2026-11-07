@@ -78,11 +78,11 @@ function validatedHarness(
   const provider = capabilities.providers.find(
     (p) => p.providerInstanceId === agent.execution.providerInstanceId,
   );
-  if (!provider || !["codex", "claudeAgent"].includes(provider.driverKind))
+  if (!provider || !provider.reporting.supported)
     blocked(
       "harness_unsupported",
       "agent.execution.providerInstanceId",
-      "This harness has no supported Factory reporting adapter.",
+      `${provider?.reporting.explanation ?? "T3 no longer offers the selected provider."} Choose another provider for ${agent.name} in Studio → Agents.`,
     );
   const settingsStatus = agentSettingsStatus(agent.execution, capabilities);
   if (

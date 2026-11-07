@@ -1,9 +1,10 @@
 import { resolveAgentModel } from "@t3-factory/domain-validation";
+import type { T3ProviderCapability } from "./adapters/t3.ts";
+import { providerReporting } from "./reporting-drivers.ts";
 import type {
   AgentCapabilities,
   AgentExecutionSettingsStatus,
   AgentExecutionSettings,
-  AgentProviderCapability,
   AgentSettingAvailability,
   AgentSettingStatus,
 } from "@t3-factory/contracts";
@@ -84,7 +85,7 @@ export function emptyCapabilities(explanation: string, checkedAt: string): Agent
 
 export function readyCapabilities(
   environments: AgentCapabilities["environments"],
-  providers: readonly AgentProviderCapability[],
+  providers: readonly T3ProviderCapability[],
   checkedAt: string,
 ): AgentCapabilities {
   return {
@@ -92,6 +93,9 @@ export function readyCapabilities(
     explanation: "Provider, model and thinking options come from the live T3 catalog.",
     checkedAt,
     environments,
-    providers,
+    providers: providers.map((provider) => ({
+      ...provider,
+      reporting: providerReporting(provider.driverKind),
+    })),
   };
 }
