@@ -45,10 +45,11 @@ or change of direction, and before a handoff or context reset. Record:
 - the next concrete action.
 
 On resume, read the checkpoint, then refresh Git status/diff, the issue, PR checks
-and relevant T3 thread state from their tools. Those tools own current branch,
-ownership and review status; the checkpoint stores reasoning and evidence needed
-to continue, rather than a second status tracker. Reuse earlier verification only
-when its inputs still match.
+and relevant T3 thread state from their tools. Without T3 tools, obtain current
+thread state from the user or known owner and report that it was not independently
+verified. Those tools own current branch, ownership and review status; the
+checkpoint stores reasoning and evidence needed to continue, rather than a second
+status tracker. Reuse earlier verification only when its inputs still match.
 
 ## Pull requests as a triage surface
 
