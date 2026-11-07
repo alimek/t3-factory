@@ -3,7 +3,12 @@ import { completeDynamicToolText } from "../src/activity-text.ts";
 
 it("a truncated activity item is read until its text is complete", async () => {
   // Arrange
-  const item = {
+  const item: {
+    itemId: string;
+    text: string;
+    textTruncated: boolean;
+    nextTextOffset: number | null;
+  } = {
     itemId: "turn-item:provider:cursor:native-item:call-1",
     text: "hello ",
     textTruncated: true,
