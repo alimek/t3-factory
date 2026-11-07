@@ -8,6 +8,7 @@ import {
 import { AppLayout, NotFoundPage } from "./components/app-layout.tsx";
 import { RunScreen } from "./routes/runs.tsx";
 import { RunComposer } from "./routes/run-composer.tsx";
+import { runDraft } from "./run-draft.ts";
 import {
   settingsMask,
   studioMask,
@@ -22,7 +23,7 @@ const rootRoute = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 const indexRoute = createRoute({
-  staticData: { settingsBackground: true },
+  staticData: { settingsBackground: true, runComposer: true },
   getParentRoute: () => rootRoute,
   path: "/",
   component: RunComposer,
@@ -71,13 +72,13 @@ const flowRoute = createRoute({
   beforeLoad: ({ params }) => openStudio({ tab: "flows", flowId: params.flowId }),
 });
 const runsRoute = createRoute({
-  staticData: { settingsBackground: true },
+  staticData: { settingsBackground: true, runComposer: true },
   getParentRoute: () => rootRoute,
   path: "runs",
   component: RunComposer,
 });
 const newRunRoute = createRoute({
-  staticData: { settingsBackground: true },
+  staticData: { settingsBackground: true, runComposer: true },
   getParentRoute: () => rootRoute,
   path: "runs/new",
   component: RunComposer,
@@ -178,15 +179,14 @@ export const router = createRouter({ routeTree });
 // Remember the last content destination across address-bar/bookmark navigations.
 // Route matching, masked locations and all history transitions remain router-owned.
 const settingsReturnKey = "factory.settingsReturn";
-function isSettingsBackground(path: string) {
+function routeIs(path: string, kind: "settingsBackground" | "runComposer") {
   return router
     .matchRoutes(path)
     .some(
-      (match) =>
-        match.staticData.settingsBackground &&
-        trimPathRight(match.pathname) === trimPathRight(path),
+      (match) => match.staticData[kind] && trimPathRight(match.pathname) === trimPathRight(path),
     );
 }
+const isSettingsBackground = (path: string) => routeIs(path, "settingsBackground");
 // The in-memory copy keeps Settings closable when browser storage is unavailable.
 let contentPath: string | undefined;
 function settingsReturnPath() {
@@ -199,6 +199,7 @@ function settingsReturnPath() {
   return path && isSettingsBackground(path) ? path : "/runs/new";
 }
 router.subscribe("onResolved", ({ toLocation }) => {
+  if (!routeIs(toLocation.pathname, "runComposer")) runDraft.leave();
   if (
     validateAppSearch(toLocation.search).settings ||
     validateAppSearch(toLocation.search).studio ||
@@ -215,6 +216,8 @@ router.subscribe("onResolved", ({ toLocation }) => {
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
     settingsBackground?: boolean;
+    /** Leaving every such route counts as leaving the New Run view. */
+    runComposer?: boolean;
   }
   interface Register {
     router: typeof router;

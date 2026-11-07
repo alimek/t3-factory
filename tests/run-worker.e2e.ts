@@ -79,6 +79,40 @@ test("Start launches a top-level Block worker and no Run conversation", async ({
   await app.screenshot("direct-root-worker-after-reload");
 });
 
+test("an unfinished prompt reopens as a Draft after reload and Starts exactly one Run", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const prompt = "UI saved draft\n  Keep the second line exactly.";
+  const openRuns = screen.getByRole("navigation", "Open Runs");
+  const draftRow = openRuns.getByRole("link", /^UI saved draft\s*Draft$/);
+  const projectChoice = screen.getByLabel(/^Select project: /);
+  await openComposerWithFlow(app, screen, "Demo · Focused change");
+  await screen.getByLabel("Initial prompt", { exact: false }).fill(prompt);
+  const project = await projectChoice.getAttribute("aria-label");
+  await expect(draftRow).toHaveCount(0);
+  await openRuns.getByRole("link", /^Demo · Working · Improve the project picker/).tap();
+  await expect(draftRow).toBeVisible();
+  await browser.reload();
+  await draftRow.tap();
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(prompt);
+  await expect(projectChoice).toHaveAttribute("aria-label", project!);
+  await expect(screen.getByLabel("Select Flow: Demo · Focused change")).toBeVisible();
+  await app.screenshot("draft-reopened-after-reload");
+
+  // Act
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("heading", "UI saved draft", { exact: true })).toBeVisible();
+  expect(await runsTitled(app.baseUrl, "UI saved draft")).toHaveLength(1);
+  await expect(openRuns.getByRole("link", /^UI saved draft/)).toHaveCount(1);
+  await expect(draftRow).toHaveCount(0);
+  await app.screenshot("draft-started-once");
+});
+
 test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({
   app,
   screen,

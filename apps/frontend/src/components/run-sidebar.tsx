@@ -8,6 +8,7 @@ import {
   CircleDashed,
   CirclePause,
   CircleStop,
+  FilePen,
   LoaderCircle,
   Moon,
   MoreHorizontal,
@@ -18,7 +19,14 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../api.ts";
-import { runDraft } from "../run-draft.ts";
+import {
+  byCreation,
+  draftTitle,
+  runDraft,
+  useRunDraft,
+  useRunDrafts,
+  type SavedRunDraft,
+} from "../run-draft.ts";
 import { AppLink as Link } from "./app-link.tsx";
 import { useNavigate } from "@tanstack/react-router";
 import { usePolling } from "../use-polling.ts";
@@ -88,10 +96,35 @@ function useRunNavigation() {
   return { runs, setRuns, loaded, loadError };
 }
 
-export function RunSidebar({ path }: { path: string }) {
+function NewRunButton({ current }: { current: boolean }) {
   const { hint } = useShortcutPreferences();
   const navigate = useNavigate();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="New Run (+)"
+          aria-current={current ? "page" : undefined}
+          className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
+          onClick={() => {
+            runDraft.openFresh();
+            void navigate({ to: "/runs/new" });
+          }}
+        >
+          <Plus aria-hidden strokeWidth={1.5} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function RunSidebar({ path }: { path: string }) {
   const { runs, setRuns, loaded, loadError } = useRunNavigation();
+  const drafts = useRunDrafts();
+  const composition = useRunDraft();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [snoozedExpanded, setSnoozedExpanded] = useState(false);
@@ -112,32 +145,12 @@ export function RunSidebar({ path }: { path: string }) {
   };
   const [renaming, setRenaming] = useState<RunNavigationEntry>();
   const query = search.trim().toLocaleLowerCase();
-  const matches = runs.filter((run) => run.title.toLocaleLowerCase().includes(query));
-  const main = matches.filter((run) => !run.outcome && !run.presentation.snoozed);
-  const snoozed = matches.filter((run) => !run.outcome && run.presentation.snoozed);
-  const settled = matches.filter((run) => !!run.outcome);
+  const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
   return (
     <section aria-label="Run navigation" className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
         <RunSearchField value={search} onChange={setSearch} />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="New Run (+)"
-              aria-current={path === "/runs/new" ? "page" : undefined}
-              className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
-              onClick={() => {
-                runDraft.openFresh();
-                void navigate({ to: "/runs/new" });
-              }}
-            >
-              <Plus aria-hidden strokeWidth={1.5} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
-        </Tooltip>
+        <NewRunButton current={path === "/runs/new"} />
       </div>
       {(loadError || actionError) && (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
@@ -146,7 +159,8 @@ export function RunSidebar({ path }: { path: string }) {
       )}
       <RunGroups
         path={path}
-        main={main}
+        open={open}
+        composingDraftId={composition.draftId}
         settled={settled}
         snoozed={snoozed}
         snoozedExpanded={snoozedExpanded}
@@ -157,8 +171,8 @@ export function RunSidebar({ path }: { path: string }) {
         query={query}
         search={search.trim()}
         loaded={loaded}
-        total={runs.length}
-        matches={matches.length}
+        total={total}
+        matches={matches}
         onExpand={() => setExpanded(!expanded)}
         onRename={setRenaming}
       />
@@ -176,6 +190,25 @@ export function RunSidebar({ path }: { path: string }) {
       )}
     </section>
   );
+}
+
+/** Revealed drafts join the open Runs in creation order; title search covers both. */
+function navigationGroups(
+  runs: readonly RunNavigationEntry[],
+  drafts: readonly SavedRunDraft[],
+  query: string,
+) {
+  const titled = (title: string) => title.toLocaleLowerCase().includes(query);
+  const runMatches = runs.filter((run) => titled(run.title));
+  const draftMatches = drafts.filter((draft) => titled(draftTitle(draft)));
+  const main = runMatches.filter((run) => !run.outcome && !run.presentation.snoozed);
+  return {
+    open: [...main, ...draftMatches].toSorted(byCreation),
+    snoozed: runMatches.filter((run) => !run.outcome && run.presentation.snoozed),
+    settled: runMatches.filter((run) => !!run.outcome),
+    matches: runMatches.length + draftMatches.length,
+    total: runs.length + drafts.length,
+  };
 }
 
 /** Run title search with Escape and a clear button that keeps focus in the field. */
@@ -299,7 +332,8 @@ function RunGroup({
 
 function RunGroups({
   path,
-  main,
+  open,
+  composingDraftId,
   snoozed,
   settled,
   expanded,
@@ -316,7 +350,8 @@ function RunGroups({
   busy,
 }: {
   path: string;
-  main: readonly RunNavigationEntry[];
+  open: readonly (RunNavigationEntry | SavedRunDraft)[];
+  composingDraftId: string | undefined;
   snoozed: readonly RunNavigationEntry[];
   settled: readonly RunNavigationEntry[];
   expanded: boolean;
@@ -332,30 +367,33 @@ function RunGroups({
   onPresent: (run: RunNavigationEntry) => Promise<void>;
   busy: string | undefined;
 }) {
-  const rows = (entries: readonly RunNavigationEntry[]) =>
-    entries.map((run) => (
-      <RunRow
-        key={run.id}
-        run={run}
-        selected={path === `/runs/${run.id}`}
-        onRename={() => onRename(run)}
-        onPresent={() => {
-          void onPresent(run);
-        }}
-        busy={busy === run.id}
-      />
-    ));
-  const empty = navigationEmptyState(loaded, total, matches, main.length, search);
+  const row = (run: RunNavigationEntry) => (
+    <RunRow
+      key={run.id}
+      run={run}
+      selected={path === `/runs/${run.id}`}
+      onRename={() => onRename(run)}
+      onPresent={() => {
+        void onPresent(run);
+      }}
+      busy={busy === run.id}
+    />
+  );
+  const empty = navigationEmptyState(loaded, total, matches, open.length, search);
   // One scroll region (A06): open rows, then the groups pinned to the end of the list.
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <nav aria-label="Open Runs" className="flex flex-col gap-0.5 px-2">
         {query && (
           <p className="px-2 pt-1 pb-1.5 text-2xs leading-tight font-semibold tracking-section text-subtle-foreground uppercase">
-            Runs · {main.length}
+            Runs · {open.length}
           </p>
         )}
-        {rows(main)}
+        {open.map((entry) =>
+          "presentation" in entry
+            ? row(entry)
+            : draftRow(entry, path === "/runs/new" && entry.id === composingDraftId),
+        )}
         {empty && (
           <div
             role="status"
@@ -379,7 +417,7 @@ function RunGroups({
           onExpand={onExpandSnoozed}
           count={snoozed.length}
         >
-          {rows(snoozed)}
+          {snoozed.map(row)}
         </RunGroup>
         <RunGroup
           name="Settled"
@@ -388,10 +426,39 @@ function RunGroups({
           onExpand={onExpand}
           count={settled.length}
         >
-          {rows(settled)}
+          {settled.map(row)}
         </RunGroup>
       </div>
     </div>
+  );
+}
+
+const draftRow = (draft: SavedRunDraft, selected: boolean) => (
+  <DraftRow key={draft.id} draft={draft} selected={selected} />
+);
+
+function DraftRow({ draft, selected }: { draft: SavedRunDraft; selected: boolean }) {
+  const title = draftTitle(draft);
+  return (
+    <Link
+      to="/runs/new"
+      onClick={() => runDraft.openDraft(draft.id)}
+      aria-current={selected ? "page" : undefined}
+      className={cn(
+        "flex min-w-0 gap-2 rounded-md py-2 pr-2 pl-2 text-foreground no-underline hover:bg-accent hover:no-underline focus-visible:bg-accent",
+        selected && "bg-accent ring-1 ring-border-strong ring-inset",
+      )}
+    >
+      <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+        <FilePen strokeWidth={2} className="size-3.5 text-muted-foreground" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="block truncate text-sm leading-tight font-medium text-foreground">
+          {title}
+        </span>
+        <span className="text-2xs leading-tight font-medium text-subtle-foreground">Draft</span>
+      </span>
+    </Link>
   );
 }
 

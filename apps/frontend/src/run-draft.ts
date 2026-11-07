@@ -1,17 +1,37 @@
 import { useSyncExternalStore } from "react";
 import type { StartRunInput } from "@t3-factory/contracts";
+import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import { randomId } from "./lib/ids.ts";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError } from "./api.ts";
 
+/** Client-local Run preparation. It exists only while its prompt has a non-whitespace character. */
+export interface SavedRunDraft {
+  readonly id: string;
+  readonly input: string;
+  readonly projectId: string;
+  readonly flowId: string;
+  /** A title chosen by the user; absent while the title follows the prompt. */
+  readonly manualTitle?: string;
+  readonly createdAt: string;
+  /** Run navigation shows the draft once the user has left its composition. */
+  readonly listed: boolean;
+  /** The frozen Start request awaiting a confirmed outcome. */
+  readonly submission?: StartRunInput;
+}
+
 interface RunDraft {
+  draftId: string | undefined;
   projectId: string;
   flowId: string;
   input: string;
   pending: boolean;
   busy: boolean;
   error: string;
+  saveFailed: boolean;
 }
+
+type Choice = "projectId" | "flowId";
 
 const unknownOutcome =
   "Start outcome unknown. Your input and request identity are kept. Check the same request again to recover its Run without creating a duplicate.";
@@ -19,15 +39,32 @@ const unknownOutcome =
 const unsavedUnknownOutcome =
   "Start outcome unknown, and this browser could not save the request for recovery after a reload. Keep this window open and check the same request again to recover its Run without creating a duplicate.";
 
-const pendingStartKey = (server: string) => `factory-pending-start:${server}`;
+export function draftTitle(draft: Pick<SavedRunDraft, "input" | "manualTitle">) {
+  const firstLine = draft.input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return draft.manualTitle ?? firstLine?.slice(0, TASK_TITLE_LIMIT) ?? "Untitled draft";
+}
 
-function readPendingStart(server: string): StartRunInput | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(localStorage.getItem(pendingStartKey(server)) ?? "null");
-  } catch {
-    return undefined;
-  }
+/** Newest first, then ascending id: the order Run navigation uses for Runs. */
+export function byCreation(a: { createdAt: string; id: string }, b: typeof a) {
+  const age = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  if (age) return age;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+const draftsKey = (server: string) => `factory-run-drafts:${server}`;
+
+interface SavedDrafts {
+  current: string | undefined;
+  drafts: readonly SavedRunDraft[];
+}
+
+const filled = (value: unknown): value is string =>
+  typeof value === "string" && value.trim() !== "";
+
+function readSubmission(value: unknown): StartRunInput | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const { requestId, projectId, flowId, input } = value as Record<string, unknown>;
   if (!filled(requestId) || !filled(projectId) || !filled(flowId) || !filled(input))
@@ -35,24 +72,65 @@ function readPendingStart(server: string): StartRunInput | undefined {
   return Object.freeze({ requestId, projectId, flowId, input });
 }
 
-const filled = (value: unknown): value is string =>
-  typeof value === "string" && value.trim() !== "";
+function readDraft(value: unknown): SavedRunDraft | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { id, input, projectId, flowId, manualTitle, createdAt, listed, submission } =
+    value as Record<string, unknown>;
+  if (!filled(id) || !filled(input) || typeof projectId !== "string") return undefined;
+  if (typeof flowId !== "string" || typeof listed !== "boolean") return undefined;
+  if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) return undefined;
+  if (manualTitle !== undefined && !filled(manualTitle)) return undefined;
+  const request = readSubmission(submission);
+  if (submission !== undefined && !request) return undefined;
+  return {
+    id,
+    input,
+    projectId,
+    flowId,
+    ...(manualTitle === undefined ? {} : { manualTitle }),
+    createdAt,
+    listed,
+    ...(request ? { submission: request } : {}),
+  };
+}
 
-function savePendingStart(server: string, request: StartRunInput) {
+/** Undefined when storage cannot be read; malformed saved data reads as no drafts. */
+function readSaved(server: string): SavedDrafts | undefined {
+  let text: string | null;
   try {
-    localStorage.setItem(pendingStartKey(server), JSON.stringify(request));
+    text = localStorage.getItem(draftsKey(server));
+  } catch {
+    return undefined;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text ?? "null");
+  } catch {
+    value = null;
+  }
+  const { current, drafts } = (typeof value === "object" && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  const valid = Array.isArray(drafts) ? drafts.map(readDraft).filter((d) => d !== undefined) : [];
+  return {
+    current: typeof current === "string" ? current : undefined,
+    drafts: valid.toSorted(byCreation),
+  };
+}
+
+function writeSaved(server: string, saved: SavedDrafts) {
+  try {
+    localStorage.setItem(draftsKey(server), JSON.stringify(saved));
     return true;
   } catch {
     return false;
   }
 }
 
-function forgetPendingStart(server: string) {
-  try {
-    localStorage.removeItem(pendingStartKey(server));
-  } catch {
-    // A request left behind is only offered again under its original key, never as new work.
-  }
+function withoutSubmission({ submission, ...editable }: SavedRunDraft): SavedRunDraft {
+  void submission;
+  return editable;
 }
 
 function confirmedRejection(error: unknown): error is ApiError {
@@ -82,104 +160,234 @@ export function createRunDraft(
       // Preferences remain available in memory when browser storage is unavailable.
     }
   }
-  let draft: Readonly<RunDraft> = {
-    projectId: remembered("project"),
-    flowId: remembered("flow"),
-    input: "",
-    pending: false,
-    busy: false,
-    error: "",
-  };
   let server: string | undefined;
-  let submission: StartRunInput | undefined;
+  let drafts: readonly SavedRunDraft[] = [];
+  let listedDrafts: readonly SavedRunDraft[] = [];
+  let current = { projectId: remembered("project"), flowId: remembered("flow"), input: "" };
+  let currentId: string | undefined;
+  let error = "";
+  let saveFailed = false;
+  const inFlight = new Set<string>();
+  let draft: Readonly<RunDraft> = snapshot();
   const listeners = new Set<() => void>();
+
+  function snapshot(): RunDraft {
+    const saved = drafts.find((d) => d.id === currentId);
+    return {
+      draftId: currentId,
+      ...current,
+      pending: !!saved?.submission,
+      busy: !!currentId && inFlight.has(currentId),
+      error,
+      saveFailed,
+    };
+  }
+  function publish() {
+    draft = snapshot();
+    const listed = drafts.filter((d) => d.listed);
+    if (
+      listed.length !== listedDrafts.length ||
+      listed.some((d, index) => d !== listedDrafts[index])
+    )
+      listedDrafts = listed;
+    listeners.forEach((notify) => notify());
+  }
+  /**
+   * Applies one draft's change over the latest saved drafts, so other tabs' edits to other
+   * drafts survive and ordinary edits to the same draft are last-save-wins.
+   */
+  function commit(
+    scope: string,
+    id: string,
+    change: (saved: SavedRunDraft | undefined) => SavedRunDraft | undefined,
+  ) {
+    const latest = readSaved(scope)?.drafts ?? (scope === server ? drafts : []);
+    const previous = latest.find((d) => d.id === id) ?? (scope === server ? find(id) : undefined);
+    const next = change(previous);
+    const others = latest.filter((d) => d.id !== id);
+    const result = next ? [...others, next].toSorted(byCreation) : others;
+    const saved = writeSaved(scope, {
+      current: scope === server ? currentId : readSaved(scope)?.current,
+      drafts: result,
+    });
+    if (scope === server) {
+      drafts = result;
+      saveFailed = !saved;
+    }
+    return saved;
+  }
+  function find(id: string | undefined) {
+    return drafts.find((d) => d.id === id);
+  }
+  function show(saved: SavedRunDraft | undefined) {
+    currentId = saved?.id;
+    error = saved?.submission && !inFlight.has(saved.id) ? unknownOutcome : "";
+    if (saved) {
+      const { projectId, flowId, input } = saved;
+      current = { projectId, flowId, input };
+    }
+  }
   function selectServer(next: string) {
     if (next === server) return;
     server = next;
-    const previous = submission;
-    submission = readPendingStart(next);
-    if (submission) {
-      const { projectId, flowId, input } = submission;
-      update({ projectId, flowId, input, pending: true, busy: false, error: unknownOutcome });
-    } else if (previous) {
-      update({ input: "", pending: false, busy: false, error: "" });
+    const saved = readSaved(next);
+    drafts = saved?.drafts ?? [];
+    const restored = find(saved?.current);
+    if (restored) show(restored);
+    else {
+      show(undefined);
+      current = { ...current, input: "" };
     }
+    publish();
   }
-  function update(change: Partial<RunDraft>) {
-    draft = { ...draft, ...change };
-    listeners.forEach((notify) => notify());
+  function leaveComposition() {
+    const leaving = find(currentId);
+    if (server === undefined || !leaving || leaving.listed) return false;
+    commit(server, leaving.id, (saved) => saved && { ...saved, listed: true });
+    return true;
   }
-  function edit(change: Partial<Pick<RunDraft, "projectId" | "flowId" | "input">>) {
-    if (submission) return;
-    update({ ...change, error: "" });
-    if (change.projectId !== undefined) {
-      rememberChoice("project", draft.projectId);
-      rememberChoice("flow", draft.flowId);
+  function save() {
+    if (server === undefined) return;
+    if (!current.input.trim()) {
+      const removed = currentId;
+      currentId = undefined;
+      if (removed) commit(server, removed, () => undefined);
+      return;
     }
+    const id = currentId ?? randomId();
+    currentId = id;
+    commit(server, id, (saved) => ({
+      ...(saved ?? { id, createdAt: new Date().toISOString(), listed: false }),
+      ...current,
+    }));
   }
-  function openFresh() {
-    if (submission) return;
-    update({ flowId: draft.flowId || remembered("flow"), error: "" });
-  }
-  function openFlow(flowId: string) {
-    if (submission) return;
-    update({ flowId });
-  }
-  function pendingSubmission(): StartRunInput {
-    if (submission) return submission;
-    return Object.freeze({
-      requestId: randomId(),
-      projectId: draft.projectId,
-      flowId: draft.flowId,
-      input: draft.input,
-    });
-  }
-  function rejectStart(error: unknown, recoverable: boolean) {
-    if (confirmedRejection(error)) {
-      submission = undefined;
-      update({
-        pending: false,
-        busy: false,
-        error: [error.message, ...error.detail.issues.map((issue) => issue.message)].join(" "),
-      });
-    } else {
-      update({ busy: false, error: recoverable ? unknownOutcome : unsavedUnknownOutcome });
+  function edit(change: Partial<Pick<RunDraft, Choice | "input">>) {
+    if (find(currentId)?.submission) return;
+    current = { ...current, ...change };
+    error = "";
+    if (change.projectId !== undefined || change.flowId !== undefined) {
+      rememberChoice("project", current.projectId);
+      rememberChoice("flow", current.flowId);
     }
+    save();
+    publish();
+  }
+  function openComposition(next: SavedRunDraft | undefined, flowId?: string) {
+    leaveComposition();
+    show(next);
+    if (!next)
+      current = {
+        projectId: remembered("project") || current.projectId,
+        flowId: flowId ?? (remembered("flow") || current.flowId),
+        input: "",
+      };
+    if (server !== undefined) writeSaved(server, { current: currentId, drafts });
+    publish();
+  }
+  /** Clears a selected Project or Flow that a successful catalog read no longer lists. */
+  function forgetUnavailable(choice: Choice, available: readonly string[]) {
+    if (!current[choice] || available.includes(current[choice])) return;
+    if (find(currentId)?.submission) return;
+    current = { ...current, [choice]: "" };
+    save();
+    publish();
+  }
+  function rejectStart(id: string, failure: unknown, recoverable: boolean) {
+    if (id !== currentId) return;
+    if (confirmedRejection(failure))
+      error = [failure.message, ...failure.detail.issues.map((issue) => issue.message)].join(" ");
+    else error = recoverable ? unknownOutcome : unsavedUnknownOutcome;
   }
   async function start() {
     const requestServer = server;
-    if (draft.busy || !draft.input.trim() || requestServer === undefined) return;
-    const request = pendingSubmission();
-    submission = request;
-    const recoverable = savePendingStart(requestServer, request);
-    update({ pending: true, busy: true, error: "" });
+    const saved = find(currentId);
+    if (requestServer === undefined || !saved || inFlight.has(saved.id)) return;
+    const { id } = saved;
+    const request =
+      saved.submission ??
+      Object.freeze({
+        requestId: randomId(),
+        projectId: saved.projectId,
+        flowId: saved.flowId,
+        input: saved.input,
+      });
+    inFlight.add(id);
+    const recoverable = commit(requestServer, id, (latest = saved) => ({
+      ...latest,
+      submission: request,
+    }));
+    error = "";
+    publish();
     let run;
     try {
       run = await startRun(request);
-    } catch (error) {
-      if (confirmedRejection(error)) forgetPendingStart(requestServer);
-      if (requestServer === server) rejectStart(error, recoverable);
+    } catch (failure) {
+      inFlight.delete(id);
+      if (confirmedRejection(failure))
+        commit(requestServer, id, (latest) => latest && withoutSubmission(latest));
+      if (requestServer === server) {
+        rejectStart(id, failure, recoverable);
+        publish();
+      }
       return;
     }
-    forgetPendingStart(requestServer);
-    if (requestServer !== server) return;
+    inFlight.delete(id);
+    const shown = requestServer === server && id === currentId;
+    if (shown) currentId = undefined;
+    commit(requestServer, id, () => undefined);
+    if (!shown) {
+      publish();
+      return;
+    }
     // Only the transport result decides Start's outcome; preferences and navigation do not.
     rememberChoice("project", request.projectId);
     rememberChoice("flow", request.flowId);
-    submission = undefined;
-    update({ input: "", pending: false, busy: false });
+    current = { ...current, input: "" };
+    publish();
     return run.id;
   }
+  function syncFromStorage() {
+    if (server === undefined) return;
+    const saved = readSaved(server);
+    if (!saved) return;
+    drafts = saved.drafts;
+    const latest = find(currentId);
+    if (latest) {
+      const { projectId, flowId, input } = latest;
+      current = { projectId, flowId, input };
+    } else if (currentId && !inFlight.has(currentId)) {
+      currentId = undefined;
+      current = { ...current, input: "" };
+    }
+    publish();
+  }
+  if (typeof window !== "undefined")
+    window.addEventListener("storage", (event) => {
+      if (server !== undefined && event.key === draftsKey(server)) syncFromStorage();
+    });
   return {
     getSnapshot: () => draft,
+    /** Drafts shown in Run navigation, newest first. */
+    getDrafts: () => listedDrafts,
     subscribe(notify: () => void) {
       listeners.add(notify);
       return () => listeners.delete(notify);
     },
     selectServer,
     edit,
-    openFresh,
-    openFlow,
+    /** New Run: an empty prompt with remembered choices; the previous draft stays saved. */
+    openFresh: () => openComposition(undefined),
+    /** Start Run from a Flow: a fresh composition with that Flow. */
+    openFlow: (flowId: string) => openComposition(undefined, flowId),
+    openDraft(id: string) {
+      const saved = find(id);
+      if (saved && saved.id !== currentId) openComposition(saved);
+    },
+    /** The user left the New Run view, so its draft joins Run navigation. */
+    leave() {
+      if (leaveComposition()) publish();
+    },
+    forgetUnavailable,
     start,
   };
 }
@@ -188,6 +396,10 @@ export const runDraft = createRunDraft();
 
 export function useRunDraft() {
   return useSyncExternalStore(runDraft.subscribe, runDraft.getSnapshot);
+}
+
+export function useRunDrafts() {
+  return useSyncExternalStore(runDraft.subscribe, runDraft.getDrafts);
 }
 
 export function useComposerNavigation() {

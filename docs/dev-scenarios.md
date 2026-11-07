@@ -70,6 +70,9 @@ T3 settlement or active-list behavior.
 - **Pending Start recovery.** The seed has no lost-response state; the worker E2E journey drops Start's response after the server accepts it. By hand, set the
   browser's network to offline, press **Start** for **Demo · Focused change** in Atlas (the outcome is unknown), reload, restore the network and press
   **Check same request**: exactly one Run opens. Pending Starts are browser-local and not reset by `db:reset`.
+- **Run drafts.** Drafts are browser-local and never seeded. In Atlas choose **Demo · Focused change**, type a prompt, open a
+  seeded Run (the draft appears with **Draft**), press **New Run** and type another, reload, then search a draft title and
+  reopen it: prompt and choices are restored. Start it and only its Run remains. `db:reset` does not clear drafts.
 - **Shortcuts.** In Settings → Keyboard shortcuts change Command palette, reload and use the new chord; Reset all restores defaults. Preferences are browser-local and not reset by `db:reset`.
 - **Devices and connection.** The seed includes approved **Demo · Office browser** and revoked **Demo · Retired laptop** clients in Settings → Devices & access (pending requests expire, so request one
   from another browser profile). The Vite proxy is host-local; controlled remote-client journeys cover pending, approved, revoked, offline and incompatible clients, and desktop fixtures simulate updater

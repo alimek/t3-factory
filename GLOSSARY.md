@@ -146,9 +146,15 @@ The permanent local confirmation of a Run's finished or stopped outcome, backed 
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required
-initial prompt. It preserves the in-app draft and opens from New Run or a Flow's
-Start Run; opening it does not start execution. Start always uses the current saved
-Flow and Agent definitions.
+initial prompt. It edits one Run draft at a time and opens a fresh composition from
+New Run or a Flow's Start Run; opening it does not start execution. Start always uses
+the current saved Flow and Agent definitions.
+
+**Run draft**:
+A client-local composition saved in browser storage while its prompt has a
+non-whitespace character: the exact prompt, Project/Flow references, title and
+creation time. It has no Task, Run or snapshot until Start is accepted, which removes
+it. Not to be confused with an unsaved Flow draft in Studio.
 
 **Request report**:
 An explicit user operation starting one additional Agent turn on the same thread

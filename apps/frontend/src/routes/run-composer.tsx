@@ -109,6 +109,35 @@ function useComposerChoices() {
   return { flows, creationPolicy, error };
 }
 
+/**
+ * A polled list can predate a just-created Project or Flow, so a selection it lacks is
+ * cleared only when a fresh read also lacks it. A failed read is never a deletion.
+ */
+function useForgetUnavailable(
+  choice: "projectId" | "flowId",
+  selected: string,
+  known: readonly { id: string }[] | null | undefined,
+  read: () => Promise<readonly string[]>,
+) {
+  const missing = !!known && !!selected && !known.some((item) => item.id === selected);
+  useEffect(() => {
+    if (!missing) return;
+    let active = true;
+    read().then(
+      (available) => {
+        if (active) runDraft.forgetUnavailable(choice, available);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [choice, missing, read, selected]);
+}
+
+const readFlowIds = async () => (await api.listFlows()).map((flow) => flow.id);
+const readProjectIds = async () => (await api.listProjects()).projects.map((project) => project.id);
+
 function useComposer() {
   const navigate = useNavigate();
   const draft = useRunDraft();
@@ -124,6 +153,8 @@ function useComposer() {
     if (!draft.projectId && projects.catalog.selectedProjectId)
       runDraft.edit({ projectId: projects.catalog.selectedProjectId });
   }, [projects.catalog, draft.projectId]);
+  useForgetUnavailable("flowId", draft.flowId, flows, readFlowIds);
+  useForgetUnavailable("projectId", draft.projectId, projects.catalog?.projects, readProjectIds);
   const prompt = useRef<HTMLTextAreaElement>(null);
   const [promptMissing, setPromptMissing] = useState(false);
   const project = projects.catalog?.projects.find((p) => p.id === draft.projectId);
@@ -631,12 +662,24 @@ function StartNotice({ model }: { model: Composer }) {
   );
 }
 
+function DraftStorageNotice({ model }: { model: Composer }) {
+  const { draft } = model;
+  if (!draft.saveFailed || draft.pending) return null;
+  return (
+    <Notice tone="attention" icon={TriangleAlert} title="This browser can’t save your draft">
+      Your prompt and choices stay while this window is open. Allow site storage for Factory in your
+      browser settings to keep drafts after a reload.
+    </Notice>
+  );
+}
+
 function ComposerNotices({ model }: { model: Composer }) {
   const { presentation, projectReady } = model;
   if (presentation !== "ready") {
     const notice = connectionNotices[presentation];
     return (
       <>
+        <DraftStorageNotice model={model} />
         <Notice
           tone={notice.tone}
           icon={notice.icon}
@@ -656,6 +699,7 @@ function ComposerNotices({ model }: { model: Composer }) {
   return (
     <>
       {" "}
+      <DraftStorageNotice model={model} />
       {!projectReady && <ProjectNotice model={model} />}
       <FlowNotice model={model} />
       <StartNotice model={model} />

@@ -1,5 +1,6 @@
-import { expect, it } from "vite-plus/test";
+import { assert, expect, it, vi } from "vite-plus/test";
 import { ApiError } from "../src/api.ts";
+import { draftTitle } from "../src/run-draft.ts";
 import { composer, pendingStart, reopen, unknownStart } from "./support/run-draft.ts";
 
 it("an unknown Start keeps submitted fields read-only", async (context) => {
@@ -16,30 +17,46 @@ it("an unknown Start keeps submitted fields read-only", async (context) => {
   expect(startRun).toHaveBeenCalledTimes(1);
 });
 
-it("New Run cannot discard an unresolved submission", async (context) => {
+it("New Run keeps an unresolved submission with its draft for the same check", async (context) => {
   // Arrange
   const { draft, startRun } = await unknownStart(context);
-  const before = draft.getSnapshot();
+  const submitted = structuredClone(startRun.mock.calls[0]?.[0]);
+  const { draftId } = draft.getSnapshot();
+  assert(draftId);
+  draft.openFresh();
+  draft.openDraft(draftId);
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  const runId = await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[1]?.[0]).toStrictEqual(submitted);
+  expect(runId).toBe("accepted-run");
+});
+
+it("New Run opens an empty prompt with remembered choices and keeps the previous draft", (context) => {
+  // Arrange
+  const { draft } = composer(context);
 
   // Act
   draft.openFresh();
 
   // Assert
-  expect(draft.getSnapshot()).toStrictEqual(before);
-  expect(startRun).toHaveBeenCalledTimes(1);
+  expect(draft.getSnapshot()).toMatchObject({ input: "", projectId: "project", flowId: "flow" });
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Do the work"]);
 });
 
-it("Start Run from a Flow cannot replace an unresolved submission", async (context) => {
+it("Start Run from a Flow opens that Flow in a fresh composition", (context) => {
   // Arrange
-  const { draft, startRun } = await unknownStart(context);
-  const before = draft.getSnapshot();
+  const { draft } = composer(context);
 
   // Act
   draft.openFlow("other-flow");
 
   // Assert
-  expect(draft.getSnapshot()).toStrictEqual(before);
-  expect(startRun).toHaveBeenCalledTimes(1);
+  expect(draft.getSnapshot()).toMatchObject({ input: "", flowId: "other-flow", pending: false });
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Do the work"]);
 });
 
 it("Check same request sends the identical key and payload after a lost response", async (context) => {
@@ -95,15 +112,89 @@ it("reloading during an in-flight Start reopens it as the same pending request",
   });
 });
 
-it("a pending Start is never recovered against another server", async (context) => {
+it("another server never sees this server's drafts or pending Start", async (context) => {
   // Arrange
   const lost = await unknownStart(context);
+  lost.draft.leave();
 
   // Act
   const { draft } = reopen(lost, "server-b");
 
   // Assert
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false });
+  expect(draft.getDrafts()).toStrictEqual([]);
+});
+
+it("a whitespace-only prompt removes its draft and keeps the selections", (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  draft.edit({ input: " \n\t " });
+
+  // Act
+  draft.leave();
+
+  // Assert
+  expect(draft.getDrafts()).toStrictEqual([]);
+  expect(draft.getSnapshot()).toMatchObject({ projectId: "project", flowId: "flow" });
+});
+
+it("a new draft joins Run navigation only after the user leaves the New Run view", (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  draft.edit({ input: "Still typing" });
+  const whileComposing = draft.getDrafts();
+
+  // Act
+  draft.leave();
+
+  // Assert
+  expect(whileComposing).toStrictEqual([]);
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Still typing"]);
+});
+
+it("drafts are listed newest first and editing one does not move it", (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  const first = draft.getSnapshot().draftId;
+  assert(first);
+  vi.setSystemTime(new Date("2026-11-07T08:05:00Z"));
+  draft.openFresh();
+  draft.edit({ input: "Second" });
+  draft.openDraft(first);
+
+  // Act
+  draft.edit({ input: "First, edited later" });
+
+  // Assert
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Second", "First, edited later"]);
+});
+
+it("an accepted Start removes its draft instead of listing it beside the Run", async (context) => {
+  // Arrange
+  const { draft, startRun } = composer(context);
+  draft.leave();
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(draft.getDrafts()).toStrictEqual([]);
+});
+
+it("a Flow confirmed deleted clears only that selection", (context) => {
+  // Arrange
+  const { draft } = composer(context);
+
+  // Act
+  draft.forgetUnavailable("flowId", ["another-flow"]);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    input: "Do the work",
+    projectId: "project",
+    flowId: "",
+  });
 });
 
 it("an accepted Start is not offered for checking again after reload", async (context) => {
@@ -117,6 +208,23 @@ it("an accepted Start is not offered for checking again after reload", async (co
 
   // Assert
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false });
+});
+
+it("reopening the client restores the exact unsubmitted prompt and choices", (context) => {
+  // Arrange
+  const typed = composer(context);
+  typed.draft.edit({ input: "  Keep this\n\n  exact spacing  " });
+
+  // Act
+  const { draft } = reopen(typed);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    input: "  Keep this\n\n  exact spacing  ",
+    projectId: "project",
+    flowId: "flow",
+    pending: false,
+  });
 });
 
 it("an in-flight Start cannot be sent concurrently", async (context) => {

@@ -7,7 +7,6 @@ type StartRun = Mock<(input: StartRunInput) => Promise<{ id: string }>>;
 interface BrowserStorage {
   getItem: Mock<Storage["getItem"]>;
   setItem: Mock<Storage["setItem"]>;
-  removeItem: Mock<Storage["removeItem"]>;
 }
 
 interface Composer {
@@ -23,17 +22,16 @@ function browserStorage(): BrowserStorage {
     setItem: vi.fn<Storage["setItem"]>((key, value) => {
       values.set(key, value);
     }),
-    removeItem: vi.fn<Storage["removeItem"]>((key) => {
-      values.delete(key);
-    }),
   };
 }
 
 export function composer(context: TestContext): Composer {
   const storage = browserStorage();
   vi.stubGlobal("localStorage", storage);
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-07T08:00:00Z") });
   context.onTestFinished(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
   const startRun: StartRun = vi.fn();
   const draft = createRunDraft(startRun);

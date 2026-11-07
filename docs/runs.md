@@ -2,7 +2,7 @@
 
 ## Starting
 
-Open **New Run (+)** (`/runs/new`; the Flow editor's **Start Run** opens it with its saved Flow selected). Choose an
+Open **New Run (+)** (`/runs/new`; the Flow editor's **Start Run** opens a fresh composition with its saved Flow selected). Choose an
 available project, a global ready Flow and a required initial prompt. Factory checks the project and connection, the graph,
 every referenced Agent's settings, reporting installation and explicit-call API compatibility before accepting Start.
 Failures explain recovery and keep the draft.
@@ -13,8 +13,9 @@ Failures explain recovery and keep the draft.
   even after a lost response or restart; reusing the key with changed content conflicts. An unknown response keeps the
   submitted fields read-only and offers **Check same request**; only confirmed success clears the prompt and opens the Run.
   The submitted request is saved in browser storage before it is sent, so reloading or reopening the client during an
-  in-flight or unknown Start offers the same check instead of a fresh request. It is kept per selected Factory server (a
-  desktop client never checks it against another server) and removed after a confirmed acceptance or rejection. When
+  in-flight or unknown Start offers the same check instead of a fresh request. It is kept with its draft, so each draft has its
+  own pending request, and per selected Factory server (a desktop client never checks it against another server); it is
+  removed after a confirmed acceptance or rejection. When
   storage is blocked, the unknown-outcome notice says the request survives only while the window stays open.
 - **Active slot.** One non-closed Run (including unresolved work or an in-progress Stop) occupies its Task's slot. Different
   Tasks run concurrently in the shared project checkout.
@@ -27,10 +28,18 @@ Failures explain recovery and keep the draft.
   Factory works in the project root with no isolated worktrees, omits `runtimeMode` and leaves execution permissions to T3
   and its OAuth grant, so effective autonomy is not guaranteed by Factory. Use a repository you are willing to let agents
   change.
-- **Composer.** Project and Flow choices are remembered locally; an unsubmitted prompt stays in memory across in-app navigation. Each
-  blocking condition is a notice with a recovery action, and fields that cause it are marked. The Project picker keeps
-  searchable paths, **Recheck projects** and **Add repository**; unavailable references stay visible in history but cannot be
-  selected for a new Run.
+- **Composer.** Project and Flow choices are remembered locally. Each blocking condition is a notice with a recovery action, and
+  fields that cause it are marked. The Project picker keeps searchable paths, **Recheck projects** and **Add repository**;
+  unavailable references stay visible in history but cannot be selected for a new Run.
+- **Drafts.** Typing a prompt with a non-whitespace character creates a Run draft; clearing it to whitespace removes the draft.
+  Drafts save silently while typing, without a T3 connection or ready choices, and the current composition is restored after a
+  reload or reopening the client. A draft keeps the exact prompt and Project/Flow references only; Start resolves the current
+  saved Flow and Agents. Drafts live in browser storage per client and selected Factory server; tabs sharing a profile share
+  them, and the last save wins. If storage is blocked the composer says the draft lasts only while the window is open.
+  **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
+  Flow editor's **Start Run** does the same with its Flow. A selected Project or Flow is cleared only when a fresh catalog read
+  confirms it is gone; a failed read changes nothing. Confirmed Start removes the draft and opens its Run; a confirmed
+  rejection keeps it editable.
 
 ## Execution canvas
 
@@ -59,14 +68,16 @@ Engine termination alone never completes a Run: whole-Run completion is only a r
 ## Run list
 
 The shell sidebar lists Runs globally, newest created first (id ascending breaks ties); opening, renaming and closing never
-change that key. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
+change that key. Run drafts join the main list in the same order with a **Draft** indicator once you leave the New Run view
+(Settings and Studio open over it and do not count); a draft row reopens it in the composer, and editing never moves it. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
 stale) and chips. Missing projects keep readable history; an unavailable open Run stays open.
 
 - **Needs input**: a pending Human occurrence, native T3 question/permission or an Agent's conversation-waiting report.
   **Problem**: a pending missing report, execution failure or report problem. Both can show. Stale observations or an unavailable
   project are not Problems and opening a Run clears no chip.
 - **Settled** (collapsed, with a count) holds only Runs with recorded Finished or Stopped closure. **Snoozed** sits above it.
-  Case-insensitive title search reveals matching entries in every group; Escape or × clears it.
+  Case-insensitive title search reveals matching entries in every group, including drafts (titled from the first non-empty
+  prompt line, or **Untitled draft**); Escape or × clears it.
 - **Rename** changes that Run's title only (trimmed, non-empty, ≤500 characters). Row menu: hover/focus/select, Shift+F10,
   F2 renames; closed rows offer Rename only.
 - A closed Run is read-only history and is never reopened or relaunched. To work on the matter again, start a **New Run**: it

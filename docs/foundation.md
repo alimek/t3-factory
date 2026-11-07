@@ -87,7 +87,9 @@ usable and must not turn a confirmed Start into an unknown outcome. Shortcut sch
 changes must migrate or explicitly invalidate saved preferences under the
 [current-contract policy](../AGENTS.md#one-current-contract). The composer retains an
 unknown Start's identical key and payload for an explicit check, across reloads when
-storage allows; only confirmed success clears its prompt. Client-local state that belongs
+storage allows; only confirmed success clears its prompt. Run drafts are client-local
+preparation in browser storage, never backend records, and blocked storage shows that a
+draft lasts only while the window is open. Client-local state that belongs
 to a server is scoped by that server: browsers are isolated by origin, while the desktop
 renderer shares one origin and names its role and selected server. Backend idempotency
 remains authoritative.
