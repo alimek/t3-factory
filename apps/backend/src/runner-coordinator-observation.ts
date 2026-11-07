@@ -56,10 +56,11 @@ export function observeCoordinator(
               collected.executions,
             );
           for (const reply of humanReplies) {
-            // The membership trigger admits this activation update only with the retained reply.
+            // Settling the question does not end the unfinished activation's conversation.
+            // The membership trigger still requires this exact retained user reply.
             yield* sql`INSERT INTO coordinator_native_human_replies VALUES(${run.id},${block.thread_id},${reply.executionId},${reply.itemId}) ON CONFLICT DO NOTHING`;
             if (!report)
-              yield* sql`UPDATE run_executions SET activation_id=${activationId} WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${reply.executionId} AND activation_id IS NULL AND EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_attention a ON a.id=w.attention_id JOIN run_executions old ON old.binding_id=w.target_binding_id AND old.execution_id=w.target_execution_id WHERE w.activation_id=${activationId} AND a.settled_at IS NULL AND old.ordinal<run_executions.ordinal)`;
+              yield* sql`UPDATE run_executions SET activation_id=${activationId} WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${reply.executionId} AND activation_id IS NULL AND EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_executions old ON old.binding_id=w.target_binding_id AND old.execution_id=w.target_execution_id WHERE w.activation_id=${activationId} AND old.ordinal<run_executions.ordinal)`;
           }
           yield* recordActivationState(sql, run, block, activationId, result, !!report);
           yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
