@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
-import electronUpdater from "electron-updater";
+import electronUpdater, { type VerifyUpdateSupport } from "electron-updater";
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 
 export interface UpdatePreferences {
@@ -14,6 +14,21 @@ const checkEveryMs = 6 * 3600_000;
 /** The track an installation follows until its user chooses one: the track of its own build. */
 export const buildChannel = (): UpdateChannel =>
   app.getVersion().includes("-beta.") ? "beta" : "stable";
+
+/**
+ * Notes of every version between the installed one and the update, newest first. Stable skips
+ * beta builds: the Release notes already cover their changes.
+ */
+function changelog(
+  notes: Parameters<VerifyUpdateSupport>[0]["releaseNotes"],
+  channel: UpdateChannel,
+): string | null {
+  if (!Array.isArray(notes)) return typeof notes === "string" ? notes : null;
+  const entries = notes
+    .filter((entry) => entry.note?.trim() && (channel === "beta" || !entry.version.includes("-")))
+    .map((entry) => `<h3>${entry.version}</h3>${entry.note}`);
+  return entries.length ? entries.join("") : null;
+}
 
 /**
  * GitHub Releases (or the configured feed) through electron-updater: automatic checks,
@@ -59,6 +74,7 @@ export class Updates {
       return;
     }
     this.updater.autoInstallOnAppQuit = false;
+    this.updater.fullChangelog = true;
     this.apply(preferences);
     this.updater.on("checking-for-update", () => this.set({ state: "checking", message: null }));
     this.updater.on("update-not-available", () =>
@@ -69,13 +85,7 @@ export class Updates {
         state: this.updater.autoDownload ? "downloading" : "available",
         version: info.version,
         progress: 0,
-        releaseNotes:
-          typeof info.releaseNotes === "string"
-            ? info.releaseNotes
-            : (info.releaseNotes
-                ?.filter((note) => note.note?.trim())
-                .map((note) => `${note.version}\n${note.note}`)
-                .join("\n\n") ?? null),
+        releaseNotes: changelog(info.releaseNotes, this.preferences?.channel ?? "stable"),
       }),
     );
     this.updater.on("download-progress", (progress) =>

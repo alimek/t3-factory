@@ -115,7 +115,8 @@ installs). A client update affects only that client. A server update keeps data,
 warning before orderly shutdown, or [from an approved client](#updating-the-server-from-a-client). Errors offer a retry check and builds without a release feed show updates as unsupported.
 
 The footer icon is a muted circular arrow for **Check for updates**, a highlighted downward arrow when a release is available and an upward arrow in a circle when downloaded; checking and downloading show a spinner
-with progress in the tooltip. Hover or focus shows the version and **What's new** from the feed (long notes are shortened; the full text is in Settings → Application, always displayed as text, never feed markup;
+with progress in the tooltip. Hover or focus shows the version and **What's new** from the feed: the notes of every release between the installed version and the update, newest first, from the feed's ten most recent
+entries (the stable channel leaves out beta builds, whose changes the Release notes already cover) (long notes are shortened; the full text is in Settings → Application, always displayed as text, never feed markup;
 a release without notes says so and does not block download). Application preferences are reached through the Settings gear; connection and startup gates without a sidebar keep a contextual **Application settings**
 entry, including in incompatible and offline states. If installation fails before replacement, Factory clears the quitting state and reopens the same data home through normal reconciliation, keeping the
 error in local settings.
