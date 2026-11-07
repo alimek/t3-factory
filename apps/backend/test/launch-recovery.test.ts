@@ -1,15 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
+import { uncertainLaunch } from "./support/lost-launch.ts";
 import { prepared } from "./support/prepared-runner.ts";
-
-async function lostLaunch(c: Parameters<typeof prepared>[0]) {
-  const fixture = await prepared(c);
-  fixture.t3.loseLaunchReply = true;
-  const started = await fixture.f.startRun(fixture.input);
-  assert(started.ok);
-  assert((await fixture.f.reconcileRuns()).ok);
-  fixture.t3.loseLaunchReply = false;
-  return { ...fixture, runId: started.value.id };
-}
 
 function foreignCandidate(
   launch: {
@@ -49,7 +40,7 @@ function foreignCandidate(
 
 it("an empty launch search does not launch another worker", async (c) => {
   // Arrange
-  const fixture = await lostLaunch(c);
+  const fixture = await uncertainLaunch(c);
   fixture.t3.discoverAvailable = false;
 
   // Act
@@ -65,7 +56,7 @@ it("an empty launch search does not launch another worker", async (c) => {
 
 it("two candidates with the expected title stay unresolved", async (c) => {
   // Arrange
-  const fixture = await lostLaunch(c);
+  const fixture = await uncertainLaunch(c);
   const launch = [...fixture.t3.launches.values()][0]!;
   fixture.t3.extraCandidates.push(foreignCandidate(launch, fixture.project.workspaceRoot));
 
@@ -82,7 +73,7 @@ it("two candidates with the expected title stay unresolved", async (c) => {
 
 it("a mismatched worker is not bound and is not replaced with another launch", async (c) => {
   // Arrange
-  const fixture = await lostLaunch(c);
+  const fixture = await uncertainLaunch(c);
   const launch = [...fixture.t3.launches.values()][0]!;
   fixture.t3.launches.clear();
   fixture.t3.extraCandidates.push(foreignCandidate(launch, "/other-workspace"));

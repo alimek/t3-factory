@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
+import { uncertainLaunch } from "./support/lost-launch.ts";
 import { directWorker, workerFinal } from "./support/run-worker.ts";
-import { prepared } from "./support/prepared-runner.ts";
 import type { ControlledT3 } from "./support/controlled-t3.ts";
 
 const BLOCK_TOOL = "mcp__factory-runtime__factory_get_block";
@@ -31,16 +31,6 @@ function seedTool(
     hasMore: false,
     nextPosition: null,
   };
-}
-
-async function lostLaunch(c: Parameters<typeof prepared>[0]) {
-  const fixture = await prepared(c);
-  fixture.t3.loseLaunchReply = true;
-  fixture.t3.discoverAvailable = false;
-  const started = await fixture.f.startRun(fixture.input);
-  assert(started.ok);
-  assert((await fixture.f.reconcileRuns()).ok);
-  return fixture;
 }
 
 it("factory_get_block returns the bound worker visit without a model-supplied id", async (c) => {
@@ -97,7 +87,7 @@ it("factory_get_run returns the caller Run and each Block without routing author
 
 it("an unanswered worker launch stays BINDING_PENDING until Factory binds that thread", async (c) => {
   // Arrange
-  const fixture = await lostLaunch(c);
+  const fixture = await uncertainLaunch(c, false);
   seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
 
   // Act
@@ -113,7 +103,7 @@ it("an unanswered worker launch stays BINDING_PENDING until Factory binds that t
 
 it("a worker title does not authorize factory_get_block before the native call is seen", async (c) => {
   // Arrange
-  const fixture = await lostLaunch(c);
+  const fixture = await uncertainLaunch(c, false);
   seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "other-call");
 
   // Act
@@ -129,7 +119,7 @@ it("a worker title does not authorize factory_get_block before the native call i
 
 it("a subagent calling factory_get_block stays a foreign caller during launch recovery", async (c) => {
   // Arrange
-  const fixture = await lostLaunch(c);
+  const fixture = await uncertainLaunch(c, false);
   seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call", {
     subagentId: "sub-1",
   });
@@ -195,4 +185,59 @@ it("an unknown exit names the exits captured for that Block", async (c) => {
 
   // Assert
   expect(result).toMatchObject({ code: "INVALID_EXIT", allowedExits: ["Done"] });
+});
+
+it("a changed waiting report conflicts and returns the current Block state", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  expect(
+    (
+      await fixture.f.runtime.submit({
+        arguments: { to: "waiting", message: "Which audience?" },
+        metadata: { callId: "worker-report" },
+      })
+    ).code,
+  ).toBe("ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { to: "waiting", message: "Which tone?" },
+    metadata: { callId: "worker-report" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "KEY_CONFLICT",
+    state: "waiting",
+    allowedTransitions: [],
+    allowedExits: ["Done"],
+  });
+});
+
+it("a finished report without a message is accepted when that exit does not require feedback", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { to: "finished", exit: "Done" },
+    metadata: { callId: "worker-report" },
+  });
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+});
+
+it("a finished report without a message is refused when that exit requires feedback", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "", true);
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { to: "finished", exit: "Done" },
+    metadata: { callId: "worker-report" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({ code: "FEEDBACK_REQUIRED" });
 });

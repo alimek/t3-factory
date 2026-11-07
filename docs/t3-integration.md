@@ -135,11 +135,13 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 
 ## Execution operations
 
-- **Launch.** The primary conversation uses the saved provider, model and options, explicit
-  project/environment, project-root workspace and exact first message and request key.
-  Workers come from its native delegation. Launch omits `runtimeMode`; if the public schema
-  requires it, Start fails with `launch_unsupported`. Unknown acceptance cannot be replayed
-  without independent continuity and key-retention proof, absent by default.
+- **Launch.** Each Agent Block's first visit is its own top-level thread. It uses that
+  Agent's saved provider, model and options, the explicit project and environment, the
+  project-root workspace, and the exact first message and request key. There is no Run
+  conversation and no native-delegation launch. Launch omits `runtimeMode`; if the public
+  schema requires it, Start fails with `launch_unsupported`. An uncertain launch is searched
+  for and is not replayed. A definitive rejection is an error. Unknown send acceptance
+  cannot be replayed without independent continuity and key-retention proof, absent by default.
 - **Observation.** Active/latest identities, public execution ordinals and source timestamps
   distinguish renewed work from earlier executions. Native attention includes permissions
   as well as questions; an incomplete listing cannot prove the absence of either.
@@ -164,9 +166,11 @@ source timestamp. Unsupported, unavailable or mismatched exact reads report **In
 
 ### Native delegation evidence
 
-Worker ownership requires the exact native command and independent evidence of child
-identity, parent/project scope, creation provenance and execution selection. Native activity
-can prove an invocation was issued without proving parentage or an empty descendant set.
+Factory-launched workers are top-level threads. A title is not ownership: recovery binds
+only when parentage, project, workspace, interaction mode, provider, model, options and one
+execution are all present. A missing or non-string parent withholds the search. Descendants
+a worker starts later are not report authorities. Native activity can prove an invocation
+was issued without proving parentage or an empty descendant set.
 Task fingerprints compare normalized intent, not JSON property order. Provider and model
 are observable; model options are not independently exposed by child evidence.
 
@@ -233,7 +237,7 @@ The [Runner report contract](runner.md#report-acceptance) defines immutable acti
 ### Worker reporting
 
 Factory-launched Block workers hold activation-scoped reporting authority. There is no Run conversation. Waiting and reply turns use the same worker. A final also needs the fresh activation-scoped provider/model proof
-described in [Runner](runner.md#run-owned-conversation-and-worker-tree). A worker may cancel or interrupt its own independently
+described in [Runner](runner.md#owned-workers). A worker may cancel or interrupt its own independently
 verified local subtasks before reporting; completed receipts must name the exact known task or thread, and cancellation never proves
 that work ended. Unknown, foreign, remote or incomplete command evidence holds the report with an explicit worker problem.
 Unfinished native tool items hold only the current observation; their provisional output is never saved as command evidence.

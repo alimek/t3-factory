@@ -54,7 +54,7 @@ export function workerReport(
         .length
     )
       return { code: "HUMAN_REPLY_REQUIRED" };
-    return requiredResult(report);
+    return undefined;
   });
 }
 
@@ -80,11 +80,4 @@ export function settleCoordinatorReports(
         time,
       );
   });
-}
-
-function requiredResult(report: RuntimeReport) {
-  if (report.status !== "finished") return undefined;
-  if (!report.exit) return { code: "INVALID_EXIT" };
-  if (!report.message?.trim()) return { code: "RESULT_REQUIRED" };
-  return undefined;
 }

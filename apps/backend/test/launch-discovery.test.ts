@@ -1,0 +1,137 @@
+import { expect, it } from "@effect/vitest";
+import { discoverLaunches } from "../src/launch-discovery.ts";
+
+const title = "Factory #1 · 1 Entry";
+
+function execution() {
+  return {
+    runId: "execution-1",
+    providerInstanceId: "codex-main",
+    model: "gpt-6.1-sol",
+    status: "running",
+  };
+}
+
+function thread(fields: Record<string, unknown>) {
+  return {
+    threadId: "thread-1",
+    title,
+    projectId: "project-1",
+    workspaceRoot: "/repo",
+    interactionMode: "default",
+    providerInstanceId: "codex-main",
+    model: "gpt-6.1-sol",
+    options: { reasoning: "low" },
+    recentRuns: [execution()],
+    ...fields,
+  };
+}
+
+it("a listed worker keeps the parent proved by its thread read", async () => {
+  // Arrange
+  const listed = thread({});
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return { projectId: "project-1", threads: [listed], nextCursor: null };
+    reads += 1;
+    return thread({ parentThreadId: "parent-9" });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(1);
+  expect(found).toMatchObject({
+    available: true,
+    candidates: [{ parentThreadId: "parent-9" }],
+  });
+});
+
+it("a listed worker with no parent in the list or the thread read stays unresolved", async () => {
+  // Arrange
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return { projectId: "project-1", threads: [thread({})], nextCursor: null };
+    return thread({});
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(found).toEqual({ available: false });
+});
+
+it("a non-string parent withholds the launch search", async () => {
+  // Arrange
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [thread({ parentThreadId: 4 })],
+        nextCursor: null,
+      };
+    reads += 1;
+    return thread({ parentThreadId: null });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(0);
+  expect(found).toEqual({ available: false });
+});
+
+it("an explicit top-level parent in the list is accepted without another read", async () => {
+  // Arrange
+  let reads = 0;
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [thread({ parentThreadId: null })],
+        nextCursor: null,
+      };
+    reads += 1;
+    return thread({ parentThreadId: "parent-9" });
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(reads).toBe(0);
+  expect(found).toMatchObject({
+    available: true,
+    candidates: [{ parentThreadId: null }],
+  });
+});
+
+it("another titled thread that omits its parent does not withhold a proved worker", async () => {
+  // Arrange
+  const call = async (name: string) => {
+    if (name === "t3_thread_list")
+      return {
+        projectId: "project-1",
+        threads: [
+          thread({ threadId: "thread-other", title: "Other" }),
+          thread({ parentThreadId: null }),
+        ],
+        nextCursor: null,
+      };
+    return thread({});
+  };
+
+  // Act
+  const found = await discoverLaunches(call, "project-1", title);
+
+  // Assert
+  expect(found).toMatchObject({
+    available: true,
+    candidates: [{ threadId: "thread-1", parentThreadId: null }],
+  });
+});

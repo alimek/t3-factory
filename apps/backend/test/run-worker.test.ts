@@ -149,7 +149,7 @@ it("normal Start launches the entry worker with its own Agent settings and no Ru
   expect(payload.modelSelection.model).toBe(f.agent.execution.modelId);
   expect(payload.modelSelection.instanceId).toBe(f.agent.execution.providerInstanceId);
 });
-it("a completed reporting worker releases downstream work independently of the active primary conversation", async (c) => {
+it("a completed reporting worker releases downstream work without a Run conversation", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
 
@@ -210,7 +210,7 @@ it("a worker clarification is scoped to its exact worker execution", async (c) =
   expect(run.value.reports).toStrictEqual([]);
 });
 
-it("an explicit answer is delivered to the exact worker question without involving the primary conversation", async (c) => {
+it("an explicit answer is delivered to the exact worker question", async (c) => {
   // Arrange
   const f = await waitingWorker(c);
 
@@ -449,7 +449,12 @@ it("an accepted worker final cannot be replaced by a different final", async (c)
   });
 
   // Assert
-  expect(result.code).toBe("FINAL_CONFLICT");
+  expect(result).toMatchObject({
+    code: "FINAL_CONFLICT",
+    state: "working",
+    allowedTransitions: [],
+    allowedExits: ["Done"],
+  });
 });
 
 it("a known worker report never reads an unrelated unavailable Run", async (c) => {

@@ -114,9 +114,10 @@ a live `.runner.lock`. The desktop declares macOS 13 or later, which is not a te
 Factory launches each Agent Block as its own top-level worker and installs the `$factory-block` skill ([Runner](runner.md)). This selects behavior; it is not a support badge. The persistent demo supplies simulated external evidence and
 never executes a model. Controlled public-operation and UI journeys cover local activations, independent branches, waiting, revisits, explicit report recovery, lost-launch search, restart and owned-tree Stop.
 They do not establish live provider or skill compatibility. A thread created before a definitive launch rejection, and live recovery while model options are unreadable, stay documented limits. Descendant Stop and restart still need separately authorized live verification.
+Upgrading through migration `050` deletes open Runs from the replaced contract, including each Task's active Run slot. Closed Runs, clients, Flows, Agents and Tasks remain. That deletion is one-way.
 
-If a worker finishes during its parent's delegating turn without a verified result read or report, Factory keeps waiting for T3's native event; timestamps alone prove no delivery. If no
-report follows, the user can use **Request report** or ask in T3. That delivery-dependent case is unqualified.
+If a worker finishes without a verified result read or report, Factory keeps the missing-report Problem; timestamps alone prove no delivery. If no
+report follows, the user can use **Request report** or ask in that worker's T3 thread. That delivery-dependent case is unqualified.
 
 Approved remote Factory clients control a Factory host; they do not make remote T3 workers equivalent to local ones. Peer-scoped unknown acceptance and positive input stay durable, and
 reachable peer-tree Stop uses bounded public observations, interruption and queue cancellation, retaining uncertainty for unreachable peers, unresolved nested work or missing exact

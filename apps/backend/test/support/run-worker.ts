@@ -11,9 +11,13 @@ const WORKER_EXECUTION = "execution-1";
 export async function workerStart(
   c: TestContext,
   targetBlockId: "parallel-block" | "review" | "worker" | "" = "parallel-block",
+  requiresFeedback = false,
 ) {
   const fixture = await prepared(c);
-  const first = fixture.flow.graph.blocks[0]!;
+  const source = fixture.flow.graph.blocks[0]!;
+  const first = requiresFeedback
+    ? { ...source, exits: source.exits.map((exit) => ({ ...exit, requiresFeedback: true })) }
+    : source;
   const second = { ...first, id: "parallel-block", name: "Parallel work" };
   const review = {
     id: "review",
@@ -73,8 +77,9 @@ export async function directWorker(
   c: TestContext,
   observe = true,
   targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
+  requiresFeedback = false,
 ) {
-  const fixture = await workerStart(c, targetBlockId);
+  const fixture = await workerStart(c, targetBlockId, requiresFeedback);
   seedFactoryWorker(fixture.t3, fixture.project);
   const started = await fixture.f.startRun(fixture.input);
   assert(started.ok, JSON.stringify(started));

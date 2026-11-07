@@ -30,13 +30,7 @@ export function workerTurn(body: string) {
 }
 
 /** Stable title saved with the launch. Later Block renames do not change recovery's target. */
-function workerTitle(
-  number: number,
-  blocks: readonly { id: string; name: string }[],
-  blockId: string,
-) {
-  const index = blocks.findIndex((block) => block.id === blockId);
-  const name = blocks[index]?.name ?? "";
+function workerTitle(number: number, index: number, name: string) {
   return `Factory #${number} · ${index + 1} ${name}`.slice(0, 200);
 }
 
@@ -47,15 +41,17 @@ export function workerLaunchPayload(
   key: string,
   number: number,
 ): LaunchPayload {
-  const block = snapshot.flow.graph.blocks.find((entry) => entry.id === blockId);
-  const agent = snapshot.agents.find(
-    (entry) => block?.kind === "agent" && entry.id === block.agentId,
-  );
+  const blocks = snapshot.flow.graph.blocks;
+  const index = blocks.findIndex((entry) => entry.id === blockId);
+  const block = blocks[index];
+  if (!block || block.kind !== "agent") throw Error("Launch target is not an Agent Block");
+  const agent = snapshot.agents.find((entry) => entry.id === block.agentId);
+  if (!agent) throw Error("Launch target Agent is not in the snapshot");
   const payload = launchPayload(snapshot, blockId, target, key, "");
   return {
     ...payload,
-    title: workerTitle(number, snapshot.flow.graph.blocks, blockId),
-    message: workerTurn(agent?.prompt ?? ""),
+    title: workerTitle(number, index, block.name),
+    message: workerTurn(agent.prompt),
   };
 }
 

@@ -223,11 +223,7 @@ test("a Human correction revisits the same worker conversation with a distinct a
   await app.screenshot("same-worker-second-visit");
 });
 
-test("Stop closes the primary conversation and both direct worker branches durably", async ({
-  app,
-  screen,
-  browser,
-}) => {
+test("Stop closes both direct worker branches durably", async ({ app, screen, browser }) => {
   // Arrange
   const found = await findRun(app.baseUrl, "UI worker · Parallel review from one prompt");
   const before = await readHistoryRun(app.baseUrl, found.id);

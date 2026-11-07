@@ -143,6 +143,17 @@ function blockState(problem: string | null, finished: boolean) {
   return finished ? "finished" : "working";
 }
 
+/** Observation resumes `waiting` only after the wait itself has settled. */
+function nextBlockState(
+  block: BlockRow,
+  problem: string | null,
+  released: boolean,
+  waiting: boolean,
+) {
+  const observed = blockState(problem, released);
+  return block.state === "waiting" && waiting && observed === "working" ? "waiting" : observed;
+}
+
 function recordActivationState(
   sql: SqlClient.SqlClient,
   run: RunRow,
@@ -175,7 +186,7 @@ function recordActivationState(
     if (problem === "missing-report")
       yield* sql`UPDATE run_executions SET problem='missing-report' WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${latestId!}`;
     yield* sql`UPDATE run_activations SET phase=CASE WHEN phase='finished' THEN phase ELSE ${phase} END,evidence_json=${JSON.stringify(result.evidence)},coverage=${result.evidence.release ? "local-bounded" : "unverified"},problem=${problem} WHERE id=${activationId}`;
-    yield* sql`UPDATE run_blocks SET execution_id=${latestId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${parent.pendingRequestCount},problem=${problem},state=${blockState(problem, !!report && result.evidence.release)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
+    yield* sql`UPDATE run_blocks SET execution_id=${latestId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${parent.pendingRequestCount},problem=${problem},state=${nextBlockState(block, problem, !!report && result.evidence.release, waits.length > 0)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
   });
 }
 

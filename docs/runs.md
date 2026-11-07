@@ -91,7 +91,7 @@ acceptance only after saving it. The model does not supply a report key or a Run
 - An identical retry returns the original acknowledgement, also after renewed work, Stop or closure; changed content conflicts,
   even under a new key. A previous execution's report cannot finish renewed work.
 - Acceptance holds every outgoing handoff until fresh evidence shows source completion, empty queues and no native request. The
-  timeline shows **handoff held**, then **handoff released** (dispatch reserved); the recipient's worker command or send acknowledgement is
+  timeline shows **handoff held**, then **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is
   separate.
 - A first visit launches the block's own top-level worker. Later visits queue independent turns on that same worker, each as
   its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
@@ -128,10 +128,9 @@ acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
 ## Completion and permanent history
 
 A Run closes **Finished** only when every Block visit has its worker's accepted final result, every Human step is answered, no
-delivery, worker command or control recovery is outstanding, and fresh observations of the Run conversation, every worker and
+delivery, launch, handoff or send is outstanding, and fresh observations of every worker and
 their descendants show completed work, no queued work, no native attention and no Problem. Never-visited branches need not run.
-A failed Run conversation control turn must first be recovered with **Recover Run control** (a rolled-back one needs Stop). A
-report or T3 completion alone, or incomplete coverage, keeps the Run open and its Task slot occupied.
+A report or T3 completion alone, or incomplete coverage, keeps the Run open and its Task slot occupied.
 
 Run detail shows the **recorded observed frontier**: exact executions, statuses, queue and native counts with their separate read
 times. T3 reads are not an atomic cutoff, so direct T3 activity can arrive before local closure; completion does not certify result
@@ -144,10 +143,10 @@ events and closure evidence remain; no transcript or response-body archive exist
 
 ## Stop
 
-**Stop Run** first blocks new handoffs, cancels unsent work and worker commands and settles pending Human steps as
+**Stop Run** first blocks new handoffs, cancels unsent launches and handoffs and settles pending Human steps as
 **cancelled-on-Stop** without inventing answers. Nothing is dispatched after Stop; a delivery whose outcome is unknown stays
-unresolved and keeps Stop uncertain. Factory cancels queued turns and requests thread/tree Stop across the Run conversation,
-workers and descendants; the recorded execution reference is not a T3 fence.
+unresolved and keeps Stop uncertain. Factory cancels queued turns and requests thread/tree Stop across the owned
+workers and their descendants; the recorded execution reference is not a T3 fence.
 
 **Stop requested / Uncertain Stop** means terminal state and empty queue and native coverage are not yet confirmed, or a pre-Stop
 operation is unresolved. An acknowledgement is insufficient; the Run keeps its slot through restart and reconciles automatically.
@@ -164,6 +163,7 @@ fails startup. Shutdown does not Stop the Run or interrupt T3; reopening the sam
 
 ## Completed stages in T3
 
-When a Run passes its successful-closure checks, Factory marks its worker threads **Settled** in T3 before recording the closure. After
-confirmed Finished or Stopped closure it also tries to settle the primary Run conversation. Factory never unsettles. This is best-effort
-organization: failure never changes results or closure, and an attempted request is never replayed.
+When native settle is supported, Factory best-effort marks each worker in the closure frontier **Settled** in T3 before recording
+Finished. New Runs have no Run conversation to settle. A historical closed Run that still has a coordinator row can settle that
+thread after closure. Factory never unsettles. This is best-effort organization: failure never changes results or closure, and an
+attempted request is never replayed.

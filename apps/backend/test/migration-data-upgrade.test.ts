@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { mainUpgradeData } from "./support/main-upgrade.ts";
 
-it("upgrading released main removes retired Runs and preserves current work, definitions and client access", async (c) => {
+it("upgrading deletes open Runs and preserves clients, Flows, Agents and Tasks", async (c) => {
   // Arrange
   const fixture = await mainUpgradeData(c);
 

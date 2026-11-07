@@ -78,22 +78,46 @@ async function candidateFor(
   projectId: string,
   title: string,
 ): Promise<LaunchCandidate | "incomplete" | undefined> {
-  const detail = await titledThread(call, thread);
-  if (!detail || detail.title !== title) return undefined;
-  if (!("workspaceRoot" in detail)) return "incomplete";
+  const detail = await evidenceFor(call, thread, title);
+  if (detail === "incomplete" || !detail) return detail;
   const executions = executionList(detail);
   if (!executions) return "incomplete";
   return candidateFrom(detail, projectId, title, executions);
 }
 
-async function titledThread(call: Call, thread: Record<string, unknown>) {
+/** A title match with a missing parent, workspace or execution list is read before it can count. */
+async function evidenceFor(call: Call, thread: Record<string, unknown>, title: string) {
+  const named = await ensureTitle(call, thread);
+  if (typeof named.title !== "string" || named.title !== title) return undefined;
+  const detail = launchEvidenceGap(named) ? await readThread(call, named) : named;
+  if (detail.title !== title) return undefined;
+  if (!provenLaunchEvidence(detail)) return "incomplete" as const;
+  return detail;
+}
+
+async function ensureTitle(call: Call, thread: Record<string, unknown>) {
   if (typeof thread.title === "string") return thread;
+  return readThread(call, thread);
+}
+
+async function readThread(call: Call, thread: Record<string, unknown>) {
   const threadId = requiredString(thread.threadId);
-  const detail = {
+  return {
     ...asObject(await call("t3_thread_read", { threadId, runLimit: 50 })),
     ...thread,
   };
-  return typeof detail.title === "string" ? detail : undefined;
+}
+
+function launchEvidenceGap(thread: Record<string, unknown>) {
+  return !("parentThreadId" in thread) || !("workspaceRoot" in thread) || !executionList(thread);
+}
+
+function provenLaunchEvidence(detail: Record<string, unknown>) {
+  return !launchEvidenceGap(detail) && provenParent(detail.parentThreadId);
+}
+
+function provenParent(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.length > 0);
 }
 
 function executionList(detail: Record<string, unknown>) {
@@ -111,8 +135,8 @@ function optionalText(value: unknown) {
 }
 
 function parentThread(value: unknown) {
-  if (value === null) return null;
-  return typeof value === "string" ? value : null;
+  if (!provenParent(value)) throw Error("Thread parent evidence is unavailable");
+  return value;
 }
 
 function candidateFrom(
