@@ -1,7 +1,7 @@
 # Studio
 
 Studio is the modal authoring surface for global Flows and reusable Agent definitions. It opens over the current Run or the Run composer and leaves that screen mounted, so closing it returns
-there with its draft intact. The Studio icon sits just before Settings in the Run sidebar footer; Settings holds connection, Agent reporting and keyboard preferences and does not list Agents.
+there with its draft intact. Settings holds connection, Agent reporting and keyboard preferences and does not list Agents.
 
 ## Shell
 

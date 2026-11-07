@@ -1,27 +1,10 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { CommandPalette } from "./components/command-palette.tsx";
 import { matchesShortcut, shouldHandleShortcut } from "./keyboard-shortcuts.ts";
 import { getShortcutPreferences } from "./shortcut-preferences.ts";
 import { useSettingsNavigation, validateAppSearch } from "./settings-navigation.ts";
 import { runDraft } from "./run-draft.ts";
-
-type KeyboardCommands = { paletteOpen: boolean; togglePalette: () => void };
-const KeyboardCommandsContext = createContext<KeyboardCommands | null>(null);
-
-export function useKeyboardCommands() {
-  const value = useContext(KeyboardCommandsContext);
-  if (!value) throw new Error("useKeyboardCommands requires KeyboardCommandsProvider");
-  return value;
-}
 
 export function KeyboardCommandsProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -76,7 +59,7 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
   }, [newRun, paletteOpen, settings, togglePalette]);
 
   return (
-    <KeyboardCommandsContext.Provider value={{ paletteOpen, togglePalette }}>
+    <>
       {children}
       <CommandPalette
         open={paletteOpen}
@@ -84,6 +67,6 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
         restoreFocus={restoreFocus}
         onNewRun={newRun}
       />
-    </KeyboardCommandsContext.Provider>
+    </>
   );
 }

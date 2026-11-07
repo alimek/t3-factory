@@ -89,7 +89,7 @@ T3 settlement or active-list behavior.
   reopen it: prompt and choices are restored. From the older draft's ··· menu (or F2) rename it, edit its prompt and reload:
   the title stays. Start it: only its Run remains, with the manual title, below the newer draft; **Discard** the newer draft
   and it disappears at once. `db:reset` does not clear drafts.
-- **Shortcuts.** In Settings → Keyboard shortcuts change Command palette, reload and use the new chord; Reset all restores defaults. Preferences are browser-local and not reset by `db:reset`.
+- **Sidebar footer and shortcuts.** With any seeded Run open, inspect Snoozed: no top separator appears above the group. The footer shows Settings first and Studio second. Open each control and close its modal to return to the Run. Use a fresh browser profile or restore the default Command palette binding in Settings → Keyboard shortcuts, then press Cmd+K (Ctrl+K on other platforms): the command palette opens even though the footer has no palette button. In Settings → Keyboard shortcuts change Command palette, reload and use the new chord; Reset all restores defaults. Preferences are browser-local and not reset by `db:reset`.
 - **Devices and connection.** The seed includes approved **Demo · Office browser** and revoked **Demo · Retired laptop** clients in Settings → Devices & access (pending requests expire, so request one
   from another browser profile). The Vite proxy is host-local; controlled remote-client journeys cover pending, approved, revoked, offline and incompatible clients, and desktop fixtures simulate updater
   checks and the native bridge without qualifying real updates, Keychain behavior, certificate trust or a second physical device.

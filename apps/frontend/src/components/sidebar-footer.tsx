@@ -1,5 +1,5 @@
 import { UpdateControl } from "./update-control.tsx";
-import { Command, Settings, PencilRuler } from "lucide-react";
+import { Settings, PencilRuler } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ConnectionStateDot,
@@ -18,7 +18,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useKeyboardCommands } from "../keyboard-commands.tsx";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { reportingSummary, useReportingState } from "../reporting-state.tsx";
 
@@ -54,24 +53,11 @@ export function SidebarFooter() {
   const settingsOptions = useSettingsOptions({ tab: indicator.tab });
   const statusLabel = indicator.label;
   const statusText = indicator.text;
-  const { togglePalette, paletteOpen } = useKeyboardCommands();
   return (
     <nav
       aria-label="Sidebar footer"
       className="mt-auto flex h-12 shrink-0 items-center gap-1 border-t border-border bg-sidebar px-3"
     >
-      <FooterIcon
-        label={`Command palette, ${hint("palette")}`}
-        active={paletteOpen}
-        onClick={togglePalette}
-      >
-        <Command aria-hidden className="size-4" strokeWidth={1.5} />
-      </FooterIcon>
-      <FooterIcon label="Studio" active={!!studio}>
-        <Link {...studioOptions} aria-label="Studio">
-          <PencilRuler aria-hidden className="size-4" strokeWidth={1.5} />
-        </Link>
-      </FooterIcon>
       <FooterIcon
         label={`Settings, ${statusLabel}`}
         shortcut={hint("settings")}
@@ -85,6 +71,11 @@ export function SidebarFooter() {
             className={indicator.dotClass}
             overlay
           />
+        </Link>
+      </FooterIcon>
+      <FooterIcon label="Studio" active={!!studio}>
+        <Link {...studioOptions} aria-label="Studio">
+          <PencilRuler aria-hidden className="size-4" strokeWidth={1.5} />
         </Link>
       </FooterIcon>
       {statusText && (
@@ -103,13 +94,11 @@ function FooterIcon({
   label,
   shortcut,
   active,
-  onClick,
   children,
 }: {
   label: string;
   shortcut?: string;
   active: boolean;
-  onClick?: () => void;
   children: ReactNode;
 }) {
   const buttonClass = cn(
@@ -119,29 +108,15 @@ function FooterIcon({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        {onClick ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={label.split(",")[0]?.trim() ?? label}
-            aria-pressed={active}
-            className={buttonClass}
-            onClick={onClick}
-          >
-            {children}
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="icon"
-            asChild
-            aria-current={active ? "page" : undefined}
-            className={buttonClass}
-          >
-            {children}
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          asChild
+          aria-current={active ? "page" : undefined}
+          className={buttonClass}
+        >
+          {children}
+        </Button>
       </TooltipTrigger>
       <TooltipContent side="top">
         {label}
