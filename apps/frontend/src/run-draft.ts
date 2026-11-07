@@ -292,6 +292,28 @@ export function createRunDraft(
     save();
     publish();
   }
+  /** False when the title is blank or too long, or the draft awaits a Start outcome. */
+  function rename(id: string, title: string) {
+    const manualTitle = title.trim();
+    const saved = find(id);
+    if (server === undefined || !saved || saved.submission) return false;
+    if (!manualTitle || manualTitle.length > TASK_TITLE_LIMIT) return false;
+    commit(server, id, (latest = saved) => ({ ...latest, manualTitle }));
+    publish();
+    return true;
+  }
+  /** A draft awaiting a Start outcome is kept so its exact request can still be checked. */
+  function discard(id: string) {
+    const saved = find(id);
+    if (server === undefined || !saved || saved.submission) return;
+    if (id === currentId) {
+      currentId = undefined;
+      current = { ...current, input: "" };
+      error = "";
+    }
+    commit(server, id, () => undefined);
+    publish();
+  }
   function rejectStart(id: string, failure: unknown, recoverable: boolean) {
     if (id !== currentId) return;
     if (confirmedRejection(failure))
@@ -388,6 +410,8 @@ export function createRunDraft(
       if (leaveComposition()) publish();
     },
     forgetUnavailable,
+    rename,
+    discard,
     start,
   };
 }

@@ -39,7 +39,8 @@ Failures explain recovery and keep the draft.
   **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
   Flow editor's **Start Run** does the same with its Flow. A selected Project or Flow is cleared only when a fresh catalog read
   confirms it is gone; a failed read changes nothing. Confirmed Start removes the draft and opens its Run; a confirmed
-  rejection keeps it editable.
+  rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
+  survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
 ## Execution canvas
 
@@ -78,8 +79,11 @@ stale) and chips. Missing projects keep readable history; an unavailable open Ru
 - **Settled** (collapsed, with a count) holds only Runs with recorded Finished or Stopped closure. **Snoozed** sits above it.
   Case-insensitive title search reveals matching entries in every group, including drafts (titled from the first non-empty
   prompt line, or **Untitled draft**); Escape or × clears it.
-- **Rename** changes that Run's title only (trimmed, non-empty, ≤500 characters). Row menu: hover/focus/select, Shift+F10,
-  F2 renames; closed rows offer Rename only.
+- **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
+  Row menu: hover/focus/select, Shift+F10, F2 renames; closed rows offer Rename only. Draft rows offer Rename and
+  **Discard**, which removes the draft from this browser at once without confirmation; discarding the open draft leaves an
+  empty composition with the same choices. While a draft's Start is in flight or its outcome is unknown, both are
+  unavailable: the draft keeps its exact request until **Check same request** settles it.
 - A closed Run is read-only history and is never reopened or relaunched. To work on the matter again, start a **New Run**: it
   uses the current saved Flow and Agent definitions, not an earlier Run's snapshot.
 

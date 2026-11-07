@@ -169,6 +169,103 @@ it("drafts are listed newest first and editing one does not move it", (context) 
   expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Second", "First, edited later"]);
 });
 
+it("a renamed draft keeps its trimmed title through prompt edits and reload", (context) => {
+  // Arrange
+  const typed = composer(context);
+  const { draftId } = typed.draft.getSnapshot();
+  assert(draftId);
+  typed.draft.leave();
+  typed.draft.rename(draftId, "  Release notes  ");
+  typed.draft.edit({ input: "A different first line" });
+
+  // Act
+  const { draft } = reopen(typed);
+
+  // Assert
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Release notes"]);
+});
+
+it("a blank rename keeps the draft and its automatic title after reload", (context) => {
+  // Arrange
+  const typed = composer(context);
+  const { draftId } = typed.draft.getSnapshot();
+  assert(draftId);
+  typed.draft.leave();
+  typed.draft.rename(draftId, " \t ");
+
+  // Act
+  const { draft } = reopen(typed);
+
+  // Assert
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Do the work"]);
+});
+
+it("clearing the prompt removes a renamed draft", (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  const { draftId } = draft.getSnapshot();
+  assert(draftId);
+  draft.leave();
+  draft.rename(draftId, "Release notes");
+
+  // Act
+  draft.edit({ input: "  " });
+
+  // Assert
+  expect(draft.getDrafts()).toStrictEqual([]);
+});
+
+it("discarding a draft removes it after reload and keeps the other drafts", (context) => {
+  // Arrange
+  const typed = composer(context);
+  const { draftId } = typed.draft.getSnapshot();
+  assert(draftId);
+  typed.draft.openFresh();
+  typed.draft.edit({ input: "Keep this one" });
+  typed.draft.leave();
+
+  // Act
+  typed.draft.discard(draftId);
+
+  // Assert
+  expect(reopen(typed).draft.getDrafts().map(draftTitle)).toStrictEqual(["Keep this one"]);
+});
+
+it("discarding the open draft leaves an empty composition with the same choices", (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  const { draftId } = draft.getSnapshot();
+  assert(draftId);
+
+  // Act
+  draft.discard(draftId);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    draftId: undefined,
+    input: "",
+    projectId: "project",
+    flowId: "flow",
+  });
+});
+
+it("Discard keeps an unresolved Start for the same check", async (context) => {
+  // Arrange
+  const { draft, startRun } = await unknownStart(context);
+  const submitted = structuredClone(startRun.mock.calls[0]?.[0]);
+  const { draftId } = draft.getSnapshot();
+  assert(draftId);
+  draft.discard(draftId);
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  const runId = await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[1]?.[0]).toStrictEqual(submitted);
+  expect(runId).toBe("accepted-run");
+});
+
 it("an accepted Start removes its draft instead of listing it beside the Run", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);
