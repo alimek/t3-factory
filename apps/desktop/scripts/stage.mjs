@@ -14,7 +14,13 @@ import { buildIdentity } from "./build-identity.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const stage = join(root, "stage");
 const desktop = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-const identity = buildIdentity(root, desktop.version, process.argv.includes("--release"));
+const argv = process.argv.slice(2);
+const identity = buildIdentity(
+  root,
+  desktop.version,
+  argv.includes("--release") ? "release" : argv.includes("--beta") ? "beta" : "development",
+  argv[argv.indexOf("--beta") + 1],
+);
 const electronVersion = desktop.devDependencies.electron;
 // Resolve the same fs-ext the backend depends on, never a separately chosen version.
 const backendRequire = createRequire(

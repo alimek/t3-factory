@@ -11,4 +11,5 @@ export const channels = {
   checkForUpdates: "factory:check-for-updates",
   downloadUpdate: "factory:download-update",
   installUpdate: "factory:install-update",
+  setUpdateChannel: "factory:set-update-channel",
 } as const;

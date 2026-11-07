@@ -7,6 +7,8 @@ import type {
   ProtocolDescriptor,
   RemoteAccessStatus,
   RequestClientAccessInput,
+  ServerUpdate,
+  ServerUpdateAction,
   RunDetail,
   RunCreationPolicy,
   StartRunInput,
@@ -161,4 +163,7 @@ export const api = {
   getRemoteAccess: () => request<RemoteAccessStatus>("/api/host/remote-access"),
   setRemoteAccess: (enabled: boolean) =>
     put<RemoteAccessStatus>("/api/host/remote-access", { enabled }),
+  getServerUpdate: () => request<ServerUpdate>("/api/server-update"),
+  runServerUpdate: (action: ServerUpdateAction) =>
+    request<ServerUpdate>(`/api/server-update/${action}`, { method: "POST" }),
 };

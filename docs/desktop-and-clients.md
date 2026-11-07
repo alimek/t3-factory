@@ -71,8 +71,9 @@ reauthorization and Agent reporting installation stay host setup: remote clients
 their status and a "Managed on the Factory host" notice, and such changes are refused
 remotely. When T3 needs approval, a remote client may choose **Open authorization on
 server** to reopen or start consent in the host's browser for the saved endpoint; see
-[T3 connection](t3-integration.md#authorizing). Lifecycle, approvals and
-updates are host-local only.
+[T3 connection](t3-integration.md#authorizing). Lifecycle and approvals are host-local
+only; an approved client may check, download and install the server's own update
+([updates](#updates)).
 
 Unanswered requests expire after 15 minutes; at most ten may wait at once. **Deny**
 rejects a request; **Revoke** removes an approved client's access immediately,
@@ -104,16 +105,37 @@ outside the draggable region, fullscreen and window controls stay native, and th
 
 ## Updates
 
-Updates are checked automatically on launch and every six hours; downloading and installing are explicit. An available release shows a **Download update** icon in the Run sidebar footer and the same action in
-**Settings → Application**; progress disables repeat downloads, and once ready **Install and restart** is a separate action with a confirmation on this computer (cancelling keeps the app and the downloaded update;
-quitting never installs). A client update affects only that client; a server update is installed only from the host, with the open-Run interruption warning before orderly shutdown, and data, role, reporting
-registrations and T3 connection remain (restart reconciles). Errors offer a retry check and builds without a release feed show updates as unsupported.
+Updates are checked automatically on launch and every six hours. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
+on-demand [beta builds](release.md#beta-builds) of main, plus newer stable Releases). Until chosen, an installation follows the channel of the build it runs. Changing the channel discards an update found on the
+previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Application settings says so. The same section shows the updater state with the last check time and a labelled update control.
 
-The footer icon is a muted circular arrow for **Check for updates**, a highlighted downward arrow when a release is available and an upward arrow in a circle when downloaded; checking and downloading show a spinner
-with progress in the tooltip. Hover or focus shows the version and **What's new** from the feed (long notes are shortened; the full text is in Settings → Application, always displayed as text, never feed markup;
-a release without notes says so and does not block download). Application preferences are reached through the Settings gear; connection and startup gates without a sidebar keep a contextual **Application settings**
-entry, including in incompatible and offline states. If installation fails before replacement, Factory clears the quitting state and reopens the same data home through normal reconciliation, keeping the
-error in local settings.
+One control at the right of the Run sidebar footer drives the lifecycle for every installation this window can replace: the desktop app itself, and the server when the window talks to one through its update
+API (a desktop client's remote server, or the server a browser profile uses). A desktop server is one target. Its states:
+
+| State | Control | Click |
+| --- | --- | --- |
+| Idle | Circular arrow, **Check for updates** | Checks every target |
+| Checking | Spinner | — |
+| Up to date | Check mark, **Up to date · Stable 0.1.0**, for a few seconds after a check | Checks again |
+| Available | Highlighted download arrow; tooltip shows the version and a short changelog | Downloads on every target that has an update; nothing downloads on its own |
+| Downloading | Percentage; tooltip shows the version and percentage across targets | — |
+| Ready | Highlighted arrow, **Update downloaded · Click to upgrade client + server** (or one of them) | Opens the upgrade review |
+| Upgrading | Spinner, **Upgrading…** | — |
+| Error | Warning, **Update failed · Click to retry** | Shows what failed, e.g. **Server update failed · Client kept**, with **Retry** |
+
+The **upgrade review** opens anchored to the control: **Upgrade client + server?** lists each downloaded target (**Client · This device**, **Server · <host>**) as current → target release, notes that the remote
+server updates first and how many open Runs keep going. Nothing changes until **Upgrade**; **Cancel** keeps everything. This confirmation replaces the native dialog, and ordinary Quit never installs. With two targets
+the server installs first: the client waits until the server answers its handshake with the target release and only then restarts. If the server does not return on that release within ten minutes, or reports an
+installation error, the upgrade stops with **Server update failed · Client kept** and the client is unchanged. A browser reloads its UI after the server upgrade.
+
+A server update keeps data, role, reporting registrations and T3 connection; Runs are not stopped and reconcile after restart, and clients go **Offline** meanwhile and reconnect automatically. The server's channel
+is chosen on its host. A server running from a source checkout, a development package or a release without the update API is not an upgrade target. Connection and startup gates without a sidebar keep a contextual
+**Application settings** entry with the channel and the same control for this app only, including in incompatible and offline states.
+
+The Available tooltip previews the changes of every release between the installed version and the update, newest first, from the feed's ten most recent entries; the stable channel leaves out beta builds, whose
+changes the Release notes already cover. Each change is one line without author, PR or commit references and without its Conventional Commit prefix; four are shown, then **+N more**. Notes are always read as
+text, never feed markup; a release without notes says so and does not block download. If installation fails before
+replacement, Factory clears the quitting state and reopens the same data home through normal reconciliation, keeping the error in the control.
 
 ## Browser access on the host
 

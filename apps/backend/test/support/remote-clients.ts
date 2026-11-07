@@ -4,10 +4,14 @@ import { Agent, request } from "node:https";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ClientKind, FactoryClient, Result } from "@t3-factory/contracts";
+import type { ClientKind, FactoryClient, Result, ServerUpdateAction } from "@t3-factory/contracts";
 import { FACTORY_MINIMUM_SERVER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
 import { loadConfiguration } from "@t3-factory/backend/config";
-import { startServer, type ServerOptions } from "@t3-factory/backend/server";
+import {
+  startServer,
+  type ApplicationUpdates,
+  type ServerOptions,
+} from "@t3-factory/backend/server";
 import { prepared } from "./prepared-runner.ts";
 
 interface Reply<A = unknown> {
@@ -151,6 +155,31 @@ class RemoteClient {
   close() {
     this.agent.destroy();
   }
+}
+
+/** A desktop server's updater holding a downloaded beta; it records requested actions. */
+export function recordingUpdates() {
+  const actions: ServerUpdateAction[] = [];
+  const updates: ApplicationUpdates = {
+    status: () => ({
+      channel: "beta",
+      update: {
+        state: "downloaded",
+        version: "0.1.1-beta.3",
+        progress: 100,
+        downloadedBytes: null,
+        totalBytes: null,
+        checkedAt: null,
+        releaseNotes: null,
+        message: null,
+      },
+    }),
+    run: (action) => {
+      actions.push(action);
+      return Promise.resolve({ ok: true, value: null });
+    },
+  };
+  return { actions, updates };
 }
 
 /** A Factory server with secure remote access on loopback ports and a host-local owner panel. */

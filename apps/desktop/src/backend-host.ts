@@ -2,10 +2,17 @@
  * The desktop server's backend: the same public Factory operations and listeners as
  * `pnpm start`, in an Electron utility process with the bundled runtime.
  */
+import type { Result, ServerUpdateAction } from "@t3-factory/contracts";
 import { loadConfiguration } from "@t3-factory/backend/config";
-import { startServer } from "@t3-factory/backend/server";
+import { startServer, type ApplicationUpdates } from "@t3-factory/backend/server";
 
-type Message = { readonly type: "shutdown" };
+type Message =
+  | { readonly type: "shutdown" }
+  | {
+      readonly type: "update-status";
+      readonly status: ReturnType<ApplicationUpdates["status"]>;
+    }
+  | { readonly type: "update-result"; readonly id: number; readonly result: Result<null> };
 const parent = process.parentPort;
 
 function explain(error: unknown, home: string | undefined): string {
@@ -19,6 +26,41 @@ function explain(error: unknown, home: string | undefined): string {
   return "Factory could not open its data home. Check permissions on the data directory and its config.json, then choose Retry.";
 }
 
+/** The main process owns the updater; it publishes status here and answers each action. */
+function hostUpdates(): ApplicationUpdates {
+  let status: ReturnType<ApplicationUpdates["status"]> = {
+    channel: null,
+    update: {
+      state: "checking",
+      version: null,
+      progress: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      releaseNotes: null,
+      checkedAt: null,
+      message: null,
+    },
+  };
+  let next = 0;
+  const pending = new Map<number, (result: Result<null>) => void>();
+  parent.on("message", (event: { data: Message }) => {
+    if (event.data.type === "update-status") status = event.data.status;
+    if (event.data.type === "update-result") {
+      pending.get(event.data.id)?.(event.data.result);
+      pending.delete(event.data.id);
+    }
+  });
+  return {
+    status: () => status,
+    run: (action: ServerUpdateAction) =>
+      new Promise((resolve) => {
+        const id = ++next;
+        pending.set(id, resolve);
+        parent.postMessage({ type: "update-action", id, action });
+      }),
+  };
+}
+
 let home: string | undefined;
 try {
   const config = await loadConfiguration();
@@ -27,6 +69,7 @@ try {
   const server = await startServer(config, {
     uiDirectory: process.env.FACTORY_UI_DIRECTORY ?? null,
     applicationVersion: process.env.FACTORY_APPLICATION_VERSION ?? "desktop",
+    applicationUpdates: hostUpdates(),
     ...(executable ? { bridgeRuntime: { kind: "bundled" as const, executable } } : {}),
   });
   parent.postMessage({ type: "ready", port: server.address.port, home: config.home });

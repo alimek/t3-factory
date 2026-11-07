@@ -15,6 +15,7 @@
     "test:e2e": "e2e run",
     "desktop:package": "pnpm build && pnpm --filter @t3-factory/desktop package",
     "desktop:package:release": "pnpm build && pnpm --filter @t3-factory/desktop package --release",
+    "desktop:package:beta": "pnpm build && pnpm --filter @t3-factory/desktop package --beta",
     "desktop:probe": "node apps/desktop/scripts/probe-package.mjs",
     "e2e:screenshots": "pnpm build && e2e run tests/screenshots.e2e.ts --trace on --output .e2e/screenshots",
     "e2e:explore": "e2e explore --config e2e.explore.config.ts",

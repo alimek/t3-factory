@@ -1,0 +1,128 @@
+name: Beta
+
+# Beta builds of main: nightly when main moved since the last beta, or on demand. Each one is a
+# signed GitHub prerelease `vX.Y.(Z+1)-beta.N` that beta-channel installations update to.
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: beta
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Resolve beta source
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.source.outputs.build }}
+      sha: ${{ steps.source.outputs.sha }}
+      previous: ${{ steps.source.outputs.previous }}
+    steps:
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
+        run: |
+          previous=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '[.[] | select(.prerelease and (.draft | not) and (.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-beta\\.[0-9]+$")))][0].tag_name // ""')
+          previous_sha=""
+          if [[ -n "$previous" ]]; then
+            previous_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$previous" --jq .sha)
+          fi
+          build=true
+          if [[ "$SCHEDULED" = true && "$previous_sha" = "$GITHUB_SHA" ]]; then
+            build=false
+            echo "main is still at $previous ($GITHUB_SHA); no nightly beta." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "build=$build"
+            echo "sha=$GITHUB_SHA"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+  build-macos:
+    name: Build
+    needs: source
+    if: needs.source.outputs.build == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      sha: ${{ needs.source.outputs.sha }}
+      channel: beta
+      beta-number: ${{ github.run_number }}
+    secrets:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+  publish:
+    name: Publish beta
+    needs: [source, build-macos]
+    if: ${{ !cancelled() && needs.build-macos.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.build-macos.outputs.tag }}
+      RELEASE_SHA: ${{ needs.source.outputs.sha }}
+      RELEASE_VERSION: ${{ needs.build-macos.outputs.version }}
+      PREVIOUS_TAG: ${{ needs.source.outputs.previous }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ needs.build-macos.outputs.tag }}
+          path: downloads
+      - name: Verify downloads
+        working-directory: downloads
+        run: |
+          base="T3.Factory-$RELEASE_VERSION-arm64"
+          printf '%s\n' "$base.dmg" "$base.dmg.blockmap" "$base.zip" "$base.zip.blockmap" \
+            SHA256SUMS.txt beta-mac.yml | sort > ../expected-files.txt
+          ls -1 | sort > ../actual-files.txt
+          diff -u ../expected-files.txt ../actual-files.txt
+          sha256sum --check --strict SHA256SUMS.txt
+          test "$(awk '{print $2}' SHA256SUMS.txt | sort)" = "$(grep -v '^SHA256SUMS.txt$' ../expected-files.txt)"
+          grep -qx "version: $RELEASE_VERSION" beta-mac.yml
+      - name: Create draft prerelease
+        run: |
+          notes=(--generate-notes)
+          if [[ -n "$PREVIOUS_TAG" ]]; then notes+=(--notes-start-tag "$PREVIOUS_TAG"); fi
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+            --target "$RELEASE_SHA" --title "T3 Factory $RELEASE_VERSION" "${notes[@]}"
+          echo "RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\" and .draft) | .id")" >> "$GITHUB_ENV"
+      - name: Upload and verify assets
+        run: |
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" downloads/*
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
+            --jq '.[] | "\(.digest | sub("^sha256:"; ""))  \(.name)"' | sort -k2 > uploaded.txt
+          (cd downloads && sha256sum -- *) | sort -k2 > local.txt
+          diff -u local.txt uploaded.txt
+      - name: Publish
+        run: |
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .prerelease <<<"$release")" = true
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$RELEASE_SHA"
+          jq -r '"Published beta: " + .html_url' <<<"$release" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove an unpublished draft
+        if: failure() && env.RELEASE_ID != ''
+        run: |
+          # A draft has no tag yet; the next beta build gets a new number.
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .draft)" = true ]]; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+          fi

@@ -20,12 +20,17 @@ import {
   Tray,
   type IpcMainInvokeEvent,
 } from "electron";
+import type {
+  Result as OperationResult,
+  ServerUpdateAction,
+  UpdateChannel,
+} from "@t3-factory/contracts";
 import { ApprovedClient } from "./approved-client.ts";
 import { BackendSupervisor } from "./backend.ts";
 import { channels } from "./ipc.ts";
 import { appOrigin, factoryProtocolHandler, type ApiTarget } from "./protocol.ts";
 import { SettingsStore } from "./settings-store.ts";
-import { Updates } from "./updates.ts";
+import { buildChannel, Updates } from "./updates.ts";
 
 // Disposable profiles for probes and side-by-side installs; FACTORY_HOME selects server data.
 if (process.env.FACTORY_DESKTOP_USER_DATA)
@@ -55,6 +60,10 @@ let tray: Tray | null = null;
 /** Set only after the local user confirmed and the backend stopped in order. */
 let quitting = false;
 let installingUpdate = false;
+/** An approved client's install request was accepted and starts on the next tick. */
+let serverInstallAccepted = false;
+
+const updateChannel = (): UpdateChannel => store.get().updateChannel ?? buildChannel();
 
 function desktopState() {
   const settings = store.get();
@@ -66,6 +75,7 @@ function desktopState() {
       : null,
     backend: backend.state,
     launchAtLogin: settings.launchAtLogin,
+    updateChannel: updateChannel(),
     update: updates.current,
   };
 }
@@ -102,30 +112,15 @@ async function openRunCount(): Promise<number | null> {
 const interruption = {
   quit: { button: "Quit Factory", verb: "Quitting" },
   switch: { button: "Stop server and switch", verb: "Switching to client mode" },
-  update: { button: "Install and restart", verb: "Installing the update" },
 } as const;
 
 /**
- * Host-local confirmation before Factory control stops. Quit, role switch and update
- * installation never Stop Runs; T3 work may continue while Factory is closed.
+ * Host-local confirmation before Factory control stops. Quit and role switch never Stop
+ * Runs; T3 work may continue while Factory is closed. Update installation is confirmed in
+ * the upgrade review, which shows the same open-Run warning.
  */
 async function confirmInterruption(action: keyof typeof interruption): Promise<boolean> {
-  if (store.get().role !== "server" || backend.state.state !== "running") {
-    if (action !== "update") return true;
-    const options = {
-      type: "question" as const,
-      buttons: ["Install and restart", "Cancel"],
-      defaultId: 1,
-      cancelId: 1,
-      message: "Install the downloaded update and restart Factory?",
-      detail:
-        "Factory will restart to finish installing. Your data and application settings are kept.",
-    };
-    const result = window
-      ? await dialog.showMessageBox(window, options)
-      : await dialog.showMessageBox(options);
-    return result.response === 0;
-  }
+  if (store.get().role !== "server" || backend.state.state !== "running") return true;
   const open = await openRunCount();
   if (action === "quit" && open === 0) return true;
   const runs =
@@ -254,15 +249,22 @@ async function setLaunchAtLogin(enabled: boolean): Promise<Result> {
   return { ok: true };
 }
 
+async function setUpdateChannel(channel: unknown): Promise<Result> {
+  if (channel !== "stable" && channel !== "beta") return failed("Choose stable or beta.");
+  const problem = updates.configure(channel);
+  if (problem) return failed(problem);
+  await store.update({ updateChannel: channel });
+  broadcast();
+  return { ok: true };
+}
+
+/** Confirmed in the upgrade review; the backend still shuts down in order before replacement. */
 async function installUpdate(): Promise<Result> {
   if (installingUpdate) return failed("Update installation is already in progress.");
   if (updates.current.state !== "downloaded") return failed("No downloaded update is ready.");
   installingUpdate = true;
   try {
-    if (!(await stopBackendFor("update"))) {
-      installingUpdate = false;
-      return failed("Installation cancelled. The update is still ready.");
-    }
+    await backend.stop();
     if (updates.current.state !== "downloaded")
       throw new Error("The update is no longer ready. Check for updates again.");
     quitting = true;
@@ -274,6 +276,39 @@ async function installUpdate(): Promise<Result> {
     if (store.get().role === "server") backend.start();
     return failed(`Update installation could not start: ${String(error)}`);
   }
+}
+
+/** Server role: approved clients operate this installation's updater through the backend. */
+async function runServerUpdate(action: ServerUpdateAction): Promise<OperationResult<null>> {
+  const refused = (message: string): OperationResult<null> => ({
+    ok: false,
+    error: { code: "conflict", message, issues: [] },
+  });
+  const state = updates.current.state;
+  if (action === "check") {
+    await updates.check();
+    return { ok: true, value: null };
+  }
+  if (action === "download") {
+    if (state !== "available") return refused("No server update is available to download.");
+    void updates.download();
+    return { ok: true, value: null };
+  }
+  if (state !== "downloaded") return refused("No downloaded server update is ready to install.");
+  if (installingUpdate || serverInstallAccepted)
+    return refused("The server update is already being installed.");
+  // Accepted before the deferred start, so a concurrent request is refused, not failed.
+  serverInstallAccepted = true;
+  // Answer the client before the backend begins its orderly shutdown.
+  // A failed start is published as the updater's error, which the waiting client reads.
+  setImmediate(
+    () =>
+      void installUpdate().then((result) => {
+        serverInstallAccepted = false;
+        if (!result.ok) updates.fail(result.message);
+      }),
+  );
+  return { ok: true, value: null };
 }
 
 /** Only the bundled UI in this app's own window may use the native bridge. */
@@ -325,6 +360,7 @@ function registerBridge() {
     return { ok: true };
   });
   handle(channels.installUpdate, () => installUpdate());
+  handle(channels.setUpdateChannel, (channel: unknown) => setUpdateChannel(channel));
 }
 
 function registerUi() {
@@ -378,6 +414,13 @@ async function start() {
       FACTORY_BRIDGE_EXECUTABLE: process.execPath,
     },
     broadcast,
+    {
+      status: () => ({
+        channel: updates.current.state === "unsupported" ? null : updateChannel(),
+        update: updates.current,
+      }),
+      run: runServerUpdate,
+    },
   );
   updates = new Updates((status) => {
     if (installingUpdate && quitting && status.state === "error") {
@@ -387,6 +430,7 @@ async function start() {
       if (store.get().role === "server") backend.start();
       openWindow();
     }
+    backend.publishUpdate();
     broadcast();
   });
   // A system termination request (kill, launchd) is not an interactive Quit: no dialog,
@@ -404,7 +448,7 @@ async function start() {
   registerUi();
   registerBridge();
   if (store.get().role === "server") backend.start();
-  updates.start();
+  updates.start(updateChannel());
   tray = new Tray(trayImage());
   refreshTray();
   const settings = store.get();

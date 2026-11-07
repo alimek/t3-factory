@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReportingInstallation } from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { Button } from "@/components/ui/button";
-import { useClientScope } from "../client-gate.tsx";
+import { useClientScope } from "../client-scope.ts";
 import { HostSetupNotice } from "./connection.tsx";
 
 const labels = {

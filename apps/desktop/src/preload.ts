@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
   checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates),
   downloadUpdate: () => ipcRenderer.invoke(channels.downloadUpdate),
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
+  setUpdateChannel: (channel: string) =>
+    ipcRenderer.invoke(channels.setUpdateChannel, String(channel)),
 });

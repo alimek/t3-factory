@@ -1,52 +1,63 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
-import electronUpdater from "electron-updater";
-
-export interface UpdateStatus {
-  readonly state:
-    | "idle"
-    | "checking"
-    | "available"
-    | "downloading"
-    | "downloaded"
-    | "error"
-    | "unsupported";
-  readonly version: string | null;
-  readonly progress: number | null;
-  readonly releaseNotes: string | null;
-  readonly message: string | null;
-}
+import electronUpdater, { type VerifyUpdateSupport } from "electron-updater";
+import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 
 const checkEveryMs = 6 * 3600_000;
 
+/** The track an installation follows until its user chooses one: the track of its own build. */
+export const buildChannel = (): UpdateChannel =>
+  app.getVersion().includes("-beta.") ? "beta" : "stable";
+
 /**
- * GitHub Releases (or the configured feed) through electron-updater: automatic checks and
+ * Notes of every version between the installed one and the update, newest first. Stable skips
+ * beta builds: the Release notes already cover their changes.
+ */
+function changelog(
+  notes: Parameters<VerifyUpdateSupport>[0]["releaseNotes"],
+  channel: UpdateChannel,
+): string | null {
+  if (!Array.isArray(notes)) return typeof notes === "string" ? notes : null;
+  const entries = notes
+    .filter((entry) => channel === "beta" || !entry.version.includes("-"))
+    .map(
+      (entry) => `<h3>${entry.version}</h3><div>${entry.note?.trim() || "No release notes."}</div>`,
+    );
+  return entries.length ? entries.join("") : null;
+}
+
+/**
+ * GitHub Releases (or the configured feed) through electron-updater: automatic checks,
  * explicit downloads, installation only through `install()`. A Quit never installs an update.
  */
 export class Updates {
-  private status: UpdateStatus = {
+  private status: ApplicationUpdate = {
     state: "idle",
     version: null,
     progress: null,
+    downloadedBytes: null,
+    totalBytes: null,
     releaseNotes: null,
     message: null,
+    checkedAt: null,
   };
   private readonly updater = electronUpdater.autoUpdater;
+  private channel: UpdateChannel | null = null;
 
-  constructor(private readonly changed: (status: UpdateStatus) => void) {}
+  constructor(private readonly changed: (status: ApplicationUpdate) => void) {}
 
-  get current(): UpdateStatus {
+  get current(): ApplicationUpdate {
     return this.status;
   }
 
-  private set(change: Partial<UpdateStatus>) {
+  private set(change: Partial<ApplicationUpdate>) {
     this.status = { ...this.status, ...change };
     this.changed(this.status);
   }
 
   /** Development runs and builds without a configured feed report updates as unsupported. */
-  start() {
+  start(channel: UpdateChannel) {
     if (app.getVersion().includes("+dev.")) {
       this.set({
         state: "unsupported",
@@ -63,27 +74,34 @@ export class Updates {
     }
     this.updater.autoDownload = false;
     this.updater.autoInstallOnAppQuit = false;
-    this.updater.allowPrerelease = false;
+    this.updater.fullChangelog = true;
+    this.apply(channel);
     this.updater.on("checking-for-update", () => this.set({ state: "checking", message: null }));
     this.updater.on("update-not-available", () =>
-      this.set({ state: "idle", version: null, progress: null, releaseNotes: null }),
+      this.set({
+        state: "idle",
+        version: null,
+        progress: null,
+        releaseNotes: null,
+        checkedAt: new Date().toISOString(),
+      }),
     );
     this.updater.on("update-available", (info) =>
       this.set({
         state: "available",
+        checkedAt: new Date().toISOString(),
         version: info.version,
         progress: 0,
-        releaseNotes:
-          typeof info.releaseNotes === "string"
-            ? info.releaseNotes
-            : (info.releaseNotes
-                ?.filter((note) => note.note?.trim())
-                .map((note) => `${note.version}\n${note.note}`)
-                .join("\n\n") ?? null),
+        releaseNotes: changelog(info.releaseNotes, this.channel ?? "stable"),
       }),
     );
     this.updater.on("download-progress", (progress) =>
-      this.set({ state: "downloading", progress: progress.percent }),
+      this.set({
+        state: "downloading",
+        progress: progress.percent,
+        downloadedBytes: progress.transferred,
+        totalBytes: progress.total,
+      }),
     );
     this.updater.on("update-downloaded", (info) =>
       this.set({ state: "downloaded", version: info.version, progress: 100 }),
@@ -99,20 +117,48 @@ export class Updates {
     setInterval(() => void this.check(), checkEveryMs).unref();
   }
 
+  /**
+   * Beta follows prereleases and stable Releases, whichever is newer; stable follows only
+   * Releases. Leaving beta never downgrades: the installed beta stays until a newer Release.
+   */
+  private apply(channel: UpdateChannel) {
+    this.channel = channel;
+    this.updater.channel = channel === "beta" ? "beta" : "latest";
+    this.updater.allowPrerelease = channel === "beta";
+    this.updater.allowDowngrade = false;
+  }
+
+  /** A changed track discards an update found on the previous one and checks again. */
+  configure(channel: UpdateChannel): string | null {
+    if (this.status.state === "unsupported" || this.channel === null || channel === this.channel)
+      return null;
+    if (this.status.state === "checking" || this.status.state === "downloading")
+      return "Wait for the current update check or download to finish before changing the channel.";
+    this.apply(channel);
+    this.set({ state: "idle", version: null, progress: null, releaseNotes: null, message: null });
+    void this.check();
+    return null;
+  }
+
   async check(): Promise<void> {
     if (["unsupported", "downloaded", "downloading", "checking"].includes(this.status.state))
       return;
     await this.updater.checkForUpdates().catch(() => undefined);
   }
 
-  /** Download starts only after an explicit local action, never while checking metadata. */
+  /** A download starts only after an explicit action, never while checking metadata. */
   async download(): Promise<void> {
     if (this.status.state !== "available") return;
-    this.set({ state: "downloading", progress: 0, message: null });
+    this.set({ state: "downloading", progress: 0, downloadedBytes: 0, message: null });
     await this.updater.downloadUpdate().catch(() => undefined);
   }
 
-  /** Called only after the local user confirmed and the backend shut down in order. */
+  /** An installation that could not start leaves the app running on its current release. */
+  fail(message: string) {
+    this.set({ state: "error", progress: null, message });
+  }
+
+  /** Called only after the upgrade review was confirmed and the backend shut down in order. */
   install() {
     try {
       this.updater.quitAndInstall(false, true);

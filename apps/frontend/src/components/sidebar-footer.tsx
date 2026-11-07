@@ -1,4 +1,4 @@
-import { DesktopUpdateAction } from "./desktop-update-action.tsx";
+import { UpdateControl } from "./update-control.tsx";
 import { Command, Settings, PencilRuler } from "lucide-react";
 import type { ReactNode } from "react";
 import {
@@ -64,7 +64,7 @@ export function SidebarFooter() {
         </span>
       )}
       <div className="ml-auto shrink-0">
-        <DesktopUpdateAction iconOnly />
+        <UpdateControl />
       </div>
     </nav>
   );

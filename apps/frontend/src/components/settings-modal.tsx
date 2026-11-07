@@ -12,7 +12,7 @@ import {
 import { KeyboardSettings } from "./keyboard-settings.tsx";
 import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
-import { useClientScope } from "../client-gate.tsx";
+import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
 import { SettingsPanel } from "./screen-layout.tsx";
@@ -73,7 +73,7 @@ const applicationSection: SettingsSection = {
   tab: "application",
   title: "Application",
   icon: AppWindow,
-  keywords: ["role", "server", "client", "updates", "login", "startup"],
+  keywords: ["role", "server", "client", "login", "startup", "updates", "channel", "beta"],
 };
 
 /** Approvals exist only on the host panel; the Application section only in the desktop app. */
@@ -146,7 +146,7 @@ export function SettingsModal() {
         <WorkspaceDialogHeader
           title="Settings"
           section={current.title}
-          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access and the desktop application."
+          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, updates and the desktop application."
           onClose={close}
         />
         <div className="flex min-h-0 flex-1 max-sm:flex-col">

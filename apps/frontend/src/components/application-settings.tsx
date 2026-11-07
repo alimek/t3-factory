@@ -4,24 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SectionLabel } from "@/components/page";
-import { desktopBridge, type DesktopResult, type DesktopState } from "../desktop-bridge.ts";
+import { desktopBridge, type DesktopResult } from "../desktop-bridge.ts";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ReleaseNotes } from "./release-notes.tsx";
-import { DesktopUpdateAction } from "./desktop-update-action.tsx";
 import { useDesktopState } from "../desktop-state.ts";
+import { UpdateSettings } from "./update-settings.tsx";
 
-const updateCopy: Record<DesktopState["update"]["state"], string> = {
-  idle: "Factory is up to date.",
-  checking: "Checking for updates…",
-  available: "An update is available. Download it when you are ready.",
-  downloading: "Downloading the update…",
-  downloaded: "The update is ready. It installs only when you choose Install.",
-  error: "The update failed. Review the error and check again to retry.",
-  unsupported: "Automatic updates are not configured for this build.",
-};
-
-/** Desktop-only: role, remembered server, launch at login and explicit update installation. */
-export function ApplicationSettings() {
+/**
+ * Desktop-only: role, remembered server, launch at login and updates. `local` is the gate
+ * dialog without a usable server, where only this app can be updated.
+ */
+export function ApplicationSettings({ local = false }: { local?: boolean }) {
   const desktop = desktopBridge();
   const state = useDesktopState();
   const [error, setError] = useState("");
@@ -30,7 +22,6 @@ export function ApplicationSettings() {
     const result = await operation();
     setError(result.ok ? "" : result.message);
   };
-  const update = state.update;
   return (
     <div className="grid gap-6">
       <div className="grid gap-2">
@@ -82,21 +73,7 @@ export function ApplicationSettings() {
         />
         <Label htmlFor="launch-at-login">Open Factory in the background at login</Label>
       </section>
-      <section aria-label="Updates" className="grid gap-2">
-        <SectionLabel>Updates</SectionLabel>
-        <p role="status" className="text-sm">
-          {updateCopy[update.state]}
-          {update.version && ` Version ${update.version}.`}
-          {update.state === "downloading" &&
-            update.progress !== null &&
-            ` ${Math.round(update.progress)}%`}
-        </p>
-        {update.version && <ReleaseNotes notes={update.releaseNotes} />}
-        {update.message && <p className="text-xs text-muted-foreground">{update.message}</p>}
-        <div className="flex flex-wrap gap-2">
-          <DesktopUpdateAction />
-        </div>
-      </section>
+      <UpdateSettings state={state} local={local} />
     </div>
   );
 }
@@ -116,7 +93,7 @@ export function LocalApplicationControls() {
           <DialogDescription>
             Settings and updates for this computer, available independently of the server.
           </DialogDescription>
-          <ApplicationSettings />
+          <ApplicationSettings local />
         </DialogContent>
       </Dialog>
     </>

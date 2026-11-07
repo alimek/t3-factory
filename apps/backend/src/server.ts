@@ -31,6 +31,9 @@ import {
 } from "./http-support.ts";
 import { listen, type Surface } from "./listener.ts";
 import { remoteAccessController } from "./remote-listener.ts";
+import { serverUpdateRoutes, type ApplicationUpdates } from "./server-update-routes.ts";
+
+export type { ApplicationUpdates } from "./server-update-routes.ts";
 
 const defaultUiDirectory = fileURLToPath(new URL("../../frontend/dist/", import.meta.url));
 const contentTypes: Record<string, string> = {
@@ -706,6 +709,8 @@ export interface ServerOptions {
   /** Another release's protocol range, for compatibility tests of mixed installations. */
   readonly protocol?: Pick<ProtocolDescriptor, "protocol" | "minimumPeerProtocol">;
   readonly bridgeRuntime?: FactoryOptions["bridgeRuntime"];
+  /** The desktop server's updater, which approved clients may operate. */
+  readonly applicationUpdates?: ApplicationUpdates;
 }
 
 const accessRequestsPerMinute = 5;
@@ -762,7 +767,11 @@ export async function startServer(config: Configuration, options: ServerOptions 
       return (request: HttpServerRequestType) => handleHttpRequest(request, binding);
     };
   const remote = remoteAccessController(config, handlerFor("remote", config.allowedHosts ?? []));
-  routes = [...accessRoutes(factory, protocol, remote, limiter), ...apiRoutes(factory)];
+  routes = [
+    ...accessRoutes(factory, protocol, remote, limiter),
+    ...apiRoutes(factory),
+    ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
+  ];
   const nodeServer = createServer();
   let host: Awaited<ReturnType<typeof listen>>;
   try {

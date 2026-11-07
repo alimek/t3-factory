@@ -11,14 +11,24 @@ import { readFileSync } from "node:fs";
 const { factoryBuild } = JSON.parse(
   readFileSync(new URL("stage/package.json", import.meta.url), "utf8"),
 );
-const release = factoryBuild.channel === "release";
+const beta = factoryBuild.channel === "beta";
 const generic = process.env.FACTORY_UPDATE_URL;
 const owner = process.env.FACTORY_UPDATE_GITHUB_OWNER;
 const repo = process.env.FACTORY_UPDATE_GITHUB_REPO;
+// Beta builds write `beta-mac.yml` and are GitHub prereleases; stable builds write `latest-mac.yml`.
+const channel = beta ? { channel: "beta" } : {};
 const publish = generic
-  ? [{ provider: "generic", url: generic }]
+  ? [{ provider: "generic", url: generic, ...channel }]
   : owner && repo
-    ? [{ provider: "github", owner, repo, releaseType: "release" }]
+    ? [
+        {
+          provider: "github",
+          owner,
+          repo,
+          releaseType: beta ? "prerelease" : "release",
+          ...channel,
+        },
+      ]
     : null;
 const signed = Boolean(process.env.CSC_LINK || process.env.CSC_NAME);
 
@@ -69,6 +79,9 @@ export default {
     notarize: signed && Boolean(process.env.APPLE_API_KEY),
   },
   dmg: { sign: false },
+  // A generic feed is one directory for both tracks: stable builds also refresh `beta-mac.yml`
+  // so beta installations receive a stable Release newer than the last beta.
+  generateUpdatesFilesForAllChannels: true,
   // Local builds never attach to a release feed, even if release credentials are in the shell.
-  publish: release ? publish : null,
+  publish: factoryBuild.channel === "development" ? null : publish,
 };

@@ -1,7 +1,14 @@
 import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { desktopBridgeScript } from "./support/desktop-bridge.ts";
-import { approvedBrowser, remoteFixture } from "./support/remote-access.ts";
+import {
+  approvedBrowser,
+  expectServerInstallRequested,
+  openApproved,
+  openUpgradeReview,
+  remoteFixture,
+  serverUpdateActions,
+} from "./support/remote-access.ts";
 
 beforeEach(async ({ app }) => {
   await remoteFixture(app, "compatible");
@@ -89,7 +96,7 @@ test("a failed access request can be retried after automatic reconnection", asyn
   await app.screenshot("access-request-reconnected");
 });
 
-test("an incompatible desktop client can request installation of its downloaded update", async ({
+test("an incompatible desktop client can upgrade itself from local application settings", async ({
   app,
   screen,
   browser,
@@ -101,16 +108,82 @@ test("an incompatible desktop client can request installation of its downloaded 
   await expect(
     screen.getByRole("heading", "This client and server can’t work together"),
   ).toBeVisible();
-
   await screen.getByRole("button", "Application settings").tap();
-  await expect(screen.getByRole("button", "Install and restart")).toBeEnabled();
+  await screen.getByRole("button", "Review upgrade").tap();
+  await expect(screen.getByRole("heading", "Upgrade client?")).toBeVisible();
+  await app.screenshot("local-upgrade-review");
 
   // Act
-  await screen.getByRole("button", "Install and restart").tap();
+  await screen.getByRole("button", "Upgrade", { exact: true }).tap();
+
+  // Assert: the stand-in bridge records the request instead of restarting the app.
+  await expect(screen.getByRole("button", "Upgrading…")).toBeVisible();
+});
+
+test("an approved browser upgrades the server after reviewing it", async ({ app, screen }) => {
+  // Arrange
+  const before = (await serverUpdateActions(app)).length;
+  await openUpgradeReview(app, screen, "server");
+  await expect(screen.getByRole("region", /^Server · /)).toContainText("0.1.1-beta.3");
+
+  // Act
+  await screen.getByRole("button", "Upgrade", { exact: true }).tap();
 
   // Assert
-  await expect(screen.getByText("Update installation requested.")).toBeVisible();
-  await app.screenshot("local-update-controls");
+  await expectServerInstallRequested(app, screen, before);
+});
+
+test("a desktop client upgrades its server first and waits for it before restarting", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.addInitScript(desktopBridgeScript("client"));
+  const before = (await serverUpdateActions(app)).length;
+  await openUpgradeReview(app, screen, "client + server");
+  await expect(screen.getByRole("region", "Client · This device")).toContainText("0.2.0");
+  await expect(screen.getByRole("region", "Server · factory.example")).toContainText(
+    "0.1.1-beta.3",
+  );
+  await app.screenshot("upgrade-review-client-and-server");
+
+  // Act
+  await screen.getByRole("button", "Upgrade", { exact: true }).tap();
+
+  // Assert: the fixture server never returns on its target release, so the client keeps waiting.
+  await expectServerInstallRequested(app, screen, before);
+});
+
+test("an available update previews its changes as short lines in the footer tooltip", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const change = (title: string, pr: number) =>
+    `<li>${title} by @ali in https://github.com/alimek/t3-factory/pull/${pr}</li>`;
+  const notes = `<h2>What's Changed</h2><ul>${[
+    change("feat(desktop): faster startup", 30),
+    change("fix: more reliable reconnects", 31),
+    change("feat: improved update diagnostics", 32),
+    change("fix(ui): tidy footer spacing", 33),
+    change("chore: refresh dependencies", 34),
+  ].join(
+    "",
+  )}</ul><p><strong>Full Changelog</strong>: https://github.com/alimek/t3-factory/compare/v0.1.0...v0.2.0</p>`;
+  await browser.addInitScript(desktopBridgeScript("client", "available", notes));
+  await openApproved(app, "/runs/new");
+
+  // Act
+  await screen.getByRole("button", "0.2.0 available").hover();
+
+  // Assert
+  const tooltip = screen.getByRole("tooltip");
+  await expect(tooltip).toContainText("Faster startup");
+  await expect(tooltip).toContainText("+1 more");
+  await expect(tooltip).not.toContainText("@ali");
+  await app.screenshot("changelog-tooltip");
 });
 
 test("the current composer requires an updated server before requesting access", async ({

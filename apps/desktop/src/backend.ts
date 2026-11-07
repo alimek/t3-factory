@@ -1,4 +1,6 @@
 import { utilityProcess, type UtilityProcess } from "electron";
+import type { ServerUpdateAction } from "@t3-factory/contracts";
+import type { ApplicationUpdates } from "@t3-factory/backend/server";
 
 export type BackendState = {
   readonly state: "stopped" | "starting" | "running" | "failed";
@@ -8,7 +10,8 @@ export type BackendState = {
 type HostMessage =
   | { readonly type: "ready"; readonly port: number; readonly home: string }
   | { readonly type: "failed"; readonly message: string }
-  | { readonly type: "stopped" };
+  | { readonly type: "stopped" }
+  | { readonly type: "update-action"; readonly id: number; readonly action: ServerUpdateAction };
 
 const shutdownTimeoutMs = 30_000;
 
@@ -23,6 +26,7 @@ export class BackendSupervisor {
     private readonly entry: string,
     private readonly env: Record<string, string>,
     private readonly changed: (state: BackendState) => void,
+    private readonly updates: ApplicationUpdates,
   ) {}
 
   get state(): BackendState {
@@ -47,9 +51,14 @@ export class BackendSupervisor {
       if (message.type === "ready") {
         this.port = message.port;
         this.home = message.home;
+        this.publishUpdate();
         this.set({ state: "running", message: null });
       }
       if (message.type === "failed") this.set({ state: "failed", message: message.message });
+      if (message.type === "update-action")
+        void this.updates
+          .run(message.action)
+          .then((result) => child.postMessage({ type: "update-result", id: message.id, result }));
     });
     child.on("exit", () => {
       const expected = this.current.state === "stopped";
@@ -62,6 +71,11 @@ export class BackendSupervisor {
             "The Factory server stopped unexpectedly. Runs were not stopped; choose Retry to reopen and reconcile them.",
         });
     });
+  }
+
+  /** The backend answers `/api/server-update` reads from the last published status. */
+  publishUpdate() {
+    this.child?.postMessage({ type: "update-status", status: this.updates.status() });
   }
 
   /** Orderly shutdown releases ownership; a hung backend is killed only after the timeout. */
