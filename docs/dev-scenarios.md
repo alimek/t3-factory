@@ -106,7 +106,7 @@ T3 settlement or active-list behavior.
   referenced Agents, including both later reviewers, appear in Start blockers and no Run is
   created. Repair Codex and retry the same draft. The controlled whole-Flow journey separately
   proves accepted Start and accepted worker result; neither follows from a green Settings dot.
-  A controlled launch-contract rejection separately checks the connection repair link and
+  A controlled runtime-contract rejection (missing T3 send fields, reported for every Agent) checks the connection repair link and
   absence of an Agent repair action when no Agent is blocked.
 
 ## Verification coverage

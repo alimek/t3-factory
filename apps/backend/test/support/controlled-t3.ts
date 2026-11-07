@@ -500,6 +500,7 @@ export class ControlledT3 implements T3Adapter {
   pendingApproval = false;
   reopenedApprovals = 0;
   capabilitiesAvailable = true;
+  runtimeContractComplete = true;
   readonly controlledProviders: T3ProviderCapability[] = [
     {
       providerInstanceId: "codex-main",
@@ -548,7 +549,9 @@ export class ControlledT3 implements T3Adapter {
               "modelSelection",
               "workspaceStrategy",
             ],
-            t3_thread_send: ["threadId", "clientRequestId", "mode"],
+            t3_thread_send: this.runtimeContractComplete
+              ? ["threadId", "clientRequestId", "mode"]
+              : ["threadId", "clientRequestId"],
             t3_thread_read: ["threadId", "view", "afterPosition"],
             t3_queue: ["action", "queuedRunId"],
             t3_thread_interrupt: ["threadId", "stop", "clientRequestId"],

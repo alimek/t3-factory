@@ -327,11 +327,11 @@ async function approvedBrowserCookie() {
 }
 
 const fixtureRoutes: Record<string, () => unknown> = {
-  "/__fixture/readiness/unsupported-launch"() {
-    t3.launchSupported = false;
+  "/__fixture/readiness/incomplete-runtime"() {
+    t3.runtimeContractComplete = false;
   },
   async "/__fixture/readiness/restore"() {
-    t3.launchSupported = true;
+    t3.runtimeContractComplete = true;
     const targets = requireSuccess(await factory.getReportingInstallations());
     const codex = targets.find((target) => target.instances.includes("codex-main"));
     assert(codex);

@@ -71,7 +71,7 @@ test("Start names every blocked Agent including later branches and succeeds afte
   await app.screenshot("whole-flow-result-accepted");
 });
 
-test("a launch contract blocker points to the connection without blaming Agents", async ({
+test("Agent-scoped runtime contract blockers point to the connection without blaming Agents", async ({
   app,
   screen,
 }) => {
@@ -79,23 +79,23 @@ test("a launch contract blocker points to the connection without blaming Agents"
   await openComposerWithFlow(app, screen, "Demo · Parallel review");
   await screen
     .getByLabel("Initial prompt", { exact: false })
-    .fill("UI unsupported launch contract");
-  const unsupported = await fetch(new URL("/__fixture/readiness/unsupported-launch", app.baseUrl), {
+    .fill("UI incomplete runtime contract");
+  const incomplete = await fetch(new URL("/__fixture/readiness/incomplete-runtime", app.baseUrl), {
     method: "POST",
   });
-  assert(unsupported.ok);
+  assert(incomplete.ok);
 
   // Act
   await screen.getByRole("button", "Start", { exact: true }).tap();
 
   // Assert
   await expect(screen.getByRole("list", "Start blockers")).toContainText(
-    "T3 launch contract is unsupported",
+    "t3_thread_send lacks required runtime fields",
   );
   await expect(
     screen.getByRole("link", "Open T3 connection settings", { exact: true }),
   ).toBeVisible();
   await app.screenshot("connection-only-blocker");
   await expect(screen.getByRole("link", "Open Studio → Agents", { exact: true })).toHaveCount(0);
-  expect(await runsTitled(app.baseUrl, "UI unsupported launch contract")).toHaveLength(0);
+  expect(await runsTitled(app.baseUrl, "UI incomplete runtime contract")).toHaveLength(0);
 });

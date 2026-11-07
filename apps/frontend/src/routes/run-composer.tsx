@@ -665,7 +665,9 @@ function StartNotice({ model }: { model: Composer }) {
             {(draft.issues.length === 0 ||
               draft.issues.some(
                 (issue) =>
-                  issue.path.startsWith("agents.") && issue.code !== "reporting_installation",
+                  issue.path.startsWith("agents.") &&
+                  !issue.path.split(".").includes("connection") &&
+                  issue.code !== "reporting_installation",
               )) && (
               <NoticeStudioLink selection={{ tab: "agents" }}>
                 Open Studio → Agents
@@ -677,7 +679,8 @@ function StartNotice({ model }: { model: Composer }) {
               </NoticeStudioLink>
             )}
             {draft.issues.some(
-              (issue) => issue.path.includes("connection") || issue.code === "project_connection",
+              (issue) =>
+                issue.path.split(".").includes("connection") || issue.code === "project_connection",
             ) && (
               <NoticeSettingsLink selection={{ tab: "connection" }}>
                 Open T3 connection settings
