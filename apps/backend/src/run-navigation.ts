@@ -21,6 +21,7 @@ export function openRunNavigation(
             id: string;
             title: string;
             created_at: string;
+            creation_key: string;
             stop_requested_at: string | null;
             confirmed_at: string | null;
             outcome: RunNavigationEntry["outcome"];
@@ -30,10 +31,10 @@ export function openRunNavigation(
             project_title: string;
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
-          }>`SELECT r.id,r.title,r.created_at,r.stop_requested_at,c.confirmed_at,c.outcome,rp.snoozed,rp.woke,
+          }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.stop_requested_at,c.confirmed_at,c.outcome,rp.snoozed,rp.woke,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
-          LEFT JOIN run_closures c ON c.run_id=r.id LEFT JOIN run_presentation rp ON rp.run_id=r.id ORDER BY r.created_at DESC,r.id`;
+          LEFT JOIN run_closures c ON c.run_id=r.id LEFT JOIN run_presentation rp ON rp.run_id=r.id ORDER BY r.created_at DESC,r.creation_key`;
           const blocks = yield* sql<{
             run_id: string;
             state: RunNavigationEntry["blocks"][number]["state"];
@@ -77,6 +78,7 @@ export function openRunNavigation(
                 id: row.id,
                 title: row.title,
                 createdAt: row.created_at,
+                creationKey: row.creation_key,
                 project: {
                   id: row.project_id,
                   title: row.project_title,

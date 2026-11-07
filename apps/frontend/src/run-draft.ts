@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { StartRunInput } from "@t3-factory/contracts";
-import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
+import { isCanonicalTimestamp, TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import { randomId } from "./lib/ids.ts";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError } from "./api.ts";
@@ -47,11 +47,18 @@ export function draftTitle(draft: Pick<SavedRunDraft, "input" | "manualTitle">) 
   return draft.manualTitle ?? firstLine?.slice(0, TASK_TITLE_LIMIT) ?? "Untitled draft";
 }
 
-/** Newest first, then ascending id: the order Run navigation uses for Runs. */
-export function byCreation(a: { createdAt: string; id: string }, b: typeof a) {
+/**
+ * Newest first, then ascending creation key: the order Run navigation uses. A draft's key is
+ * its id, which its Start sends as the request key, so its Run takes the same place.
+ */
+export function byCreation(
+  a: { createdAt: string; id: string; creationKey?: string },
+  b: typeof a,
+) {
   const age = Date.parse(b.createdAt) - Date.parse(a.createdAt);
   if (age) return age;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  const [first, second] = [a.creationKey ?? a.id, b.creationKey ?? b.id];
+  return first < second ? -1 : first > second ? 1 : 0;
 }
 
 const draftsKey = (server: string) => `factory-run-drafts:${server}`;
@@ -72,7 +79,7 @@ function readSubmission(value: unknown): StartRunInput | undefined {
   >;
   if (!filled(requestId) || !filled(projectId) || !filled(flowId) || !filled(input))
     return undefined;
-  if (!filled(title) || !filled(createdAt)) return undefined;
+  if (!filled(title) || !isCanonicalTimestamp(createdAt)) return undefined;
   return Object.freeze({ requestId, projectId, flowId, input, title, createdAt });
 }
 
@@ -82,7 +89,7 @@ function readDraft(value: unknown): SavedRunDraft | undefined {
     value as Record<string, unknown>;
   if (!filled(id) || !filled(input) || typeof projectId !== "string") return undefined;
   if (typeof flowId !== "string" || typeof listed !== "boolean") return undefined;
-  if (typeof createdAt !== "string" || Number.isNaN(Date.parse(createdAt))) return undefined;
+  if (!isCanonicalTimestamp(createdAt)) return undefined;
   if (manualTitle !== undefined && !filled(manualTitle)) return undefined;
   const request = readSubmission(submission);
   if (submission !== undefined && !request) return undefined;
@@ -146,28 +153,32 @@ function confirmedRejection(error: unknown): error is ApiError {
 export function createRunDraft(
   startRun: (submission: StartRunInput) => Promise<{ id: string }> = api.startRun,
 ) {
+  let server: string | undefined;
   const rememberedChoices = new Map<string, string>();
   function remembered(key: string) {
-    const cached = rememberedChoices.get(key);
+    if (server === undefined) return "";
+    const name = `factory-last-${key}:${server}`;
+    const cached = rememberedChoices.get(name);
     if (cached !== undefined) return cached;
     try {
-      return localStorage.getItem(`factory-last-${key}`) ?? "";
+      return localStorage.getItem(name) ?? "";
     } catch {
       return "";
     }
   }
   function rememberChoice(key: string, value: string) {
-    rememberedChoices.set(key, value);
+    if (server === undefined) return;
+    const name = `factory-last-${key}:${server}`;
+    rememberedChoices.set(name, value);
     try {
-      localStorage.setItem(`factory-last-${key}`, value);
+      localStorage.setItem(name, value);
     } catch {
       // Preferences remain available in memory when browser storage is unavailable.
     }
   }
-  let server: string | undefined;
   let drafts: readonly SavedRunDraft[] = [];
   let listedDrafts: readonly SavedRunDraft[] = [];
-  let current = { projectId: remembered("project"), flowId: remembered("flow"), input: "" };
+  let current = { projectId: "", flowId: "", input: "" };
   let currentId: string | undefined;
   let error = "";
   let saveFailed = false;
@@ -240,7 +251,7 @@ export function createRunDraft(
     if (restored) show(restored);
     else {
       show(undefined);
-      current = { ...current, input: "" };
+      current = { projectId: remembered("project"), flowId: remembered("flow"), input: "" };
     }
     publish();
   }
@@ -332,7 +343,8 @@ export function createRunDraft(
     const request =
       saved.submission ??
       Object.freeze({
-        requestId: randomId(),
+        // Rejected requests are never recorded, so one key per draft can still be retried.
+        requestId: id,
         projectId: saved.projectId,
         flowId: saved.flowId,
         input: saved.input,

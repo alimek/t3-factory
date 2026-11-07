@@ -788,7 +788,7 @@ function StopStatus({ run, stop }: { run: RunDetail; stop: StopControl }) {
           </p>
           <p role="status" className="text-2xs leading-4 tracking-label text-attention">
             Uncertain Stop: active, queued or unknown work still needs fresh confirmation. This Run
-            retains the Task slot. Reconciliation continues automatically after restart.
+            stays open. Reconciliation continues automatically after restart.
           </p>
         </>
       ) : (

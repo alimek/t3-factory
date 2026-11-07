@@ -462,6 +462,7 @@ export interface ProjectCatalog {
 }
 
 export interface StartRunInput {
+  /** Also the Run's navigation `creationKey`. */
   readonly requestId: string;
   readonly projectId: string;
   readonly flowId: string;
@@ -633,6 +634,11 @@ export interface RunNavigationEntry {
   readonly id: string;
   readonly title: string;
   readonly createdAt: string;
+  /**
+   * Orders entries with equal `createdAt` (ascending): the Start request key, which the
+   * composer takes from the draft's id so its Run keeps the draft's place.
+   */
+  readonly creationKey: string;
   readonly project: Pick<FactoryProject, "id" | "title" | "workspaceRoot" | "availability">;
   readonly closedAt: string | null;
   readonly outcome: RunClosure["outcome"] | null;

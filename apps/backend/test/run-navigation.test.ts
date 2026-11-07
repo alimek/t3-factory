@@ -2,21 +2,31 @@ import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
 import { siblingRuns } from "./support/navigation.ts";
 
-it("a Start with an over-long title or a non-canonical creation time creates no Run", async (c) => {
+it("a Start with an over-long title creates no Run", async (c) => {
   // Arrange
   const { f, input } = await prepared(c);
 
   // Act
-  const result = await f.startRun({
-    ...input,
-    title: "x".repeat(501),
-    createdAt: "2026-11-07 08:00",
-  });
+  const result = await f.startRun({ ...input, title: "x".repeat(501) });
 
   // Assert
   assert(!result.ok);
   expect(result.error.code).toBe("validation");
-  expect(result.error.issues.map((issue) => issue.path)).toStrictEqual(["title", "createdAt"]);
+  expect(result.error.issues.map((issue) => issue.path)).toStrictEqual(["title"]);
+  expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
+});
+
+it("a Start with a non-canonical creation time creates no Run", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+
+  // Act
+  const result = await f.startRun({ ...input, createdAt: "2026-11-07 08:00" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("validation");
+  expect(result.error.issues.map((issue) => issue.path)).toStrictEqual(["createdAt"]);
   expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
 });
 
@@ -50,6 +60,20 @@ it("a started draft keeps its chosen title and creation order after restart", as
     { id: older.value.id, title: "Chosen draft title", createdAt: "2026-11-07T08:00:00.000Z" },
   ]);
   expect(older.value.startedAt).not.toBe("2026-11-07T08:00:00.000Z");
+});
+
+it("Runs created at the same time are ordered by their Start request keys", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+  assert((await f.startRun({ ...input, requestId: "b-draft" })).ok);
+  assert((await f.startRun({ ...input, requestId: "a-draft" })).ok);
+
+  // Act
+  const result = await f.listRunNavigation();
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.map((entry) => entry.creationKey)).toStrictEqual(["a-draft", "b-draft"]);
 });
 
 it("renaming a Run trims its title without changing its sibling or its Task", async (c) => {

@@ -18,8 +18,8 @@ and restricted OAuth credentials live outside project repositories.
 - Start atomically captures the Run input, full Flow graph and referenced Agent prompts,
   settings, labels and revisions. Later definition changes cannot rewrite history.
   External skill files are not frozen.
-- Each Task permits one non-closed Run, including uncertain work or Stop in progress.
-  Each Start creates a new Task, Run and threads; closed Runs are never reopened.
+- Each Start creates a new Task, Run and threads; a Task never has more than one
+  non-closed Run, and closed Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization

@@ -13,7 +13,11 @@ import type {
   T3Connection,
   ValidationIssue,
 } from "@t3-factory/contracts";
-import { flowReadiness, TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
+import {
+  flowReadiness,
+  isCanonicalTimestamp,
+  TASK_TITLE_LIMIT,
+} from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter } from "./adapters/t3.ts";
@@ -33,12 +37,6 @@ function validStartInput(input: StartRunInput | undefined): input is StartRunInp
     input.input.length <= 100000
   );
 }
-/** Navigation compares creation times as text, so only canonical UTC timestamps are accepted. */
-function canonicalTimestamp(value: unknown) {
-  if (typeof value !== "string") return false;
-  const time = Date.parse(value);
-  return !Number.isNaN(time) && new Date(time).toISOString() === value;
-}
 function startPresentationIssues(input: StartRunInput): ValidationIssue[] {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   return [
@@ -51,7 +49,7 @@ function startPresentationIssues(input: StartRunInput): ValidationIssue[] {
             message: `Run title is required and must fit ${TASK_TITLE_LIMIT} characters.`,
           },
         ]),
-    ...(canonicalTimestamp(input.createdAt)
+    ...(isCanonicalTimestamp(input.createdAt)
       ? []
       : [
           {
@@ -145,7 +143,7 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
       n: number;
     }>`SELECT COALESCE(MAX(number),0)+1 AS n FROM runs`;
     const number = allocated!.n;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${title},${number})`;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number})`;
     yield* sql`INSERT INTO run_snapshots(run_id,snapshot_json) VALUES(${plan.runId},${JSON.stringify(plan.snapshot)})`;
     for (const block of plan.snapshot.flow.graph.blocks)
       yield* sql`INSERT INTO run_blocks(run_id,block_id,name) VALUES(${plan.runId},${block.id},${block.name})`;

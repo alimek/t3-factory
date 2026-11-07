@@ -142,7 +142,7 @@ pending. Resnoozing accounts for existing attention identities so they cannot
 repeatedly wake the same Run.
 
 **Run closure**:
-The permanent local confirmation of a Run's finished or stopped outcome, backed by a recorded observed frontier and an unchanged local generation. Closure releases the Task's active Run slot; it is not an atomic cutoff of later T3 activity or a quality guarantee.
+The permanent local confirmation of a Run's finished or stopped outcome, backed by a recorded observed frontier and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required

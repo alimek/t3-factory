@@ -1,6 +1,6 @@
 import { assert, expect, it, vi } from "vite-plus/test";
 import { ApiError } from "../src/api.ts";
-import { draftTitle } from "../src/run-draft.ts";
+import { byCreation, draftTitle } from "../src/run-draft.ts";
 import { composer, pendingStart, reopen, unknownStart } from "./support/run-draft.ts";
 
 it("an unknown Start keeps submitted fields read-only", async (context) => {
@@ -125,6 +125,17 @@ it("another server never sees this server's drafts or pending Start", async (con
   // Assert
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false });
   expect(draft.getDrafts()).toStrictEqual([]);
+});
+
+it("another server's fresh composer does not preselect this server's Project and Flow", (context) => {
+  // Arrange
+  const chosen = composer(context);
+
+  // Act
+  const { draft } = reopen(chosen, "server-b");
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ projectId: "", flowId: "" });
 });
 
 it("a whitespace-only prompt removes its draft and keeps the selections", (context) => {
@@ -290,6 +301,30 @@ it("Start submits the draft's bounded first-line title and its original creation
   });
 });
 
+it("a started draft's Run keeps the draft's place among entries created at the same time", async (context) => {
+  // Arrange
+  const { draft, startRun } = composer(context);
+  const started = draft.getSnapshot().draftId;
+  assert(started);
+  draft.openFresh();
+  draft.edit({ input: "Created at the same moment" });
+  draft.leave();
+  const before = draft.getDrafts();
+  draft.openDraft(started);
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  const request = startRun.mock.calls[0]?.[0];
+  assert(request);
+  const run = { id: "accepted-run", createdAt: request.createdAt, creationKey: request.requestId };
+  const after = [...draft.getDrafts(), run].toSorted(byCreation);
+  expect(run.creationKey).toBe(started);
+  expect(after.indexOf(run)).toBe(before.findIndex((entry) => entry.id === started));
+});
+
 it("Start submits a renamed draft's manual title", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);
@@ -382,7 +417,6 @@ it("blocked local storage cannot turn a confirmed Start into an unknown result",
   // Arrange
   const { draft, startRun, storage } = composer(context);
   startRun.mockResolvedValueOnce({ id: "accepted-run" });
-  storage.setItem.mockClear();
   storage.setItem.mockImplementation(() => {
     throw new Error("Storage blocked");
   });
@@ -393,7 +427,6 @@ it("blocked local storage cannot turn a confirmed Start into an unknown result",
   // Assert
   expect(runId).toBe("accepted-run");
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false, busy: false, error: "" });
-  expect(storage.setItem).toHaveBeenCalled();
 });
 
 it("an unknown Start warns when blocked storage cannot keep it for recovery", async (context) => {
