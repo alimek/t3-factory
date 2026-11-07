@@ -84,7 +84,14 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
       {run.threadBindings
         .filter((b) => b.blockId === activation.blockId)
         .map((binding) => (
-          <BindingLink key={binding.id} binding={binding} />
+          <div key={binding.id} className="flex flex-col gap-1">
+            <BindingLink binding={binding} />
+            {binding.role === "descendant" && (
+              <span className="font-mono text-2xs break-all text-muted-foreground">
+                {binding.threadId}
+              </span>
+            )}
+          </div>
         ))}
       {run.remoteWork
         .filter((w) => w.activationId === activation.id)
