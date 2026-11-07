@@ -4,11 +4,6 @@ import { app } from "electron";
 import electronUpdater, { type VerifyUpdateSupport } from "electron-updater";
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 
-export interface UpdatePreferences {
-  readonly channel: UpdateChannel;
-  readonly autoDownload: boolean;
-}
-
 const checkEveryMs = 6 * 3600_000;
 
 /** The track an installation follows until its user chooses one: the track of its own build. */
@@ -32,19 +27,20 @@ function changelog(
 
 /**
  * GitHub Releases (or the configured feed) through electron-updater: automatic checks,
- * downloads that are automatic only when preferred, installation only through `install()`.
- * A Quit never installs an update.
+ * explicit downloads, installation only through `install()`. A Quit never installs an update.
  */
 export class Updates {
   private status: ApplicationUpdate = {
     state: "idle",
     version: null,
     progress: null,
+    downloadedBytes: null,
+    totalBytes: null,
     releaseNotes: null,
     message: null,
   };
   private readonly updater = electronUpdater.autoUpdater;
-  private preferences: UpdatePreferences | null = null;
+  private channel: UpdateChannel | null = null;
 
   constructor(private readonly changed: (status: ApplicationUpdate) => void) {}
 
@@ -58,7 +54,7 @@ export class Updates {
   }
 
   /** Development runs and builds without a configured feed report updates as unsupported. */
-  start(preferences: UpdatePreferences) {
+  start(channel: UpdateChannel) {
     if (app.getVersion().includes("+dev.")) {
       this.set({
         state: "unsupported",
@@ -73,23 +69,29 @@ export class Updates {
       });
       return;
     }
+    this.updater.autoDownload = false;
     this.updater.autoInstallOnAppQuit = false;
     this.updater.fullChangelog = true;
-    this.apply(preferences);
+    this.apply(channel);
     this.updater.on("checking-for-update", () => this.set({ state: "checking", message: null }));
     this.updater.on("update-not-available", () =>
       this.set({ state: "idle", version: null, progress: null, releaseNotes: null }),
     );
     this.updater.on("update-available", (info) =>
       this.set({
-        state: this.updater.autoDownload ? "downloading" : "available",
+        state: "available",
         version: info.version,
         progress: 0,
-        releaseNotes: changelog(info.releaseNotes, this.preferences?.channel ?? "stable"),
+        releaseNotes: changelog(info.releaseNotes, this.channel ?? "stable"),
       }),
     );
     this.updater.on("download-progress", (progress) =>
-      this.set({ state: "downloading", progress: progress.percent }),
+      this.set({
+        state: "downloading",
+        progress: progress.percent,
+        downloadedBytes: progress.transferred,
+        totalBytes: progress.total,
+      }),
     );
     this.updater.on("update-downloaded", (info) =>
       this.set({ state: "downloaded", version: info.version, progress: 100 }),
@@ -109,28 +111,22 @@ export class Updates {
    * Beta follows prereleases and stable Releases, whichever is newer; stable follows only
    * Releases. Leaving beta never downgrades: the installed beta stays until a newer Release.
    */
-  private apply(preferences: UpdatePreferences) {
-    this.preferences = preferences;
-    this.updater.channel = preferences.channel === "beta" ? "beta" : "latest";
-    this.updater.allowPrerelease = preferences.channel === "beta";
+  private apply(channel: UpdateChannel) {
+    this.channel = channel;
+    this.updater.channel = channel === "beta" ? "beta" : "latest";
+    this.updater.allowPrerelease = channel === "beta";
     this.updater.allowDowngrade = false;
-    this.updater.autoDownload = preferences.autoDownload;
   }
 
   /** A changed track discards an update found on the previous one and checks again. */
-  configure(preferences: UpdatePreferences): string | null {
-    if (this.status.state === "unsupported" || this.preferences === null) {
-      this.preferences = preferences;
+  configure(channel: UpdateChannel): string | null {
+    if (this.status.state === "unsupported" || this.channel === null || channel === this.channel)
       return null;
-    }
-    const switched = preferences.channel !== this.preferences.channel;
-    if (switched && this.status.state === "downloading")
+    if (this.status.state === "downloading")
       return "Wait for the current download to finish before changing the update channel.";
-    this.apply(preferences);
-    if (switched) {
-      this.set({ state: "idle", version: null, progress: null, releaseNotes: null, message: null });
-      void this.check();
-    } else if (preferences.autoDownload) void this.download();
+    this.apply(channel);
+    this.set({ state: "idle", version: null, progress: null, releaseNotes: null, message: null });
+    void this.check();
     return null;
   }
 
@@ -140,14 +136,14 @@ export class Updates {
     await this.updater.checkForUpdates().catch(() => undefined);
   }
 
-  /** Without automatic downloads, a download starts only after an explicit action. */
+  /** A download starts only after an explicit action, never while checking metadata. */
   async download(): Promise<void> {
     if (this.status.state !== "available") return;
-    this.set({ state: "downloading", progress: 0, message: null });
+    this.set({ state: "downloading", progress: 0, downloadedBytes: 0, message: null });
     await this.updater.downloadUpdate().catch(() => undefined);
   }
 
-  /** Called only after a confirmation and after the backend shut down in order. */
+  /** Called only after the upgrade review was confirmed and the backend shut down in order. */
   install() {
     try {
       this.updater.quitAndInstall(false, true);

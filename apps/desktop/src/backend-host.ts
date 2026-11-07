@@ -34,6 +34,8 @@ function hostUpdates(): ApplicationUpdates {
       state: "checking",
       version: null,
       progress: null,
+      downloadedBytes: null,
+      totalBytes: null,
       releaseNotes: null,
       message: null,
     },

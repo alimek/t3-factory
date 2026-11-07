@@ -26,7 +26,6 @@ export interface DesktopSettings {
   readonly launchAtLogin: boolean;
   /** Null until chosen: the installation follows the track of the build it runs. */
   readonly updateChannel: UpdateChannel | null;
-  readonly autoDownloadUpdates: boolean;
 }
 
 const initialSettings: DesktopSettings = {
@@ -35,7 +34,6 @@ const initialSettings: DesktopSettings = {
   server: null,
   launchAtLogin: false,
   updateChannel: null,
-  autoDownloadUpdates: true,
 };
 
 function isTrust(value: unknown): value is ServerTrust {
@@ -63,7 +61,7 @@ function parseSettings(raw: unknown): DesktopSettings | undefined {
   const role = value.role === "server" || value.role === "client" ? value.role : null;
   const server = value.server === null || value.server === undefined ? null : value.server;
   if (server !== null && !isServer(server)) return undefined;
-  // Update preferences were added within version 1; files without them keep the defaults.
+  // The update channel was added within version 1; files without it follow the build's channel.
   return {
     version: 1,
     role,
@@ -73,7 +71,6 @@ function parseSettings(raw: unknown): DesktopSettings | undefined {
       value.updateChannel === "stable" || value.updateChannel === "beta"
         ? value.updateChannel
         : null,
-    autoDownloadUpdates: value.autoDownloadUpdates !== false,
   };
 }
 

@@ -3,16 +3,15 @@
 export const desktopBridgeScript = (
   role: "client" | null = null,
   update: "available" | "downloaded" | "downloading" = "downloaded",
-  confirmInstall = false,
   releaseNotes:
     | string
-    | null = "<ul><li>Reopen authorization from an approved client.</li><li>Choose when to download and install updates.</li></ul>",
+    | null = "<ul><li>Reopen authorization from an approved client.</li><li>Review client and server upgrades together.</li></ul>",
 ) => `
   (() => {
     let state = {
-      version: "0.1.0", role: ${JSON.stringify(role)}, server: ${JSON.stringify(role === "client" ? { url: "https://factory.example", fingerprint: "fixture" } : null)}, launchAtLogin: false, updateChannel: "stable", autoDownloadUpdates: true,
+      version: "0.1.0", role: ${JSON.stringify(role)}, server: ${JSON.stringify(role === "client" ? { url: "https://factory.example", fingerprint: "fixture" } : null)}, launchAtLogin: false, updateChannel: "stable",
       backend: { state: "stopped", message: null },
-      update: { state: ${JSON.stringify(update)}, version: "0.2.0", progress: 42, message: null, releaseNotes: ${JSON.stringify(releaseNotes)} },
+      update: { state: ${JSON.stringify(update)}, version: "0.2.0", progress: 64, downloadedBytes: 81000000, totalBytes: 126000000, message: null, releaseNotes: ${JSON.stringify(releaseNotes)} },
     };
     const listeners = new Set();
     const publish = () => listeners.forEach((listener) => listener(state));
@@ -27,8 +26,8 @@ export const desktopBridgeScript = (
       setLaunchAtLogin: async () => ({ ok: true }),
       checkForUpdates: async () => ({ ok: true }),
       downloadUpdate: async () => { state = { ...state, update: { ...state.update, state: "downloaded", progress: 100 } }; publish(); return { ok: true }; },
-      setUpdatePreferences: async (change) => { state = { ...state, ...(change.channel ? { updateChannel: change.channel } : {}), ...("autoDownload" in change ? { autoDownloadUpdates: change.autoDownload } : {}) }; publish(); return { ok: true }; },
-      installUpdate: async () => { if (${JSON.stringify(confirmInstall)} && !window.confirm("Install the downloaded update and restart Factory?")) return { ok: false, message: "Installation cancelled. The update is still ready." }; state = { ...state, update: { ...state.update, state: "idle", message: "Update installation requested." } }; publish(); return { ok: true }; },
+      setUpdateChannel: async (updateChannel) => { state = { ...state, updateChannel }; publish(); return { ok: true }; },
+      installUpdate: async () => { window.__clientInstallRequested = true; state = { ...state, update: { ...state.update, state: "idle", version: null } }; publish(); return { ok: true }; },
     };
   })();
 `;

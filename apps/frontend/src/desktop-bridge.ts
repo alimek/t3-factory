@@ -5,7 +5,6 @@
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 
 export type DesktopRole = "server" | "client";
-export type UpdateState = ApplicationUpdate["state"];
 
 export interface DesktopState {
   readonly version: string;
@@ -20,7 +19,6 @@ export interface DesktopState {
   readonly launchAtLogin: boolean;
   /** The release track this installation updates from. */
   readonly updateChannel: UpdateChannel;
-  readonly autoDownloadUpdates: boolean;
   readonly update: ApplicationUpdate;
 }
 
@@ -52,13 +50,10 @@ export interface FactoryDesktop {
   setLaunchAtLogin(enabled: boolean): Promise<DesktopResult>;
   checkForUpdates(): Promise<DesktopResult>;
   downloadUpdate(): Promise<DesktopResult>;
-  /** Installs a downloaded update after local confirmation; never runs on an unrelated Quit. */
+  /** Installs a downloaded update confirmed in the upgrade review; never on an unrelated Quit. */
   installUpdate(): Promise<DesktopResult>;
   /** A changed channel discards an update found on the previous one and checks again. */
-  setUpdatePreferences(preferences: {
-    readonly channel?: UpdateChannel;
-    readonly autoDownload?: boolean;
-  }): Promise<DesktopResult>;
+  setUpdateChannel(channel: UpdateChannel): Promise<DesktopResult>;
 }
 
 declare global {

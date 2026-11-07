@@ -334,7 +334,10 @@ export interface ApplicationUpdate {
     | "error"
     | "unsupported";
   readonly version: string | null;
+  /** Download percentage and byte counts while downloading. */
   readonly progress: number | null;
+  readonly downloadedBytes: number | null;
+  readonly totalBytes: number | null;
   readonly releaseNotes: string | null;
   readonly message: string | null;
 }

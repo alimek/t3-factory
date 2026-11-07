@@ -101,11 +101,11 @@ The workflows require a public repository and use its GitHub Releases as the upd
 
 Review generated notes, artifact hashes and verification evidence from the workflow before approving `publish`; the evidence includes the packaged probe report for exactly this build. Before approval, install the downloaded artifact on a clean Mac. For later Releases, also install it over the previous signed Release on disposable data and verify data and bridge preservation, server restart and reconciliation, and client reconnect. Keep hashes and results; never probe a production installation. Complete the applicable packaged, clean-user and live-integration checks below and record unverified cases explicitly. CI's Gatekeeper assessment on the build runner proves neither clean-user installation nor updates between signed Releases.
 
-The in-app update path cannot be qualified before approval: a previous signed build reads only published GitHub Releases, and the candidate stays a draft without assets until `publish`. Verify an update from the previous signed Release through the app (download, Cancel, ordinary Quit, **Install and restart**) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so an update defect is fixed by a new version.
+The in-app update path cannot be qualified before approval: a previous signed build reads only published GitHub Releases, and the candidate stays a draft without assets until `publish`. Verify an update from the previous signed Release through the app (download, **Not now** in the review, ordinary Quit, **Confirm upgrade**, and a client with its remote server) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so an update defect is fixed by a new version.
 
 Recipients install the first signed DMG manually; developer packages cannot bootstrap into the update feed. Release and beta builds check on launch and every six hours, and from the footer or Application settings.
-Downloads start automatically unless the installation turned that off; **Install and restart** opens a native confirmation, and ordinary Quit never installs. A server update is installed from its host or, after the
-requester confirms the open-Run warning, from an approved client; a client update affects only that client. Compatible protocol ranges let clients and server update independently.
+Downloads and installation are explicit: the footer control downloads, and the upgrade review confirms installation; ordinary Quit never installs. A client connected to a remote server upgrades the server
+first and restarts only once the server is back on its target release; a client update otherwise affects only that client. Compatible protocol ranges let clients and server update independently.
 
 ## Beta builds
 

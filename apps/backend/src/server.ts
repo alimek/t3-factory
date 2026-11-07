@@ -595,7 +595,7 @@ function dispatchApi(
 
 // Known client routes use the built entry; missing assets must stay 404.
 const clientRoutePattern =
-  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/application|\/server)?)\/?$/;
+  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/application|\/updates)?)\/?$/;
 
 function uiFile(uiDirectory: string, pathname: string): string | undefined {
   const root = resolve(uiDirectory);

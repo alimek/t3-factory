@@ -3,72 +3,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { SectionLabel } from "@/components/page";
-import { desktopBridge, type DesktopResult, type DesktopState } from "../desktop-bridge.ts";
+import { desktopBridge, type DesktopResult } from "../desktop-bridge.ts";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { UpdateStatus } from "./release-notes.tsx";
-import { DesktopUpdateAction } from "./desktop-update-action.tsx";
 import { useDesktopState } from "../desktop-state.ts";
+import { UpdateControl } from "./update-control.tsx";
+import { UpdateSettings } from "./update-settings.tsx";
 
-const updateCopy: Record<DesktopState["update"]["state"], string> = {
-  idle: "Factory is up to date.",
-  checking: "Checking for updates…",
-  available: "An update is available. Download it when you are ready.",
-  downloading: "Downloading the update…",
-  downloaded: "The update is ready. It installs only when you choose Install.",
-  error: "The update failed. Review the error and check again to retry.",
-  unsupported: "Automatic updates are not configured for this build.",
-};
-
-function UpdatePreferences({
-  state,
-  run,
-}: {
-  state: DesktopState;
-  run: (operation: () => Promise<DesktopResult>) => Promise<void>;
-}) {
-  const desktop = desktopBridge();
-  if (!desktop || state.update.state === "unsupported") return null;
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-1.5">
-        <Label htmlFor="update-channel">Update channel</Label>
-        <NativeSelect
-          id="update-channel"
-          wrapperClassName="w-60"
-          value={state.updateChannel}
-          onChange={(event) =>
-            void run(() =>
-              desktop.setUpdatePreferences({
-                channel: event.target.value === "beta" ? "beta" : "stable",
-              }),
-            )
-          }
-        >
-          <NativeSelectOption value="stable">Stable releases</NativeSelectOption>
-          <NativeSelectOption value="beta">Beta builds of main</NativeSelectOption>
-        </NativeSelect>
-        <p className="text-xs text-muted-foreground">
-          Beta follows nightly builds of the main branch and newer stable releases. Returning to
-          stable keeps a newer beta installed until a later stable release is published.
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="auto-download-updates"
-          checked={state.autoDownloadUpdates}
-          onCheckedChange={(checked) =>
-            void run(() => desktop.setUpdatePreferences({ autoDownload: checked === true }))
-          }
-        />
-        <Label htmlFor="auto-download-updates">Download updates automatically</Label>
-      </div>
-    </div>
-  );
-}
-
-/** Desktop-only: role, remembered server, launch at login, update channel and installation. */
+/** Desktop-only: role, remembered server and launch at login. */
 export function ApplicationSettings() {
   const desktop = desktopBridge();
   const state = useDesktopState();
@@ -78,7 +20,6 @@ export function ApplicationSettings() {
     const result = await operation();
     setError(result.ok ? "" : result.message);
   };
-  const update = state.update;
   return (
     <div className="grid gap-6">
       <div className="grid gap-2">
@@ -130,14 +71,6 @@ export function ApplicationSettings() {
         />
         <Label htmlFor="launch-at-login">Open Factory in the background at login</Label>
       </section>
-      <section aria-label="Updates" className="grid gap-2">
-        <SectionLabel>Updates</SectionLabel>
-        <UpdatePreferences state={state} run={run} />
-        <UpdateStatus update={update} copy={updateCopy[update.state]} />
-        <div className="flex flex-wrap gap-2">
-          <DesktopUpdateAction />
-        </div>
-      </section>
     </div>
   );
 }
@@ -158,6 +91,10 @@ export function LocalApplicationControls() {
             Settings and updates for this computer, available independently of the server.
           </DialogDescription>
           <ApplicationSettings />
+          <UpdateSettings />
+          <div>
+            <UpdateControl inline />
+          </div>
         </DialogContent>
       </Dialog>
     </>

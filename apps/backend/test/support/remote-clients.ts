@@ -167,6 +167,8 @@ export function recordingUpdates() {
         state: "downloaded",
         version: "0.1.1-beta.3",
         progress: 100,
+        downloadedBytes: null,
+        totalBytes: null,
         releaseNotes: null,
         message: null,
       },

@@ -139,10 +139,10 @@ const accessRoute = createRoute({
   path: "settings/access",
   beforeLoad: () => openSettings({ tab: "access" }),
 });
-const serverRoute = createRoute({
+const updatesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "settings/server",
-  beforeLoad: () => openSettings({ tab: "server" }),
+  path: "settings/updates",
+  beforeLoad: () => openSettings({ tab: "updates" }),
 });
 const applicationRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -175,7 +175,7 @@ const routeTree = rootRoute.addChildren([
   runtimeRoute,
   keyboardRoute,
   accessRoute,
-  serverRoute,
+  updatesRoute,
   applicationRoute,
   skillsRoute,
 ]);

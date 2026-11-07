@@ -94,7 +94,7 @@ test("a failed access request can be retried after automatic reconnection", asyn
   await app.screenshot("access-request-reconnected");
 });
 
-test("an incompatible desktop client can request installation of its downloaded update", async ({
+test("an incompatible desktop client can upgrade itself from local application settings", async ({
   app,
   screen,
   browser,
@@ -106,37 +106,56 @@ test("an incompatible desktop client can request installation of its downloaded 
   await expect(
     screen.getByRole("heading", "This client and server can’t work together"),
   ).toBeVisible();
-
   await screen.getByRole("button", "Application settings").tap();
-  await expect(screen.getByRole("button", "Install and restart")).toBeEnabled();
+  await screen.getByRole("button", "Download ready · Review upgrade").tap();
+  await expect(screen.getByRole("heading", "Upgrade client?")).toBeVisible();
+  await app.screenshot("local-upgrade-review");
 
   // Act
-  await screen.getByRole("button", "Install and restart").tap();
+  await screen.getByRole("button", "Confirm upgrade").tap();
 
-  // Assert
-  await expect(screen.getByText("Update installation requested.")).toBeVisible();
-  await app.screenshot("local-update-controls");
+  // Assert: the stand-in bridge records the request instead of restarting the app.
+  await expect(screen.getByRole("button", "Upgrading client…")).toBeVisible();
 });
 
-test("an approved browser installs the server's downloaded update after confirming the open-Run warning", async ({
-  app,
-  screen,
-}) => {
+test("an approved browser upgrades the server after reviewing it", async ({ app, screen }) => {
   // Arrange
-  await openApproved(app, "/settings/server");
-  await expect(screen.getByText(/ready to install\. Version 0\.1\.1-beta\.3\./)).toBeVisible();
-  await screen.getByRole("button", "Install and restart server").tap();
-  const confirmation = screen.getByRole("dialog", "Install the update and restart the server?");
-  await expect(confirmation).toContainText(/Runs? (is|are) open|No Runs are open/);
-  await app.screenshot("server-update-confirmation");
+  const before = (await serverUpdateActions(app)).length;
+  await openApproved(app, "/runs/new");
+  await screen.getByRole("button", "Download ready · Review upgrade").tap();
+  await expect(screen.getByRole("heading", "Upgrade server?")).toBeVisible();
+  await expect(screen.getByRole("region", "Server · Remote")).toContainText("0.1.1-beta.3");
 
   // Act
-  await confirmation.getByRole("button", "Install and restart server").tap();
+  await screen.getByRole("button", "Confirm upgrade").tap();
 
   // Assert
-  await expect(screen.getByText(/installing the update and restarting/)).toBeVisible();
-  expect((await serverUpdateActions(app)).join(",")).toBe("install");
-  await app.screenshot("server-update-installing");
+  await expect(screen.getByRole("button", "Upgrading server…")).toBeVisible();
+  expect((await serverUpdateActions(app)).slice(before).join(",")).toBe("install");
+});
+
+test("a desktop client upgrades its server first and waits for it before restarting", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.addInitScript(desktopBridgeScript("client"));
+  const before = (await serverUpdateActions(app)).length;
+  await openApproved(app, "/runs/new");
+  await screen.getByRole("button", "Download ready · Review upgrade").tap();
+  await expect(screen.getByRole("heading", "Upgrade client and server?")).toBeVisible();
+  await expect(screen.getByRole("region", "Client · This device")).toContainText("0.2.0");
+  await expect(screen.getByRole("region", "Server · Remote")).toContainText("factory.example");
+  await app.screenshot("upgrade-review-client-and-server");
+
+  // Act
+  await screen.getByRole("button", "Confirm upgrade both").tap();
+
+  // Assert: the fixture server never returns on its target release, so the client keeps waiting.
+  await expect(screen.getByRole("button", "Upgrading client + server…")).toBeVisible();
+  expect((await serverUpdateActions(app)).slice(before).join(",")).toBe("install");
+  await app.screenshot("upgrading-client-and-server");
 });
 
 test("the current composer requires an updated server before requesting access", async ({

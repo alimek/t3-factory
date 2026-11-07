@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { CircleAlert, CloudOff, Hourglass, KeyRound, ShieldX, WifiOff } from "lucide-react";
 import type { ClientAccessState, FactoryClient } from "@t3-factory/contracts";
 import {
@@ -20,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { fieldLabelClass } from "@/components/page";
 import { GateScreen } from "@/components/gate-screen";
 import { api, ApiError } from "./api.ts";
+import { ScopeContext } from "./client-scope.ts";
 import { desktopBridge } from "./desktop-bridge.ts";
 import { transport, useTransport } from "./transport.ts";
 
@@ -30,11 +23,6 @@ type Gate =
   | { readonly kind: "request"; readonly previous: "none" | "denied" | "revoked" }
   | { readonly kind: "pending"; readonly client: FactoryClient }
   | { readonly kind: "ready"; readonly scope: "host" | "remote" };
-
-const ScopeContext = createContext<"host" | "remote">("host");
-
-/** `host`: the owner's local panel. `remote`: an approved client without host setup controls. */
-export const useClientScope = () => useContext(ScopeContext);
 
 const localProtocol = {
   protocol: FACTORY_PROTOCOL,

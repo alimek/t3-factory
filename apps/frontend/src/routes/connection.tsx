@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { T3Connection } from "@t3-factory/contracts";
 import { Hourglass, Info, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
-import { useClientScope } from "../client-gate.tsx";
+import { useClientScope } from "../client-scope.ts";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

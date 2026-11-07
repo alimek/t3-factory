@@ -23,11 +23,6 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
   checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates),
   downloadUpdate: () => ipcRenderer.invoke(channels.downloadUpdate),
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
-  setUpdatePreferences: (preferences: { channel?: string; autoDownload?: boolean }) =>
-    ipcRenderer.invoke(channels.setUpdatePreferences, {
-      ...(preferences.channel === undefined ? {} : { channel: String(preferences.channel) }),
-      ...(preferences.autoDownload === undefined
-        ? {}
-        : { autoDownload: preferences.autoDownload === true }),
-    }),
+  setUpdateChannel: (channel: string) =>
+    ipcRenderer.invoke(channels.setUpdateChannel, String(channel)),
 });

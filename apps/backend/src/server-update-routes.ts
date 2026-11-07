@@ -17,6 +17,8 @@ const sourceUpdates: ApplicationUpdates = {
       state: "unsupported",
       version: null,
       progress: null,
+      downloadedBytes: null,
+      totalBytes: null,
       releaseNotes: null,
       message: "This server runs from a source checkout. Update it on its host.",
     },
