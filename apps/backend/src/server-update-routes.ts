@@ -10,6 +10,8 @@ export interface ApplicationUpdates {
   run(action: ServerUpdateAction): Promise<Result<null>>;
 }
 
+const actionTimeoutMs = 30_000;
+
 const sourceUpdates: ApplicationUpdates = {
   status: () => ({
     channel: null,
@@ -44,13 +46,24 @@ export function serverUpdateRoutes(
       value: { application, ...updates.status(), openRunCount: lifecycle.value.openRunCount },
     };
   };
+  // A feed check waits on the network; the request returns and the check continues there.
+  const bounded = (name: ServerUpdateAction) =>
+    Promise.race([
+      updates.run(name),
+      new Promise<Result<null>>((resolve) =>
+        setTimeout(
+          () => resolve(failure("internal", "The server is still working on the update request.")),
+          actionTimeoutMs,
+        ).unref(),
+      ),
+    ]);
   const action = (name: ServerUpdateAction): ApiRoute => ({
     method: "POST",
     path: new RegExp(`^/api/server-update/${name}$`),
     handle: () =>
       Effect.map(
         Effect.promise(async () => {
-          const result = await updates.run(name);
+          const result = await bounded(name);
           return result.ok ? read() : result;
         }),
         (result) => resultResponse(result),

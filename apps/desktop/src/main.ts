@@ -295,7 +295,13 @@ async function runServerUpdate(action: ServerUpdateAction): Promise<OperationRes
   if (state !== "downloaded") return refused("No downloaded server update is ready to install.");
   if (installingUpdate) return refused("The server update is already being installed.");
   // Answer the client before the backend begins its orderly shutdown.
-  setImmediate(() => void installUpdate());
+  // A failed start is published as the updater's error, which the waiting client reads.
+  setImmediate(
+    () =>
+      void installUpdate().then((result) => {
+        if (!result.ok) updates.fail(result.message);
+      }),
+  );
   return { ok: true, value: null };
 }
 

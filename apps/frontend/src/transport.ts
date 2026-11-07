@@ -57,7 +57,7 @@ export const protocolHeaders = {
 
 /** Distinguish a locally refused command from a request whose response was lost. */
 export class OfflineError extends Error {
-  constructor(delivery: "not-sent" | "unknown" = "unknown") {
+  constructor(readonly delivery: "not-sent" | "unknown" = "unknown") {
     super(
       delivery === "not-sent"
         ? "Factory is offline. Nothing was sent; reconnect and check the current state first."

@@ -21,6 +21,17 @@ on:
         description: Monotonic beta build number
         required: false
         type: string
+    secrets:
+      CSC_LINK:
+        required: true
+      CSC_KEY_PASSWORD:
+        required: true
+      APPLE_API_KEY:
+        required: true
+      APPLE_API_KEY_ID:
+        required: true
+      APPLE_API_ISSUER:
+        required: true
     outputs:
       version:
         description: Packaged application version

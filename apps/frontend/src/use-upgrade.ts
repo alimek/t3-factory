@@ -3,6 +3,7 @@ import type { ApplicationUpdate, ServerUpdate, UpdateChannel } from "@t3-factory
 import { api } from "./api.ts";
 import { useClientScope } from "./client-scope.ts";
 import { desktopBridge, type DesktopState } from "./desktop-bridge.ts";
+import { OfflineError } from "./transport.ts";
 import { useDesktopState } from "./desktop-state.ts";
 import { usePolling } from "./use-polling.ts";
 
@@ -152,11 +153,13 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
 
   const check = async () => {
     setFailure(null);
-    await Promise.allSettled([
+    const [, server] = await Promise.allSettled([
       app && desktop?.checkForUpdates(),
       remote && api.runServerUpdate("check").then(setServer),
     ]);
-    setCheckedAt(Date.now());
+    if (server.status === "rejected")
+      setFailure({ title: "Server update check failed", message: describe(server.reason) });
+    else setCheckedAt(Date.now());
   };
 
   const download = async () => {
@@ -178,7 +181,10 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
     setUpgrading(true);
     try {
       if (serverReady) {
-        await api.runServerUpdate("install");
+        await api.runServerUpdate("install").catch((cause: unknown) => {
+          // A lost reply may follow an accepted install: the restart itself answers.
+          if (!(cause instanceof OfflineError && cause.delivery === "unknown")) throw cause;
+        });
         await waitForServer(serverReady.update.version);
       }
     } catch (cause) {

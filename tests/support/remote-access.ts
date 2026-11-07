@@ -44,7 +44,9 @@ export async function expectServerInstallRequested(
   installsBefore: number,
 ) {
   await expect(screen.getByRole("button", "Upgrading…")).toBeVisible();
-  expect((await serverUpdateActions(app)).slice(installsBefore).join(",")).toBe("install");
+  await expect
+    .poll(async () => (await serverUpdateActions(app)).slice(installsBefore).join(","))
+    .toBe("install");
 }
 
 /** Lets wall-clock time pass in the browser session, for interval-driven behavior. */

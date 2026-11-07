@@ -20,8 +20,10 @@ function changelog(
 ): string | null {
   if (!Array.isArray(notes)) return typeof notes === "string" ? notes : null;
   const entries = notes
-    .filter((entry) => entry.note?.trim() && (channel === "beta" || !entry.version.includes("-")))
-    .map((entry) => `<h3>${entry.version}</h3>${entry.note}`);
+    .filter((entry) => channel === "beta" || !entry.version.includes("-"))
+    .map(
+      (entry) => `<h3>${entry.version}</h3><div>${entry.note?.trim() || "No release notes."}</div>`,
+    );
   return entries.length ? entries.join("") : null;
 }
 
@@ -130,8 +132,8 @@ export class Updates {
   configure(channel: UpdateChannel): string | null {
     if (this.status.state === "unsupported" || this.channel === null || channel === this.channel)
       return null;
-    if (this.status.state === "downloading")
-      return "Wait for the current download to finish before changing the update channel.";
+    if (this.status.state === "checking" || this.status.state === "downloading")
+      return "Wait for the current update check or download to finish before changing the channel.";
     this.apply(channel);
     this.set({ state: "idle", version: null, progress: null, releaseNotes: null, message: null });
     void this.check();
@@ -149,6 +151,11 @@ export class Updates {
     if (this.status.state !== "available") return;
     this.set({ state: "downloading", progress: 0, downloadedBytes: 0, message: null });
     await this.updater.downloadUpdate().catch(() => undefined);
+  }
+
+  /** An installation that could not start leaves the app running on its current release. */
+  fail(message: string) {
+    this.set({ state: "error", progress: null, message });
   }
 
   /** Called only after the upgrade review was confirmed and the backend shut down in order. */
