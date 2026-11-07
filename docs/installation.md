@@ -80,10 +80,20 @@ links), and rejects linked database, state or lock files. If an older developmen
 `dev:prod` opens the real production database and credentials, so edits, migrations and reconciliation affect real state. Stop the production backend first (one backend per database); restarting dev is
 not Stop and live T3 work may continue. T3 Code must run separately for `dev:prod` and `start`.
 
+For daily use while developing Factory itself, run `pnpm dev:prod` in the checkout whose changes you want to exercise. Open the printed Vite URL for the current source UI; the backend runs API-only.
+On one computer, the default loopback URL is enough. On separate computers, `pnpm dev:prod --tailscale` exposes that UI on the server's Tailscale address, subject to the trust boundary below.
+An installed desktop client can use the development backend when their protocols overlap, but still displays its bundled UI; desktop-shell changes need a local desktop build.
+
+Before switching an existing installation, take a consistent SQLite backup plus its configuration and credentials outside the checkout and review pending migrations for data loss or compatibility breaks.
+Shut down the current backend in order, then start dev with the same home and backend port to preserve reporting URLs. Keep a way to restart the server outside Factory: a broken development backend cannot
+repair itself through its own UI. Source reload affects only the running checkout; changes in another clone or worktree require an intentional switch. See [local acceptance checks](testing.md#local-development-acceptance)
+for the verification boundary. Machine addresses, home overrides, launch commands and backup locations belong in private local configuration outside Git.
+
 ### Tailscale access
 
 `pnpm dev --tailscale` (or `pnpm dev:prod --tailscale`) binds Vite to the address from `tailscale ip -4` (the CLI must be on `PATH`; discovery failures stop startup without falling back to another
-interface). This is unauthenticated development tooling: the Vite proxy reaches the backend from loopback, so tailnet devices get host-local access. Use secure remote access for real data. The flag
+interface). This is unauthenticated development tooling: the Vite proxy reaches the backend from loopback, so tailnet devices get host-local access. Use approved-client HTTPS for ordinary remote access to real data.
+Sharing a live Vite session intentionally grants host-local access; restrict its address and port to trusted development devices with tailnet access rules. It does not exercise client approval or TLS. The flag
 changes neither the backend bind, nor the data home, nor Tailscale Serve/Funnel or ACLs. `FACTORY_DEV_HOME` aside, `FACTORY_DEV_HOST` sets an explicit frontend bind and `--tailscale` takes precedence.
 
 ## UI journeys
