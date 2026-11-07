@@ -43,6 +43,7 @@ type StudioLinkProps = {
   className?: string;
   "aria-current"?: ComponentProps<"a">["aria-current"];
   "aria-label"?: string;
+  "aria-describedby"?: ComponentProps<"a">["aria-describedby"];
 };
 
 export function StudioLink({ selection, ...props }: StudioLinkProps) {

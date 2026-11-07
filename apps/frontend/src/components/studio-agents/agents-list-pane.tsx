@@ -6,6 +6,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { StudioLink } from "../app-link.tsx";
 import { agentRuntimeMeta, flowUsageCount, flowUsageLabel } from "@/lib/agent-display";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { agentReportingStatus, useReportingState } from "../../reporting-state.tsx";
 
 export function AgentsListPane({
   agents,
@@ -147,6 +149,7 @@ function AgentListRows({
             id={agent.id}
             name={agent.name}
             meta={agentRuntimeMeta(agent, capabilities)}
+            providerId={agent.execution.providerInstanceId}
             usage={flowUsageLabel(flowUsageCount(flows ?? [], agent.id))}
             selected={selectedId === agent.id}
           />
@@ -162,17 +165,22 @@ function AgentListItemLink({
   meta,
   usage,
   selected,
+  providerId,
 }: {
   id: string;
   name: string;
   meta: string;
   usage?: string;
   selected: boolean;
+  providerId?: string;
 }) {
+  const reporting = useReportingState();
+  const status = providerId ? agentReportingStatus(providerId, reporting) : undefined;
   return (
     <StudioLink
       selection={{ tab: "agents", agentId: id }}
       aria-label={name}
+      aria-describedby={status ? `agent-reporting-${id}` : undefined}
       aria-current={selected ? "page" : undefined}
       className={cn(
         "flex min-w-0 w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-foreground no-underline outline-none transition-colors hover:no-underline focus-visible:ring-[3px] focus-visible:ring-ring/50",
@@ -187,6 +195,14 @@ function AgentListItemLink({
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="truncate text-sm font-medium">{name}</span>
         <span className="truncate text-2xs text-subtle-foreground">{meta}</span>
+        {status && (
+          <Badge
+            id={`agent-reporting-${id}`}
+            variant={status.state === "attention" ? "attention" : "secondary"}
+          >
+            {status.label}
+          </Badge>
+        )}
       </span>
       {usage && (
         <span className="shrink-0 text-2xs font-medium text-muted-foreground">{usage}</span>

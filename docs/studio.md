@@ -48,6 +48,10 @@ Availability is separate from verified execution support. A provider without Fac
 as a disabled choice marked **No Factory reporting yet**, with the reason under it, so it cannot be chosen; a saved Agent that already uses one keeps it visible with that mark. New Agents default to the first provider with reporting support; when T3 offers none, no provider is preselected and the Agent needs a supported provider before it can run. Omitted thinking-option lists use defaults; malformed lists are rejected. Factory launches each Block worker with these saved settings
 ([Run execution](runner.md#current-execution-contract)); the API's `execution` field holds the worker settings and `settingsStatus` their availability.
 
+The list and editor also show the provider's [reporting installation status](t3-integration.md#agent-reporting).
+The editor follows the current provider choice, explains installation problems and links to **Settings → Agent reporting**.
+Installed configuration does not establish full execution readiness or live report visibility; Start still checks those gates.
+
 **Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt and settings, and Studio shows the latest; a stale or invalid save returns an error,
 appends nothing and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
