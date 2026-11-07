@@ -182,7 +182,13 @@ test("reloading a waiting worker retains its exact question link", async ({
     "href",
     question.link!,
   );
-  expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(run.activations);
+  // Periodic reconciliation may re-observe the waiting worker between the two reads.
+  expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(
+    run.activations.map((activation) => ({
+      ...activation,
+      evidence: { ...activation.evidence, observedAt: expect.any(String) },
+    })),
+  );
   await app.screenshot("worker-question-after-reload");
 });
 
