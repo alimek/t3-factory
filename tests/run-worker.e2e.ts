@@ -248,31 +248,3 @@ test("Stop closes both direct worker branches durably", async ({ app, screen, br
   await expect(screen.getByRole("button", "Stop Run", { exact: true })).toHaveCount(0);
   await app.screenshot("root-two-workers-stopped-after-reload");
 });
-
-test("Run again starts a new worker Run from a closed Run snapshot", async ({ app, screen }) => {
-  // Arrange
-  const source = await findRun(app.baseUrl, "UI worker · Stopped · Earlier navigation experiment");
-  await app.open(`/runs/${source.id}`);
-  await screen.getByRole("button", "Run again", { exact: true }).tap();
-  await screen
-    .getByLabel("Initial prompt", { exact: false })
-    .fill("UI direct worker second attempt");
-  await expect(screen.getByText("Snapshot from source Run · configuration fixed")).toBeVisible();
-
-  // Act
-  await screen.getByRole("button", "Start", { exact: true }).tap();
-
-  // Assert
-  await expect(
-    screen.getByRole("heading", "UI direct worker second attempt", { exact: true }),
-  ).toBeVisible();
-  const created = await findRun(app.baseUrl, "UI direct worker second attempt");
-  expect(created.id).not.toBe(source.id);
-  await expect
-    .poll(async () =>
-      (await readHistoryRun(app.baseUrl, created.id)).threadBindings.map((binding) => binding.role),
-    )
-    .toEqual(["worker"]);
-  expect((await readHistoryRun(app.baseUrl, created.id)).runCoordinator).toBeNull();
-  expect((await readHistoryRun(app.baseUrl, source.id)).outcome).toBe("stopped");
-});

@@ -1,7 +1,6 @@
-import { forwardRef, type ComponentProps, type ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { createLink } from "@tanstack/react-router";
 import { SettingsLink, StudioLink } from "./app-link.tsx";
 import { cn } from "@/lib/utils";
 
@@ -43,19 +42,7 @@ export function Notice({
 const actionClass =
   "inline-flex items-center gap-1 rounded-sm font-medium text-link underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
-/** In-app link action for a notice, with the trailing chevron from the Figma notices. */
-const NoticeAnchor = forwardRef<HTMLAnchorElement, ComponentProps<"a">>(function NoticeAnchor(
-  { children, ...props },
-  ref,
-) {
-  return (
-    <a ref={ref} {...props} className={actionClass}>
-      {children}
-      <ChevronRight aria-hidden className="size-3.5" strokeWidth={1.5} />
-    </a>
-  );
-});
-export const NoticeLink = createLink(NoticeAnchor);
+/** Settings link action for a notice, with the trailing chevron from the Figma notices. */
 export function NoticeSettingsLink({ children, ...props }: ComponentProps<typeof SettingsLink>) {
   return (
     <SettingsLink {...props} className={actionClass}>

@@ -19,7 +19,7 @@ and restricted OAuth credentials live outside project repositories.
   settings, labels and revisions. Later definition changes cannot rewrite history.
   External skill files are not frozen.
 - Each Task permits one non-closed Run, including uncertain work or Stop in progress.
-  Run again creates a new Run and threads, never reopens history.
+  Each Start creates a new Task, Run and threads; closed Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
@@ -87,7 +87,7 @@ usable and must not turn a confirmed Start into an unknown outcome. Shortcut sch
 changes must migrate or explicitly invalidate saved preferences under the
 [current-contract policy](../AGENTS.md#one-current-contract). The composer retains an
 unknown Start's identical key and payload for an explicit check; only confirmed success
-clears its prompt. Backend idempotency and the Task slot remain authoritative.
+clears its prompt. Backend idempotency remains authoritative.
 
 The UI must work over plain HTTP on a LAN or Tailscale address as well as loopback.
 Browser APIs requiring a secure context must not be the only way to generate identifiers.

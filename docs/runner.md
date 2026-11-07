@@ -36,7 +36,7 @@ reporting protocol.
 
 Start checks the connection, project, graph, saved Agent settings, the `$factory-block`
 skill, reporting installation and launch support. It does not require a Run coordinator.
-Accepted Start atomically claims the Task slot, assigns the Run number, captures the
+Accepted Start atomically creates the Run's Task, assigns the Run number, captures the
 snapshot and records each launch intent before contacting T3. An accepted request key is
 unique across the database: the same content returns the same Run; changed content
 conflicts. Flow input targets start independently and are not handoffs.
@@ -52,10 +52,9 @@ after reservation leaves uncertainty, not a fresh attempt. An acknowledgement pr
 acceptance only, not execution or completion. Later arrivals to the same Block wait for
 its unresolved launch; unrelated branches may continue.
 
-Run again resolves the source snapshot on the backend, validates its captured settings
-against current availability and uses the same Task-slot and request-key rules. It never
-trusts a client-supplied replacement graph. The composer requires the server's creation
-policy before Start.
+Start always resolves the current saved Flow and Agents on the backend; it never trusts a
+client-supplied graph or launches from an earlier Run's snapshot. The composer requires the
+server's creation policy before Start.
 
 ## Ownership and restart
 
@@ -268,7 +267,7 @@ compare-and-set or replay key, direct activity can race the final read.
 
 ## Navigation and presentation
 
-[Run navigation](runs.md#run-list-task-history-and-run-again) reflects recorded closure and
+[Run navigation](runs.md#run-list) reflects recorded closure and
 unsettled attention without settling either. Snooze, Restore and acknowledging Woke change
 presentation only. New attention identities or an increased pending native count wake a
 snoozed open Run; a replacement request with an unchanged count is undetectable. Closure

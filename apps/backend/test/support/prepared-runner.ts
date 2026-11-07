@@ -87,20 +87,3 @@ export async function prepared(c: TestContext) {
     },
   };
 }
-
-/** A captured configuration ready for independent snapshot Start requests. */
-export async function preparedSnapshotRun(c: TestContext) {
-  const fixture = await prepared(c);
-  const source = await fixture.f.startRun(fixture.input);
-  assert(source.ok);
-  return {
-    ...fixture,
-    source: source.value,
-    snapshotInput: {
-      requestId: "snapshot-rerun",
-      projectId: fixture.project.id,
-      sourceRunId: source.value.id,
-      input: "A different task",
-    },
-  };
-}

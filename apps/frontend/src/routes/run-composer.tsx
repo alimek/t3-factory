@@ -11,7 +11,6 @@ import {
   CircleHelp,
   Info,
   Play,
-  RotateCcw,
   TriangleAlert,
   Unplug,
   Workflow,
@@ -21,7 +20,6 @@ import { ProjectPicker, useProjectCatalog } from "../components/project-picker.t
 import {
   Notice,
   NoticeButton,
-  NoticeLink,
   NoticeSettingsLink,
   NoticeStudioLink,
 } from "../components/notice.tsx";
@@ -90,48 +88,32 @@ function flowLaunchIssues(flow: FlowDraft) {
   return flow.readiness.issues.map((issue) => issue.message).join(" ");
 }
 
-function launchConfiguration(draft: ReturnType<typeof useRunDraft>, flow: FlowDraft | undefined) {
-  const snapshotMode = !!draft.sourceRunId;
-  const flowLaunchReady = snapshotMode || (!!flow && flowCanLaunch(flow));
-  return { snapshotMode, flowLaunchReady };
-}
-
 function useComposerChoices() {
-  const draft = useRunDraft();
   const [flows, setFlows] = useState<readonly FlowDraft[] | null>(null);
   const [creationPolicy, setCreationPolicy] = useState<RunCreationPolicy | null>(null);
   const [error, setError] = useState("");
-  const [activeRunId, setActiveRunId] = useState<string>();
   usePolling({
     intervalMs: 3000,
-    onPoll: useCallback(
-      async (isActive) => {
-        try {
-          const [rows, tasks, policy] = await Promise.all([
-            api.listFlows(),
-            draft.taskId ? api.listTasks(draft.projectId) : Promise.resolve([]),
-            api.getRunCreationPolicy(),
-          ]);
-          if (!isActive()) return;
-          setFlows(rows);
-          setCreationPolicy(policy);
-          setActiveRunId(tasks.find((t) => t.id === draft.taskId)?.activeRunId ?? undefined);
-          setError("");
-        } catch {
-          if (isActive()) setError("Could not refresh launch choices. Your draft is kept.");
-        }
-      },
-      [draft.taskId, draft.projectId],
-    ),
+    onPoll: useCallback(async (isActive) => {
+      try {
+        const [rows, policy] = await Promise.all([api.listFlows(), api.getRunCreationPolicy()]);
+        if (!isActive()) return;
+        setFlows(rows);
+        setCreationPolicy(policy);
+        setError("");
+      } catch {
+        if (isActive()) setError("Could not refresh launch choices. Your draft is kept.");
+      }
+    }, []),
   });
-  return { flows, creationPolicy, error, activeRunId: draft.activeRunId ?? activeRunId };
+  return { flows, creationPolicy, error };
 }
 
 function useComposer() {
   const navigate = useNavigate();
   const draft = useRunDraft();
   const projects = useProjectCatalog();
-  const { flows, creationPolicy, error, activeRunId } = useComposerChoices();
+  const { flows, creationPolicy, error } = useComposerChoices();
   // Start and live observation depend on readiness: keep it current while shown.
   useConnectionWatch("always");
   const { presentation } = useConnectionState();
@@ -146,18 +128,17 @@ function useComposer() {
   const [promptMissing, setPromptMissing] = useState(false);
   const project = projects.catalog?.projects.find((p) => p.id === draft.projectId);
   const flow = flows?.find((f) => f.id === draft.flowId);
-  const { snapshotMode, flowLaunchReady } = launchConfiguration(draft, flow);
   const locked = draft.pending;
   const projectReady = project?.availability === "available";
   const ready =
     !!creationPolicy &&
     presentation === "ready" &&
     projectReady &&
-    flowLaunchReady &&
+    !!flow &&
+    flowCanLaunch(flow) &&
     !error &&
     !projects.loadError &&
-    !projects.busy &&
-    !activeRunId;
+    !projects.busy;
   const start = async () => {
     if (!draft.pending) {
       if (!draft.input.trim()) {
@@ -175,13 +156,11 @@ function useComposer() {
     projects,
     flows,
     error,
-    activeRunId,
     presentation,
     prompt,
     promptMissing,
     project,
     flow,
-    snapshotMode,
     locked,
     projectReady,
     ready,
@@ -192,11 +171,9 @@ function useComposer() {
 
 type Composer = ReturnType<typeof useComposer>;
 
-function composerHelp({ presentation, snapshotMode }: Composer) {
+function composerHelp({ presentation }: Composer) {
   if (presentation === "unavailable")
     return "Project and Flow lists show their last known values while disconnected.";
-  if (snapshotMode)
-    return "Uses the saved Flow and Agent snapshot in fresh threads. Project and prompt can change.";
   return "Each Agent Block starts in its own worker. Factory keeps the Flow’s routing.";
 }
 
@@ -205,7 +182,7 @@ export function RunComposer() {
   const { draft, project, projectReady, start } = model;
   const inactive = !draft.pending && (!model.ready || !draft.input.trim());
   return (
-    <ScreenLayout title={model.snapshotMode ? "Run again" : "New Run"}>
+    <ScreenLayout title="New Run">
       <main className="flex flex-1 items-center justify-center px-6 pt-8 pb-16 max-sm:px-4">
         <form
           className="flex w-full max-w-160 flex-col gap-4"
@@ -221,12 +198,6 @@ export function RunComposer() {
           }}
         >
           <div className="grid gap-1.5">
-            {draft.sourceTitle && (
-              <p className="mb-1 flex items-center gap-1.5 text-2xs font-medium text-link">
-                <RotateCcw aria-hidden className="size-3" strokeWidth={1.5} />
-                Run again from “{draft.sourceTitle}”
-              </p>
-            )}
             <h1 className="text-heading font-semibold tracking-heading">
               {projectReady ? `What should we work on in ${project?.title}?` : "Start a new Run"}
             </h1>
@@ -235,7 +206,6 @@ export function RunComposer() {
               thread.
             </p>
           </div>
-          <ActiveRunNotice model={model} />
           <ComposerFields model={model} />
           <ComposerNotices model={model} />
           <div className="flex items-center justify-between gap-3">
@@ -301,14 +271,13 @@ function FlowFieldValue({
   value?: string;
   placeholder: string;
 }) {
-  const { draft, flow } = model;
+  const { flow } = model;
   if (!value) return <span className="truncate text-muted-foreground">{placeholder}</span>;
   return (
     <>
       <span className="min-w-0 truncate font-medium">{value}</span>
       {flow && (
         <span className="min-w-0 truncate text-2xs tracking-label text-subtle-foreground">
-          {draft.sourceTitle ? "current version · " : ""}
           {flowCanLaunch(flow) ? "ready" : "Not ready"}
         </span>
       )}
@@ -403,35 +372,6 @@ function FlowChoices({
           No matching Flows.
         </p>
       )}
-    </div>
-  );
-}
-
-function SnapshotFlowField({ name }: { name: string }) {
-  return (
-    <div className="grid min-w-0 content-start gap-1.5">
-      <Label htmlFor="launch-flow-snapshot" className={fieldLabelClass}>
-        Flow
-      </Label>
-      <div
-        id="launch-flow-snapshot"
-        className={cn(
-          selectFieldClass,
-          "flex cursor-default items-center gap-2 bg-muted/40 text-left",
-        )}
-      >
-        <Workflow aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate font-medium">{name}</span>
-          <span className="truncate text-2xs tracking-label text-subtle-foreground">
-            Snapshot from source Run · configuration fixed
-          </span>
-        </span>
-      </div>
-      <p className="text-2xs text-muted-foreground">
-        Agent prompts and Flow wiring come from the saved snapshot. To pick a different current
-        Flow, use New Run.
-      </p>
     </div>
   );
 }
@@ -544,11 +484,7 @@ function ComposerFields({ model }: { model: Composer }) {
           onSelect={(projectId) => edit({ projectId })}
           disabled={locked}
         />
-        {model.snapshotMode ? (
-          <SnapshotFlowField name={draft.snapshotFlowName ?? "Flow snapshot"} />
-        ) : (
-          <FlowField model={model} />
-        )}
+        <FlowField model={model} />
       </fieldset>
       <div className="grid gap-1.5">
         <Label htmlFor="launch-prompt" className={cn(fieldLabelClass, "gap-1.5")}>
@@ -584,27 +520,6 @@ function ComposerFields({ model }: { model: Composer }) {
         )}
       </div>
     </>
-  );
-}
-
-function ActiveRunNotice({ model }: { model: Composer }) {
-  const { activeRunId, draft } = model;
-  if (!activeRunId) return null;
-  return (
-    <Notice
-      tone="attention"
-      icon={TriangleAlert}
-      title="Already running again"
-      action={
-        <NoticeLink to="/runs/$runId" params={{ runId: activeRunId }}>
-          Open the existing Run
-        </NoticeLink>
-      }
-    >
-      {draft.sourceTitle ? `You ran “${draft.sourceTitle}” again and that Run is still open.` : ""}{" "}
-      Finish or stop the open Run first. Editing the prompt keeps this Run again linked to its
-      source.
-    </Notice>
   );
 }
 
@@ -645,7 +560,6 @@ function ProjectNotice({ model }: { model: Composer }) {
 }
 
 function FlowNotice({ model }: { model: Composer }) {
-  if (model.snapshotMode) return null;
   const { flows, flow } = model;
   if (flows?.length === 0) {
     return (
@@ -678,7 +592,7 @@ function FlowNotice({ model }: { model: Composer }) {
 }
 
 function StartNotice({ model }: { model: Composer }) {
-  const { draft, error, start, snapshotMode } = model;
+  const { draft, error, start } = model;
   if (draft.error && draft.pending) {
     return (
       <Notice
@@ -702,19 +616,10 @@ function StartNotice({ model }: { model: Composer }) {
         icon={TriangleAlert}
         title="T3 rejected the start"
         action={
-          snapshotMode ? (
-            <NoticeButton disabled={draft.busy} onClick={runDraft.openFresh}>
-              New Run with current definitions
-            </NoticeButton>
-          ) : (
-            <NoticeStudioLink selection={{ tab: "agents" }}>Open Studio → Agents</NoticeStudioLink>
-          )
+          <NoticeStudioLink selection={{ tab: "agents" }}>Open Studio → Agents</NoticeStudioLink>
         }
       >
-        {draft.error}{" "}
-        {snapshotMode
-          ? "No Run was created; change the project or prompt, or start a New Run with current definitions."
-          : "No Run was created; change the Agent or Flow, then Start again."}
+        {draft.error} No Run was created; change the Agent or Flow, then Start again.
       </Notice>
     );
   }

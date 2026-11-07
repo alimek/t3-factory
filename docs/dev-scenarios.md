@@ -46,8 +46,8 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Two reviewers working in parallel | Two active reviewer blocks | Inspect independent branches and Stop |
 | Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect two independent top-level workers and Stop |
 | Problem · Search checks failed | Failed execution with unresolved Problem | Inspect attention and failure evidence |
-| Finished · Clearer onboarding copy | Finished in Settled | Inspect permanent history and Run again |
-| Stopped · Earlier navigation experiment | Confirmed stopped in Settled | Inspect Stop evidence and Run again |
+| Finished · Clearer onboarding copy | Finished in Settled | Inspect permanent history; start a New Run for further work |
+| Stopped · Earlier navigation experiment | Confirmed stopped in Settled | Inspect Stop evidence; no relaunch action |
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
 | Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form); native reply continuation is covered by controlled backend fixtures |

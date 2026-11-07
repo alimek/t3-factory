@@ -17,7 +17,6 @@ export async function siblingRuns(c: TestContext) {
   p.t3.engineStatus = "running";
   const second = await p.f.startRun({
     ...p.input,
-    taskId: first.value.task.id,
     requestId: "second",
     input: "Second title\nHidden body",
   });

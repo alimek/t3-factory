@@ -18,7 +18,7 @@ it("a Run takes its bounded title from the first non-empty prompt line", async (
   expect(result.value.input).toBe(prompt);
 });
 
-it("renaming a Run trims its title without changing its sibling or legacy Task", async (c) => {
+it("renaming a Run trims its title without changing its sibling or its Task", async (c) => {
   // Arrange
   const { f, first, second } = await siblingRuns(c);
 
@@ -31,10 +31,10 @@ it("renaming a Run trims its title without changing its sibling or legacy Task",
   expect(renamed.value.snapshot).toStrictEqual(first.snapshot);
   expect(renamed.value.events).toStrictEqual(first.events);
   expect(renamed.value.input).toBe(first.input);
+  expect(renamed.value.task.title).toBe(first.task.title);
   const other = await f.getRun(second.id);
   assert(other.ok);
   expect(other.value.title).toBe("Second title");
-  expect(other.value.task.title).toBe(first.task.title);
 });
 
 it("a whitespace-only Run title is rejected", async (c) => {

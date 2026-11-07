@@ -7,7 +7,7 @@ available project, a global ready Flow and a required initial prompt. Factory ch
 every referenced Agent's settings, reporting installation and explicit-call API compatibility before accepting Start.
 Failures explain recovery and keep the draft.
 
-- **Task and Run.** Start creates a Task (named from the first non-empty input line) and its first Run. Each Run has its own
+- **Task and Run.** Each Start creates a new Task (named from the first non-empty input line) and its Run. Each Run has its own
   title, from its first non-empty prompt line, limited to 500 characters.
 - **Idempotency.** A stable request key belongs to one composer submission. Retrying an accepted request returns the same Run,
   even after a lost response or restart; reusing the key with changed content conflicts. An unknown response keeps the
@@ -46,14 +46,13 @@ substituted.
   lays out left to right, changes neither the Flow nor the snapshot and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
 - The top bar shows title, project, snapshot, block states, each worker's **Open worker in T3** link (a pending launch says
-  recovery is still searching and offers no replacement), **Stop Run** (open) or **Run again** (closed) and a
-  ··· menu. The timeline starts collapsed; the context rail (attention, Stop/closure
+  recovery is still searching and offers no replacement), **Stop Run** (open) and a ··· menu. The timeline starts collapsed; the context rail (attention, Stop/closure
   evidence, prompt, snapshot, project, work periods) opens from 1280 px wide.
 - Verified running worker work is ordinary progress; unavailable native evidence is a coordination Problem.
 
 Engine termination alone never completes a Run: whole-Run completion is only a recorded Finished or Stopped outcome.
 
-## Run list, Task history and Run again
+## Run list
 
 The shell sidebar lists Runs globally, newest created first (id ascending breaks ties); opening, renaming and closing never
 change that key. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
@@ -66,13 +65,8 @@ stale) and chips. Missing projects keep readable history; an unavailable open Ru
   Case-insensitive title search reveals matching entries in every group; Escape or × clears it.
 - **Rename** changes that Run's title only (trimmed, non-empty, ≤500 characters). Row menu: hover/focus/select, Shift+F10,
   F2 renames; closed rows offer Rename only.
-- **Run again** opens the composer with the previous project and prompt editable and the Flow and Agent configuration fixed to
-  the **source Run's snapshot**, even if definitions changed or the Flow was removed. It creates a new Run with fresh threads,
-  never reopens history, resets files or freezes external skill files. Captured settings that are no longer available block Start
-  instead of being replaced. The current-Flow composer requires a ready Flow and links to the Flow editor when it is not.
-  **New Run** is the way to use current definitions.
-- Run again stays on its source Task (blocked with a link while that Task has an open Run). Choosing a different project starts an
-  independent matter; replacing an unsent prompt asks for confirmation. Confirmed Finished or Stopped closure frees the slot.
+- A closed Run is read-only history and is never reopened or relaunched. To work on the matter again, start a **New Run**: it
+  uses the current saved Flow and Agent definitions, not an earlier Run's snapshot.
 
 ### Snooze and Woke
 

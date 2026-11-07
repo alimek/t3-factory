@@ -1,6 +1,6 @@
-import { expect, it, vi } from "vite-plus/test";
+import { expect, it } from "vite-plus/test";
 import { ApiError } from "../src/api.ts";
-import { composer, pendingStart, sourceRun, unknownStart } from "./support/run-draft.ts";
+import { composer, pendingStart, unknownStart } from "./support/run-draft.ts";
 
 it("an unknown Start keeps submitted fields read-only", async (context) => {
   // Arrange
@@ -16,9 +16,9 @@ it("an unknown Start keeps submitted fields read-only", async (context) => {
   expect(startRun).toHaveBeenCalledTimes(1);
 });
 
-it("New Run cannot discard an unresolved Run again submission", async (context) => {
+it("New Run cannot discard an unresolved submission", async (context) => {
   // Arrange
-  const { draft, startRun } = await unknownStart(context, true);
+  const { draft, startRun } = await unknownStart(context);
   const before = draft.getSnapshot();
 
   // Act
@@ -42,22 +42,6 @@ it("Start Run from a Flow cannot replace an unresolved submission", async (conte
   expect(startRun).toHaveBeenCalledTimes(1);
 });
 
-it("Run again opens the pending composer without replacing its submission", async (context) => {
-  // Arrange
-  const { draft, startRun } = await unknownStart(context);
-  const before = draft.getSnapshot();
-  const confirmReplacement = vi.fn(() => true);
-
-  // Act
-  const open = draft.openRunAgain(sourceRun, confirmReplacement);
-
-  // Assert
-  expect(open).toBe(true);
-  expect(draft.getSnapshot()).toStrictEqual(before);
-  expect(startRun).toHaveBeenCalledTimes(1);
-  expect(confirmReplacement).not.toHaveBeenCalled();
-});
-
 it("Check same request sends the identical key and payload after a lost response", async (context) => {
   // Arrange
   const { draft, startRun } = await unknownStart(context);
@@ -78,33 +62,6 @@ it("Check same request sends the identical key and payload after a lost response
   });
   expect(runId).toBe("accepted-run");
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false, busy: false });
-});
-
-it("Run again recovery keeps its source snapshot and Task slot", async (context) => {
-  // Arrange
-  const { draft, startRun } = await unknownStart(context, true);
-  const submitted = structuredClone(startRun.mock.calls[0]?.[0]);
-  startRun.mockRejectedValueOnce(new TypeError("Still unknown"));
-
-  // Act
-  await draft.start();
-
-  // Assert
-  expect(startRun.mock.calls[1]?.[0]).toStrictEqual(submitted);
-  expect(submitted).toStrictEqual({
-    requestId: expect.any(String),
-    projectId: sourceRun.task.projectId,
-    taskId: sourceRun.task.id,
-    sourceRunId: sourceRun.id,
-    input: sourceRun.input,
-  });
-  expect(draft.getSnapshot()).toMatchObject({
-    input: sourceRun.input,
-    sourceRunId: sourceRun.id,
-    taskId: sourceRun.task.id,
-    pending: true,
-    busy: false,
-  });
 });
 
 it("an in-flight Start cannot be sent concurrently", async (context) => {
@@ -159,29 +116,6 @@ it("validation settles Start and keeps the prompt available for correction", asy
     pending: false,
     busy: false,
     error: "Not ready",
-  });
-});
-
-it("a Task slot conflict settles Start and exposes the existing Run", async (context) => {
-  // Arrange
-  const { draft, startRun } = composer(context);
-  startRun.mockRejectedValueOnce(
-    new ApiError({
-      code: "conflict",
-      message: "Task occupied",
-      issues: [{ code: "active_run", path: "taskId", message: "existing-run" }],
-    }),
-  );
-
-  // Act
-  await draft.start();
-
-  // Assert
-  expect(draft.getSnapshot()).toMatchObject({
-    input: "Do the work",
-    pending: false,
-    busy: false,
-    activeRunId: "existing-run",
   });
 });
 

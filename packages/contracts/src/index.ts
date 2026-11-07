@@ -461,16 +461,12 @@ export interface ProjectCatalog {
   readonly problem: string | null;
 }
 
-export type StartRunInput = {
+export interface StartRunInput {
   readonly requestId: string;
   readonly projectId: string;
+  readonly flowId: string;
   readonly input: string;
-  /** Reuse an existing Task for Run again; creates a new Run without reopening history. */
-  readonly taskId?: string;
-} & (
-  | { readonly flowId: string; readonly sourceRunId?: never }
-  | { readonly sourceRunId: string; readonly flowId?: never }
-);
+}
 export interface TaskRunEntry {
   readonly stopRequestedAt: string | null;
   readonly id: string;

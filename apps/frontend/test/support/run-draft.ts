@@ -2,14 +2,6 @@ import { vi, type Mock, type TestContext } from "vite-plus/test";
 import type { StartRunInput } from "@t3-factory/contracts";
 import { createRunDraft } from "../../src/run-draft.ts";
 
-export const sourceRun = {
-  id: "source-run",
-  title: "Previous Run",
-  input: "Original prompt",
-  task: { id: "source-task", projectId: "source-project" },
-  snapshot: { flow: { name: "Saved Flow" } },
-};
-
 interface Composer {
   draft: ReturnType<typeof createRunDraft>;
   startRun: Mock<(input: StartRunInput) => Promise<{ id: string }>>;
@@ -31,12 +23,8 @@ export function composer(context: TestContext): Composer {
   return { draft, startRun, storage };
 }
 
-export async function unknownStart(
-  context: TestContext,
-  snapshot = false,
-): Promise<ReturnType<typeof composer>> {
+export async function unknownStart(context: TestContext): Promise<ReturnType<typeof composer>> {
   const setup = composer(context);
-  if (snapshot) setup.draft.openRunAgain(sourceRun, () => true);
   setup.startRun.mockRejectedValueOnce(new TypeError("Response lost"));
   await setup.draft.start();
   return setup;

@@ -112,8 +112,6 @@ export const api = {
   getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   listRuns: (projectId: string) =>
     request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),
-  listTasks: (projectId: string) =>
-    request<readonly TaskSummary[]>(`/api/tasks?projectId=${encodeURIComponent(projectId)}`),
   updateTask: (id: string, input: { title: string }) =>
     patch<TaskSummary>(`/api/tasks/${encodeURIComponent(id)}`, input),
   getReportingInstallations: () => request<readonly ReportingInstallation[]>("/api/reporting"),

@@ -184,8 +184,7 @@ Qualify remote workers separately and only where the adapter exposes enough nati
 
 Budget these independently: OAuth pending callback across restart, denial, credential reuse, refresh, outage, revocation and reauthorization (changed grants must retain history without replaying uncertain
 work); project create/reuse, distinct clones, unavailable and restored directories and capability changes; native questions and approvals and direct activity in a participating thread; launch and send
-loss of response; backend exit versus Stop, active interrupts, queued cancellation and unavailable coverage across restart; and finished and stopped history after restart, where Run again must create fresh
-work under the retained Task.
+loss of response; backend exit versus Stop, active interrupts, queued cancellation and unavailable coverage across restart; and finished and stopped history after restart.
 
 ### Cleanup
 
