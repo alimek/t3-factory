@@ -1,4 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
+import { capturedWorker } from "./support/worker-contract.ts";
 import {
   reportReadSchema as readSchema,
   reportItem as item,
@@ -11,6 +12,34 @@ import {
   inheritedReport,
   optionalMetadataReport,
 } from "./support/boundaries-setup.ts";
+
+it("captured delegation evidence survives a failed Factory read and a native continuation in the same activity", async (c) => {
+  // Arrange
+  const { adapter: t3, endpoint } = await capturedWorker(c);
+
+  // Act
+  const evidence = await t3.readDelegationActivity({ endpoint }, "thread-1");
+
+  // Assert
+  expect(evidence.complete).toBe(true);
+  expect(evidence.invocations).toMatchObject([
+    {
+      parentRunId: "execution-2",
+      input: {
+        providerInstanceId: "cursor",
+        model: "composer-2.5",
+        options: null,
+        clientRequestId: null,
+      },
+      result: {
+        childThreadId: "thread-3",
+        childRunId: "execution-3",
+        options: {},
+        status: "running",
+      },
+    },
+  ]);
+});
 
 it("report reader follows pages and exact-item continuations preserving Codex and Claude provenance", async (c) => {
   // Arrange
