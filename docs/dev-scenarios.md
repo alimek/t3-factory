@@ -53,6 +53,14 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
 | Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form); controlled backend fixtures cover repeated native replies after a reportless reply, final or renewed waiting, and restart |
 
+**Native child completion coverage.** The Working and Finished scenarios expose delegated
+work and permanent closure, but do not seed provider-native children without public runs.
+HTTP adapter lifecycle tests cover that projection: an accepted result releases its
+handoff, or closes the Run after restart, only after exact worker aggregate completion
+and empty child queues/native requests. A queued child turn, active child, unanswered
+request or missing run-count metadata keeps the result held. This controlled evidence
+does not qualify live provider execution.
+
 Fresh or reset homes install a disposable Codex reporting target and the `$factory-block` skill before creating Runs, so Settings shows Installed for it; real harness homes are never configured. The simulator also offers a **Cursor** provider (`demo-cursor`). Factory can install reporting for it, but this home does not, so Settings → Agent reporting lists that target as not installed and no seeded Agent uses it. Other drivers stay **Reporting not available yet**. Seed Runs launch top-level Block workers: the simulator publishes decoded native acceptance and execution evidence, workers report through `factory_update_block`,
 and separate terminal observations release Agent and Human handoffs. Questions stay in the worker, Human corrections revisit the same worker with a new activation, the Problem case is a failed worker
 execution and the Finished and Stopped cases confirm the owned tree. The simulator retains execution states; it generates no code changes and finishes no work on its own. Ordinary restarts retain current-contract demo state; the contract-removal migration deletes obsolete Runs. Use a deliberate reset to restore the complete scenario baseline after upgrading an older demo home.
@@ -94,11 +102,7 @@ T3 settlement or active-list behavior.
   To inspect initial installation, stop a disposable demo, move its `reporting-codex/config.toml` aside and restart. From the approved desktop client configured above, open **Settings → Agent reporting**, choose **Install Factory MCP** on the Codex target and reload: it stays **Installed**.
   The Working scenario retains an active delegated child after the parent turn completes;
   backend tests cover automatic notification continuations, report acceptance after restart
-  and rejection of notifications that would bypass a user question. HTTP adapter lifecycle
-  tests also cover idle provider-native children without public runs: handoff and closure
-  after restart require aggregate completion and empty child queues/native requests;
-  active children and missing run-count metadata keep the result held. This shape is not
-  modeled by the persistent demo. Layout proof uses long
+  and rejection of notifications that would bypass a user question. Layout proof uses long
   execution and recovery identities in the isolated UI fixture; demo identifiers stay short.
   To inspect reporting warnings, stop a disposable demo, move its `reporting-codex/skills/factory-block/SKILL.md` aside and restart.
   The Settings dot turns amber and Studio marks the saved Codex Agents **Reporting needs attention** with the missing-skill explanation.

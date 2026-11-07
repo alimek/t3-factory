@@ -24,6 +24,7 @@ export async function reportedNativeWorker(
   c: TestContext,
   thread: Record<string, unknown> = {},
   targetBlockId: Parameters<typeof directWorker>[2] = "parallel-block",
+  queuedNativeRuns: readonly string[] = [],
 ) {
   const f = await directWorker(c, true, targetBlockId);
   const body = childRead(
@@ -40,7 +41,13 @@ export async function reportedNativeWorker(
     },
     [],
   );
-  const wire = await authorizedLiveOAuth(c, { runtimeActivity: () => body });
+  const wire = await authorizedLiveOAuth(c, {
+    runtimeActivity: () => body,
+    queue: () => ({
+      items: queuedNativeRuns.map((queuedRunId) => ({ queuedRunId })),
+      nextCursor: null,
+    }),
+  });
   const target = { endpoint: wire.endpoint };
   f.t3.childEvidence.set(
     "child",
@@ -56,6 +63,9 @@ export async function reportedNativeWorker(
     id === "child"
       ? wire.adapter.readExecution(target, id, recorded)
       : readExecution(t, id, recorded);
+  const readQueue = f.t3.readQueue.bind(f.t3);
+  f.t3.readQueue = (t, id) =>
+    id === "child" ? wire.adapter.readQueue(target, id) : readQueue(t, id);
   f.t3.delegationActivities.set("child", {
     threadId: "child",
     projectId: f.project.projectId,

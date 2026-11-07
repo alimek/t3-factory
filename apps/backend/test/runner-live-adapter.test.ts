@@ -110,6 +110,21 @@ it("a T3-owned child cannot use native idle evidence in place of its executions"
   expect(f.t3.launches.size).toBe(1);
 });
 
+it("a queued native-child turn holds an accepted result even after worker aggregate completion", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c, {}, "parallel-block", ["queued-native-turn"]);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]?.state).toBe("working");
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+
 it("missing native run coverage does not become proof of an empty child", async (c) => {
   // Arrange
   const f = await reportedNativeWorker(c, { runCount: undefined });
