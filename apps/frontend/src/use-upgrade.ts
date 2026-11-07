@@ -41,12 +41,12 @@ const describe = (cause: unknown) =>
 /** The most urgent state across targets decides the single control the user sees. */
 function phaseOf(
   targets: readonly UpgradeTarget[],
-  upgrading: string | null,
+  upgrading: boolean,
   failure: UpgradeFailure | null,
   justChecked: boolean,
 ): UpgradePhase {
   const any = (state: ApplicationUpdate["state"]) => targets.some((t) => t.update.state === state);
-  if (upgrading !== null) return "upgrading";
+  if (upgrading) return "upgrading";
   if (failure || any("error")) return "error";
   if (any("downloading")) return "downloading";
   if (any("available")) return "available";
@@ -99,9 +99,12 @@ function apiTarget(
   };
 }
 
-function upgradeScope(server: UpgradeTarget | null, local: UpgradeTarget | null) {
-  if (server && local) return "client + server";
-  return local?.kind === "client" ? "client" : "server";
+/** What confirming replaces: the downloaded targets, e.g. "client + server". */
+export function upgradeScope(targets: readonly UpgradeTarget[]) {
+  const kinds = new Set(
+    targets.filter((target) => target.update.state === "downloaded").map((target) => target.kind),
+  );
+  return kinds.size === 2 ? "client + server" : kinds.has("client") ? "client" : "server";
 }
 
 function useServerUpdate(enabled: boolean, fast: boolean) {
@@ -128,14 +131,13 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
   const desktop = desktopBridge();
   const state = useDesktopState();
   const scope = useClientScope();
-  /** What the confirmed upgrade replaces, e.g. "client + server", until it ends. */
-  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
   const [failure, setFailure] = useState<UpgradeFailure | null>(null);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const serverRole = state?.role === "server";
   const [server, setServer] = useServerUpdate(
     includeServer && !serverRole && (!desktop || state !== null),
-    upgrading !== null || ["checking", "downloading"].includes(state?.update.state ?? ""),
+    upgrading || ["checking", "downloading"].includes(state?.update.state ?? ""),
   );
   useEffect(() => {
     if (checkedAt === null) return;
@@ -173,14 +175,14 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
     const serverReady = remote?.update.state === "downloaded" ? remote : null;
     const localReady = app?.update.state === "downloaded" ? app : null;
     setFailure(null);
-    setUpgrading(upgradeScope(serverReady, localReady));
+    setUpgrading(true);
     try {
       if (serverReady) {
         await api.runServerUpdate("install");
         await waitForServer(serverReady.update.version);
       }
     } catch (cause) {
-      setUpgrading(null);
+      setUpgrading(false);
       setFailure({
         title: localReady ? "Server update failed · Client kept" : "Server update failed",
         message: describe(cause),
@@ -190,15 +192,15 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
     if (!localReady) {
       // A browser receives the upgraded server's UI only by loading it again.
       if (!desktop) window.location.reload();
-      setUpgrading(null);
+      setUpgrading(false);
       return;
     }
     const result = await desktop?.installUpdate();
     if (result && !result.ok) {
-      setUpgrading(null);
+      setUpgrading(false);
       setFailure({ title: "Client update failed", message: result.message });
     }
   };
 
-  return { targets, phase, upgrading, failure, check, download, upgrade };
+  return { targets, phase, failure, check, download, upgrade };
 }

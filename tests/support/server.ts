@@ -56,6 +56,7 @@ const server = await startServer(
           progress: 100,
           downloadedBytes: null,
           totalBytes: null,
+          checkedAt: null,
           releaseNotes: "<ul><li>Update the server from an approved client.</li></ul>",
           message: null,
         },

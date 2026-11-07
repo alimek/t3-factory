@@ -37,6 +37,7 @@ function hostUpdates(): ApplicationUpdates {
       downloadedBytes: null,
       totalBytes: null,
       releaseNotes: null,
+      checkedAt: null,
       message: null,
     },
   };

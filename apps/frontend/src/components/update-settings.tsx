@@ -1,93 +1,98 @@
 import { useState } from "react";
 import { RadioGroup } from "radix-ui";
-import type { UpdateChannel } from "@t3-factory/contracts";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
+import { SectionLabel } from "@/components/page";
 import { cn } from "@/lib/utils";
+import type { DesktopState } from "../desktop-bridge.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
-import { useDesktopState } from "../desktop-state.ts";
+import { UpdateControl } from "./update-control.tsx";
 
-const channels: readonly { value: UpdateChannel; title: string; lines: readonly string[] }[] = [
-  {
-    value: "stable",
-    title: "Stable",
-    lines: ["Tagged releases from main.", "Reliable updates for everyday work."],
-  },
-  {
-    value: "beta",
-    title: "Beta",
-    lines: ["Nightly when new commits exist.", "Plus manually requested builds."],
-  },
-];
+function checkedAgo(checkedAt: string | null) {
+  if (!checkedAt) return "";
+  const minutes = Math.floor((Date.now() - Date.parse(checkedAt)) / 60_000);
+  if (minutes < 1) return " · Last checked just now.";
+  if (minutes < 60) return ` · Last checked ${minutes} min ago.`;
+  return ` · Last checked at ${new Date(checkedAt).toLocaleTimeString([], { timeStyle: "short" })}.`;
+}
 
-/** Desktop-only: the release channel this installation's updater follows. */
-export function UpdateSettings() {
+function statusLine(update: ApplicationUpdate) {
+  const version = update.version ?? "An update";
+  switch (update.state) {
+    case "idle":
+      return `You’re up to date${checkedAgo(update.checkedAt) || "."}`;
+    case "checking":
+      return "Checking for updates…";
+    case "available":
+      return `${version} is available.`;
+    case "downloading":
+      return `Downloading ${version} · ${Math.round(update.progress ?? 0)}%.`;
+    case "downloaded":
+      return `${version} is downloaded and ready to upgrade.`;
+    case "error":
+    case "unsupported":
+      return update.message ?? "Updates are unavailable.";
+  }
+}
+
+/**
+ * Desktop-only part of Application settings: the release channel this installation follows,
+ * its updater state and the update control. `local` gates update only this app.
+ */
+export function UpdateSettings({ state, local }: { state: DesktopState; local: boolean }) {
   const desktop = desktopBridge();
-  const state = useDesktopState();
   const [error, setError] = useState("");
-  if (!desktop || !state) return null;
+  if (!desktop) return null;
   const choose = async (channel: UpdateChannel) => {
     const result = await desktop.setUpdateChannel(channel);
     setError(result.ok ? "" : result.message);
   };
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2">
-        <h2 className="text-title font-semibold text-foreground">Updates</h2>
-        <p className="text-sm text-muted-foreground">
-          Choose the release channel this app follows.
-        </p>
-      </div>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      <div className="grid gap-3">
-        <p id="release-channel" className="text-sm text-foreground">
-          Release channel
-        </p>
-        <RadioGroup.Root
-          aria-labelledby="release-channel"
-          value={state.updateChannel}
-          onValueChange={(value) => void choose(value === "beta" ? "beta" : "stable")}
-          className="grid grid-cols-2 gap-3 max-sm:grid-cols-1"
-        >
-          {channels.map((channel) => (
-            <RadioGroup.Item
-              key={channel.value}
-              value={channel.value}
-              aria-label={channel.title}
-              className={cn(
-                "grid gap-2 rounded-md border border-border bg-muted p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                "data-[state=checked]:border-primary",
-              )}
-            >
-              <span className="flex items-center gap-2 text-base text-foreground">
-                <span
-                  aria-hidden
-                  className="flex size-3.5 items-center justify-center rounded-full border border-muted-foreground"
-                >
-                  <RadioGroup.Indicator className="size-full rounded-full bg-primary" />
-                </span>
-                {channel.title}
-              </span>
-              {channel.lines.map((line) => (
-                <span key={line} className="text-sm text-muted-foreground">
-                  {line}
-                </span>
-              ))}
-            </RadioGroup.Item>
-          ))}
-        </RadioGroup.Root>
+    <section aria-label="Updates" className="grid gap-3">
+      <SectionLabel>Updates</SectionLabel>
+      <p id="release-channel" className="text-sm text-foreground">
+        Release channel
+      </p>
+      <RadioGroup.Root
+        aria-labelledby="release-channel"
+        value={state.updateChannel}
+        onValueChange={(value) => void choose(value === "beta" ? "beta" : "stable")}
+        className="flex gap-2"
+      >
+        {(
+          [
+            ["stable", "Stable"],
+            ["beta", "Beta"],
+          ] as const
+        ).map(([channel, title]) => (
+          <RadioGroup.Item
+            key={channel}
+            value={channel}
+            className={cn(
+              "h-8 rounded-md border bg-muted px-3 text-sm text-foreground outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+            )}
+          >
+            {title}
+          </RadioGroup.Item>
+        ))}
+      </RadioGroup.Root>
+      <p className="text-xs text-muted-foreground">
+        Stable · Tagged releases from main.
+        <br />
+        Beta · Nightly with new commits, plus manual builds.
         {state.updateChannel === "stable" && state.version.includes("-beta.") && (
-          <p className="text-xs text-muted-foreground">
+          <>
+            <br />
             This beta stays installed until a newer stable release is published.
-          </p>
+          </>
         )}
-        {state.update.state === "unsupported" && state.update.message && (
-          <p className="text-xs text-muted-foreground">{state.update.message}</p>
-        )}
+      </p>
+      <p role="status" className={cn("text-sm", error && "text-destructive")}>
+        {error || statusLine(state.update)}
+      </p>
+      <div>
+        <UpdateControl inline includeServer={!local} />
       </div>
-    </div>
+    </section>
   );
 }

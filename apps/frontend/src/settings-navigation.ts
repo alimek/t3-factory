@@ -1,14 +1,13 @@
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 
 export type SettingsSelection = {
-  tab: "connection" | "runtime" | "keyboard" | "access" | "updates" | "application";
+  tab: "connection" | "runtime" | "keyboard" | "access" | "application";
 };
 const settingsTabs: readonly SettingsSelection["tab"][] = [
   "connection",
   "runtime",
   "keyboard",
   "access",
-  "updates",
   "application",
 ];
 export type StudioSelection =
@@ -54,7 +53,6 @@ export function studioMask(selection: StudioSelection) {
 export function settingsMask(selection: SettingsSelection) {
   if (selection.tab === "keyboard") return { to: "/settings/keyboard" as const };
   if (selection.tab === "access") return { to: "/settings/access" as const };
-  if (selection.tab === "updates") return { to: "/settings/updates" as const };
   if (selection.tab === "application") return { to: "/settings/application" as const };
   return selection.tab === "runtime"
     ? { to: "/settings/runtime" as const }

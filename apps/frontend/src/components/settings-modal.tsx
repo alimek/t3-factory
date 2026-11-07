@@ -6,14 +6,12 @@ import {
   MonitorSmartphone,
   Plug,
   Search,
-  RefreshCw,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { KeyboardSettings } from "./keyboard-settings.tsx";
 import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
-import { UpdateSettings } from "./update-settings.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
@@ -71,20 +69,14 @@ const accessSection: SettingsSection = {
   icon: MonitorSmartphone,
   keywords: ["remote", "clients", "approve", "revoke", "LAN", "Tailscale", "certificate"],
 };
-const updatesSection: SettingsSection = {
-  tab: "updates",
-  title: "Updates",
-  icon: RefreshCw,
-  keywords: ["updates", "upgrade", "release", "channel", "stable", "beta"],
-};
 const applicationSection: SettingsSection = {
   tab: "application",
   title: "Application",
   icon: AppWindow,
-  keywords: ["role", "server", "client", "login", "startup", "version"],
+  keywords: ["role", "server", "client", "login", "startup", "updates", "channel", "beta"],
 };
 
-/** Approvals exist only on the host panel; Updates and Application only in the desktop app. */
+/** Approvals exist only on the host panel; the Application section only in the desktop app. */
 function useSections(): readonly SettingsSection[] {
   const scope = useClientScope();
   return [
@@ -92,7 +84,7 @@ function useSections(): readonly SettingsSection[] {
     reportingSection,
     keyboardSection,
     ...(scope === "host" ? [accessSection] : []),
-    ...(desktopBridge() ? [updatesSection, applicationSection] : []),
+    ...(desktopBridge() ? [applicationSection] : []),
   ];
 }
 
@@ -109,7 +101,6 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   runtime: () => <RuntimeSettings />,
   keyboard: () => <KeyboardSettings />,
   access: () => <AccessSettings />,
-  updates: () => <UpdateSettings />,
   application: () => <ApplicationSettings />,
 };
 

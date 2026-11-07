@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useUpgrade, type UpgradePhase, type UpgradeTarget } from "../use-upgrade.ts";
-import { ReleaseNotes } from "./release-notes.tsx";
+import { upgradeScope, useUpgrade, type UpgradePhase, type UpgradeTarget } from "../use-upgrade.ts";
+import { ChangelogPreview } from "./release-notes.tsx";
 import { UpgradeError, UpgradeReview } from "./upgrade-review.tsx";
 
 const icons: Record<UpgradePhase, LucideIcon> = {
@@ -27,48 +27,50 @@ const icons: Record<UpgradePhase, LucideIcon> = {
   error: TriangleAlert,
 };
 
-const megabytes = (bytes: number) => Math.round(bytes / 1_000_000);
-
-function downloadProgress(targets: readonly UpgradeTarget[]) {
+function downloadPercent(targets: readonly UpgradeTarget[]) {
   const downloading = targets.filter((target) => target.update.state === "downloading");
   const done = downloading.reduce((sum, t) => sum + (t.update.downloadedBytes ?? 0), 0);
   const total = downloading.reduce((sum, t) => sum + (t.update.totalBytes ?? 0), 0);
-  const percent = total
+  return total
     ? Math.round((done / total) * 100)
     : Math.round(downloading[0]?.update.progress ?? 0);
-  return { percent, detail: total ? ` · ${megabytes(done)} / ${megabytes(total)} MB` : "" };
 }
+
+const versionIn = (targets: readonly UpgradeTarget[], state: UpgradeTarget["update"]["state"]) =>
+  targets.find((target) => target.update.state === state)?.update.version ?? "Update";
 
 /** The control's name and its tooltip, per the update lifecycle. */
 function describe(
   phase: UpgradePhase,
   targets: readonly UpgradeTarget[],
-  upgrading: string | null,
-  failureTitle: string | undefined,
 ): { label: string; detail?: ReactNode } {
-  const available = targets.find((target) => target.update.state === "available");
   switch (phase) {
     case "idle":
       return { label: "Check for updates" };
     case "checking":
       return { label: "Checking for updates…" };
-    case "up-to-date":
-      return { label: `You’re up to date · ${targets[targets.length - 1]?.current ?? ""}` };
-    case "available":
-      return {
-        label: `${available?.update.version ?? "An update"} available`,
-        detail: <ReleaseNotes notes={available?.update.releaseNotes ?? null} compact />,
-      };
-    case "downloading": {
-      const { percent, detail } = downloadProgress(targets);
-      return { label: `Downloading · ${percent}%${detail}` };
+    case "up-to-date": {
+      const [first] = targets;
+      const channel = first?.channel === "beta" ? "Beta" : "Stable";
+      return { label: `Up to date · ${channel} ${first?.current ?? ""}` };
     }
+    case "available": {
+      const available = targets.find((target) => target.update.state === "available");
+      return {
+        label: `${versionIn(targets, "available")} available`,
+        detail: <ChangelogPreview notes={available?.update.releaseNotes ?? null} />,
+      };
+    }
+    case "downloading":
+      return {
+        label: `Downloading ${versionIn(targets, "downloading")} · ${downloadPercent(targets)}%`,
+      };
     case "ready":
-      return { label: "Download ready · Review upgrade" };
+      return { label: `Update downloaded · Click to upgrade ${upgradeScope(targets)}` };
     case "upgrading":
-      return { label: `Upgrading ${upgrading ?? "Factory"}…` };
+      return { label: "Upgrading…" };
     case "error":
-      return { label: failureTitle ?? "Update failed" };
+      return { label: "Update failed · Click to retry" };
   }
 }
 
@@ -80,11 +82,7 @@ function ControlFace({
   targets: readonly UpgradeTarget[];
 }) {
   if (phase === "downloading")
-    return (
-      <span className="text-2xs font-medium text-primary">
-        {downloadProgress(targets).percent}%
-      </span>
-    );
+    return <span className="text-2xs font-medium text-primary">{downloadPercent(targets)}%</span>;
   const Icon = icons[phase];
   const spinning = phase === "checking" || phase === "upgrading";
   return (
@@ -92,17 +90,32 @@ function ControlFace({
   );
 }
 
+const inlineLabels: Record<UpgradePhase, string> = {
+  idle: "Check for updates",
+  checking: "Checking…",
+  "up-to-date": "Check for updates",
+  available: "Download update",
+  downloading: "Downloading…",
+  ready: "Review upgrade",
+  upgrading: "Upgrading…",
+  error: "Review error",
+};
+
 /**
- * One update control for this app and its server. `inline` is the labelled button in local
- * application settings, where only this desktop app can be updated.
+ * One update control for this app and its server: the footer icon, or the labelled button in
+ * Application settings. Without `includeServer` only this desktop app is updated.
  */
-export function UpdateControl({ inline = false }: { inline?: boolean }) {
-  const { targets, phase, upgrading, failure, check, download, upgrade } = useUpgrade({
-    includeServer: !inline,
-  });
+export function UpdateControl({
+  inline = false,
+  includeServer = true,
+}: {
+  inline?: boolean;
+  includeServer?: boolean;
+}) {
+  const { targets, phase, failure, check, download, upgrade } = useUpgrade({ includeServer });
   const [panel, setPanel] = useState<"review" | "error" | null>(null);
   if (targets.length === 0) return null;
-  const { label, detail } = describe(phase, targets, upgrading, failure?.title);
+  const { label, detail } = describe(phase, targets);
   const busy = phase === "checking" || phase === "downloading" || phase === "upgrading";
   const highlighted = phase === "available" || phase === "ready";
   const act = () => {
@@ -121,7 +134,7 @@ export function UpdateControl({ inline = false }: { inline?: boolean }) {
               type="button"
               variant={inline ? "secondary" : "ghost"}
               size={inline ? "default" : "icon"}
-              aria-label={label}
+              aria-label={inline ? inlineLabels[phase] : label}
               aria-disabled={busy}
               onClick={act}
               className={cn(
@@ -130,18 +143,18 @@ export function UpdateControl({ inline = false }: { inline?: boolean }) {
               )}
             >
               <ControlFace phase={phase} targets={targets} />
-              {inline && label}
+              {inline && inlineLabels[phase]}
             </Button>
           </TooltipTrigger>
         </PopoverAnchor>
         {panel === null && (
-          <TooltipContent side="top" className="max-w-80 text-left">
-            <p>{label}</p>
+          <TooltipContent side="top" className="grid max-w-72 gap-1 py-1.5 text-left text-pretty">
+            <p className={detail ? "font-medium" : undefined}>{label}</p>
             {detail}
           </TooltipContent>
         )}
       </Tooltip>
-      <PopoverContent side="top" align="end">
+      <PopoverContent side="top" align="end" className="p-4">
         {panel === "review" && (
           <UpgradeReview
             targets={targets}

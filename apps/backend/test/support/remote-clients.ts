@@ -169,6 +169,7 @@ export function recordingUpdates() {
         progress: 100,
         downloadedBytes: null,
         totalBytes: null,
+        checkedAt: null,
         releaseNotes: null,
         message: null,
       },

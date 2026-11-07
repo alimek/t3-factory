@@ -340,6 +340,8 @@ export interface ApplicationUpdate {
   readonly totalBytes: number | null;
   readonly releaseNotes: string | null;
   readonly message: string | null;
+  /** ISO time the feed was last read successfully. */
+  readonly checkedAt: string | null;
 }
 
 /** The server installation's updater, operated by approved clients through `/api/server-update`. */

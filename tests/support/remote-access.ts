@@ -30,6 +30,23 @@ export async function serverUpdateActions(app: FixtureApp) {
   return (await response.json()) as readonly string[];
 }
 
+/** An approved profile opens the upgrade review from the footer's downloaded-update control. */
+export async function openUpgradeReview(app: FixtureApp, screen: Screen, scope: string) {
+  await openApproved(app, "/runs/new");
+  await screen.getByRole("button", `Update downloaded · Click to upgrade ${scope}`).tap();
+  await expect(screen.getByRole("heading", `Upgrade ${scope}?`)).toBeVisible();
+}
+
+/** The review's confirmation started the upgrade and the fixture server received one install. */
+export async function expectServerInstallRequested(
+  app: FixtureApp,
+  screen: Screen,
+  installsBefore: number,
+) {
+  await expect(screen.getByRole("button", "Upgrading…")).toBeVisible();
+  expect((await serverUpdateActions(app)).slice(installsBefore).join(",")).toBe("install");
+}
+
 /** Lets wall-clock time pass in the browser session, for interval-driven behavior. */
 export const elapse = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -105,9 +105,9 @@ outside the draggable region, fullscreen and window controls stay native, and th
 
 ## Updates
 
-Updates are checked automatically on launch and every six hours. **Settings → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
+Updates are checked automatically on launch and every six hours. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
 on-demand [beta builds](release.md#beta-builds) of main, plus newer stable Releases). Until chosen, an installation follows the channel of the build it runs. Changing the channel discards an update found on the
-previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Settings → Updates says so.
+previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Application settings says so. The same section shows the updater state with the last check time and a labelled update control.
 
 One control at the right of the Run sidebar footer drives the lifecycle for every installation this window can replace: the desktop app itself, and the server when the window talks to one through its update
 API (a desktop client's remote server, or the server a browser profile uses). A desktop server is one target. Its states:
@@ -116,15 +116,15 @@ API (a desktop client's remote server, or the server a browser profile uses). A 
 | --- | --- | --- |
 | Idle | Circular arrow, **Check for updates** | Checks every target |
 | Checking | Spinner | — |
-| Up to date | Check mark with the version, for a few seconds after a check | Checks again |
-| Available | Highlighted download arrow; tooltip shows the version and **What's new** | Downloads on every target that has an update; nothing downloads on its own |
-| Downloading | Percentage; tooltip shows downloaded and total MB across targets | — |
-| Ready | Highlighted arrow, **Download ready · Review upgrade** | Opens the upgrade review |
-| Upgrading | Spinner, **Upgrading client + server…** (or one of them) | — |
-| Error | Warning, e.g. **Server update failed · Client kept** | Shows the error with **Retry** |
+| Up to date | Check mark, **Up to date · Stable 0.1.0**, for a few seconds after a check | Checks again |
+| Available | Highlighted download arrow; tooltip shows the version and a short changelog | Downloads on every target that has an update; nothing downloads on its own |
+| Downloading | Percentage; tooltip shows the version and percentage across targets | — |
+| Ready | Highlighted arrow, **Update downloaded · Click to upgrade client + server** (or one of them) | Opens the upgrade review |
+| Upgrading | Spinner, **Upgrading…** | — |
+| Error | Warning, **Update failed · Click to retry** | Shows what failed, e.g. **Server update failed · Client kept**, with **Retry** |
 
-The **upgrade review** opens anchored to the control. It lists each downloaded target with its current and target release, the verified download, the server's open-Run count and, for a remote server, that other
-clients may briefly disconnect. Nothing changes until **Confirm upgrade** (**Confirm upgrade both** for two targets); this confirmation replaces the native dialog, and ordinary Quit never installs. With two targets
+The **upgrade review** opens anchored to the control: **Upgrade client + server?** lists each downloaded target (**Client · This device**, **Server · <host>**) as current → target release, notes that the remote
+server updates first and how many open Runs keep going. Nothing changes until **Upgrade**; **Cancel** keeps everything. This confirmation replaces the native dialog, and ordinary Quit never installs. With two targets
 the server installs first: the client waits until the server answers its handshake with the target release and only then restarts. If the server does not return on that release within ten minutes, or reports an
 installation error, the upgrade stops with **Server update failed · Client kept** and the client is unchanged. A browser reloads its UI after the server upgrade.
 
@@ -132,8 +132,9 @@ A server update keeps data, role, reporting registrations and T3 connection; Run
 is chosen on its host. A server running from a source checkout, a development package or a release without the update API is not an upgrade target. Connection and startup gates without a sidebar keep a contextual
 **Application settings** entry with the channel and the same control for this app only, including in incompatible and offline states.
 
-**What's new** lists the notes of every release between the installed version and the update, newest first, from the feed's ten most recent entries; the stable channel leaves out beta builds, whose changes the
-Release notes already cover. Notes are shortened in the tooltip and always displayed as text, never feed markup; a release without notes says so and does not block download. If installation fails before
+The Available tooltip previews the changes of every release between the installed version and the update, newest first, from the feed's ten most recent entries; the stable channel leaves out beta builds, whose
+changes the Release notes already cover. Each change is one line without author, PR or commit references and without its Conventional Commit prefix; four are shown, then **+N more**. Notes are always read as
+text, never feed markup; a release without notes says so and does not block download. If installation fails before
 replacement, Factory clears the quitting state and reopens the same data home through normal reconciliation, keeping the error in the control.
 
 ## Browser access on the host

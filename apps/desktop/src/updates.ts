@@ -38,6 +38,7 @@ export class Updates {
     totalBytes: null,
     releaseNotes: null,
     message: null,
+    checkedAt: null,
   };
   private readonly updater = electronUpdater.autoUpdater;
   private channel: UpdateChannel | null = null;
@@ -75,11 +76,18 @@ export class Updates {
     this.apply(channel);
     this.updater.on("checking-for-update", () => this.set({ state: "checking", message: null }));
     this.updater.on("update-not-available", () =>
-      this.set({ state: "idle", version: null, progress: null, releaseNotes: null }),
+      this.set({
+        state: "idle",
+        version: null,
+        progress: null,
+        releaseNotes: null,
+        checkedAt: new Date().toISOString(),
+      }),
     );
     this.updater.on("update-available", (info) =>
       this.set({
         state: "available",
+        checkedAt: new Date().toISOString(),
         version: info.version,
         progress: 0,
         releaseNotes: changelog(info.releaseNotes, this.channel ?? "stable"),

@@ -11,7 +11,7 @@ export const desktopBridgeScript = (
     let state = {
       version: "0.1.0", role: ${JSON.stringify(role)}, server: ${JSON.stringify(role === "client" ? { url: "https://factory.example", fingerprint: "fixture" } : null)}, launchAtLogin: false, updateChannel: "stable",
       backend: { state: "stopped", message: null },
-      update: { state: ${JSON.stringify(update)}, version: "0.2.0", progress: 64, downloadedBytes: 81000000, totalBytes: 126000000, message: null, releaseNotes: ${JSON.stringify(releaseNotes)} },
+      update: { state: ${JSON.stringify(update)}, version: "0.2.0", progress: 64, downloadedBytes: 81000000, totalBytes: 126000000, message: null, checkedAt: null, releaseNotes: ${JSON.stringify(releaseNotes)} },
     };
     const listeners = new Set();
     const publish = () => listeners.forEach((listener) => listener(state));

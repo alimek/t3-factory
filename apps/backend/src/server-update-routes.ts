@@ -20,6 +20,7 @@ const sourceUpdates: ApplicationUpdates = {
       downloadedBytes: null,
       totalBytes: null,
       releaseNotes: null,
+      checkedAt: null,
       message: "This server runs from a source checkout. Update it on its host.",
     },
   }),

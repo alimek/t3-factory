@@ -7,11 +7,13 @@ import { SectionLabel } from "@/components/page";
 import { desktopBridge, type DesktopResult } from "../desktop-bridge.ts";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useDesktopState } from "../desktop-state.ts";
-import { UpdateControl } from "./update-control.tsx";
 import { UpdateSettings } from "./update-settings.tsx";
 
-/** Desktop-only: role, remembered server and launch at login. */
-export function ApplicationSettings() {
+/**
+ * Desktop-only: role, remembered server, launch at login and updates. `local` is the gate
+ * dialog without a usable server, where only this app can be updated.
+ */
+export function ApplicationSettings({ local = false }: { local?: boolean }) {
   const desktop = desktopBridge();
   const state = useDesktopState();
   const [error, setError] = useState("");
@@ -71,6 +73,7 @@ export function ApplicationSettings() {
         />
         <Label htmlFor="launch-at-login">Open Factory in the background at login</Label>
       </section>
+      <UpdateSettings state={state} local={local} />
     </div>
   );
 }
@@ -90,11 +93,7 @@ export function LocalApplicationControls() {
           <DialogDescription>
             Settings and updates for this computer, available independently of the server.
           </DialogDescription>
-          <ApplicationSettings />
-          <UpdateSettings />
-          <div>
-            <UpdateControl inline />
-          </div>
+          <ApplicationSettings local />
         </DialogContent>
       </Dialog>
     </>
