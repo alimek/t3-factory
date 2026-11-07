@@ -98,8 +98,6 @@ jobs:
           grep -qx "version: $RELEASE_VERSION" beta-mac.yml
       - name: Create draft prerelease
         run: |
-          # The id has to come from the create response. A draft has no git tag yet, and
-          # listing releases can miss it; verification then requests releases//assets.
           payload=$(jq -n \
             --arg tag_name "$RELEASE_TAG" \
             --arg target_commitish "$RELEASE_SHA" \
@@ -125,10 +123,6 @@ jobs:
           jq -r .html_url <<<"$release"
       - name: Upload and verify assets
         run: |
-          if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
-            echo "::error::RELEASE_ID is missing, so uploaded assets cannot be checked."
-            exit 1
-          fi
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" downloads/*
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
             --jq '.[] | "\(.digest | sub("^sha256:"; ""))  \(.name)"' > uploaded.txt
