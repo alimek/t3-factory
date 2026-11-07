@@ -124,7 +124,7 @@ function AttentionDetails({
   const shown = items.filter((item) => (tab === "pending" ? !item.settledAt : !!item.settledAt));
   const forBlock = blockId !== undefined;
   return (
-    <section className="flex flex-col gap-3" aria-label="Run attention">
+    <section className="flex min-w-0 flex-col gap-3 wrap-anywhere" aria-label="Run attention">
       {!forBlock && (
         <div className="flex flex-col gap-1">
           <h2 className={sectionLabelClass}>Attention</h2>

@@ -24,6 +24,17 @@ it("restored demo treats verified running work as normal progress and preserves 
   );
   expect(after.value.outcome).toBeNull();
   expect(after.value.blocks.some((block) => block.threadId !== null)).toBe(true);
+  expect(after.value.blocks[0]).toMatchObject({
+    state: "working",
+    engineStatus: "completed",
+    problem: null,
+  });
+  expect(after.value.threadBindings).toContainEqual(
+    expect.objectContaining({ role: "descendant" }),
+  );
+  expect(
+    after.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
+  ).toStrictEqual([]);
   expect(flow.value).toStrictEqual(edited);
   expect(runs.value).toHaveLength(count);
 });

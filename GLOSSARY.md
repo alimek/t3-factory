@@ -132,6 +132,8 @@ One arrival at a Human step within a Run, with its own pending context and settl
 
 **Work period**:
 One exact T3 execution in a Run or Block conversation, including repeated visits and queued turns. The Run conversation and worker conversations retain separate ownership scopes.
+Automatic continuations after delegated or background work are separate Work periods
+within the same unfinished Block activation when native notification evidence verifies them.
 
 **Settled**:
 In Run navigation, the group of executions with confirmed whole-Run Finished or

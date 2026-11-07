@@ -1,4 +1,4 @@
-import { nativeHumanReplies } from "./coordinator-human-authority.ts";
+import { nativeWorkerTurns } from "./coordinator-worker-turns.ts";
 import { retainRemoteWork } from "./coordinator-remote.ts";
 import { settleCoordinatorWaits } from "./coordinator-conversation.ts";
 import * as Effect from "effect/Effect";
@@ -27,8 +27,8 @@ export function observeCoordinator(
       if (contextId !== run.context_id) throw Error("Coordinator context changed.");
       const collected = yield* collectCoordination(database, t3, run, block);
       const { activationId, result } = collected;
-      const humanReplies = yield* Effect.tryPromise(() =>
-        nativeHumanReplies(t3, run, block.thread_id!),
+      const workerTurns = yield* Effect.tryPromise(() =>
+        nativeWorkerTurns(t3, run, block.thread_id!),
       ).pipe(Effect.catchCause(() => Effect.succeed([])));
       yield* database.mutate(run.id, (sql) =>
         Effect.gen(function* () {
@@ -55,12 +55,17 @@ export function observeCoordinator(
               time,
               collected.executions,
             );
-          for (const reply of humanReplies) {
-            // Settling the question does not end the unfinished activation's conversation.
-            // The membership trigger still requires this exact retained user reply.
-            yield* sql`INSERT INTO coordinator_native_human_replies VALUES(${run.id},${block.thread_id},${reply.executionId},${reply.itemId}) ON CONFLICT DO NOTHING`;
-            if (!report)
-              yield* sql`UPDATE run_executions SET activation_id=${activationId} WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${reply.executionId} AND activation_id IS NULL AND EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_executions old ON old.binding_id=w.target_binding_id AND old.execution_id=w.target_execution_id WHERE w.activation_id=${activationId} AND old.ordinal<run_executions.ordinal)`;
+          for (const turn of workerTurns) {
+            if (turn.kind === "human-reply") {
+              yield* sql`INSERT INTO coordinator_native_human_replies VALUES(${run.id},${block.thread_id},${turn.executionId},${turn.itemId}) ON CONFLICT DO NOTHING`;
+              if (!report)
+                yield* sql`UPDATE run_executions SET activation_id=${activationId} WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${turn.executionId} AND activation_id IS NULL AND EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_executions old ON old.binding_id=w.target_binding_id AND old.execution_id=w.target_execution_id WHERE w.activation_id=${activationId} AND old.ordinal<run_executions.ordinal)`;
+              yield* settleCoordinatorWaits(sql, run.id, block.block_id, time);
+            } else {
+              yield* sql`INSERT INTO worker_native_continuations VALUES(${run.id},${block.thread_id},${turn.executionId},${turn.itemId}) ON CONFLICT DO NOTHING`;
+              if (!report)
+                yield* sql`UPDATE run_executions SET activation_id=${activationId} WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${turn.executionId} AND activation_id IS NULL AND NOT EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_attention a ON a.id=w.attention_id WHERE w.activation_id=${activationId} AND a.settled_at IS NULL) AND EXISTS(SELECT 1 FROM run_executions old WHERE old.binding_id=run_executions.binding_id AND old.activation_id=${activationId} AND old.ordinal<run_executions.ordinal)`;
+            }
           }
           yield* recordActivationState(sql, run, block, activationId, result, !!report);
           yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
@@ -172,7 +177,8 @@ function recordActivationState(
     const waits =
       yield* sql`SELECT w.id FROM coordinator_waits w JOIN run_attention a ON a.id=w.attention_id WHERE w.activation_id=${activationId} AND ((w.parent_execution_id=${latestId ?? ""} AND NOT EXISTS(SELECT 1 FROM run_executions old JOIN run_executions next ON next.binding_id=old.binding_id AND next.ordinal>old.ordinal WHERE old.binding_id=w.target_binding_id AND old.execution_id=w.target_execution_id AND next.activation_id=old.activation_id)) OR a.settled_at IS NULL)`;
     const phase = report ? "reported" : waits.length > 0 ? "waiting-worker" : "assessing";
-    const completedAssessment = phase === "assessing" && latest?.status === "completed";
+    // A completed model turn may still be waiting on delegated/background work or its wake-up.
+    const completedAssessment = phase === "assessing" && result.evidence.release;
     const problem = result.problem ?? (completedAssessment ? "missing-report" : null);
     yield* attention(
       sql,
