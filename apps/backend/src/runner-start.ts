@@ -25,6 +25,7 @@ import { failure } from "./result.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
+import { currentFlowRevisionNumber } from "./flow-revisions.ts";
 import { now } from "./time.ts";
 function validStartInput(input: StartRunInput | undefined): input is StartRunInput {
   return (
@@ -97,16 +98,14 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
     const [current] = yield* sql<{
       context_id: string;
     }>`SELECT context_id FROM t3_connection WHERE singleton=1`;
-    const [flow] = yield* sql<{
-      revision: number;
-    }>`SELECT revision FROM flows WHERE id=${plan.snapshot.flow.id}`;
+    const flowRevision = yield* currentFlowRevisionNumber(sql, plan.snapshot.flow.id);
     const [project] = yield* sql<{
       workspace_root: string;
       availability: string;
     }>`SELECT workspace_root,availability FROM projects WHERE id=${plan.project.id}`;
     if (
       current?.context_id !== plan.contextId ||
-      flow?.revision !== plan.snapshot.flow.revision ||
+      flowRevision !== plan.snapshot.flow.revision ||
       project?.workspace_root !== plan.project.workspaceRoot ||
       project.availability !== "available"
     )

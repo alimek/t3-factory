@@ -106,9 +106,9 @@ revision N** (another explicit save, which can conflict again). There is no auto
 
 ### Removing a Flow
 
-**Remove** in Flow details permanently deletes the editable definition (no archive) after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
+**Remove** in Flow details removes the editable definition from Studio and the Run composer after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
 the Flow list, also when another view already removed it. Runs, their snapshots, shared Agents and T3 threads are unaffected: active Runs continue, settled Run canvases use their snapshots, and
-removal is not Stop. Deletion needs no revision match; a save that reaches a deleted Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
+removal is not Stop. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a deleted Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
 Flow.
 
 ## Validation contract
@@ -138,9 +138,14 @@ capability or live execution readiness.
 
 ### Revisions and snapshots
 
-An update compares the expected revision atomically: a stale request returns `conflict`
-without mutation, and an accepted save advances the revision exactly once. Agent references
-are resolved against saved definitions. Graph and coordinator shapes follow the
+Each successful create or save appends one immutable Flow revision whose name and graph are
+stored as rows owned by that revision; Studio reads the latest revision of each Flow that is
+not removed, and `revision` is that revision's number. An update compares the expected revision
+atomically: a stale or invalid request returns an error and appends nothing, and an accepted save
+advances the revision exactly once. Within a revision, connections reference exits of their own
+source block and blocks of the same revision, and the Flow input targets blocks of that revision.
+Agent references are resolved against saved definitions at read time, so a draft may still name a
+missing Agent. Stored shapes follow the
 [stored-data migration rules](foundation.md#sql-migrations). Start captures the selected
 graph and referenced Agents; Auto-arrange and input-port presentation do not change
 validation semantics. [Removing a Flow](#removing-a-flow) leaves Run snapshots intact.

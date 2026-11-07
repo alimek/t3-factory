@@ -16,16 +16,16 @@ it("upgrading deletes open Runs and preserves clients, Flows, Agents and Tasks",
   const revoked = await factory.getClientAccess(fixture.revokedCredential);
   assert(revoked.ok);
   expect(revoked.value.status).toBe("revoked");
-  const flow = await factory.getFlow(fixture.flow.id);
-  assert(flow.ok);
-  expect(flow.value).toMatchObject({
-    id: fixture.flow.id,
-    name: fixture.flow.name,
-    revision: fixture.flow.revision,
-    graph: fixture.flow.graph,
-    createdAt: fixture.flow.createdAt,
-    updatedAt: fixture.flow.updatedAt,
-  });
+  expect(await factory.getFlow(fixture.flow.id)).toStrictEqual({ ok: true, value: fixture.flow });
+  const flows = await factory.listFlows();
+  assert(flows.ok);
+  expect(flows.value.map((flow) => flow.name)).toStrictEqual([
+    "Retained current work",
+    "Single worker",
+  ]);
+  expect(flows.value[0]?.graph.connections).toStrictEqual([
+    { sourceBlockId: "worker", exitId: "done", targetBlockId: "reviewer" },
+  ]);
   const agent = await factory.getAgent(fixture.agent.id);
   assert(agent.ok);
   expect(agent.value).toMatchObject(fixture.agent);

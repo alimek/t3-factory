@@ -15,6 +15,8 @@ and restricted OAuth credentials live outside project repositories.
 
 - Agent and Flow definitions are editable. Saves compare revisions; stale writes conflict.
   Structural validity permits incomplete drafts, while readiness is a separate launch gate.
+  Each Flow save appends an immutable relational revision; removing a Flow hides it from
+  Studio and Start but keeps its revisions.
 - Start atomically captures the Run input, full Flow graph and referenced Agent prompts,
   settings, labels and revisions. Later definition changes cannot rewrite history.
   External skill files are not frozen.
@@ -60,7 +62,7 @@ a released migration. Each chunk contains **one SQLite statement**, separated by
 `-- statement-breakpoint` line. Do not add `BEGIN` or `COMMIT`: the migrator owns the
 transaction. An unknown migration ledger fails closed.
 
-Persisted JSON (Flow graphs, Run snapshots and payloads) is versioned like the schema.
+Persisted JSON (Run snapshots and payloads) is versioned like the schema.
 A shape change needs a migration that rewrites stored data and a
 [frozen-fixture upgrade test](../apps/backend/test/fixtures/README.md). Preserve records by
 converting them to the current shape unless the user explicitly accepts discarding the

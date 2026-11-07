@@ -6,11 +6,9 @@ import type {
   AgentExecutionSettings,
   FactoryOperations,
   FlowDraft,
-  FlowGraph,
   Result,
 } from "@t3-factory/contracts";
 import {
-  flowGraphReferencesAgent,
   flowReadiness,
   validateCreateAgent,
   validateCreateFlow,
@@ -24,17 +22,15 @@ import type { EffectOperations } from "./effect-operations.ts";
 import { failure } from "./result.ts";
 import { now as currentTime } from "./time.ts";
 import { newId } from "./ids.ts";
+import {
+  appendFlowRevision,
+  currentFlowsReferenceAgent,
+  readCurrentFlows,
+  type FlowRevision,
+} from "./flow-revisions.ts";
 /** A new Flow starts with its Flow input block at the top-left of the canvas. */
 const NEW_FLOW_INPUT_POSITION = { x: 40, y: 50 };
 
-type FlowRow = {
-  id: string;
-  name: string;
-  revision: number;
-  graph_json: string;
-  created_at: string;
-  updated_at: string;
-};
 type AgentRow = {
   id: string;
   name: string;
@@ -66,18 +62,11 @@ const toAgent = (row: AgentRow, capabilities: AgentCapabilities | null): AgentDe
     settingsStatus: agentSettingsStatus(execution, capabilities),
   };
 };
-const toDraft = (row: FlowRow, agentIds?: ReadonlySet<string>): FlowDraft => {
-  const graph = JSON.parse(row.graph_json) as FlowGraph;
-  return {
-    id: row.id,
-    name: row.name,
-    revision: row.revision,
-    graph,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    readiness: flowReadiness(graph, agentIds),
-  };
-};
+const toDraft = (flow: FlowRevision, agentIds?: ReadonlySet<string>): FlowDraft => ({
+  ...flow,
+  readiness: flowReadiness(flow.graph, agentIds),
+});
+const flowNotFound = () => failure("not_found", "This Flow does not exist.");
 
 export const makeDefinitions = (
   t3: T3Adapter,
@@ -87,6 +76,9 @@ export const makeDefinitions = (
     const sql = yield* SqlClient.SqlClient;
     const provideSql = <A>(operation: Effect.Effect<Result<A>, unknown, SqlClient.SqlClient>) =>
       operation.pipe(Effect.provideService(SqlClient.SqlClient, sql));
+    const savedAgentIds = sql<{ id: string }>`SELECT id FROM agents`.pipe(
+      Effect.map((agents) => new Set(agents.map((agent) => agent.id))),
+    );
     const loadCapabilities = Effect.fn("Definitions.loadCapabilities")(function* () {
       const status = yield* connection.getConnection();
       if (!status.ok || status.value.state !== "ready" || !status.value.endpoint) {
@@ -163,30 +155,27 @@ export const makeDefinitions = (
         const validated = validateCreateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            const id = yield* newId;
-            const now = yield* currentTime;
-            const graph: FlowGraph = {
-              blocks: [],
-              connections: [],
-              flowInput: { position: NEW_FLOW_INPUT_POSITION, targetBlockIds: [] },
-            };
-            yield* sql`INSERT INTO flows (id, name, revision, graph_json, created_at, updated_at)
-          VALUES (${id}, ${validated.value.name}, 1, ${JSON.stringify(graph)}, ${now}, ${now})`;
-            return {
-              ok: true as const,
-              value: {
+          sql.withTransaction(
+            Effect.gen(function* () {
+              const id = yield* newId;
+              const now = yield* currentTime;
+              const flow: FlowRevision = {
                 id,
                 name: validated.value.name,
                 revision: 1,
-                graph,
+                graph: {
+                  blocks: [],
+                  connections: [],
+                  flowInput: { position: NEW_FLOW_INPUT_POSITION, targetBlockIds: [] },
+                },
                 createdAt: now,
                 updatedAt: now,
-                readiness: flowReadiness(graph),
-              },
-            };
-          }),
+              };
+              yield* sql`INSERT INTO flows (id, created_at) VALUES (${id}, ${now})`;
+              yield* appendFlowRevision(sql, { ...flow, savedAt: now });
+              return { ok: true as const, value: toDraft(flow) };
+            }),
+          ),
         );
       },
       validateFlow(input) {
@@ -194,11 +183,9 @@ export const makeDefinitions = (
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql(
           Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            const agents = yield* sql<{ id: string }>`SELECT id FROM agents`;
             return {
               ok: true as const,
-              value: flowReadiness(validated.value.graph, new Set(agents.map((a) => a.id))),
+              value: flowReadiness(validated.value.graph, yield* savedAgentIds),
             };
           }),
         );
@@ -206,66 +193,45 @@ export const makeDefinitions = (
       updateFlow(id, input) {
         const validated = validateUpdateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
-        return provideSql(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            return yield* sql.withTransaction(
-              Effect.gen(function* () {
-                const [row] = yield* sql<FlowRow>`SELECT * FROM flows WHERE id = ${id}`;
-                if (!row)
-                  return {
-                    ok: false as const,
-                    error: {
-                      code: "not_found" as const,
-                      message: "This Flow does not exist.",
-                      issues: [],
-                    },
-                  };
-                if (row.revision !== validated.value.expectedRevision)
-                  return {
-                    ok: false as const,
-                    error: {
-                      code: "conflict" as const,
-                      message:
-                        "A newer revision exists. Keep your edits and reconcile before saving again.",
-                      issues: [
-                        {
-                          code: "stale_revision",
-                          path: "expectedRevision",
-                          message: "Compare the latest saved Flow with your local draft.",
-                        },
-                      ],
-                    },
-                  };
-                const now = yield* currentTime;
-                yield* sql`UPDATE flows SET name = ${validated.value.name}, graph_json = ${JSON.stringify(validated.value.graph)}, revision = revision + 1, updated_at = ${now} WHERE id = ${id} AND revision = ${validated.value.expectedRevision}`;
-                const agents = yield* sql<{ id: string }>`SELECT id FROM agents`;
-                return {
-                  ok: true as const,
-                  value: toDraft(
+        return provideSql<FlowDraft>(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              const [saved] = yield* readCurrentFlows(sql, id);
+              if (!saved) return flowNotFound();
+              if (saved.revision !== validated.value.expectedRevision)
+                return failure(
+                  "conflict",
+                  "A newer revision exists. Keep your edits and reconcile before saving again.",
+                  [
                     {
-                      ...row,
-                      name: validated.value.name,
-                      graph_json: JSON.stringify(validated.value.graph),
-                      revision: row.revision + 1,
-                      updated_at: now,
+                      code: "stale_revision",
+                      path: "expectedRevision",
+                      message: "Compare the latest saved Flow with your local draft.",
                     },
-                    new Set(agents.map((a) => a.id)),
-                  ),
-                };
-              }),
-            );
-          }),
+                  ],
+                );
+              const now = yield* currentTime;
+              const flow: FlowRevision = {
+                ...saved,
+                name: validated.value.name,
+                revision: saved.revision + 1,
+                graph: validated.value.graph,
+                updatedAt: now,
+              };
+              yield* appendFlowRevision(sql, { ...flow, savedAt: now });
+              return { ok: true as const, value: toDraft(flow, yield* savedAgentIds) };
+            }),
+          ),
         );
       },
       removeFlow(id) {
         return provideSql<void>(
           Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
+            const now = yield* currentTime;
             const removed = yield* sql<{
               id: string;
-            }>`DELETE FROM flows WHERE id=${id} RETURNING id`;
-            if (!removed.length) return failure("not_found", "This Flow does not exist.");
+            }>`UPDATE flows SET removed_at=${now} WHERE id=${id} AND removed_at IS NULL RETURNING id`;
+            if (!removed.length) return flowNotFound();
             return { ok: true as const, value: undefined };
           }),
         );
@@ -273,36 +239,18 @@ export const makeDefinitions = (
       listFlows() {
         return provideSql(
           Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            const rows = yield* sql<FlowRow>`SELECT * FROM flows ORDER BY created_at DESC, id ASC`;
-            const agents = yield* sql<{ id: string }>`SELECT id FROM agents`;
-            const agentIds = new Set(agents.map((a) => a.id));
-            return {
-              ok: true as const,
-              value: rows.map((row) => toDraft(row, agentIds)),
-            };
+            const flows = yield* readCurrentFlows(sql);
+            const agentIds = yield* savedAgentIds;
+            return { ok: true as const, value: flows.map((flow) => toDraft(flow, agentIds)) };
           }),
         );
       },
       getFlow(id) {
-        return provideSql(
+        return provideSql<FlowDraft>(
           Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            const [row] = yield* sql<FlowRow>`SELECT * FROM flows WHERE id = ${id}`;
-            if (!row)
-              return {
-                ok: false as const,
-                error: {
-                  code: "not_found" as const,
-                  message: "This Flow does not exist.",
-                  issues: [],
-                },
-              };
-            const agents = yield* sql<{ id: string }>`SELECT id FROM agents`;
-            return {
-              ok: true as const,
-              value: toDraft(row, new Set(agents.map((a) => a.id))),
-            };
+            const [flow] = yield* readCurrentFlows(sql, id);
+            if (!flow) return flowNotFound();
+            return { ok: true as const, value: toDraft(flow, yield* savedAgentIds) };
           }),
         );
       },
@@ -438,16 +386,11 @@ export const makeDefinitions = (
               const sql = yield* SqlClient.SqlClient;
               const [agent] = yield* sql<{ id: string }>`SELECT id FROM agents WHERE id=${id}`;
               if (!agent) return { ok: true as const, value: undefined };
-              const flows = yield* sql<FlowRow>`SELECT graph_json FROM flows`;
-              for (const row of flows) {
-                const graph = JSON.parse(row.graph_json) as FlowGraph;
-                if (flowGraphReferencesAgent(graph, id)) {
-                  return failure(
-                    "conflict",
-                    "This Agent is used in saved Flows. Remove those references before deleting it.",
-                  );
-                }
-              }
+              if (yield* currentFlowsReferenceAgent(sql, id))
+                return failure(
+                  "conflict",
+                  "This Agent is used in saved Flows. Remove those references before deleting it.",
+                );
               yield* sql`DELETE FROM agents WHERE id=${id}`;
               return { ok: true as const, value: undefined };
             }),
