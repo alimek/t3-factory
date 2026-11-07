@@ -9,7 +9,7 @@ import { fieldLabelClass } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ChoiceMenu, type MenuChoice } from "@/components/choice-menu";
 import { cn } from "@/lib/utils";
 
 function optionValue(
@@ -179,8 +179,14 @@ export function ExecutionSettingsFields({
           saving={saving}
           choices={providers.map((entry) => ({
             id: entry.providerInstanceId,
-            label: `${entry.displayName ?? entry.providerInstanceId}${entry.reporting.supported ? "" : " (no Factory reporting yet)"}`,
-            disabled: !entry.reporting.supported,
+            label: entry.displayName ?? entry.providerInstanceId,
+            ...(entry.reporting.supported
+              ? {}
+              : {
+                  badge: "No Factory reporting yet",
+                  description: entry.reporting.explanation,
+                  disabled: true,
+                }),
           }))}
           emptyLabel="Capabilities unavailable"
           unavailableLabel={`Saved provider (${availability})`}
@@ -279,46 +285,28 @@ function CapabilityField({
   value: string;
   onChange: (value: string) => void;
   saving: boolean;
-  choices: readonly { id: string; label: string; disabled?: boolean }[];
+  choices: readonly MenuChoice[];
   emptyLabel: string;
   unavailableLabel: string;
 }) {
+  const savedUnavailable = !!value && !choices.some((choice) => choice.id === value);
   return (
     <div className="grid gap-1.5">
       <StepLabel htmlFor={id} step={step} label={label} />
-      <div className="relative">
-        <NativeSelect
-          id={id}
-          value={value}
-          className="bg-muted @xl/agent-form:pr-24"
-          onChange={(event) => onChange(event.target.value)}
-          disabled={saving || !choices.length}
-        >
-          {(!choices.length || !value) && (
-            <NativeSelectOption value="">
-              {choices.length ? "Choose…" : emptyLabel}
-            </NativeSelectOption>
-          )}
-          {choices.map((choice) => (
-            <NativeSelectOption key={choice.id} value={choice.id} disabled={choice.disabled}>
-              {choice.label}
-            </NativeSelectOption>
-          ))}
-          {value && !choices.some((choice) => choice.id === value) && (
-            <NativeSelectOption value={value}>
-              {unavailableLabel}: {value}
-            </NativeSelectOption>
-          )}
-        </NativeSelect>
-        {hint && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute top-1/2 right-8 hidden -translate-y-1/2 text-2xs font-medium text-subtle-foreground @xl/agent-form:inline"
-          >
-            {hint}
-          </span>
-        )}
-      </div>
+      <ChoiceMenu
+        id={id}
+        label={label}
+        value={value}
+        choices={
+          savedUnavailable
+            ? [{ id: value, label: `${unavailableLabel}: ${value}`, disabled: true }, ...choices]
+            : choices
+        }
+        onChange={onChange}
+        disabled={saving || !choices.length}
+        placeholder={choices.length ? "Choose…" : emptyLabel}
+        {...(hint ? { hint } : {})}
+      />
       {hint && (
         <p className="text-2xs font-medium text-subtle-foreground @xl/agent-form:hidden">{hint}</p>
       )}
@@ -356,24 +344,15 @@ function ModelOptionField({
           disabled={saving || (descriptor.values !== undefined && descriptor.values.length < 2)}
         />
       ) : (
-        <div className="relative">
-          <ModelOptionSelect
-            id={id}
-            descriptor={descriptor}
-            value={value}
-            onChange={onChange}
-            saving={saving}
-            {...(hint ? { className: "@xl/agent-form:pr-24" } : {})}
-          />
-          {hint && (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 right-8 hidden -translate-y-1/2 text-2xs font-medium text-subtle-foreground @xl/agent-form:inline"
-            >
-              {hint}
-            </span>
-          )}
-        </div>
+        <ModelOptionSelect
+          id={id}
+          label={`${prefix}${descriptor.label}`}
+          descriptor={descriptor}
+          value={value}
+          onChange={onChange}
+          saving={saving}
+          {...(hint ? { hint } : {})}
+        />
       )}
       {hint && descriptor.type !== "boolean" && (
         <p className="text-2xs font-medium text-subtle-foreground @xl/agent-form:hidden">{hint}</p>
@@ -384,45 +363,46 @@ function ModelOptionField({
 
 function ModelOptionSelect({
   id,
+  label,
   descriptor,
   value,
   onChange,
   saving,
-  className,
+  hint,
 }: {
   id: string;
+  label: string;
   descriptor: AgentModelOptionDescriptor;
   value: AgentModelOptionValue["value"];
   onChange: (value: AgentModelOptionValue["value"]) => void;
   saving: boolean;
-  className?: string;
+  hint?: string;
 }) {
   const { values } = descriptor;
-  const choices =
+  // Published value domains may mix types (e.g. [false, "auto"]); JSON keeps each typed.
+  const key = values ? JSON.stringify(value) : String(value);
+  const choices: readonly MenuChoice[] =
     values?.map((entry) => ({ id: JSON.stringify(entry), label: String(entry) })) ??
-    descriptor.choices;
+    descriptor.choices ??
+    [];
+  const savedUnavailable = !choices.some((choice) => choice.id === key);
   return (
-    <NativeSelect
+    <ChoiceMenu
       id={id}
-      className={cn("bg-muted", className)}
-      value={values ? JSON.stringify(value) : String(value)}
-      onChange={(event) =>
-        onChange(values ? (JSON.parse(event.target.value) as string | boolean) : event.target.value)
+      label={label}
+      value={key}
+      choices={
+        savedUnavailable
+          ? [
+              { id: key, label: `Saved value (unavailable): ${String(value)}`, disabled: true },
+              ...choices,
+            ]
+          : choices
       }
+      onChange={(next) => onChange(values ? (JSON.parse(next) as string | boolean) : next)}
       disabled={saving}
-    >
-      {!choices?.some(
-        (choice) => choice.id === (values ? JSON.stringify(value) : String(value)),
-      ) && (
-        <NativeSelectOption value={values ? JSON.stringify(value) : String(value)}>
-          Saved value (unavailable): {String(value)}
-        </NativeSelectOption>
-      )}
-      {choices?.map((choice) => (
-        <NativeSelectOption key={choice.id} value={choice.id}>
-          {choice.label}
-        </NativeSelectOption>
-      ))}
-    </NativeSelect>
+      placeholder="Choose…"
+      {...(hint ? { hint } : {})}
+    />
   );
 }
