@@ -157,13 +157,13 @@ Factory exposes two listeners with distinct trust boundaries:
 
 | Surface | Binding | Trust | Routes |
 | --- | --- | --- | --- |
-| `host` | `host`/`port` from `config.json` (loopback by default), plain HTTP | Host-local: the socket peer must be a loopback address, plus the existing Host and mutation checks | All product routes, host-setup routes, report ingress, `/api/host/*` owner routes |
+| `host` | `host`/`port` from `config.json` (loopback by default), plain HTTP | Host-local: the socket peer must be a loopback address, plus the existing Host and mutation checks | All product routes, host-setup routes, Factory MCP (`/mcp`), `/api/host/*` owner routes |
 | `remote` | `remoteAccess.host`/`port` (default `0.0.0.0:4312`), TLS 1.2+ only | Approved client credential on every request | Product routes; host-setup routes answer `host_only`; owner routes do not exist |
 
 The host surface keeps the [existing Host/Origin defenses](installation.md#configuration-and-storage).
 A request whose socket peer is not loopback is refused with `host_only`, even when the
 listener is bound to `0.0.0.0`, so plain-HTTP network access never reaches product data. Host-local trust is the same OS-user boundary that already protects the
-database, credentials and the reporting bridge. Anything forwarding network traffic
+database, credentials and Factory MCP. Anything forwarding network traffic
 into loopback (an SSH tunnel, Tailscale Serve, a reverse proxy, the `pnpm dev`
 Vite proxy) extends that host-local trust and is not an approved-client path.
 
@@ -173,7 +173,7 @@ and an approved client credential before any operation. Public
 remote routes are limited to the handshake (`GET /api/protocol`), the caller's own
 access state (`GET /api/client-access`), access requests (rate-limited to five per peer
 per minute) and the public certificate (`/factory-ca.pem`); static UI files carry no
-product data. Report ingress (`/api/runtime/*`), endpoint changes
+product data. Factory MCP (`/mcp`), endpoint changes
 (`PUT /api/connection`), host reauthorization (`POST /api/connection/authorize`, which
 retires the current context) and reporting installation are `hostOnly`: report ingress
 therefore cannot become a bypass into general APIs, and the T3 grant never leaves the
@@ -251,16 +251,6 @@ Remembered trust and encrypted credentials survive role changes; unreadable or u
 saved settings are kept aside rather than silently reused.
 `FACTORY_DESKTOP_USER_DATA` selects a disposable profile for probes, as `FACTORY_HOME`
 selects server data.
-
-### Bundled runtime and reporting bridge
-
-The desktop bundles its Node runtime, so harness reporting needs no system Node.
-Registrations use `<home>/reporting/factory-runtime-node`, a Factory-owned launcher
-that follows the app's current executable after moves or updates. Source installs
-use `/usr/bin/env node`. Switching between source and desktop registration requires
-repair of Factory's own entry only; unrelated configuration is preserved. The required
-`runAsNode` fuse remains enabled for this bridge. Attribution and report authority are
-unchanged.
 
 The Factory CA is not name-constrained: other processes under the host account, including T3 workloads, can read its key. Browser system-wide trust therefore extends beyond Factory; the desktop's app-scoped pin leaves the system trust store unchanged. Local approvals share the host account's trust boundary.
 

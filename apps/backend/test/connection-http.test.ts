@@ -90,16 +90,24 @@ it("HTTP rejects hostile Host headers", async (c) => {
   expect(rootStatus).toBe(421);
 });
 
-it("runtime report POSTs require the Factory request header", async (c) => {
+it("Factory MCP refuses a cross-origin browser request", async (c) => {
   // Arrange
   const t3 = new ControlledT3();
   const { base } = await startConnectionServer(c, t3);
 
   // Act
-  const reportStatus = (await fetch(`${base}/api/runtime/report`, { method: "POST" })).status;
+  const response = await fetch(`${base}/mcp`, {
+    method: "POST",
+    headers: {
+      origin: "https://attacker.example",
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+  });
 
   // Assert
-  expect(reportStatus).toBe(403);
+  expect(response.status).toBe(403);
 });
 
 it("authorize preflight from an untrusted origin is rejected without CORS allow headers", async (c) => {

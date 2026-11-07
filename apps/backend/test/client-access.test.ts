@@ -86,9 +86,15 @@ it("an approved client cannot change host T3 setup or submit runtime reports", a
   const laptop = await server.approved("Laptop");
 
   // Act
-  const reply = await laptop.send("POST", "/api/runtime/report", {
-    arguments: { to: "finished" },
-    metadata: { callId: "remote-call" },
+  const reply = await laptop.send("POST", "/mcp", {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "factory_update_block",
+      arguments: { to: "finished" },
+      _meta: { callId: "remote-call" },
+    },
   });
 
   // Assert

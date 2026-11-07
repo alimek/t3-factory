@@ -13,6 +13,7 @@ import {
   type ServerOptions,
 } from "@t3-factory/backend/server";
 import { prepared } from "./prepared-runner.ts";
+import { installFirstReportingTarget } from "./reporting.ts";
 
 interface Reply<A = unknown> {
   readonly status: number;
@@ -295,10 +296,8 @@ export async function remotePrepared(context: TestContext) {
     reportingStateDirectory: join(fixture.h.processHome, "reporting-state"),
     connectionRetryMs: 60_000,
   });
-  // The reporting bridge must name this server's actual loopback address.
-  const targets = await server.factory.getReportingInstallations();
-  assert(targets.ok);
-  assert((await server.factory.installReporting({ targetId: targets.value[0]!.id })).ok);
+  // The reporting entry must name this server's actual Factory MCP URL.
+  await installFirstReportingTarget(server.factory);
   const laptop = await server.approved("Laptop");
   return { ...fixture, server, laptop };
 }

@@ -1,6 +1,6 @@
 // Packaged-application probe: copies the built .app to a disposable location and runs it
 // with a temporary HOME, `PATH=/usr/bin:/bin` and no developer tools. It proves existing
-// source data adoption, server startup, bundled bridge execution, window close, Quit
+// source data adoption, server startup, the Factory MCP endpoint, window close, Quit
 // releasing ownership, restart and client-only startup. It never touches the real
 // ~/.t3-factory, Keychain (mock keychain) or login items, and starts no T3 workload.
 //
@@ -11,7 +11,6 @@ import { existsSync, openSync } from "node:fs";
 import { arch, release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createInterface } from "node:readline";
 
 const report = process.argv[2];
 if (!report) throw new Error("Usage: probe-package.mjs <report.json>");
@@ -104,25 +103,32 @@ async function closeWindow(debugPort) {
   await fetch(`http://127.0.0.1:${debugPort}/json/close/${page.id}`);
 }
 
-/** Runs the shipped bridge with the packaged executable as Node; PATH has no node. */
-async function bridgeReport(bridge) {
-  const child = spawn(executable, [bridge, `http://127.0.0.1:${port}`], {
-    env: { ...clean, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: ["pipe", "pipe", "inherit"],
-  });
-  const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+/** Calls the packaged backend's MCP endpoint the way a harness does, as stateless JSON-RPC. */
+async function mcpReport() {
   const call = async (id, method, params) => {
-    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-    return JSON.parse((await lines.next()).value);
+    const response = await api("/mcp", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+    });
+    if (!response.ok) throw new Error(`MCP ${method} answered ${response.status}`);
+    const event = (await response.text()).split("\n").find((line) => line.startsWith("data: "));
+    return JSON.parse(event.slice("data: ".length));
   };
-  const initialized = await call(1, "initialize", { protocolVersion: "2025-06-18" });
+  const initialized = await call(1, "initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "probe", version: "1" },
+  });
   const listed = await call(2, "tools/list", {});
   const reported = await call(3, "tools/call", {
     name: "factory_update_block",
     arguments: { to: "finished" },
     _meta: { callId: "probe-call" },
   });
-  child.kill();
   return {
     server: initialized.result.serverInfo.name,
     tools: listed.result.tools.map((tool) => tool.name),
@@ -186,21 +192,7 @@ try {
     return { excerpt: text.slice(0, 120) };
   });
 
-  await stage("the bundled runtime runs the reporting bridge without Node on PATH", async () => {
-    const bridge = join(work, "factory-runtime.mjs");
-    // Copy the shipped asset out of app.asar with the packaged runtime itself.
-    execFileSync(
-      executable,
-      [
-        "-e",
-        "require('node:fs').copyFileSync(process.argv[1], process.argv[2])",
-        join(app, "Contents/Resources/app.asar/build/runtime-stdio.mjs"),
-        bridge,
-      ],
-      { env: { ...clean, ELECTRON_RUN_AS_NODE: "1" } },
-    );
-    return bridgeReport(bridge);
-  });
+  await stage("the packaged backend serves Factory MCP to harnesses", mcpReport);
 
   await stage("closing the last window keeps the server running", async () => {
     await closeWindow(9441);

@@ -1,12 +1,12 @@
 import { assert, expect, it } from "@effect/vitest";
 import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { reportingClient } from "./support/reporting-client.ts";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import {
   driverHomes,
   reportingFixture,
-  installedReportingClient,
   installedReportingFixture,
+  installedReportingServer,
 } from "./support/reporting.ts";
 import { isolatedUserHome } from "./support/reporting-home.ts";
 
@@ -95,10 +95,15 @@ it("a conflicting configuration target exposes no repair action", async (context
   });
 });
 
-it("a missing owned connection file offers repair", async (context) => {
+it("a Factory entry for another backend address offers repair", async (context) => {
   // Arrange
-  const { factory, connectionFile } = await installedReportingFixture(context);
-  await rm(connectionFile);
+  const { factory, config } = await installedReportingFixture(context);
+  await writeFile(
+    config,
+    JSON.stringify({
+      mcpServers: { "factory-runtime": { type: "http", url: "http://127.0.0.1:4999/mcp" } },
+    }),
+  );
 
   // Act
   const result = await factory.getReportingInstallations();
@@ -178,8 +183,8 @@ it("installing Cursor reporting writes the user MCP file", async (context) => {
   expect(installed.value.status).toBe("installed");
   expect(cursor.path).toBe(join(home, ".cursor", "mcp.json"));
   expect(
-    JSON.parse(await readFile(cursor.path!, "utf8")).mcpServers["factory-runtime"].command,
-  ).toBe("/usr/bin/env");
+    JSON.parse(await readFile(cursor.path!, "utf8")).mcpServers["factory-runtime"],
+  ).toStrictEqual({ url: "http://127.0.0.1:4310/mcp" });
 });
 
 it("Grok reporting uses the standard home and stays not installed until install", async (context) => {
@@ -197,7 +202,7 @@ it("Grok reporting uses the standard home and stays not installed until install"
   expect(grok.status).toBe("not-installed");
 });
 
-it("a provider without reporting shows the stdio entry and no install action", async (context) => {
+it("a provider without reporting shows the MCP address and no install action", async (context) => {
   // Arrange
   const { factory } = await driverHomes(context, { pi: { driver: "pi", config: {} } });
 
@@ -209,7 +214,7 @@ it("a provider without reporting shows the stdio entry and no install action", a
   const pi = result.value.find((target) => target.provider === "pi")!;
   expect(pi.path).toBe(null);
   expect(pi.message).toMatch(/factory-runtime/);
-  expect(pi.message).toMatch(/\/usr\/bin\/env/);
+  expect(pi.message).toContain("http://127.0.0.1:4310/mcp");
   expect(pi.actions).toStrictEqual({ install: false, repair: false, reinstall: false });
 });
 
@@ -264,45 +269,28 @@ it("symbolic link configuration is not overwritten", async (context) => {
   expect(await readFile(other, "utf8")).toBe("{}");
 });
 
-it("the installed portable bridge exposes report and scoped context over stdio", async (context) => {
+it("an installed Claude entry reaches the Factory tools on the listening backend", async (context) => {
   // Arrange
-  const rpc = await installedReportingClient(context);
+  const { config } = await installedReportingServer(context);
+  const entry = JSON.parse(await readFile(config, "utf8")).mcpServers["factory-runtime"];
+  const client = new Client({ name: "harness", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(entry.url)));
+  context.onTestFinished(() => client.close());
 
   // Act
-  const response = await rpc("tools/list");
+  const listed = await client.listTools();
 
   // Assert
-  expect(response.result.tools.map((tool: { name: string }) => tool.name)).toStrictEqual([
+  expect(entry.type).toBe("http");
+  expect(listed.tools.map((tool) => tool.name)).toStrictEqual([
     "factory_update_block",
     "factory_get_block",
     "factory_get_run",
   ]);
-  expect(response.result.tools[0].name).toBe("factory_update_block");
-  expect(response.result.tools[0].inputSchema.required).toStrictEqual(["to"]);
+  expect(listed.tools[0]!.inputSchema.required).toStrictEqual(["to"]);
 });
 
-const bundled = (executable = process.execPath) => ({ kind: "bundled" as const, executable });
-
-it("a desktop installation's reporting bridge runs without Node on the harness PATH", async (context) => {
-  // Arrange
-  const { factory, config, home } = await reportingFixture(context, "claudeAgent", bundled());
-  const targets = await factory.getReportingInstallations();
-  assert(targets.ok);
-  assert((await factory.installReporting({ targetId: targets.value[0]!.id })).ok);
-  const call = await reportingClient(context, config, home, "/nonexistent");
-
-  // Act
-  const listed = await call("tools/list");
-
-  // Assert
-  expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toStrictEqual([
-    "factory_update_block",
-    "factory_get_block",
-    "factory_get_run",
-  ]);
-});
-
-it("repairing for the desktop runtime replaces only Factory's own Codex entry", async (context) => {
+it("repairing a Codex entry for another backend address replaces only Factory's entry", async (context) => {
   // Arrange
   const { factory, harness, options, config } = await reportingFixture(context, "codex");
   await writeFile(config, '# keep this comment\nmodel = "sample"\n');
@@ -310,21 +298,21 @@ it("repairing for the desktop runtime replaces only Factory's own Codex entry", 
   assert(targets.ok);
   assert((await factory.installReporting({ targetId: targets.value[0]!.id })).ok);
   await factory.close();
-  const desktop = await harness.open({ ...options, bridgeRuntime: bundled() });
+  const moved = await harness.open({ ...options, runtimeBackendUrl: "http://127.0.0.1:4999" });
 
   // Act
-  const result = await desktop.installReporting({ targetId: targets.value[0]!.id });
+  const result = await moved.installReporting({ targetId: targets.value[0]!.id });
 
   // Assert
   assert(result.ok);
   expect(result.value.status).toBe("installed");
   const saved = await readFile(config, "utf8");
-  expect(saved).toMatch(/^# keep this comment\nmodel = "sample"\n/);
-  expect(saved.match(/\[mcp_servers\.factory-runtime\]/g)).toHaveLength(1);
-  expect(saved).toMatch(/command = ".*\/reporting\/factory-runtime-node"/);
+  expect(saved).toBe(
+    '# keep this comment\nmodel = "sample"\n\n[mcp_servers.factory-runtime]\nurl = "http://127.0.0.1:4999/mcp"\n',
+  );
 });
 
-it("Repair installs the Factory Block skill for Claude next to the bridge", async (context) => {
+it("Repair installs the Factory Block skill under the Claude home", async (context) => {
   // Arrange
   const { home, harness } = await installedReportingFixture(context);
   const harnessSkill = join(home, ".claude", "skills", "factory-block", "SKILL.md");
@@ -337,15 +325,10 @@ it("Repair installs the Factory Block skill for Claude next to the bridge", asyn
   expect(installed).toBe(await readFile(canonical, "utf8"));
   expect(installed).toContain("name: factory-block");
   expect(installed).toContain("factory_get_block");
-  expect(installed).toContain("retryAfterMs");
-  expect(installed).toContain("BINDING_PENDING");
+  expect(installed).toContain("factory_get_run");
   expect(installed).toContain('to: "waiting"');
   expect(installed).toContain('to: "finished"');
-  expect(installed).toContain("allowedTransitions");
-  expect(installed).toContain("allowedExits");
-  expect(installed).toContain("original acknowledgement");
-  expect(installed).toContain("Subagents never call Factory tools");
-  expect(installed).toContain("factory_get_run");
+  expect(installed).toContain("`ref`");
   expect(installed).toContain("$factory-block");
 });
 

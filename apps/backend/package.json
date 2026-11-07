@@ -29,6 +29,7 @@
     "@effect/platform-node": "4.1.2",
     "@effect/sql-sqlite-node": "4.1.2",
     "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "@t3-factory/contracts": "workspace:*",
     "@t3-factory/domain-validation": "workspace:*",
     "effect": "4.1.2",

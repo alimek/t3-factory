@@ -68,23 +68,31 @@ the current one and keep mismatches unresolved: reauthorization is never permiss
 
 ## Agent reporting
 
-Agents report Block results by calling `factory_update_block` on a Factory MCP bridge
-installed in their harness configuration. Factory correlates the native tool call with the exact execution, returns a durable acknowledgement and never parses assistant text.
-Repair also installs the `$factory-block` skill next to the bridge. The worker's first message starts with `$factory-block` and, when Factory minted one, includes a Factory tool ref.
+Agents report Block results by calling `factory_update_block` on **Factory MCP**, a Streamable HTTP
+MCP server at `/mcp` on the backend's host-local listener (`http://127.0.0.1:4310/mcp` by default).
+Each harness configuration registers it once by URL as `factory-runtime`; the harness connects at
+session start and lists the tools the running backend serves. Factory correlates the native tool
+call with the exact execution, returns a durable acknowledgement and never parses assistant text.
+Installation also writes the `$factory-block` skill beside the harness configuration. The skill names
+which tool to use when; protocol rules live in the tool descriptions, so an application update changes
+them without touching harness files. The worker's first message starts with `$factory-block` and,
+when Factory minted one, includes a Factory tool ref.
 
 ### Installation actions
 
 **Settings → Agent reporting** shows Not installed, Installed or Needs attention for each
 discovered configuration home, with a global **Recheck installation**. Codex, Claude, Cursor and
 Grok are those homes. Every other provider instance is listed as **Reporting not available yet**,
-with the stdio `factory-runtime` entry to add by hand and no install action. Agent capabilities
+with the `factory-runtime` MCP URL to add by hand and no install action. Agent capabilities
 publish the same per-provider `reporting` status, and Start blocks an unsupported provider with
 `harness_unsupported` pointing to Studio → Agents.
 
 - **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
-  Factory's own entry. **Repair installation** appears only when Factory can repair its owned
-  bridge assets (missing or outdated bridge, changed backend address). An upgrade that changes the
-  bridge needs one Repair and a fresh harness session before Start. Conflicts, inaccessible
+  Factory's own entry. **Repair installation** appears only when Factory can repair what it owns:
+  a missing or outdated `$factory-block` skill, or Factory's entry pointing at another backend
+  address (a changed `port` or `FACTORY_PORT`). An application upgrade needs no Repair; a fresh
+  harness session sees the new tools. Any other `factory-runtime` entry, including a command
+  entry from an earlier stdio bridge, is a conflict to remove by hand. Conflicts, inaccessible
   homes, unsupported providers and remote hosts show diagnostics only; unknown or remote homes
   get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
@@ -102,18 +110,15 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   attribution, so runtime evidence stays **UNVERIFIED** even after a valid report. Fresh harness
   sessions and native trust approvals remain the user's responsibility. No setup action starts a
   workload.
-- A desktop server registers the bridge through `~/.t3-factory/reporting/factory-runtime-node`,
-  which uses the app's bundled runtime. A registration made by a source installation shows
-  **Needs attention** with **Repair installation** under the desktop (and the reverse); Repair
-  replaces only Factory's own entry. Factory does not migrate it on its own: harness
-  configuration is written only on an explicit action.
+- Desktop and source servers register the same URL, so switching between them needs no
+  Repair. Harness configuration is written only on an explicit action.
   Approved remote clients see this screen read-only
-  ([client access](desktop-and-clients.md#bundled-runtime-and-reporting-bridge)).
+  ([client access](desktop-and-clients.md#connecting-a-client)).
 
 ## Reporting readiness
 
 Start and runtime readiness check the real connection, the available project, the selected
-environment/provider/model/options, the public T3 interface and the installed bridge. Readiness
+environment/provider/model/options, the public T3 interface and the installed Factory MCP entry. Readiness
 covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. When the blocking problem is the reporting installation, the rejected-Start notice links to **Settings → Agent reporting**; other readiness problems link to **Studio → Agents**. Readiness never
 launches diagnostic work, answers approvals or substitutes settings.
 
@@ -208,28 +213,29 @@ and retains existing selections, including false and unavailable values.
 ## Reporting installation
 
 The installer needs authorized same-user loopback T3, accessible local state and a matching environment identity; `FACTORY_T3_STATE_DIRECTORY` overrides state discovery, and standard homes assume
-Factory and T3 share an OS user and home. Installed drivers: `codex`, `claudeAgent`, `cursor` and `grok`. Other drivers stay blocked at Start. Agent reporting still lists them with the stdio `factory-runtime` command and args to add by hand once Factory can tie that harness's calls to a Run. Home resolution for Codex, Claude and Grok uses the trimmed non-empty persisted `config.homePath`, then the last provider environment entry
+Factory and T3 share an OS user and home. Installed drivers: `codex`, `claudeAgent`, `cursor` and `grok`. Other drivers stay blocked at Start. Agent reporting still lists them with the `factory-runtime` MCP URL to add by hand once Factory can tie that harness's calls to a Run. Home resolution for Codex, Claude and Grok uses the trimmed non-empty persisted `config.homePath`, then the last provider environment entry
 (`CODEX_HOME`, `CLAUDE_CONFIG_DIR` or `GROK_HOME`), then the same-user default (`~/.codex/config.toml`, `~/.claude.json` or `<dir>/.claude.json`, `~/.grok/config.toml`). Cursor always uses `~/.cursor/mcp.json`; the Cursor SDK reads that path from the OS home and ignores a provider `homePath`. Tilde paths are expanded; relative
 paths are refused. Factory's own environment never redirects discovery and T3's inherited host variables are unobservable, so an undisclosed override needs manual verification. Managed setup,
 shadow homes, custom launch arguments and policy profiles need review; do not switch setup modes to satisfy the installer. Installer support does not qualify live Claude workloads.
 
-Codex and Grok install `mcp_servers.factory-runtime` (TOML). Claude and Cursor install `mcpServers.factory-runtime` (JSON). Conflicting or modified entries, symlink/special/hard-linked files and unsupported TOML
+Codex and Grok install `[mcp_servers.factory-runtime]` with `url` (TOML). Claude installs `mcpServers.factory-runtime` as `{ "type": "http", "url" }` and Cursor as `{ "url" }` (JSON); these are
+the shapes each harness's own `mcp add` writes. The URL is the backend's loopback address plus `/mcp`. Conflicting or modified entries, symlink/special/hard-linked files and unsupported TOML
 structures are refused; unrelated content is preserved. Installation refuses detected conflicting edits; arbitrary external editors are outside its transaction.
 Installation proves configuration, not effective native trust or visibility under higher-priority project policy. A missing Cursor directory is created on install.
+An open harness session keeps the tool list it read at start; new tools reach the next session.
 
-The stable bridge is `reporting/factory-runtime.mjs` in the data home beside `connection.json`; source and built operation use the same asset. A changed backend address or outdated bridge requires
-explicit reinstall, and moving the data home requires reviewing its old registration. The source launcher needs POSIX `/usr/bin/env` and `node` on the harness PATH; the desktop supplies its bundled
-runtime. After repair, cached harness processes may need a fresh MCP session. See [Agent reporting](t3-integration.md).
+## Factory MCP and caller correlation
 
-## Bridge and caller correlation
-
-The bridge exposes `factory_get_block({ ref? })`, read-only `factory_get_run({ ref? })`, and
-`factory_update_block({ to, exit?, message, ref? })`. `to` is `waiting` or `finished`. `ref` is the
-Factory tool ref from that worker's message. It disambiguates simultaneous calls and is not Run or
-Block authority. Host-only ingress accepts neither approved-client credentials nor model-supplied
-Run or Block identity. The bridge holds no T3 credentials or database. A globally visible tool, a
-title match or a subagent is not report authority. `factory_report` and `factory_context` are not
-installed.
+Factory MCP is stateless Streamable HTTP on the host-local listener only: the approved-client
+listener answers `/mcp` with `host_only`, and a request whose `Origin` is not the listener's own
+origin is refused, so a browser page cannot drive it. It requires no credential: authority comes
+from native call evidence, not from the transport. It exposes `factory_get_block({ ref? })`,
+read-only `factory_get_run({ ref? })`, and `factory_update_block({ to, exit?, message, ref? })`.
+`to` is `waiting` or `finished`. `ref` is the Factory tool ref from that worker's message. It
+disambiguates simultaneous calls and is not Run or Block authority. The endpoint accepts neither
+approved-client credentials nor model-supplied Run or Block identity, and forwards the harness's
+call `_meta` unchanged. A globally visible tool, a title match or a subagent is not report
+authority. `factory_report` and `factory_context` are not exposed.
 
 - **Bindings.** Open-Run work is tied to saved thread, project, exact execution and
   authorization references. Confirmed closure ends authority for new reports; retained
@@ -243,20 +249,20 @@ installed.
   (`pending` or `running`) factory tool on a bound thread whose recorded arguments equal the
   call, including `ref` when the model sent one. Cursor stores those arguments as `input`.
   Grok stores them as `input.tool_input`, and names the tool `factory-runtime__<tool>`.
-  An inherited thread hint only narrows candidates. A truncated dynamic tool is read onward
+  Factory MCP sends no inherited thread hint, so every bound thread is a candidate.
+  A truncated dynamic tool is read onward
   from its continuation offset until the text is complete. Missing, ambiguous, stale, or
   foreign evidence rejects the call, as does a continuation that is inconsistent, exhausted,
   or over 262144 characters. Unavailable candidates cannot simply be ignored.
   Native delegation evidence remains Codex and Claude only. A Cursor or Grok worker can
   report its own Block; Factory does not decode native child delegation from those harnesses.
-  Block and Run reads can locate a Codex or Claude call by its native call ID when the
-  harness omits the inherited thread hint. Exactly one proven local call is still required.
+  Block and Run reads locate a Codex or Claude call by its native call ID.
+  Exactly one proven local call is still required.
   A read from a renewed execution refreshes observation before comparing the saved binding;
   it does not wait for the periodic sweep or grant report authority.
   Fresh observations do not replace the durable gate check at acceptance.
-- **Installation freshness.** An edited or outdated bridge needs **Repair** and a fresh
-  harness session. The `$factory-block` skill is part of installation readiness. A missing
-  or outdated skill is repairable and blocks Start.
+- **Installation freshness.** The `$factory-block` skill is part of installation readiness. A
+  missing or outdated skill is repairable and blocks Start.
 - **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
   is `INVALID_EXIT`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.

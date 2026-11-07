@@ -42,8 +42,8 @@ The home is created with mode 0700 and `config.json` 0600; existing configuratio
 
 Every request, including UI assets, must use the bound port and an allowed Host: loopback bindings accept `localhost`, `127.0.0.1` and `[::1]`; other bindings accept IP literals and listed DNS names
 (for example `FACTORY_ALLOWED_HOSTS=factory.tail.example`); anything else gets HTTP 421. Every method except GET/HEAD needs `X-Factory-Request: 1`, and a present `Origin` must equal `http://` plus the
-Host; failures return HTTP 403 before any operation. Factory sends no CORS headers. The UI, runtime bridge and shipped fixtures send the header; custom API clients must too. This blocks cross-site
-mutation and DNS rebinding.
+Host; failures return HTTP 403 before any operation. Factory sends no CORS headers. The UI and shipped fixtures send the header; custom API clients must too. This blocks cross-site
+mutation and DNS rebinding. Factory MCP (`/mcp`) is the one exception: harnesses send no custom header, so it refuses any present `Origin` other than its own instead.
 
 This listener is the **host-local** surface: it answers only requests whose socket peer is loopback (others get 403 `host_only`), even when bound to `0.0.0.0`. Other devices use secure remote access
 (approved, revocable clients over TLS on a separate listener) enabled in **Settings → Devices & access** or `"remoteAccess": { "enabled": true }`; see [desktop and approved clients](desktop-and-clients.md) and [Release](release.md).
@@ -56,7 +56,7 @@ This listener is the **host-local** surface: it answers only requests whose sock
 | `pnpm dev:prod` | Live T3 backend and Vite with source reload | `~/.t3-factory`, or `FACTORY_HOME` |
 | `pnpm start` | Built backend serving API and built UI | `~/.t3-factory`, or `FACTORY_HOME` |
 
-Development runs from source with no build and never writes production `dist`. Reporting installation uses the source bridge asset, which the build copies unchanged, so switching modes needs no repair.
+Development runs from source with no build and never writes production `dist`. Every mode serves Factory MCP from its own listener, so reporting registrations need no repair when switching between modes on the same port.
 Production needs `pnpm build` before `pnpm start`, also after source updates; `start` does not watch or rebuild. Demo storage persists across restarts: a fresh home gets sample Agents, Flows and Runs plus
 an authorized simulated T3 connection, and normal startup preserves edits without reseeding (see [development scenarios](dev-scenarios.md)). `pnpm dev` ignores `FACTORY_HOME`; set an absolute
 `FACTORY_DEV_HOME` outside the checkout to customize it. Neither dev command copies or seeds the production database.

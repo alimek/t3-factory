@@ -1,6 +1,6 @@
 // Bundles the Electron main process, sandboxed preload and backend utility process, and
-// copies the assets the backend resolves beside its module: SQL migrations, the reporting
-// bridge and the built UI. Only the native lock module stays an external package.
+// copies the assets the backend resolves beside its module: SQL migrations and the built
+// UI. Only the native lock module stays an external package.
 import { cp, mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -61,7 +61,6 @@ await Promise.all([
   }),
 ]);
 await cp(`${backend}src/migrations`, `${out}/migrations`, { recursive: true });
-await cp(`${backend}src/runtime-stdio.mjs`, `${out}/runtime-stdio.mjs`);
 await cp(frontend, `${out}/ui`, { recursive: true });
 await cp(`${root}resources/trayTemplate.png`, `${out}/resources/trayTemplate.png`);
 await cp(`${root}resources/trayTemplate@2x.png`, `${out}/resources/trayTemplate@2x.png`);

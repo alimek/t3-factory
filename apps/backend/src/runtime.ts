@@ -10,7 +10,7 @@ const REPORT_TOOL_NAMES = factoryToolAliases([
   "mcp__factory-runtime__factory_update_block",
 ]);
 
-/** A factory_update_block call as forwarded by the stdio runtime, before caller correlation. */
+/** A factory_update_block call as forwarded by Factory MCP, before caller correlation. */
 interface ReportCall {
   readonly report: RuntimeReport;
   /** The harness's native call ID (`callId` or `claudecode/toolUseId`). */

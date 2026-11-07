@@ -410,8 +410,6 @@ async function start() {
     {
       FACTORY_UI_DIRECTORY: uiDirectory,
       FACTORY_APPLICATION_VERSION: app.getVersion(),
-      // Harness registrations launch the bridge through this executable as Node.
-      FACTORY_BRIDGE_EXECUTABLE: process.execPath,
     },
     broadcast,
     {

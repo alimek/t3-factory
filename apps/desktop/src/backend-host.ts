@@ -65,12 +65,10 @@ let home: string | undefined;
 try {
   const config = await loadConfiguration();
   home = config.home;
-  const executable = process.env.FACTORY_BRIDGE_EXECUTABLE;
   const server = await startServer(config, {
     uiDirectory: process.env.FACTORY_UI_DIRECTORY ?? null,
     applicationVersion: process.env.FACTORY_APPLICATION_VERSION ?? "desktop",
     applicationUpdates: hostUpdates(),
-    ...(executable ? { bridgeRuntime: { kind: "bundled" as const, executable } } : {}),
   });
   parent.postMessage({ type: "ready", port: server.address.port, home: config.home });
   parent.on("message", (event: { data: Message }) => {

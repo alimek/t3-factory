@@ -63,6 +63,10 @@ Retired as the way a Run starts. Factory launches each Agent Block as its own to
 **Worker**:
 The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block`. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block.
 
+**Factory MCP**:
+The MCP server a Factory server serves at `/mcp` on its host-local listener. Harnesses register it once by URL and call `factory_get_block`, `factory_get_run` and `factory_update_block` on it; an application update changes its tools without changing harness configuration.
+_Avoid_: bridge (the retired stdio copy installed per harness).
+
 **Block activation**:
 One accepted task at a Flow block, spanning its exact worker Work periods until its result is completed.
 
