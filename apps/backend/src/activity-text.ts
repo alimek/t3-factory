@@ -22,7 +22,7 @@ export async function completeDynamicToolText<T extends TextItem>(
     text += slice(part, part.textTruncated === true);
     if (text.length > TEXT_LIMIT) throw Error("Activity text exceeds the 262144-character limit.");
     if (part.textTruncated !== true) {
-      if (part.nextTextOffset != null)
+      if (part.nextTextOffset !== null && part.nextTextOffset !== undefined)
         throw Error("Activity continuation metadata is inconsistent.");
       return { ...item, text, textTruncated: false, nextTextOffset: null };
     }
