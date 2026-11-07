@@ -47,8 +47,7 @@ export default {
   npmRebuild: false,
   nodeGypRebuild: false,
   electronFuses: {
-    // The reporting bridge runs this executable as Node (ELECTRON_RUN_AS_NODE).
-    runAsNode: true,
+    runAsNode: false,
     enableCookieEncryption: true,
     enableNodeOptionsEnvironmentVariable: false,
     enableNodeCliInspectArguments: false,

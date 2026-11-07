@@ -5,7 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import { isIP, type AddressInfo } from "node:net";
 import { toIncomingMessage } from "@effect/platform-node/NodeHttpServerRequest";
 import * as Effect from "effect/Effect";
-import { HttpServerResponse } from "effect/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
 import type { ProtocolDescriptor, Result } from "@t3-factory/contracts";
 import { FACTORY_MINIMUM_PEER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
@@ -30,6 +30,7 @@ import {
   type OperationCall,
 } from "./http-support.ts";
 import { listen, type Surface } from "./listener.ts";
+import { runtimeMcpHandler } from "./runtime-mcp.ts";
 import { remoteAccessController } from "./remote-listener.ts";
 import { serverUpdateRoutes, type ApplicationUpdates } from "./server-update-routes.ts";
 
@@ -262,39 +263,6 @@ function reportingRoutes(factory: Factory): readonly ApiRoute[] {
         Effect.map(
           Effect.promise(() => factory.installReporting(input)),
           resultResponse,
-        ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runtime\/report$/,
-      hostOnly: true,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.runtime.submit(input)),
-          (body) => writeJsonResponse(200, body),
-        ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runtime\/block$/,
-      hostOnly: true,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.runtime.block(input)),
-          (body) => writeJsonResponse(200, body),
-        ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runtime\/run$/,
-      hostOnly: true,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.runtime.run(input)),
-          (body) => writeJsonResponse(200, body),
         ),
     },
     {
@@ -639,6 +607,33 @@ interface HttpBinding {
   readonly uiDirectory: string | null;
   readonly protocol: ProtocolDescriptor;
   readonly factory: Factory;
+  readonly mcp: (request: Request) => Promise<Response>;
+}
+
+/**
+ * Harness reporting over Streamable HTTP. Caller authority comes from native call
+ * evidence, so the endpoint needs no credential, but browsers must not reach it.
+ */
+function serveMcp(
+  request: HttpServerRequestType,
+  binding: HttpBinding,
+): Effect.Effect<HttpServerResponse.HttpServerResponse, unknown> {
+  if (binding.surface === "remote")
+    return Effect.succeed(
+      writeJsonResponse(
+        403,
+        failure("host_only", "Harnesses reach Factory MCP only on the host's loopback address."),
+      ),
+    );
+  const origin = request.headers.origin;
+  if (origin !== undefined && origin !== `http://${request.headers.host}`)
+    return Effect.succeed(
+      writeJsonResponse(403, failure("validation", "Factory MCP refuses cross-origin requests.")),
+    );
+  return HttpServerRequest.toWeb(request).pipe(
+    Effect.flatMap((web) => Effect.promise(() => binding.mcp(web))),
+    Effect.map(HttpServerResponse.fromWeb),
+  );
 }
 
 function handleHttpRequest(
@@ -653,7 +648,7 @@ function handleHttpRequest(
 function handleHttpRequestInner(
   request: HttpServerRequestType,
   binding: HttpBinding,
-): Effect.Effect<HttpServerResponse.HttpServerResponse> {
+): Effect.Effect<HttpServerResponse.HttpServerResponse, unknown> {
   return Effect.gen(function* () {
     const address = binding.nodeServer.address() as AddressInfo;
     if (!isAllowedHost(request.headers.host, address, binding.allowedHosts)) {
@@ -672,6 +667,8 @@ function handleHttpRequestInner(
         ),
       );
     }
+    const target = requestTarget(request);
+    if (target?.pathname === "/mcp") return yield* serveMcp(request, binding);
     if (!passesMutationGuard(request, binding.surface === "remote" ? "https" : "http")) {
       return writeJsonResponse(
         403,
@@ -681,7 +678,6 @@ function handleHttpRequestInner(
         ),
       );
     }
-    const target = requestTarget(request);
     if (!target) {
       return resultResponse(failure("validation", "Invalid request URL."));
     }
@@ -708,7 +704,6 @@ export interface ServerOptions {
   readonly applicationVersion?: string;
   /** Another release's protocol range, for compatibility tests of mixed installations. */
   readonly protocol?: Pick<ProtocolDescriptor, "protocol" | "minimumPeerProtocol">;
-  readonly bridgeRuntime?: FactoryOptions["bridgeRuntime"];
   /** The desktop server's updater, which approved clients may operate. */
   readonly applicationUpdates?: ApplicationUpdates;
 }
@@ -727,7 +722,6 @@ function factoryOptions(config: Configuration, options: ServerOptions): FactoryO
     ...(options.connectionRetryMs !== undefined
       ? { connectionRetryMs: options.connectionRetryMs }
       : {}),
-    ...(options.bridgeRuntime ? { bridgeRuntime: options.bridgeRuntime } : {}),
   };
 }
 
@@ -737,7 +731,7 @@ const serverProtocol = (options: ServerOptions): ProtocolDescriptor => ({
   application: options.applicationVersion ?? "source",
 });
 
-/** Harness bridges always report to the host-local listener over loopback. */
+/** Harnesses always report to the host-local listener over loopback. */
 function loopbackUrl(host: string, port: number): string {
   const runtimeHost = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host;
   return `http://${runtimeHost.includes(":") ? "[" + runtimeHost + "]" : runtimeHost}:${port}`;
@@ -750,6 +744,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
   const factory = await openFactory(factoryOptions(config, options));
   const protocol = serverProtocol(options);
   const limiter = new RequestLimiter(accessRequestsPerMinute, 60_000);
+  const mcp = runtimeMcpHandler(factory.runtime);
   let routes: readonly ApiRoute[] = [];
   const handlerFor =
     (surface: Surface, allowedHosts: readonly string[]) => (nodeServer: Server) => {
@@ -763,6 +758,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
         uiDirectory,
         protocol,
         factory,
+        mcp,
       };
       return (request: HttpServerRequestType) => handleHttpRequest(request, binding);
     };

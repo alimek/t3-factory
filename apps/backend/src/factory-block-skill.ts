@@ -1,25 +1,27 @@
 import { basename, dirname, join } from "node:path";
 
-/** The one Factory Block skill installed for Codex and Claude. Harness copies must match this text. */
+/**
+ * The Factory Block skill installed beside each harness configuration. It names which tool
+ * to use when; protocol rules live in the MCP tool descriptions so an update needs no reinstall.
+ */
 export const FACTORY_BLOCK_SKILL = `---
 name: factory-block
-description: Work one Factory Block from factory_get_block and report only through factory_update_block.
+description: Work one Factory Block with the factory-runtime tools. Use when the thread's first message starts with $factory-block.
 ---
 
 # Factory Block
 
-You are one Block in a Factory Run. Factory owns routing, Stop, and closure.
+This thread is one Block in a Factory Run. Factory takes the Block's result only from its tools, never from chat.
 
-1. Call \`factory_get_block\` before other work. If the reply is \`BINDING_PENDING\`, wait \`retryAfterMs\` and call it again. That reply grants no authority. When the message gives a Factory tool ref, pass that exact string as \`ref\` on every Factory tool call. \`ref\` only tells Factory which in-flight call is yours. It is not a Run or Block id.
-2. Work from this Agent's prompt and the returned inputs: the original Run input, incoming results, and feedback.
-3. Call \`factory_update_block\` with \`to: "waiting"\` and a nonempty \`message\` when you need a user reply. Do not send an exit.
-4. Call \`factory_update_block\` exactly once with \`to: "finished"\`, one configured exit, and a message when that exit requires feedback.
-5. On a conflict, use \`allowedTransitions\` and \`allowedExits\` from the reply. Do not invent a transition or an exit.
-6. An identical retry of an accepted update returns the original acknowledgement. Do not send a different update for the same state.
-7. Subagents never call Factory tools.
-8. \`factory_get_run\` is read-only. It grants no routing authority.
+1. Call \`factory_get_block\` before any other work. Done when it returns your Block with its inputs and exits.
+2. Work from this Agent's prompt and those inputs. Call \`factory_get_run\` when you need the rest of the Run as context.
+3. Report with \`factory_update_block\`. Done when it returns an acknowledgement.
+   - \`to: "waiting"\` when you need the user's reply, then end the turn.
+   - \`to: "finished"\` with one of the Block's exits when the work is done.
 
-The first message in this thread starts with \`$factory-block\`. Follow this skill on every visit, including feedback.
+When the message gives a Factory tool ref, pass it as \`ref\` on every Factory tool call. Factory tools belong to this thread's own agent; subagents work without them.
+
+Every later turn in this thread, including feedback and user replies, starts again at step 1.
 `;
 
 /** Codex keeps the skill next to config.toml. Claude's user config keeps it under `.claude/skills`. */

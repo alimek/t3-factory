@@ -71,8 +71,7 @@ export const makeFactoryService = (
           process.env.FACTORY_T3_STATE_DIRECTORY ??
           join(homedir(), ".t3", "userdata"),
         connection.getConnection,
-        () => runtimeBackendUrl,
-        options.bridgeRuntime,
+        () => `${runtimeBackendUrl}/mcp`,
       ),
     );
     const reporting = Context.get(reportingContext, ReportingInstaller.ReportingInstaller);

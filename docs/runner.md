@@ -116,7 +116,7 @@ handoffs are durable before the acknowledgement is returned.
   handoff can take over a waiting conversation like a reply.
 
 Report metadata retains keys, fingerprints and references, not a second message archive.
-[Caller correlation](t3-integration.md#bridge-and-caller-correlation) defines the native
+[Caller correlation](t3-integration.md#factory-mcp-and-caller-correlation) defines the native
 attribution requirements.
 
 ## Observation and attention

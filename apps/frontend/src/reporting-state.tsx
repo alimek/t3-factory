@@ -23,7 +23,7 @@ interface ReportingStatus {
   message: string;
 }
 
-/** Configuration only: an installed bridge is not evidence that a live worker can report. */
+/** Configuration only: an installed Factory MCP entry is not evidence that a live worker can report. */
 export function agentReportingStatus(
   providerInstanceId: string,
   { targets, error }: Pick<ReportingReads, "targets" | "error">,

@@ -46,7 +46,7 @@ These are deployment prerequisites, not repository content:
 Local packaging without signing credentials is **ad-hoc signed** without the hardened runtime (Apple Silicon kills unsigned binaries and Electron's fuse changes void its linker signature): it runs locally for probes but
 is not a release and Gatekeeper rejects it on another Mac. The update location must be anonymously readable (a public release-assets repository or generic HTTPS feed) and no maintainer token may reach clients; the
 updater makes unauthenticated requests, so a browser's GitHub login grants no access to private release assets. Without a feed the app reports updates as **unsupported**. Preparing a build neither publishes a release
-nor authorizes changing repository visibility. Fuses: `runAsNode` stays on (harness registrations run the bridge via the app executable with `ELECTRON_RUN_AS_NODE=1`); Node options and inspect CLI are off, cookie
+nor authorizes changing repository visibility. Fuses: `runAsNode`, Node options and inspect CLI are off, cookie
 encryption and embedded asar integrity are on, and the app loads only from asar.
 
 ## Release and update flow
@@ -124,15 +124,15 @@ beta until a newer Release is published.
 
 ## Packaged verification and limits
 
-For a Release, `build-macos` runs the probe against the unpacked application it built and keeps the report in `release-evidence-<tag>`; it then checks that the application inside both the ZIP and the mounted DMG has an intact deep signature, a stapled ticket and the same code directory hash as the probed application, so the downloads ship the probed bundle. Locally, `pnpm desktop:probe /absolute/report.json` probes the package in `apps/desktop/release/mac-arm64/`, so run it right after packaging that checkout; it does not read a downloaded artifact. The probe uses disposable application data and a mock keychain and checks package startup, role selection, backend lifecycle and runtime
-bridge packaging; keep its report with the release artifacts. Controlled browser journeys cover approved-client transport and updater UI ([UI verification](testing.md)).
+For a Release, `build-macos` runs the probe against the unpacked application it built and keeps the report in `release-evidence-<tag>`; it then checks that the application inside both the ZIP and the mounted DMG has an intact deep signature, a stapled ticket and the same code directory hash as the probed application, so the downloads ship the probed bundle. Locally, `pnpm desktop:probe /absolute/report.json` probes the package in `apps/desktop/release/mac-arm64/`, so run it right after packaging that checkout; it does not read a downloaded artifact. The probe uses disposable application data and a mock keychain and checks package startup, role selection, backend lifecycle and the
+Factory MCP endpoint; keep its report with the release artifacts. Controlled browser journeys cover approved-client transport and updater UI ([UI verification](testing.md)).
 
 Acceptance procedures use a disposable application copy, HOME, desktop profile and data home with a minimal PATH and a mock keychain unless real Keychain persistence is under test; never touch a production installation or
 its login items, and keep raw captures in ignored `.e2e/` with a summary in the PR.
 
 - **Packaged authoring:** create and edit a Flow in the packaged Studio, quit, reopen in a fresh process and verify the same definition, graph and revision in the renderer and through public operations (source-API data
   does not prove renderer writes).
-- **Packaged reporting:** with `ControlledT3` and the packaged executable and bridge (no system Node), start a Run, submit a native-attributed explicit report and verify acceptance, then successful source completion before
+- **Packaged reporting:** with `ControlledT3` and the packaged backend's Factory MCP, start a Run, submit a native-attributed explicit report and verify acceptance, then successful source completion before
   the handoff; record whether the backend was source or packaged (`UNBOUND_CALLER` proves transport only) and re-test registration after an actual app-version replacement.
 - **Native lifecycle:** with an open Run close the last window and verify API access, reopen, cancel native Quit and verify state, then confirm Quit and verify orderly shutdown and ownership release; after restart
   compare Run, report and execution state and separately verify reconciliation after T3 reconnect.
@@ -142,5 +142,5 @@ its login items, and keep raw captures in ignored `.e2e/` with a summary in the 
   (changing HOME alone does not isolate login items).
 
 These checks and controlled fixtures do not establish: Developer ID signing, notarization and Gatekeeper acceptance on a clean Mac; cross-device LAN/Tailscale routing, certificate SANs and browser CA trust;
-updates between consecutive signed releases (including failed downloads, data and bridge preservation, and independent client/server updates); the integrated lifecycle with connected T3, retained remote credentials,
+updates between consecutive signed releases (including failed downloads, data and reporting-registration preservation, and independent client/server updates); the integrated lifecycle with connected T3, retained remote credentials,
 launch at login and real Keychain prompts; or live T3 OAuth and workloads through the desktop. Record each as PASS, FAIL or UNVERIFIED; an ad-hoc package probe is insufficient for public distribution.
