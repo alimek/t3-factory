@@ -487,7 +487,7 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
 }
 
 /**
- * Read-only snapshot canvas. The viewport is local UI state: polling replaces
+ * Read-only canvas of a captured Flow revision. The viewport is local UI state: polling replaces
  * block facts in place and does not fit or move the view again.
  */
 export function ExecutionCanvas({

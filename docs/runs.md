@@ -52,9 +52,9 @@ Failures explain recovery and keep the draft.
 
 ## Execution canvas
 
-Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow snapshot**). Positions, exits,
+Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow revision**). Positions, exits,
 connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
-project is unavailable; a changed later definition is labelled, never substituted.
+project is unavailable; a later edit or removal is labelled (**Flow edited since**, **Flow removed since**), never substituted.
 
 - The **Flow input** block shows the Run's truncated prompt and has no state or details panel.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped. Several blocks can be
@@ -67,9 +67,9 @@ project is unavailable; a changed later definition is labelled, never substitute
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
-- The top bar shows title, project, snapshot, block states, each worker's **Open worker in T3** link (a pending launch says
+- The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Stop Run** (open) and a ··· menu. The timeline starts collapsed; the context rail (attention, Stop/closure
-  evidence, prompt, snapshot, project, work periods) opens from 1280 px wide.
+  evidence, prompt, Flow revision, project, work periods) opens from 1280 px wide.
 - Verified running worker work is ordinary progress; unavailable native evidence is a coordination Problem.
 
 Engine termination alone never completes a Run: whole-Run completion is only a recorded Finished or Stopped outcome.
