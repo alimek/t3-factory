@@ -60,6 +60,12 @@ Use exact accessible names for deterministic paths. For variable flows use
 
 ## Evidence
 
+Every PR that touches UI must include before/after screenshots of the affected views.
+Capture the baseline from the PR base revision and the verified result in the same
+viewport; use comparable states and explain differences in the PR. Keep both sets
+separately under `.e2e/`, upload them as PR attachments and embed them in the PR body's
+**UI screenshots** section.
+
 `pnpm e2e:screenshots` saves named PNGs for Flows, Agents, Runs, Agent reporting,
 and a Flow before saving and after reload under `.e2e/screenshots/results/`.
 Each output root has `report.json` listing exact artifact paths; `--trace on`
