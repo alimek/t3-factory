@@ -647,10 +647,19 @@ function StartNotice({ model }: { model: Composer }) {
         icon={TriangleAlert}
         title="T3 rejected the start"
         action={
-          <NoticeStudioLink selection={{ tab: "agents" }}>Open Studio → Agents</NoticeStudioLink>
+          draft.remedy === "reporting" ? (
+            <NoticeSettingsLink selection={{ tab: "runtime" }}>
+              Open Settings → Agent reporting
+            </NoticeSettingsLink>
+          ) : (
+            <NoticeStudioLink selection={{ tab: "agents" }}>Open Studio → Agents</NoticeStudioLink>
+          )
         }
       >
-        {draft.error} No Run was created; change the Agent or Flow, then Start again.
+        {draft.error} No Run was created;{" "}
+        {draft.remedy === "reporting"
+          ? "install or repair Factory MCP in Agent reporting, then Start again."
+          : "change the Agent or Flow, then Start again."}
       </Notice>
     );
   }

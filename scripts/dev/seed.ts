@@ -82,6 +82,7 @@ async function createDemoReporting(home: string, environmentId: string) {
           driver: "claudeAgent",
           config: { homePath: join(home, "reporting-missing-claude") },
         },
+        "demo-cursor": { driver: "cursor" },
       },
     }),
   );

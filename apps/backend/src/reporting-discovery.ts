@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import type { ReportingInstallation, T3Connection } from "@t3-factory/contracts";
 import { isLocalEndpoint } from "./endpoint-local.ts";
 import { withReportingInstallationActions } from "./reporting-installation-actions.ts";
+import { isReportingDriver, providerReporting, type ReportingDriver } from "./reporting-drivers.ts";
 
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -50,7 +51,7 @@ function assertDirectHomeSupported(instance: Record<string, unknown>) {
     );
 }
 
-function resolveReportingHome(instance: Record<string, unknown>, driver: "codex" | "claudeAgent") {
+function resolveReportingHome(instance: Record<string, unknown>, driver: ReportingDriver) {
   assertDirectHomeSupported(instance);
   const config = record(instance.config ?? {});
   const variables = Array.isArray(instance.environment) ? instance.environment.map(record) : [];
@@ -84,6 +85,16 @@ const targetFor = Effect.fn(function* (
 ): Generator<Effect.Effect<unknown, unknown>, ReportingInstallation, never> {
   const instance = record(raw);
   const driver = instance.driver;
+  if (!isReportingDriver(driver))
+    return withReportingInstallationActions({
+      id,
+      provider: String(driver),
+      instances: [id],
+      path: null,
+      status: "unsupported",
+      message: providerReporting(driver).explanation,
+      runtimeEvidence: "UNVERIFIED",
+    });
   const base = {
     id,
     provider: String(driver),
@@ -95,8 +106,6 @@ const targetFor = Effect.fn(function* (
     ReportingInstallation,
     never
   > {
-    if (driver !== "codex" && driver !== "claudeAgent")
-      throw Error("This provider has no supported user-level reporting installer.");
     const resolved = resolveReportingHome(instance, driver);
     const directory = yield* boundary(() => realpath(resolved.directory));
     if (!(yield* boundary(() => stat(directory))).isDirectory())
