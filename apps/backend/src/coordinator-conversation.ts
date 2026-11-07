@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { RuntimeBinding, RuntimeReport } from "./runtime-types.ts";
+import { acceptedTransition, type RuntimeBinding, type RuntimeReport } from "./runtime-types.ts";
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
 import { settleCoordinatorReports } from "./coordinator-report.ts";
@@ -29,13 +29,18 @@ export function acceptCoordinatorWait(
     const time = yield* now,
       id = yield* newId,
       attentionId = yield* newId;
-    const reply = {
-      code: "ACCEPTED",
-      reportId: id,
-      executionId: binding.runId,
-      blockId: binding.blockId,
-      acceptedAt: time,
-    };
+    const reply = acceptedTransition(
+      {
+        code: "ACCEPTED",
+        reportId: id,
+        executionId: binding.runId,
+        blockId: binding.blockId,
+        acceptedAt: time,
+      },
+      "waiting",
+      "waiting",
+    );
+    yield* sql`UPDATE run_blocks SET state='waiting',report_status='waiting' WHERE run_id=${binding.factoryRunId} AND block_id=${binding.blockId}`;
     yield* settleCoordinatorWaits(sql, binding.factoryRunId, binding.blockId, time, true);
     yield* sql`INSERT INTO run_attention(id,run_id,block_id,execution_id,kind,source_key,appeared_at,message,binding_id) VALUES(${attentionId},${binding.factoryRunId},${binding.blockId},${target.execution_id},'conversation-waiting',${"attention:" + attentionId},${time},${report.message!},${target.id})`;
     yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${binding.factoryRunId},${binding.blockId},${target.execution_id},${target.id},'attention-appeared',${"attention:" + attentionId},${attentionId},${time})`;

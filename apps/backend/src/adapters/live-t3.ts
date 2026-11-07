@@ -39,9 +39,12 @@ import type {
   T3Project,
   T3ProjectTarget,
   ExecutionObservation,
+  LaunchDiscovery,
   LaunchPayload,
   LaunchReference,
   LaunchSupport,
+  T3Target,
+  ThreadIdentityRead,
   RecordedExecution,
   RuntimeActivity,
   ReportActivity,
@@ -49,6 +52,8 @@ import type {
   SendPayload,
   SendReference,
 } from "./t3.ts";
+import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
+import { LaunchRejected } from "./t3.ts";
 import type { AgentEnvironment, AgentProviderCapability, T3Contract } from "@t3-factory/contracts";
 import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-validation";
 import {
@@ -1151,12 +1156,12 @@ export class LiveT3Adapter implements T3Adapter {
   }
   async launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference> {
     return this.withAuthorizedClient(target, async (client) => {
-      const body = this.structuredToolResult(
-        await client.callTool(
-          { name: "t3_thread_launch", arguments: { ...payload } },
-          { timeout: 30_000 },
-        ),
-      ) as LaunchReference;
+      const result = await client.callTool(
+        { name: "t3_thread_launch", arguments: { ...payload } },
+        { timeout: 30_000 },
+      );
+      if (result.isError) throw new LaunchRejected("T3 rejected the worker launch");
+      const body = this.structuredToolResult(result) as LaunchReference;
       if (
         !body ||
         !body.threadId ||
@@ -1176,6 +1181,35 @@ export class LiveT3Adapter implements T3Adapter {
         link: body.link,
       };
     });
+  }
+  async discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery> {
+    try {
+      return await this.withAuthorizedClient(target, async (client) =>
+        discoverLaunches(
+          async (name, args) =>
+            this.structuredToolResult(
+              await client.callTool({ name, arguments: args }, { timeout: 30_000 }),
+            ),
+          target.projectId,
+          title,
+        ),
+      );
+    } catch {
+      return { available: false };
+    }
+  }
+  async readThreadIdentity(target: T3Target, threadId: string): Promise<ThreadIdentityRead> {
+    return this.withAuthorizedClient(target, async (client) =>
+      threadIdentityRead(
+        this.structuredToolResult(
+          await client.callTool(
+            { name: "t3_thread_read", arguments: { threadId, runLimit: 50 } },
+            { timeout: 30_000 },
+          ),
+        ),
+        threadId,
+      ),
+    );
   }
   async inspectSettleSupport(target: T3Endpoint) {
     return this.inspectContractSupport(target, {

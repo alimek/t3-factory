@@ -42,7 +42,7 @@ test("saved worker settings persist after reload", async ({ app, screen, browser
   await app.screenshot("worker-only-save-reloaded");
 });
 
-test("Start launches the Run conversation and a direct worker", async ({
+test("Start launches a top-level Block worker and no Run conversation", async ({
   app,
   screen,
   browser,
@@ -65,16 +65,12 @@ test("Start launches the Run conversation and a direct worker", async ({
     .poll(async () => (await readHistoryRun(app.baseUrl, created.id)).threadBindings.length)
     .toBe(1);
   const run = await readHistoryRun(app.baseUrl, created.id);
-  expect(run.snapshot.executionContract).toBe("run-worker-v1");
-  expect(run.snapshot.coordinationInstructionVersion).toBe(5);
+  expect(run.runCoordinator).toBeNull();
+  expect(run.number).toBeGreaterThan(0);
   expect(run.threadBindings.map((b) => b.role)).toEqual(["worker"]);
   expect(run.activations).toHaveLength(1);
-  expect(run.runCoordinator?.threadId).not.toBe(run.threadBindings[0]?.threadId);
+  expect(run.blocks[0]?.threadId).toBe(run.threadBindings[0]?.threadId);
   await browser.reload();
-  await expect(screen.getByRole("link", "Open Run conversation", { exact: true })).toHaveAttribute(
-    "href",
-    run.runCoordinator!.link!,
-  );
   await expect(
     screen
       .getByRole("region", "Block activations")
@@ -171,7 +167,11 @@ test("a completed worker report releases review work as another direct worker", 
   await expect(screen.getByRole("region", "Block activations")).toContainText(
     "Delivered → Review implementation",
   );
-  await expect(screen.getByRole("link", "Open Run conversation", { exact: true })).toBeVisible();
+  await expect(
+    screen
+      .getByRole("region", "Block activations")
+      .getByRole("link", "Open worker in T3", { exact: true }),
+  ).toHaveCount(2);
   await app.screenshot("worker-report-released-to-reviewer");
 });
 
@@ -223,11 +223,7 @@ test("a Human correction revisits the same worker conversation with a distinct a
   await app.screenshot("same-worker-second-visit");
 });
 
-test("Stop closes the primary conversation and both direct worker branches durably", async ({
-  app,
-  screen,
-  browser,
-}) => {
+test("Stop closes both direct worker branches durably", async ({ app, screen, browser }) => {
   // Arrange
   const found = await findRun(app.baseUrl, "UI worker · Parallel review from one prompt");
   const before = await readHistoryRun(app.baseUrl, found.id);
@@ -244,10 +240,10 @@ test("Stop closes the primary conversation and both direct worker branches durab
   const saved = await readHistoryRun(app.baseUrl, found.id);
   expect(saved.threadBindings).toEqual(before.threadBindings);
   expect(saved.threadBindings.map((b) => b.role)).toEqual(["worker", "worker"]);
-  expect(saved.closure?.rootFrontier?.map((m) => m.threadId)).toContain(
-    before.runCoordinator!.threadId,
+  expect(saved.runCoordinator).toBeNull();
+  expect(saved.closure?.frontier.map((member) => member.threadId).sort()).toEqual(
+    before.threadBindings.map((binding) => binding.threadId).sort(),
   );
-  expect(saved.closure?.rootFrontier).toHaveLength(3);
   await expect(screen.getByRole("region", "Closure evidence")).toContainText("Stopped");
   await expect(screen.getByRole("button", "Stop Run", { exact: true })).toHaveCount(0);
   await app.screenshot("root-two-workers-stopped-after-reload");
@@ -277,8 +273,6 @@ test("Run again starts a new worker Run from a closed Run snapshot", async ({ ap
       (await readHistoryRun(app.baseUrl, created.id)).threadBindings.map((binding) => binding.role),
     )
     .toEqual(["worker"]);
-  expect((await readHistoryRun(app.baseUrl, created.id)).snapshot.executionContract).toBe(
-    "run-worker-v1",
-  );
+  expect((await readHistoryRun(app.baseUrl, created.id)).runCoordinator).toBeNull();
   expect((await readHistoryRun(app.baseUrl, source.id)).outcome).toBe("stopped");
 });

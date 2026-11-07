@@ -1,3 +1,4 @@
+import { dispatchBlockLaunch } from "./runner-block-workers.ts";
 import { prepareCoordinatorHandoff } from "./runner-coordinator-handoffs.ts";
 import { COORDINATOR_HOLD } from "./runner-coordination.ts";
 import type { EffectOperations } from "./effect-operations.ts";
@@ -98,7 +99,7 @@ export function openRunnerDispatch(
           const [activation] = yield* sql<{
             id: string;
           }>`SELECT id FROM run_activations WHERE run_id=${runRow.id} AND block_id=${intent.block_id} ORDER BY rowid DESC LIMIT 1`;
-          yield* sql`INSERT INTO run_worker_activations(activation_id,binding_id,initial_execution_id,parent_thread_id) SELECT ${activation!.id},b.id,${reference.runId},c.thread_id FROM run_thread_bindings b JOIN run_coordinators c ON c.run_id=b.run_id WHERE b.run_id=${runRow.id} AND b.thread_id=${reference.threadId} ON CONFLICT DO NOTHING`;
+          yield* sql`INSERT INTO run_worker_activations(activation_id,binding_id,initial_execution_id,parent_thread_id) SELECT ${activation!.id},b.id,${reference.runId},b.thread_id FROM run_thread_bindings b WHERE b.run_id=${runRow.id} AND b.thread_id=${reference.threadId} ON CONFLICT DO NOTHING`;
           yield* sql`UPDATE run_blocks SET state='working',execution_id=${reference.runId},engine_status=${reference.status},report_status=NULL,problem=${COORDINATOR_HOLD},freshness='unknown' WHERE run_id=${runRow.id} AND block_id=${intent.block_id}`;
           yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.runId},'send-acknowledged',${"ack:" + intent.id},${intent.id},${time},${reference.status})`;
@@ -108,12 +109,29 @@ export function openRunnerDispatch(
   }
   function dispatchIntent(runRow: RunRow, saved: IntentRow, contextId: string | null) {
     return Effect.gen(function* () {
-      if (!runRow.gate_open || !["launch", "handoff", "send"].includes(saved.kind)) return;
+      const launchRecovery = saved.kind === "launch" && saved.state !== "pending";
+      if (
+        (!runRow.gate_open && !launchRecovery) ||
+        !["launch", "handoff", "send"].includes(saved.kind)
+      )
+        return;
       if (contextId !== saved.context_id) {
         yield* problem(
           saved,
           "Authorization context changed or is unavailable; operation remains unresolved.",
         );
+        return;
+      }
+      if (saved.kind === "launch") {
+        yield* dispatchBlockLaunch(database, t3, runRow, saved);
+        const [block] = yield* run(
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            return yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${saved.block_id}`;
+          }),
+        );
+        if (block?.thread_id && (yield* row(runRow.id))?.gate_open)
+          yield* observe(runRow, block, contextId);
         return;
       }
       let intent = saved;
@@ -124,8 +142,10 @@ export function openRunnerDispatch(
             if (!prepared) return;
             intent = prepared;
           }
-          // A first launch is a worker command owned and dispatched by the Run conversation.
-          if (intent.kind === "launch") return;
+          if (intent.kind === "launch") {
+            yield* dispatchBlockLaunch(database, t3, runRow, intent);
+            return;
+          }
           const checked = yield* verifyDispatch(runRow, intent);
           if (!checked.ok) {
             yield* problem(intent, checked.problem);

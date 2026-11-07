@@ -1,9 +1,4 @@
-import {
-  persistRunCoordinator,
-  runCoordinatorPayload,
-  prepareRootCommands,
-  persistRootCommands,
-} from "./run-coordinator.ts";
+import { entryMessagesTooLong, persistEntryLaunches } from "./runner-block-workers.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { newId } from "./ids.ts";
 import type {
@@ -79,11 +74,6 @@ type StartPlan = {
   time: string;
   contextId: string;
   retryScope: string | null;
-  root: {
-    selection: NonNullable<RunSnapshot["flow"]["coordinator"]>;
-    payload: ReturnType<typeof runCoordinatorPayload>;
-    commands: ReturnType<typeof prepareRootCommands>;
-  };
 };
 /** Rechecks saved revisions, context and project inside the acceptance transaction. */
 function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
@@ -149,7 +139,7 @@ function claimTaskSlot(sql: SqlClient.SqlClient, plan: StartPlan) {
     return undefined;
   });
 }
-/** Deduplicates, acquires the Task slot and records the Run, its Run conversation and one worker command per Flow input target. */
+/** Deduplicates, acquires the Task slot and records one Factory launch per Flow input target. */
 function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
   return Effect.gen(function* () {
     const [duplicate] = yield* sql<{
@@ -165,52 +155,36 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
     const occupied = yield* claimTaskSlot(sql, plan);
     if (occupied) return occupied;
     const project = plan.project;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,title) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.input
+    const [allocated] = yield* sql<{
+      n: number;
+    }>`SELECT COALESCE(MAX(number),0)+1 AS n FROM runs`;
+    const number = allocated!.n;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.input
       .split(/\r?\n/)
       .map((line) => line.trim())
       .find(Boolean)!
-      .slice(0, TASK_TITLE_LIMIT)})`;
+      .slice(0, TASK_TITLE_LIMIT)},${number})`;
     yield* sql`INSERT INTO run_snapshots(run_id,snapshot_json) VALUES(${plan.runId},${JSON.stringify(plan.snapshot)})`;
     for (const block of plan.snapshot.flow.graph.blocks)
       yield* sql`INSERT INTO run_blocks(run_id,block_id,name) VALUES(${plan.runId},${block.id},${block.name})`;
-    yield* persistRunCoordinator(
-      sql,
-      plan.runId,
-      plan.root.selection,
-      plan.root.payload,
-      plan.retryScope,
-      plan.time,
-    );
-    yield* persistRootCommands(sql, plan.runId, plan.root.commands, plan.time);
+    yield* persistEntryLaunches(sql, {
+      runId: plan.runId,
+      number,
+      snapshot: plan.snapshot,
+      project,
+      contextId: plan.contextId,
+      retryScope: plan.retryScope,
+      time: plan.time,
+    });
     yield* sql`INSERT INTO run_events(run_id,kind,source_key,observed_at) VALUES(${plan.runId},'started','start',${plan.time})`;
     return { ok: true as const, value: plan.runId };
   });
 }
-/** Build the Run conversation launch and worker commands before accepting durable state or performing I/O. */
-function prepareStartWork(
-  snapshot: RunSnapshot,
-  project: FactoryProject,
-  runId: string,
-  input: StartRunInput,
-) {
-  return Effect.gen(function* () {
-    const selection = snapshot.flow.coordinator;
-    if (!selection) return failure("validation", "Choose an explicit local Flow Run coordinator.");
-    const commands = prepareRootCommands(snapshot, project, runId, input.input);
-    const payload = runCoordinatorPayload(
-      snapshot,
-      project,
-      selection,
-      yield* newId,
-      input.input,
-      commands[0]?.invocation,
-    );
-    if (payload.message.length > 120000)
-      return failure("validation", "The shared Run context exceeds T3's first-message limit.");
-    if (commands.some((command) => command.worker.payload.message.length > 120000))
-      return failure("validation", "The Agent prompt plus input exceeds T3's first-message limit.");
-    return { ok: true as const, value: { selection, commands, payload } };
-  });
+/** The first worker message is checked before the acceptance transaction commits. */
+function prepareStartWork(snapshot: RunSnapshot) {
+  if (entryMessagesTooLong(snapshot))
+    return failure("validation", "The Agent prompt exceeds T3's first-message limit.");
+  return { ok: true as const };
 }
 export function openRunnerStart(
   database: RunnerDatabase,
@@ -258,17 +232,11 @@ export function openRunnerStart(
       const checked = yield* startPreconditions(input);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope } = checked.value;
-      const snapshot: RunSnapshot = {
-        flow,
-        agents,
-        reportingProtocol: "explicit-mcp-v2",
-        executionContract: "run-worker-v1",
-        coordinationInstructionVersion: 5,
-      };
+      const snapshot: RunSnapshot = { flow, agents };
+      const ready = prepareStartWork(snapshot);
+      if (!ready.ok) return ready;
       const runId = yield* newId,
         taskId = input.taskId ?? (yield* newId);
-      const root = yield* prepareStartWork(snapshot, project, runId, input);
-      if (!root.ok) return root;
       const plan: StartPlan = {
         input: input,
         requestFingerprint: content,
@@ -279,7 +247,6 @@ export function openRunnerStart(
         time: yield* now,
         contextId: context.id,
         retryScope,
-        root: root.value,
       };
       const accepted = yield* transaction((sql) => acceptStart(sql, plan));
       if (!accepted.ok) return accepted;
@@ -320,19 +287,6 @@ export function openRunnerStart(
         return failure("validation", "Fix Flow readiness before starting.", readiness.issues);
       const agents = yield* readyAgents(flow, target.project.id, capturedAgents);
       if (!agents.ok) return agents;
-      if (!flow.coordinator || !agents.value[0])
-        return failure("validation", "Choose an explicit local Flow Run coordinator.");
-      const rootCheck = yield* checkSnapshot(target.project.id, {
-        ...agents.value[0],
-        execution: flow.coordinator,
-      });
-      if (!rootCheck.ok) return rootCheck;
-      if (!rootCheck.value.ready)
-        return failure(
-          "validation",
-          "Run coordinator readiness is incomplete.",
-          rootCheck.value.issues,
-        );
       const support = yield* Effect.tryPromise({
         try: () => t3.inspectLaunchSupport(target.project).catch(() => null),
         catch: (error) => error,

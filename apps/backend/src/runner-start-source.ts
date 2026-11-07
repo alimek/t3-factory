@@ -12,7 +12,7 @@ export function startRequestFingerprint(input: StartRunInput) {
   );
 }
 
-/** Run again reuses the source Run's captured Flow, Run coordinator and Agent settings. */
+/** Run again reuses the source Run's captured Flow and Agent settings. */
 export function snapshotStartDefinitions(
   snapshot: RunSnapshot,
 ): Result<{ flow: FlowDraft; capturedAgents: RunSnapshot["agents"] }> {

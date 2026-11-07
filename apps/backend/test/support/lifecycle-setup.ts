@@ -18,7 +18,7 @@ export function bindRuntimeReportCaller(
         itemId: `t:native-item:${callId}`,
         type: "dynamic_tool",
         runId: executionId,
-        text: '{"toolName":"mcp__factory-runtime__factory_report"}',
+        text: '{"toolName":"mcp__factory-runtime__factory_update_block"}',
       },
     ],
     hasMore: false,

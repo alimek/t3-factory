@@ -49,7 +49,13 @@ type RunEventRow = {
   engine_status: string | null;
 };
 
-function runBlock(block: BlockRow): RunDetail["blocks"][number] {
+function runBlock(block: BlockRow, intents: readonly IntentRow[]): RunDetail["blocks"][number] {
+  const recovering = intents.some(
+    (intent) =>
+      intent.block_id === block.block_id &&
+      intent.kind === "launch" &&
+      ["pending", "reserved", "uncertain"].includes(intent.state),
+  );
   return {
     blockId: block.block_id,
     name: block.name,
@@ -63,6 +69,7 @@ function runBlock(block: BlockRow): RunDetail["blocks"][number] {
     pendingRequestCount: block.pending_request_count,
     observedAt: block.observed_at,
     freshness: block.freshness,
+    recovery: recovering ? "pending" : null,
   };
 }
 
@@ -255,6 +262,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
           ok: true as const,
           value: {
             id: runRow.id,
+            number: runRow.number,
             title: runRow.title,
             task: { id: runRow.task_id, title: runRow.task_title, projectId: runRow.project_id },
             input: runRow.input,
@@ -272,7 +280,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
             stopRequestedAt: runRow.stop_requested_at,
             gateOpen: !!runRow.gate_open,
             generation: runRow.generation,
-            blocks: blocks.map(runBlock),
+            blocks: blocks.map((block) => runBlock(block, intents)),
             reports: reports.map(runReport),
             executions: executions.map(runExecution),
             humanOccurrences: humans.map(humanOccurrence),

@@ -128,6 +128,10 @@ export interface T3Adapter {
   sendMessage(target: T3Endpoint, payload: SendPayload): Promise<SendReference>;
   inspectLaunchSupport(target: T3Endpoint): Promise<LaunchSupport>;
   launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference>;
+  /** Search one project for a launch that may already exist. Incomplete scans withhold candidates. */
+  discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery>;
+  /** Independent thread identity. Callers still prove it is the saved worker. */
+  readThreadIdentity(target: T3Target, threadId: string): Promise<ThreadIdentityRead>;
   readQueue(
     target: T3Endpoint,
     threadId: string,
@@ -211,6 +215,41 @@ export interface LaunchReference {
   readonly runId: string;
   readonly link: string | null;
   readonly status: string;
+}
+/** T3 refused the launch before accepting it. The outcome is not uncertain. */
+export class LaunchRejected extends Error {
+  override readonly name = "LaunchRejected";
+}
+export interface LaunchCandidateExecution {
+  readonly runId: string;
+  readonly providerInstanceId: string;
+  readonly model: string;
+  readonly status: string;
+}
+export interface LaunchCandidate {
+  readonly title: string;
+  readonly projectId: string;
+  readonly parentThreadId: string | null;
+  readonly workspaceRoot: string | null;
+  readonly interactionMode: string | null;
+  readonly providerInstanceId: string;
+  readonly model: string;
+  readonly options: Readonly<Record<string, string | boolean>> | null;
+  readonly threadId: string;
+  readonly executions: readonly LaunchCandidateExecution[];
+  readonly link?: string | null;
+}
+export type LaunchDiscovery =
+  | { readonly available: false }
+  | { readonly available: true; readonly candidates: readonly LaunchCandidate[] };
+export interface ThreadIdentityRead {
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly parentThreadId: string | null;
+  readonly workspaceRoot: string | null;
+  readonly providerInstanceId: string;
+  readonly model: string;
+  readonly executions: readonly LaunchCandidateExecution[];
 }
 export interface ExecutionObservation {
   readonly projectId: string;

@@ -21,6 +21,20 @@ import { isTerminal, runTarget } from "./runner-utils.ts";
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
 
+function stopActiveFrontier(
+  database: RunnerDatabase,
+  t3: T3Adapter,
+  run: RunRow,
+  frontier: ClosureAttempt["frontier"][number],
+) {
+  return Effect.gen(function* () {
+    if (terminalFrontier(frontier)) return;
+    yield* requestFrontierStop(database, t3, run, frontier);
+    for (const queued of frontier.queuedRunIds)
+      yield* requestFrontierStop(database, t3, run, frontier, queued);
+  });
+}
+
 function terminalFrontier(f: ClosureAttempt["frontier"][number]) {
   return (
     !f.activeRunId &&
@@ -103,7 +117,7 @@ export function reconcileCoordinatorStop(
       const frontiers: ClosureAttempt["frontier"][number][] = [];
       const peers = yield* Effect.tryPromise(() => collectPeerStop(database, t3, run, remoteWork));
       frontiers.push(...peers.frontier);
-      let complete = peers.complete && root.complete;
+      let complete = peers.complete && root.complete && discovered.complete;
       let observed = true;
       for (const member of discovered.members) {
         const attempt = yield* recoverOperation(
@@ -159,9 +173,7 @@ export function reconcileCoordinatorStop(
         const frontier = attempt.frontier[0]!;
         frontiers.push(frontier);
         yield* retainStopExecutions(database, run, frontier);
-        yield* requestFrontierStop(database, t3, run, frontier);
-        for (const queued of frontier.queuedRunIds)
-          yield* requestFrontierStop(database, t3, run, frontier, queued);
+        yield* stopActiveFrontier(database, t3, run, frontier);
         complete &&= terminalFrontier(frontier);
         if (terminalFrontier(frontier))
           complete &&= yield* Effect.tryPromise(() =>

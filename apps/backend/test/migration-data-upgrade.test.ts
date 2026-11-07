@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { mainUpgradeData } from "./support/main-upgrade.ts";
 
-it("upgrading released main removes retired Runs and preserves current work, definitions and client access", async (c) => {
+it("upgrading deletes open Runs and preserves clients, Flows, Agents and Tasks", async (c) => {
   // Arrange
   const fixture = await mainUpgradeData(c);
 
@@ -25,7 +25,6 @@ it("upgrading released main removes retired Runs and preserves current work, def
     graph: fixture.flow.graph,
     createdAt: fixture.flow.createdAt,
     updatedAt: fixture.flow.updatedAt,
-    coordinator: null,
   });
   const agent = await factory.getAgent(fixture.agent.id);
   assert(agent.ok);
@@ -35,29 +34,11 @@ it("upgrading released main removes retired Runs and preserves current work, def
   assert(!run.ok);
   expect(run.error.code).toBe("not_found");
   const current = await factory.getRun(fixture.current.id);
-  assert(current.ok);
-  expect(current.value.snapshot).toStrictEqual(fixture.currentSnapshot);
-  expect(current.value.closedAt).toBeNull();
-  expect(current.value.gateOpen).toBe(true);
-  expect(current.value.activations).toMatchObject([
-    {
-      id: fixture.current.activations[0]?.id,
-      blockId: "worker",
-      cause: "start:worker",
-      phase: "delegating",
-      delegation: fixture.current.activations[0]?.delegation,
-    },
-  ]);
-  expect(current.value.runCoordinator).toMatchObject({
-    threadId: fixture.current.runCoordinator?.threadId,
-    executionId: fixture.current.runCoordinator?.executionId,
-    selection: fixture.current.runCoordinator?.selection,
-    state: "acknowledged",
-  });
-  expect(fixture.t3.launches.size).toBe(2);
+  assert(!current.ok);
+  expect(current.error.code).toBe("not_found");
   const navigation = await factory.listRunNavigation();
   assert(navigation.ok);
-  expect(navigation.value.map((entry) => entry.id)).toStrictEqual([fixture.current.id]);
+  expect(navigation.value.map((entry) => entry.id)).toStrictEqual([]);
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);
   expect(tasks.value.find((task) => task.id === fixture.before.task.id)).toMatchObject({
@@ -66,7 +47,9 @@ it("upgrading released main removes retired Runs and preserves current work, def
     latestRun: null,
     runs: [],
   });
-  expect(tasks.value.find((task) => task.id === fixture.current.task.id)?.activeRunId).toBe(
-    fixture.current.id,
-  );
+  expect(tasks.value.find((task) => task.id === fixture.current.task.id)).toMatchObject({
+    id: fixture.current.task.id,
+    activeRunId: null,
+    runs: [],
+  });
 });

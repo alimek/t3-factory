@@ -11,6 +11,7 @@ import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parse } from "smol-toml";
 import type { ReportingInstallation, Result, T3Connection } from "@t3-factory/contracts";
+import { FACTORY_BLOCK_SKILL, factoryBlockSkillPath } from "./factory-block-skill.ts";
 import { discoverReporting, record } from "./reporting-discovery.ts";
 import {
   RepairableInstallationError,
@@ -92,6 +93,13 @@ async function refreshLauncher(launcher: string, executable: string) {
 async function bridgeMatches(bridge: string, source: URL) {
   try {
     return (await readFile(bridge, "utf8")) === (await readFile(source, "utf8"));
+  } catch {
+    return false;
+  }
+}
+async function skillMatches(path: string) {
+  try {
+    return (await readFile(path, "utf8")) === FACTORY_BLOCK_SKILL;
   } catch {
     return false;
   }
@@ -203,6 +211,7 @@ const openReportingInstallation = Effect.fn(function* (
   runtime: BridgeRuntime = pathNode,
 ) {
   const bridge = join(directory, "reporting", "factory-runtime.mjs");
+  const canonicalSkill = join(directory, "reporting", "skills", "factory-block", "SKILL.md");
   const launcher = bridgeEntries(bridge, { kind: "bundled", executable: "" }).current.command;
   const source = new URL("./runtime-stdio.mjs", import.meta.url);
   const semaphore = yield* Semaphore.make(1);
@@ -248,6 +257,13 @@ const openReportingInstallation = Effect.fn(function* (
       if (!(yield* boundary(() => bridgeMatches(bridge, source))))
         throw new RepairableInstallationError(
           "Factory bridge missing or outdated. Repair the installation from this backend.",
+        );
+      if (
+        !(yield* boundary(() => skillMatches(factoryBlockSkillPath(target.path!)))) ||
+        !(yield* boundary(() => skillMatches(canonicalSkill)))
+      )
+        throw new RepairableInstallationError(
+          "Factory Block skill missing or outdated. Repair the installation from this backend.",
         );
       const saved = yield* boundary(() =>
         readReportingConnection(join(dirname(bridge), "connection.json")),
@@ -324,6 +340,21 @@ const openReportingInstallation = Effect.fn(function* (
                 const bridgeBefore = yield* boundary(() => readConfig(bridge));
                 const bridgeSource = yield* boundary(() => readFile(source, "utf8"));
                 yield* boundary(() => replace(bridge, bridgeBefore, bridgeSource));
+                const harnessSkill = factoryBlockSkillPath(target.path);
+                yield* boundary(() =>
+                  mkdir(dirname(harnessSkill), { recursive: true, mode: 0o700 }),
+                );
+                yield* boundary(() =>
+                  mkdir(dirname(canonicalSkill), { recursive: true, mode: 0o700 }),
+                );
+                const harnessSkillBefore = yield* boundary(() => readConfig(harnessSkill));
+                yield* boundary(() =>
+                  replace(harnessSkill, harnessSkillBefore, FACTORY_BLOCK_SKILL),
+                );
+                const canonicalBefore = yield* boundary(() => readConfig(canonicalSkill));
+                yield* boundary(() =>
+                  replace(canonicalSkill, canonicalBefore, FACTORY_BLOCK_SKILL),
+                );
                 const connectionFile = join(dirname(bridge), "connection.json");
                 const connectionBefore = yield* boundary(() => readConfig(connectionFile));
                 yield* boundary(() =>

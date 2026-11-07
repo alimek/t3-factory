@@ -1,17 +1,23 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { prepared } from "./prepared-runner.ts";
-import { contextCaller, nativeChild, supplyChild } from "./native-root-evidence.ts";
 import { bindThreadReportCaller } from "./lifecycle-setup.ts";
+
+const WORKER_THREAD = "thread-1";
+const WORKER_EXECUTION = "execution-1";
 
 /** The single-worker Flow, handing its result to a second worker, a Human review that
  * releases the second worker, back to itself, or nowhere. */
 export async function workerStart(
   c: TestContext,
   targetBlockId: "parallel-block" | "review" | "worker" | "" = "parallel-block",
+  requiresFeedback = false,
 ) {
   const fixture = await prepared(c);
-  const first = fixture.flow.graph.blocks[0]!;
+  const source = fixture.flow.graph.blocks[0]!;
+  const first = requiresFeedback
+    ? { ...source, exits: source.exits.map((exit) => ({ ...exit, requiresFeedback: true })) }
+    : source;
   const second = { ...first, id: "parallel-block", name: "Parallel work" };
   const review = {
     id: "review",
@@ -42,77 +48,73 @@ export async function workerStart(
   assert(flow.ok);
   return { ...fixture, flow: flow.value };
 }
+
+/** Quiet top-level evidence for the Factory-launched worker, before that launch is observed. */
+function seedFactoryWorker(
+  t3: ControlledT3,
+  project: { projectId: string; workspaceRoot: string },
+) {
+  t3.descendantEvidence.set(WORKER_THREAD, {
+    parentThreadId: WORKER_THREAD,
+    descendants: [],
+    scanComplete: true,
+    coverage: "incomplete",
+    problem: "Bounded fixture scan",
+  });
+  t3.executionObservations.set(WORKER_THREAD, {
+    threadId: WORKER_THREAD,
+    projectId: project.projectId,
+    workspaceRoot: project.workspaceRoot,
+    link: `t3://threads/${WORKER_THREAD}`,
+    activeRunId: WORKER_EXECUTION,
+    latestRunId: WORKER_EXECUTION,
+    pendingRequestCount: 0,
+    recentRuns: [{ runId: WORKER_EXECUTION, status: "running", ordinal: 1 }],
+  });
+}
+
 export async function directWorker(
   c: TestContext,
   observe = true,
   targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
+  requiresFeedback = false,
 ) {
-  const fixture = await workerStart(c, targetBlockId);
+  const fixture = await workerStart(c, targetBlockId, requiresFeedback);
+  seedFactoryWorker(fixture.t3, fixture.project);
   const started = await fixture.f.startRun(fixture.input);
   assert(started.ok, JSON.stringify(started));
   await fixture.f.reconcileRuns();
-  const payload = [...fixture.t3.launches.values()][0]!.payload;
-  const invocation = nativeChild(
-    JSON.parse(payload.message.split("\n").at(-1)!),
-    "execution-1",
-    2,
-    fixture.project.projectId,
-  );
-  supplyChild(fixture.t3, invocation, fixture.project);
-  fixture.t3.delegationActivities.set("thread-1", {
-    threadId: "thread-1",
-    projectId: fixture.project.projectId,
-    complete: true,
-    invocations: [invocation],
-  });
-  fixture.t3.descendantEvidence.set("thread-1", {
-    parentThreadId: "thread-1",
-    descendants: [
-      { ...fixture.t3.childEvidence.get("thread-2")!.thread!, relationship: "t3-owned" },
-    ],
-    scanComplete: true,
-    coverage: "incomplete",
-    problem: "Bounded scan",
-  });
-  contextCaller(fixture.t3, fixture.project.projectId, "thread-2", "execution-2");
   if (observe) assert((await fixture.f.reconcileRuns()).ok);
   bindThreadReportCaller(
     fixture.t3,
     fixture.project.projectId,
-    "thread-2",
-    "execution-2",
+    WORKER_THREAD,
+    WORKER_EXECUTION,
     "worker-report",
   );
-  return { ...fixture, runId: started.value.id, invocation };
+  return { ...fixture, runId: started.value.id };
 }
 export const workerFinal = () => ({
   arguments: {
-    key: "final",
-    status: "finished",
+    to: "finished",
     exit: "done",
     message: "Implemented the requested result.",
   },
   metadata: { callId: "worker-report" },
 });
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {
-  const prior = f.t3.executionObservations.get("thread-2")!;
-  f.t3.executionObservations.set("thread-2", {
+  const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
+  f.t3.executionObservations.set(WORKER_THREAD, {
     ...prior,
     activeRunId: null,
     recentRuns: prior.recentRuns.map((r) => ({ ...r, status })),
   });
-  const child = f.t3.childEvidence.get("thread-2")!;
-  f.t3.childEvidence.set("thread-2", {
-    ...child,
-    thread: { ...child.thread!, activeRunId: null },
-    execution: { ...child.execution!, status },
-  });
-  f.t3.delegatedSettlements.set(JSON.stringify(["thread-2", "execution-2"]), {
-    threadId: "thread-2",
-    runId: "execution-2",
+  f.t3.delegatedSettlements.set(JSON.stringify([WORKER_THREAD, WORKER_EXECUTION]), {
+    threadId: WORKER_THREAD,
+    runId: WORKER_EXECUTION,
     state: "settled",
     status,
-    resultRun: { runId: "execution-2", status },
+    resultRun: { runId: WORKER_EXECUTION, status },
     queueCoverage: "unobserved",
     nativeRequestCoverage: "unobserved",
   });
@@ -128,11 +130,11 @@ export async function reportedWorker(
   return f;
 }
 
-/** A reported single worker whose own tree and the Run conversation are freshly quiet. */
+/** A reported single worker whose own tree is freshly quiet. */
 export async function finishedWorker(c: TestContext) {
   const f = await reportedWorker(c, "completed", "");
   f.t3.engineStatus = "completed";
-  settledAggregate(f.t3, "thread-1", "execution-1", "completed");
+  settledAggregate(f.t3, WORKER_THREAD, WORKER_EXECUTION, "completed");
   return f;
 }
 
@@ -152,7 +154,7 @@ export async function waitingWorker(c: TestContext) {
   assert(
     (
       await f.f.runtime.submit({
-        arguments: { key: "question", status: "waiting", message: "Which audience?" },
+        arguments: { to: "waiting", message: "Which audience?" },
         metadata: { callId: "worker-report" },
       })
     ).code === "ACCEPTED",
@@ -193,22 +195,21 @@ export async function workerNativeReply(
 }
 
 /** Publish native reply evidence independently of the backend's observation lifetime. */
-export function supplyWorkerReply(
+function supplyWorkerReply(
   f: Awaited<ReturnType<typeof waitingWorker>>,
   reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
 ) {
-  const prior = f.t3.executionObservations.get("thread-2")!;
-  f.t3.executionObservations.set("thread-2", {
+  const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
+  f.t3.executionObservations.set(WORKER_THREAD, {
     ...prior,
     activeRunId: "answer-execution",
     latestRunId: "answer-execution",
     recentRuns: [...prior.recentRuns, { runId: "answer-execution", status: "running", ordinal: 2 }],
   });
-  workerTurnSelection(f, "answer-execution");
   bindThreadReportCaller(
     f.t3,
     f.project.projectId,
-    "thread-2",
+    WORKER_THREAD,
     "answer-execution",
     "worker-report",
   );
@@ -222,7 +223,7 @@ export function supplyWorkerReply(
         runId: "answer-execution",
         text: "Public audience.",
         visibility: "local",
-        sourceThreadId: "thread-2",
+        sourceThreadId: WORKER_THREAD,
         createdBy: "user",
         ...reply,
       },
@@ -230,32 +231,17 @@ export function supplyWorkerReply(
   };
 }
 
-function workerTurnSelection(f: Awaited<ReturnType<typeof directWorker>>, runId: string) {
-  const child = f.t3.childEvidence.get("thread-2")!;
-  const priorKey = JSON.stringify(["thread-2", child.execution!.runId]);
-  if (!f.t3.childEvidence.has(priorKey)) f.t3.childEvidence.set(priorKey, child);
-  const next = {
-    ...child,
-    target: { ...child.target, childRunId: runId },
-    thread: { ...child.thread!, activeRunId: runId, latestRunId: runId },
-    execution: { ...child.execution!, runId, status: "running" },
-  };
-  f.t3.childEvidence.set("thread-2", next);
-  f.t3.childEvidence.set(JSON.stringify(["thread-2", runId]), next);
-}
-
 export async function revisitReportingWorker(c: TestContext) {
   const f = await revisitedWorker(c);
   const runId = [...f.t3.sends.values()][0]!.reference.runId;
-  const prior = f.t3.executionObservations.get("thread-2")!;
-  f.t3.executionObservations.set("thread-2", {
+  const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
+  f.t3.executionObservations.set(WORKER_THREAD, {
     ...prior,
     activeRunId: runId,
     latestRunId: runId,
     recentRuns: [...prior.recentRuns, { runId, status: "running", ordinal: 3 }],
   });
-  workerTurnSelection(f, runId);
-  bindThreadReportCaller(f.t3, f.project.projectId, "thread-2", runId, "worker-report");
+  bindThreadReportCaller(f.t3, f.project.projectId, WORKER_THREAD, runId, "worker-report");
   return { ...f, workerExecutionId: runId };
 }
 
@@ -271,16 +257,24 @@ function settledAggregate(t3: ControlledT3, threadId: string, runId: string, sta
   });
 }
 
-/** The Run conversation is interrupted and its fully scanned tree has no further members. */
+/** The launched worker is interrupted and its fully scanned tree has no further members. */
 export function interruptRunConversation(t3: ControlledT3) {
   t3.engineStatus = "interrupted";
-  if (!t3.descendantEvidence.has("thread-1"))
-    t3.descendantEvidence.set("thread-1", {
-      parentThreadId: "thread-1",
+  const observation = t3.executionObservations.get(WORKER_THREAD);
+  if (observation)
+    t3.executionObservations.set(WORKER_THREAD, {
+      ...observation,
+      activeRunId: null,
+      latestRunId: observation.latestRunId ?? WORKER_EXECUTION,
+      recentRuns: observation.recentRuns.map((run) => ({ ...run, status: "interrupted" })),
+    });
+  if (!t3.descendantEvidence.has(WORKER_THREAD))
+    t3.descendantEvidence.set(WORKER_THREAD, {
+      parentThreadId: WORKER_THREAD,
       descendants: [],
       scanComplete: true,
       coverage: "incomplete",
       problem: "Bounded fixture scan",
     });
-  settledAggregate(t3, "thread-1", "execution-1", "interrupted");
+  settledAggregate(t3, WORKER_THREAD, WORKER_EXECUTION, "interrupted");
 }

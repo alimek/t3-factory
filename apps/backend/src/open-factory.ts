@@ -8,9 +8,11 @@ import type { RuntimeReports } from "./runtime.ts";
 import type { RuntimeReply } from "./runtime-types.ts";
 
 export interface Factory extends FactoryOperations {
-  readonly runtime: Omit<RuntimeReports, "submit" | "context"> & {
+  readonly runtime: Omit<RuntimeReports, "submit" | "context" | "block" | "run"> & {
     submit(input: unknown): Promise<RuntimeReply>;
     context(input: unknown): Promise<import("./runtime-types.ts").RuntimeContextReply>;
+    block(input: unknown): Promise<RuntimeReply>;
+    run(input: unknown): Promise<RuntimeReply>;
   };
   setRuntimeBackendUrl(url: string): void;
   close(): Promise<void>;
@@ -57,7 +59,12 @@ export async function openFactory(options: FactoryOptions): Promise<Factory> {
     ...facade,
     runtime: {
       ...reports,
-      ...promiseOperations(runtime, { submit: reports.submit, context: reports.context }),
+      ...promiseOperations(runtime, {
+        submit: reports.submit,
+        context: reports.context,
+        block: reports.block,
+        run: reports.run,
+      }),
     },
     setRuntimeBackendUrl,
     close: () => (closing ??= runtime.dispose()),

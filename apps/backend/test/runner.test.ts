@@ -42,7 +42,7 @@ it("editing an Agent preserves the dispatched Run snapshot", async (c) => {
   expect(t3.launches.size).toBe(1);
 });
 
-it("a lost Run conversation launch acknowledgement recovers the same thread and execution after restart", async (c) => {
+it("a lost worker launch acknowledgement recovers the same thread and execution after restart", async (c) => {
   // Arrange
   const { h, f, t3, input } = await prepared(c);
   t3.loseLaunchReply = true;
@@ -59,12 +59,14 @@ it("a lost Run conversation launch acknowledgement recovers the same thread and 
   // Assert
   const r = await restored.getRun(accepted.value.id);
   assert(r.ok);
-  expect(r.value.runCoordinator?.threadId).toBe(original.threadId);
-  expect(r.value.runCoordinator?.executionId).toBe(original.runId);
+  expect(r.value.runCoordinator).toBeNull();
+  expect(r.value.blocks[0]?.threadId).toBe(original.threadId);
+  expect(r.value.blocks[0]?.executionId).toBe(original.runId);
+  expect(r.value.blocks[0]?.recovery).toBeNull();
   expect(t3.launches.size).toBe(1);
 });
 
-it("changed grant identity leaves an uncertain Run conversation launch unresolved", async (c) => {
+it("changed grant identity leaves an uncertain worker launch unresolved", async (c) => {
   // Arrange
   const { h, f, t3, input } = await prepared(c);
   t3.loseLaunchReply = true;
@@ -81,8 +83,9 @@ it("changed grant identity leaves an uncertain Run conversation launch unresolve
   // Assert
   const r = await changed.getRun(accepted.value.id);
   assert(r.ok);
-  expect(r.value.runCoordinator?.state).toBe("uncertain");
-  expect(r.value.runCoordinator?.problem).toMatch(/authorization context/);
+  expect(r.value.runCoordinator).toBeNull();
+  expect(r.value.blocks[0]?.threadId).toBeNull();
+  expect(r.value.blocks[0]?.recovery).toBe("pending");
   expect(t3.launches.size).toBe(1);
 });
 
@@ -161,7 +164,11 @@ it("SIGKILL of the live owner allows recovery of an uncertain Run conversation l
   assert(list.ok && list.value[0]);
   const r = await recovered.getRun(list.value[0].id);
   assert(r.ok);
-  expect(r.value.runCoordinator?.state).toBe("acknowledged");
+  expect(r.value.runCoordinator).toBeNull();
+  expect(r.value.blocks[0]?.threadId).toBe("thread-1");
+  expect(r.value.blocks[0]?.executionId).toBe("execution-1");
+  expect(r.value.blocks[0]?.recovery).toBeNull();
+  expect(t3.launches.size).toBe(1);
 });
 
 it("runtime readiness rejects a saved model option outside the permitted domain", async (c) => {
@@ -197,7 +204,7 @@ it("runtime readiness rejects a saved model option outside the permitted domain"
   assert(rejected.ok && !rejected.value.ready);
   assert(rejected.value.issues.some((issue) => issue.code === "settings_unavailable"));
 });
-it("an unproven retry scope leaves a recovered Run conversation launch unresolved", async (c) => {
+it("an unproven retry scope still binds the searched worker and does not launch another", async (c) => {
   // Arrange
   const { h, f, t3, input } = await prepared(c);
   t3.loseLaunchReply = true;
@@ -214,8 +221,9 @@ it("an unproven retry scope leaves a recovered Run conversation launch unresolve
   // Assert
   const r = await changed.getRun(accepted.value.id);
   assert(r.ok);
-  expect(r.value.runCoordinator?.state).toBe("uncertain");
-  expect(r.value.runCoordinator?.problem).toMatch(/unproven/);
+  expect(r.value.blocks[0]?.threadId).toBe("thread-1");
+  expect(r.value.blocks[0]?.executionId).toBe("execution-1");
+  expect(r.value.blocks[0]?.recovery).toBeNull();
   expect(t3.launches.size).toBe(1);
 });
 

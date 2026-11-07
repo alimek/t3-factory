@@ -5,7 +5,49 @@ import type { CoordinationSaved } from "./coordinator-evidence-saved.ts";
 import type { RetainLocal } from "./coordinator-local-observations.ts";
 import { retainedSelection } from "./coordinator-selection.ts";
 import type { BlockRow, RunRow } from "./runner-types.ts";
-import { runTarget } from "./runner-utils.ts";
+import { checkoutWorkspace, runTarget } from "./runner-utils.ts";
+
+/** Factory launched this worker itself. The self marker is not T3 parentage. */
+export async function factoryOwnedSelection(
+  t3: T3Adapter,
+  run: RunRow,
+  block: BlockRow,
+  saved: CoordinationSaved,
+) {
+  if (!block.thread_id || saved.workerParentThreadId !== block.thread_id) return false;
+  const snapshot = JSON.parse(run.snapshot_json) as RunSnapshot;
+  const node = snapshot.flow.graph.blocks.find((entry) => entry.id === block.block_id);
+  const expected = snapshot.agents.find(
+    (agent) => node?.kind === "agent" && agent.id === node.agentId,
+  )?.execution;
+  const executions = saved.executions.filter(
+    (execution) => execution.thread_id === block.thread_id && execution.activation_id === saved.id,
+  );
+  if (!expected || !executions.length) return false;
+  try {
+    const identity = await t3.readThreadIdentity(runTarget(run), block.thread_id);
+    if (
+      identity.threadId !== block.thread_id ||
+      identity.projectId !== run.t3_project_id ||
+      identity.parentThreadId !== null ||
+      !checkoutWorkspace(identity.workspaceRoot, run.workspace_root) ||
+      identity.providerInstanceId !== expected.providerInstanceId ||
+      identity.model !== expected.modelId
+    )
+      return false;
+    return executions.every(
+      (execution) =>
+        identity.executions.filter(
+          (candidate) =>
+            candidate.runId === execution.execution_id &&
+            candidate.providerInstanceId === expected.providerInstanceId &&
+            candidate.model === expected.modelId,
+        ).length === 1,
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** A thread's current model cannot prove the immutable selection of its earlier executions. */
 export async function directWorkerSelection(

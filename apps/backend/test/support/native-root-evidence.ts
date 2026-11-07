@@ -116,38 +116,3 @@ export function supplyChild(
     recentRuns: [{ runId: result.childRunId!, status: "running", ordinal: 1 }],
   });
 }
-
-/** A worker's own factory_context call, visible only in its thread's native activity. */
-export function contextCaller(
-  t3: ControlledT3,
-  projectId: string,
-  threadId: string,
-  executionId: string,
-  callId = "context",
-) {
-  t3.runtimeActivity = {
-    thread: { threadId, projectId, activeRunId: executionId, runtimeMode: "full-access" },
-    items: [
-      {
-        itemId: `turn-item:provider:codex:native-item:${callId}`,
-        type: "dynamic_tool",
-        runId: executionId,
-        sourceThreadId: threadId,
-        visibility: "local",
-        textTruncated: false,
-        nextTextOffset: null,
-        text: JSON.stringify({ toolName: "factory-runtime.factory_context" }),
-      },
-    ],
-    hasMore: false,
-    nextPosition: null,
-  };
-  t3.readRuntimeActivity = async (_target, candidate) =>
-    candidate === threadId
-      ? t3.runtimeActivity
-      : {
-          ...t3.runtimeActivity,
-          thread: { threadId: candidate, projectId, activeRunId: null, runtimeMode: "full-access" },
-          items: [],
-        };
-}

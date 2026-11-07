@@ -107,6 +107,7 @@ export const makeFactoryService = (
       (threadId) => runner.isClosedThread(threadId),
       (key, threadId, discover) => runner.reportBindings(key, threadId, discover),
       (input) => runner.runtimeContext(input),
+      (kind, input) => runner.readFactoryTool(kind, input),
     );
     // A literal without spreads: guardOperations and the Promise facade expose exactly these keys.
     const operations: FactoryEffectOperations = {

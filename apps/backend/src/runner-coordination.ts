@@ -1,34 +1,10 @@
 import { readRemoteReferences } from "./coordinator-remote.ts";
 import { threadHref } from "./thread-link.ts";
-import { workerDelegationPlan } from "./coordinator-plan.ts";
-import type { RunSnapshot, RunDetail } from "@t3-factory/contracts";
-import type { LaunchPayload } from "./adapters/t3.ts";
+import type { RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import { fingerprint } from "./runner-utils.ts";
 
-export const COORDINATOR_HOLD = "Coordinator evidence unavailable; activation remains unverified.";
-
-/** The direct worker's first message and native delegation plan for one Block activation. */
-export function coordinatorLaunch(
-  snapshot: RunSnapshot,
-  blockId: string,
-  input: string,
-  activationId: string,
-  requestKey: string,
-  payload: LaunchPayload,
-) {
-  const block = snapshot.flow.graph.blocks.find((b) => b.id === blockId)!;
-  const agent = snapshot.agents.find((a) => block.kind === "agent" && a.id === block.agentId)!;
-  const message = `${agent.prompt}\n\nTask context:\n${input}\n\nFactory activation ${activationId}. You are the direct worker for this Block. Call factory-runtime.factory_report yourself. Report status finished with one exact configured exit and a concise nonempty result. Report waiting with a concise question when clarification is needed; no exit for waiting. Factory owns routing and immutable final acceptance. Do not delegate replacement work or ask the Run conversation to judge or report your final. A report accepted while you work does not release downstream work until your execution and subtree finish. Configured exits: ${JSON.stringify(block.exits)}.`;
-  const invocation = workerDelegationPlan(agent, message, requestKey);
-  return {
-    activationId,
-    requestKey,
-    inputFingerprint: fingerprint(JSON.stringify(invocation)),
-    payload: { ...payload, message },
-  };
-}
+export const COORDINATOR_HOLD = "Worker evidence unavailable; activation remains unverified.";
 
 /** Separate activation and native request identity; no external worker dispatch intent exists. */
 export function persistActivation(
@@ -36,10 +12,7 @@ export function persistActivation(
   runId: string,
   blockId: string,
   time: string,
-  plan: Pick<
-    ReturnType<typeof coordinatorLaunch>,
-    "activationId" | "requestKey" | "inputFingerprint"
-  >,
+  plan: { activationId: string; requestKey: string; inputFingerprint: string },
   cause = "start:" + blockId,
 ) {
   return Effect.gen(function* () {

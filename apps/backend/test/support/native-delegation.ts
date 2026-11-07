@@ -112,7 +112,7 @@ export async function delegationWire(
                   position: 1,
                   itemId: "turn-item:provider:codex:native-item:report",
                   status: "running",
-                  text: JSON.stringify({ toolName: "factory-runtime.factory_report" }),
+                  text: JSON.stringify({ toolName: "factory-runtime.factory_update_block" }),
                   textTruncated: false,
                   nextTextOffset: null,
                 },

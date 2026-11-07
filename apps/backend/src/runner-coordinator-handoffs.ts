@@ -1,5 +1,3 @@
-import { rootInvocation } from "./run-coordinator-commands.ts";
-import { delegationFingerprint } from "./adapters/delegation-activity.ts";
 import { releaseCoordinatorSource } from "./coordinator-release.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { coordinatorGate } from "./runner-coordinator-gate.ts";
@@ -7,8 +5,8 @@ import * as Effect from "effect/Effect";
 import type { RunSnapshot } from "@t3-factory/contracts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow, StoredTarget } from "./runner-types.ts";
-import { coordinatorLaunch, persistActivation } from "./runner-coordination.ts";
-import { launchPayload } from "./runner-handoffs.ts";
+import { persistActivation } from "./runner-coordination.ts";
+import { workerLaunchPayload, workerTurn } from "./runner-block-workers.ts";
 import { fingerprint } from "./runner-utils.ts";
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
@@ -37,7 +35,7 @@ export function prepareCoordinatorHandoff(
     );
     const pending = yield* database.transaction(
       (sql) =>
-        sql`SELECT c.activation_id FROM run_coordinator_commands c JOIN run_activations a ON a.id=c.activation_id WHERE c.run_id=${run.id} AND a.block_id=${intent.block_id} AND (c.state!='accepted' OR ${prior ? 0 : 1}=1)`,
+        sql`SELECT id FROM operation_intents WHERE run_id=${run.id} AND block_id=${intent.block_id} AND kind='launch' AND state NOT IN ('acknowledged','cancelled')`,
     );
     if (pending.length) return undefined;
     if (prior && !(yield* coordinatorGate(database, t3, current, intent.block_id)))
@@ -58,39 +56,35 @@ export function prepareCoordinatorHandoff(
         const snapshot = JSON.parse(run.snapshot_json) as RunSnapshot;
         const target = JSON.parse(intent.target_json) as StoredTarget;
         const message = (JSON.parse(intent.payload_json) as { message: string }).message;
-        const plan = coordinatorLaunch(
+        const activationId = yield* newId;
+        const launched = workerLaunchPayload(
           snapshot,
           intent.block_id,
-          message,
-          yield* newId,
-          yield* newId,
-          launchPayload(snapshot, intent.block_id, target, intent.request_key, message),
+          target,
+          intent.request_key,
+          current.number,
         );
+        const plan = {
+          activationId,
+          requestKey: intent.request_key,
+          inputFingerprint: fingerprint(launched.message),
+        };
         yield* persistActivation(sql, run.id, intent.block_id, yield* now, plan, intent.cause);
         let payload:
           | import("./adapters/t3.ts").LaunchPayload
-          | import("./adapters/t3.ts").SendPayload = plan.payload;
+          | import("./adapters/t3.ts").SendPayload = launched;
         if (prior) {
           payload = {
             environmentId: target.environmentId,
             threadId: prior.thread_id,
             mode: "queue",
             clientRequestId: intent.request_key,
-            message: plan.payload.message,
+            message: workerTurn(message),
           };
           yield* sql`UPDATE run_delegations SET accepted_json=${prior.accepted_json} WHERE activation_id=${plan.activationId}`;
           yield* sql`INSERT INTO coordinator_revisits(activation_id,original_activation_id) VALUES(${plan.activationId},${prior.original_id})`;
           yield* sql`UPDATE run_activations SET phase='finished' WHERE id=${prior.id}`;
           yield* sql`UPDATE operation_intents SET target_json=${JSON.stringify({ ...target, threadId: prior.thread_id })} WHERE id=${intent.id}`;
-        }
-        if (!prior) {
-          const invocation = rootInvocation(
-            snapshot,
-            intent.block_id,
-            plan.payload.message,
-            plan.requestKey,
-          );
-          yield* sql`INSERT INTO run_coordinator_commands(activation_id,run_id,request_key,invocation_json,invocation_fingerprint,plan_json,send_key,intent_id) VALUES(${plan.activationId},${run.id},${invocation.clientRequestId},${JSON.stringify(invocation)},${delegationFingerprint(invocation)},${JSON.stringify(plan.payload.message)},${yield* newId},${intent.id})`;
         }
         const body = JSON.stringify(payload);
         yield* sql`UPDATE operation_intents SET kind=${prior ? "send" : "launch"},payload_json=${body},fingerprint=${fingerprint(body)} WHERE id=${intent.id} AND kind='handoff' AND state='pending'`;
