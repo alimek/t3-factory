@@ -23,8 +23,9 @@ export function completeCoordinator(
       const support = yield* Effect.tryPromise(() =>
         t3.inspectSettleSupport(runTarget(run)).catch(() => null),
       );
+      // Provider-native projections have no public execution for a settlement receipt.
       if (support?.supported)
-        for (const member of attempt.frontier) {
+        for (const member of attempt.frontier.filter((member) => member.latestRunId !== null)) {
           if (!(yield* coordinatorGate(database, t3, run))) return;
           if ((yield* liveContextId()) !== run.context_id) return;
           yield* database.serial(id, () =>

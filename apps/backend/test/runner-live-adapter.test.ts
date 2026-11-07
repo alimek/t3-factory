@@ -5,7 +5,124 @@ import { launchFixture } from "./support/launch-fixture.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
-import { capturedWorker, completedWireWorker } from "./support/worker-contract.ts";
+import {
+  capturedWorker,
+  completedWireWorker,
+  reportedNativeWorker,
+} from "./support/worker-contract.ts";
+
+it("a completed worker with runless native subagents releases its accepted result to the next Block", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]?.state).toBe("finished");
+  expect(run.value.reports[0]?.completionEligibleAt).toEqual(expect.any(String));
+  expect(f.t3.launches.size).toBe(2);
+  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
+
+it("restart finishes a reported Run with idle native subagents without inventing child executions", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c, {}, "");
+  await f.f.close();
+
+  // Act
+  const reopened = await f.h.open({ t3: f.t3 });
+
+  // Assert
+  const run = await reopened.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.outcome).toBe("finished");
+  expect(run.value.executions).toMatchObject([{ executionId: "execution-1" }]);
+  expect(run.value.executions).toHaveLength(1);
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("an idle native child cannot release a result while aggregate settlement is pending", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c);
+  f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", "execution-1"]), {
+    threadId: "thread-1",
+    runId: "execution-1",
+    state: "pending",
+    status: "completed",
+    resultRun: null,
+    queueCoverage: "unobserved",
+    nativeRequestCoverage: "unobserved",
+  });
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]?.state).toBe("working");
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("a running native child without public runs keeps an accepted result held", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c, { status: "running" });
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("a native child with an unanswered request keeps an accepted result held", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c, { pendingRequestCount: 1 });
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("a T3-owned child cannot use native idle evidence in place of its executions", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c, { creationSource: "mcp" });
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("missing native run coverage does not become proof of an empty child", async (c) => {
+  // Arrange
+  const f = await reportedNativeWorker(c, { runCount: undefined });
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
 
 it("a captured checkout worker retains exact execution identity from its nested thread read", async (c) => {
   // Arrange

@@ -93,7 +93,11 @@ T3 settlement or active-list behavior.
   To inspect initial installation, stop a disposable demo, move its `reporting-codex/config.toml` aside and restart. From the approved desktop client configured above, open **Settings → Agent reporting**, choose **Install Factory MCP** on the Codex target and reload: it stays **Installed**.
   The Working scenario retains an active delegated child after the parent turn completes;
   backend tests cover automatic notification continuations, report acceptance after restart
-  and rejection of notifications that would bypass a user question. Layout proof uses long
+  and rejection of notifications that would bypass a user question. HTTP adapter lifecycle
+  tests also cover idle provider-native children without public runs: handoff and closure
+  after restart require aggregate completion and empty child queues/native requests;
+  active children and missing run-count metadata keep the result held. This shape is not
+  modeled by the persistent demo. Layout proof uses long
   execution and recovery identities in the isolated UI fixture; demo identifiers stay short.
   To inspect reporting warnings, stop a disposable demo, move its `reporting-codex/skills/factory-block/SKILL.md` aside and restart.
   The Settings dot turns amber and Studio marks the saved Codex Agents **Reporting needs attention** with the missing-skill explanation.

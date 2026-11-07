@@ -1,7 +1,8 @@
 import { assert, expect, type TestContext } from "@effect/vitest";
 import { workerActivity } from "../fixtures/t3-worker-activity.ts";
 import { authorizedLiveOAuth } from "./boundaries-setup.ts";
-import { waitingWorker, workerFinal } from "./run-worker.ts";
+import { directWorker, finishWorker, waitingWorker, workerFinal } from "./run-worker.ts";
+import { childRead } from "./coordination-wire.ts";
 import { supplyChild } from "./native-root-evidence.ts";
 import { beginNativeTurn, finishNativeTurn } from "../../../../scripts/dev/native-simulation.ts";
 import type { RuntimeActivity } from "../../src/adapters/t3.ts";
@@ -16,6 +17,62 @@ export function capturedWorker(c: TestContext) {
         : workerActivity.items,
     }),
   });
+}
+
+/** Native Codex children are projected as idle threads without public executions. */
+export async function reportedNativeWorker(
+  c: TestContext,
+  thread: Record<string, unknown> = {},
+  targetBlockId: Parameters<typeof directWorker>[2] = "parallel-block",
+) {
+  const f = await directWorker(c, true, targetBlockId);
+  const body = childRead(
+    {
+      projectId: f.project.projectId,
+      parentThreadId: "thread-1",
+      creationSource: "provider",
+      status: "idle",
+      runCount: 0,
+      link: "<t3-thread://v2/fixture/child>",
+      activeRunId: null,
+      latestRunId: null,
+      ...thread,
+    },
+    [],
+  );
+  const wire = await authorizedLiveOAuth(c, { runtimeActivity: () => body });
+  const target = { endpoint: wire.endpoint };
+  f.t3.childEvidence.set(
+    "child",
+    await wire.adapter.readChildEvidence(target, {
+      parentThreadId: "thread-1",
+      projectId: f.project.projectId,
+      childThreadId: "child",
+      childRunId: null,
+    }),
+  );
+  const readExecution = f.t3.readExecution.bind(f.t3);
+  f.t3.readExecution = (t, id, recorded) =>
+    id === "child"
+      ? wire.adapter.readExecution(target, id, recorded)
+      : readExecution(t, id, recorded);
+  f.t3.delegationActivities.set("child", {
+    threadId: "child",
+    projectId: f.project.projectId,
+    complete: true,
+    invocations: [],
+  });
+  f.t3.descendantEvidence.set("thread-1", {
+    parentThreadId: "thread-1",
+    descendants: [{ ...body.thread, relationship: "provider-native" }],
+    scanComplete: true,
+    coverage: "incomplete",
+    problem: "Bounded native child scan.",
+  });
+  const accepted = await f.f.runtime.submit(workerFinal());
+  assert(accepted.code === "ACCEPTED", JSON.stringify(accepted));
+  finishWorker(f);
+  return f;
 }
 
 /** Synthetic lifecycle using captured wire metadata. Only reads cross the HTTP adapter;
