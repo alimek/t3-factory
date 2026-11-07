@@ -36,7 +36,7 @@ import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { sectionLabelClass } from "../components/page.tsx";
 import { useConnectionState, useConnectionWatch } from "../connection-state.tsx";
 import { exitRecipients } from "../flow-graph.ts";
-import { api } from "../api.ts";
+import { api, ApiError } from "../api.ts";
 import { usePolling } from "../use-polling.ts";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -80,13 +80,17 @@ function useRunObservation(id: string) {
               api.listProjects(),
               api.getFlow(runDetail.flowId).then(
                 (flow) => ({ revision: flow.revision }) satisfies CurrentFlowRevision,
-                () => "missing" as const,
+                (error: unknown) =>
+                  error instanceof ApiError && error.detail.code === "not_found"
+                    ? ("missing" as const)
+                    : undefined,
               ),
             ]);
             if (!isActive()) return;
             setProject(catalog.projects.find((item) => item.id === runDetail.task.projectId));
             setProjectsLoaded(true);
-            setDefinition(flowDefinition);
+            // A transient Flow read failure keeps the last known state instead of claiming removal.
+            if (flowDefinition) setDefinition(flowDefinition);
           })
           .catch(() => {
             if (isActive()) setError("Observations unavailable. Saved history is retained.");
