@@ -21,9 +21,8 @@ const RETRY_AFTER_MS = 500;
 
 type ToolKind = "block" | "run";
 type ToolCall = { readonly callId: string; readonly threadId: string };
-type ToolProof =
-  | { readonly executionId: string }
-  | { readonly code: "FOREIGN_CALLER" | "INCOMPLETE_CALL_EVIDENCE" };
+type ToolRejection = { readonly code: "FOREIGN_CALLER" | "INCOMPLETE_CALL_EVIDENCE" };
+type ToolProof = { readonly executionId: string } | ToolRejection;
 
 /** Host-owned Block and Run reads. Arguments never name a Run or Block. */
 export function openBlockTools(
@@ -31,11 +30,27 @@ export function openBlockTools(
   t3: T3Adapter,
   getRun: (id: string) => Effect.Effect<{ ok: true; value: RunDetail } | { ok: false }, unknown>,
   liveContextId: () => Effect.Effect<string | null, unknown>,
+  refresh: (runId: string) => Effect.Effect<void, unknown>,
 ) {
+  const locateNativeTool = (
+    kind: ToolKind,
+    callId: string,
+    threads: readonly { threadId: string; run: RunRow }[],
+  ) =>
+    Effect.gen(function* () {
+      const matches: ToolCall[] = [];
+      for (const thread of threads) {
+        const call = { threadId: thread.threadId, callId };
+        const proof = yield* prove(thread.run, call, toolNames(kind));
+        if (proof && "code" in proof) return proof;
+        if (proof) matches.push(call);
+      }
+      return matches.length === 1 ? matches[0]! : { code: "UNBOUND_CALLER" as const };
+    });
   const locateTool = (
     kind: ToolKind,
     parsed: ParsedTool,
-  ): Effect.Effect<ToolCall | { readonly code: "UNBOUND_CALLER" }, unknown> =>
+  ): Effect.Effect<ToolCall | { readonly code: "UNBOUND_CALLER" } | ToolRejection, unknown> =>
     Effect.gen(function* () {
       const rows = yield* database.transaction(
         (sql) =>
@@ -46,8 +61,7 @@ export function openBlockTools(
       );
       const threads: {
         threadId: string;
-        projectId: string;
-        target: ReturnType<typeof runTarget>;
+        run: RunRow;
       }[] = [];
       for (const row of rows) {
         if (parsed.threadId && row.thread_id !== parsed.threadId) continue;
@@ -55,18 +69,24 @@ export function openBlockTools(
         if (!run || run.context_id !== (yield* liveContextId())) continue;
         threads.push({
           threadId: row.thread_id,
-          projectId: run.t3_project_id,
-          target: runTarget(run),
+          run,
         });
       }
+      if (parsed.callId) return yield* locateNativeTool(kind, parsed.callId, threads);
       const located = yield* Effect.tryPromise(() =>
-        findInFlightFactoryCall(t3, threads, toolNames(kind), parsed.args),
+        findInFlightFactoryCall(
+          t3,
+          threads.map(({ threadId, run }) => ({
+            threadId,
+            projectId: run.t3_project_id,
+            target: runTarget(run),
+          })),
+          toolNames(kind),
+          parsed.args,
+        ),
       );
       if (!located) return { code: "UNBOUND_CALLER" as const };
-      if (
-        (parsed.callId && parsed.callId !== located.callId) ||
-        (parsed.threadId && parsed.threadId !== located.threadId)
-      )
+      if (parsed.threadId && parsed.threadId !== located.threadId)
         return { code: "UNBOUND_CALLER" as const };
       return { callId: located.callId, threadId: located.threadId };
     });
@@ -112,8 +132,17 @@ export function openBlockTools(
       const proof = yield* prove(run, call, toolNames(kind));
       if (!proof) return { code: "UNBOUND_CALLER" };
       if ("code" in proof) return proof;
-      if (bound.executionId && proof.executionId !== bound.executionId)
-        return { code: "UNBOUND_CALLER" };
+      if (bound.executionId && proof.executionId !== bound.executionId) {
+        // A reply may reach the tool before the periodic sweep observes its execution.
+        yield* refresh(bound.runId);
+        const [current] = yield* database.transaction(
+          (sql) =>
+            sql<{
+              execution_id: string | null;
+            }>`SELECT execution_id FROM run_blocks WHERE run_id=${bound.runId} AND block_id=${bound.blockId}`,
+        );
+        if (current?.execution_id !== proof.executionId) return { code: "UNBOUND_CALLER" };
+      }
       return yield* project(kind, bound.runId, bound.blockId);
     });
 
@@ -263,11 +292,6 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
   if (!block || !graphBlock) return { code: "UNBOUND_CALLER" };
   const visits = detail.activations.filter((activation) => activation.blockId === blockId);
   const cause = visits[visits.length - 1]?.cause ?? "";
-  const sources = new Set(
-    detail.definitions.flow.graph.connections
-      .filter((edge) => edge.targetBlockId === blockId)
-      .map((edge) => edge.sourceBlockId),
-  );
   const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
   return {
     code: "BLOCK",
@@ -288,15 +312,31 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
         : [],
     inputs: {
       input: detail.input,
-      results: detail.reports
-        .filter((report) => sources.has(report.blockId) && report.status === "finished")
-        .map((report) => ({ blockId: report.blockId, message: report.resultMessage ?? null })),
+      results: incomingResults(detail, cause),
       feedback: feedbackId
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
         : null,
     },
     allowedTransitions: block.state === "working" ? ["waiting", "finished"] : [],
   };
+}
+
+/** One arrival activates one visit; graph neighbors and later reports are not its inputs. */
+function incomingResults(detail: RunDetail, cause: string) {
+  const reportId = /^report:([^/]+)/.exec(cause)?.[1];
+  const report = detail.reports.find((entry) => entry.id === reportId);
+  if (!report) return [];
+  const source = detail.definitions.flow.graph.blocks.find((entry) => entry.id === report.blockId)!;
+  return [
+    {
+      reportId: report.id,
+      blockId: report.blockId,
+      blockName: source.name,
+      exitName: source.exits.find((exit) => exit.id === report.exitId)!.name,
+      message: report.resultMessage ?? null,
+      threadLink: detail.blocks.find((block) => block.blockId === report.blockId)!.link,
+    },
+  ];
 }
 
 function runView(detail: RunDetail): RuntimeReply {

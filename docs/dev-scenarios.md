@@ -84,7 +84,7 @@ T3 settlement or active-list behavior.
 - **Devices and connection.** The seed includes approved **Demo · Office browser** and revoked **Demo · Retired laptop** clients in Settings → Devices & access (pending requests expire, so request one
   from another browser profile). The Vite proxy is host-local; controlled remote-client journeys cover pending, approved, revoked, offline and incompatible clients, and desktop fixtures simulate updater
   checks and the native bridge without qualifying real updates, Keychain behavior, certificate trust or a second physical device.
-- **Reporting.** Source-mode installation, recheck and transport must work with missing or stale build output and stay Installed across source-to-built switching; public-operation and subprocess tests own this. The worker E2E journey covers accepted results, questions/replies, handoffs and Human corrections; backend tests own missing-report recovery, report races and failures. The persistent demo does not model the T3 reply turn of conversation waiting.
+- **Reporting.** Source-mode installation, recheck and transport must work with missing or stale build output and stay Installed across source-to-built switching; public-operation and subprocess tests own this. The worker E2E journey covers accepted results, questions/replies, handoffs and Human corrections; backend tests own missing-report recovery, report races and failures, context reads without inherited thread hints and exact incoming Agent results on repeated visits. The persistent demo does not model the T3 reply turn of conversation waiting or native harness metadata.
 
 ## Verification coverage
 

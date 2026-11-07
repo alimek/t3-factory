@@ -188,7 +188,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
     recoverRunCoordinator: rootRecovery.recoverRunCoordinator,
-    readFactoryTool: openBlockTools(database, t3, getRun, liveContextId),
+    readFactoryTool: openBlockTools(database, t3, getRun, liveContextId, (id) =>
+      drive(id, "observe"),
+    ),
     runtimeContext: openRuntimeContext(
       database,
       t3,

@@ -36,7 +36,14 @@ export type RuntimeReply = {
   }[];
   readonly inputs?: {
     readonly input: string;
-    readonly results: readonly { readonly blockId: string; readonly message: string | null }[];
+    readonly results: readonly {
+      readonly reportId: string;
+      readonly blockId: string;
+      readonly blockName: string;
+      readonly exitName: string;
+      readonly message: string | null;
+      readonly threadLink: string | null;
+    }[];
     readonly feedback: string | null;
   };
   readonly number?: number;
