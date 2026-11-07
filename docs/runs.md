@@ -10,7 +10,8 @@ Failures explain recovery and keep the draft.
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
   else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes
   the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
-  title (after trimming) or a creation time that is not a UTC ISO 8601 timestamp, and creates nothing.
+  title (after trimming) or a creation time not in `Date.toISOString()` form (for example `2026-11-07T08:00:00.000Z`),
+  and creates nothing.
 - **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
   records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
   even after a lost response or restart; reusing the key with changed content, including title or creation time, conflicts. An unknown response keeps the

@@ -79,7 +79,7 @@ The executor of a flow's declared transitions and conditions. Agent results dete
 A packaged workflow or set of instructions guiding an agent's work.
 
 **Task**:
-A concrete matter to work on within a project, such as a coding change, an idea to discuss, or a specification to investigate. It groups the history of Runs addressing that matter, potentially through different Flows.
+A concrete matter to work on within a project, such as a coding change, an idea to discuss, or a specification to investigate. Each Start creates a new Task for its Run; Tasks recorded by earlier releases can still hold several Runs.
 
 **Run**:
 One execution of a selected flow for a task in a project, with its own editable title

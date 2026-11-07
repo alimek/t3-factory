@@ -55,7 +55,8 @@ function startPresentationIssues(input: StartRunInput): ValidationIssue[] {
           {
             code: "run_created_at",
             path: "createdAt",
-            message: "The draft creation time must be an ISO 8601 UTC timestamp.",
+            message:
+              "The draft creation time must use the Date.toISOString() format, such as 2026-11-07T08:00:00.000Z.",
           },
         ]),
   ];

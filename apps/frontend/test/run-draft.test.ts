@@ -445,6 +445,23 @@ it("an unknown Start warns when blocked storage cannot keep it for recovery", as
   expect(draft.getSnapshot().error).toContain("could not save the request");
 });
 
+it("drafts kept only in memory after a failed save survive editing another draft", (context) => {
+  // Arrange
+  const { draft, storage } = composer(context);
+  storage.setItem.mockImplementation(() => {
+    throw new Error("Quota exceeded");
+  });
+  draft.openFresh();
+  draft.edit({ input: "Unsaved second" });
+  draft.openFresh();
+
+  // Act
+  draft.edit({ input: "Unsaved third" });
+
+  // Assert
+  expect(draft.getDrafts().map(draftTitle)).toContain("Unsaved second");
+});
+
 it("validation settles Start and keeps the prompt available for correction", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);

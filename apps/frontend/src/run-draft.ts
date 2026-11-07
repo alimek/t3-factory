@@ -216,7 +216,9 @@ export function createRunDraft(
     id: string,
     change: (saved: SavedRunDraft | undefined) => SavedRunDraft | undefined,
   ) {
-    const latest = readSaved(scope)?.drafts ?? (scope === server ? drafts : []);
+    // After a failed write the stored list is stale and would drop drafts kept only in memory.
+    const stored = scope === server && saveFailed ? undefined : readSaved(scope)?.drafts;
+    const latest = stored ?? (scope === server ? drafts : []);
     const previous = latest.find((d) => d.id === id) ?? (scope === server ? find(id) : undefined);
     const next = change(previous);
     const others = latest.filter((d) => d.id !== id);
