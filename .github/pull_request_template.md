@@ -6,6 +6,11 @@
 
 <!-- Name the checks run and the observable behavior verified; include material limits. -->
 
+## UI screenshots
+
+<!-- Required for UI changes: embed Before and After screenshots of the affected views.
+Otherwise write N/A. Follow .agents/skills/verify-t3-factory/SKILL.md#evidence. -->
+
 ## Scope and contracts
 
 <!-- Apply docs/quality-gates.md#change-review. Explain the current need for added modules,
