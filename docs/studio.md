@@ -107,7 +107,7 @@ revision N** (another explicit save, which can conflict again). There is no auto
 ### Removing a Flow
 
 **Remove** in Flow details permanently deletes the editable definition (no archive) after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
-the Flow list, also when another view already removed it. Runs, their snapshots, shared Agents and T3 threads are unaffected: active Runs continue, settled Run canvases and Run again use their snapshots, and
+the Flow list, also when another view already removed it. Runs, their snapshots, shared Agents and T3 threads are unaffected: active Runs continue, settled Run canvases use their snapshots, and
 removal is not Stop. Deletion needs no revision match; a save that reaches a deleted Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
 Flow.
 

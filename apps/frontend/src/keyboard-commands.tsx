@@ -47,7 +47,7 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
     void router.navigate({ to: "/runs/new", search: {}, resetScroll: false }).then(() => {
       const location = router.state.location;
       const search = validateAppSearch(location.search);
-      // A cancelled draft guard must not change the covered composer's snapshot mode.
+      // A cancelled draft guard must not reset the covered composer.
       if (location.pathname === "/runs/new" && !search.studio && !search.settings)
         runDraft.openFresh();
     });

@@ -19,30 +19,17 @@ import type { T3Adapter } from "./adapters/t3.ts";
 import { failure } from "./result.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
-import { catalogProject } from "./runner-utils.ts";
+import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { now } from "./time.ts";
-import { snapshotStartDefinitions, startRequestFingerprint } from "./runner-start-source.ts";
 function validStartInput(input: StartRunInput | undefined): input is StartRunInput {
   return (
     !!input &&
     typeof input === "object" &&
-    [input.requestId, input.projectId, input.input].every(
+    [input.requestId, input.projectId, input.flowId, input.input].every(
       (candidate) => typeof candidate === "string" && candidate.trim(),
     ) &&
-    validStartSource(input) &&
-    (input.taskId === undefined || (typeof input.taskId === "string" && !!input.taskId)) &&
     input.requestId.length <= 256 &&
     input.input.length <= 100000
-  );
-}
-function validStartSource(input: StartRunInput) {
-  return (
-    (typeof input.flowId === "string" &&
-      !!input.flowId.trim() &&
-      input.sourceRunId === undefined) ||
-    (typeof input.sourceRunId === "string" &&
-      !!input.sourceRunId.trim() &&
-      input.flowId === undefined)
   );
 }
 /** The connected T3 context and an available project on the same endpoint and environment. */
@@ -90,7 +77,7 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
     }>`SELECT workspace_root,availability FROM projects WHERE id=${plan.project.id}`;
     if (
       current?.context_id !== plan.contextId ||
-      (plan.input.sourceRunId === undefined && flow?.revision !== plan.snapshot.flow.revision) ||
+      flow?.revision !== plan.snapshot.flow.revision ||
       project?.workspace_root !== plan.project.workspaceRoot ||
       project.availability !== "available"
     )
@@ -98,7 +85,6 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
         "conflict",
         "Configuration changed while validating. Check setup and retry this Start.",
       );
-    if (plan.input.sourceRunId !== undefined) return undefined;
     for (const agent of plan.snapshot.agents) {
       const [saved] = yield* sql<{
         revision: number;
@@ -109,37 +95,7 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
     return undefined;
   });
 }
-/** Run again reuses a Task only when its active slot is free; otherwise a new Task is created. */
-function claimTaskSlot(sql: SqlClient.SqlClient, plan: StartPlan) {
-  return Effect.gen(function* () {
-    if (!plan.input.taskId) {
-      yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${plan.input.input.trim().split(/\r?\n/)[0]!.trim().slice(0, TASK_TITLE_LIMIT)},${plan.time})`;
-      return undefined;
-    }
-    const [task] = yield* sql<{
-      project_id: string;
-    }>`SELECT project_id FROM tasks WHERE id=${plan.taskId}`;
-    if (!task || task.project_id !== plan.project.id)
-      return failure("not_found", "This Task does not belong to this project.");
-    const [activeRun] = yield* sql<{
-      id: string;
-    }>`SELECT id FROM runs WHERE task_id=${plan.taskId} AND closed_at IS NULL`;
-    if (activeRun)
-      return failure(
-        "conflict",
-        "This Task already has a non-closed Run, including unresolved work.",
-        [
-          {
-            code: "active_run",
-            path: "activeRunId",
-            message: activeRun.id,
-          },
-        ],
-      );
-    return undefined;
-  });
-}
-/** Deduplicates, acquires the Task slot and records one Factory launch per Flow input target. */
+/** Deduplicates, creates the Run's Task and records one Factory launch per Flow input target. */
 function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
   return Effect.gen(function* () {
     const [duplicate] = yield* sql<{
@@ -152,8 +108,7 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
         : failure("conflict", "Start key content conflicts.");
     const conflict = yield* startConfigurationConflict(sql, plan);
     if (conflict) return conflict;
-    const occupied = yield* claimTaskSlot(sql, plan);
-    if (occupied) return occupied;
+    yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${plan.input.input.trim().split(/\r?\n/)[0]!.trim().slice(0, TASK_TITLE_LIMIT)},${plan.time})`;
     const project = plan.project;
     const [allocated] = yield* sql<{
       n: number;
@@ -215,7 +170,7 @@ export function openRunnerStart(
             },
           ],
         );
-      const content = startRequestFingerprint(input);
+      const content = fingerprint(JSON.stringify([input.projectId, input.flowId, input.input]));
       const existing = yield* run(
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
@@ -236,7 +191,7 @@ export function openRunnerStart(
       const ready = prepareStartWork(snapshot);
       if (!ready.ok) return ready;
       const runId = yield* newId,
-        taskId = input.taskId ?? (yield* newId);
+        taskId = yield* newId;
       const plan: StartPlan = {
         input: input,
         requestFingerprint: content,
@@ -260,8 +215,8 @@ export function openRunnerStart(
     return Effect.gen(function* () {
       yield* ops.recheckConnection();
       yield* ops.recheckProjects();
-      const [connection, projects, definitions] = yield* Effect.all(
-        [ops.getConnection(), ops.listProjects(), startDefinitions(input)],
+      const [connection, projects, savedFlow] = yield* Effect.all(
+        [ops.getConnection(), ops.listProjects(), ops.getFlow(input.flowId)],
         { concurrency: "unbounded" },
       );
       const target = startTarget(connection, projects, input.projectId);
@@ -277,15 +232,12 @@ export function openRunnerStart(
             },
           ],
         );
-      if (!definitions.ok) return definitions;
-      const { flow, capturedAgents } = definitions.value;
-      const readiness = flowReadiness(
-        flow.graph,
-        capturedAgents && new Set(capturedAgents.map((agent) => agent.id)),
-      );
+      if (!savedFlow.ok) return savedFlow;
+      const flow = savedFlow.value;
+      const readiness = flowReadiness(flow.graph);
       if (!readiness.ready)
         return failure("validation", "Fix Flow readiness before starting.", readiness.issues);
-      const agents = yield* readyAgents(flow, target.project.id, capturedAgents);
+      const agents = yield* readyAgents(flow, target.project.id);
       if (!agents.ok) return agents;
       const support = yield* Effect.tryPromise({
         try: () => t3.inspectLaunchSupport(target.project).catch(() => null),
@@ -306,22 +258,9 @@ export function openRunnerStart(
       };
     });
   }
-  function startDefinitions(input: StartRunInput) {
-    return Effect.gen(function* () {
-      if (input.sourceRunId !== undefined) {
-        const source = yield* getRun(input.sourceRunId);
-        if (!source.ok) return source;
-        return snapshotStartDefinitions(source.value.snapshot);
-      }
-      const flow = yield* ops.getFlow(input.flowId);
-      if (!flow.ok) return flow;
-      return { ok: true as const, value: { flow: flow.value, capturedAgents: undefined } };
-    });
-  }
   function readyAgents(
     flow: FlowDraft,
     projectId: string,
-    capturedAgents?: RunSnapshot["agents"],
   ): Effect.Effect<Result<RunSnapshot["agents"][number][]>, unknown> {
     return Effect.gen(function* () {
       const agents: RunSnapshot["agents"][number][] = [];
@@ -331,8 +270,7 @@ export function openRunnerStart(
         ),
       );
       for (const id of ids) {
-        const captured = capturedAgents?.find((candidate) => candidate.id === id);
-        const agent = captured ? { ok: true as const, value: captured } : yield* ops.getAgent(id);
+        const agent = yield* ops.getAgent(id);
         if (!agent.ok) return agent;
         const check = yield* checkSnapshot(projectId, agent.value);
         if (!check.ok) return check;

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { RunDetail, StartRunInput } from "@t3-factory/contracts";
+import type { StartRunInput } from "@t3-factory/contracts";
 import { randomId } from "./lib/ids.ts";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError } from "./api.ts";
@@ -8,23 +8,10 @@ interface RunDraft {
   projectId: string;
   flowId: string;
   input: string;
-  taskId?: string | undefined;
-  /** Settled Run title when composing Run again. */
-  sourceTitle?: string | undefined;
-  /** Snapshot-based Run again; backend resolves definitions from this Run. */
-  sourceRunId?: string | undefined;
-  /** Flow name from the source Run snapshot (display only). */
-  snapshotFlowName?: string | undefined;
   pending: boolean;
   busy: boolean;
   error: string;
-  activeRunId?: string | undefined;
 }
-
-type RunAgainSource = Pick<RunDetail, "id" | "title" | "input"> & {
-  task: Pick<RunDetail["task"], "id" | "projectId">;
-  snapshot: { flow: Pick<RunDetail["snapshot"]["flow"], "name"> };
-};
 
 export function createRunDraft(
   startRun: (submission: StartRunInput) => Promise<{ id: string }> = api.startRun,
@@ -61,25 +48,9 @@ export function createRunDraft(
     draft = { ...draft, ...change };
     listeners.forEach((notify) => notify());
   }
-  function currentDefinitions(flowId: string) {
-    return {
-      sourceRunId: undefined,
-      sourceTitle: undefined,
-      snapshotFlowName: undefined,
-      flowId,
-      taskId: undefined,
-    };
-  }
   function edit(change: Partial<Pick<RunDraft, "projectId" | "flowId" | "input">>) {
     if (submission) return;
-    update({
-      ...change,
-      ...(change.projectId !== undefined && change.projectId !== draft.projectId
-        ? { taskId: undefined }
-        : {}),
-      error: "",
-      activeRunId: undefined,
-    });
+    update({ ...change, error: "" });
     if (change.projectId !== undefined) {
       rememberChoice("project", draft.projectId);
       rememberChoice("flow", draft.flowId);
@@ -87,45 +58,20 @@ export function createRunDraft(
   }
   function openFresh() {
     if (submission) return;
-    update({
-      ...currentDefinitions(draft.flowId || remembered("flow")),
-      error: "",
-      activeRunId: undefined,
-    });
+    update({ flowId: draft.flowId || remembered("flow"), error: "" });
   }
   function openFlow(flowId: string) {
     if (submission) return;
-    update(currentDefinitions(flowId));
-  }
-  function openRunAgain(run: RunAgainSource, confirmReplacement: () => boolean) {
-    if (submission) return true;
-    if (draft.input.trim() && !confirmReplacement()) return false;
-    update({
-      projectId: run.task.projectId,
-      flowId: "",
-      input: run.input,
-      taskId: run.task.id,
-      sourceTitle: run.title,
-      sourceRunId: run.id,
-      snapshotFlowName: run.snapshot.flow.name,
-      error: "",
-      activeRunId: undefined,
-    });
-    return true;
+    update({ flowId });
   }
   function pendingSubmission(): StartRunInput {
     if (submission) return submission;
-    const base = {
+    return Object.freeze({
       requestId: randomId(),
       projectId: draft.projectId,
+      flowId: draft.flowId,
       input: draft.input,
-      ...(draft.taskId ? { taskId: draft.taskId } : {}),
-    };
-    return Object.freeze(
-      draft.sourceRunId
-        ? { ...base, sourceRunId: draft.sourceRunId }
-        : { ...base, flowId: draft.flowId },
-    );
+    });
   }
   function rejectStart(error: unknown) {
     if (
@@ -137,7 +83,6 @@ export function createRunDraft(
         pending: false,
         busy: false,
         error: [error.message, ...error.detail.issues.map((issue) => issue.message)].join(" "),
-        activeRunId: error.detail.issues.find((issue) => issue.code === "active_run")?.message,
       });
     } else {
       update({
@@ -161,18 +106,9 @@ export function createRunDraft(
     }
     // Only the transport result decides Start's outcome; preferences and navigation do not.
     rememberChoice("project", request.projectId);
-    if (request.flowId) rememberChoice("flow", request.flowId);
+    rememberChoice("flow", request.flowId);
     submission = undefined;
-    update({
-      input: "",
-      taskId: undefined,
-      sourceTitle: undefined,
-      sourceRunId: undefined,
-      snapshotFlowName: undefined,
-      pending: false,
-      busy: false,
-      activeRunId: undefined,
-    });
+    update({ input: "", pending: false, busy: false });
     return run.id;
   }
   return {
@@ -184,7 +120,6 @@ export function createRunDraft(
     edit,
     openFresh,
     openFlow,
-    openRunAgain,
     start,
   };
 }
@@ -197,15 +132,9 @@ export function useRunDraft() {
 
 export function useComposerNavigation() {
   const navigate = useNavigate();
-  const open = () => {
-    void navigate({ to: "/runs/new" });
-  };
-  function openRunComposer(run: RunDetail) {
-    if (runDraft.openRunAgain(run, () => window.confirm("Replace your current Run draft?"))) open();
-  }
   function openFlowComposer(flowId: string) {
     runDraft.openFlow(flowId);
-    open();
+    void navigate({ to: "/runs/new" });
   }
-  return { openRunComposer, openFlowComposer };
+  return { openFlowComposer };
 }

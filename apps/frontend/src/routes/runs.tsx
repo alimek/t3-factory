@@ -13,7 +13,6 @@ import {
   type FactoryProject,
   type FlowBlock,
   type RunDetail,
-  type TaskSummary,
 } from "@t3-factory/contracts";
 import {
   Archive,
@@ -39,7 +38,6 @@ import { useConnectionState, useConnectionWatch } from "../connection-state.tsx"
 import { exitRecipients } from "../flow-graph.ts";
 import { api } from "../api.ts";
 import { usePolling } from "../use-polling.ts";
-import { useComposerNavigation } from "../run-draft.ts";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -61,11 +59,10 @@ function blockName(run: RunDetail, blockId: string) {
 
 type SnapshotDefinition = { readonly revision: number } | "missing";
 
-/** Polls the Run with its Task, project and whether the saved snapshot still matches the Flow. */
+/** Polls the Run with its project and whether the saved snapshot still matches the Flow. */
 function useRunObservation(id: string) {
   const [run, setRun] = useState<RunDetail>();
   const [error, setError] = useState("");
-  const [taskSnapshot, setTaskSnapshot] = useState<TaskSummary>();
   const [project, setProject] = useState<FactoryProject>();
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [definition, setDefinition] = useState<SnapshotDefinition>();
@@ -79,8 +76,7 @@ function useRunObservation(id: string) {
             if (!isActive()) return;
             setRun(runDetail);
             setError("");
-            const [tasks, catalog, flowDefinition] = await Promise.all([
-              api.listTasks(runDetail.task.projectId),
+            const [catalog, flowDefinition] = await Promise.all([
               api.listProjects(),
               api.getFlow(runDetail.flowId).then(
                 (flow) => ({ revision: flow.revision }) satisfies SnapshotDefinition,
@@ -88,7 +84,6 @@ function useRunObservation(id: string) {
               ),
             ]);
             if (!isActive()) return;
-            setTaskSnapshot(tasks.find((task) => task.id === runDetail.task.id));
             setProject(catalog.projects.find((item) => item.id === runDetail.task.projectId));
             setProjectsLoaded(true);
             setDefinition(flowDefinition);
@@ -99,7 +94,7 @@ function useRunObservation(id: string) {
       [id],
     ),
   });
-  return { run, setRun, error, taskSnapshot, project, projectsLoaded, definition };
+  return { run, setRun, error, project, projectsLoaded, definition };
 }
 
 type RunObservation = ReturnType<typeof useRunObservation>;
@@ -341,8 +336,7 @@ function RunTopBar({
   contextOpen: boolean;
   onToggleContext: () => void;
 }) {
-  const { openRunComposer } = useComposerNavigation();
-  const { project, taskSnapshot } = observed;
+  const { project } = observed;
   const unavailable = projectIsUnavailable(project, observed.projectsLoaded);
   const stale = !run.closedAt && observationText(run, !!observed.error).startsWith("Not live");
   return (
@@ -368,11 +362,6 @@ function RunTopBar({
           <span className="tracking-label">· Created {dayAndTime(run.startedAt)}</span>
         </p>
       </div>
-      {run.closedAt && project?.availability === "available" && taskSnapshot && (
-        <Button type="button" variant="outline" onClick={() => openRunComposer(run)}>
-          Run again
-        </Button>
-      )}
       {!run.closedAt && !run.stopRequestedAt && (
         <Button
           type="button"
