@@ -70,7 +70,7 @@ import {
   type ChildEvidenceTarget,
   type EvidenceCall,
 } from "./coordination-evidence.ts";
-import { completeDynamicToolText } from "../activity-text.ts";
+import { completeDynamicToolText, needsCompleteActivityText } from "../activity-text.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { parseProviderCapabilities } from "./t3-capabilities.ts";
 import {
@@ -1753,7 +1753,7 @@ export class LiveT3Adapter implements T3Adapter {
       const items = [];
       for (const item of body.items) {
         items.push(
-          item.type === "dynamic_tool" && item.textTruncated === true
+          needsCompleteActivityText(item)
             ? await completeDynamicToolText(item, async (itemId, textOffset) => {
                 const page = this.structuredToolResult(
                   await client.callTool(

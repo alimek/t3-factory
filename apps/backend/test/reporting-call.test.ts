@@ -97,3 +97,37 @@ it("a completed Cursor call is not an in-flight caller", () => {
   // Assert
   expect(selected).toBeUndefined();
 });
+
+it("a truncated unrelated Cursor tool does not reject the in-flight Factory call", () => {
+  // Arrange
+  const factoryCall = thread(
+    "cursor",
+    "call-1",
+    JSON.stringify({
+      toolName: "mcp__factory-runtime__factory_get_block",
+      input: { ref: "ref-1" },
+    }),
+  );
+  const unrelated = factoryCall.pages[0]!.items[0]!;
+  const other = {
+    ...unrelated,
+    itemId: "turn-item:provider:cursor:native-item:call-other",
+    text: '{"toolName":"Read","input":{"path":"',
+    textTruncated: true,
+    nextTextOffset: 32,
+  };
+  const threads = [
+    {
+      ...factoryCall,
+      pages: [{ ...factoryCall.pages[0]!, items: [other, unrelated] }],
+    },
+  ];
+
+  // Act
+  const selected = selectInFlightCall(threads, ["mcp__factory-runtime__factory_get_block"], {
+    ref: "ref-1",
+  });
+
+  // Assert
+  expect(selected).toEqual({ threadId: "thread-1", callId: "call-1" });
+});

@@ -1,4 +1,29 @@
 const TEXT_LIMIT = 262_144;
+const TOOL_NAME = /"toolName"\s*:\s*"([^"\\]+)"/;
+const FACTORY_TOOL = /factory_(?:update_block|get_block|get_run|context)$/;
+const IN_FLIGHT = new Set(["pending", "running"]);
+
+/**
+ * Full text is needed for an in-flight call whose tool is not yet known, and for any
+ * Factory tool, including a finished retry. A finished unrelated tool is left truncated
+ * so reading it cannot abort the scan.
+ */
+export function needsCompleteActivityText(item: {
+  readonly type: string;
+  readonly status?: string;
+  readonly text: string | null;
+  readonly textTruncated?: boolean;
+}): boolean {
+  if (item.type !== "dynamic_tool" || item.textTruncated !== true) return false;
+  const name = activityToolName(item.text);
+  if (name !== undefined) return FACTORY_TOOL.test(name);
+  return IN_FLIGHT.has(item.status ?? "");
+}
+
+export function activityToolName(text: string | null): string | undefined {
+  const match = text ? TOOL_NAME.exec(text) : null;
+  return match?.[1];
+}
 
 type TextItem = {
   readonly itemId: string;

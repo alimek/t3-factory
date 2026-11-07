@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { RuntimeActivity, T3Adapter, T3Endpoint } from "./adapters/t3.ts";
+import { activityToolName } from "./activity-text.ts";
 import { ACTIVITY_REPORTING_DRIVERS } from "./reporting-drivers.ts";
 
 const MARKER = ":native-item:";
@@ -94,8 +95,11 @@ function factoryBody(
     item.textTruncated !== false ||
     (item.nextTextOffset !== null && item.nextTextOffset !== undefined) ||
     !item.text
-  )
+  ) {
+    const name = activityToolName(item.text);
+    if (name !== undefined && !names.has(name)) return undefined;
     return null;
+  }
   let body: { toolName?: unknown; input?: unknown };
   try {
     body = JSON.parse(item.text) as { toolName?: unknown; input?: unknown };
