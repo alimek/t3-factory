@@ -34,8 +34,11 @@ once every five seconds.
 | Incompatible version (`incompatible`) | The MCP protocol or connection contract is unsupported. Inspect problems, update T3 if appropriate, recheck. |
 | Connected (`ready`) | An approved grant, live tool inventory and environment identity passed connection checks. |
 
-The badge and the sidebar Settings dot are green only when Connected, amber for authorization or version problems and
-red when disconnected; outside Connected the sidebar footer also names the state, so status never relies on color. The
+The connection badge is green only when Connected, amber for authorization or version problems and
+red when disconnected. The sidebar Settings dot also checks reporting configuration for providers used by saved Agents:
+while Connected, a missing, outdated, unsupported or unreadable installation makes it amber with a labelled warning and
+opens **Agent reporting**. Unused providers do not raise this warning. Reporting inspection is neutral while loading;
+connection problems take precedence. The footer names problems, so status never relies on color. The
 pane shows the address, T3 version, authorization, environment and last-check time with T3's explanation, **Check again**
 for non-connected states and **Edit address** (open by default when no endpoint is saved). Settings has a search field,
 nav sections (T3 connection, Agent reporting, [Keyboard shortcuts](keyboard-shortcuts.md)) and closes with Esc; below
@@ -85,6 +88,10 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   homes, unsupported providers and remote hosts show diagnostics only; unknown or remote homes
   get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
+  Studio's Agent list and editor show the selected provider's reporting installation status, including the actual
+  diagnostic and **Open Agent reporting** for repair. Changing the provider updates the editor's status before saving.
+  Status refreshes on opening Agents or Agent reporting, after saving or removing an Agent and after an installation action;
+  visible windows also recheck on focus and periodically. These indicators describe configuration, not verified execution.
   Discovery for same-user loopback T3 covers standard homes (`~/.codex/config.toml`,
   `~/.claude.json`, `~/.grok/config.toml`) and explicit `homePath` or persisted `CODEX_HOME`,
   `CLAUDE_CONFIG_DIR` or `GROK_HOME` values. Cursor always uses `~/.cursor/mcp.json` and ignores

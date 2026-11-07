@@ -15,6 +15,7 @@ import { ApplicationSettings } from "./application-settings.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
+import { reportingSummary, useReportingState } from "../reporting-state.tsx";
 import { SettingsPanel } from "./screen-layout.tsx";
 import { ConnectionSettingsPanel } from "../routes/connection.tsx";
 import {
@@ -214,11 +215,18 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
   const options = useSettingsOptions({ tab: section.tab });
   const { presentation } = useConnectionState();
   const status = connectionStatusLabel(presentation);
+  const reporting = reportingSummary(useReportingState());
   const Icon = section.icon;
   return (
     <Link
       {...options}
-      aria-label={section.tab === "connection" ? `${section.title}, ${status}` : section.title}
+      aria-label={
+        section.tab === "connection"
+          ? `${section.title}, ${status}`
+          : section.tab === "runtime" && reporting.state === "attention"
+            ? `${section.title}, ${reporting.label}`
+            : section.title
+      }
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-8 items-center gap-2 rounded-md px-2 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50",
@@ -229,6 +237,9 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
       <span className="min-w-0 flex-1 truncate">{section.title}</span>
       {section.tab === "connection" && (
         <ConnectionStateDot presentation={presentation} label={status} />
+      )}
+      {section.tab === "runtime" && reporting.state === "attention" && (
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-attention" />
       )}
     </Link>
   );

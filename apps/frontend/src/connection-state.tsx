@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import type { ConnectionState, T3Connection } from "@t3-factory/contracts";
@@ -14,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { api } from "./api.ts";
 import { useSettings, useStudio } from "./settings-navigation.ts";
+import { useRefreshSchedule } from "./use-refresh-schedule.ts";
 
 export type ConnectionPresentation = "unknown" | "loading" | ConnectionState | "load-error";
 
@@ -67,11 +67,6 @@ type ConnectionStateContextValue = {
 
 const ConnectionStateContext = createContext<ConnectionStateContextValue | null>(null);
 
-/** While a watching screen is mounted: authorization, reconnection or disconnection may land soon. */
-const watchingMs = 2500;
-/** Otherwise the sidebar indicator only needs an occasional refresh. */
-const backgroundMs = 30_000;
-
 type ConnectionReads = {
   connection: T3Connection | null;
   loadError: string;
@@ -121,29 +116,6 @@ function useConnectionReads() {
     setReads({ connection, loadError: "", loadedOnce: true });
   }, []);
   return { ...reads, refresh, setConnection };
-}
-
-const subscribeVisibility = (listener: () => void) => {
-  document.addEventListener("visibilitychange", listener);
-  return () => document.removeEventListener("visibilitychange", listener);
-};
-const documentVisible = () => document.visibilityState !== "hidden";
-
-/** Reads on load, focus and return to visibility; polls only while the document is visible. */
-function useRefreshSchedule(refresh: () => void, watching: boolean) {
-  const visible = useSyncExternalStore(subscribeVisibility, documentVisible, () => true);
-  useEffect(() => {
-    if (visible) refresh();
-  }, [visible, refresh]);
-  useEffect(() => {
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  }, [refresh]);
-  useEffect(() => {
-    if (!visible) return;
-    const timer = setInterval(refresh, watching ? watchingMs : backgroundMs);
-    return () => clearInterval(timer);
-  }, [visible, watching, refresh]);
 }
 
 function presentationOf(reads: ConnectionReads): ConnectionPresentation {

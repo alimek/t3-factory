@@ -171,9 +171,9 @@ const response = await fetch(`http://127.0.0.1:${server.address.port}/api/agents
     name: "Sample worker",
     prompt: "Improve the empty search state",
     execution: {
-      environmentId: "local",
-      providerInstanceId: "codex",
-      modelId: "sample",
+      environmentId: t3.environmentId,
+      providerInstanceId: "codex-main",
+      modelId: "gpt-6.1-sol",
       modelOptions: [],
     },
   }),
@@ -327,6 +327,9 @@ async function approvedBrowserCookie() {
 }
 
 const fixtureRoutes: Record<string, () => unknown> = {
+  async "/__fixture/reporting/break"() {
+    await rm(join(home, "reporting-codex", "skills", "factory-block", "SKILL.md"));
+  },
   async "/__fixture/worker/prepare"() {
     await (workerRuns ??= prepareWorkerRuns());
     return { ok: true };
