@@ -4,6 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { router } from "./router.tsx";
 import { ConnectionStateProvider } from "./connection-state.tsx";
+import { ReportingStateProvider } from "./reporting-state.tsx";
 import { ClientGate } from "./client-gate.tsx";
 import { DesktopShell } from "./desktop-shell.tsx";
 import { desktopBridge } from "./desktop-bridge.ts";
@@ -18,8 +19,14 @@ createRoot(document.getElementById("root")!).render(
       <DesktopShell>
         <ClientGate>
           <ConnectionStateProvider>
-            <RouterProvider router={router} />
-            <TanStackRouterDevtools router={router} initialIsOpen={false} position="bottom-right" />
+            <ReportingStateProvider>
+              <RouterProvider router={router} />
+              <TanStackRouterDevtools
+                router={router}
+                initialIsOpen={false}
+                position="bottom-right"
+              />
+            </ReportingStateProvider>
           </ConnectionStateProvider>
         </ClientGate>
       </DesktopShell>

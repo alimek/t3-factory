@@ -85,6 +85,10 @@ T3 settlement or active-list behavior.
   from another browser profile). The Vite proxy is host-local; controlled remote-client journeys cover pending, approved, revoked, offline and incompatible clients, and desktop fixtures simulate updater
   checks and the native bridge without qualifying real updates, Keychain behavior, certificate trust or a second physical device.
 - **Reporting.** Source-mode installation, recheck and transport must work with missing or stale build output and stay Installed across source-to-built switching; public-operation and subprocess tests own this. The worker E2E journey covers accepted results, questions/replies, handoffs and Human corrections; backend tests own missing-report recovery, report races and failures, context reads without inherited thread hints and exact incoming Agent results on repeated visits. The persistent demo does not model the T3 reply turn of conversation waiting or native harness metadata.
+  To inspect reporting warnings, stop a disposable demo, move its `reporting-codex/skills/factory-block/SKILL.md` aside and restart.
+  The Settings dot turns amber and Studio marks the saved Codex Agents **Reporting needs attention** with the missing-skill explanation.
+  Follow **Open Agent reporting** and **Repair installation**: the dot returns green and the Agents show **Reporting installed** without a reload.
+  The unconfigured, unused Cursor and Claude targets do not make the dot amber. These are configuration checks; no model is launched.
 
 ## Verification coverage
 

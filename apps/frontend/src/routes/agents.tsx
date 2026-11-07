@@ -6,8 +6,10 @@ import { useActiveView } from "../use-active-view.ts";
 import { AgentsListPane } from "../components/studio-agents/agents-list-pane.tsx";
 import { AgentEditorPane } from "../components/studio-agents/agent-editor-pane.tsx";
 import { flowUsageCount } from "@/lib/agent-display";
+import { useReportingState } from "../reporting-state.tsx";
 
 function useAgentsLibrary() {
+  const { refresh: refreshReporting } = useReportingState();
   const [agents, setAgents] = useState<readonly AgentDefinition[] | null>(null);
   const [flows, setFlows] = useState<readonly FlowDraft[] | null>(null);
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>();
@@ -15,7 +17,11 @@ function useAgentsLibrary() {
   const reload = useCallback(async () => {
     setError("");
     try {
-      const [nextAgents, nextFlows] = await Promise.all([api.listAgents(), api.listFlows()]);
+      const [nextAgents, nextFlows] = await Promise.all([
+        api.listAgents(),
+        api.listFlows(),
+        refreshReporting(),
+      ]);
       setAgents(nextAgents);
       setFlows(nextFlows);
       return nextAgents;
@@ -23,7 +29,7 @@ function useAgentsLibrary() {
       setError("Factory could not load Agents.");
       return null;
     }
-  }, []);
+  }, [refreshReporting]);
   useEffect(() => {
     void reload();
   }, [reload]);

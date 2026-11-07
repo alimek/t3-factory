@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReportingInstallation } from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { Button } from "@/components/ui/button";
 import { useClientScope } from "../client-scope.ts";
 import { HostSetupNotice } from "./connection.tsx";
+import { useReportingState } from "../reporting-state.tsx";
 
 const labels: Record<ReportingInstallation["status"], string> = {
   "not-installed": "Not installed",
@@ -20,29 +21,24 @@ const providerNames: Record<string, string> = {
 export function RuntimeSettings() {
   // Installation changes the host's harness homes; remote clients only see its status.
   const host = useClientScope() === "host";
-  const [targets, setTargets] = useState<readonly ReportingInstallation[]>([]);
+  const { targets, refresh: refreshReporting, error: readError } = useReportingState();
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setBusy(true);
     setError("");
-    try {
-      setTargets(await api.getReportingInstallations());
-    } catch (error) {
-      setError(String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
+    await refreshReporting();
+    setBusy(false);
+  }, [refreshReporting]);
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [refresh]);
   const install = async (targetId: string) => {
     setBusy(true);
     setError("");
     try {
       await api.installReporting({ targetId });
-      setTargets(await api.getReportingInstallations());
+      await refreshReporting();
     } catch (error) {
       setError(String(error));
     } finally {
@@ -61,12 +57,12 @@ export function RuntimeSettings() {
       <Button variant="outline" disabled={busy} onClick={() => void refresh()}>
         Recheck installation
       </Button>
-      {error && (
+      {(error || readError) && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {error || readError}
         </p>
       )}
-      {targets.map((target) => (
+      {targets?.map((target) => (
         <article key={target.id} className="space-y-3 rounded-lg border p-4">
           <h3 className="font-medium">{providerNames[target.provider] ?? target.provider}</h3>
           <p role="status" className="text-sm font-medium">
