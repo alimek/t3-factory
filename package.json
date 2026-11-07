@@ -23,6 +23,7 @@
     "format:check": "vp fmt --check",
     "lint": "vp lint",
     "fallow": "fallow --fail-on-issues",
+    "check:git-attribution": "node scripts/check-git-attribution.mjs",
     "prepare": "vp config --no-agent",
     "check": "pnpm format:check && pnpm fallow && pnpm build && pnpm lint && pnpm typecheck && pnpm test"
   },
