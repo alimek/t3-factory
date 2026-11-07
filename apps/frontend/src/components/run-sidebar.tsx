@@ -436,7 +436,7 @@ function RunGroups({
         )}
       </nav>
       <div aria-hidden className="min-h-2 flex-1" />
-      <div className="flex shrink-0 flex-col border-t px-2 py-1.5">
+      <div className="flex shrink-0 flex-col px-2 py-1.5">
         <RunGroup
           name="Snoozed"
           expanded={snoozedExpanded}
