@@ -217,23 +217,29 @@ export function createRunDraft(
     id: string,
     change: (saved: SavedRunDraft | undefined) => SavedRunDraft | undefined,
   ) {
-    const stored = readSaved(scope)?.drafts;
-    const latest = scope === server ? (stored ? withUnsaved(stored) : drafts) : (stored ?? []);
+    const latest = latestDrafts(scope);
     const previous = latest.find((d) => d.id === id) ?? (scope === server ? find(id) : undefined);
     const next = change(previous);
     const others = latest.filter((d) => d.id !== id);
     const result = next ? [...others, next].toSorted(byCreation) : others;
-    const saved = writeSaved(scope, {
-      current: scope === server ? currentId : readSaved(scope)?.current,
-      drafts: result,
-    });
-    if (scope === server) {
-      drafts = result;
-      saveFailed = !saved;
-      if (saved) unsaved.clear();
-      else unsaved.set(id, next);
-    }
+    if (scope !== server)
+      return writeSaved(scope, { current: readSaved(scope)?.current, drafts: result });
+    const saved = store(scope, result);
+    if (!saved) unsaved.set(id, next);
     return saved;
+  }
+  /** Writes the current server's drafts and open composition, tracking whether the write held. */
+  function store(scope: string, result: readonly SavedRunDraft[]) {
+    const saved = writeSaved(scope, { current: currentId, drafts: result });
+    drafts = result;
+    saveFailed = !saved;
+    if (saved) unsaved.clear();
+    return saved;
+  }
+  function latestDrafts(scope: string) {
+    const stored = readSaved(scope)?.drafts;
+    if (scope !== server) return stored ?? [];
+    return stored ? withUnsaved(stored) : drafts;
   }
   /** Overlays this tab's changes that failed to save onto other tabs' stored drafts. */
   function withUnsaved(stored: readonly SavedRunDraft[]) {
@@ -308,7 +314,7 @@ export function createRunDraft(
         flowId: flowId ?? (remembered("flow") || current.flowId),
         input: "",
       };
-    if (server !== undefined) writeSaved(server, { current: currentId, drafts });
+    if (server !== undefined) store(server, latestDrafts(server));
     publish();
   }
   /** Clears a selected Project or Flow that a successful catalog read no longer lists. */

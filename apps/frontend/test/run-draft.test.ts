@@ -489,6 +489,22 @@ it("a recovered save keeps drafts another tab saved while this tab's writes fail
   );
 });
 
+it("opening New Run keeps a draft another tab saved before this tab synced", (context) => {
+  // Arrange
+  const setup = composer(context);
+  setup.draft.leave();
+  const other = reopen(setup).draft;
+  other.openFresh();
+  other.edit({ input: "Other tab" });
+  other.leave();
+
+  // Act
+  setup.draft.openFresh();
+
+  // Assert
+  expect(reopen(setup).draft.getDrafts().map(draftTitle)).toContain("Other tab");
+});
+
 it("validation settles Start and keeps the prompt available for correction", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);
