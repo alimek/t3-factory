@@ -14,6 +14,7 @@ import {
   missingWorkerReport,
   revisitedWorker,
   workerNativeReply,
+  workerFollowupReply,
   finishedWorker,
   pendingReview,
   interruptRunConversation,
@@ -398,6 +399,63 @@ it("a native user answer with explicit null sender retains worker report authori
 
   // Assert
   expect(result.code).toBe("ACCEPTED");
+});
+it("a later native user reply can finish the activation after a reportless reply and backend restart", async (c) => {
+  // Arrange
+  const f = await workerFollowupReply(c);
+  await f.f.close();
+  const factory = await f.h.open({ t3: f.t3 });
+
+  // Act
+  const result = await factory.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await factory.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.activations).toHaveLength(1);
+  expect(run.value.reports).toMatchObject([
+    { executionId: "followup-execution", activationId: run.value.activations[0]?.id },
+  ]);
+  expect(
+    run.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
+  ).toStrictEqual([]);
+});
+it("a later native user reply can ask another question after a reportless reply", async (c) => {
+  // Arrange
+  const f = await workerFollowupReply(c);
+
+  // Act
+  const result = await f.f.runtime.submit({
+    arguments: { to: "waiting", message: "Confirm the revised scope?" },
+    metadata: { callId: "worker-report" },
+  });
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.activations).toHaveLength(1);
+  expect(run.value.reports).toStrictEqual([]);
+  expect(
+    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
+  ).toMatchObject([{ executionId: "followup-execution", message: "Confirm the revised scope?" }]);
+  expect(
+    run.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
+  ).toStrictEqual([]);
+});
+it("an agent-authored follow-up cannot acquire report authority from a settled worker question", async (c) => {
+  // Arrange
+  const f = await workerFollowupReply(c, { createdBy: "agent" });
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal());
+
+  // Assert
+  expect(result.code).toBe("UNBOUND_ACTIVATION");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports).toStrictEqual([]);
 });
 it("a native user answer with omitted sender can ask a new question on the same activation", async (c) => {
   // Arrange

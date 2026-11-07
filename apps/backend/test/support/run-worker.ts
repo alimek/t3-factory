@@ -198,29 +198,25 @@ export async function workerNativeReply(
 function supplyWorkerReply(
   f: Awaited<ReturnType<typeof waitingWorker>>,
   reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
+  executionId = "answer-execution",
+  ordinal = 2,
 ) {
   const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
   f.t3.executionObservations.set(WORKER_THREAD, {
     ...prior,
-    activeRunId: "answer-execution",
-    latestRunId: "answer-execution",
-    recentRuns: [...prior.recentRuns, { runId: "answer-execution", status: "running", ordinal: 2 }],
+    activeRunId: executionId,
+    latestRunId: executionId,
+    recentRuns: [...prior.recentRuns, { runId: executionId, status: "running", ordinal }],
   });
-  bindThreadReportCaller(
-    f.t3,
-    f.project.projectId,
-    WORKER_THREAD,
-    "answer-execution",
-    "worker-report",
-  );
+  bindThreadReportCaller(f.t3, f.project.projectId, WORKER_THREAD, executionId, "worker-report");
   f.t3.runtimeActivity = {
     ...f.t3.runtimeActivity,
     items: [
       ...f.t3.runtimeActivity.items,
       {
-        itemId: "user-answer",
+        itemId: "user-answer-" + executionId,
         type: "message",
-        runId: "answer-execution",
+        runId: executionId,
         text: "Public audience.",
         visibility: "local",
         sourceThreadId: WORKER_THREAD,
@@ -229,6 +225,19 @@ function supplyWorkerReply(
       },
     ],
   };
+}
+
+/** A second native answer follows a completed reply turn that omitted its report. */
+export async function workerFollowupReply(
+  c: TestContext,
+  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
+) {
+  const f = await workerNativeReply(c);
+  assert((await f.f.reconcileRuns()).ok);
+  finishWorker(f);
+  assert((await f.f.reconcileRuns()).ok);
+  supplyWorkerReply(f, reply, "followup-execution", 3);
+  return f;
 }
 
 export async function revisitReportingWorker(c: TestContext) {
