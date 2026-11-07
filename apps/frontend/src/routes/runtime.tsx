@@ -5,10 +5,16 @@ import { Button } from "@/components/ui/button";
 import { useClientScope } from "../client-scope.ts";
 import { HostSetupNotice } from "./connection.tsx";
 
-const labels = {
+const labels: Record<ReportingInstallation["status"], string> = {
   "not-installed": "Not installed",
   installed: "Installed",
   "needs-attention": "Needs attention",
+  unsupported: "Reporting not available yet",
+};
+const providerNames: Record<string, string> = {
+  claudeAgent: "Claude",
+  codex: "Codex",
+  cursor: "Cursor",
 };
 export function RuntimeSettings() {
   // Installation changes the host's harness homes; remote clients only see its status.
@@ -61,19 +67,15 @@ export function RuntimeSettings() {
       )}
       {targets.map((target) => (
         <article key={target.id} className="space-y-3 rounded-lg border p-4">
-          <h3 className="font-medium">
-            {target.provider === "claudeAgent"
-              ? "Claude"
-              : target.provider === "codex"
-                ? "Codex"
-                : target.provider}
-          </h3>
+          <h3 className="font-medium">{providerNames[target.provider] ?? target.provider}</h3>
           <p role="status" className="text-sm font-medium">
             {labels[target.status]}
           </p>
-          <p className="break-all text-xs text-muted-foreground">
-            {target.path ?? "Configuration target unavailable"}
-          </p>
+          {target.status !== "unsupported" && (
+            <p className="break-all text-xs text-muted-foreground">
+              {target.path ?? "Configuration target unavailable"}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">{target.instances.join(", ")}</p>
           <p className="text-sm">{target.message}</p>
           {host && (

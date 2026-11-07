@@ -50,7 +50,9 @@ function initialExecution(
   capabilities: AgentCapabilities | null,
 ): AgentExecutionSettings {
   if (saved) return saved;
-  const provider = capabilities?.providers[0];
+  const provider =
+    capabilities?.providers.find((entry) => entry.reporting.supported) ??
+    capabilities?.providers[0];
   const model = provider?.models[0];
   return {
     environmentId: capabilities?.environments[0]?.environmentId ?? "",
@@ -177,12 +179,19 @@ export function ExecutionSettingsFields({
           saving={saving}
           choices={providers.map((entry) => ({
             id: entry.providerInstanceId,
-            label: entry.displayName ?? entry.providerInstanceId,
+            label: `${entry.displayName ?? entry.providerInstanceId}${entry.reporting.supported ? "" : " (no Factory reporting yet)"}`,
+            disabled: !entry.reporting.supported,
           }))}
           emptyLabel="Capabilities unavailable"
           unavailableLabel={`Saved provider (${availability})`}
         />
       </div>
+      {selectedProvider && !selectedProvider.reporting.supported && (
+        <p role="status" className="text-xs text-attention">
+          {selectedProvider.reporting.explanation} Start is blocked until you choose another
+          provider.
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <CapabilityField
           id={`${role}-model`}
@@ -276,7 +285,7 @@ function CapabilityField({
   value: string;
   onChange: (value: string) => void;
   saving: boolean;
-  choices: readonly { id: string; label: string }[];
+  choices: readonly { id: string; label: string; disabled?: boolean }[];
   emptyLabel: string;
   unavailableLabel: string;
 }) {
@@ -297,7 +306,7 @@ function CapabilityField({
             </NativeSelectOption>
           )}
           {choices.map((choice) => (
-            <NativeSelectOption key={choice.id} value={choice.id}>
+            <NativeSelectOption key={choice.id} value={choice.id} disabled={choice.disabled}>
               {choice.label}
             </NativeSelectOption>
           ))}

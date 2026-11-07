@@ -20,6 +20,9 @@ export interface SavedRunDraft {
   readonly submission?: StartRunInput;
 }
 
+/** Where the user fixes a rejected Start: Agent reporting setup, or the Agent and Flow choices. */
+type StartRemedy = "reporting" | "studio";
+
 interface RunDraft {
   draftId: string | undefined;
   projectId: string;
@@ -28,6 +31,7 @@ interface RunDraft {
   pending: boolean;
   busy: boolean;
   error: string;
+  remedy: StartRemedy;
   saveFailed: boolean;
 }
 
@@ -181,6 +185,7 @@ export function createRunDraft(
   let current = { projectId: "", flowId: "", input: "" };
   let currentId: string | undefined;
   let error = "";
+  let remedy: StartRemedy = "studio";
   let saveFailed = false;
   const unsaved = new Map<string, SavedRunDraft | undefined>();
   const inFlight = new Set<string>();
@@ -195,6 +200,7 @@ export function createRunDraft(
       pending: !!saved?.submission,
       busy: !!currentId && inFlight.has(currentId),
       error,
+      remedy,
       saveFailed,
     };
   }
@@ -352,9 +358,12 @@ export function createRunDraft(
   }
   function rejectStart(id: string, failure: unknown, recoverable: boolean) {
     if (id !== currentId) return;
-    if (confirmedRejection(failure))
+    if (confirmedRejection(failure)) {
       error = [failure.message, ...failure.detail.issues.map((issue) => issue.message)].join(" ");
-    else error = recoverable ? unknownOutcome : unsavedUnknownOutcome;
+      remedy = failure.detail.issues.some((issue) => issue.code === "reporting_installation")
+        ? "reporting"
+        : "studio";
+    } else error = recoverable ? unknownOutcome : unsavedUnknownOutcome;
   }
   async function start() {
     const requestServer = server;

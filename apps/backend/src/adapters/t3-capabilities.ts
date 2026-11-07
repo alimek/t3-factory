@@ -2,8 +2,8 @@ import type {
   AgentModelCapability,
   AgentModelOptionDescriptor,
   AgentOptionChoice,
-  AgentProviderCapability,
 } from "@t3-factory/contracts";
+import type { T3ProviderCapability } from "./t3.ts";
 
 type PublishedDefault = { readonly default?: string | boolean };
 
@@ -82,7 +82,7 @@ function modelCapability(model: unknown): AgentModelCapability[] {
   return [{ id, label, ...(options?.length ? { options } : {}) }];
 }
 
-function providerCapability(provider: unknown): AgentProviderCapability[] {
+function providerCapability(provider: unknown): T3ProviderCapability[] {
   if (!isObject(provider)) return [];
   const providerInstanceId = stringField(provider, "providerInstanceId") ?? "";
   const driverKind = stringField(provider, "driverKind") ?? "";
@@ -93,7 +93,7 @@ function providerCapability(provider: unknown): AgentProviderCapability[] {
 }
 
 /** Decodes an `orchestrator_capabilities` result, dropping entries Factory cannot represent. */
-export function parseProviderCapabilities(body: unknown): AgentProviderCapability[] {
+export function parseProviderCapabilities(body: unknown): T3ProviderCapability[] {
   const providers = isObject(body) ? arrayField(body, "providers") : undefined;
   if (!providers) throw new Error("orchestrator_capabilities returned an unexpected shape.");
   return providers.flatMap(providerCapability);

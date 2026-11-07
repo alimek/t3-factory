@@ -552,6 +552,24 @@ it("validation settles Start and keeps the prompt available for correction", asy
   });
 });
 
+it("a Start blocked by reporting installation points the user to Agent reporting", async (context) => {
+  // Arrange
+  const { draft, startRun } = composer(context);
+  startRun.mockRejectedValueOnce(
+    new ApiError({
+      code: "validation",
+      message: "Execution readiness is incomplete for Griller.",
+      issues: [{ code: "reporting_installation", path: "runtime", message: "Repair." }],
+    }),
+  );
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ pending: false, remedy: "reporting" });
+});
+
 it("a missing Start reference settles the request without clearing the prompt", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);

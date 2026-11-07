@@ -20,6 +20,13 @@ export class PersistentT3 extends ControlledT3 {
     this.statePath = join(home, "demo-engine.json");
     this.authorized = true;
     this.serverVersion = "local-development-simulator";
+    // A provider T3 offers but Factory cannot correlate reports from yet.
+    this.controlledProviders.push({
+      providerInstanceId: "demo-cursor",
+      displayName: "Cursor",
+      driverKind: "cursor",
+      models: [{ id: "composer-2", label: "Composer 2" }],
+    });
     if (restore) this.restore();
   }
 
