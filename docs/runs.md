@@ -5,7 +5,11 @@
 Open **New Run (+)** (`/runs/new`; the Flow editor's **Start Run** opens a fresh composition with its saved Flow selected). Choose an
 available project, a global ready Flow and a required initial prompt. Factory checks the project and connection, the graph,
 every referenced Agent's settings, reporting installation and explicit-call API compatibility before accepting Start.
-Failures explain recovery and keep the draft.
+Failures explain recovery and keep the draft. Start collects setup problems for every referenced Agent,
+including later branches, labels each cause with its Agent and offers reporting, Studio or connection
+repair actions. Agent checks and launch capability inspection use the same Start preflight; no worker
+is launched on rejection. Correct configuration, accepted Start and accepted Block result are separate
+levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
   else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes

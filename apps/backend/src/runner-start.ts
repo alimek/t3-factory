@@ -272,20 +272,30 @@ export function openRunnerStart(
       if (!readiness.ready)
         return failure("validation", "Fix Flow readiness before starting.", readiness.issues);
       const agents = yield* readyAgents(flow, target.project.id);
-      if (!agents.ok) return agents;
       const support = yield* Effect.tryPromise({
         try: () => t3.inspectLaunchSupport(target.project).catch(() => null),
         catch: (error) => error,
       });
-      if (!support)
+      const issues: ValidationIssue[] = [
+        ...(!agents.ok ? agents.error.issues : []),
+        ...(!support || !support.supported
+          ? [
+              {
+                code: "launch_unsupported",
+                path: "connection.contract",
+                message:
+                  support?.explanation ??
+                  "T3 launch capabilities are unavailable. Recheck the connection and retry this Start.",
+              },
+            ]
+          : []),
+      ];
+      if (!agents.ok || !support || !support.supported)
         return failure(
           "validation",
-          "T3 launch capabilities are unavailable. Recheck the connection and retry this Start.",
+          "Flow execution setup is incomplete. No Run was created.",
+          issues,
         );
-      if (!support.supported)
-        return failure("validation", support.explanation, [
-          { code: "launch_unsupported", path: "connection.contract", message: support.explanation },
-        ]);
       return {
         ok: true as const,
         value: { ...target, flow, agents: agents.value, retryScope: support.retryScope },
@@ -298,6 +308,7 @@ export function openRunnerStart(
   ): Effect.Effect<Result<RunDefinitions["agents"][number][]>, unknown> {
     return Effect.gen(function* () {
       const agents: RunDefinitions["agents"][number][] = [];
+      const issues: ValidationIssue[] = [];
       const ids = new Set(
         flow.graph.blocks.flatMap((block) =>
           block.kind === "agent" && block.agentId ? [block.agentId] : [],
@@ -305,18 +316,33 @@ export function openRunnerStart(
       );
       for (const id of ids) {
         const agent = yield* ops.getAgent(id);
-        if (!agent.ok) return agent;
+        if (!agent.ok) {
+          issues.push({
+            code: "agent_unavailable",
+            path: `agents.${id}`,
+            message: `Agent ${id}: ${agent.error.message}`,
+          });
+          continue;
+        }
         const check = yield* checkAgent(projectId, agent.value);
-        if (!check.ok) return check;
-        if (!check.value.ready)
-          return failure(
-            "validation",
-            `Execution readiness is incomplete for ${agent.value.name}.`,
-            check.value.issues,
-          );
+        const problems = !check.ok
+          ? [
+              { code: "agent_readiness", path: "runtime", message: check.error.message },
+              ...check.error.issues,
+            ]
+          : check.value.issues;
+        issues.push(
+          ...problems.map((issue) => ({
+            ...issue,
+            path: `agents.${id}.${issue.path}`,
+            message: `${agent.value.name}: ${issue.message}`,
+          })),
+        );
         agents.push(agent.value);
       }
-      return { ok: true, value: agents };
+      return issues.length
+        ? failure("validation", "Flow Agent setup is incomplete.", issues)
+        : { ok: true, value: agents };
     });
   }
   return { start };

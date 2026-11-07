@@ -253,6 +253,17 @@ export async function seedScenarios(
     clientRequestId: "demo-project-picker-child",
     task: "Implement the empty state and return the result to the parent worker.",
   });
+  delegateNativeWork(context.t3, worker.threadId, worker.executionId, {
+    target: {
+      providerInstanceId: "codex-main",
+      model: "gpt-6.1-sol",
+      options: { reasoning: "high" },
+    },
+    mode: "async",
+    isolation: "shared",
+    clientRequestId: "demo-project-picker-review",
+    task: "Review empty-state keyboard focus and accessible labels independently.",
+  });
   await reconcileUntil(
     context,
     working.id,
@@ -262,6 +273,6 @@ export async function seedScenarios(
           block.blockId === worker.blockId &&
           block.engineStatus === "completed" &&
           block.state === "working",
-      ) && run.threadBindings.some((binding) => binding.role === "descendant"),
+      ) && run.threadBindings.filter((binding) => binding.role === "descendant").length === 2,
   );
 }

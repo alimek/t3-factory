@@ -327,6 +327,40 @@ async function approvedBrowserCookie() {
 }
 
 const fixtureRoutes: Record<string, () => unknown> = {
+  "/__fixture/readiness/incomplete-runtime"() {
+    t3.runtimeContractComplete = false;
+  },
+  async "/__fixture/readiness/restore"() {
+    t3.runtimeContractComplete = true;
+    const targets = requireSuccess(await factory.getReportingInstallations());
+    const codex = targets.find((target) => target.instances.includes("codex-main"));
+    assert(codex);
+    requireSuccess(await factory.installReporting({ targetId: codex.id }));
+  },
+  async "/__fixture/readiness/report"() {
+    const summary = requireSuccess(await factory.listRunNavigation()).find(
+      (run) => run.title === "UI whole Flow readiness",
+    );
+    assert(summary);
+    const current = requireSuccess(await factory.getRun(summary.id));
+    const source = requireSuccess(await factory.listProjects()).projects.find(
+      (item) => item.id === current.task.projectId,
+    );
+    assert(source);
+    const accepted = await report(
+      { ...context, t3ProjectId: source.projectId },
+      current,
+      "worker",
+      {
+        to: "finished",
+        exit: "review",
+        message: "Ready for parallel review.",
+      },
+    );
+    await observeTerminal(t3, executionBlock(accepted), "completed");
+    await reconcileUntil(context, current.id, (run) => run.activations.length === 3);
+    return { ok: true };
+  },
   async "/__fixture/reporting/remove-registration"() {
     await rm(join(home, "reporting-codex", "config.toml"));
   },

@@ -6,7 +6,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { restoreLaunches } from "./support/lifecycle-setup.ts";
 import { dirname, join } from "node:path";
-import { prepared } from "./support/prepared-runner.ts";
+import { prepared, preparedBlockedFlow } from "./support/prepared-runner.ts";
 
 it("Start atomically deduplicates concurrent requests for the same Run", async (c) => {
   // Arrange
@@ -250,4 +250,23 @@ it("reusing a Start request key with a different draft title is a conflict", asy
   // Assert
   assert(!result.ok);
   expect(result.error.code).toBe("conflict");
+});
+
+it("Start reports all blocked later Agents while the entry Agent is ready and creates no Run", async (c) => {
+  // Arrange
+  const { f, t3, input, agent, project } = await preparedBlockedFlow(c);
+  const entry = await f.recheckRuntime({ projectId: project.id, agentId: agent.id });
+  assert(entry.ok && entry.value.ready);
+
+  // Act
+  const result = await f.startRun(input);
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues.map((issue) => issue.message)).toEqual([
+    expect.stringContaining("Code reviewer:"),
+    expect.stringContaining("Accessibility reviewer:"),
+  ]);
+  expect(await f.listRuns(project.id)).toStrictEqual({ ok: true, value: [] });
+  expect(t3.launches.size).toBe(0);
 });

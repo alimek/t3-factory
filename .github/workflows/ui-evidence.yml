@@ -1,0 +1,47 @@
+name: UI evidence
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    paths:
+      - "apps/frontend/**"
+
+permissions:
+  pull-requests: read
+
+jobs:
+  attachments:
+    name: UI evidence attachments
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require Before and After images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          const number = process.env.GITHUB_REF.match(/^refs\/pull\/(\d+)\/merge$/)?.[1];
+          if (!number) throw new Error('Expected an open pull request merge ref.');
+          const pr = JSON.parse(execFileSync('gh', ['api', `repos/${process.env.GITHUB_REPOSITORY}/pulls/${number}`], { encoding: 'utf8' }));
+          let fence;
+          const body = (pr.body ?? '').replace(/<!--[\s\S]*?-->/g, '').split('\n').filter((line) => {
+            const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+            if (fence) {
+              if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*$`).test(line)) fence = undefined;
+              return false;
+            }
+            if (marker) { fence = marker[1]; return false; }
+            return !/^(?: {4}|\t)/.test(line);
+          }).join('\n').replace(/(`+)[\s\S]*?\1/g, '');
+          const section = body.match(/^## UI screenshots\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m)?.[1] ?? '';
+          const image = /!\[[^\]]*\]\(https:\/\/[^\s)]+\)/;
+          for (const label of ['Before', 'After']) {
+            const block = section.match(new RegExp(`^### ${label}\\s*\\n([\\s\\S]*?)(?=^### |$(?![\\s\\S]))`, 'm'))?.[1] ?? '';
+            if (!image.test(block)) {
+              console.error(`::error::UI changes require an embedded HTTPS image under "### ${label}" in "## UI screenshots". See verify-t3-factory Evidence.`);
+              process.exitCode = 1;
+            }
+          }
+          JS

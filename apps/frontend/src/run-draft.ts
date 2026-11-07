@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { StartRunInput } from "@t3-factory/contracts";
+import type { StartRunInput, ValidationIssue } from "@t3-factory/contracts";
 import { isCanonicalTimestamp, TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import { randomId } from "./lib/ids.ts";
 import { useNavigate } from "@tanstack/react-router";
@@ -32,6 +32,7 @@ interface RunDraft {
   busy: boolean;
   error: string;
   remedy: StartRemedy;
+  issues: readonly ValidationIssue[];
   saveFailed: boolean;
 }
 
@@ -186,6 +187,7 @@ export function createRunDraft(
   let currentId: string | undefined;
   let error = "";
   let remedy: StartRemedy = "studio";
+  let issues: readonly ValidationIssue[] = [];
   let saveFailed = false;
   const unsaved = new Map<string, SavedRunDraft | undefined>();
   const inFlight = new Set<string>();
@@ -201,6 +203,7 @@ export function createRunDraft(
       busy: !!currentId && inFlight.has(currentId),
       error,
       remedy,
+      issues,
       saveFailed,
     };
   }
@@ -262,6 +265,7 @@ export function createRunDraft(
   }
   function show(saved: SavedRunDraft | undefined) {
     currentId = saved?.id;
+    issues = [];
     error = saved?.submission && !inFlight.has(saved.id) ? unknownOutcome : "";
     if (saved) {
       const { projectId, flowId, input } = saved;
@@ -307,6 +311,7 @@ export function createRunDraft(
     if (find(currentId)?.submission) return;
     current = { ...current, ...change };
     error = "";
+    issues = [];
     if (change.projectId !== undefined || change.flowId !== undefined) {
       rememberChoice("project", current.projectId);
       rememberChoice("flow", current.flowId);
@@ -352,6 +357,7 @@ export function createRunDraft(
       currentId = undefined;
       current = { ...current, input: "" };
       error = "";
+      issues = [];
     }
     commit(server, id, () => undefined);
     publish();
@@ -359,7 +365,8 @@ export function createRunDraft(
   function rejectStart(id: string, failure: unknown, recoverable: boolean) {
     if (id !== currentId) return;
     if (confirmedRejection(failure)) {
-      error = [failure.message, ...failure.detail.issues.map((issue) => issue.message)].join(" ");
+      error = failure.message;
+      issues = failure.detail.issues;
       remedy = failure.detail.issues.some((issue) => issue.code === "reporting_installation")
         ? "reporting"
         : "studio";
@@ -387,6 +394,7 @@ export function createRunDraft(
       submission: request,
     }));
     error = "";
+    issues = [];
     publish();
     let run;
     try {

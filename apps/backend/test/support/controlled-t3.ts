@@ -86,8 +86,13 @@ export class ControlledT3 implements T3Adapter {
     return {
       supported: this.launchSupported,
       retryScope: this.retryScope,
-      explanation: "Controlled durable replay lifetime",
+      explanation: this.launchSupported
+        ? "Controlled durable replay lifetime"
+        : "T3 launch contract is unsupported. Recheck the T3 connection.",
     };
+  }
+  protected launchIds(n: number) {
+    return { threadId: `thread-${n}`, runId: `execution-${n}` };
   }
   async launchThread(
     _target: T3Endpoint,
@@ -99,14 +104,14 @@ export class ControlledT3 implements T3Adapter {
     if (accepted && JSON.stringify(accepted.payload) !== JSON.stringify(payload))
       throw Error("Key conflict");
     if (!accepted) {
-      const n = this.launches.size + 1;
+      const { threadId, runId } = this.launchIds(this.launches.size + 1);
       accepted = {
         payload,
         reference: {
           projectId: payload.projectId,
-          threadId: `thread-${n}`,
-          runId: `execution-${n}`,
-          link: `t3://threads/thread-${n}`,
+          threadId,
+          runId,
+          link: `t3://threads/${threadId}`,
           status: "running",
         },
       };
@@ -495,6 +500,7 @@ export class ControlledT3 implements T3Adapter {
   pendingApproval = false;
   reopenedApprovals = 0;
   capabilitiesAvailable = true;
+  runtimeContractComplete = true;
   readonly controlledProviders: T3ProviderCapability[] = [
     {
       providerInstanceId: "codex-main",
@@ -543,7 +549,9 @@ export class ControlledT3 implements T3Adapter {
               "modelSelection",
               "workspaceStrategy",
             ],
-            t3_thread_send: ["threadId", "clientRequestId", "mode"],
+            t3_thread_send: this.runtimeContractComplete
+              ? ["threadId", "clientRequestId", "mode"]
+              : ["threadId", "clientRequestId"],
             t3_thread_read: ["threadId", "view", "afterPosition"],
             t3_queue: ["action", "queuedRunId"],
             t3_thread_interrupt: ["threadId", "stop", "clientRequestId"],

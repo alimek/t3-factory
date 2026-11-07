@@ -40,7 +40,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 
 | Run title after prefix | Initial state | Useful interaction |
 | --- | --- | --- |
-| Working · Improve the project picker | Open, one working Agent whose own turn completed while its delegated child still runs | Inspect the working Block and retained descendant without a missing-report Problem; Stop; launch another Run |
+| Working · Improve the project picker | Open, one working Agent whose own turn completed while two delegated children still run | Inspect the working Block and two retained descendants and their distinct links without a missing-report Problem; Stop; launch another Run |
 | Waiting for your review | Pending Human occurrence after implementation/review | Approve or request changes with feedback |
 | Applying your requested changes | Answered Human occurrence and renewed Agent work | Inspect correction handoff and work history |
 | Two reviewers working in parallel | Two active reviewer blocks | Inspect independent branches and Stop |
@@ -100,14 +100,22 @@ T3 settlement or active-list behavior.
   The demo's HTTPS listener serves the API without the browser UI; the desktop client supplies its bundled UI. Opening the Vite URL instead still uses host-local access.
 - **Reporting.** The demo's Codex entry points at the demo backend's own Factory MCP URL; backend tests own the installed URL reaching the listening server and repair after an address change. The worker E2E journey covers accepted results, questions/replies, handoffs and Human corrections; backend tests own missing-report recovery (including pending delegation/continuation refusal), durable rejection diagnostics, report races and failures, context reads without inherited thread hints and exact incoming Agent results on repeated visits. The persistent demo does not model the T3 reply turn of conversation waiting or native harness metadata.
   To inspect initial installation, stop a disposable demo, move its `reporting-codex/config.toml` aside and restart. From the approved desktop client configured above, open **Settings → Agent reporting**, choose **Install Factory MCP** on the Codex target and reload: it stays **Installed**.
-  The Working scenario retains an active delegated child after the parent turn completes;
+  The Working scenario retains two active delegated children after the parent turn completes;
   backend tests cover automatic notification continuations, report acceptance after restart
-  and rejection of notifications that would bypass a user question. Layout proof uses long
-  execution and recovery identities in the isolated UI fixture; demo identifiers stay short.
+  and rejection of notifications that would bypass a user question. Fresh demo and UI
+  fixture workers and descendants use UUID thread identities and `run:thread:<uuid>:ordinal:1`
+  execution identities, carried through adapter evidence and public Run reads. Retained
+  homes preserve existing identities; reset only a disposable home to see the new baseline.
   To inspect reporting warnings, stop a disposable demo, move its `reporting-codex/skills/factory-block/SKILL.md` aside and restart.
   The Settings dot turns amber and Studio marks the saved Codex Agents **Reporting needs attention** with the missing-skill explanation.
   Follow **Open Agent reporting** and **Repair installation**: the dot returns green and the Agents show **Reporting installed** without a reload.
   The unconfigured, unused Cursor and Claude targets do not make the dot amber. These are configuration checks; no model is launched.
+  With that skill missing, compose **Demo · Parallel review** and press **Start**: all three
+  referenced Agents, including both later reviewers, appear in Start blockers and no Run is
+  created. Repair Codex and retry the same draft. The controlled whole-Flow journey separately
+  proves accepted Start and accepted worker result; neither follows from a green Settings dot.
+  A controlled runtime-contract rejection (missing T3 send fields, reported for every Agent) checks the connection repair link and
+  absence of an Agent repair action when no Agent is blocked.
 
 ## Verification coverage
 
