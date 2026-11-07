@@ -88,5 +88,7 @@ documentation impact and any migration or intentional compatibility break. Link 
 issue when applicable and identify anything still unverified. Review your diff against
 the [change review criteria](docs/quality-gates.md#change-review).
 
-Use your own Git identity. Follow the [community standards](CODE_OF_CONDUCT.md).
+Use the configured Git identity and attribution-free commit and squash messages;
+see the [Git attribution check](docs/quality-gates.md#git-identity-and-squash-input).
+Follow the [community standards](CODE_OF_CONDUCT.md).
 Contributions are made under the repository's [MIT License](LICENSE).
