@@ -1,9 +1,9 @@
 import { assert, expect, it } from "@effect/vitest";
-import { mainUpgradeData } from "./support/main-upgrade.ts";
+import { releasedUpgradeData } from "./support/released-upgrade.ts";
 
-it("upgrading deletes open Runs and preserves clients, Flows, Agents and Tasks", async (c) => {
+it("upgrading v0.2.0 preserves clients, current definitions and closed and active Run history", async (c) => {
   // Arrange
-  const fixture = await mainUpgradeData(c);
+  const fixture = await releasedUpgradeData(c);
 
   // Act
   const factory = await fixture.h.open({ t3: fixture.t3, connectionRetryMs: 60_000 });
@@ -16,40 +16,50 @@ it("upgrading deletes open Runs and preserves clients, Flows, Agents and Tasks",
   const revoked = await factory.getClientAccess(fixture.revokedCredential);
   assert(revoked.ok);
   expect(revoked.value.status).toBe("revoked");
-  const flow = await factory.getFlow(fixture.flow.id);
-  assert(flow.ok);
-  expect(flow.value).toMatchObject({
-    id: fixture.flow.id,
-    name: fixture.flow.name,
-    revision: fixture.flow.revision,
-    graph: fixture.flow.graph,
-    createdAt: fixture.flow.createdAt,
-    updatedAt: fixture.flow.updatedAt,
+  expect(await factory.listFlows()).toMatchObject({ ok: true, value: [{ id: fixture.flow.id }] });
+  expect(await factory.getFlow(fixture.flow.id)).toStrictEqual({ ok: true, value: fixture.flow });
+  expect(await factory.listAgents()).toMatchObject({ ok: true, value: [{ id: fixture.agent.id }] });
+  expect(await factory.getAgent(fixture.agent.id)).toStrictEqual({
+    ok: true,
+    value: fixture.agent,
   });
-  const agent = await factory.getAgent(fixture.agent.id);
-  assert(agent.ok);
-  expect(agent.value).toMatchObject(fixture.agent);
-  expect(agent.value).not.toHaveProperty("coordinator");
-  const run = await factory.getRun(fixture.before.id);
-  assert(!run.ok);
-  expect(run.error.code).toBe("not_found");
-  const current = await factory.getRun(fixture.current.id);
-  assert(!current.ok);
-  expect(current.error.code).toBe("not_found");
+  const retiredFlow = await factory.getFlow(fixture.retired.flow.id);
+  assert(!retiredFlow.ok);
+  expect(retiredFlow.error.code).toBe("not_found");
+  const retiredAgent = await factory.getAgent(fixture.retired.agent.id);
+  assert(!retiredAgent.ok);
+  expect(retiredAgent.error.code).toBe("not_found");
+  expect(await factory.getRun(fixture.closed.id)).toStrictEqual({
+    ok: true,
+    value: fixture.closed,
+  });
+  const active = await factory.getRun(fixture.active.id);
+  assert(active.ok);
+  expect(active.value).toMatchObject({
+    id: fixture.active.id,
+    closedAt: null,
+    outcome: null,
+    snapshot: fixture.active.snapshot,
+    threadBindings: fixture.active.threadBindings,
+  });
+  const [activation] = fixture.active.activations;
+  const [execution] = fixture.active.executions;
+  assert(activation && execution);
+  expect(active.value.activations).toMatchObject([
+    { id: activation.id, blockId: activation.blockId, delegation: activation.delegation },
+  ]);
+  expect(active.value.executions).toMatchObject([
+    { activationId: execution.activationId, executionId: execution.executionId },
+  ]);
   const navigation = await factory.listRunNavigation();
   assert(navigation.ok);
-  expect(navigation.value.map((entry) => entry.id)).toStrictEqual([]);
+  expect(navigation.value.map((entry) => [entry.id, entry.outcome])).toStrictEqual([
+    [fixture.active.id, null],
+    [fixture.closed.id, "finished"],
+  ]);
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);
-  expect(tasks.value.find((task) => task.id === fixture.before.task.id)).toMatchObject({
-    ...fixture.before.task,
-    activeRunId: null,
-    latestRun: null,
-    runs: [],
-  });
-  expect(tasks.value.find((task) => task.id === fixture.current.task.id)).toMatchObject({
-    id: fixture.current.task.id,
-    activeRunId: null,
-    runs: [],
-  });
+  expect(tasks.value.map((task) => [task.id, task.activeRunId])).toStrictEqual(
+    fixture.tasks.map((task) => [task.id, task.activeRunId]),
+  );
 });
