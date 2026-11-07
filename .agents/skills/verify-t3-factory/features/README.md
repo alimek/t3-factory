@@ -17,7 +17,7 @@ use older/newer peers owned and cleaned up by the same fixture process.
 | Flow authoring | `tests/flow-authoring.e2e.ts` | Connections, loop/fan-out, readiness and durable saving |
 | Settings and shortcuts | `tests/keyboard-shortcuts.e2e.ts` | Palette selection and Settings preserving the composer draft |
 | Current Run lifecycle | `tests/run-worker.e2e.ts` | Worker settings, launch/observe, exact question link and reply, handoff, Human correction, Stop/closure and Run again |
-| Remote access | `tests/remote-access.e2e.ts` | Approval, revocation, offline state and compatibility |
+| Remote access | `tests/remote-access.e2e.ts` | Approval, revocation, offline state, compatibility and installing a server update from a client |
 | Remote connection | `tests/remote-connection.e2e.ts` | Host authorization and automatic connection status |
 
 Use `pnpm exec e2e run <spec> --trace on --video on --output .e2e/proof/<change>`.

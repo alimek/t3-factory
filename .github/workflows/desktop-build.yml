@@ -1,0 +1,182 @@
+name: Desktop build
+
+# Signed, notarized and probed macOS build of one exact commit, shared by stable Releases and
+# beta builds. It writes only Actions artifacts; the calling workflow publishes them.
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Commit to build
+        required: true
+        type: string
+      channel:
+        description: release (version from package.json) or beta (prerelease of the next patch)
+        required: true
+        type: string
+      release-version:
+        description: Expected version of a stable Release (X.Y.Z)
+        required: false
+        type: string
+      beta-number:
+        description: Monotonic beta build number
+        required: false
+        type: string
+    outputs:
+      version:
+        description: Packaged application version
+        value: ${{ jobs.build-macos.outputs.version }}
+      tag:
+        description: Release tag for that version (vVERSION)
+        value: ${{ jobs.build-macos.outputs.tag }}
+
+permissions: {}
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+    env:
+      BUILD_SHA: ${{ inputs.sha }}
+      BUILD_CHANNEL: ${{ inputs.channel }}
+      RELEASE_VERSION: ${{ inputs.release-version }}
+      BETA_NUMBER: ${{ inputs.beta-number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Check build source
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(git rev-parse HEAD)" = "$BUILD_SHA"
+          case "$BUILD_CHANNEL" in
+            release)
+              for manifest in package.json apps/desktop/package.json; do
+                version=$(node -p "require('./$manifest').version")
+                if [[ "$version" != "$RELEASE_VERSION" ]]; then
+                  echo "::error::$manifest has version $version, expected $RELEASE_VERSION."
+                  exit 1
+                fi
+              done ;;
+            beta)
+              if [[ ! "$BETA_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::Beta builds need a positive build number, got '$BETA_NUMBER'."
+                exit 1
+              fi ;;
+            *)
+              echo "::error::Unknown build channel '$BUILD_CHANNEL'."
+              exit 1 ;;
+          esac
+          mkdir -p .e2e/release
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Check controlled UI journeys
+        run: |
+          pnpm exec e2e-web install chromium
+          pnpm exec e2e run --trace on --output .e2e/release/journeys
+      - name: Build, sign and notarize
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          FACTORY_UPDATE_GITHUB_OWNER: ${{ github.repository_owner }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_CONTENT APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing release secret: $name"
+              exit 1
+            fi
+          done
+          # Scheduled runs carry no repository payload; derive the feed repository from the run.
+          export FACTORY_UPDATE_GITHUB_REPO="${GITHUB_REPOSITORY#*/}"
+          export APPLE_API_KEY="$RUNNER_TEMP/factory-notary-key.p8"
+          (umask 077; printf '%s' "$APPLE_API_KEY_CONTENT" > "$APPLE_API_KEY")
+          if [[ "$BUILD_CHANNEL" = release ]]; then
+            pnpm desktop:package:release
+          else
+            pnpm desktop:package:beta "$BETA_NUMBER"
+          fi
+      - id: identity
+        name: Record packaged version
+        run: |
+          version=$(node -p "require('./apps/desktop/stage/package.json').version")
+          if [[ "$BUILD_CHANNEL" = release && "$version" != "$RELEASE_VERSION" ]]; then
+            echo "::error::Packaged version $version differs from $RELEASE_VERSION."
+            exit 1
+          fi
+          if [[ "$BUILD_CHANNEL" = beta && "$version" != *"-beta.$BETA_NUMBER" ]]; then
+            echo "::error::Packaged version $version is not beta build $BETA_NUMBER."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - name: Verify packaged application
+        run: |
+          app='apps/desktop/release/mac-arm64/T3 Factory.app'
+          codesign --verify --deep --strict --verbose=2 -R='anchor apple generic' "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          pnpm desktop:probe "$PWD/.e2e/release/packaged-probe.json"
+          hdiutil verify apps/desktop/release/*.dmg
+          unzip -t apps/desktop/release/*.zip
+      - name: Check downloads contain the probed application
+        run: |
+          # Same CDHash and an intact deep seal mean each archive ships the verified, probed bundle.
+          cdhash() { codesign --display --verbose=4 "$1" 2>&1 | sed -n 's/^CDHash=//p'; }
+          expected=$(cdhash 'apps/desktop/release/mac-arm64/T3 Factory.app')
+          test -n "$expected"
+          unpacked="$RUNNER_TEMP/release-zip"
+          mounted="$RUNNER_TEMP/release-dmg"
+          ditto -x -k apps/desktop/release/*.zip "$unpacked"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mounted" apps/desktop/release/*.dmg
+          trap 'hdiutil detach "$mounted"' EXIT
+          for app in "$unpacked/T3 Factory.app" "$mounted/T3 Factory.app"; do
+            codesign --verify --deep --strict --verbose=2 -R='anchor apple generic' "$app"
+            xcrun stapler validate "$app"
+            if [[ "$(cdhash "$app")" != "$expected" ]]; then
+              echo "::error::$app differs from the probed application."
+              exit 1
+            fi
+          done
+      - name: Collect release downloads
+        run: |
+          downloads=.e2e/release/downloads
+          mkdir -p "$downloads"
+          feed=$([[ "$BUILD_CHANNEL" = beta ]] && echo beta-mac.yml || echo latest-mac.yml)
+          cp apps/desktop/release/*.{dmg,zip,blockmap} "apps/desktop/release/$feed" "$downloads/"
+          cd "$downloads"
+          shasum -a 256 -- * > SHA256SUMS.txt
+      - name: Keep downloads for qualification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ steps.identity.outputs.tag }}
+          path: .e2e/release/downloads/
+          if-no-files-found: error
+          # A re-run of this job replaces the run's artifacts with its own results.
+          overwrite: true
+      - name: Keep verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-evidence-${{ steps.identity.outputs.tag || inputs.sha }}
+          include-hidden-files: true
+          overwrite: true
+          path: |
+            .e2e/release/
+            !.e2e/release/downloads/
+      - name: Remove notarization key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-notary-key.p8"

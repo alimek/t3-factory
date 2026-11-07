@@ -2,15 +2,10 @@
  * The narrow native surface the desktop preload exposes to bundled UI only. Browsers and
  * remote content never have it; the UI checks for its presence instead of guessing.
  */
+import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
+
 export type DesktopRole = "server" | "client";
-export type UpdateState =
-  | "idle"
-  | "checking"
-  | "available"
-  | "downloading"
-  | "downloaded"
-  | "error"
-  | "unsupported";
+export type UpdateState = ApplicationUpdate["state"];
 
 export interface DesktopState {
   readonly version: string;
@@ -23,13 +18,10 @@ export interface DesktopState {
     readonly message: string | null;
   };
   readonly launchAtLogin: boolean;
-  readonly update: {
-    readonly state: UpdateState;
-    readonly version: string | null;
-    readonly progress: number | null;
-    readonly releaseNotes: string | null;
-    readonly message: string | null;
-  };
+  /** The release track this installation updates from. */
+  readonly updateChannel: UpdateChannel;
+  readonly autoDownloadUpdates: boolean;
+  readonly update: ApplicationUpdate;
 }
 
 export type DesktopResult =
@@ -62,6 +54,11 @@ export interface FactoryDesktop {
   downloadUpdate(): Promise<DesktopResult>;
   /** Installs a downloaded update after local confirmation; never runs on an unrelated Quit. */
   installUpdate(): Promise<DesktopResult>;
+  /** A changed channel discards an update found on the previous one and checks again. */
+  setUpdatePreferences(preferences: {
+    readonly channel?: UpdateChannel;
+    readonly autoDownload?: boolean;
+  }): Promise<DesktopResult>;
 }
 
 declare global {

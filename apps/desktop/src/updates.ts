@@ -2,30 +2,26 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 import electronUpdater from "electron-updater";
+import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 
-export interface UpdateStatus {
-  readonly state:
-    | "idle"
-    | "checking"
-    | "available"
-    | "downloading"
-    | "downloaded"
-    | "error"
-    | "unsupported";
-  readonly version: string | null;
-  readonly progress: number | null;
-  readonly releaseNotes: string | null;
-  readonly message: string | null;
+export interface UpdatePreferences {
+  readonly channel: UpdateChannel;
+  readonly autoDownload: boolean;
 }
 
 const checkEveryMs = 6 * 3600_000;
 
+/** The track an installation follows until its user chooses one: the track of its own build. */
+export const buildChannel = (): UpdateChannel =>
+  app.getVersion().includes("-beta.") ? "beta" : "stable";
+
 /**
- * GitHub Releases (or the configured feed) through electron-updater: automatic checks and
- * explicit downloads, installation only through `install()`. A Quit never installs an update.
+ * GitHub Releases (or the configured feed) through electron-updater: automatic checks,
+ * downloads that are automatic only when preferred, installation only through `install()`.
+ * A Quit never installs an update.
  */
 export class Updates {
-  private status: UpdateStatus = {
+  private status: ApplicationUpdate = {
     state: "idle",
     version: null,
     progress: null,
@@ -33,20 +29,21 @@ export class Updates {
     message: null,
   };
   private readonly updater = electronUpdater.autoUpdater;
+  private preferences: UpdatePreferences | null = null;
 
-  constructor(private readonly changed: (status: UpdateStatus) => void) {}
+  constructor(private readonly changed: (status: ApplicationUpdate) => void) {}
 
-  get current(): UpdateStatus {
+  get current(): ApplicationUpdate {
     return this.status;
   }
 
-  private set(change: Partial<UpdateStatus>) {
+  private set(change: Partial<ApplicationUpdate>) {
     this.status = { ...this.status, ...change };
     this.changed(this.status);
   }
 
   /** Development runs and builds without a configured feed report updates as unsupported. */
-  start() {
+  start(preferences: UpdatePreferences) {
     if (app.getVersion().includes("+dev.")) {
       this.set({
         state: "unsupported",
@@ -61,16 +58,15 @@ export class Updates {
       });
       return;
     }
-    this.updater.autoDownload = false;
     this.updater.autoInstallOnAppQuit = false;
-    this.updater.allowPrerelease = false;
+    this.apply(preferences);
     this.updater.on("checking-for-update", () => this.set({ state: "checking", message: null }));
     this.updater.on("update-not-available", () =>
       this.set({ state: "idle", version: null, progress: null, releaseNotes: null }),
     );
     this.updater.on("update-available", (info) =>
       this.set({
-        state: "available",
+        state: this.updater.autoDownload ? "downloading" : "available",
         version: info.version,
         progress: 0,
         releaseNotes:
@@ -99,20 +95,49 @@ export class Updates {
     setInterval(() => void this.check(), checkEveryMs).unref();
   }
 
+  /**
+   * Beta follows prereleases and stable Releases, whichever is newer; stable follows only
+   * Releases. Leaving beta never downgrades: the installed beta stays until a newer Release.
+   */
+  private apply(preferences: UpdatePreferences) {
+    this.preferences = preferences;
+    this.updater.channel = preferences.channel === "beta" ? "beta" : "latest";
+    this.updater.allowPrerelease = preferences.channel === "beta";
+    this.updater.allowDowngrade = false;
+    this.updater.autoDownload = preferences.autoDownload;
+  }
+
+  /** A changed track discards an update found on the previous one and checks again. */
+  configure(preferences: UpdatePreferences): string | null {
+    if (this.status.state === "unsupported" || this.preferences === null) {
+      this.preferences = preferences;
+      return null;
+    }
+    const switched = preferences.channel !== this.preferences.channel;
+    if (switched && this.status.state === "downloading")
+      return "Wait for the current download to finish before changing the update channel.";
+    this.apply(preferences);
+    if (switched) {
+      this.set({ state: "idle", version: null, progress: null, releaseNotes: null, message: null });
+      void this.check();
+    } else if (preferences.autoDownload) void this.download();
+    return null;
+  }
+
   async check(): Promise<void> {
     if (["unsupported", "downloaded", "downloading", "checking"].includes(this.status.state))
       return;
     await this.updater.checkForUpdates().catch(() => undefined);
   }
 
-  /** Download starts only after an explicit local action, never while checking metadata. */
+  /** Without automatic downloads, a download starts only after an explicit action. */
   async download(): Promise<void> {
     if (this.status.state !== "available") return;
     this.set({ state: "downloading", progress: 0, message: null });
     await this.updater.downloadUpdate().catch(() => undefined);
   }
 
-  /** Called only after the local user confirmed and the backend shut down in order. */
+  /** Called only after a confirmation and after the backend shut down in order. */
   install() {
     try {
       this.updater.quitAndInstall(false, true);

@@ -71,8 +71,9 @@ reauthorization and Agent reporting installation stay host setup: remote clients
 their status and a "Managed on the Factory host" notice, and such changes are refused
 remotely. When T3 needs approval, a remote client may choose **Open authorization on
 server** to reopen or start consent in the host's browser for the saved endpoint; see
-[T3 connection](t3-integration.md#authorizing). Lifecycle, approvals and
-updates are host-local only.
+[T3 connection](t3-integration.md#authorizing). Lifecycle and approvals are host-local
+only; an approved client may check, download and install the server's own update
+([updating the server](#updating-the-server-from-a-client)).
 
 Unanswered requests expire after 15 minutes; at most ten may wait at once. **Deny**
 rejects a request; **Revoke** removes an approved client's access immediately,
@@ -104,16 +105,28 @@ outside the draggable region, fullscreen and window controls stay native, and th
 
 ## Updates
 
-Updates are checked automatically on launch and every six hours; downloading and installing are explicit. An available release shows a **Download update** icon in the Run sidebar footer and the same action in
-**Settings → Application**; progress disables repeat downloads, and once ready **Install and restart** is a separate action with a confirmation on this computer (cancelling keeps the app and the downloaded update;
-quitting never installs). A client update affects only that client; a server update is installed only from the host, with the open-Run interruption warning before orderly shutdown, and data, role, reporting
-registrations and T3 connection remain (restart reconciles). Errors offer a retry check and builds without a release feed show updates as unsupported.
+Updates are checked automatically on launch and every six hours. **Settings → Application** chooses the installation's **update channel**: **Stable releases** (tagged Releases) or **Beta builds of main** (see
+[beta builds](release.md#beta-builds)), which also receives newer stable Releases. Until chosen, an installation follows the channel of the build it runs. Changing the channel discards an update found on the
+previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists.
+
+**Download updates automatically** is on by default; turned off, an available release shows a **Download update** icon in the Run sidebar footer and the same action in Settings → Application, and progress disables
+repeat downloads. Installing is always explicit: once ready, **Install and restart** is a separate action with a confirmation on this computer (cancelling keeps the app and the downloaded update; quitting never
+installs). A client update affects only that client. A server update keeps data, role, reporting registrations and T3 connection (restart reconciles); it is installed from the host with the open-Run interruption
+warning before orderly shutdown, or [from an approved client](#updating-the-server-from-a-client). Errors offer a retry check and builds without a release feed show updates as unsupported.
 
 The footer icon is a muted circular arrow for **Check for updates**, a highlighted downward arrow when a release is available and an upward arrow in a circle when downloaded; checking and downloading show a spinner
 with progress in the tooltip. Hover or focus shows the version and **What's new** from the feed (long notes are shortened; the full text is in Settings → Application, always displayed as text, never feed markup;
 a release without notes says so and does not block download). Application preferences are reached through the Settings gear; connection and startup gates without a sidebar keep a contextual **Application settings**
 entry, including in incompatible and offline states. If installation fails before replacement, Factory clears the quitting state and reopens the same data home through normal reconciliation, keeping the
 error in local settings.
+
+### Updating the server from a client
+
+Approved desktop and browser clients have **Settings → Server**, which shows the server's version, channel and updater state and offers its next action: check, download on the server, or **Install and restart
+server**. Installing asks the requesting user to confirm with the server's open-Run count; the host shows no further dialog and performs the same orderly shutdown, install and restart as a host-initiated
+update. Runs are not stopped, the client goes **Offline** while the server restarts and reconnects automatically. The server's channel and automatic-download preference remain host-local. A server that runs from a
+source checkout, or a development package, reports updates as unsupported; a server release that predates this section answers `not_found`, and the client asks to update it on its host. The host panel
+updates through its own Application settings and has no Server section.
 
 ## Browser access on the host
 

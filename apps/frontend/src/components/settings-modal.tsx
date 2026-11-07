@@ -6,12 +6,14 @@ import {
   MonitorSmartphone,
   Plug,
   Search,
+  Server,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { KeyboardSettings } from "./keyboard-settings.tsx";
 import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
+import { ServerUpdateSettings } from "./server-update-settings.tsx";
 import { useClientScope } from "../client-gate.tsx";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
@@ -69,6 +71,12 @@ const accessSection: SettingsSection = {
   icon: MonitorSmartphone,
   keywords: ["remote", "clients", "approve", "revoke", "LAN", "Tailscale", "certificate"],
 };
+const serverSection: SettingsSection = {
+  tab: "server",
+  title: "Server",
+  icon: Server,
+  keywords: ["server", "updates", "upgrade", "restart", "version"],
+};
 const applicationSection: SettingsSection = {
   tab: "application",
   title: "Application",
@@ -76,14 +84,17 @@ const applicationSection: SettingsSection = {
   keywords: ["role", "server", "client", "updates", "login", "startup"],
 };
 
-/** Approvals exist only on the host panel; the Application section only in the desktop app. */
+/**
+ * Approvals exist only on the host panel and server updates only for approved clients (the host
+ * updates through its Application section); the Application section only in the desktop app.
+ */
 function useSections(): readonly SettingsSection[] {
   const scope = useClientScope();
   return [
     connectionSection,
     reportingSection,
     keyboardSection,
-    ...(scope === "host" ? [accessSection] : []),
+    ...(scope === "host" ? [accessSection] : [serverSection]),
     ...(desktopBridge() ? [applicationSection] : []),
   ];
 }
@@ -101,6 +112,7 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   runtime: () => <RuntimeSettings />,
   keyboard: () => <KeyboardSettings />,
   access: () => <AccessSettings />,
+  server: () => <ServerUpdateSettings />,
   application: () => <ApplicationSettings />,
 };
 
@@ -146,7 +158,7 @@ export function SettingsModal() {
         <WorkspaceDialogHeader
           title="Settings"
           section={current.title}
-          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access and the desktop application."
+          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, server updates and the desktop application."
           onClose={close}
         />
         <div className="flex min-h-0 flex-1 max-sm:flex-col">

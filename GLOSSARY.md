@@ -7,6 +7,9 @@ T3 Factory lets users compose and run their own software development workflows.
 **Release**:
 One T3 Factory product version, identified by a `vX.Y.Z` tag on a fixed commit and published only by the controlled `publish` job. macOS packaging is part of the Release; see [Release](docs/release.md).
 
+**Beta build**:
+A signed prerelease of `main`, tagged `vX.Y.(Z+1)-beta.N`, built nightly when `main` changed or on demand. It is not a Release: it skips the release PR and maintainer qualification. Installations on the **beta update channel** receive beta builds and newer Releases; the **stable channel** receives Releases only. See [Release](docs/release.md#beta-builds).
+
 **Project**:
 A local repository represented by a T3 project, providing the context for Tasks and Runs. Independent local clones are distinct projects even when they share a remote repository.
 

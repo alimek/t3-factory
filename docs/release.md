@@ -1,6 +1,6 @@
 # Release
 
-A Release is one T3 Factory product version, identified by a `vX.Y.Z` tag on a fixed commit and published only by the controlled `publish` job. macOS Apple Silicon packaging, signing and qualification are part of that Release. Application behavior is in [desktop and approved clients](desktop-and-clients.md).
+A Release is one T3 Factory product version, identified by a `vX.Y.Z` tag on a fixed commit and published only by the controlled `publish` job. macOS Apple Silicon packaging, signing and qualification are part of that Release. [Beta builds](#beta-builds) are a second, unqualified track built from `main`. Application behavior is in [desktop and approved clients](desktop-and-clients.md).
 
 ## Version ownership
 
@@ -17,6 +17,7 @@ release is inside pnpm's minimum release age rather than adding an exclusion.
 pnpm install --frozen-lockfile
 pnpm desktop:package          # local build: base version + HEAD identity
 pnpm desktop:package:release  # clean checkout, release version, optional release feed
+pnpm desktop:package:beta 12  # clean checkout, beta build 12 of the next patch, optional feed
 pnpm desktop:probe /absolute/report.json
 pnpm --filter @t3-factory/desktop start   # stage, then run the shell from source output
 ```
@@ -26,7 +27,7 @@ headers; output lands in `apps/desktop/release/` as `T3.Factory-<version>-arm64.
 
 ## Build identity and assets
 
-`apps/desktop/package.json` supplies the desktop build version, synchronized by release-please with the product version. Local staging and packaging never edit versions: local packages are `<release>+dev.<12-character-HEAD>` plus `.dirty` for uncommitted changes (the suffix identifies the commit, not a content hash). `pnpm desktop:package:release` requires a clean checkout, keeps the plain version and never publishes. macOS bundle version fields stay numeric. Development packages omit the update feed and disable the updater even if release-feed variables are set; install another local DMG to test a newer local build.
+`apps/desktop/package.json` supplies the desktop build version, synchronized by release-please with the product version. Local staging and packaging never edit versions: local packages are `<release>+dev.<12-character-HEAD>` plus `.dirty` for uncommitted changes (the suffix identifies the commit, not a content hash). `pnpm desktop:package:release` requires a clean checkout, keeps the plain version and never publishes. `pnpm desktop:package:beta <N>` also requires a clean checkout and packages `<major>.<minor>.<patch+1>-beta.<N>`: above the current Release and below the next one, so the updater orders both tracks correctly. macOS bundle version fields stay numeric. Development packages omit the update feed and disable the updater even if release-feed variables are set; install another local DMG to test a newer local build.
 
 Shipping artwork is checked in: the macOS icon (`apps/desktop/resources/icon.png`, 1024 px), menu-bar templates (`trayTemplate{,@2x}.png`) and browser favicons (`apps/frontend/public/favicon-{16,32}.png`);
 electron-builder generates the ICNS. Packaging needs no external design service.
@@ -39,7 +40,7 @@ These are deployment prerequisites, not repository content:
 | --- | --- |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | Developer ID Application certificate; enables the hardened runtime and `resources/entitlements.mac.plist` (JIT only) |
 | `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | Notarization (only with signing) |
-| `FACTORY_UPDATE_URL` | Generic update feed (`latest-mac.yml`, zip, blockmap) readable without credentials |
+| `FACTORY_UPDATE_URL` | Generic update feed (`latest-mac.yml`, `beta-mac.yml`, zip, blockmap) readable without credentials; a Release also rewrites `beta-mac.yml` so beta installations receive it |
 | `FACTORY_UPDATE_GITHUB_OWNER`, `FACTORY_UPDATE_GITHUB_REPO` | GitHub Releases feed, only for a repository whose releases are public |
 
 Local packaging without signing credentials is **ad-hoc signed** without the hardened runtime (Apple Silicon kills unsigned binaries and Electron's fuse changes void its linker signature): it runs locally for probes but
@@ -56,7 +57,7 @@ After the merge, release-please creates tag `vX.Y.Z` on that exact merge commit 
 
 `source` resolves the tag and requires exactly one release with that tag, still a draft. The tag commit must equal the release target and, when cut in this run, the release-please commit. Published releases are refused.
 
-`build-macos` runs only on a macOS arm64 runner and checks out that exact commit. It verifies that root and desktop package versions equal the tag version, then runs `pnpm check`, controlled e2e browser journeys, Developer ID signing and notarization, `codesign`, `stapler` and `spctl` validation, the isolated packaged probe, DMG/ZIP checks and SHA-256 checksums. Missing Apple credentials fail the build; there is no silent unsigned release. This job writes only Actions artifacts: `release-<tag>` holds downloads and `release-evidence-<tag>` holds evidence retained even on failure. It never writes release assets.
+`build-macos` calls the reusable **Desktop build** workflow (`.github/workflows/desktop-build.yml`), which beta builds share. It runs only on a macOS arm64 runner and checks out that exact commit. It verifies that root and desktop package versions equal the tag version, then runs `pnpm check`, controlled e2e browser journeys, Developer ID signing and notarization, `codesign`, `stapler` and `spctl` validation, the isolated packaged probe, DMG/ZIP checks and SHA-256 checksums. Missing Apple credentials fail the build; there is no silent unsigned release. This job writes only Actions artifacts: `release-<tag>` holds downloads and `release-evidence-<tag>` holds evidence retained even on failure. It never writes release assets.
 
 A maintainer qualifies the downloaded Actions artifact as described below, then approves `publish` through the GitHub environment **release**, which requires a reviewer. `publish` alone writes release assets: it re-checks the draft and tag commit, verifies the complete artifact file set (DMG, ZIP, their blockmaps, `latest-mac.yml` and `SHA256SUMS.txt`) and checksums, removes any assets left on the still-draft release by an earlier failed attempt, and uploads the complete set. It verifies asset names and SHA-256 digests on GitHub before setting `draft=false` and marking the Release latest.
 
@@ -94,7 +95,7 @@ Also configure:
 
 A tag ruleset protecting `v*` from update and deletion is recommended so tags stay fixed while a Release is still a draft.
 
-The workflow requires a public repository and uses its GitHub Releases as the update feed. `latest-mac.yml` and the `T3.Factory-<version>-arm64.dmg` / `T3.Factory-<version>-arm64.zip` filenames match GitHub download names so metadata remains valid after upload.
+The workflows require a public repository and use its GitHub Releases as the update feed. `latest-mac.yml`, `beta-mac.yml` and the `T3.Factory-<version>-arm64.dmg` / `T3.Factory-<version>-arm64.zip` filenames match GitHub download names so metadata remains valid after upload.
 
 ### Maintainer qualification
 
@@ -102,9 +103,24 @@ Review generated notes, artifact hashes and verification evidence from the workf
 
 The in-app update path cannot be qualified before approval: a previous signed build reads only published GitHub Releases, and the candidate stays a draft without assets until `publish`. Verify an update from the previous signed Release through the app (download, Cancel, ordinary Quit, **Install and restart**) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so an update defect is fixed by a new version.
 
-Recipients install the first signed DMG manually; developer packages cannot bootstrap into this channel. Release builds check on launch and every six hours, and from the footer or Application settings. The first click
-downloads and **Install and restart** opens a native confirmation; ordinary Quit never installs. Server installation needs action on that host and warns about open Runs; a client update affects only that client.
-Compatible protocol ranges let clients and server update independently.
+Recipients install the first signed DMG manually; developer packages cannot bootstrap into the update feed. Release and beta builds check on launch and every six hours, and from the footer or Application settings.
+Downloads start automatically unless the installation turned that off; **Install and restart** opens a native confirmation, and ordinary Quit never installs. A server update is installed from its host or, after the
+requester confirms the open-Run warning, from an approved client; a client update affects only that client. Compatible protocol ranges let clients and server update independently.
+
+## Beta builds
+
+A beta build is a signed prerelease of `main` for installations on the beta update channel. The **Beta** workflow (`.github/workflows/beta.yml`) runs nightly at 02:00 UTC and builds only when `main` moved since the
+last published beta; a manual dispatch from `main` always builds. Its build number is the workflow run number, so its version is `<major>.<minor>.<patch+1>-beta.<run number>` of the current product version and its tag is
+`v<version>`. release-please ignores these tags: it locates the last Release by the version in its manifest.
+
+The build is the same **Desktop build** job as a Release (quality gate, browser journeys, signing, notarization, Gatekeeper and probe checks), but writes `beta-mac.yml` instead of `latest-mac.yml`. The
+`publish` job of the Beta workflow then creates a draft prerelease targeting the built commit with notes generated since the previous beta, uploads the complete asset set, compares SHA-256 digests and publishes it
+as a prerelease that is never marked latest. A failed attempt deletes its own still-draft prerelease, which has no tag yet; the next run uses a new number.
+
+Beta builds deliberately skip the release PR, the **release** environment approval and maintainer qualification: they reach beta installations without a human gate. Choose the beta channel only for installations
+that accept that risk. Stable installations never see prereleases because the updater asks GitHub only for the latest Release. Beta installations take the newest entry in the repository's release feed that is a
+Release or a beta build; a Release has no `beta-mac.yml`, so the updater falls back to its `latest-mac.yml`. The updater never installs an older version: an installation that leaves the beta channel keeps its
+beta until a newer Release is published.
 
 ## Packaged verification and limits
 

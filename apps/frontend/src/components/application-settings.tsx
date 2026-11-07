@@ -3,10 +3,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { SectionLabel } from "@/components/page";
 import { desktopBridge, type DesktopResult, type DesktopState } from "../desktop-bridge.ts";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ReleaseNotes } from "./release-notes.tsx";
+import { UpdateStatus } from "./release-notes.tsx";
 import { DesktopUpdateAction } from "./desktop-update-action.tsx";
 import { useDesktopState } from "../desktop-state.ts";
 
@@ -20,7 +21,54 @@ const updateCopy: Record<DesktopState["update"]["state"], string> = {
   unsupported: "Automatic updates are not configured for this build.",
 };
 
-/** Desktop-only: role, remembered server, launch at login and explicit update installation. */
+function UpdatePreferences({
+  state,
+  run,
+}: {
+  state: DesktopState;
+  run: (operation: () => Promise<DesktopResult>) => Promise<void>;
+}) {
+  const desktop = desktopBridge();
+  if (!desktop || state.update.state === "unsupported") return null;
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-1.5">
+        <Label htmlFor="update-channel">Update channel</Label>
+        <NativeSelect
+          id="update-channel"
+          wrapperClassName="w-60"
+          value={state.updateChannel}
+          onChange={(event) =>
+            void run(() =>
+              desktop.setUpdatePreferences({
+                channel: event.target.value === "beta" ? "beta" : "stable",
+              }),
+            )
+          }
+        >
+          <NativeSelectOption value="stable">Stable releases</NativeSelectOption>
+          <NativeSelectOption value="beta">Beta builds of main</NativeSelectOption>
+        </NativeSelect>
+        <p className="text-xs text-muted-foreground">
+          Beta follows nightly builds of the main branch and newer stable releases. Returning to
+          stable keeps a newer beta installed until a later stable release is published.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="auto-download-updates"
+          checked={state.autoDownloadUpdates}
+          onCheckedChange={(checked) =>
+            void run(() => desktop.setUpdatePreferences({ autoDownload: checked === true }))
+          }
+        />
+        <Label htmlFor="auto-download-updates">Download updates automatically</Label>
+      </div>
+    </div>
+  );
+}
+
+/** Desktop-only: role, remembered server, launch at login, update channel and installation. */
 export function ApplicationSettings() {
   const desktop = desktopBridge();
   const state = useDesktopState();
@@ -84,15 +132,8 @@ export function ApplicationSettings() {
       </section>
       <section aria-label="Updates" className="grid gap-2">
         <SectionLabel>Updates</SectionLabel>
-        <p role="status" className="text-sm">
-          {updateCopy[update.state]}
-          {update.version && ` Version ${update.version}.`}
-          {update.state === "downloading" &&
-            update.progress !== null &&
-            ` ${Math.round(update.progress)}%`}
-        </p>
-        {update.version && <ReleaseNotes notes={update.releaseNotes} />}
-        {update.message && <p className="text-xs text-muted-foreground">{update.message}</p>}
+        <UpdatePreferences state={state} run={run} />
+        <UpdateStatus update={update} copy={updateCopy[update.state]} />
         <div className="flex flex-wrap gap-2">
           <DesktopUpdateAction />
         </div>

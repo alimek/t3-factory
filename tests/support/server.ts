@@ -5,7 +5,12 @@ import { promisify } from "node:util";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FactoryClient, Result, StartRunInput } from "../../packages/contracts/src/index.ts";
+import type {
+  FactoryClient,
+  Result,
+  ServerUpdateAction,
+  StartRunInput,
+} from "../../packages/contracts/src/index.ts";
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
@@ -34,12 +39,30 @@ const config = await loadConfiguration({
 const t3 = new PersistentT3(home, false);
 // Use the real pending-approval simulation for remote connection journeys.
 t3.authorize = ControlledT3.prototype.authorize.bind(t3);
+// The desktop server's updater holding a downloaded beta; approved clients' requests are recorded.
+const serverUpdateActions: ServerUpdateAction[] = [];
 const server = await startServer(
   { ...config, port: 0 },
   {
     t3,
     connectionRetryMs: 1000,
     reportingStateDirectory: join(home, "reporting-t3-state"),
+    applicationUpdates: {
+      status: () => ({
+        channel: "beta",
+        update: {
+          state: "downloaded",
+          version: "0.1.1-beta.3",
+          progress: 100,
+          releaseNotes: "<ul><li>Update the server from an approved client.</li></ul>",
+          message: null,
+        },
+      }),
+      run: (action) => {
+        serverUpdateActions.push(action);
+        return Promise.resolve({ ok: true, value: null });
+      },
+    },
   },
 );
 const factory = server.factory;
@@ -389,6 +412,7 @@ const fixtureRoutes: Record<string, () => unknown> = {
   "/__fixture/reset-connection-reads": () => {
     connectionReads = 0;
   },
+  "/__fixture/server-update-actions": () => serverUpdateActions,
   "/__fixture/t3-observations": () => ({
     authorizationStarts: current.t3.authorizationStarts,
     reopenedApprovals: current.t3.reopenedApprovals,

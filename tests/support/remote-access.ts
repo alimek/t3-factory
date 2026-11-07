@@ -24,6 +24,12 @@ export async function hostT3Observations(app: FixtureApp) {
   };
 }
 
+/** Updater actions approved clients requested from the fixture's desktop server. */
+export async function serverUpdateActions(app: FixtureApp) {
+  const response = await remoteFixture(app, "server-update-actions");
+  return (await response.json()) as readonly string[];
+}
+
 /** Lets wall-clock time pass in the browser session, for interval-driven behavior. */
 export const elapse = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -1,7 +1,12 @@
 import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { desktopBridgeScript } from "./support/desktop-bridge.ts";
-import { approvedBrowser, remoteFixture } from "./support/remote-access.ts";
+import {
+  approvedBrowser,
+  openApproved,
+  remoteFixture,
+  serverUpdateActions,
+} from "./support/remote-access.ts";
 
 beforeEach(async ({ app }) => {
   await remoteFixture(app, "compatible");
@@ -111,6 +116,27 @@ test("an incompatible desktop client can request installation of its downloaded 
   // Assert
   await expect(screen.getByText("Update installation requested.")).toBeVisible();
   await app.screenshot("local-update-controls");
+});
+
+test("an approved browser installs the server's downloaded update after confirming the open-Run warning", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await openApproved(app, "/settings/server");
+  await expect(screen.getByText(/ready to install\. Version 0\.1\.1-beta\.3\./)).toBeVisible();
+  await screen.getByRole("button", "Install and restart server").tap();
+  const confirmation = screen.getByRole("dialog", "Install the update and restart the server?");
+  await expect(confirmation).toContainText(/Runs? (is|are) open|No Runs are open/);
+  await app.screenshot("server-update-confirmation");
+
+  // Act
+  await confirmation.getByRole("button", "Install and restart server").tap();
+
+  // Assert
+  await expect(screen.getByText(/installing the update and restarting/)).toBeVisible();
+  expect((await serverUpdateActions(app)).join(",")).toBe("install");
+  await app.screenshot("server-update-installing");
 });
 
 test("the current composer requires an updated server before requesting access", async ({
