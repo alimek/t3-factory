@@ -137,6 +137,14 @@ marks them stale and cannot authorize work or closure.
   evidence confirms the owned tree, queues and native requests are quiet and T3 confirms
   aggregate completion. A yielded parent turn alone is insufficient: delegated work,
   background work or a pending continuation keeps the Block working.
+- A rejected report from a uniquely correlated current worker records a report-problem
+  with a static rejection code, explanation and next step. It retains only existing
+  execution/binding references, never rejected report content, call payloads or secrets.
+  Repeated rejections update the pending diagnostic; accepted correction or confirmed
+  linked recovery settles it while preserving its history. Uncorrelated or foreign calls
+  cannot attach Problems to a Run. Rejection changes neither execution state nor authority.
+  A later missing-report Problem means no report was accepted, not that none was attempted.
+  Historical rejections made before this diagnostic existed are not backfilled.
 - Failed, cancelled or interrupted work shows an execution-failed Problem. Renewed work
   does not dismiss earlier Problems, and Factory never retries failed work automatically.
 - Native attention includes questions and permissions. Only a fresh independently read
@@ -257,7 +265,9 @@ closed Run may still display a stored conversation.
 **Request report** accepts one explicit recovery per missing-report occurrence. It queues
 an ordinary turn on the same worker, linked to the original exact execution and activation.
 Eligibility needs fresh execution, queue and native coverage, latest identity, unchanged
-authorization and an open gate. Accepted results or competing work make the request stale;
+authorization and an open gate. The worker’s full activation frontier must also be quiet,
+including delegated/background work and T3 aggregate completion; this is checked again
+before dispatch. Accepted results or competing work make the request stale;
 unknown acceptance never authorizes another key.
 
 Recovery settles the original missing-report attention only after the linked execution

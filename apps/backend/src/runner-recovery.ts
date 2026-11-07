@@ -1,3 +1,5 @@
+import { collectCoordination } from "./coordinator-evidence.ts";
+import type { BlockRow } from "./runner-types.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
@@ -41,6 +43,7 @@ export function recoveryRows(sql: SqlClient.SqlClient, id: string) {
 }
 /** Fresh external evidence is separate from the local transaction/generation check. */
 export function recoveryFrontier(
+  database: RunnerDatabase,
   t3: T3Adapter,
   runRow: RunRow,
   blockId: string,
@@ -49,6 +52,17 @@ export function recoveryFrontier(
   requireIdleFrontier = true,
 ) {
   return Effect.gen(function* () {
+    if (requireIdleFrontier) {
+      const [block] = yield* database.run(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${blockId}`;
+        }),
+      );
+      if (!block || block.thread_id !== threadId) return false;
+      const coordination = yield* collectCoordination(database, t3, runRow, block);
+      if (!coordination.result.evidence.release) return false;
+    }
     const attempt = yield* gatherClosureAttempt(
       {
         runId: runRow.id,
@@ -113,11 +127,11 @@ export function openRunnerRecovery(
         Effect.gen(function* () {
           if (
             (yield* liveContextId()) !== current.context_id ||
-            !(yield* recoveryFrontier(t3, current, a.blockId, threadId, a.executionId))
+            !(yield* recoveryFrontier(database, t3, current, a.blockId, threadId, a.executionId))
           )
             return failure(
               "conflict",
-              "Recovery requires the original completed execution, no newer or queued work, and no pending native requests.",
+              "Recovery requires the original completed execution, no newer or queued work, no pending native requests, and verified completion of delegated/background work and continuations.",
             );
           return { ok: true as const, value: undefined };
         }),
@@ -202,6 +216,7 @@ export function recoveryDispatchGeneration(
     if (
       !recovery ||
       !(yield* recoveryFrontier(
+        database,
         t3,
         current,
         intent.block_id,

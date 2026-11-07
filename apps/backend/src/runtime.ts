@@ -1,3 +1,4 @@
+import { reportDiagnostic } from "./runtime-report-diagnostic.ts";
 import { nativeCallId } from "./runtime-caller.ts";
 import { factoryToolAliases, findInFlightFactoryCall } from "./reporting-call.ts";
 import * as Effect from "effect/Effect";
@@ -298,11 +299,12 @@ export function createRuntime(
     },
     submit: Effect.fn(function* (input: unknown) {
       const call = parseReportCall(input);
-      if ("code" in call) return call;
-      return yield* Effect.gen(function* () {
+      if ("code" in call) return reportDiagnostic(call);
+      const reply = yield* Effect.gen(function* () {
         const match = yield* correlate(call);
         return "code" in match ? match : yield* forwardReport(call.report, match);
       }).pipe(Effect.catchCause(() => Effect.succeed({ code: "RUNTIME_UNAVAILABLE" })));
+      return reportDiagnostic(reply);
     }),
   };
 }
