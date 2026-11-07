@@ -148,13 +148,13 @@ export function UpdateControl({
           </TooltipTrigger>
         </PopoverAnchor>
         {panel === null && (
-          <TooltipContent side="top" className="grid max-w-72 gap-1 py-1.5 text-left text-pretty">
-            <p className={detail ? "font-medium" : undefined}>{label}</p>
-            {detail}
+          <TooltipContent side="top" align="center" className="grid max-w-none gap-1 py-1.5">
+            <p className={cn("text-center whitespace-nowrap", detail && "font-medium")}>{label}</p>
+            {detail && <div className="max-w-72 text-left">{detail}</div>}
           </TooltipContent>
         )}
       </Tooltip>
-      <PopoverContent side="top" align="end" className="p-4">
+      <PopoverContent side="top" collisionPadding={8} className="p-4">
         {panel === "review" && (
           <UpgradeReview
             targets={targets}

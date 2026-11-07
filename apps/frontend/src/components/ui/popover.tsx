@@ -13,6 +13,7 @@ function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitiv
 function PopoverContent({
   className,
   sideOffset = 6,
+  children,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
@@ -25,7 +26,10 @@ function PopoverContent({
           className,
         )}
         {...props}
-      />
+      >
+        {children}
+        <PopoverPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-popover fill-popover" />
+      </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
   );
 }
