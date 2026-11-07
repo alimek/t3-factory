@@ -86,3 +86,17 @@ it("saving a removed Flow rejects the edit instead of recreating the definition"
   expect(saved.error.code).toBe("not_found");
   expect(await f.listFlows()).toStrictEqual({ ok: true, value: [] });
 });
+
+it("starting a removed Flow is rejected without creating a Run", async (c) => {
+  // Arrange
+  const { f, input, flow } = await prepared(c);
+  assert((await f.removeFlow(flow.id)).ok);
+
+  // Act
+  const started = await f.startRun(input);
+
+  // Assert
+  assert(!started.ok);
+  expect(started.error.code).toBe("not_found");
+  expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
+});

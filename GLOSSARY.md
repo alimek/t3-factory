@@ -16,6 +16,9 @@ A local repository represented by a T3 project, providing the context for Tasks 
 **Flow**:
 A user-defined graph of work steps and control rules. Its design determines which parts run autonomously and which require human participation.
 
+**Flow revision**:
+One immutable saved version of a Flow's name and graph. Every successful create or save appends the next revision; Studio shows the latest, and removing a Flow keeps its revisions.
+
 **Flow block**:
 A constituent element of a flow: the Flow input block, an agent block or a human step.
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
