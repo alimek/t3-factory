@@ -7,7 +7,12 @@ import { createHash } from "node:crypto";
 import type { ReportingInstallation, T3Connection } from "@t3-factory/contracts";
 import { isLocalEndpoint } from "./endpoint-local.ts";
 import { withReportingInstallationActions } from "./reporting-installation-actions.ts";
-import { isReportingDriver, reportingHome, type ReportingDriver } from "./reporting-drivers.ts";
+import {
+  isReportingDriver,
+  providerReporting,
+  reportingHome,
+  type ReportingDriver,
+} from "./reporting-drivers.ts";
 
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -94,9 +99,8 @@ const targetFor = Effect.fn(function* (
       provider: String(driver),
       instances: [id],
       path: null,
-      status: "needs-attention",
-      message:
-        "Factory has no installer for this provider and cannot accept its reports yet. The MCP entry to add, once support exists, is shown after recheck.",
+      status: "unsupported",
+      message: providerReporting(driver).explanation,
       runtimeEvidence: "UNVERIFIED",
     });
   const base = {

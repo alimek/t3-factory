@@ -51,10 +51,12 @@ import type {
   ReportActivityItem,
   SendPayload,
   SendReference,
+  T3ProviderCapability,
 } from "./t3.ts";
+import { isReportingDriver } from "../reporting-drivers.ts";
 import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
 import { LaunchRejected } from "./t3.ts";
-import type { AgentEnvironment, AgentProviderCapability, T3Contract } from "@t3-factory/contracts";
+import type { AgentEnvironment, T3Contract } from "@t3-factory/contracts";
 import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-validation";
 import {
   delegationActivity,
@@ -70,7 +72,6 @@ import {
 } from "./coordination-evidence.ts";
 import { completeDynamicToolText } from "../activity-text.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
-import { isReportingDriver } from "../reporting-drivers.ts";
 import { parseProviderCapabilities } from "./t3-capabilities.ts";
 import {
   listenOAuthCallback,
@@ -1487,7 +1488,7 @@ export class LiveT3Adapter implements T3Adapter {
       return { environmentId: body.environmentId, label };
     });
   }
-  async orchestratorCapabilities(target: T3Endpoint): Promise<readonly AgentProviderCapability[]> {
+  async orchestratorCapabilities(target: T3Endpoint): Promise<readonly T3ProviderCapability[]> {
     return this.withAuthorizedClient(target, async (client) =>
       parseProviderCapabilities(
         this.structuredToolResult(

@@ -23,7 +23,7 @@ export const explicitReadiness = Effect.fn(function* (
   if (target?.status === "installed") return readiness;
   const message = !targets.ok
     ? targets.error.message
-    : target?.status === "needs-attention"
+    : target?.status === "needs-attention" || target?.status === "unsupported"
       ? target.message
       : "Install Factory MCP for this provider's effective home in Settings → Agent reporting, then start a fresh session.";
   return {

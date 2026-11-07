@@ -1,4 +1,4 @@
-import type { AgentEnvironment, AgentProviderCapability } from "@t3-factory/contracts";
+import type { AgentEnvironment } from "@t3-factory/contracts";
 import { LaunchRejected } from "../../src/adapters/t3.ts";
 import { isReportingDriver } from "../../src/reporting-drivers.ts";
 import type {
@@ -11,6 +11,7 @@ import type {
   T3Inspection,
   T3Project,
   T3ProjectTarget,
+  T3ProviderCapability,
 } from "../../src/adapters/t3.ts";
 
 /** Independent external-engine lifetime; no SQL or Factory internals. */
@@ -494,7 +495,7 @@ export class ControlledT3 implements T3Adapter {
   pendingApproval = false;
   reopenedApprovals = 0;
   capabilitiesAvailable = true;
-  readonly controlledProviders: AgentProviderCapability[] = [
+  readonly controlledProviders: T3ProviderCapability[] = [
     {
       providerInstanceId: "codex-main",
       displayName: "Codex",
@@ -588,7 +589,7 @@ export class ControlledT3 implements T3Adapter {
       throw new Error("External failure containing secret material");
     return { environmentId: this.environmentId, label: "Controlled machine" };
   }
-  async orchestratorCapabilities(_target: T3Endpoint): Promise<readonly AgentProviderCapability[]> {
+  async orchestratorCapabilities(_target: T3Endpoint): Promise<readonly T3ProviderCapability[]> {
     if (!this.available || !this.authorized)
       throw new Error("External failure containing secret material");
     if (!this.capabilitiesAvailable) throw new Error("Capabilities are temporarily unavailable");

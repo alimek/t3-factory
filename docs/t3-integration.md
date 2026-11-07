@@ -72,7 +72,11 @@ Repair also installs the `$factory-block` skill next to the bridge. The worker's
 ### Installation actions
 
 **Settings → Agent reporting** shows Not installed, Installed or Needs attention for each
-discovered configuration home, with a global **Recheck installation**.
+discovered configuration home, with a global **Recheck installation**. Codex, Claude, Cursor and
+Grok are those homes. Every other provider instance is listed as **Reporting not available yet**,
+with the stdio `factory-runtime` entry to add by hand and no install action. Agent capabilities
+publish the same per-provider `reporting` status, and Start blocks an unsupported provider with
+`harness_unsupported` pointing to Studio → Agents.
 
 - **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
   Factory's own entry. **Repair installation** appears only when Factory can repair its owned
@@ -91,7 +95,9 @@ discovered configuration home, with a global **Recheck installation**.
   workload.
 - A desktop server registers the bridge through `~/.t3-factory/reporting/factory-runtime-node`,
   which uses the app's bundled runtime. A registration made by a source installation shows
-  **Needs attention** under the desktop (and the reverse); repair replaces only Factory's own entry.
+  **Needs attention** with **Repair installation** under the desktop (and the reverse); Repair
+  replaces only Factory's own entry. Factory does not migrate it on its own: harness
+  configuration is written only on an explicit action.
   Approved remote clients see this screen read-only
   ([client access](desktop-and-clients.md#bundled-runtime-and-reporting-bridge)).
 
@@ -99,7 +105,7 @@ discovered configuration home, with a global **Recheck installation**.
 
 Start and runtime readiness check the real connection, the available project, the selected
 environment/provider/model/options, the public T3 interface and the installed bridge. Readiness
-covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. Readiness never
+covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. When the blocking problem is the reporting installation, the rejected-Start notice links to **Settings → Agent reporting**; other readiness problems link to **Studio → Agents**. Readiness never
 launches diagnostic work, answers approvals or substitutes settings.
 
 A final result is immutable; a worker's handoffs stay held until fresh source completion and

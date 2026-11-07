@@ -6,6 +6,9 @@ import type {
   T3Contract,
 } from "@t3-factory/contracts";
 
+/** A provider as T3's catalog publishes it; Factory adds its own reporting support. */
+export type T3ProviderCapability = Omit<AgentProviderCapability, "reporting">;
+
 export type T3ConnectionReason =
   | "connected"
   | "approval-required"
@@ -176,7 +179,7 @@ export interface T3Adapter {
    */
   resumeAuthorization(target: T3Endpoint): Promise<AuthorizationResumption>;
   readEnvironment(target: T3Endpoint): Promise<AgentEnvironment>;
-  orchestratorCapabilities(target: T3Endpoint): Promise<readonly AgentProviderCapability[]>;
+  orchestratorCapabilities(target: T3Endpoint): Promise<readonly T3ProviderCapability[]>;
   close(): Promise<void>;
 }
 

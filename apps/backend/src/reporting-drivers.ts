@@ -1,5 +1,7 @@
+import type { AgentProviderReporting } from "@t3-factory/contracts";
+
 /** Harnesses whose Block reports Factory can accept. */
-const REPORTING_DRIVERS = ["codex", "claudeAgent", "cursor", "grok"] as const;
+export const REPORTING_DRIVERS = ["codex", "claudeAgent", "cursor", "grok"] as const;
 export type ReportingDriver = (typeof REPORTING_DRIVERS)[number];
 
 /**
@@ -28,4 +30,17 @@ export function reportingHome(driver: Exclude<ReportingDriver, "cursor">): {
     file: ".claude.json",
     toml: false,
   };
+}
+
+export function providerReporting(driverKind: unknown): AgentProviderReporting {
+  return isReportingDriver(driverKind)
+    ? {
+        supported: true,
+        explanation: "Reports Block results through Factory MCP once it is installed.",
+      }
+    : {
+        supported: false,
+        explanation:
+          "Factory reporting is not available for this provider yet. Settings → Agent reporting shows the MCP entry to add once support exists.",
+      };
 }

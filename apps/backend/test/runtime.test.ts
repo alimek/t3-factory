@@ -80,5 +80,7 @@ it("unsupported harnesses remain visible and block runtime readiness", async (c)
   assert(check.value.issues.some((i) => i.code === "harness_unsupported"));
   const capabilities = await f.getAgentCapabilities();
   assert(capabilities.ok);
-  assert(capabilities.value.providers.some((provider) => provider.driverKind === "future"));
+  expect(
+    capabilities.value.providers.find((provider) => provider.driverKind === "future")?.reporting,
+  ).toMatchObject({ supported: false });
 });

@@ -57,6 +57,26 @@ it("Codex installation preserves existing settings and survives backend restart 
   expect(before).toMatch(/command = "other"/);
 });
 
+it("a provider without Factory reporting is listed as unsupported with nothing to install", async (context) => {
+  // Arrange
+  const { factory } = await reportingFixture(context, "pi");
+
+  // Act
+  const targets = await factory.getReportingInstallations();
+
+  // Assert
+  assert(targets.ok);
+  expect(targets.value).toMatchObject([
+    {
+      provider: "pi",
+      instances: ["test-provider"],
+      status: "unsupported",
+      path: null,
+      actions: { install: false, repair: false, reinstall: false },
+    },
+  ]);
+});
+
 it("a conflicting configuration target exposes no repair action", async (context) => {
   // Arrange
   const { factory, config } = await reportingFixture(context);
