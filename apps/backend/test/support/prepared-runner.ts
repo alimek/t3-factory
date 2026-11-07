@@ -84,6 +84,8 @@ export async function prepared(c: TestContext) {
       projectId: p.value.id,
       flowId: flow.value.id,
       input: "Improve search\nKeep it accessible.",
+      title: "Improve search",
+      createdAt: "2026-11-07T08:00:00.000Z",
     },
   };
 }

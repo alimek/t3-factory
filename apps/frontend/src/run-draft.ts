@@ -66,10 +66,14 @@ const filled = (value: unknown): value is string =>
 
 function readSubmission(value: unknown): StartRunInput | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { requestId, projectId, flowId, input } = value as Record<string, unknown>;
+  const { requestId, projectId, flowId, input, title, createdAt } = value as Record<
+    string,
+    unknown
+  >;
   if (!filled(requestId) || !filled(projectId) || !filled(flowId) || !filled(input))
     return undefined;
-  return Object.freeze({ requestId, projectId, flowId, input });
+  if (!filled(title) || !filled(createdAt)) return undefined;
+  return Object.freeze({ requestId, projectId, flowId, input, title, createdAt });
 }
 
 function readDraft(value: unknown): SavedRunDraft | undefined {
@@ -332,6 +336,8 @@ export function createRunDraft(
         projectId: saved.projectId,
         flowId: saved.flowId,
         input: saved.input,
+        title: draftTitle(saved),
+        createdAt: saved.createdAt,
       });
     inFlight.add(id);
     const recoverable = commit(requestServer, id, (latest = saved) => ({

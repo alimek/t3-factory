@@ -39,7 +39,7 @@ skill, reporting installation and launch support. It does not require a Run coor
 Accepted Start atomically creates the Run's Task, assigns the Run number, captures the
 snapshot and records each launch intent before contacting T3. An accepted request key is
 unique across the database: the same content returns the same Run; changed content
-conflicts. Flow input targets start independently and are not handoffs.
+conflicts. Content is the project, Flow, input, title and creation time. Flow input targets start independently and are not handoffs.
 
 A worker is bound from the launch acknowledgement, or from exactly one search candidate
 whose title matches and whose thread, workspace, provider, model, options and execution

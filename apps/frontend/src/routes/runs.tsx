@@ -359,7 +359,7 @@ function RunTopBar({
             <span className="sr-only">Flow for this Run: </span>
             {run.flowName} · snapshot
           </span>
-          <span className="tracking-label">· Created {dayAndTime(run.startedAt)}</span>
+          <span className="tracking-label">· Started {dayAndTime(run.startedAt)}</span>
         </p>
       </div>
       {!run.closedAt && !run.stopRequestedAt && (

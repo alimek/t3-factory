@@ -72,9 +72,9 @@ T3 settlement or active-list behavior.
   **Check same request**: exactly one Run opens. Pending Starts are browser-local and not reset by `db:reset`.
 - **Run drafts.** Drafts are browser-local and never seeded. In Atlas choose **Demo · Focused change**, type a prompt, open a
   seeded Run (the draft appears with **Draft**), press **New Run** and type another, reload, then search a draft title and
-  reopen it: prompt and choices are restored. From a draft row's ··· menu (or F2) rename it, edit its prompt and reload: the
-  title stays; **Discard** the other draft and it disappears at once. Start it and only its Run remains. `db:reset` does not
-  clear drafts.
+  reopen it: prompt and choices are restored. From the older draft's ··· menu (or F2) rename it, edit its prompt and reload:
+  the title stays. Start it: only its Run remains, with the manual title, below the newer draft; **Discard** the newer draft
+  and it disappears at once. `db:reset` does not clear drafts.
 - **Shortcuts.** In Settings → Keyboard shortcuts change Command palette, reload and use the new chord; Reset all restores defaults. Preferences are browser-local and not reset by `db:reset`.
 - **Devices and connection.** The seed includes approved **Demo · Office browser** and revoked **Demo · Retired laptop** clients in Settings → Devices & access (pending requests expire, so request one
   from another browser profile). The Vite proxy is host-local; controlled remote-client journeys cover pending, approved, revoked, offline and incompatible clients, and desktop fixtures simulate updater

@@ -76,6 +76,8 @@ it("Check same request sends the identical key and payload after a lost response
     projectId: "project",
     flowId: "flow",
     input: "Do the work",
+    title: "Do the work",
+    createdAt: "2026-11-07T08:00:00.000Z",
   });
   expect(runId).toBe("accepted-run");
   expect(draft.getSnapshot()).toMatchObject({ input: "", pending: false, busy: false });
@@ -264,6 +266,43 @@ it("Discard keeps an unresolved Start for the same check", async (context) => {
   // Assert
   expect(startRun.mock.calls[1]?.[0]).toStrictEqual(submitted);
   expect(runId).toBe("accepted-run");
+});
+
+it("Start submits the draft's bounded first-line title and its original creation time", async (context) => {
+  // Arrange
+  const { draft, startRun } = composer(context);
+  vi.setSystemTime(new Date("2026-11-07T08:05:00Z"));
+  const prompt = " \n\t\r\n  " + "x".repeat(501) + "\nFull input retained";
+  draft.edit({ input: prompt });
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[0]?.[0]).toStrictEqual({
+    requestId: expect.any(String),
+    projectId: "project",
+    flowId: "flow",
+    input: prompt,
+    title: "x".repeat(500),
+    createdAt: "2026-11-07T08:00:00.000Z",
+  });
+});
+
+it("Start submits a renamed draft's manual title", async (context) => {
+  // Arrange
+  const { draft, startRun } = composer(context);
+  const { draftId } = draft.getSnapshot();
+  assert(draftId);
+  draft.rename(draftId, "Release notes");
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[0]?.[0]).toMatchObject({ title: "Release notes" });
 });
 
 it("an accepted Start removes its draft instead of listing it beside the Run", async (context) => {
