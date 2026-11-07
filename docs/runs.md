@@ -128,6 +128,10 @@ acceptance only after saving it. The model does not supply a report key or a Run
   and report. Eligibility is rechecked at acceptance (newer or queued work, native attention, changed authorization, accepted
   results, Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
   attention with a recovery reason and may allow closure; a failed one stays unresolved.
+- **Rejected report**: a proven current worker's rejected report appears as a separate Problem with the rejection
+  code, reason and repair guidance. Missing report means no report was accepted; the worker may have attempted one.
+  Correct the reported issue without repeating work. A corrected accepted report or confirmed linked recovery settles
+  the rejection while preserving its history; progress alone does not. Unverified caller errors stay in MCP/T3.
 - **Conversation waiting**: an Agent that asked questions in chat reports `to: "waiting"` with a message. The block
   shows waiting, the Run shows **Needs input** with that message and **Open in T3**; reply in the worker's T3 thread. When Factory
   observes the reply turn the attention settles (`resumed-by`), the waiting report stays in history and the reply turn reports

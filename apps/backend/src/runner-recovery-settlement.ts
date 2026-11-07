@@ -1,3 +1,4 @@
+import { settleReportRejections } from "./runner-report-diagnostics.ts";
 import * as Effect from "effect/Effect";
 import type { RunDetail } from "@t3-factory/contracts";
 import type { T3Adapter } from "./adapters/t3.ts";
@@ -76,6 +77,7 @@ export function settleRecoveries(
       attentionId: string;
       blockId: string;
       executionId: string;
+      sourceExecutionId: string;
     }[] = [];
     for (const recovery of detail.value.recoveries) {
       if (recovery.settledAt) continue;
@@ -90,7 +92,15 @@ export function settleRecoveries(
       const proven = yield* recoverOperation(
         Effect.all(
           chain.executionIds.map((executionId) =>
-            recoveryFrontier(t3, current, recovery.blockId, block.threadId!, executionId, false),
+            recoveryFrontier(
+              database,
+              t3,
+              current,
+              recovery.blockId,
+              block.threadId!,
+              executionId,
+              false,
+            ),
           ),
           { concurrency: "unbounded" },
         ),
@@ -101,6 +111,7 @@ export function settleRecoveries(
           attentionId: recovery.attentionId,
           blockId: recovery.blockId,
           executionId: chain.executionId,
+          sourceExecutionId: recovery.sourceExecutionId,
         });
     }
     if (!settlements.length) return;
@@ -112,6 +123,13 @@ export function settleRecoveries(
         if (!held.length) return;
         const time = yield* now;
         for (const recovery of settlements) {
+          yield* settleReportRejections(
+            sql,
+            id,
+            recovery.blockId,
+            recovery.sourceExecutionId,
+            time,
+          );
           yield* sql`UPDATE report_recoveries SET settled_at=${time} WHERE attention_id=${recovery.attentionId} AND settled_at IS NULL`;
           yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason=${"recovered-by:" + recovery.executionId} WHERE id=${recovery.attentionId} AND settled_at IS NULL`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${id},${recovery.blockId},${recovery.executionId},'attention-settled',${"attention-settled:" + recovery.attentionId},${recovery.attentionId},${time}) ON CONFLICT DO NOTHING`;

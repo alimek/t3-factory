@@ -1,3 +1,4 @@
+import { settleReportRejections } from "./runner-report-diagnostics.ts";
 import { rootControlDispatchAllowed } from "./run-control-recovery-proof.ts";
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
@@ -63,7 +64,22 @@ export function completeCoordinator(
           const closed = yield* confirmClosure(sql, database.owner.token, fresh, "finished");
           if (closed) {
             yield* sql`UPDATE run_activations SET phase='finished',problem=NULL WHERE run_id=${id}`;
-            yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${yield* now}) WHERE run_id=${id}`;
+            const time = yield* now;
+            yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${time}) WHERE run_id=${id}`;
+            // Terminal activations have no handoff release to settle their recovery diagnostics.
+            const reports = yield* sql<{
+              block_id: string;
+              execution_id: string;
+            }>`SELECT block_id,execution_id FROM runtime_reports WHERE run_id=${id}`;
+            for (const report of reports)
+              yield* settleReportRejections(
+                sql,
+                id,
+                report.block_id,
+                report.execution_id,
+                time,
+                true,
+              );
           }
         }),
       );
