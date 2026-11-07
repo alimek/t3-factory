@@ -2,8 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { ReportingInstallation } from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { Button } from "@/components/ui/button";
-import { useClientScope } from "../client-scope.ts";
-import { HostSetupNotice } from "./connection.tsx";
 import { useReportingState } from "../reporting-state.tsx";
 
 const labels: Record<ReportingInstallation["status"], string> = {
@@ -19,8 +17,6 @@ const providerNames: Record<string, string> = {
   grok: "Grok",
 };
 export function RuntimeSettings() {
-  // Installation changes the host's harness homes; remote clients only see its status.
-  const host = useClientScope() === "host";
   const { targets, refresh: refreshReporting, error: readError } = useReportingState();
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -48,11 +44,10 @@ export function RuntimeSettings() {
   return (
     <section className="space-y-5">
       <h2 className="text-title font-semibold">Agent reporting</h2>
-      <HostSetupNotice />
       <p className="text-sm text-muted-foreground">
-        Install Factory MCP once per harness home for all Projects, worktrees and Agents. Installed
-        configuration does not prove that live reporting works in the harness today. New Runs
-        require MCP reporting; existing Runs keep their saved reporting protocol.
+        Install Factory MCP on the server computer once per harness home for all Projects, worktrees
+        and Agents. Installed configuration does not prove that live reporting works in the harness
+        today. New Runs require MCP reporting; existing Runs keep their saved reporting protocol.
       </p>
       <Button variant="outline" disabled={busy} onClick={() => void refresh()}>
         Recheck installation
@@ -75,25 +70,23 @@ export function RuntimeSettings() {
           )}
           <p className="text-xs text-muted-foreground">{target.instances.join(", ")}</p>
           <p className="text-sm">{target.message}</p>
-          {host && (
-            <div className="flex flex-wrap gap-2">
-              {target.actions.install && (
-                <Button disabled={busy} onClick={() => void install(target.id)}>
-                  Install Factory MCP
-                </Button>
-              )}
-              {target.actions.repair && (
-                <Button disabled={busy} onClick={() => void install(target.id)}>
-                  Repair installation
-                </Button>
-              )}
-              {target.actions.reinstall && (
-                <Button variant="secondary" disabled={busy} onClick={() => void install(target.id)}>
-                  Reinstall Factory MCP
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {target.actions.install && (
+              <Button disabled={busy} onClick={() => void install(target.id)}>
+                Install Factory MCP
+              </Button>
+            )}
+            {target.actions.repair && (
+              <Button disabled={busy} onClick={() => void install(target.id)}>
+                Repair installation
+              </Button>
+            )}
+            {target.actions.reinstall && (
+              <Button variant="secondary" disabled={busy} onClick={() => void install(target.id)}>
+                Reinstall Factory MCP
+              </Button>
+            )}
+          </div>
         </article>
       ))}
       <p className="text-sm text-muted-foreground">

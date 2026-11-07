@@ -35,7 +35,8 @@ remove it from earlier commits; revoke exposed credentials before coordinating c
 - The plain HTTP listener is host-local and rejects non-loopback peers. Other devices
   connect through the separate HTTPS listener after individual host approval;
   see [approved clients](docs/desktop-and-clients.md).
-- An approved client can operate Flows, Agents and Runs. Approve only devices you
+- An approved client can operate Flows, Agents and Runs and install or repair Factory MCP
+  in the server's harness configuration. Approve only devices you
   trust; revoke access on the host when no longer needed.
 - The execution host, OS account, T3, configured harnesses and selected project are
   trusted. Factory does not isolate malicious processes running as the same OS user.

@@ -66,10 +66,13 @@ profile is approved individually on the host panel, where each request shows its
 device name, kind and six-digit verification code. Approve only a request whose code
 matches the requesting screen. Approved clients have full normal Factory access: Flows,
 Agents, Runs, Human answers, attention, history and Run operations, with the existing
-revision-conflict behavior. The T3 endpoint, host
-reauthorization and Agent reporting installation stay host setup: remote clients see
-their status and a "Managed on the Factory host" notice, and such changes are refused
-remotely. When T3 needs approval, a remote client may choose **Open authorization on
+revision-conflict behavior. They can also install, repair and reinstall Factory MCP in
+**Settings → Agent reporting**. Clients control the authoritative server remotely:
+commands execute on the server and reporting setup changes the server's harness files.
+Keeping files and credentials on the server does not by itself restrict an operation
+to its local panel. The T3 endpoint and host reauthorization remain host-only: remote
+clients see their status and a "Managed on the Factory host" notice.
+When T3 needs approval, a remote client may choose **Open authorization on
 server** to reopen or start consent in the host's browser for the saved endpoint; see
 [T3 connection](t3-integration.md#authorizing). Lifecycle and approvals are host-local
 only; an approved client may check, download and install the server's own update
@@ -173,9 +176,11 @@ and an approved client credential before any operation. Public
 remote routes are limited to the handshake (`GET /api/protocol`), the caller's own
 access state (`GET /api/client-access`), access requests (rate-limited to five per peer
 per minute) and the public certificate (`/factory-ca.pem`); static UI files carry no
-product data. Factory MCP (`/mcp`), endpoint changes
+product data. Reporting installation is an approved-client product operation; it uses
+the same server-side installer as the host panel and accepts only a discovered target
+identifier, not a client-supplied filesystem path. Factory MCP (`/mcp`), endpoint changes
 (`PUT /api/connection`), host reauthorization (`POST /api/connection/authorize`, which
-retires the current context) and reporting installation are `hostOnly`: report ingress
+retires the current context) remain `hostOnly`: report ingress
 therefore cannot become a bypass into general APIs, and the T3 grant never leaves the
 host. `POST /api/connection/authorization/open` is the one connection mutation an
 approved client may call: it only reopens a pending approval or starts one for the
