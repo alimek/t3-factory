@@ -13,6 +13,7 @@ import { parse } from "smol-toml";
 import type { ReportingInstallation, Result, T3Connection } from "@t3-factory/contracts";
 import { FACTORY_BLOCK_SKILL, factoryBlockSkillPath } from "./factory-block-skill.ts";
 import { discoverReporting, record } from "./reporting-discovery.ts";
+import { isReportingDriver } from "./reporting-drivers.ts";
 import {
   RepairableInstallationError,
   withReportingInstallationActions,
@@ -315,7 +316,9 @@ const openReportingInstallation = Effect.fn(function* (
         ok: true,
         value: yield* Effect.forEach(
           (yield* targets()).map((target) =>
-            target.path || target.instances.length === 0 ? target : { ...target, message: manual },
+            target.path || target.instances.length === 0 || isReportingDriver(target.provider)
+              ? target
+              : { ...target, message: manual },
           ),
           inspect,
           { concurrency: "unbounded" },
