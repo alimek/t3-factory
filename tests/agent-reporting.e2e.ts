@@ -53,7 +53,7 @@ test("reporting problems are visible before Start and clear after repairing the 
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
   await screen
     .getByRole("article")
-    .filter({ hasText: "codex-main" })
+    .filter({ has: screen.getByRole("heading", "Codex", { exact: true }) })
     .getByRole("button", "Repair installation", { exact: true })
     .tap();
   await screen.getByRole("button", "Close", { exact: true }).tap();

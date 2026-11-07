@@ -168,6 +168,8 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 - **Observation.** Active/latest identities, public execution ordinals and source timestamps
   distinguish renewed work from earlier executions. Native attention includes permissions
   as well as questions; an incomplete listing cannot prove the absence of either.
+  Local system notification metadata also identifies automatic worker continuations;
+  Factory does not infer continuation authority from notification text.
 - **Send.** Work targets an exact thread with `mode: queue`, a stable request key and fixed
   message. Returned thread/message/execution references must match. Send replay requires its
   own continuity proof; launch replay support is insufficient.
