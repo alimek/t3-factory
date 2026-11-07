@@ -228,8 +228,10 @@ installed.
   (`pending` or `running`) factory tool on a bound thread whose recorded arguments equal the
   call, including `ref` when the model sent one. Cursor stores those arguments as `input`.
   Grok stores them as `input.tool_input`, and names the tool `factory-runtime__<tool>`.
-  An inherited thread hint only narrows candidates. Missing, ambiguous, truncated, stale
-  or foreign evidence rejects the call; unavailable candidates cannot simply be ignored.
+  An inherited thread hint only narrows candidates. A truncated dynamic tool is read onward
+  from its continuation offset until the text is complete. Missing, ambiguous, stale, or
+  foreign evidence rejects the call, as does a continuation that is inconsistent, exhausted,
+  or over 262144 characters. Unavailable candidates cannot simply be ignored.
   Native delegation evidence remains Codex and Claude only. A Cursor or Grok worker can
   report its own Block; Factory does not decode native child delegation from those harnesses.
   Fresh observations do not replace the durable gate check at acceptance.
