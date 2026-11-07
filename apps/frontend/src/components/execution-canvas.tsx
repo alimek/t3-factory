@@ -39,7 +39,7 @@ const EXECUTION_FLOW_INPUT_HEIGHT = 102;
 const EXECUTION_FOOTER_HEIGHT = 32;
 
 function executionBlockDisplayHeight(run: RunDetail, block: FlowBlock, unavailable: boolean) {
-  const graph = run.snapshot.flow.graph;
+  const graph = run.definitions.flow.graph;
   const recorded = run.blocks.find((item) => item.blockId === block.id);
   const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
   const attention = blockAttention(run, block.id);
@@ -55,7 +55,7 @@ function executionBlockDisplayHeight(run: RunDetail, block: FlowBlock, unavailab
 }
 
 function executionLayoutProfile(run: RunDetail) {
-  const graph = run.snapshot.flow.graph;
+  const graph = run.definitions.flow.graph;
   const blockHeights: Record<string, number> = {};
   for (const block of graph.blocks) {
     // Reserve both possible status footers so polling cannot make arranged nodes overlap.
@@ -126,7 +126,7 @@ function agentLabel(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "asks you";
   if (!block.agentId) return "not chosen";
   return (
-    run.snapshot.agents.find((agent) => agent.id === block.agentId)?.name ?? "Unavailable Agent"
+    run.definitions.agents.find((agent) => agent.id === block.agentId)?.name ?? "Unavailable Agent"
   );
 }
 
@@ -398,7 +398,7 @@ function ExecutionBlock({
   const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
   const human = block.kind === "human";
   const name = block.name || "Unnamed block";
-  const graph = run.snapshot.flow.graph;
+  const graph = run.definitions.flow.graph;
   const incoming = incomingWiresForBlock(graph, block.id);
   const incomingPortIndices = incoming.length > 0 ? incoming.map((_wire, index) => index) : [0];
   return (
@@ -470,7 +470,7 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
     autoArrange,
   } = useFlowLayoutSession({
     scope: run.id,
-    graph: run.snapshot.flow.graph,
+    graph: run.definitions.flow.graph,
     profile: executionLayoutProfile(run),
   });
   const wireLayout = executionLayout(run, observationUnavailable);
@@ -487,7 +487,7 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
 }
 
 /**
- * Read-only snapshot canvas. The viewport is local UI state: polling replaces
+ * Read-only canvas of a captured Flow revision. The viewport is local UI state: polling replaces
  * block facts in place and does not fit or move the view again.
  */
 export function ExecutionCanvas({

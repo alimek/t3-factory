@@ -15,8 +15,13 @@ and restricted OAuth credentials live outside project repositories.
 
 - Agent and Flow definitions are editable. Saves compare revisions; stale writes conflict.
   Structural validity permits incomplete drafts, while readiness is a separate launch gate.
-- Start atomically captures the Run input, full Flow graph and referenced Agent prompts,
-  settings, labels and revisions. Later definition changes cannot rewrite history.
+  Each Flow save appends an immutable relational revision and each Agent save an immutable
+  Agent revision; removing either hides it from Studio and Start but keeps its revisions.
+- Start atomically records the Run input, references the current Flow revision and freezes
+  the current revision of every Agent that Flow references, including blocks it may never
+  visit; each Agent activation references that frozen revision. Runs keep no separate copy:
+  execution, recovery and Run history read these revisions, so later edits and removals
+  cannot rewrite history.
   External skill files are not frozen.
 - Each Start creates a new Task, Run and threads; a Task never has more than one
   non-closed Run, and closed Runs are never reopened.
@@ -35,10 +40,10 @@ network I/O. Restart reconciles open Runs before dispatching. Uncertain operatio
 new attempts, and failed Agent work is never retried automatically; see
 [ownership and recovery](runner.md#ownership-and-restart).
 
-**Retention.** History, input, snapshots, events, deduplication metadata and closure evidence
+**Retention.** History, input, revisions, events, deduplication metadata and closure evidence
 are kept indefinitely. Message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
-remain. Initial input and prompt snapshots are intentional exceptions. There is no
+remain. Initial input and revision prompts are intentional exceptions. There is no
 transcript archive, and payload clearing is not secure erasure.
 
 ## Public operations
@@ -60,8 +65,12 @@ a released migration. Each chunk contains **one SQLite statement**, separated by
 `-- statement-breakpoint` line. Do not add `BEGIN` or `COMMIT`: the migrator owns the
 transaction. An unknown migration ledger fails closed.
 
-Persisted JSON (Flow graphs, Run snapshots and payloads) is versioned like the schema.
-A shape change needs a migration that rewrites stored data and a
+Persisted JSON (operational payloads, evidence and Agent model options) is versioned like
+the schema. Flow graphs and Run definitions are not stored as JSON: Flow and Agent revisions
+are relational rows that Runs reference, so changing their shape is an ordinary SQL migration
+over current and historical revisions. Such a migration converts every revision in place under
+the guard rule below; it never appends, renumbers or drops revisions, because Runs reference
+them. A JSON shape change needs a migration that rewrites stored data and a
 [frozen-fixture upgrade test](../apps/backend/test/fixtures/README.md). Preserve records by
 converting them to the current shape unless the user explicitly accepts discarding the
 affected data. An accepted removal still needs a migration and an upgrade test proving
@@ -97,5 +106,5 @@ remains authoritative.
 The UI must work over plain HTTP on a LAN or Tailscale address as well as loopback.
 Browser APIs requiring a secure context must not be the only way to generate identifiers.
 Canvas routing and viewport geometry are transient; pan, zoom and polling never modify
-saved definitions or Run snapshots. Authoring positions change only through explicit
+saved definitions or the revisions a Run captured. Authoring positions change only through explicit
 edits or Auto-arrange followed by Save; see [canvas behavior](studio.md#automatic-layout-and-canvas-view).

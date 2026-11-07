@@ -4,6 +4,7 @@ import { makeRunLanes } from "./runner-lanes.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { now } from "./time.ts";
+import { readRunDefinitions } from "./run-definitions.ts";
 /** The sole owner of local Run mutation lanes and SQL transaction boundaries. */
 export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { token: string }) {
   const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>): Effect.Effect<A, E> =>
@@ -27,7 +28,10 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
       return yield* run(
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          return (yield* sql<RunRow>`SELECT r.*, t.project_id, t.title, s.snapshot_json, c.endpoint, c.environment_id, p.project_id AS t3_project_id FROM runs r JOIN tasks t ON t.id=r.task_id JOIN run_snapshots s ON s.run_id=r.id JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN projects p ON p.id=t.project_id WHERE r.id=${id}`)[0];
+          const [runRow] = yield* sql<
+            Omit<RunRow, "definitions">
+          >`SELECT r.*, t.project_id, t.title, c.endpoint, c.environment_id, p.project_id AS t3_project_id FROM runs r JOIN tasks t ON t.id=r.task_id JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN projects p ON p.id=t.project_id WHERE r.id=${id}`;
+          return runRow && { ...runRow, definitions: yield* readRunDefinitions(sql, runRow) };
         }),
       );
     });

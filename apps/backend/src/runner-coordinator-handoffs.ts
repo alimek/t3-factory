@@ -2,7 +2,6 @@ import { releaseCoordinatorSource } from "./coordinator-release.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { coordinatorGate } from "./runner-coordinator-gate.ts";
 import * as Effect from "effect/Effect";
-import type { RunSnapshot } from "@t3-factory/contracts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow, StoredTarget } from "./runner-types.ts";
 import { persistActivation } from "./runner-coordination.ts";
@@ -53,12 +52,12 @@ export function prepareCoordinatorHandoff(
         if (!valid.length) return undefined;
         if (!intent.payload_json || fingerprint(intent.payload_json) !== intent.fingerprint)
           throw Error("Invalid handoff payload");
-        const snapshot = JSON.parse(run.snapshot_json) as RunSnapshot;
+        const { definitions } = run;
         const target = JSON.parse(intent.target_json) as StoredTarget;
         const message = (JSON.parse(intent.payload_json) as { message: string }).message;
         const activationId = yield* newId;
         const launched = workerLaunchPayload(
-          snapshot,
+          definitions,
           intent.block_id,
           target,
           intent.request_key,

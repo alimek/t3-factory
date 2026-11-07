@@ -299,7 +299,7 @@ function DeleteAgentButton({
             <DialogDescription>
               {flowUsage > 0
                 ? `This Agent is used in ${flowUsageLabel(flowUsage)}. Remove it from those Flows before deleting, or Factory will reject the delete.`
-                : "This permanently removes the Agent definition. Flows that already ran keep their snapshot."}
+                : "This removes the Agent from Studio with no restore. Its saved revisions are kept, so Runs that used it keep the Agent they started with."}
             </DialogDescription>
           </DialogHeader>
           {error && (

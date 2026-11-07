@@ -16,7 +16,7 @@ it("restored demo treats verified running work as normal progress and preserves 
   assert(after.ok);
   assert(flow.ok);
   assert(runs.ok);
-  expect(after.value.snapshot).toStrictEqual(before.snapshot);
+  expect(after.value.definitions).toStrictEqual(before.definitions);
   expect(after.value.threadBindings).toStrictEqual(before.threadBindings);
   expect(after.value.runCoordinator).toBeNull();
   expect(after.value.executions.map((e) => [e.executionId, e.engineStatus])).toStrictEqual(

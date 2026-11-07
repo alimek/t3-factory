@@ -26,7 +26,7 @@ workflow, routes work and records its history.
 - **Keep decisions with people.** Answer Human steps in Factory and open T3 for native
   agent questions or permissions. See which Runs need input or have a Problem.
 - **Follow durable execution.** Inspect the execution canvas, handoffs and timeline;
-  retain snapshots and history across backend restarts. Stop a Run or start another from its snapshot.
+  keep each Run's captured definitions and history across backend restarts. Stop a Run or start a new one.
 - **Work locally or from an approved device.** Use the browser on the host, or connect
   an approved desktop/browser client through the separate HTTPS listener.
 

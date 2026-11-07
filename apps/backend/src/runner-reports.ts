@@ -4,7 +4,7 @@ import type { T3Adapter } from "./adapters/t3.ts";
 import { acceptCoordinatorWait, settleCoordinatorWaits } from "./coordinator-conversation.ts";
 import { workerReport, settleCoordinatorReports } from "./coordinator-report.ts";
 import { newId } from "./ids.ts";
-import type { RunSnapshot } from "@t3-factory/contracts";
+import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { attention } from "./runner-attention.ts";
@@ -19,6 +19,7 @@ import {
   type RuntimeReport,
 } from "./runtime-types.ts";
 import { now } from "./time.ts";
+import { readRunDefinitions } from "./run-definitions.ts";
 function reportRetry(
   sql: SqlClient.SqlClient,
   binding: RuntimeBinding,
@@ -35,8 +36,8 @@ function reportRetry(
   });
 }
 /** Exact exit names and identities resolve against the captured Flow, never a later edit. */
-function reportRoute(snapshot: RunSnapshot, blockId: string, report: RuntimeReport) {
-  const block = snapshot.flow.graph.blocks.find((block) => block.id === blockId);
+function reportRoute(definitions: RunDefinitions, blockId: string, report: RuntimeReport) {
+  const block = definitions.flow.graph.blocks.find((block) => block.id === blockId);
   if (!block || block.kind !== "agent") return rejected("UNBOUND_CALLER");
   const matches = block.exits.filter(
     (candidate) => candidate.name === report.exit || candidate.id === report.exit,
@@ -49,19 +50,19 @@ function reportRoute(snapshot: RunSnapshot, blockId: string, report: RuntimeRepo
     };
   if (exit?.requiresFeedback && !report.message?.trim()) return rejected("FEEDBACK_REQUIRED");
   const recipients = exit
-    ? snapshot.flow.graph.connections
+    ? definitions.flow.graph.connections
         .filter((edge) => edge.sourceBlockId === block.id && edge.exitId === exit.id)
         .map((edge) => edge.targetBlockId)
     : [];
-  if (recipients.some((id) => !snapshot.flow.graph.blocks.some((block) => block.id === id)))
+  if (recipients.some((id) => !definitions.flow.graph.blocks.some((block) => block.id === id)))
     return rejected("INVALID_RECIPIENT");
   return { ok: true as const, exitId: exit?.id ?? null, recipients };
 }
 /** A changed report names the Block's current state and the transitions still open from it. */
 function conflictDetail(reply: RuntimeReply, block: BlockRow, runRow: ReportRunRow): RuntimeReply {
   if (reply.code !== "KEY_CONFLICT" && reply.code !== "FINAL_CONFLICT") return reply;
-  const snapshot = JSON.parse(runRow.snapshot_json) as RunSnapshot;
-  const flowBlock = snapshot.flow.graph.blocks.find((entry) => entry.id === block.block_id);
+  const { definitions } = runRow;
+  const flowBlock = definitions.flow.graph.blocks.find((entry) => entry.id === block.block_id);
   return {
     ...reply,
     state: block.state,
@@ -99,9 +100,14 @@ export function openRunnerReports(
   /** The report must come from the saved thread of a persisted Run under this owner and context. */
   function reportCaller(sql: SqlClient.SqlClient, binding: RuntimeBinding, retryOnly: boolean) {
     return Effect.gen(function* () {
-      const [runRow] =
-        yield* sql<ReportRunRow>`SELECT r.id,r.gate_open,r.closed_at,r.context_id,r.workspace_root,s.snapshot_json,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN run_snapshots s ON s.run_id=r.id JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${binding.factoryRunId}`;
-      if (!runRow) return rejected(retryOnly ? "STALE_EXECUTION" : "RUNNER_UNAVAILABLE");
+      const [saved] = yield* sql<
+        Omit<ReportRunRow, "definitions"> & { flow_revision_id: string }
+      >`SELECT r.id,r.gate_open,r.closed_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${binding.factoryRunId}`;
+      if (!saved) return rejected(retryOnly ? "STALE_EXECUTION" : "RUNNER_UNAVAILABLE");
+      const runRow: ReportRunRow = {
+        ...saved,
+        definitions: yield* readRunDefinitions(sql, saved),
+      };
       const [connection] = yield* sql<{
         context_id: string;
       }>`SELECT context_id FROM t3_connection WHERE singleton=1`;
@@ -208,11 +214,7 @@ export function openRunnerReports(
               if (retryOnly || block.execution_id !== binding.runId)
                 return { code: "STALE_EXECUTION" };
               if (block.freshness !== "fresh") return { code: "INCOMPLETE_EXECUTION_EVIDENCE" };
-              const route = reportRoute(
-                JSON.parse(runRow.snapshot_json) as RunSnapshot,
-                binding.blockId,
-                report,
-              );
+              const route = reportRoute(runRow.definitions, binding.blockId, report);
               if (!route.ok) return route.reply;
               if (report.status === "waiting")
                 return yield* acceptCoordinatorWait(sql, binding, report, content);

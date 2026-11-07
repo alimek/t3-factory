@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import type {
   AgentCapabilities,
-  AgentDefinition,
+  RunDefinitions,
   AuthorizationContext,
   FactoryOperations,
   ProjectCatalog,
@@ -63,7 +63,7 @@ function readyCapabilities(cap: Result<AgentCapabilities>) {
 /** Keep the connected local environment, a supported reporting harness and every chosen setting. */
 function validatedHarness(
   context: AuthorizationContext,
-  agent: AgentDefinition,
+  agent: RunDefinitions["agents"][number],
   capabilities: AgentCapabilities,
 ) {
   if (
@@ -166,7 +166,10 @@ const openRuntimeSetup = Effect.fn(function* (
     yield* semaphore.withPermits(1)(Effect.void);
   });
   yield* Effect.addFinalizer(() => close);
-  const selection = Effect.fn(function* (input: unknown, snapshotAgent?: AgentDefinition) {
+  const selection = Effect.fn(function* (
+    input: unknown,
+    capturedAgent?: RunDefinitions["agents"][number],
+  ) {
     const i = object(input);
     if (typeof i.projectId !== "string" || typeof i.agentId !== "string")
       blocked("selection_required", "runtime.selection", "Choose a saved project and Agent.");
@@ -175,8 +178,8 @@ const openRuntimeSetup = Effect.fn(function* (
       [
         ops.getConnection(),
         ops.listProjects(),
-        snapshotAgent
-          ? Effect.succeed({ ok: true as const, value: snapshotAgent })
+        capturedAgent
+          ? Effect.succeed({ ok: true as const, value: capturedAgent })
           : ops.getAgent(i.agentId),
         ops.getAgentCapabilities(),
       ],
@@ -193,11 +196,11 @@ const openRuntimeSetup = Effect.fn(function* (
   /** Explicit reporting: the connected contract, an installed Factory MCP and report support. */
   const readiness = Effect.fn(function* (
     input: unknown,
-    snapshotAgent?: AgentDefinition,
+    capturedAgent?: RunDefinitions["agents"][number],
   ): Generator<Effect.Effect<unknown, unknown>, Result<RuntimeReadiness>, never> {
     const issues: ValidationIssue[] = [];
     yield* Effect.gen(function* () {
-      const s = yield* selection(input, snapshotAgent);
+      const s = yield* selection(input, capturedAgent);
       issues.push(...runtimeContractIssues(s.c));
       const installed = yield* explicitReadiness(
         {
@@ -237,7 +240,7 @@ const openRuntimeSetup = Effect.fn(function* (
   });
   return {
     close: () => close,
-    recheckSnapshot: (projectId: string, agent: AgentDefinition) =>
+    recheckAgent: (projectId: string, agent: RunDefinitions["agents"][number]) =>
       serial(() => readiness({ projectId, agentId: agent.id }, agent)),
     recheckRuntime: (i: unknown) => serial(() => readiness(i)),
   };

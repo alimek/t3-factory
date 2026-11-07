@@ -1,0 +1,2060 @@
+{
+  "format": 1,
+  "sourceCommit": "62e4e62cf71c1794db4ad8a2e1bce9d121c20ce0",
+  "schema": [
+    "CREATE TABLE \"effect_sql_migrations\" (\n  migration_id integer PRIMARY KEY NOT NULL,\n  created_at datetime NOT NULL DEFAULT current_timestamp,\n  name VARCHAR(255) NOT NULL\n)",
+    "CREATE TABLE flows (\n  id TEXT PRIMARY KEY NOT NULL,\n  name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 200),\n  revision INTEGER NOT NULL CHECK (revision > 0),\n  graph_json TEXT NOT NULL CHECK (json_valid(graph_json)),\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n)",
+    "CREATE TABLE t3_authorization_contexts (\n  id TEXT PRIMARY KEY,\n  endpoint TEXT NOT NULL,\n  authorization_identity TEXT NOT NULL,\n  environment_id TEXT NOT NULL,\n  created_at TEXT NOT NULL\n)",
+    "CREATE TABLE t3_connection (\n  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),\n  endpoint TEXT NOT NULL,\n  context_id TEXT REFERENCES t3_authorization_contexts(id)\n)",
+    "CREATE TABLE agents (\n  id TEXT PRIMARY KEY NOT NULL,\n  name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 200),\n  prompt TEXT NOT NULL CHECK (length(prompt) <= 120000),\n  revision INTEGER NOT NULL CHECK (revision > 0),\n  environment_id TEXT NOT NULL CHECK (length(trim(environment_id)) > 0),\n  provider_instance_id TEXT NOT NULL CHECK (length(trim(provider_instance_id)) > 0),\n  model_id TEXT NOT NULL CHECK (length(trim(model_id)) > 0),\n  model_options_json TEXT NOT NULL CHECK (json_valid(model_options_json)),\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n)",
+    "CREATE TABLE projects (\n  id TEXT PRIMARY KEY,\n  endpoint TEXT NOT NULL,\n  environment_id TEXT NOT NULL,\n  project_id TEXT NOT NULL,\n  title TEXT NOT NULL,\n  workspace_root TEXT NOT NULL,\n  availability TEXT NOT NULL,\n  observed_at TEXT NOT NULL, project_icon_json TEXT, favicon_path TEXT,\n  UNIQUE(endpoint, environment_id, project_id)\n)",
+    "CREATE TABLE project_selection (\n  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),\n  project_id TEXT REFERENCES projects(id)\n)",
+    "CREATE TABLE runner_owner (\n  singleton INTEGER PRIMARY KEY CHECK(singleton=1),\n  token TEXT NOT NULL,\n  pid INTEGER NOT NULL,\n  acquired_at TEXT NOT NULL\n)",
+    "CREATE TABLE tasks (\n  id TEXT PRIMARY KEY,\n  project_id TEXT NOT NULL REFERENCES projects(id),\n  title TEXT NOT NULL,\n  created_at TEXT NOT NULL\n)",
+    "CREATE TABLE runs (\n  id TEXT PRIMARY KEY,\n  task_id TEXT NOT NULL REFERENCES tasks(id),\n  request_id TEXT NOT NULL UNIQUE,\n  request_fingerprint TEXT NOT NULL,\n  input TEXT NOT NULL,\n  context_id TEXT NOT NULL REFERENCES t3_authorization_contexts(id),\n  workspace_root TEXT NOT NULL,\n  gate_open INTEGER NOT NULL DEFAULT 1 CHECK(gate_open IN (0,1)),\n  generation INTEGER NOT NULL DEFAULT 0,\n  started_at TEXT NOT NULL,\n  closed_at TEXT,\n  outcome TEXT\n, stop_requested_at TEXT, title TEXT NOT NULL DEFAULT '', number INTEGER)",
+    "CREATE TABLE run_snapshots (\n  run_id TEXT PRIMARY KEY REFERENCES runs(id),\n  snapshot_json TEXT NOT NULL\n)",
+    "CREATE TABLE run_blocks (\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  block_id TEXT NOT NULL,\n  name TEXT NOT NULL,\n  state TEXT NOT NULL DEFAULT 'not-started',\n  thread_id TEXT,\n  execution_id TEXT,\n  link TEXT,\n  engine_status TEXT,\n  report_status TEXT,\n  pending_request_count INTEGER,\n  observed_at TEXT,\n  freshness TEXT NOT NULL DEFAULT 'unknown', problem TEXT,\n  PRIMARY KEY(run_id,block_id),\n  UNIQUE(run_id,thread_id)\n)",
+    "CREATE TABLE operation_intents (\n  id TEXT PRIMARY KEY,\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  block_id TEXT NOT NULL,\n  kind TEXT NOT NULL,\n  cause TEXT NOT NULL,\n  target_json TEXT NOT NULL,\n  request_key TEXT NOT NULL UNIQUE,\n  payload_json TEXT,\n  fingerprint TEXT NOT NULL,\n  context_id TEXT NOT NULL REFERENCES t3_authorization_contexts(id),\n  retry_scope TEXT,\n  state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','reserved','uncertain','acknowledged','cancelled')),\n  reserved_by TEXT,\n  reserved_at TEXT,\n  result_json TEXT,\n  problem TEXT,\n  reconciled_at TEXT, report_id TEXT REFERENCES runtime_reports(id), source_block_id TEXT, exit_id TEXT, occurrence_id TEXT REFERENCES human_occurrences(id), recovery_attempt INTEGER NOT NULL DEFAULT 0, recovery_not_before TEXT,\n  UNIQUE(run_id,cause),\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE run_events (\n  sequence INTEGER PRIMARY KEY AUTOINCREMENT,\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  block_id TEXT,\n  kind TEXT NOT NULL,\n  source_key TEXT NOT NULL,\n  observed_at TEXT NOT NULL, execution_id TEXT, cause_id TEXT, source_at TEXT, engine_status TEXT, binding_id TEXT REFERENCES run_thread_bindings(id),\n  UNIQUE(run_id,source_key)\n)",
+    "CREATE TABLE run_attention (\n  id TEXT PRIMARY KEY,\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  block_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  kind TEXT NOT NULL,\n  source_key TEXT NOT NULL,\n  native_request_id TEXT,\n  occurrence_id TEXT,\n  appeared_at TEXT NOT NULL,\n  settled_at TEXT,\n  settlement_reason TEXT, message TEXT, binding_id TEXT REFERENCES run_thread_bindings(id),\n  UNIQUE(run_id,source_key),\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE human_occurrences (\n  id TEXT PRIMARY KEY,\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  block_id TEXT NOT NULL,\n  incoming_intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),\n  state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','answered','withdrawn','cancelled-on-Stop')),\n  pending_context TEXT,\n  appeared_at TEXT NOT NULL,\n  settled_at TEXT,\n  exit_id TEXT,\n  answer_fingerprint TEXT,\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE run_closures (\n  run_id TEXT PRIMARY KEY REFERENCES runs(id),\n  outcome TEXT NOT NULL CHECK(outcome IN ('finished','stopped')),\n  generation INTEGER NOT NULL,\n  confirmed_at TEXT NOT NULL,\n  frontier_json TEXT NOT NULL\n, coordination_json TEXT, root_frontier_json TEXT)",
+    "CREATE TABLE run_presentation (\n  run_id TEXT PRIMARY KEY REFERENCES runs(id),\n  snoozed INTEGER NOT NULL DEFAULT 0 CHECK(snoozed IN (0,1)),\n  woke INTEGER NOT NULL DEFAULT 0 CHECK(woke IN (0,1)),\n  CHECK(NOT (snoozed=1 AND woke=1))\n)",
+    "CREATE TABLE run_snooze_attention (\n  run_id TEXT NOT NULL REFERENCES run_presentation(run_id),\n  attention_id TEXT NOT NULL REFERENCES run_attention(id),\n  PRIMARY KEY(run_id,attention_id)\n)",
+    "CREATE TABLE client_grants (\n  id TEXT PRIMARY KEY,\n  label TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('desktop', 'browser')),\n  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied', 'revoked')),\n  secret_hash TEXT NOT NULL,\n  verification_code TEXT NOT NULL,\n  requested_at TEXT NOT NULL,\n  decided_at TEXT,\n  last_seen_at TEXT\n)",
+    "CREATE TABLE run_delegations (\n  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),\n  request_key TEXT NOT NULL UNIQUE,\n  input_fingerprint TEXT NOT NULL,\n  state TEXT NOT NULL DEFAULT 'planned' CHECK(state='planned')\n, accepted_json TEXT)",
+    "CREATE TABLE \"run_thread_bindings\" (\n  id TEXT PRIMARY KEY,\n  run_id TEXT NOT NULL,\n  block_id TEXT NOT NULL,\n  environment_id TEXT NOT NULL,\n  thread_id TEXT NOT NULL,\n  role TEXT NOT NULL CHECK(role IN ('direct-worker','coordinator','worker','descendant')),\n  parent_binding_id TEXT REFERENCES run_thread_bindings(id), link TEXT,\n  UNIQUE(run_id,environment_id,thread_id),\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE \"runtime_reports\" (\n  id TEXT PRIMARY KEY,\n  run_id TEXT NOT NULL,\n  block_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  report_key TEXT NOT NULL,\n  fingerprint TEXT NOT NULL,\n  status TEXT NOT NULL CHECK(status IN ('waiting','finished')),\n  exit_id TEXT,\n  recipients_json TEXT NOT NULL,\n  pending_message TEXT,\n  acknowledgement_json TEXT NOT NULL,\n  accepted_at TEXT NOT NULL, final_contract INTEGER NOT NULL DEFAULT 0, completion_eligible_at TEXT,\n  thread_scope TEXT, activation_id TEXT REFERENCES run_activations(id), result_message TEXT,\n  UNIQUE(run_id,block_id,execution_id,report_key),\n  FOREIGN KEY(run_id,thread_scope,execution_id) REFERENCES run_executions(run_id,thread_id,execution_id)\n)",
+    "CREATE TABLE \"report_recoveries\" (\n  attention_id TEXT PRIMARY KEY REFERENCES run_attention(id),\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  block_id TEXT NOT NULL,\n  source_execution_id TEXT NOT NULL,\n  intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),\n  requested_at TEXT NOT NULL,\n  settled_at TEXT,\n  thread_scope TEXT,\n  FOREIGN KEY(run_id,thread_scope,source_execution_id) REFERENCES run_executions(run_id,thread_id,execution_id)\n)",
+    "CREATE TABLE \"run_executions\" (\n  run_id TEXT NOT NULL,\n  block_id TEXT NOT NULL,\n  thread_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  engine_status TEXT,\n  report_status TEXT,\n  observed_at TEXT, ordinal INTEGER, source_at TEXT, problem TEXT, native_request_count INTEGER, binding_id TEXT REFERENCES run_thread_bindings(id), activation_id TEXT REFERENCES run_activations(id),\n  PRIMARY KEY(run_id,thread_id,execution_id),\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE coordinator_settlements (\n  run_id TEXT NOT NULL,\n  thread_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  attempted_at TEXT NOT NULL,\n  PRIMARY KEY(run_id,thread_id,execution_id),\n  FOREIGN KEY(run_id,thread_id,execution_id) REFERENCES run_executions(run_id,thread_id,execution_id)\n)",
+    "CREATE TABLE coordinator_native_items (\n  activation_id TEXT NOT NULL REFERENCES run_activations(id),\n  thread_id TEXT NOT NULL,\n  item_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  fingerprint TEXT NOT NULL,\n  PRIMARY KEY(activation_id,thread_id,item_id)\n)",
+    "CREATE TABLE coordinator_waits (\n  id TEXT PRIMARY KEY,\n  activation_id TEXT NOT NULL REFERENCES run_activations(id),\n  parent_execution_id TEXT NOT NULL,\n  report_key TEXT NOT NULL,\n  fingerprint TEXT NOT NULL,\n  acknowledgement_json TEXT NOT NULL,\n  target_binding_id TEXT NOT NULL REFERENCES run_thread_bindings(id),\n  target_execution_id TEXT NOT NULL,\n  attention_id TEXT NOT NULL REFERENCES run_attention(id),\n  UNIQUE(activation_id,parent_execution_id,report_key)\n)",
+    "CREATE TABLE \"run_activations\" (\n  id TEXT PRIMARY KEY,\n  run_id TEXT NOT NULL,\n  block_id TEXT NOT NULL,\n  cause TEXT NOT NULL,\n  phase TEXT NOT NULL DEFAULT 'delegating' CHECK(phase IN ('delegating','waiting-worker','assessing','reported','finished')),\n  coverage TEXT NOT NULL DEFAULT 'unverified' CHECK(coverage IN ('unverified','local-bounded')),\n  created_at TEXT NOT NULL,\n  evidence_json TEXT,\n  problem TEXT,\n  UNIQUE(run_id,cause),\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE coordinator_revisits (\n  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),\n  original_activation_id TEXT NOT NULL REFERENCES run_activations(id))",
+    "CREATE TABLE coordinator_releases (\n  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),\n  report_id TEXT NOT NULL UNIQUE REFERENCES runtime_reports(id),\n  generation INTEGER NOT NULL,\n  context_id TEXT NOT NULL,\n  frontier_json TEXT NOT NULL,\n  released_at TEXT NOT NULL\n)",
+    "CREATE TABLE coordinator_native_obligations (\n  run_id TEXT NOT NULL,\n  block_id TEXT NOT NULL,\n  thread_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  PRIMARY KEY(run_id,thread_id,execution_id),\n  FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)\n)",
+    "CREATE TABLE coordinator_remote_work (\n  id INTEGER PRIMARY KEY,\n  activation_id TEXT NOT NULL REFERENCES run_activations(id),\n  parent_thread_id TEXT NOT NULL,\n  task_id TEXT,\n  environment_id TEXT NOT NULL,\n  thread_id TEXT,\n  label TEXT NOT NULL,\n  status TEXT NOT NULL,\n  source_item_id TEXT NOT NULL,\n  source_execution_id TEXT NOT NULL,\n  source_fingerprint TEXT NOT NULL,\n  available INTEGER NOT NULL DEFAULT 0,\n  pending_request_count INTEGER,\n  observed_at TEXT,\n  resolved INTEGER NOT NULL DEFAULT 0,\n  CHECK((task_id IS NULL) = (thread_id IS NULL))\n)",
+    "CREATE TABLE coordinator_peer_obligations (\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  environment_id TEXT NOT NULL,\n  root_thread_id TEXT NOT NULL,\n  thread_id TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK(kind IN ('member','queued','execution','native','nested')),\n  reference TEXT NOT NULL,\n  PRIMARY KEY(run_id,environment_id,root_thread_id,thread_id,kind,reference)\n)",
+    "CREATE TABLE coordinator_local_executions (\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  thread_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  parent_thread_id TEXT,\n  provider_instance_id TEXT,\n  model TEXT,\n  ordinal INTEGER,\n  PRIMARY KEY(run_id,thread_id,execution_id)\n)",
+    "CREATE TABLE run_coordinators (\n  run_id TEXT PRIMARY KEY REFERENCES runs(id),\n  selection_json TEXT NOT NULL,\n  request_key TEXT NOT NULL UNIQUE,\n  payload_json TEXT,\n  fingerprint TEXT NOT NULL,\n  retry_scope TEXT,\n  state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','reserved','uncertain','acknowledged','cancelled')),\n  reserved_by TEXT,\n  reserved_at TEXT,\n  thread_id TEXT UNIQUE,\n  execution_id TEXT,\n  link TEXT,\n  engine_status TEXT,\n  problem TEXT,\n  created_at TEXT NOT NULL,\n  acknowledged_at TEXT\n, instruction_version INTEGER NOT NULL DEFAULT 0 CHECK(instruction_version IN (0,1)), freshness TEXT NOT NULL DEFAULT 'unknown', observed_at TEXT, pending_request_count INTEGER, queued_count INTEGER)",
+    "CREATE TABLE run_coordinator_commands (\n  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),\n  run_id TEXT NOT NULL REFERENCES run_coordinators(run_id),\n  request_key TEXT NOT NULL UNIQUE,\n  invocation_json TEXT NOT NULL,\n  invocation_fingerprint TEXT NOT NULL,\n  plan_json TEXT NOT NULL,\n  send_key TEXT NOT NULL UNIQUE,\n  send_json TEXT,\n  send_fingerprint TEXT,\n  retry_scope TEXT,\n  state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','reserved','uncertain','issued','accepted')),\n  parent_execution_id TEXT,\n  accepted_json TEXT,\n  thread_id TEXT UNIQUE,\n  execution_id TEXT,\n  problem TEXT,\n  intent_id TEXT REFERENCES operation_intents(id), cancelled_at TEXT)",
+    "CREATE TABLE run_coordinator_obligations (\n  run_id TEXT NOT NULL REFERENCES run_coordinators(run_id),\n  source_key TEXT NOT NULL,\n  evidence_json TEXT NOT NULL,\n  PRIMARY KEY(run_id,source_key)\n)",
+    "CREATE TABLE coordinator_question_replies (\n  attention_id TEXT PRIMARY KEY REFERENCES run_attention(id),\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  request_id TEXT NOT NULL,\n  message TEXT NOT NULL,\n  intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),\n  activation_id TEXT NOT NULL REFERENCES run_activations(id),\n  binding_id TEXT NOT NULL REFERENCES run_thread_bindings(id),\n  UNIQUE(run_id,request_id)\n)",
+    "CREATE TABLE coordinator_native_human_replies (\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  thread_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  item_id TEXT NOT NULL,\n  PRIMARY KEY(run_id,thread_id,item_id)\n)",
+    "CREATE TABLE run_root_obligations (\n  run_id TEXT NOT NULL REFERENCES run_coordinators(run_id),\n  thread_id TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK(kind IN ('member','execution','native','remote','command','followup')),\n  reference TEXT NOT NULL,\n  PRIMARY KEY(run_id,thread_id,kind,reference)\n)",
+    "CREATE TABLE run_root_cancelled_controls (\n  run_id TEXT NOT NULL REFERENCES run_coordinators(run_id),\n  source_execution_id TEXT NOT NULL,\n  PRIMARY KEY(run_id,source_execution_id)\n)",
+    "CREATE TABLE assessment_checkpoints (\n activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),\n report_id TEXT NOT NULL UNIQUE REFERENCES runtime_reports(id),\n reporter_thread_id TEXT NOT NULL,\n reporter_execution_id TEXT NOT NULL,\n evidence_json TEXT NOT NULL\n)",
+    "CREATE TABLE run_control_recoveries (\n run_id TEXT NOT NULL REFERENCES run_coordinators(run_id),\n source_execution_id TEXT NOT NULL,\n thread_id TEXT NOT NULL,\n activation_id TEXT REFERENCES run_coordinator_commands(activation_id),\n request_key TEXT NOT NULL UNIQUE,\n payload_json TEXT NOT NULL,\n retry_scope TEXT,\n state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','reserved','uncertain','acknowledged')),\n acknowledgement_json TEXT,\n completed_execution_id TEXT,\n PRIMARY KEY(run_id,source_execution_id)\n)",
+    "CREATE TABLE coordinator_native_commands (\n run_id TEXT NOT NULL REFERENCES runs(id),\n block_id TEXT NOT NULL,\n thread_id TEXT NOT NULL,\n item_id TEXT NOT NULL,\n execution_id TEXT NOT NULL,\n fingerprint TEXT NOT NULL,\n evidence_json TEXT NOT NULL,\n PRIMARY KEY(run_id,thread_id,item_id,fingerprint)\n)",
+    "CREATE TABLE run_root_settlements (\n  run_id TEXT PRIMARY KEY REFERENCES runs(id),\n  thread_id TEXT NOT NULL,\n  execution_id TEXT NOT NULL,\n  created_at TEXT NOT NULL,\n  attempted_at TEXT,\n  retired_at TEXT,\n  outcome TEXT CHECK(outcome IN ('acknowledged','uncertain'))\n)",
+    "CREATE TABLE run_worker_activations (\n  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),\n  binding_id TEXT NOT NULL REFERENCES run_thread_bindings(id),\n  initial_execution_id TEXT NOT NULL,\n  parent_thread_id TEXT NOT NULL\n)",
+    "CREATE TABLE \"run_root_stop_intents\" (\n  run_id TEXT NOT NULL REFERENCES runs(id),\n  cause TEXT NOT NULL,\n  thread_id TEXT NOT NULL,\n  payload_json TEXT NOT NULL,\n  state TEXT NOT NULL CHECK(state IN ('pending','reserved','uncertain','acknowledged')),\n  PRIMARY KEY(run_id,cause)\n)"
+  ],
+  "postDataSchema": [
+    "CREATE INDEX flows_listing ON flows (created_at DESC, id ASC)",
+    "CREATE INDEX agents_listing ON agents (updated_at DESC, id ASC)",
+    "CREATE UNIQUE INDEX one_open_run_per_task ON runs(task_id) WHERE closed_at IS NULL\n",
+    "CREATE UNIQUE INDEX one_reservation_per_run ON operation_intents(run_id) WHERE state='reserved'\n",
+    "CREATE TRIGGER wake_run_on_new_attention AFTER INSERT ON run_attention\nWHEN NEW.settled_at IS NULL\nBEGIN\n  UPDATE run_presentation SET snoozed=0,woke=1\n  WHERE run_id=NEW.run_id AND snoozed=1\n    AND NOT EXISTS(SELECT 1 FROM run_closures WHERE run_id=NEW.run_id)\n    AND NOT EXISTS(SELECT 1 FROM run_snooze_attention WHERE run_id=NEW.run_id AND attention_id=NEW.id);\nEND",
+    "CREATE TRIGGER settle_run_presentation AFTER INSERT ON run_closures\nBEGIN\n  UPDATE run_presentation SET snoozed=0,woke=0 WHERE run_id=NEW.run_id;\nEND",
+    "CREATE TRIGGER wake_run_on_increased_native_attention AFTER UPDATE OF pending_request_count ON run_blocks\nWHEN NEW.pending_request_count > OLD.pending_request_count\nBEGIN\n  UPDATE run_presentation SET snoozed=0,woke=1\n  WHERE run_id=NEW.run_id AND snoozed=1\n    AND NOT EXISTS(SELECT 1 FROM run_closures WHERE run_id=NEW.run_id)\n    AND EXISTS(SELECT 1 FROM run_attention WHERE run_id=NEW.run_id AND block_id=NEW.block_id\n      AND kind='native-request' AND settled_at IS NULL);\nEND",
+    "CREATE INDEX client_grants_status ON client_grants(status, requested_at)\n",
+    "CREATE UNIQUE INDEX one_final_result ON runtime_reports(run_id,block_id,execution_id) WHERE final_contract=1",
+    "CREATE UNIQUE INDEX one_activation_result ON runtime_reports(activation_id) WHERE activation_id IS NOT NULL",
+    "CREATE TRIGGER scope_runtime_reports AFTER INSERT ON runtime_reports WHEN NEW.thread_scope IS NULL BEGIN UPDATE runtime_reports SET thread_scope=(SELECT thread_id FROM run_blocks WHERE run_id=NEW.run_id AND block_id=NEW.block_id) WHERE rowid=NEW.rowid; END",
+    "CREATE TRIGGER scope_report_recoveries AFTER INSERT ON report_recoveries WHEN NEW.thread_scope IS NULL BEGIN UPDATE report_recoveries SET thread_scope=(SELECT thread_id FROM run_blocks WHERE run_id=NEW.run_id AND block_id=NEW.block_id) WHERE rowid=NEW.rowid; END",
+    "CREATE TRIGGER immutable_activation_report BEFORE UPDATE OF activation_id,result_message,execution_id,fingerprint,status,exit_id,acknowledgement_json ON runtime_reports\nWHEN OLD.activation_id IS NOT NULL\nBEGIN SELECT RAISE(ABORT, 'Activation results are immutable'); END",
+    "CREATE TRIGGER immutable_execution_identity BEFORE UPDATE OF run_id,block_id,thread_id,execution_id ON run_executions\nWHEN NEW.run_id IS NOT OLD.run_id OR NEW.block_id IS NOT OLD.block_id OR NEW.thread_id IS NOT OLD.thread_id OR NEW.execution_id IS NOT OLD.execution_id\nBEGIN SELECT RAISE(ABORT, 'Execution identity is immutable'); END",
+    "CREATE UNIQUE INDEX remote_work_source ON coordinator_remote_work(\n  activation_id,parent_thread_id,source_item_id,source_execution_id,environment_id,\n  COALESCE(task_id,''),COALESCE(thread_id,'')\n)",
+    "CREATE TRIGGER immutable_run_closure_update BEFORE UPDATE ON run_closures BEGIN SELECT RAISE(ABORT, 'Closure evidence is immutable'); END",
+    "CREATE TRIGGER immutable_coordinator_answer BEFORE UPDATE ON coordinator_question_replies\nBEGIN SELECT RAISE(ABORT,'Coordinator answer is immutable'); END",
+    "CREATE TRIGGER immutable_assessment_checkpoint_update BEFORE UPDATE ON assessment_checkpoints BEGIN SELECT RAISE(ABORT,'Assessment checkpoints are immutable'); END",
+    "CREATE TRIGGER run_worker_activations_immutable_update BEFORE UPDATE ON run_worker_activations BEGIN SELECT RAISE(ABORT, 'Worker activation authority is immutable'); END",
+    "CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL\n",
+    "CREATE TRIGGER immutable_run_snapshot_update BEFORE UPDATE ON run_snapshots BEGIN SELECT RAISE(ABORT, 'Run snapshots are immutable'); END",
+    "CREATE TRIGGER immutable_run_snapshot_delete BEFORE DELETE ON run_snapshots BEGIN SELECT RAISE(ABORT, 'Run snapshots are immutable'); END",
+    "CREATE TRIGGER immutable_run_closure_delete BEFORE DELETE ON run_closures BEGIN SELECT RAISE(ABORT, 'Closure evidence is immutable'); END",
+    "CREATE TRIGGER immutable_assessment_checkpoint_delete BEFORE DELETE ON assessment_checkpoints BEGIN SELECT RAISE(ABORT,'Assessment checkpoints are immutable'); END",
+    "CREATE TRIGGER run_worker_activations_immutable_delete BEFORE DELETE ON run_worker_activations BEGIN SELECT RAISE(ABORT, 'Worker activation authority is immutable'); END",
+    "CREATE TRIGGER immutable_execution_membership BEFORE UPDATE OF binding_id,activation_id ON run_executions\nWHEN OLD.binding_id IS NOT NULL AND (NEW.binding_id IS NOT OLD.binding_id OR NEW.activation_id IS NOT OLD.activation_id)\nAND NOT (OLD.binding_id=NEW.binding_id AND OLD.activation_id IS NULL AND EXISTS(SELECT 1 FROM run_worker_activations w JOIN coordinator_native_human_replies h ON h.run_id=NEW.run_id AND h.thread_id=NEW.thread_id AND h.execution_id=NEW.execution_id JOIN coordinator_waits q ON q.activation_id=w.activation_id JOIN run_attention a ON a.id=q.attention_id JOIN run_executions prior ON prior.binding_id=q.target_binding_id AND prior.execution_id=q.target_execution_id WHERE w.activation_id=NEW.activation_id AND w.binding_id=NEW.binding_id AND a.settled_at IS NULL AND prior.ordinal<NEW.ordinal))\nBEGIN SELECT RAISE(ABORT, 'Execution membership is immutable'); END"
+  ],
+  "tables": [
+    {
+      "table": "effect_sql_migrations",
+      "rows": [
+        {
+          "migration_id": 1,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "flows"
+        },
+        {
+          "migration_id": 2,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "t3_connection"
+        },
+        {
+          "migration_id": 4,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "agents"
+        },
+        {
+          "migration_id": 5,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "projects"
+        },
+        {
+          "migration_id": 7,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "runtime_setup"
+        },
+        {
+          "migration_id": 8,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "runner"
+        },
+        {
+          "migration_id": 9,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "reports_attention"
+        },
+        {
+          "migration_id": 10,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "handoffs"
+        },
+        {
+          "migration_id": 11,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "human_occurrences"
+        },
+        {
+          "migration_id": 12,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_closure"
+        },
+        {
+          "migration_id": 13,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "stop"
+        },
+        {
+          "migration_id": 14,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "structured_reports"
+        },
+        {
+          "migration_id": 15,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "project_icons"
+        },
+        {
+          "migration_id": 16,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "project_favicons"
+        },
+        {
+          "migration_id": 17,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_titles"
+        },
+        {
+          "migration_id": 18,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_presentation"
+        },
+        {
+          "migration_id": 19,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "native_attention_wake"
+        },
+        {
+          "migration_id": 20,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "flow_input"
+        },
+        {
+          "migration_id": 21,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "explicit_results"
+        },
+        {
+          "migration_id": 23,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "report_recovery"
+        },
+        {
+          "migration_id": 24,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "thread_settlements"
+        },
+        {
+          "migration_id": 25,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "conversation_waiting"
+        },
+        {
+          "migration_id": 26,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "client_access"
+        },
+        {
+          "migration_id": 27,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "agent_coordinator"
+        },
+        {
+          "migration_id": 28,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_start"
+        },
+        {
+          "migration_id": 29,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_lifecycle"
+        },
+        {
+          "migration_id": 30,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_conversation"
+        },
+        {
+          "migration_id": 31,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_revisits"
+        },
+        {
+          "migration_id": 32,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_recovery"
+        },
+        {
+          "migration_id": 33,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_stop"
+        },
+        {
+          "migration_id": 34,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "coordinator_release"
+        },
+        {
+          "migration_id": 35,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "native_obligations"
+        },
+        {
+          "migration_id": 36,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "remote_obligations"
+        },
+        {
+          "migration_id": 38,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "peer_stop"
+        },
+        {
+          "migration_id": 39,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "activation_context"
+        },
+        {
+          "migration_id": 40,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "local_execution_evidence"
+        },
+        {
+          "migration_id": 41,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_coordinator"
+        },
+        {
+          "migration_id": 42,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "flow_coordinator"
+        },
+        {
+          "migration_id": 43,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "hybrid_commands"
+        },
+        {
+          "migration_id": 44,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "context_grants"
+        },
+        {
+          "migration_id": 45,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_root_frontier"
+        },
+        {
+          "migration_id": 46,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "assessment_checkpoints"
+        },
+        {
+          "migration_id": 47,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_root_settlements"
+        },
+        {
+          "migration_id": 48,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "run_workers"
+        },
+        {
+          "migration_id": 49,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "current_execution_contract"
+        },
+        {
+          "migration_id": 50,
+          "created_at": "2026-11-07 09:57:09",
+          "name": "factory_block_workers"
+        }
+      ]
+    },
+    {
+      "table": "flows",
+      "rows": [
+        {
+          "id": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+          "name": "Single worker",
+          "revision": 2,
+          "graph_json": "{\"flowInput\":{\"position\":{\"x\":0,\"y\":0},\"targetBlockIds\":[\"worker\"]},\"blocks\":[{\"id\":\"worker\",\"name\":\"Entry worker\",\"kind\":\"agent\",\"agentId\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"position\":{\"x\":0,\"y\":0},\"exits\":[{\"id\":\"done\",\"name\":\"Done\",\"description\":\"Completed\",\"outcome\":\"completion\",\"requiresFeedback\":false}]}],\"connections\":[]}",
+          "created_at": "2026-11-07T09:57:10.199Z",
+          "updated_at": "2026-11-07T09:57:10.199Z"
+        }
+      ]
+    },
+    {
+      "table": "t3_authorization_contexts",
+      "rows": [
+        {
+          "id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "endpoint": "http://127.0.0.1:3773/mcp",
+          "authorization_identity": "controlled-grant-2",
+          "environment_id": "controlled-environment",
+          "created_at": "2026-11-07T09:57:09.982Z"
+        }
+      ]
+    },
+    {
+      "table": "t3_connection",
+      "rows": [
+        {
+          "singleton": 1,
+          "endpoint": "http://127.0.0.1:3773/mcp",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7"
+        }
+      ]
+    },
+    {
+      "table": "agents",
+      "rows": [
+        {
+          "id": "f9673149-8672-4886-8f94-a7282b8249ad",
+          "name": "Worker",
+          "prompt": "Follow repository instructions and update the changelog.",
+          "revision": 2,
+          "environment_id": "controlled-environment",
+          "provider_instance_id": "codex-main",
+          "model_id": "gpt-6.1-sol",
+          "model_options_json": "[{\"id\":\"reasoning\",\"value\":\"high\"}]",
+          "created_at": "2026-11-07T09:57:10.199Z",
+          "updated_at": "2026-11-07T09:57:10.235Z"
+        }
+      ]
+    },
+    {
+      "table": "projects",
+      "rows": [
+        {
+          "id": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+          "endpoint": "http://127.0.0.1:3773/mcp",
+          "environment_id": "controlled-environment",
+          "project_id": "created-1",
+          "title": "New repository",
+          "workspace_root": "/fixture/upgrade-repository",
+          "availability": "available",
+          "observed_at": "2026-11-07T09:57:10.200Z",
+          "project_icon_json": null,
+          "favicon_path": null
+        }
+      ]
+    },
+    {
+      "table": "project_selection",
+      "rows": []
+    },
+    {
+      "table": "runner_owner",
+      "rows": []
+    },
+    {
+      "table": "tasks",
+      "rows": [
+        {
+          "id": "b5e93a9a-11dd-4995-88ab-096cd7dd5ea0",
+          "project_id": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+          "title": "Retire the legacy importer",
+          "created_at": "2026-11-07T09:57:10.143Z"
+        },
+        {
+          "id": "b5904c4a-7d95-4749-8680-5908604f2770",
+          "project_id": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+          "title": "Improve search",
+          "created_at": "2026-11-07T09:57:10.228Z"
+        }
+      ]
+    },
+    {
+      "table": "runs",
+      "rows": [
+        {
+          "id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "task_id": "b5e93a9a-11dd-4995-88ab-096cd7dd5ea0",
+          "request_id": "closed-start",
+          "request_fingerprint": "76a9c7eca375dba0a5bf3620e377b335478fb65f8d75dea99bfe7c05aef3f53a",
+          "input": "Retire the legacy importer\nKeep existing exports.",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "workspace_root": "/fixture/upgrade-repository",
+          "gate_open": 0,
+          "generation": 8,
+          "started_at": "2026-11-07T09:57:10.143Z",
+          "closed_at": "2026-11-07T09:57:10.196Z",
+          "outcome": "finished",
+          "stop_requested_at": null,
+          "title": "Retire the legacy importer",
+          "number": 1
+        },
+        {
+          "id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "task_id": "b5904c4a-7d95-4749-8680-5908604f2770",
+          "request_id": "active-start",
+          "request_fingerprint": "a878adae5f2070830810ff88e27e67041a9ecab29430d429885f7641f1d8f40a",
+          "input": "Improve search\nKeep it accessible.",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "workspace_root": "/fixture/upgrade-repository",
+          "gate_open": 1,
+          "generation": 4,
+          "started_at": "2026-11-07T09:57:10.228Z",
+          "closed_at": null,
+          "outcome": null,
+          "stop_requested_at": null,
+          "title": "Improve search",
+          "number": 2
+        }
+      ]
+    },
+    {
+      "table": "run_snapshots",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "snapshot_json": "{\"flow\":{\"id\":\"35d85c6d-eba0-4c4f-ad1c-aa3c852f2e33\",\"name\":\"Retired flow\",\"revision\":2,\"graph\":{\"flowInput\":{\"position\":{\"x\":0,\"y\":0},\"targetBlockIds\":[\"worker\"]},\"blocks\":[{\"id\":\"worker\",\"name\":\"Retired worker block\",\"kind\":\"agent\",\"agentId\":\"cdc3c352-32a8-4d04-aa34-39b25d83129c\",\"position\":{\"x\":0,\"y\":0},\"exits\":[{\"id\":\"done\",\"name\":\"Done\",\"description\":\"Completed\",\"outcome\":\"completion\",\"requiresFeedback\":false}]}],\"connections\":[]},\"createdAt\":\"2026-11-07T09:57:10.088Z\",\"updatedAt\":\"2026-11-07T09:57:10.088Z\",\"readiness\":{\"ready\":true,\"issues\":[]}},\"agents\":[{\"id\":\"cdc3c352-32a8-4d04-aa34-39b25d83129c\",\"name\":\"Retired worker\",\"prompt\":\"Follow the retired checklist.\",\"revision\":1,\"execution\":{\"environmentId\":\"controlled-environment\",\"providerInstanceId\":\"codex-main\",\"modelId\":\"gpt-6.1-sol\",\"modelOptions\":[{\"id\":\"reasoning\",\"value\":\"high\"}]},\"createdAt\":\"2026-11-07T09:57:10.087Z\",\"updatedAt\":\"2026-11-07T09:57:10.087Z\",\"settingsStatus\":{\"environment\":{\"state\":\"available\"},\"provider\":{\"state\":\"available\"},\"model\":{\"state\":\"available\"},\"options\":[{\"id\":\"reasoning\",\"state\":\"available\"}]}}]}"
+        },
+        {
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "snapshot_json": "{\"flow\":{\"id\":\"daff11c1-9ba9-4f2d-afa3-89e274401c2f\",\"name\":\"Single worker\",\"revision\":2,\"graph\":{\"flowInput\":{\"position\":{\"x\":0,\"y\":0},\"targetBlockIds\":[\"worker\"]},\"blocks\":[{\"id\":\"worker\",\"name\":\"Entry worker\",\"kind\":\"agent\",\"agentId\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"position\":{\"x\":0,\"y\":0},\"exits\":[{\"id\":\"done\",\"name\":\"Done\",\"description\":\"Completed\",\"outcome\":\"completion\",\"requiresFeedback\":false}]}],\"connections\":[]},\"createdAt\":\"2026-11-07T09:57:10.199Z\",\"updatedAt\":\"2026-11-07T09:57:10.199Z\",\"readiness\":{\"ready\":true,\"issues\":[]}},\"agents\":[{\"id\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"name\":\"Worker\",\"prompt\":\"Follow repository instructions.\",\"revision\":1,\"execution\":{\"environmentId\":\"controlled-environment\",\"providerInstanceId\":\"codex-main\",\"modelId\":\"gpt-6.1-sol\",\"modelOptions\":[{\"id\":\"reasoning\",\"value\":\"high\"}]},\"createdAt\":\"2026-11-07T09:57:10.199Z\",\"updatedAt\":\"2026-11-07T09:57:10.199Z\",\"settingsStatus\":{\"environment\":{\"state\":\"available\"},\"provider\":{\"state\":\"available\"},\"model\":{\"state\":\"available\"},\"options\":[{\"id\":\"reasoning\",\"state\":\"available\"}]}}]}"
+        }
+      ]
+    },
+    {
+      "table": "run_blocks",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "name": "Retired worker block",
+          "state": "finished",
+          "thread_id": "thread-1",
+          "execution_id": "execution-1",
+          "link": "https://app.t3.codes/threads/controlled-environment/thread-1",
+          "engine_status": "completed",
+          "report_status": "finished",
+          "pending_request_count": 0,
+          "observed_at": "2026-11-07T09:57:10.186Z",
+          "freshness": "fresh",
+          "problem": null
+        },
+        {
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "name": "Entry worker",
+          "state": "working",
+          "thread_id": "thread-2",
+          "execution_id": "execution-2",
+          "link": "https://app.t3.codes/threads/controlled-environment/thread-2",
+          "engine_status": "running",
+          "report_status": null,
+          "pending_request_count": 0,
+          "observed_at": "2026-11-07T09:57:10.234Z",
+          "freshness": "fresh",
+          "problem": "Coordinator descendant or native obligation coverage is unverified."
+        }
+      ]
+    },
+    {
+      "table": "operation_intents",
+      "rows": [
+        {
+          "id": "1c1516ec-bbda-4f01-a5f4-940288f45d92",
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "kind": "launch",
+          "cause": "start:worker",
+          "target_json": "{\"id\":\"4caac952-e21e-4c4d-8aca-86be2a3f4951\",\"endpoint\":\"http://127.0.0.1:3773/mcp\",\"environmentId\":\"controlled-environment\",\"projectId\":\"created-1\",\"title\":\"New repository\",\"workspaceRoot\":\"/fixture/upgrade-repository\",\"availability\":\"available\",\"observedAt\":\"2026-11-07T09:57:10.089Z\",\"projectIcon\":null,\"faviconUrl\":null,\"blockId\":\"worker\"}",
+          "request_key": "0b78c9e9-3928-4b14-b2c3-5642dc61fcf4",
+          "payload_json": null,
+          "fingerprint": "c7f2ea139ac74b3ced51d3f529dfe55afb7837c21840f744aa78521a98361a92",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "retry_scope": "controlled-durable-server-1",
+          "state": "acknowledged",
+          "reserved_by": "e0fba302-13c1-4d9a-917d-693a3b9dc0b9",
+          "reserved_at": "2026-11-07T09:57:10.152Z",
+          "result_json": "{\"projectId\":\"created-1\",\"threadId\":\"thread-1\",\"runId\":\"execution-1\",\"link\":\"t3://threads/thread-1\",\"status\":\"running\"}",
+          "problem": null,
+          "reconciled_at": "2026-11-07T09:57:10.153Z",
+          "report_id": null,
+          "source_block_id": null,
+          "exit_id": null,
+          "occurrence_id": null,
+          "recovery_attempt": 0,
+          "recovery_not_before": null
+        },
+        {
+          "id": "de39c9f2-03e2-4d54-8b65-172332c54ea8",
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "kind": "launch",
+          "cause": "start:worker",
+          "target_json": "{\"id\":\"4caac952-e21e-4c4d-8aca-86be2a3f4951\",\"endpoint\":\"http://127.0.0.1:3773/mcp\",\"environmentId\":\"controlled-environment\",\"projectId\":\"created-1\",\"title\":\"New repository\",\"workspaceRoot\":\"/fixture/upgrade-repository\",\"availability\":\"available\",\"observedAt\":\"2026-11-07T09:57:10.200Z\",\"projectIcon\":null,\"faviconUrl\":null,\"blockId\":\"worker\"}",
+          "request_key": "ed649381-5cde-4911-90b3-5d54a0ec0568",
+          "payload_json": null,
+          "fingerprint": "08576c3eeb781ea0b6fc46b4c78299f1f78e05752c30104a54facdf34e87bb28",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "retry_scope": "controlled-durable-server-1",
+          "state": "acknowledged",
+          "reserved_by": "e0fba302-13c1-4d9a-917d-693a3b9dc0b9",
+          "reserved_at": "2026-11-07T09:57:10.231Z",
+          "result_json": "{\"projectId\":\"created-1\",\"threadId\":\"thread-2\",\"runId\":\"execution-2\",\"link\":\"t3://threads/thread-2\",\"status\":\"running\"}",
+          "problem": null,
+          "reconciled_at": "2026-11-07T09:57:10.231Z",
+          "report_id": null,
+          "source_block_id": null,
+          "exit_id": null,
+          "occurrence_id": null,
+          "recovery_attempt": 0,
+          "recovery_not_before": null
+        }
+      ]
+    },
+    {
+      "table": "run_events",
+      "rows": [
+        {
+          "sequence": 1,
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": null,
+          "kind": "started",
+          "source_key": "start",
+          "observed_at": "2026-11-07T09:57:10.143Z",
+          "execution_id": null,
+          "cause_id": null,
+          "source_at": null,
+          "engine_status": null,
+          "binding_id": null
+        },
+        {
+          "sequence": 2,
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "kind": "launch-acknowledged",
+          "source_key": "ack:1c1516ec-bbda-4f01-a5f4-940288f45d92",
+          "observed_at": "2026-11-07T09:57:10.153Z",
+          "execution_id": "execution-1",
+          "cause_id": "1c1516ec-bbda-4f01-a5f4-940288f45d92",
+          "source_at": null,
+          "engine_status": "running",
+          "binding_id": null
+        },
+        {
+          "sequence": 3,
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "kind": "report-accepted",
+          "source_key": "report:42a50e43-95a4-4b10-8c3d-eecf4603cfd9",
+          "observed_at": "2026-11-07T09:57:10.181Z",
+          "execution_id": "execution-1",
+          "cause_id": "42a50e43-95a4-4b10-8c3d-eecf4603cfd9",
+          "source_at": null,
+          "engine_status": null,
+          "binding_id": null
+        },
+        {
+          "sequence": 4,
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "kind": "execution-observed",
+          "source_key": "2f63aacc-8705-4a8c-b2f7-32c5fcae61ef",
+          "observed_at": "2026-11-07T09:57:10.186Z",
+          "execution_id": "execution-1",
+          "cause_id": null,
+          "source_at": null,
+          "engine_status": "completed",
+          "binding_id": "47d61d27-56d1-4969-a25e-3327b887aabe"
+        },
+        {
+          "sequence": 5,
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": null,
+          "kind": "run-closed",
+          "source_key": "closure",
+          "observed_at": "2026-11-07T09:57:10.196Z",
+          "execution_id": null,
+          "cause_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "source_at": null,
+          "engine_status": null,
+          "binding_id": null
+        },
+        {
+          "sequence": 6,
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": null,
+          "kind": "started",
+          "source_key": "start",
+          "observed_at": "2026-11-07T09:57:10.228Z",
+          "execution_id": null,
+          "cause_id": null,
+          "source_at": null,
+          "engine_status": null,
+          "binding_id": null
+        },
+        {
+          "sequence": 7,
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "kind": "launch-acknowledged",
+          "source_key": "ack:de39c9f2-03e2-4d54-8b65-172332c54ea8",
+          "observed_at": "2026-11-07T09:57:10.231Z",
+          "execution_id": "execution-2",
+          "cause_id": "de39c9f2-03e2-4d54-8b65-172332c54ea8",
+          "source_at": null,
+          "engine_status": "running",
+          "binding_id": null
+        }
+      ]
+    },
+    {
+      "table": "run_attention",
+      "rows": []
+    },
+    {
+      "table": "human_occurrences",
+      "rows": []
+    },
+    {
+      "table": "run_closures",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "outcome": "finished",
+          "generation": 7,
+          "confirmed_at": "2026-11-07T09:57:10.196Z",
+          "frontier_json": "[{\"environmentId\":\"controlled-environment\",\"blockId\":\"worker\",\"threadId\":\"thread-1\",\"projectId\":\"created-1\",\"workspaceRoot\":\"/fixture/upgrade-repository\",\"projectObservedAt\":\"2026-11-07T09:57:10.195Z\",\"executionObservedAt\":\"2026-11-07T09:57:10.196Z\",\"queueObservedAt\":\"2026-11-07T09:57:10.196Z\",\"nativeObservedAt\":\"2026-11-07T09:57:10.196Z\",\"activeRunId\":null,\"latestRunId\":\"execution-1\",\"executions\":[{\"executionId\":\"execution-1\",\"status\":\"completed\",\"ordinal\":1,\"sourceAt\":null}],\"queuedRunIds\":[],\"queueNextCursor\":null,\"pendingRequestCount\":0}]",
+          "coordination_json": "[{\"version\":1,\"observedAt\":\"2026-11-07T09:57:10.195Z\",\"designation\":true,\"lineageCoverage\":\"incomplete\",\"lineageScanComplete\":true,\"aggregateState\":\"settled\",\"holdReason\":null,\"release\":true,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-1\",\"role\":\"worker\",\"executionIds\":[\"execution-1\"]}]}]",
+          "root_frontier_json": "[]"
+        }
+      ]
+    },
+    {
+      "table": "run_presentation",
+      "rows": []
+    },
+    {
+      "table": "run_snooze_attention",
+      "rows": []
+    },
+    {
+      "table": "client_grants",
+      "rows": [
+        {
+          "id": "6a3da0cc-0a45-454f-a99c-2555f503ea33",
+          "label": "Upgrade laptop",
+          "kind": "desktop",
+          "status": "approved",
+          "secret_hash": "a652eaa6e09606d72ece25748e7fda57bf4f1753191a49483bbaf38bdd62cb83",
+          "verification_code": "059 916",
+          "requested_at": "2026-11-07T09:57:10.086Z",
+          "decided_at": "2026-11-07T09:57:10.086Z",
+          "last_seen_at": null
+        },
+        {
+          "id": "ae4d6e48-68db-4d8c-96fc-c50cea9cf551",
+          "label": "Revoked browser",
+          "kind": "browser",
+          "status": "revoked",
+          "secret_hash": "18a76201b9985d3e6fe8de087174665e5624991c2f94e8934586705ce4a40943",
+          "verification_code": "816 518",
+          "requested_at": "2026-11-07T09:57:10.086Z",
+          "decided_at": "2026-11-07T09:57:10.087Z",
+          "last_seen_at": null
+        }
+      ]
+    },
+    {
+      "table": "run_delegations",
+      "rows": [
+        {
+          "activation_id": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "request_key": "0b78c9e9-3928-4b14-b2c3-5642dc61fcf4",
+          "input_fingerprint": "a48cd05e40f41c4a6ab92fa980f58dd57348b75313fb329f1387c3139e0a8c4e",
+          "state": "planned",
+          "accepted_json": null
+        },
+        {
+          "activation_id": "d66428a0-9e26-46b5-a6a9-6f50fa1a7970",
+          "request_key": "ed649381-5cde-4911-90b3-5d54a0ec0568",
+          "input_fingerprint": "f365f38a12b9206c72983cbfb7fd6948c849b58c338840f48779b8252bc6150c",
+          "state": "planned",
+          "accepted_json": null
+        }
+      ]
+    },
+    {
+      "table": "run_thread_bindings",
+      "rows": [
+        {
+          "id": "47d61d27-56d1-4969-a25e-3327b887aabe",
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "environment_id": "controlled-environment",
+          "thread_id": "thread-1",
+          "role": "worker",
+          "parent_binding_id": "47d61d27-56d1-4969-a25e-3327b887aabe",
+          "link": "t3://threads/thread-1"
+        },
+        {
+          "id": "0a55e3d1-1f9e-449d-ae90-38f009e504fa",
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "environment_id": "controlled-environment",
+          "thread_id": "thread-2",
+          "role": "worker",
+          "parent_binding_id": "0a55e3d1-1f9e-449d-ae90-38f009e504fa",
+          "link": "t3://threads/thread-2"
+        }
+      ]
+    },
+    {
+      "table": "runtime_reports",
+      "rows": [
+        {
+          "id": "42a50e43-95a4-4b10-8c3d-eecf4603cfd9",
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "execution_id": "execution-1",
+          "report_key": "finished",
+          "fingerprint": "8f083ad1d65de75d10f1dad1d394a0eac167d6b26939e535d5937f9397170500",
+          "status": "finished",
+          "exit_id": "done",
+          "recipients_json": "[]",
+          "pending_message": null,
+          "acknowledgement_json": "{\"code\":\"ACCEPTED\",\"reportId\":\"42a50e43-95a4-4b10-8c3d-eecf4603cfd9\",\"blockId\":\"worker\",\"executionId\":\"execution-1\",\"acceptedAt\":\"2026-11-07T09:57:10.181Z\",\"state\":\"working\",\"allowedTransitions\":[],\"next\":\"Factory keeps this final and releases downstream work after this execution settles.\"}",
+          "accepted_at": "2026-11-07T09:57:10.181Z",
+          "final_contract": 1,
+          "completion_eligible_at": "2026-11-07T09:57:10.196Z",
+          "thread_scope": "thread-1",
+          "activation_id": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "result_message": "Implemented the requested result."
+        }
+      ]
+    },
+    {
+      "table": "report_recoveries",
+      "rows": []
+    },
+    {
+      "table": "run_executions",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "thread_id": "thread-1",
+          "execution_id": "execution-1",
+          "engine_status": "completed",
+          "report_status": "finished",
+          "observed_at": "2026-11-07T09:57:10.186Z",
+          "ordinal": 1,
+          "source_at": null,
+          "problem": null,
+          "native_request_count": 0,
+          "binding_id": "47d61d27-56d1-4969-a25e-3327b887aabe",
+          "activation_id": "f32c3cd6-5133-43b0-9e73-82f25bda289a"
+        },
+        {
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "thread_id": "thread-2",
+          "execution_id": "execution-2",
+          "engine_status": "running",
+          "report_status": null,
+          "observed_at": "2026-11-07T09:57:10.234Z",
+          "ordinal": 1,
+          "source_at": null,
+          "problem": null,
+          "native_request_count": 0,
+          "binding_id": "0a55e3d1-1f9e-449d-ae90-38f009e504fa",
+          "activation_id": "d66428a0-9e26-46b5-a6a9-6f50fa1a7970"
+        }
+      ]
+    },
+    {
+      "table": "coordinator_settlements",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "thread_id": "thread-1",
+          "execution_id": "execution-1",
+          "attempted_at": "2026-11-07T09:57:10.194Z"
+        }
+      ]
+    },
+    {
+      "table": "coordinator_native_items",
+      "rows": []
+    },
+    {
+      "table": "coordinator_waits",
+      "rows": []
+    },
+    {
+      "table": "run_activations",
+      "rows": [
+        {
+          "id": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "cause": "start:worker",
+          "phase": "finished",
+          "coverage": "local-bounded",
+          "created_at": "2026-11-07T09:57:10.143Z",
+          "evidence_json": "{\"version\":1,\"observedAt\":\"2026-11-07T09:57:10.186Z\",\"designation\":true,\"lineageCoverage\":\"incomplete\",\"lineageScanComplete\":true,\"aggregateState\":\"settled\",\"holdReason\":null,\"release\":true,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-1\",\"role\":\"worker\",\"executionIds\":[\"execution-1\"]}]}",
+          "problem": null
+        },
+        {
+          "id": "d66428a0-9e26-46b5-a6a9-6f50fa1a7970",
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "cause": "start:worker",
+          "phase": "assessing",
+          "coverage": "unverified",
+          "created_at": "2026-11-07T09:57:10.228Z",
+          "evidence_json": "{\"version\":1,\"observedAt\":\"2026-11-07T09:57:10.234Z\",\"designation\":true,\"lineageCoverage\":\"unknown\",\"lineageScanComplete\":false,\"aggregateState\":\"unknown\",\"holdReason\":\"Coordinator descendant or native obligation coverage is unverified.\",\"release\":false,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-2\",\"role\":\"worker\",\"executionIds\":[\"execution-2\"]}]}",
+          "problem": "Coordinator descendant or native obligation coverage is unverified."
+        }
+      ]
+    },
+    {
+      "table": "coordinator_revisits",
+      "rows": []
+    },
+    {
+      "table": "coordinator_releases",
+      "rows": []
+    },
+    {
+      "table": "coordinator_native_obligations",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "block_id": "worker",
+          "thread_id": "thread-1",
+          "execution_id": "execution-1"
+        },
+        {
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "block_id": "worker",
+          "thread_id": "thread-2",
+          "execution_id": "execution-2"
+        }
+      ]
+    },
+    {
+      "table": "coordinator_remote_work",
+      "rows": []
+    },
+    {
+      "table": "coordinator_peer_obligations",
+      "rows": []
+    },
+    {
+      "table": "coordinator_local_executions",
+      "rows": [
+        {
+          "run_id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "thread_id": "thread-1",
+          "execution_id": "execution-1",
+          "parent_thread_id": "thread-1",
+          "provider_instance_id": null,
+          "model": null,
+          "ordinal": 1
+        },
+        {
+          "run_id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "thread_id": "thread-2",
+          "execution_id": "execution-2",
+          "parent_thread_id": "thread-2",
+          "provider_instance_id": null,
+          "model": null,
+          "ordinal": 1
+        }
+      ]
+    },
+    {
+      "table": "run_coordinators",
+      "rows": []
+    },
+    {
+      "table": "run_coordinator_commands",
+      "rows": []
+    },
+    {
+      "table": "run_coordinator_obligations",
+      "rows": []
+    },
+    {
+      "table": "coordinator_question_replies",
+      "rows": []
+    },
+    {
+      "table": "coordinator_native_human_replies",
+      "rows": []
+    },
+    {
+      "table": "run_root_obligations",
+      "rows": []
+    },
+    {
+      "table": "run_root_cancelled_controls",
+      "rows": []
+    },
+    {
+      "table": "assessment_checkpoints",
+      "rows": [
+        {
+          "activation_id": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "report_id": "42a50e43-95a4-4b10-8c3d-eecf4603cfd9",
+          "reporter_thread_id": "thread-1",
+          "reporter_execution_id": "execution-1",
+          "evidence_json": "{\"members\":[{\"threadId\":\"thread-1\",\"role\":\"worker\",\"executionIds\":[\"execution-1\"]}],\"sources\":[]}"
+        }
+      ]
+    },
+    {
+      "table": "run_control_recoveries",
+      "rows": []
+    },
+    {
+      "table": "coordinator_native_commands",
+      "rows": []
+    },
+    {
+      "table": "run_root_settlements",
+      "rows": []
+    },
+    {
+      "table": "run_worker_activations",
+      "rows": [
+        {
+          "activation_id": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "binding_id": "47d61d27-56d1-4969-a25e-3327b887aabe",
+          "initial_execution_id": "execution-1",
+          "parent_thread_id": "thread-1"
+        },
+        {
+          "activation_id": "d66428a0-9e26-46b5-a6a9-6f50fa1a7970",
+          "binding_id": "0a55e3d1-1f9e-449d-ae90-38f009e504fa",
+          "initial_execution_id": "execution-2",
+          "parent_thread_id": "thread-2"
+        }
+      ]
+    },
+    {
+      "table": "run_root_stop_intents",
+      "rows": []
+    }
+  ],
+  "expected": {
+    "t3": {
+      "peers": {
+        "map": []
+      },
+      "settleSupported": true,
+      "settledThreads": {
+        "set": ["thread-1"]
+      },
+      "settlements": [
+        {
+          "threadId": "thread-1"
+        }
+      ],
+      "stopSupported": true,
+      "cancellations": [],
+      "treeStops": [],
+      "launchSupported": true,
+      "retryScope": "controlled-durable-server-1",
+      "loseLaunchReply": false,
+      "launches": {
+        "map": [
+          [
+            "0b78c9e9-3928-4b14-b2c3-5642dc61fcf4",
+            {
+              "payload": {
+                "environmentId": "controlled-environment",
+                "projectId": "created-1",
+                "clientRequestId": "0b78c9e9-3928-4b14-b2c3-5642dc61fcf4",
+                "title": "Factory #1 \u00b7 1 Retired worker block",
+                "message": "$factory-block\n\nFollow the retired checklist.",
+                "workspaceStrategy": {
+                  "type": "root"
+                },
+                "interactionMode": "default",
+                "modelSelection": {
+                  "instanceId": "codex-main",
+                  "model": "gpt-6.1-sol",
+                  "options": {
+                    "reasoning": "high"
+                  }
+                }
+              },
+              "reference": {
+                "projectId": "created-1",
+                "threadId": "thread-1",
+                "runId": "execution-1",
+                "link": "t3://threads/thread-1",
+                "status": "running"
+              }
+            }
+          ],
+          [
+            "ed649381-5cde-4911-90b3-5d54a0ec0568",
+            {
+              "payload": {
+                "environmentId": "controlled-environment",
+                "projectId": "created-1",
+                "clientRequestId": "ed649381-5cde-4911-90b3-5d54a0ec0568",
+                "title": "Factory #2 \u00b7 1 Entry worker",
+                "message": "$factory-block\n\nFollow repository instructions.",
+                "workspaceStrategy": {
+                  "type": "root"
+                },
+                "interactionMode": "default",
+                "modelSelection": {
+                  "instanceId": "codex-main",
+                  "model": "gpt-6.1-sol",
+                  "options": {
+                    "reasoning": "high"
+                  }
+                }
+              },
+              "reference": {
+                "projectId": "created-1",
+                "threadId": "thread-2",
+                "runId": "execution-2",
+                "link": "t3://threads/thread-2",
+                "status": "running"
+              }
+            }
+          ]
+        ]
+      },
+      "engineStatus": "running",
+      "pendingRequestCount": 0,
+      "rejectLaunch": false,
+      "discoverAvailable": true,
+      "reportCheckoutWorkspace": false,
+      "omitCandidateOptions": false,
+      "extraCandidates": [],
+      "sendSupported": true,
+      "sendRetryScope": "controlled-durable-send-1",
+      "loseSendReply": false,
+      "sends": {
+        "map": []
+      },
+      "executionObservations": {
+        "map": [
+          [
+            "thread-1",
+            {
+              "threadId": "thread-1",
+              "projectId": "created-1",
+              "workspaceRoot": "/fixture/upgrade-repository",
+              "link": "t3://threads/thread-1",
+              "activeRunId": null,
+              "latestRunId": "execution-1",
+              "pendingRequestCount": 0,
+              "recentRuns": [
+                {
+                  "runId": "execution-1",
+                  "status": "completed",
+                  "ordinal": 1
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      "queueNextCursor": null,
+      "queuedRunIds": [],
+      "delegationActivities": {
+        "map": [
+          [
+            "thread-1",
+            {
+              "threadId": "thread-1",
+              "projectId": "created-1",
+              "complete": true,
+              "invocations": []
+            }
+          ]
+        ]
+      },
+      "childEvidence": {
+        "map": []
+      },
+      "descendantEvidence": {
+        "map": [
+          [
+            "thread-1",
+            {
+              "parentThreadId": "thread-1",
+              "descendants": [],
+              "scanComplete": true,
+              "coverage": "incomplete",
+              "problem": "Bounded fixture scan"
+            }
+          ]
+        ]
+      },
+      "delegatedSettlements": {
+        "map": [
+          [
+            "[\"thread-1\",\"execution-1\"]",
+            {
+              "threadId": "thread-1",
+              "runId": "execution-1",
+              "state": "settled",
+              "status": "completed",
+              "resultRun": {
+                "runId": "execution-1",
+                "status": "completed"
+              },
+              "queueCoverage": "unobserved",
+              "nativeRequestCoverage": "unobserved"
+            }
+          ]
+        ]
+      },
+      "remoteObservations": {
+        "map": []
+      },
+      "reportSupported": true,
+      "reportActivities": {
+        "map": []
+      },
+      "runtimeActivity": {
+        "thread": {
+          "threadId": "thread-1",
+          "projectId": "created-1",
+          "activeRunId": "execution-1",
+          "runtimeMode": "full-access"
+        },
+        "items": [
+          {
+            "visibility": "local",
+            "sourceThreadId": "thread-1",
+            "textTruncated": false,
+            "nextTextOffset": null,
+            "itemId": "t:native-item:worker-report",
+            "type": "dynamic_tool",
+            "runId": "execution-1",
+            "text": "{\"toolName\":\"mcp__factory-runtime__factory_update_block\"}"
+          }
+        ],
+        "hasMore": false,
+        "nextPosition": null
+      },
+      "projects": [
+        {
+          "projectId": "created-1",
+          "title": "New repository",
+          "workspaceRoot": "/fixture/upgrade-repository",
+          "available": true
+        }
+      ],
+      "projectCreates": 1,
+      "available": true,
+      "authorized": true,
+      "identity": "controlled-grant-2",
+      "environmentId": "controlled-environment",
+      "serverVersion": "a-different-version-is-allowed",
+      "compatible": true,
+      "authorizationStarts": 0,
+      "pendingApproval": false,
+      "reopenedApprovals": 0,
+      "capabilitiesAvailable": true,
+      "controlledProviders": [
+        {
+          "providerInstanceId": "codex-main",
+          "displayName": "Codex",
+          "driverKind": "codex",
+          "models": [
+            {
+              "id": "gpt-6.1-sol",
+              "label": "GPT 6.1 Sol",
+              "options": [
+                {
+                  "id": "reasoning",
+                  "label": "Reasoning effort",
+                  "type": "select",
+                  "choices": [
+                    {
+                      "id": "low",
+                      "label": "Low"
+                    },
+                    {
+                      "id": "high",
+                      "label": "High"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "project": {
+      "id": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+      "endpoint": "http://127.0.0.1:3773/mcp",
+      "environmentId": "controlled-environment",
+      "projectId": "created-1",
+      "title": "New repository",
+      "workspaceRoot": "/fixture/upgrade-repository",
+      "availability": "available",
+      "observedAt": "2026-11-07T09:57:10.085Z",
+      "projectIcon": null,
+      "faviconUrl": null
+    },
+    "clients": [
+      {
+        "id": "6a3da0cc-0a45-454f-a99c-2555f503ea33",
+        "label": "Upgrade laptop",
+        "kind": "desktop",
+        "status": "approved",
+        "verificationCode": "059 916",
+        "requestedAt": "2026-11-07T09:57:10.086Z",
+        "decidedAt": "2026-11-07T09:57:10.086Z",
+        "lastSeenAt": null
+      },
+      {
+        "id": "ae4d6e48-68db-4d8c-96fc-c50cea9cf551",
+        "label": "Revoked browser",
+        "kind": "browser",
+        "status": "revoked",
+        "verificationCode": "816 518",
+        "requestedAt": "2026-11-07T09:57:10.086Z",
+        "decidedAt": "2026-11-07T09:57:10.087Z",
+        "lastSeenAt": null
+      }
+    ],
+    "approvedCredential": "6a3da0cc-0a45-454f-a99c-2555f503ea33.o8JMMhdbB0WP9tGuUmoYQOcnIbZ0yfPTeUj5XFZOwS0",
+    "revokedCredential": "ae4d6e48-68db-4d8c-96fc-c50cea9cf551.yQ5PDqnOSQ9c6kXSFuUWIY9X-5ICz7UZ5bWiDC2kIZU",
+    "flow": {
+      "id": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+      "name": "Single worker",
+      "revision": 2,
+      "graph": {
+        "flowInput": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "targetBlockIds": ["worker"]
+        },
+        "blocks": [
+          {
+            "id": "worker",
+            "name": "Entry worker",
+            "kind": "agent",
+            "agentId": "f9673149-8672-4886-8f94-a7282b8249ad",
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "exits": [
+              {
+                "id": "done",
+                "name": "Done",
+                "description": "Completed",
+                "outcome": "completion",
+                "requiresFeedback": false
+              }
+            ]
+          }
+        ],
+        "connections": []
+      },
+      "createdAt": "2026-11-07T09:57:10.199Z",
+      "updatedAt": "2026-11-07T09:57:10.199Z",
+      "readiness": {
+        "ready": true,
+        "issues": []
+      }
+    },
+    "agent": {
+      "id": "f9673149-8672-4886-8f94-a7282b8249ad",
+      "name": "Worker",
+      "prompt": "Follow repository instructions and update the changelog.",
+      "revision": 2,
+      "execution": {
+        "environmentId": "controlled-environment",
+        "providerInstanceId": "codex-main",
+        "modelId": "gpt-6.1-sol",
+        "modelOptions": [
+          {
+            "id": "reasoning",
+            "value": "high"
+          }
+        ]
+      },
+      "createdAt": "2026-11-07T09:57:10.199Z",
+      "updatedAt": "2026-11-07T09:57:10.235Z",
+      "settingsStatus": {
+        "environment": {
+          "state": "available"
+        },
+        "provider": {
+          "state": "available"
+        },
+        "model": {
+          "state": "available"
+        },
+        "options": [
+          {
+            "id": "reasoning",
+            "state": "available"
+          }
+        ]
+      }
+    },
+    "retired": {
+      "flow": {
+        "id": "35d85c6d-eba0-4c4f-ad1c-aa3c852f2e33",
+        "name": "Retired flow (edited)",
+        "revision": 3,
+        "graph": {
+          "flowInput": {
+            "position": {
+              "x": 40,
+              "y": 80
+            },
+            "targetBlockIds": ["worker"]
+          },
+          "blocks": [
+            {
+              "id": "worker",
+              "name": "Retired worker block",
+              "kind": "agent",
+              "agentId": "cdc3c352-32a8-4d04-aa34-39b25d83129c",
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "exits": [
+                {
+                  "id": "done",
+                  "name": "Done",
+                  "description": "Completed",
+                  "outcome": "completion",
+                  "requiresFeedback": false
+                }
+              ]
+            }
+          ],
+          "connections": []
+        },
+        "createdAt": "2026-11-07T09:57:10.088Z",
+        "updatedAt": "2026-11-07T09:57:10.198Z",
+        "readiness": {
+          "ready": true,
+          "issues": []
+        }
+      },
+      "agent": {
+        "id": "cdc3c352-32a8-4d04-aa34-39b25d83129c",
+        "name": "Retired worker",
+        "prompt": "Edited after the Run started.",
+        "revision": 2,
+        "execution": {
+          "environmentId": "controlled-environment",
+          "providerInstanceId": "codex-main",
+          "modelId": "gpt-6.1-sol",
+          "modelOptions": []
+        },
+        "createdAt": "2026-11-07T09:57:10.087Z",
+        "updatedAt": "2026-11-07T09:57:10.198Z",
+        "settingsStatus": {
+          "environment": {
+            "state": "available"
+          },
+          "provider": {
+            "state": "available"
+          },
+          "model": {
+            "state": "available"
+          },
+          "options": []
+        }
+      }
+    },
+    "closed": {
+      "id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+      "number": 1,
+      "title": "Retire the legacy importer",
+      "task": {
+        "id": "b5e93a9a-11dd-4995-88ab-096cd7dd5ea0",
+        "title": "Retire the legacy importer",
+        "projectId": "4caac952-e21e-4c4d-8aca-86be2a3f4951"
+      },
+      "input": "Retire the legacy importer\nKeep existing exports.",
+      "flowId": "35d85c6d-eba0-4c4f-ad1c-aa3c852f2e33",
+      "flowName": "Retired flow",
+      "snapshot": {
+        "flow": {
+          "id": "35d85c6d-eba0-4c4f-ad1c-aa3c852f2e33",
+          "name": "Retired flow",
+          "revision": 2,
+          "graph": {
+            "flowInput": {
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "targetBlockIds": ["worker"]
+            },
+            "blocks": [
+              {
+                "id": "worker",
+                "name": "Retired worker block",
+                "kind": "agent",
+                "agentId": "cdc3c352-32a8-4d04-aa34-39b25d83129c",
+                "position": {
+                  "x": 0,
+                  "y": 0
+                },
+                "exits": [
+                  {
+                    "id": "done",
+                    "name": "Done",
+                    "description": "Completed",
+                    "outcome": "completion",
+                    "requiresFeedback": false
+                  }
+                ]
+              }
+            ],
+            "connections": []
+          },
+          "createdAt": "2026-11-07T09:57:10.088Z",
+          "updatedAt": "2026-11-07T09:57:10.088Z",
+          "readiness": {
+            "ready": true,
+            "issues": []
+          }
+        },
+        "agents": [
+          {
+            "id": "cdc3c352-32a8-4d04-aa34-39b25d83129c",
+            "name": "Retired worker",
+            "prompt": "Follow the retired checklist.",
+            "revision": 1,
+            "execution": {
+              "environmentId": "controlled-environment",
+              "providerInstanceId": "codex-main",
+              "modelId": "gpt-6.1-sol",
+              "modelOptions": [
+                {
+                  "id": "reasoning",
+                  "value": "high"
+                }
+              ]
+            },
+            "createdAt": "2026-11-07T09:57:10.087Z",
+            "updatedAt": "2026-11-07T09:57:10.087Z",
+            "settingsStatus": {
+              "environment": {
+                "state": "available"
+              },
+              "provider": {
+                "state": "available"
+              },
+              "model": {
+                "state": "available"
+              },
+              "options": [
+                {
+                  "id": "reasoning",
+                  "state": "available"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "runCoordinator": null,
+      "coordinationActions": {
+        "questionReplies": [],
+        "controlRecoveries": []
+      },
+      "rootWork": [],
+      "remoteWork": [],
+      "activations": [
+        {
+          "id": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "blockId": "worker",
+          "cause": "start:worker",
+          "phase": "finished",
+          "coverage": "local-bounded",
+          "createdAt": "2026-11-07T09:57:10.143Z",
+          "problem": null,
+          "evidence": {
+            "version": 1,
+            "observedAt": "2026-11-07T09:57:10.186Z",
+            "designation": true,
+            "lineageCoverage": "incomplete",
+            "lineageScanComplete": true,
+            "aggregateState": "settled",
+            "holdReason": null,
+            "release": true,
+            "limitations": [
+              "Local bounded observations are not atomic; remote coverage is unavailable.",
+              "Independent child reads omit options; settings are verified against native acceptance."
+            ],
+            "members": [
+              {
+                "threadId": "thread-1",
+                "role": "worker",
+                "executionIds": ["execution-1"]
+              }
+            ]
+          },
+          "delegation": {
+            "requestKey": "0b78c9e9-3928-4b14-b2c3-5642dc61fcf4",
+            "inputFingerprint": "a48cd05e40f41c4a6ab92fa980f58dd57348b75313fb329f1387c3139e0a8c4e",
+            "state": "planned"
+          }
+        }
+      ],
+      "threadBindings": [
+        {
+          "id": "47d61d27-56d1-4969-a25e-3327b887aabe",
+          "blockId": "worker",
+          "environmentId": "controlled-environment",
+          "threadId": "thread-1",
+          "role": "worker",
+          "link": "t3://threads/thread-1",
+          "parentBindingId": "47d61d27-56d1-4969-a25e-3327b887aabe"
+        }
+      ],
+      "startedAt": "2026-11-07T09:57:10.143Z",
+      "closedAt": "2026-11-07T09:57:10.196Z",
+      "outcome": "finished",
+      "closure": {
+        "outcome": "finished",
+        "rootFrontier": [],
+        "coordination": [
+          {
+            "version": 1,
+            "observedAt": "2026-11-07T09:57:10.195Z",
+            "designation": true,
+            "lineageCoverage": "incomplete",
+            "lineageScanComplete": true,
+            "aggregateState": "settled",
+            "holdReason": null,
+            "release": true,
+            "limitations": [
+              "Local bounded observations are not atomic; remote coverage is unavailable.",
+              "Independent child reads omit options; settings are verified against native acceptance."
+            ],
+            "members": [
+              {
+                "threadId": "thread-1",
+                "role": "worker",
+                "executionIds": ["execution-1"]
+              }
+            ]
+          }
+        ],
+        "generation": 7,
+        "confirmedAt": "2026-11-07T09:57:10.196Z",
+        "frontier": [
+          {
+            "environmentId": "controlled-environment",
+            "blockId": "worker",
+            "threadId": "thread-1",
+            "projectId": "created-1",
+            "workspaceRoot": "/fixture/upgrade-repository",
+            "projectObservedAt": "2026-11-07T09:57:10.195Z",
+            "executionObservedAt": "2026-11-07T09:57:10.196Z",
+            "queueObservedAt": "2026-11-07T09:57:10.196Z",
+            "nativeObservedAt": "2026-11-07T09:57:10.196Z",
+            "activeRunId": null,
+            "latestRunId": "execution-1",
+            "executions": [
+              {
+                "executionId": "execution-1",
+                "status": "completed",
+                "ordinal": 1,
+                "sourceAt": null
+              }
+            ],
+            "queuedRunIds": [],
+            "queueNextCursor": null,
+            "pendingRequestCount": 0
+          }
+        ]
+      },
+      "stopRequestedAt": null,
+      "gateOpen": false,
+      "generation": 8,
+      "blocks": [
+        {
+          "blockId": "worker",
+          "name": "Retired worker block",
+          "state": "finished",
+          "threadId": "thread-1",
+          "executionId": "execution-1",
+          "link": "https://app.t3.codes/threads/controlled-environment/thread-1",
+          "engineStatus": "completed",
+          "reportStatus": "finished",
+          "problem": null,
+          "pendingRequestCount": 0,
+          "observedAt": "2026-11-07T09:57:10.186Z",
+          "freshness": "fresh",
+          "recovery": null
+        }
+      ],
+      "reports": [
+        {
+          "id": "42a50e43-95a4-4b10-8c3d-eecf4603cfd9",
+          "activationId": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "resultMessage": "Implemented the requested result.",
+          "blockId": "worker",
+          "executionId": "execution-1",
+          "key": "finished",
+          "fingerprint": "8f083ad1d65de75d10f1dad1d394a0eac167d6b26939e535d5937f9397170500",
+          "status": "finished",
+          "exitId": "done",
+          "recipients": [],
+          "acceptedAt": "2026-11-07T09:57:10.181Z",
+          "completionEligibleAt": "2026-11-07T09:57:10.196Z"
+        }
+      ],
+      "executions": [
+        {
+          "bindingId": "47d61d27-56d1-4969-a25e-3327b887aabe",
+          "activationId": "f32c3cd6-5133-43b0-9e73-82f25bda289a",
+          "blockId": "worker",
+          "executionId": "execution-1",
+          "engineStatus": "completed",
+          "reportStatus": "finished",
+          "problem": null,
+          "observedAt": "2026-11-07T09:57:10.186Z",
+          "observedStartedAt": "2026-11-07T09:57:10.153Z",
+          "observedEndedAt": "2026-11-07T09:57:10.186Z"
+        }
+      ],
+      "humanOccurrences": [],
+      "recoveries": [],
+      "attention": [],
+      "intents": [
+        {
+          "id": "1c1516ec-bbda-4f01-a5f4-940288f45d92",
+          "kind": "launch",
+          "blockId": "worker",
+          "reportId": null,
+          "occurrenceId": null,
+          "sourceBlockId": null,
+          "exitId": null,
+          "payloadRetained": false,
+          "reference": {
+            "projectId": "created-1",
+            "threadId": "thread-1",
+            "runId": "execution-1",
+            "link": "t3://threads/thread-1",
+            "status": "running"
+          },
+          "state": "acknowledged",
+          "requestKey": "0b78c9e9-3928-4b14-b2c3-5642dc61fcf4",
+          "fingerprint": "c7f2ea139ac74b3ced51d3f529dfe55afb7837c21840f744aa78521a98361a92",
+          "contextId": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "reservedAt": "2026-11-07T09:57:10.152Z",
+          "problem": null
+        }
+      ],
+      "events": [
+        {
+          "sequence": 1,
+          "kind": "started",
+          "observedAt": "2026-11-07T09:57:10.143Z",
+          "sourceAt": null,
+          "engineStatus": null,
+          "executionId": null,
+          "causeId": null,
+          "blockId": null
+        },
+        {
+          "sequence": 2,
+          "kind": "launch-acknowledged",
+          "observedAt": "2026-11-07T09:57:10.153Z",
+          "sourceAt": null,
+          "engineStatus": "running",
+          "executionId": "execution-1",
+          "causeId": "1c1516ec-bbda-4f01-a5f4-940288f45d92",
+          "blockId": "worker"
+        },
+        {
+          "sequence": 3,
+          "kind": "report-accepted",
+          "observedAt": "2026-11-07T09:57:10.181Z",
+          "sourceAt": null,
+          "engineStatus": null,
+          "executionId": "execution-1",
+          "causeId": "42a50e43-95a4-4b10-8c3d-eecf4603cfd9",
+          "blockId": "worker"
+        },
+        {
+          "sequence": 4,
+          "kind": "execution-observed",
+          "observedAt": "2026-11-07T09:57:10.186Z",
+          "sourceAt": null,
+          "engineStatus": "completed",
+          "executionId": "execution-1",
+          "causeId": null,
+          "blockId": "worker"
+        },
+        {
+          "sequence": 5,
+          "kind": "run-closed",
+          "observedAt": "2026-11-07T09:57:10.196Z",
+          "sourceAt": null,
+          "engineStatus": null,
+          "executionId": null,
+          "causeId": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "blockId": null
+        }
+      ]
+    },
+    "active": {
+      "id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+      "number": 2,
+      "title": "Improve search",
+      "task": {
+        "id": "b5904c4a-7d95-4749-8680-5908604f2770",
+        "title": "Improve search",
+        "projectId": "4caac952-e21e-4c4d-8aca-86be2a3f4951"
+      },
+      "input": "Improve search\nKeep it accessible.",
+      "flowId": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+      "flowName": "Single worker",
+      "snapshot": {
+        "flow": {
+          "id": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+          "name": "Single worker",
+          "revision": 2,
+          "graph": {
+            "flowInput": {
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "targetBlockIds": ["worker"]
+            },
+            "blocks": [
+              {
+                "id": "worker",
+                "name": "Entry worker",
+                "kind": "agent",
+                "agentId": "f9673149-8672-4886-8f94-a7282b8249ad",
+                "position": {
+                  "x": 0,
+                  "y": 0
+                },
+                "exits": [
+                  {
+                    "id": "done",
+                    "name": "Done",
+                    "description": "Completed",
+                    "outcome": "completion",
+                    "requiresFeedback": false
+                  }
+                ]
+              }
+            ],
+            "connections": []
+          },
+          "createdAt": "2026-11-07T09:57:10.199Z",
+          "updatedAt": "2026-11-07T09:57:10.199Z",
+          "readiness": {
+            "ready": true,
+            "issues": []
+          }
+        },
+        "agents": [
+          {
+            "id": "f9673149-8672-4886-8f94-a7282b8249ad",
+            "name": "Worker",
+            "prompt": "Follow repository instructions.",
+            "revision": 1,
+            "execution": {
+              "environmentId": "controlled-environment",
+              "providerInstanceId": "codex-main",
+              "modelId": "gpt-6.1-sol",
+              "modelOptions": [
+                {
+                  "id": "reasoning",
+                  "value": "high"
+                }
+              ]
+            },
+            "createdAt": "2026-11-07T09:57:10.199Z",
+            "updatedAt": "2026-11-07T09:57:10.199Z",
+            "settingsStatus": {
+              "environment": {
+                "state": "available"
+              },
+              "provider": {
+                "state": "available"
+              },
+              "model": {
+                "state": "available"
+              },
+              "options": [
+                {
+                  "id": "reasoning",
+                  "state": "available"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "runCoordinator": null,
+      "coordinationActions": {
+        "questionReplies": [],
+        "controlRecoveries": []
+      },
+      "rootWork": [],
+      "remoteWork": [],
+      "activations": [
+        {
+          "id": "d66428a0-9e26-46b5-a6a9-6f50fa1a7970",
+          "blockId": "worker",
+          "cause": "start:worker",
+          "phase": "assessing",
+          "coverage": "unverified",
+          "createdAt": "2026-11-07T09:57:10.228Z",
+          "problem": "Coordinator descendant or native obligation coverage is unverified.",
+          "evidence": {
+            "version": 1,
+            "observedAt": "2026-11-07T09:57:10.234Z",
+            "designation": true,
+            "lineageCoverage": "unknown",
+            "lineageScanComplete": false,
+            "aggregateState": "unknown",
+            "holdReason": "Coordinator descendant or native obligation coverage is unverified.",
+            "release": false,
+            "limitations": [
+              "Local bounded observations are not atomic; remote coverage is unavailable.",
+              "Independent child reads omit options; settings are verified against native acceptance."
+            ],
+            "members": [
+              {
+                "threadId": "thread-2",
+                "role": "worker",
+                "executionIds": ["execution-2"]
+              }
+            ]
+          },
+          "delegation": {
+            "requestKey": "ed649381-5cde-4911-90b3-5d54a0ec0568",
+            "inputFingerprint": "f365f38a12b9206c72983cbfb7fd6948c849b58c338840f48779b8252bc6150c",
+            "state": "planned"
+          }
+        }
+      ],
+      "threadBindings": [
+        {
+          "id": "0a55e3d1-1f9e-449d-ae90-38f009e504fa",
+          "blockId": "worker",
+          "environmentId": "controlled-environment",
+          "threadId": "thread-2",
+          "role": "worker",
+          "link": "t3://threads/thread-2",
+          "parentBindingId": "0a55e3d1-1f9e-449d-ae90-38f009e504fa"
+        }
+      ],
+      "startedAt": "2026-11-07T09:57:10.228Z",
+      "closedAt": null,
+      "outcome": null,
+      "closure": null,
+      "stopRequestedAt": null,
+      "gateOpen": true,
+      "generation": 4,
+      "blocks": [
+        {
+          "blockId": "worker",
+          "name": "Entry worker",
+          "state": "working",
+          "threadId": "thread-2",
+          "executionId": "execution-2",
+          "link": "https://app.t3.codes/threads/controlled-environment/thread-2",
+          "engineStatus": "running",
+          "reportStatus": null,
+          "problem": "Coordinator descendant or native obligation coverage is unverified.",
+          "pendingRequestCount": 0,
+          "observedAt": "2026-11-07T09:57:10.234Z",
+          "freshness": "fresh",
+          "recovery": null
+        }
+      ],
+      "reports": [],
+      "executions": [
+        {
+          "bindingId": "0a55e3d1-1f9e-449d-ae90-38f009e504fa",
+          "activationId": "d66428a0-9e26-46b5-a6a9-6f50fa1a7970",
+          "blockId": "worker",
+          "executionId": "execution-2",
+          "engineStatus": "running",
+          "reportStatus": null,
+          "problem": null,
+          "observedAt": "2026-11-07T09:57:10.234Z",
+          "observedStartedAt": "2026-11-07T09:57:10.231Z",
+          "observedEndedAt": null
+        }
+      ],
+      "humanOccurrences": [],
+      "recoveries": [],
+      "attention": [],
+      "intents": [
+        {
+          "id": "de39c9f2-03e2-4d54-8b65-172332c54ea8",
+          "kind": "launch",
+          "blockId": "worker",
+          "reportId": null,
+          "occurrenceId": null,
+          "sourceBlockId": null,
+          "exitId": null,
+          "payloadRetained": false,
+          "reference": {
+            "projectId": "created-1",
+            "threadId": "thread-2",
+            "runId": "execution-2",
+            "link": "t3://threads/thread-2",
+            "status": "running"
+          },
+          "state": "acknowledged",
+          "requestKey": "ed649381-5cde-4911-90b3-5d54a0ec0568",
+          "fingerprint": "08576c3eeb781ea0b6fc46b4c78299f1f78e05752c30104a54facdf34e87bb28",
+          "contextId": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "reservedAt": "2026-11-07T09:57:10.231Z",
+          "problem": null
+        }
+      ],
+      "events": [
+        {
+          "sequence": 6,
+          "kind": "started",
+          "observedAt": "2026-11-07T09:57:10.228Z",
+          "sourceAt": null,
+          "engineStatus": null,
+          "executionId": null,
+          "causeId": null,
+          "blockId": null
+        },
+        {
+          "sequence": 7,
+          "kind": "launch-acknowledged",
+          "observedAt": "2026-11-07T09:57:10.231Z",
+          "sourceAt": null,
+          "engineStatus": "running",
+          "executionId": "execution-2",
+          "causeId": "de39c9f2-03e2-4d54-8b65-172332c54ea8",
+          "blockId": "worker"
+        }
+      ]
+    },
+    "tasks": [
+      {
+        "id": "b5904c4a-7d95-4749-8680-5908604f2770",
+        "title": "Improve search",
+        "projectId": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+        "createdAt": "2026-11-07T09:57:10.228Z",
+        "activeRunId": "948a469b-a3e8-4d09-b556-c8cac48630db",
+        "latestRun": {
+          "id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+          "flowId": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+          "flowName": "Single worker",
+          "startedAt": "2026-11-07T09:57:10.228Z",
+          "closedAt": null,
+          "outcome": null,
+          "stopRequestedAt": null
+        },
+        "runs": [
+          {
+            "id": "948a469b-a3e8-4d09-b556-c8cac48630db",
+            "flowId": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+            "flowName": "Single worker",
+            "input": "Improve search\nKeep it accessible.",
+            "startedAt": "2026-11-07T09:57:10.228Z",
+            "closedAt": null,
+            "outcome": null,
+            "stopRequestedAt": null
+          }
+        ]
+      },
+      {
+        "id": "b5e93a9a-11dd-4995-88ab-096cd7dd5ea0",
+        "title": "Retire the legacy importer",
+        "projectId": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+        "createdAt": "2026-11-07T09:57:10.143Z",
+        "activeRunId": null,
+        "latestRun": {
+          "id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+          "flowId": "35d85c6d-eba0-4c4f-ad1c-aa3c852f2e33",
+          "flowName": "Retired flow",
+          "startedAt": "2026-11-07T09:57:10.143Z",
+          "closedAt": "2026-11-07T09:57:10.196Z",
+          "outcome": "finished",
+          "stopRequestedAt": null
+        },
+        "runs": [
+          {
+            "id": "e60ff2d2-206d-43df-8242-308ca583c89f",
+            "flowId": "35d85c6d-eba0-4c4f-ad1c-aa3c852f2e33",
+            "flowName": "Retired flow",
+            "input": "Retire the legacy importer\nKeep existing exports.",
+            "startedAt": "2026-11-07T09:57:10.143Z",
+            "closedAt": "2026-11-07T09:57:10.196Z",
+            "outcome": "finished",
+            "stopRequestedAt": null
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -40,7 +40,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   owner: { token: string },
   bindings: RunnerOptions["bindings"],
   intervalMs: number,
-  checkSnapshot: RunnerOptions["checkSnapshot"],
+  checkAgent: RunnerOptions["checkAgent"],
 ) {
   const sql = yield* SqlClient.SqlClient;
   const scope = yield* Effect.scope;
@@ -67,8 +67,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const rootRecovery = openRunControlRecovery(database, t3);
   const { consumeRuntimeReport } = openRunnerReports(database, lifecycle, t3);
   const { observe } = openRunnerObservation(database, t3, bindings);
-  const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkSnapshot, observe);
-  const { start } = openRunnerStart(database, ops, t3, lifecycle, checkSnapshot);
+  const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
+  const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
   const { stopRun, reconcileStop, stopObservationsUnavailable, attemptSuccessfulClosure } =
     openRunnerStop(database, t3, lifecycle, liveContextId);

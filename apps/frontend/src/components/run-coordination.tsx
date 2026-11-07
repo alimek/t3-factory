@@ -154,7 +154,7 @@ export function RetainedResult({
   run: RunDetail;
   report: RunDetail["reports"][number];
 }) {
-  const exit = run.snapshot.flow.graph.blocks
+  const exit = run.definitions.flow.graph.blocks
     .find((b) => b.id === report.blockId)
     ?.exits.find((e) => e.id === report.exitId);
   return (

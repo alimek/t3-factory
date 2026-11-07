@@ -83,7 +83,7 @@ export interface RunContext {
   readonly closedAt: string | null;
   readonly outcome: import("@t3-factory/contracts").RunDetail["outcome"];
   readonly stopRequestedAt: string | null;
-  readonly snapshot: { readonly flow: import("@t3-factory/contracts").RunSnapshot["flow"] };
+  readonly definitions: { readonly flow: import("@t3-factory/contracts").RunDefinitions["flow"] };
   readonly blocks: readonly Pick<
     import("@t3-factory/contracts").RunBlock,
     "blockId" | "name" | "state" | "problem" | "freshness"

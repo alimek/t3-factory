@@ -92,7 +92,7 @@ function recordedProblem(run: RunDetail, item: RunAttention) {
 function selectedExit(run: RunDetail, item: RunAttention) {
   const occurrence = run.humanOccurrences.find((entry) => entry.id === item.occurrenceId);
   if (!occurrence?.exitId) return;
-  return run.snapshot.flow.graph.blocks
+  return run.definitions.flow.graph.blocks
     .find((block) => block.id === occurrence.blockId)
     ?.exits.find((exit) => exit.id === occurrence.exitId)?.name;
 }
@@ -313,7 +313,7 @@ function PendingHuman({
   onUpdated: (run: RunDetail) => void;
 }) {
   const occurrence = run.humanOccurrences.find((entry) => entry.id === item.occurrenceId);
-  const block = run.snapshot.flow.graph.blocks.find((entry) => entry.id === item.blockId);
+  const block = run.definitions.flow.graph.blocks.find((entry) => entry.id === item.blockId);
   if (!block || !occurrence || occurrence.state !== "pending")
     return <p className="text-sm text-muted-foreground">This occurrence is no longer pending.</p>;
   return (

@@ -36,7 +36,7 @@ import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { sectionLabelClass } from "../components/page.tsx";
 import { useConnectionState, useConnectionWatch } from "../connection-state.tsx";
 import { exitRecipients } from "../flow-graph.ts";
-import { api } from "../api.ts";
+import { api, ApiError } from "../api.ts";
 import { usePolling } from "../use-polling.ts";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -57,15 +57,15 @@ function blockName(run: RunDetail, blockId: string) {
   return run.blocks.find((block) => block.blockId === blockId)?.name;
 }
 
-type SnapshotDefinition = { readonly revision: number } | "missing";
+type CurrentFlowRevision = { readonly revision: number } | "missing";
 
-/** Polls the Run with its project and whether the saved snapshot still matches the Flow. */
+/** Polls the Run with its project and whether its captured Flow revision is still current. */
 function useRunObservation(id: string) {
   const [run, setRun] = useState<RunDetail>();
   const [error, setError] = useState("");
   const [project, setProject] = useState<FactoryProject>();
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [definition, setDefinition] = useState<SnapshotDefinition>();
+  const [definition, setDefinition] = useState<CurrentFlowRevision>();
   usePolling({
     intervalMs: 1500,
     onPoll: useCallback(
@@ -79,14 +79,18 @@ function useRunObservation(id: string) {
             const [catalog, flowDefinition] = await Promise.all([
               api.listProjects(),
               api.getFlow(runDetail.flowId).then(
-                (flow) => ({ revision: flow.revision }) satisfies SnapshotDefinition,
-                () => "missing" as const,
+                (flow) => ({ revision: flow.revision }) satisfies CurrentFlowRevision,
+                (error: unknown) =>
+                  error instanceof ApiError && error.detail.code === "not_found"
+                    ? ("missing" as const)
+                    : undefined,
               ),
             ]);
             if (!isActive()) return;
             setProject(catalog.projects.find((item) => item.id === runDetail.task.projectId));
             setProjectsLoaded(true);
-            setDefinition(flowDefinition);
+            // A transient Flow read failure keeps the last known state instead of claiming removal.
+            if (flowDefinition) setDefinition(flowDefinition);
           })
           .catch(() => {
             if (isActive()) setError("Observations unavailable. Saved history is retained.");
@@ -220,7 +224,7 @@ function RunDetailView({
   onSelect: (blockId: string | null) => void;
   onToggleContext: () => void;
 }) {
-  const graphBlock = run.snapshot.flow.graph.blocks.find((block) => block.id === selected);
+  const graphBlock = run.definitions.flow.graph.blocks.find((block) => block.id === selected);
   const recorded = run.blocks.find((block) => block.blockId === selected);
   const stop = useStopRun(run, observed.setRun);
   const unavailable = !!observed.error;
@@ -310,10 +314,10 @@ function lastObservedAt(run: RunDetail) {
     .at(-1);
 }
 
-function snapshotNote(run: RunDetail, definition: SnapshotDefinition | undefined) {
+function revisionNote(run: RunDetail, definition: CurrentFlowRevision | undefined) {
   if (!definition) return null;
-  if (definition === "missing") return "Original snapshot";
-  return definition.revision === run.snapshot.flow.revision ? null : "Flow edited since";
+  if (definition === "missing") return "Flow removed since";
+  return definition.revision === run.definitions.flow.revision ? null : "Flow edited since";
 }
 
 function projectIsUnavailable(project: FactoryProject | undefined, loaded: boolean) {
@@ -357,7 +361,7 @@ function RunTopBar({
           <Workflow aria-hidden className="size-2.75 shrink-0" strokeWidth={1.75} />
           <span className="truncate font-medium">
             <span className="sr-only">Flow for this Run: </span>
-            {run.flowName} · snapshot
+            {run.flowName} · captured revision
           </span>
           <span className="tracking-label">· Started {dayAndTime(run.startedAt)}</span>
         </p>
@@ -398,14 +402,14 @@ function RunTopBar({
 const canvasBadgeClass =
   "flex h-7 items-center gap-1.5 rounded-md border bg-muted pr-2.5 pl-2.25 text-2xs leading-3 whitespace-nowrap [&>svg]:size-3 [&>svg]:shrink-0";
 
-/** Figma Run/SnapshotBadge: the canvas renders the Flow snapshot saved at Start. */
-function SnapshotBadge({ run, note }: { run: RunDetail; note: string | null }) {
+/** Figma Run/SnapshotBadge: the canvas renders the Flow revision captured at Start. */
+function RevisionBadge({ run, note }: { run: RunDetail; note: string | null }) {
   return (
     <div className={canvasBadgeClass}>
       <Lock aria-hidden strokeWidth={1.75} className="text-muted-foreground" />
-      <span className="font-semibold tracking-section text-foreground">Flow snapshot</span>
+      <span className="font-semibold tracking-section text-foreground">Flow revision</span>
       <span className="truncate tracking-label text-muted-foreground">
-        {run.snapshot.flow.name} · saved at Start
+        {run.definitions.flow.name} · captured at Start
       </span>
       <span className="sr-only"> · </span>
       <span aria-hidden className="h-3 w-px bg-border" />
@@ -472,7 +476,7 @@ function CanvasOverlay({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <SnapshotBadge run={run} note={snapshotNote(run, observed.definition)} />
+        <RevisionBadge run={run} note={revisionNote(run, observed.definition)} />
         <ObservationBadge run={run} unavailable={!!observed.error} />
       </div>
       <RunConversationNotice coordinator={run.runCoordinator} />
@@ -506,7 +510,7 @@ function CanvasOverlay({
           className="w-140"
         >
           {run.closedAt
-            ? `${projectTitle} is no longer available in T3. This history and its original Flow snapshot stay readable; T3 thread links may not open.`
+            ? `${projectTitle} is no longer available in T3. This history and its captured Flow revision stay readable; T3 thread links may not open.`
             : `T3 no longer reports ${projectTitle}. Threads already running continue in T3; Factory can’t start new steps in this project until it’s available again.`}
         </Notice>
       )}
@@ -547,8 +551,8 @@ function blockAttentionLabel(run: RunDetail, blockId: string) {
 
 function blockKindLine(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "Human step · asks you";
-  const agent = run.snapshot.agents.find((item) => item.id === block.agentId)?.name;
-  const input = run.snapshot.flow.graph.flowInput.targetBlockIds.includes(block.id)
+  const agent = run.definitions.agents.find((item) => item.id === block.agentId)?.name;
+  const input = run.definitions.flow.graph.flowInput.targetBlockIds.includes(block.id)
     ? " · receives the Flow input"
     : "";
   return `Agent · ${agent ?? "not chosen"}${input}`;
@@ -650,10 +654,10 @@ function BlockDetails({
             </ul>
           </DetailSection>
         )}
-        <DetailSection title="Exits in snapshot">
+        <DetailSection title="Exits in captured revision">
           <ul className="flex flex-col gap-1.5 px-2">
             {block.exits.map((exit) => {
-              const recipients = exitRecipients(run.snapshot.flow.graph, block.id, exit.id);
+              const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
               return (
                 <li key={exit.id} className="flex items-baseline gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{exit.name || "Unnamed exit"}</span>
@@ -696,7 +700,7 @@ function BlockDetails({
   );
 }
 
-/** Run context rail (Figma A03 inspector): attention, Stop and closure, prompt, snapshot, project. */
+/** Run context rail (Figma A03 inspector): attention, Stop and closure, prompt, Flow revision, project. */
 function RunContext({
   run,
   observed,
@@ -733,9 +737,9 @@ function RunContext({
           {run.input}
         </pre>
       </ContextSection>
-      <ContextSection title="Flow snapshot">
+      <ContextSection title="Flow revision">
         <p className="text-sm text-emphasis-foreground">
-          {run.snapshot.flow.name} — captured at Start. Later Flow edits do not change this Run.
+          {run.definitions.flow.name} — captured at Start. Later Flow edits do not change this Run.
         </p>
       </ContextSection>
       <ContextSection title="Project">

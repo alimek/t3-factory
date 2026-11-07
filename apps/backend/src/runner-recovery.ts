@@ -1,7 +1,7 @@
 import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
-import type { Result, RunDetail, RunSnapshot } from "@t3-factory/contracts";
+import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter, SendPayload } from "./adapters/t3.ts";
@@ -150,8 +150,10 @@ export function openRunnerRecovery(
           const intentId = yield* newId,
             key = yield* newId,
             time = yield* now;
-          const snapshot = JSON.parse(current.snapshot_json) as RunSnapshot;
-          const exits = snapshot.flow.graph.blocks.find((block) => block.id === a.blockId)!.exits;
+          const { definitions } = current;
+          const exits = definitions.flow.graph.blocks.find(
+            (block) => block.id === a.blockId,
+          )!.exits;
           const payload: SendPayload = {
             environmentId: current.environment_id,
             threadId: b.threadId!,

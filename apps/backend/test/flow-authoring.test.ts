@@ -1,7 +1,12 @@
 import { assert, expect, it } from "@effect/vitest";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
-import { flowInput, flowWithAgent, validationFlow } from "./support/domain-setup.ts";
+import {
+  flowInput,
+  flowWithAgent,
+  readFlowAfterRestart,
+  validationFlow,
+} from "./support/domain-setup.ts";
 
 it("an incomplete graph draft saves with the Flow input connection outstanding", async (context) => {
   // Arrange
@@ -45,6 +50,56 @@ it("connecting the Flow input to an Agent makes a saved graph draft ready", asyn
   // Assert
   assert(ready.ok);
   expect(ready.value.readiness.ready).toBe(true);
+});
+
+it("a saved graph draft keeps its blocks, exits, connections and Flow input order after restart", async (context) => {
+  // Arrange
+  const { harness, factory, created, unconnectedGraph } = await flowWithAgent(context);
+  const [coder, human] = unconnectedGraph.blocks;
+  const writer = {
+    id: "writer",
+    kind: "agent" as const,
+    name: "",
+    agentId: null,
+    position: { x: -120.5, y: 7.25 },
+    exits: [
+      {
+        id: "done",
+        name: "",
+        description: "",
+        outcome: "custom" as const,
+        requiresFeedback: true,
+      },
+      {
+        id: "accepted",
+        name: "Accepted",
+        description: "Ship it",
+        outcome: "assessment-ok" as const,
+        requiresFeedback: false,
+      },
+    ],
+  };
+  const saved = await factory.updateFlow(created.value.id, {
+    name: "Ordered draft",
+    expectedRevision: 1,
+    graph: {
+      flowInput: { position: { x: -40.5, y: 12 }, targetBlockIds: ["writer", "coder"] },
+      blocks: [writer, human, coder],
+      connections: [
+        { sourceBlockId: "writer", exitId: "accepted", targetBlockId: "human" },
+        ...unconnectedGraph.connections,
+        { sourceBlockId: "writer", exitId: "done", targetBlockId: "writer" },
+      ],
+    },
+  });
+  assert(saved.ok);
+  await factory.close();
+
+  // Act
+  const recovered = await readFlowAfterRestart(harness, created.value.id);
+
+  // Assert
+  expect(recovered).toStrictEqual(saved);
 });
 
 it("updateFlow rejects a stale editor with conflict and leaves the saved revision", async (context) => {

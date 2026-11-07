@@ -602,10 +602,8 @@ function RemoveFlowAction({
     try {
       await api.removeFlow(flowId);
     } catch (e) {
-      if (!(e instanceof ApiError && e.detail.code === "not_found")) {
-        setError(e instanceof Error ? e.message : "Could not remove Flow.");
-        return;
-      }
+      setError(e instanceof Error ? e.message : "Could not remove Flow.");
+      return;
     } finally {
       setRemoving(false);
     }
@@ -638,8 +636,8 @@ function RemoveFlowAction({
             <DialogDescription asChild>
               <div className="grid gap-2 text-sm text-muted-foreground">
                 <p>
-                  This permanently deletes the editable Flow definition. Existing Runs and their
-                  history stay available with their saved snapshots.
+                  This removes the Flow from Studio with no restore. Its saved revisions are kept,
+                  so existing Runs and their history keep the Flow they started with.
                 </p>
                 {dirty && (
                   <p className="text-attention">

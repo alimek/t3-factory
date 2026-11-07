@@ -172,13 +172,8 @@ export const makeFactoryService = (
         runtimeBackendUrl = url;
       },
     };
-    runner = yield* makeRunner(
-      { ...factory, getFlow: definitions.getFlowForSnapshot },
-      t3,
-      owner,
-      runtimeReports,
-      intervalMs,
-      (projectId, agent) => setup.recheckSnapshot(projectId, agent),
+    runner = yield* makeRunner(factory, t3, owner, runtimeReports, intervalMs, (projectId, agent) =>
+      setup.recheckAgent(projectId, agent),
     );
     yield* runner.initialize();
     return factory;

@@ -1,4 +1,4 @@
-import type { Result, RunDetail, RunSnapshot } from "@t3-factory/contracts";
+import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
@@ -47,9 +47,9 @@ export function openRunnerHuman(database: RunnerDatabase, lifecycle: RunnerLifec
               if (!owned || !current?.gate_open || current.closed_at)
                 return failure("conflict", "This Run no longer accepts answers.");
               if (!occurrence) return failure("not_found", "This Human occurrence does not exist.");
-              const block = (
-                JSON.parse(runRow.snapshot_json) as RunSnapshot
-              ).flow.graph.blocks.find((block) => block.id === occurrence.block_id)!;
+              const block = runRow.definitions.flow.graph.blocks.find(
+                (block) => block.id === occurrence.block_id,
+              )!;
               const exit =
                 exitId === undefined && block.exits.length === 1
                   ? block.exits[0]
@@ -69,7 +69,7 @@ export function openRunnerHuman(database: RunnerDatabase, lifecycle: RunnerLifec
                       "This occurrence has already been settled with a different answer or reason.",
                     );
               const time = yield* now;
-              const graph = (JSON.parse(runRow.snapshot_json) as RunSnapshot).flow.graph;
+              const graph = runRow.definitions.flow.graph;
               const recipients = [
                 ...new Set(
                   graph.connections

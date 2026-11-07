@@ -1,4 +1,3 @@
-import type { RunSnapshot } from "@t3-factory/contracts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { ChildEvidence } from "./adapters/coordination-evidence.ts";
 import type { CoordinationSaved } from "./coordinator-evidence-saved.ts";
@@ -15,9 +14,9 @@ export async function factoryOwnedSelection(
   saved: CoordinationSaved,
 ) {
   if (!block.thread_id || saved.workerParentThreadId !== block.thread_id) return false;
-  const snapshot = JSON.parse(run.snapshot_json) as RunSnapshot;
-  const node = snapshot.flow.graph.blocks.find((entry) => entry.id === block.block_id);
-  const expected = snapshot.agents.find(
+  const { definitions } = run;
+  const node = definitions.flow.graph.blocks.find((entry) => entry.id === block.block_id);
+  const expected = definitions.agents.find(
     (agent) => node?.kind === "agent" && agent.id === node.agentId,
   )?.execution;
   const executions = saved.executions.filter(
@@ -57,9 +56,9 @@ export async function directWorkerSelection(
   saved: CoordinationSaved,
   retain: RetainLocal,
 ) {
-  const snapshot = JSON.parse(run.snapshot_json) as RunSnapshot;
-  const node = snapshot.flow.graph.blocks.find((b) => b.id === block.block_id);
-  const expected = snapshot.agents.find(
+  const { definitions } = run;
+  const node = definitions.flow.graph.blocks.find((b) => b.id === block.block_id);
+  const expected = definitions.agents.find(
     (a) => node?.kind === "agent" && a.id === node.agentId,
   )?.execution;
   const parent = saved.workerParentThreadId;

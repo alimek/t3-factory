@@ -1,11 +1,11 @@
 import { newId } from "./ids.ts";
-import type { RunSnapshot } from "@t3-factory/contracts";
+import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { LaunchPayload, T3Target } from "./adapters/t3.ts";
 import type { ReportRow, RunRow } from "./runner-types.ts";
 import { fingerprint, runTarget } from "./runner-utils.ts";
-function reportExitChoices(exits: RunSnapshot["flow"]["graph"]["blocks"][number]["exits"]) {
+function reportExitChoices(exits: RunDefinitions["flow"]["graph"]["blocks"][number]["exits"]) {
   const choices = exits.map(
     (exit) =>
       `- ${JSON.stringify(exit.name)} (${exit.outcome}${exit.requiresFeedback ? "; feedback required" : ""})${exit.description ? `: ${JSON.stringify(exit.description)}` : ""}`,
@@ -14,27 +14,27 @@ function reportExitChoices(exits: RunSnapshot["flow"]["graph"]["blocks"][number]
 }
 /** Explicit reporting: one immutable final per execution plus a non-final conversation waiting report. */
 export function conversationReportInstructions(
-  exits: RunSnapshot["flow"]["graph"]["blocks"][number]["exits"],
+  exits: RunDefinitions["flow"]["graph"]["blocks"][number]["exits"],
 ) {
   return `Report through factory_update_block. Chat alone is not a report. If you still need a user reply, call {to: "waiting", message: nonempty summary of what you need}, with no exit, then end this turn. Waiting is non-final and does not advance the Flow. The user replies in this T3 thread; Factory resumes this Block. Only when the task is actually complete, call {to: "finished", exit: exact name below, message: context for the next step; nonempty when feedback is required}. The first finished result for this activation is immutable. An identical retry returns the original acknowledgement. Never treat unanswered questions or your recommendations as user decisions.\nExits:\n${reportExitChoices(exits)}`;
 }
 /** A worker's launch settings; its first message is the worker's own activation message. */
 export function launchPayload(
-  snapshot: RunSnapshot,
+  definitions: RunDefinitions,
   blockId: string,
   target: Pick<T3Target, "environmentId" | "projectId">,
   key: string,
   input: string,
 ): LaunchPayload {
-  const entry = snapshot.flow.graph.blocks.find((block) => block.id === blockId)!;
-  const agent = snapshot.agents.find(
+  const entry = definitions.flow.graph.blocks.find((block) => block.id === blockId)!;
+  const agent = definitions.agents.find(
     (agent) => entry.kind === "agent" && agent.id === entry.agentId,
   )!;
   return {
     environmentId: target.environmentId,
     projectId: target.projectId,
     clientRequestId: key,
-    title: `${snapshot.flow.name}: ${entry.name}`.slice(0, 200),
+    title: `${definitions.flow.name}: ${entry.name}`.slice(0, 200),
     message: `${agent.prompt}\n\n${conversationReportInstructions(entry.exits)}\n\nFlow input:\n${input}`,
     workspaceStrategy: { type: "root" },
     interactionMode: "default",

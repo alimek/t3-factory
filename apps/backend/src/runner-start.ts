@@ -8,7 +8,7 @@ import type {
   ProjectCatalog,
   Result,
   RunDetail,
-  RunSnapshot,
+  RunDefinitions,
   StartRunInput,
   T3Connection,
   ValidationIssue,
@@ -25,6 +25,8 @@ import { failure } from "./result.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
+import { currentFlowRevisionNumber } from "./flow-revisions.ts";
+import { currentAgentRevisionNumber } from "./agent-revisions.ts";
 import { now } from "./time.ts";
 function validStartInput(input: StartRunInput | undefined): input is StartRunInput {
   return (
@@ -84,7 +86,7 @@ type StartPlan = {
   input: StartRunInput;
   requestFingerprint: string;
   project: FactoryProject;
-  snapshot: RunSnapshot;
+  definitions: RunDefinitions;
   runId: string;
   taskId: string;
   time: string;
@@ -97,16 +99,14 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
     const [current] = yield* sql<{
       context_id: string;
     }>`SELECT context_id FROM t3_connection WHERE singleton=1`;
-    const [flow] = yield* sql<{
-      revision: number;
-    }>`SELECT revision FROM flows WHERE id=${plan.snapshot.flow.id}`;
+    const flowRevision = yield* currentFlowRevisionNumber(sql, plan.definitions.flow.id);
     const [project] = yield* sql<{
       workspace_root: string;
       availability: string;
     }>`SELECT workspace_root,availability FROM projects WHERE id=${plan.project.id}`;
     if (
       current?.context_id !== plan.contextId ||
-      flow?.revision !== plan.snapshot.flow.revision ||
+      flowRevision !== plan.definitions.flow.revision ||
       project?.workspace_root !== plan.project.workspaceRoot ||
       project.availability !== "available"
     )
@@ -114,11 +114,8 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
         "conflict",
         "Configuration changed while validating. Check setup and retry this Start.",
       );
-    for (const agent of plan.snapshot.agents) {
-      const [saved] = yield* sql<{
-        revision: number;
-      }>`SELECT revision FROM agents WHERE id=${agent.id}`;
-      if (saved?.revision !== agent.revision)
+    for (const agent of plan.definitions.agents) {
+      if ((yield* currentAgentRevisionNumber(sql, agent.id)) !== agent.revision)
         return failure("conflict", "An Agent changed while validating. Check setup and retry.");
     }
     return undefined;
@@ -144,14 +141,16 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
       n: number;
     }>`SELECT COALESCE(MAX(number),0)+1 AS n FROM runs`;
     const number = allocated!.n;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number})`;
-    yield* sql`INSERT INTO run_snapshots(run_id,snapshot_json) VALUES(${plan.runId},${JSON.stringify(plan.snapshot)})`;
-    for (const block of plan.snapshot.flow.graph.blocks)
+    const { flow, agents } = plan.definitions;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number,flow_revision_id) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number},(SELECT id FROM flow_revisions WHERE flow_id=${flow.id} AND revision=${flow.revision}))`;
+    for (const agent of agents)
+      yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
+    for (const block of plan.definitions.flow.graph.blocks)
       yield* sql`INSERT INTO run_blocks(run_id,block_id,name) VALUES(${plan.runId},${block.id},${block.name})`;
     yield* persistEntryLaunches(sql, {
       runId: plan.runId,
       number,
-      snapshot: plan.snapshot,
+      definitions: plan.definitions,
       project,
       contextId: plan.contextId,
       retryScope: plan.retryScope,
@@ -162,8 +161,8 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
   });
 }
 /** The first worker message is checked before the acceptance transaction commits. */
-function prepareStartWork(snapshot: RunSnapshot) {
-  if (entryMessagesTooLong(snapshot))
+function prepareStartWork(definitions: RunDefinitions) {
+  if (entryMessagesTooLong(definitions))
     return failure("validation", "The Agent prompt exceeds T3's first-message limit.");
   return { ok: true as const };
 }
@@ -172,7 +171,7 @@ export function openRunnerStart(
   ops: EffectOperations<FactoryOperations>,
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
-  checkSnapshot: RunnerOptions["checkSnapshot"],
+  checkAgent: RunnerOptions["checkAgent"],
 ) {
   const { run, transaction } = database;
   const { isClosed, drive, getRun } = lifecycle;
@@ -222,8 +221,8 @@ export function openRunnerStart(
       const checked = yield* startPreconditions(input);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope } = checked.value;
-      const snapshot: RunSnapshot = { flow, agents };
-      const ready = prepareStartWork(snapshot);
+      const definitions: RunDefinitions = { flow, agents };
+      const ready = prepareStartWork(definitions);
       if (!ready.ok) return ready;
       const runId = yield* newId,
         taskId = yield* newId;
@@ -231,7 +230,7 @@ export function openRunnerStart(
         input: input,
         requestFingerprint: content,
         project,
-        snapshot,
+        definitions,
         runId,
         taskId,
         time: yield* now,
@@ -296,9 +295,9 @@ export function openRunnerStart(
   function readyAgents(
     flow: FlowDraft,
     projectId: string,
-  ): Effect.Effect<Result<RunSnapshot["agents"][number][]>, unknown> {
+  ): Effect.Effect<Result<RunDefinitions["agents"][number][]>, unknown> {
     return Effect.gen(function* () {
-      const agents: RunSnapshot["agents"][number][] = [];
+      const agents: RunDefinitions["agents"][number][] = [];
       const ids = new Set(
         flow.graph.blocks.flatMap((block) =>
           block.kind === "agent" && block.agentId ? [block.agentId] : [],
@@ -307,7 +306,7 @@ export function openRunnerStart(
       for (const id of ids) {
         const agent = yield* ops.getAgent(id);
         if (!agent.ok) return agent;
-        const check = yield* checkSnapshot(projectId, agent.value);
+        const check = yield* checkAgent(projectId, agent.value);
         if (!check.ok) return check;
         if (!check.value.ready)
           return failure(
