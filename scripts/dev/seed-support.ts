@@ -51,6 +51,8 @@ export async function startScenario(
       projectId: context.projectId,
       flowId,
       input: `Demo · ${title}\n\n${prompt}`,
+      title: `Demo · ${title}`,
+      createdAt: new Date().toISOString(),
     }),
   );
   return reconcileUntil(context, run.id, (detail) =>

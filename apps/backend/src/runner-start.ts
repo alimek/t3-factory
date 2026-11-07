@@ -11,8 +11,13 @@ import type {
   RunSnapshot,
   StartRunInput,
   T3Connection,
+  ValidationIssue,
 } from "@t3-factory/contracts";
-import { flowReadiness, TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
+import {
+  flowReadiness,
+  isCanonicalTimestamp,
+  TASK_TITLE_LIMIT,
+} from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter } from "./adapters/t3.ts";
@@ -31,6 +36,30 @@ function validStartInput(input: StartRunInput | undefined): input is StartRunInp
     input.requestId.length <= 256 &&
     input.input.length <= 100000
   );
+}
+function startPresentationIssues(input: StartRunInput): ValidationIssue[] {
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  return [
+    ...(title && title.length <= TASK_TITLE_LIMIT
+      ? []
+      : [
+          {
+            code: "run_title",
+            path: "title",
+            message: `Run title is required and must fit ${TASK_TITLE_LIMIT} characters.`,
+          },
+        ]),
+    ...(isCanonicalTimestamp(input.createdAt)
+      ? []
+      : [
+          {
+            code: "run_created_at",
+            path: "createdAt",
+            message:
+              "The draft creation time must use the Date.toISOString() format, such as 2026-11-07T08:00:00.000Z.",
+          },
+        ]),
+  ];
 }
 /** The connected T3 context and an available project on the same endpoint and environment. */
 function startTarget(
@@ -108,17 +137,14 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
         : failure("conflict", "Start key content conflicts.");
     const conflict = yield* startConfigurationConflict(sql, plan);
     if (conflict) return conflict;
-    yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${plan.input.input.trim().split(/\r?\n/)[0]!.trim().slice(0, TASK_TITLE_LIMIT)},${plan.time})`;
+    const title = plan.input.title.trim();
+    yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${title},${plan.time})`;
     const project = plan.project;
     const [allocated] = yield* sql<{
       n: number;
     }>`SELECT COALESCE(MAX(number),0)+1 AS n FROM runs`;
     const number = allocated!.n;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.input
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean)!
-      .slice(0, TASK_TITLE_LIMIT)},${number})`;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number})`;
     yield* sql`INSERT INTO run_snapshots(run_id,snapshot_json) VALUES(${plan.runId},${JSON.stringify(plan.snapshot)})`;
     for (const block of plan.snapshot.flow.graph.blocks)
       yield* sql`INSERT INTO run_blocks(run_id,block_id,name) VALUES(${plan.runId},${block.id},${block.name})`;
@@ -170,7 +196,16 @@ export function openRunnerStart(
             },
           ],
         );
-      const content = fingerprint(JSON.stringify([input.projectId, input.flowId, input.input]));
+      const presentationIssues = startPresentationIssues(input);
+      if (presentationIssues.length)
+        return failure(
+          "validation",
+          "Give the Run a title and a valid creation time.",
+          presentationIssues,
+        );
+      const content = fingerprint(
+        JSON.stringify([input.projectId, input.flowId, input.input, input.title, input.createdAt]),
+      );
       const existing = yield* run(
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;

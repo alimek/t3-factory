@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useLayoutEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Laptop, LoaderCircle, Server, ServerCrash, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { fieldLabelClass } from "@/components/page";
 import { useDesktopState } from "./desktop-state.ts";
 import { GateScreen } from "@/components/gate-screen";
+import { runDraft } from "./run-draft.ts";
 import {
   desktopBridge,
   type DesktopState,
@@ -20,6 +21,10 @@ import {
 export function DesktopShell({ children }: { children: ReactNode }) {
   const desktop = desktopBridge();
   const state = useDesktopState();
+  const server = selectedServer(desktop, state);
+  useLayoutEffect(() => {
+    if (server) runDraft.selectServer(server);
+  }, [server]);
   if (!desktop) return children;
   if (!state)
     return (
@@ -35,6 +40,18 @@ export function DesktopShell({ children }: { children: ReactNode }) {
     return <BackendStatus desktop={desktop} backend={state.backend} />;
   if (state.role === "client" && state.server === null) return <ConnectScreen desktop={desktop} />;
   return children;
+}
+
+/**
+ * Browser storage is already isolated per origin, but the desktop renderer loads one fixed
+ * origin for every role and server, so client-local state names the server it belongs to.
+ */
+function selectedServer(desktop: FactoryDesktop | undefined, state: DesktopState | null) {
+  if (!desktop) return "browser";
+  if (state?.role === "server") return "host";
+  if (state?.role === "client" && state.server)
+    return `client ${state.server.url} ${state.server.fingerprint}`;
+  return undefined;
 }
 
 function RoleChooser({ desktop }: { desktop: FactoryDesktop }) {

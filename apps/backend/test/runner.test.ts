@@ -238,3 +238,16 @@ it("reusing a Start request key with different input is rejected", async (c) => 
   // Assert
   assert(!result.ok);
 });
+
+it("reusing a Start request key with a different draft title is a conflict", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+  assert((await f.startRun(input)).ok);
+
+  // Act
+  const result = await f.startRun({ ...input, title: "Renamed while uncertain" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("conflict");
+});

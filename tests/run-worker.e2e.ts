@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { findRun, readHistoryRun } from "./support/run-history.ts";
+import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { workerEvent } from "./support/worker.ts";
 import { openComposerWithFlow } from "./support/composer.ts";
@@ -79,6 +79,83 @@ test("Start launches a top-level Block worker and no Run conversation", async ({
   await app.screenshot("direct-root-worker-after-reload");
 });
 
+test("an unfinished prompt reopens as a Draft after reload and Starts exactly one Run in its place", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const prompt = "UI saved draft\n  Keep the second line exactly.";
+  const openRuns = screen.getByRole("navigation", "Open Runs");
+  const draftRow = openRuns.getByRole("link", /^UI saved draft\s*Draft$/);
+  const journeyRows = openRuns.getByRole("link", /^UI (saved|newer) draft/);
+  const workingRun = openRuns.getByRole("link", /^Demo · Working · Improve the project picker/);
+  const projectChoice = screen.getByLabel(/^Select project: /);
+  await openComposerWithFlow(app, screen, "Demo · Focused change");
+  await screen.getByLabel("Initial prompt", { exact: false }).fill(prompt);
+  const project = await projectChoice.getAttribute("aria-label");
+  await expect(draftRow).toHaveCount(0);
+  await workingRun.tap();
+  await expect(draftRow).toBeVisible();
+  await screen.getByRole("button", "New Run (+)").tap();
+  await screen.getByLabel("Initial prompt", { exact: false }).fill("UI newer draft");
+  await workingRun.tap();
+  await expect(journeyRows).toHaveText([/^UI newer draft/, /^UI saved draft/]);
+  await browser.reload();
+  await draftRow.tap();
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(prompt);
+  await expect(projectChoice).toHaveAttribute("aria-label", project!);
+  await expect(screen.getByLabel("Select Flow: Demo · Focused change")).toBeVisible();
+  await app.screenshot("draft-reopened-after-reload");
+
+  // Act
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("heading", "UI saved draft", { exact: true })).toBeVisible();
+  expect(await runsTitled(app.baseUrl, "UI saved draft")).toHaveLength(1);
+  await expect(draftRow).toHaveCount(0);
+  await expect(journeyRows).toHaveText([/^UI newer draft\s*Draft$/, /^UI saved draft/]);
+  await app.screenshot("draft-started-once");
+});
+
+test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openComposerWithFlow(app, screen, "Demo · Focused change");
+  await screen.getByLabel("Initial prompt", { exact: false }).fill("UI recovered lost Start");
+  await browser.route("**/api/runs", async (route) => {
+    if (route.request.method !== "POST") return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+  await expect(screen.getByRole("button", "Check same request", { exact: true })).toBeVisible();
+  await browser.unrouteAll();
+  await browser.reload();
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(
+    "UI recovered lost Start",
+  );
+  await app.screenshot("lost-start-pending-after-reload");
+
+  // Act
+  await screen.getByRole("button", "Check same request", { exact: true }).tap();
+
+  // Assert
+  await expect(
+    screen.getByRole("heading", "UI recovered lost Start", { exact: true }),
+  ).toBeVisible();
+  expect(await runsTitled(app.baseUrl, "UI recovered lost Start")).toHaveLength(1);
+  await browser.reload();
+  await expect(
+    screen.getByRole("heading", "UI recovered lost Start", { exact: true }),
+  ).toBeVisible();
+  await app.screenshot("lost-start-recovered");
+});
+
 test("reloading a waiting worker retains its exact question link", async ({
   app,
   screen,
@@ -105,7 +182,13 @@ test("reloading a waiting worker retains its exact question link", async ({
     "href",
     question.link!,
   );
-  expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(run.activations);
+  // Periodic reconciliation may re-observe the waiting worker between the two reads.
+  expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(
+    run.activations.map((activation) => ({
+      ...activation,
+      evidence: { ...activation.evidence, observedAt: expect.any(String) },
+    })),
+  );
   await app.screenshot("worker-question-after-reload");
 });
 

@@ -39,7 +39,8 @@ skill, reporting installation and launch support. It does not require a Run coor
 Accepted Start atomically creates the Run's Task, assigns the Run number, captures the
 snapshot and records each launch intent before contacting T3. An accepted request key is
 unique across the database: the same content returns the same Run; changed content
-conflicts. Flow input targets start independently and are not handoffs.
+conflicts. Content is the project, Flow, input, title and creation time. Rejected requests record nothing, and the
+accepted key is also the Run's navigation creation key. Flow input targets start independently and are not handoffs.
 
 A worker is bound from the launch acknowledgement, or from exactly one search candidate
 whose title matches and whose thread, workspace, provider, model, options and execution
@@ -183,7 +184,7 @@ Engine termination, a final report or an aggregate settlement alone is insuffici
 Before closure, native thread settlement is best effort and a fresh frontier is checked
 again. The confirmation must still match the observed Run generation, gate, authorization
 and owner; concurrent local reports or answers invalidate it. Only durable confirmation
-records Finished or Stopped and releases the Task slot. Closure evidence is immutable.
+records Finished or Stopped. Closure evidence is immutable.
 
 Bounded, unavailable or mismatched reads that miss any recorded execution, queue or native
 request keep the Run open. Reads across T3 threads are not an atomic cutoff: direct chat

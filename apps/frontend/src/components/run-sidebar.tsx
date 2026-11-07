@@ -1,6 +1,7 @@
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
+import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,17 +9,26 @@ import {
   CircleDashed,
   CirclePause,
   CircleStop,
+  FilePen,
   LoaderCircle,
   Moon,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
+  Trash2,
   Undo2,
   X,
 } from "lucide-react";
 import { api } from "../api.ts";
-import { runDraft } from "../run-draft.ts";
+import {
+  byCreation,
+  draftTitle,
+  runDraft,
+  useRunDraft,
+  useRunDrafts,
+  type SavedRunDraft,
+} from "../run-draft.ts";
 import { AppLink as Link } from "./app-link.tsx";
 import { useNavigate } from "@tanstack/react-router";
 import { usePolling } from "../use-polling.ts";
@@ -88,10 +98,35 @@ function useRunNavigation() {
   return { runs, setRuns, loaded, loadError };
 }
 
-export function RunSidebar({ path }: { path: string }) {
+function NewRunButton({ current }: { current: boolean }) {
   const { hint } = useShortcutPreferences();
   const navigate = useNavigate();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="New Run (+)"
+          aria-current={current ? "page" : undefined}
+          className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
+          onClick={() => {
+            runDraft.openFresh();
+            void navigate({ to: "/runs/new" });
+          }}
+        >
+          <Plus aria-hidden strokeWidth={1.5} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function RunSidebar({ path }: { path: string }) {
   const { runs, setRuns, loaded, loadError } = useRunNavigation();
+  const drafts = useRunDrafts();
+  const composition = useRunDraft();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [snoozedExpanded, setSnoozedExpanded] = useState(false);
@@ -110,34 +145,14 @@ export function RunSidebar({ path }: { path: string }) {
       setBusy(undefined);
     }
   };
-  const [renaming, setRenaming] = useState<RunNavigationEntry>();
+  const [renaming, setRenaming] = useState<RunNavigationEntry | SavedRunDraft>();
   const query = search.trim().toLocaleLowerCase();
-  const matches = runs.filter((run) => run.title.toLocaleLowerCase().includes(query));
-  const main = matches.filter((run) => !run.outcome && !run.presentation.snoozed);
-  const snoozed = matches.filter((run) => !run.outcome && run.presentation.snoozed);
-  const settled = matches.filter((run) => !!run.outcome);
+  const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
   return (
     <section aria-label="Run navigation" className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
         <RunSearchField value={search} onChange={setSearch} />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="New Run (+)"
-              aria-current={path === "/runs/new" ? "page" : undefined}
-              className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
-              onClick={() => {
-                runDraft.openFresh();
-                void navigate({ to: "/runs/new" });
-              }}
-            >
-              <Plus aria-hidden strokeWidth={1.5} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
-        </Tooltip>
+        <NewRunButton current={path === "/runs/new"} />
       </div>
       {(loadError || actionError) && (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
@@ -146,7 +161,8 @@ export function RunSidebar({ path }: { path: string }) {
       )}
       <RunGroups
         path={path}
-        main={main}
+        open={open}
+        composingDraftId={composition.draftId}
         settled={settled}
         snoozed={snoozed}
         snoozedExpanded={snoozedExpanded}
@@ -157,25 +173,62 @@ export function RunSidebar({ path }: { path: string }) {
         query={query}
         search={search.trim()}
         loaded={loaded}
-        total={runs.length}
-        matches={matches.length}
+        total={total}
+        matches={matches}
         onExpand={() => setExpanded(!expanded)}
         onRename={setRenaming}
       />
-      {renaming && (
-        <RenameRun
-          run={renaming}
+      {renaming && "presentation" in renaming && (
+        <RenameDialog
+          id={renaming.id}
+          title={renaming.title}
+          kind="Run"
+          description="Change the title of this execution."
           onClose={() => setRenaming(undefined)}
-          onSaved={(title) => {
+          save={async (title) => {
+            const result = await api.renameRun(renaming.id, { title });
             setRuns((rows) =>
-              rows.map((row) => (row.id === renaming.id ? { ...row, title } : row)),
+              rows.map((row) => (row.id === renaming.id ? { ...row, title: result.title } : row)),
             );
-            setRenaming(undefined);
+          }}
+        />
+      )}
+      {renaming && !("presentation" in renaming) && (
+        <RenameDialog
+          id={renaming.id}
+          title={draftTitle(renaming)}
+          kind="draft"
+          description="Name this draft. Prompt edits keep the title you choose."
+          onClose={() => setRenaming(undefined)}
+          save={async (title) => {
+            if (!runDraft.rename(renaming.id, title))
+              throw new Error(
+                "This draft was discarded or is waiting for its Start outcome, so it keeps its title.",
+              );
           }}
         />
       )}
     </section>
   );
+}
+
+/** Revealed drafts join the open Runs in creation order; title search covers both. */
+function navigationGroups(
+  runs: readonly RunNavigationEntry[],
+  drafts: readonly SavedRunDraft[],
+  query: string,
+) {
+  const titled = (title: string) => title.toLocaleLowerCase().includes(query);
+  const runMatches = runs.filter((run) => titled(run.title));
+  const draftMatches = drafts.filter((draft) => titled(draftTitle(draft)));
+  const main = runMatches.filter((run) => !run.outcome && !run.presentation.snoozed);
+  return {
+    open: [...main, ...draftMatches].toSorted(byCreation),
+    snoozed: runMatches.filter((run) => !run.outcome && run.presentation.snoozed),
+    settled: runMatches.filter((run) => !!run.outcome),
+    matches: runMatches.length + draftMatches.length,
+    total: runs.length + drafts.length,
+  };
 }
 
 /** Run title search with Escape and a clear button that keeps focus in the field. */
@@ -299,7 +352,8 @@ function RunGroup({
 
 function RunGroups({
   path,
-  main,
+  open,
+  composingDraftId,
   snoozed,
   settled,
   expanded,
@@ -316,7 +370,8 @@ function RunGroups({
   busy,
 }: {
   path: string;
-  main: readonly RunNavigationEntry[];
+  open: readonly (RunNavigationEntry | SavedRunDraft)[];
+  composingDraftId: string | undefined;
   snoozed: readonly RunNavigationEntry[];
   settled: readonly RunNavigationEntry[];
   expanded: boolean;
@@ -328,34 +383,44 @@ function RunGroups({
   matches: number;
   onExpand: () => void;
   onExpandSnoozed: () => void;
-  onRename: (run: RunNavigationEntry) => void;
+  onRename: (entry: RunNavigationEntry | SavedRunDraft) => void;
   onPresent: (run: RunNavigationEntry) => Promise<void>;
   busy: string | undefined;
 }) {
-  const rows = (entries: readonly RunNavigationEntry[]) =>
-    entries.map((run) => (
-      <RunRow
-        key={run.id}
-        run={run}
-        selected={path === `/runs/${run.id}`}
-        onRename={() => onRename(run)}
-        onPresent={() => {
-          void onPresent(run);
-        }}
-        busy={busy === run.id}
-      />
-    ));
-  const empty = navigationEmptyState(loaded, total, matches, main.length, search);
+  const row = (run: RunNavigationEntry) => (
+    <RunRow
+      key={run.id}
+      run={run}
+      selected={path === `/runs/${run.id}`}
+      onRename={() => onRename(run)}
+      onPresent={() => {
+        void onPresent(run);
+      }}
+      busy={busy === run.id}
+    />
+  );
+  const empty = navigationEmptyState(loaded, total, matches, open.length, search);
   // One scroll region (A06): open rows, then the groups pinned to the end of the list.
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <nav aria-label="Open Runs" className="flex flex-col gap-0.5 px-2">
         {query && (
           <p className="px-2 pt-1 pb-1.5 text-2xs leading-tight font-semibold tracking-section text-subtle-foreground uppercase">
-            Runs · {main.length}
+            Runs · {open.length}
           </p>
         )}
-        {rows(main)}
+        {open.map((entry) =>
+          "presentation" in entry ? (
+            row(entry)
+          ) : (
+            <DraftRow
+              key={entry.id}
+              draft={entry}
+              selected={path === "/runs/new" && entry.id === composingDraftId}
+              onRename={() => onRename(entry)}
+            />
+          ),
+        )}
         {empty && (
           <div
             role="status"
@@ -379,7 +444,7 @@ function RunGroups({
           onExpand={onExpandSnoozed}
           count={snoozed.length}
         >
-          {rows(snoozed)}
+          {snoozed.map(row)}
         </RunGroup>
         <RunGroup
           name="Settled"
@@ -388,9 +453,144 @@ function RunGroups({
           onExpand={onExpand}
           count={settled.length}
         >
-          {rows(settled)}
+          {settled.map(row)}
         </RunGroup>
       </div>
+    </div>
+  );
+}
+
+const rowClassName = (selected: boolean) =>
+  cn(
+    "group/row flex min-w-0 items-start rounded-md hover:bg-accent has-[a:focus-visible]:bg-accent has-[button[data-state=open]]:bg-accent",
+    selected && "bg-accent ring-1 ring-border-strong ring-inset",
+  );
+
+/** Row link handlers: Shift+F10, the context-menu key and right click open the menu; F2 renames. */
+function rowMenuKeys(openMenu: () => void, onRename: () => void) {
+  return {
+    onKeyDown(event: React.KeyboardEvent) {
+      if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
+        event.preventDefault();
+        openMenu();
+      } else if (event.key === "F2") {
+        event.preventDefault();
+        onRename();
+      }
+    },
+    onContextMenu(event: React.MouseEvent) {
+      event.preventDefault();
+      openMenu();
+    },
+  };
+}
+
+function RowMenu({
+  id,
+  title,
+  selected,
+  disabled,
+  open,
+  onOpenChange,
+  children,
+}: {
+  id: string;
+  title: string;
+  selected: boolean;
+  disabled?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          disabled={disabled}
+          id={`run-actions-${id}`}
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Actions for ${title}`}
+          className={cn(
+            "mt-1.5 mr-1 size-5 text-muted-foreground opacity-0 group-hover/row:opacity-100 group-has-[a:focus-visible]/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+            selected && "opacity-100",
+          )}
+        >
+          <MoreHorizontal aria-hidden strokeWidth={1.5} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-50 border-border-strong">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RenameItem({ onSelect, disabled }: { onSelect: () => void; disabled?: boolean }) {
+  return (
+    <DropdownMenuItem onSelect={onSelect} disabled={disabled} aria-keyshortcuts="F2">
+      <Pencil aria-hidden strokeWidth={1.5} />
+      Rename
+      <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
+        F2
+      </span>
+    </DropdownMenuItem>
+  );
+}
+
+/** A draft awaiting its Start outcome cannot be renamed or discarded; only the same check settles it. */
+function DraftRow({
+  draft,
+  selected,
+  onRename,
+}: {
+  draft: SavedRunDraft;
+  selected: boolean;
+  onRename: () => void;
+}) {
+  const title = draftTitle(draft);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pending = !!draft.submission;
+  const rename = () => {
+    if (!pending) onRename();
+  };
+  return (
+    <div className={rowClassName(selected)}>
+      <Link
+        {...rowMenuKeys(() => setMenuOpen(true), rename)}
+        to="/runs/new"
+        onClick={() => runDraft.openDraft(draft.id)}
+        aria-current={selected ? "page" : undefined}
+        className="flex min-w-0 flex-1 gap-2 rounded-md py-2 pl-2 text-foreground no-underline hover:no-underline"
+      >
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+          <FilePen strokeWidth={2} className="size-3.5 text-muted-foreground" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="block truncate text-sm leading-tight font-medium text-foreground">
+            {title}
+          </span>
+          <span className="text-2xs leading-tight font-medium text-subtle-foreground">Draft</span>
+        </span>
+      </Link>
+      <RowMenu
+        id={draft.id}
+        title={title}
+        selected={selected}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+      >
+        <RenameItem onSelect={rename} disabled={pending} />
+        <DropdownMenuItem disabled={pending} onSelect={() => runDraft.discard(draft.id)}>
+          <Trash2 aria-hidden strokeWidth={1.5} />
+          Discard
+        </DropdownMenuItem>
+        {pending && (
+          <p className="px-2 py-1.5 text-2xs text-muted-foreground">
+            Waiting for its Start outcome. Open it to check the same request.
+          </p>
+        )}
+      </RowMenu>
     </div>
   );
 }
@@ -420,26 +620,9 @@ function RunRow({
   return (
     <Tooltip open={titleTip} onOpenChange={showTitleTip}>
       <TooltipTrigger asChild>
-        <div
-          className={cn(
-            "group/row flex min-w-0 items-start rounded-md hover:bg-accent has-[a:focus-visible]:bg-accent has-[button[data-state=open]]:bg-accent",
-            selected && "bg-accent ring-1 ring-border-strong ring-inset",
-          )}
-        >
+        <div className={rowClassName(selected)}>
           <Link
-            onKeyDown={(event) => {
-              if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
-                event.preventDefault();
-                setMenuOpen(true);
-              } else if (event.key === "F2") {
-                event.preventDefault();
-                onRename();
-              }
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setMenuOpen(true);
-            }}
+            {...rowMenuKeys(() => setMenuOpen(true), onRename)}
             to="/runs/$runId"
             params={{ runId: run.id }}
             aria-current={selected ? "page" : undefined}
@@ -479,45 +662,26 @@ function RunRow({
               <span className="sr-only">, {state.label}</span>
             </span>
           </Link>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                disabled={busy}
-                id={`run-actions-${run.id}`}
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Actions for ${run.title}`}
-                className={cn(
-                  "mt-1.5 mr-1 size-5 text-muted-foreground opacity-0 group-hover/row:opacity-100 group-has-[a:focus-visible]/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
-                  selected && "opacity-100",
+          <RowMenu
+            id={run.id}
+            title={run.title}
+            selected={selected}
+            disabled={busy}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+          >
+            <RenameItem onSelect={onRename} />
+            {!run.outcome && (
+              <DropdownMenuItem onSelect={onPresent}>
+                {run.presentation.snoozed ? (
+                  <Undo2 aria-hidden strokeWidth={1.5} />
+                ) : (
+                  <Moon aria-hidden strokeWidth={1.5} />
                 )}
-              >
-                <MoreHorizontal aria-hidden strokeWidth={1.5} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-50 border-border-strong">
-              <DropdownMenuItem onSelect={onRename} aria-keyshortcuts="F2">
-                <Pencil aria-hidden strokeWidth={1.5} />
-                Rename
-                <span
-                  aria-hidden
-                  className="ml-auto text-2xs tracking-label text-subtle-foreground"
-                >
-                  F2
-                </span>
+                {run.presentation.snoozed ? "Restore" : "Snooze"}
               </DropdownMenuItem>
-              {!run.outcome && (
-                <DropdownMenuItem onSelect={onPresent}>
-                  {run.presentation.snoozed ? (
-                    <Undo2 aria-hidden strokeWidth={1.5} />
-                  ) : (
-                    <Moon aria-hidden strokeWidth={1.5} />
-                  )}
-                  {run.presentation.snoozed ? "Restore" : "Snooze"}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+          </RowMenu>
         </div>
       </TooltipTrigger>
       <TooltipContent
@@ -533,26 +697,32 @@ function RunRow({
   );
 }
 
-function RenameRun({
-  run,
+function RenameDialog({
+  id,
+  title: initialTitle,
+  kind,
+  description,
+  save,
   onClose,
-  onSaved,
 }: {
-  run: RunNavigationEntry;
+  id: string;
+  title: string;
+  kind: "Run" | "draft";
+  description: string;
+  save: (title: string) => Promise<void>;
   onClose: () => void;
-  onSaved: (title: string) => void;
 }) {
-  const [title, setTitle] = useState(run.title);
+  const [title, setTitle] = useState(initialTitle);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     try {
-      const result = await api.renameRun(run.id, { title });
-      onSaved(result.title);
+      await save(title);
+      onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not rename Run.");
+      setError(error instanceof Error ? error.message : `Could not rename ${kind}.`);
     } finally {
       setBusy(false);
     }
@@ -567,20 +737,20 @@ function RenameRun({
       <DialogContent
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          document.getElementById(`run-actions-${run.id}`)?.focus();
+          document.getElementById(`run-actions-${id}`)?.focus();
         }}
       >
         <form className="space-y-4" onSubmit={(event) => void submit(event)}>
           <DialogHeader>
-            <DialogTitle>Rename Run</DialogTitle>
-            <DialogDescription>Change the title of this execution.</DialogDescription>
+            <DialogTitle>Rename {kind}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
-          <Label htmlFor="rename-run-title">Run title</Label>
+          <Label htmlFor="rename-run-title">{kind === "Run" ? "Run title" : "Draft title"}</Label>
           <Input
             id="rename-run-title"
             autoFocus
             required
-            maxLength={500}
+            maxLength={TASK_TITLE_LIMIT}
             disabled={busy}
             value={title}
             onChange={(event) => setTitle(event.target.value)}

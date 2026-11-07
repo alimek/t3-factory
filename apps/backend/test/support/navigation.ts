@@ -19,6 +19,8 @@ export async function siblingRuns(c: TestContext) {
     ...p.input,
     requestId: "second",
     input: "Second title\nHidden body",
+    title: "Second title",
+    createdAt: "2026-11-07T08:01:00.000Z",
   });
   assert(second.ok);
   return { ...p, first: stopped.value, second: second.value };
