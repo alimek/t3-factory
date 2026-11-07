@@ -12,7 +12,12 @@ import type { RunnerDatabase } from "./runner-database.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { BlockRow, ReportRow, ReportRunRow, RunnerLifecycle } from "./runner-types.ts";
 import { fingerprint, rejected } from "./runner-utils.ts";
-import type { RuntimeBinding, RuntimeReply, RuntimeReport } from "./runtime-types.ts";
+import {
+  acceptedTransition,
+  type RuntimeBinding,
+  type RuntimeReply,
+  type RuntimeReport,
+} from "./runtime-types.ts";
 import { now } from "./time.ts";
 function reportRetry(
   sql: SqlClient.SqlClient,
@@ -37,7 +42,11 @@ function reportRoute(snapshot: RunSnapshot, blockId: string, report: RuntimeRepo
     (candidate) => candidate.name === report.exit || candidate.id === report.exit,
   );
   const exit = matches[0];
-  if (report.exit !== undefined && matches.length !== 1) return rejected("INVALID_EXIT");
+  if (report.exit !== undefined && matches.length !== 1)
+    return {
+      ok: false as const,
+      reply: { code: "INVALID_EXIT", allowedExits: block.exits.map((exit) => exit.name) },
+    };
   if (exit?.requiresFeedback && !report.message?.trim()) return rejected("FEEDBACK_REQUIRED");
   const recipients = exit
     ? snapshot.flow.graph.connections
@@ -115,13 +124,23 @@ export function openRunnerReports(
     return Effect.gen(function* () {
       const id = yield* newId,
         time = yield* now;
-      const reply = {
-        code: "ACCEPTED",
-        reportId: id,
-        blockId: binding.blockId,
-        executionId: binding.runId,
-        acceptedAt: time,
-      };
+      const state =
+        block.problem === "execution-failed"
+          ? block.state
+          : block.engine_status !== "completed"
+            ? "working"
+            : report.status;
+      const reply = acceptedTransition(
+        {
+          code: "ACCEPTED",
+          reportId: id,
+          blockId: binding.blockId,
+          executionId: binding.runId,
+          acceptedAt: time,
+        },
+        report.status,
+        state,
+      );
       const recipients = JSON.stringify(route.recipients);
       yield* sql`INSERT INTO runtime_reports(id,run_id,block_id,execution_id,report_key,fingerprint,status,exit_id,recipients_json,pending_message,acknowledgement_json,accepted_at,final_contract) VALUES(${id},${binding.factoryRunId},${binding.blockId},${binding.runId},${report.key},${content},${report.status},${route.exitId},${recipients},${route.recipients.length ? (report.message ?? "") : null},${JSON.stringify(reply)},${time},${report.status === "finished" ? 1 : 0})`;
       yield* sql`UPDATE runtime_reports SET activation_id=(SELECT activation_id AS id FROM run_executions WHERE run_id=${binding.factoryRunId} AND thread_id=${binding.threadId} AND execution_id=${binding.runId}),result_message=${report.message ?? null} WHERE id=${id}`;
@@ -136,12 +155,6 @@ export function openRunnerReports(
       });
       yield* sql`UPDATE run_executions SET report_status=${report.status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${binding.factoryRunId} AND thread_id=${binding.threadId} AND execution_id=${binding.runId}`;
       // An explicit report cannot erase an engine failure.
-      const state =
-        block.problem === "execution-failed"
-          ? block.state
-          : block.engine_status !== "completed"
-            ? "working"
-            : report.status;
       yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${binding.factoryRunId} AND block_id=${binding.blockId}`;
       yield* attention(
         sql,

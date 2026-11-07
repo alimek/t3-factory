@@ -1,9 +1,12 @@
 import type { AgentEnvironment, AgentProviderCapability } from "@t3-factory/contracts";
+import { LaunchRejected } from "../../src/adapters/t3.ts";
 import type {
   AuthorizationResumption,
   T3Adapter,
+  LaunchCandidate,
   T3Endpoint,
   T3EnvironmentTarget,
+  T3Target,
   T3Inspection,
   T3Project,
   T3ProjectTarget,
@@ -107,8 +110,75 @@ export class ControlledT3 implements T3Adapter {
       };
       this.launches.set(payload.clientRequestId, accepted);
     }
+    if (this.rejectLaunch) throw new LaunchRejected("T3 rejected the worker launch");
     if (this.loseLaunchReply) throw Error("Lost response after remote acceptance");
     return accepted.reference;
+  }
+  rejectLaunch = false;
+  discoverAvailable = true;
+  omitCandidateOptions = false;
+  readonly extraCandidates: LaunchCandidate[] = [];
+  async discoverLaunchCandidates(
+    target: T3Target,
+    _title: string,
+  ): ReturnType<T3Adapter["discoverLaunchCandidates"]> {
+    if (!this.discoverAvailable || !this.available || !this.authorized) return { available: false };
+    const candidates = [...this.launches.values()].map((launch) =>
+      this.launchCandidate(target, launch),
+    );
+    return { available: true, candidates: [...candidates, ...this.extraCandidates] };
+  }
+  async readThreadIdentity(
+    target: T3Target,
+    threadId: string,
+  ): ReturnType<T3Adapter["readThreadIdentity"]> {
+    const launch = [...this.launches.values()].find(
+      (entry) => entry.reference.threadId === threadId,
+    );
+    if (!launch || !this.available || !this.authorized) throw Error("Unknown thread");
+    const observation = await this.readExecution(target, threadId);
+    return {
+      threadId,
+      projectId: launch.payload.projectId,
+      parentThreadId: null,
+      workspaceRoot: target.workspaceRoot,
+      providerInstanceId: launch.payload.modelSelection.instanceId,
+      model: launch.payload.modelSelection.model,
+      executions: observation.recentRuns.map((run) => ({
+        runId: run.runId,
+        providerInstanceId: launch.payload.modelSelection.instanceId,
+        model: launch.payload.modelSelection.model,
+        status: run.status,
+      })),
+    };
+  }
+  private launchCandidate(
+    target: T3Target,
+    launch: {
+      payload: import("../../src/adapters/t3.ts").LaunchPayload;
+      reference: import("../../src/adapters/t3.ts").LaunchReference;
+    },
+  ): LaunchCandidate {
+    return {
+      title: launch.payload.title,
+      projectId: launch.payload.projectId,
+      parentThreadId: null,
+      workspaceRoot: target.workspaceRoot,
+      interactionMode: launch.payload.interactionMode,
+      providerInstanceId: launch.payload.modelSelection.instanceId,
+      model: launch.payload.modelSelection.model,
+      options: this.omitCandidateOptions ? null : { ...launch.payload.modelSelection.options },
+      threadId: launch.reference.threadId,
+      executions: [
+        {
+          runId: launch.reference.runId,
+          providerInstanceId: launch.payload.modelSelection.instanceId,
+          model: launch.payload.modelSelection.model,
+          status: launch.reference.status,
+        },
+      ],
+      link: launch.reference.link,
+    };
   }
   sendSupported = true;
   sendRetryScope: string | null = "controlled-durable-send-1";

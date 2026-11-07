@@ -111,10 +111,9 @@ a live `.runner.lock`. The desktop declares macOS 13 or later, which is not a te
 
 ### Current execution contract
 
-Runs use `run-worker-v1` with explicit MCP v2 and coordination instruction version 5: the Flow's Run conversation P native-delegates to one worker W per Block activation
-([Runner](runner.md)). This selects behavior; it is not a support badge. The persistent demo supplies simulated external evidence and
-never executes a model. Controlled public-operation and UI journeys cover local activations, independent branches, waiting, revisits, explicit report recovery, restart and owned-tree Stop.
-They do not establish live support. Idle-parent wake, integrated reporting and exit, descendant Stop and restart still need separately authorized live verification.
+Factory launches each Agent Block as its own top-level worker and installs the `$factory-block` skill ([Runner](runner.md)). This selects behavior; it is not a support badge. The persistent demo supplies simulated external evidence and
+never executes a model. Controlled public-operation and UI journeys cover local activations, independent branches, waiting, revisits, explicit report recovery, lost-launch search, restart and owned-tree Stop.
+They do not establish live provider or skill compatibility. A thread created before a definitive launch rejection, and live recovery while model options are unreadable, stay documented limits. Descendant Stop and restart still need separately authorized live verification.
 
 If a worker finishes during its parent's delegating turn without a verified result read or report, Factory keeps waiting for T3's native event; timestamps alone prove no delivery. If no
 report follows, the user can use **Request report** or ask in T3. That delivery-dependent case is unqualified.
@@ -161,19 +160,19 @@ unperformed checks are UNVERIFIED, never inferred.
 
 ### Qualification matrix
 
-Save an explicit local Flow Run coordinator and each Agent's worker settings (every option and permission mode). Select only cells that fit the budget and mark the rest UNVERIFIED.
+Save each Agent's worker settings (every option and permission mode). Do not configure a Run coordinator. Select only cells that fit the budget and mark the rest UNVERIFIED.
 
 | Case | Required observed result |
 | --- | --- |
 | Install and attribution | Settings installs Factory MCP into the disposable home, preserving unrelated entries; a fresh session shows the tool without bypassing native trust; a denied call yields no accepted result or downstream work; inherited or ambiguous metadata yields no accepted result |
-| P → native W | Exactly the issued native command with the selected settings; independently verified P/W identities; P holds no Block binding or report authority |
+| Factory → worker | One top-level worker per Block with the captured provider, model and options; title `Factory #<number> · <position> <name>`; no Run conversation and no second launch after a lost acknowledgement |
 | Report before completion | `ACCEPTED` arrives while the execution runs; an identical retry returns the same acknowledgement; a changed final is rejected; no chat message substitutes for the call |
 | Held release | The handoff stays held until exact successful completion and clear native requests; backend restarts while held and after release yield one recipient, no duplicate work and a preserved acknowledgement |
-| Human step | One Human occurrence, answered in Factory without a T3 thread; a correction revisits the same worker with a new activation and execution; a P reply cannot impersonate the Human |
+| Human step | One Human occurrence, answered in Factory without a T3 thread; a correction revisits the same worker with a new activation and execution; another thread's reply cannot impersonate the Human |
 | Waiting | A `waiting` report shows Needs input with the message; a reply in the worker thread resumes it and settles the attention; the reply turn reports again |
 | Missing report | Problem with no automatic repair; **Request report** once, a retried click and restart reuse the same request, the new linked execution reports and the original gap stays in history |
 | Parallel and independent release | Fan-out workers progress independently; a ready source releases despite unrelated busy work; its own queues, native requests and later unauthorized work hold it |
-| Full closure | Every owned P/W/descendant execution, queue, native request and uncertain operation is covered by fresh evidence; a completed thread or accepted result alone does not close |
+| Full closure | Every owned worker, descendant, queue, native request and uncertain launch is covered by fresh evidence; a completed thread or accepted result alone does not close |
 | Gate-first Stop | No new dispatch after Stop; the whole owned tree, queues and uncertain operations reconcile; an acknowledgement alone does not confirm Stopped; unavailable evidence stays uncertain |
 | Restart and lost acknowledgement | Original keys, payloads and options stay immutable; positive evidence or independently verified replay continuity resolves identity, otherwise uncertainty stays without new work |
 | Later direct chat | Closed history stays closed; later T3 activity neither reopens it nor delivers old work, and no assessment or repair is scheduled |

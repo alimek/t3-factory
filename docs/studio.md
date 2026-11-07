@@ -44,8 +44,8 @@ editing** or **Discard changes**; a retained Flow draft keeps its own guard.
 
 **Worker settings.** Studio exposes one **Worker** execution selection: choose the environment first, then provider, model and thinking options from live T3 capabilities
 (`orchestrator_capabilities`) for that environment, never a Factory allowlist. When T3 is unavailable saved settings stay visible as unknown or unavailable and nothing is substituted.
-Availability is separate from verified execution support. Omitted thinking-option lists use defaults; malformed lists are rejected. Runs use the Flow's separately saved Run coordinator to
-delegate to this worker ([Run execution](runner.md#current-execution-contract)); the API's `execution` field holds the worker settings and `settingsStatus` their availability.
+Availability is separate from verified execution support. Omitted thinking-option lists use defaults; malformed lists are rejected. Factory launches each Block worker with these saved settings
+([Run execution](runner.md#current-execution-contract)); the API's `execution` field holds the worker settings and `settingsStatus` their availability.
 
 **Saving.** Accepted saves increment the revision; a stale save returns a conflict and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
@@ -59,14 +59,6 @@ See [T3 integration](t3-integration.md) for authorization and capability reads.
 
 Open **Studio → Flows** (`/studio/flows`), choose **New Flow** and save a name; the editor opens at `/studio/flows/:flowId`. All Flows are global: project selection never
 filters or assigns them, and no connection or project is needed to author. Block and exit IDs, positions, graph, name and revision persist across restarts.
-
-### Run coordinator
-
-**Configure Run coordinator**, above the canvas and outside block configuration, selects the local conversation (P) that native-delegates to each Block's worker. Choose the
-connected local environment, provider, model and options from T3's catalog, then **Apply to draft** and **Save Flow**. Normal Start requires this saved choice, independent of the
-worker settings on Agent definitions. New Flows start **Not configured**, Factory never infers it from Agent settings and **Clear coordinator**
-removes it. Saved unavailable or offline choices stay visible with an explanation and are never substituted. Applying a choice joins the unsaved draft, navigation guard and
-revision-conflict reconciliation, and survives restarts and opening the database on another backend.
 
 ### Canvas and block configuration
 
@@ -122,7 +114,7 @@ Flow.
 ## Validation contract
 
 `PUT /api/flows/:id` and `POST /api/flows/validate` take
-`{name, expectedRevision, graph, coordinator?}`.
+`{name, expectedRevision, graph}`. Factory does not save a Run coordinator on the Flow.
 
 ### Graph shape
 
@@ -133,12 +125,6 @@ flag, and runtime consumers enforce non-empty feedback when it is true. No block
 #### Flow input block
 
 Every graph carries exactly one `flowInput`: a canvas `position` and the `targetBlockIds` of the Agent blocks it feeds (each at most once). It has no work execution state. Targets are distinct Agent blocks; Human targets are rejected. A new Flow has no Flow input targets; removing a block also removes its target reference. Reachability starts at every Flow input target. Initial activations are independent, are not Handoffs and receive the same prompt; a failed or uncertain activation creates its own Problem while other branches can continue.
-
-#### Coordinator settings
-
-`FlowDraft.coordinator` holds `AgentExecutionSettings | null`: create accepts an explicit choice (omission creates `null`), update omission preserves the saved value and
-explicit `null` clears it. Settings validation is shared with Agent definitions; live availability never prevents saving. Coordinator, name and graph share one revision check; no model is inferred. `coordinatorStatus` is a transient projection from current connected-local capabilities (missing capabilities mean unknown, missing
-catalog entries mean unavailable) and is stripped before snapshot capture. Start requires a saved coordinator in addition to graph and runtime readiness.
 
 ### Validation
 

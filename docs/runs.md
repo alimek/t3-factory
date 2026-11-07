@@ -16,11 +16,10 @@ Failures explain recovery and keep the draft.
   Tasks run concurrently in the shared project checkout.
 - **Snapshot.** The Run keeps immutable input, the full Flow graph and each referenced Agent's prompt, settings, revision and
   labels. Later edits affect only future Runs.
-- **Launch.** Factory launches one Run conversation (**P**) with the Flow's saved Run coordinator settings. P native-delegates
-  to one worker conversation (**W**) per Agent block visit, each using the Agent's saved provider instance, model and options,
-  but only through exact Factory-issued commands. Agents connected to the Flow input start in parallel and independently (no
-  Agent is told about the others). An unknown or conflicting native acceptance holds that worker with a visible problem and is
-  never replaced; the other workers keep going.
+- **Launch.** Factory launches one top-level worker per Agent block visit, using that Agent's saved provider, model and
+  options. Agents connected to the Flow input start in parallel and independently (no Agent is told about the others). There
+  is no Run conversation. A lost launch is searched for by its saved title and verified thread evidence; Factory does not
+  launch a second worker for it. A definitive rejection is an error. Other workers keep going.
   Factory works in the project root with no isolated worktrees, omits `runtimeMode` and leaves execution permissions to T3
   and its OAuth grant, so effective autonomy is not guaranteed by Factory. Use a repository you are willing to let agents
   change.
@@ -46,8 +45,8 @@ substituted.
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the snapshot and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
-- The top bar shows title, project, snapshot, block states, **Open Run conversation** (the saved primary link; while its
-  launch is pending or uncertain Factory says so and offers no replacement), **Stop Run** (open) or **Run again** (closed) and a
+- The top bar shows title, project, snapshot, block states, each worker's **Open worker in T3** link (a pending launch says
+  recovery is still searching and offers no replacement), **Stop Run** (open) or **Run again** (closed) and a
   ··· menu. The timeline starts collapsed; the context rail (attention, Stop/closure
   evidence, prompt, snapshot, project, work periods) opens from 1280 px wide.
 - Verified running worker work is ordinary progress; unavailable native evidence is a coordination Problem.
@@ -70,8 +69,8 @@ stale) and chips. Missing projects keep readable history; an unavailable open Ru
 - **Run again** opens the composer with the previous project and prompt editable and the Flow and Agent configuration fixed to
   the **source Run's snapshot**, even if definitions changed or the Flow was removed. It creates a new Run with fresh threads,
   never reopens history, resets files or freezes external skill files. Captured settings that are no longer available block Start
-  instead of being replaced. The current-Flow composer requires the Flow's saved Run coordinator and links to the Flow editor when
-  it is missing. **New Run** is the way to use current definitions.
+  instead of being replaced. The current-Flow composer requires a ready Flow and links to the Flow editor when it is not.
+  **New Run** is the way to use current definitions.
 - Run again stays on its source Task (blocked with a link while that Task has an open Run). Choosing a different project starts an
   independent matter; replacing an unsent prompt asks for confirmation. Confirmed Finished or Stopped closure frees the slot.
 
@@ -85,19 +84,18 @@ both. T3 reports only a count, so a replacement question with an unchanged count
 
 ## Reports and attention
 
-For new Runs a worker calls `factory_report` with a stable key and status `finished` (optionally a configured exit and message) or
-`waiting`. Correction exits need non-empty feedback. Factory verifies the call against the exact saved execution and returns
-acceptance only after saving it.
+For new Runs a worker calls `factory_update_block` with `to: "finished"` (a configured exit and a message when feedback is
+required) or `to: "waiting"` with a message and no exit. Factory verifies the call against the exact saved execution and returns
+acceptance only after saving it. The model does not supply a report key or a Run id.
 
 - An identical retry returns the original acknowledgement, also after renewed work, Stop or closure; changed content conflicts,
   even under a new key. A previous execution's report cannot finish renewed work.
 - Acceptance holds every outgoing handoff until fresh evidence shows source completion, empty queues and no native request. The
   timeline shows **handoff held**, then **handoff released** (dispatch reserved); the recipient's worker command or send acknowledgement is
   separate.
-- A first visit creates the block's worker through a Run conversation command; later visits queue independent turns on that
-  same worker, each as its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or
-  agreement on a revision. Partial fan-out survives restart; an unresolved worker command holds later arrivals to that block
-  only.
+- A first visit launches the block's own top-level worker. Later visits queue independent turns on that same worker, each as
+  its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
+  Partial fan-out survives restart; an unresolved launch holds later arrivals to that block only.
 - Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; completion
   without a report is a **missing-report Problem**; failure is a Problem. Problems persist across restart and renewed work; there
   is no automatic retry or dismiss-as-success.
@@ -105,7 +103,7 @@ acceptance only after saving it.
   and report. Eligibility is rechecked at acceptance (newer or queued work, native attention, changed authorization, accepted
   results, Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
   attention with a recovery reason and may allow closure; a failed one stays unresolved.
-- **Conversation waiting** (`explicit-mcp-v2`): an Agent that asked questions in chat reports `waiting` with a message. The block
+- **Conversation waiting**: an Agent that asked questions in chat reports `to: "waiting"` with a message. The block
   shows waiting, the Run shows **Needs input** with that message and **Open in T3**; reply in the worker's T3 thread. When Factory
   observes the reply turn the attention settles (`resumed-by`), the waiting report stays in history and the reply turn reports
   again. Factory never parses chat; a model may still omit or misuse the report. See

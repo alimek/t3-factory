@@ -13,46 +13,33 @@ export async function workerRecoveryTurn(
     ...sent,
     reference: { ...sent.reference, status: "running" },
   });
-  const prior = f.t3.executionObservations.get("thread-2")!;
-  f.t3.executionObservations.set("thread-2", {
+  const prior = f.t3.executionObservations.get("thread-1")!;
+  f.t3.executionObservations.set("thread-1", {
     ...prior,
     activeRunId: executionId,
     latestRunId: executionId,
     recentRuns: [...prior.recentRuns, { runId: executionId, status: "running", ordinal: 2 }],
   });
-  const child = f.t3.childEvidence.get("thread-2")!;
-  const recoveryChild = {
-    ...child,
-    target: { ...child.target, childRunId: executionId },
-    thread: { ...child.thread!, activeRunId: executionId, latestRunId: executionId },
-    execution: { ...child.execution!, runId: executionId, status: "running" },
-  };
-  f.t3.childEvidence.set(JSON.stringify(["thread-2", executionId]), recoveryChild);
-  bindThreadReportCaller(f.t3, f.project.projectId, "thread-2", executionId, "worker-report");
-  return { ...f, executionId, sent, recoveryChild };
+  bindThreadReportCaller(f.t3, f.project.projectId, "thread-1", executionId, "worker-report");
+  return { ...f, executionId, sent };
 }
 
 export async function completedWorkerRecovery(c: TestContext) {
   const f = await missingWorkerReport(c);
-  const { executionId, sent, recoveryChild } = await workerRecoveryTurn(f, f.missing.id);
+  const { executionId, sent } = await workerRecoveryTurn(f, f.missing.id);
   assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
   f.t3.sends.set(sent.payload.clientRequestId, {
     ...sent,
     reference: { ...sent.reference, status: "completed" },
   });
-  const active = f.t3.executionObservations.get("thread-2")!;
-  f.t3.executionObservations.set("thread-2", {
+  const active = f.t3.executionObservations.get("thread-1")!;
+  f.t3.executionObservations.set("thread-1", {
     ...active,
     activeRunId: null,
     recentRuns: active.recentRuns.map((r) => ({ ...r, status: "completed" })),
   });
-  f.t3.childEvidence.set(JSON.stringify(["thread-2", executionId]), {
-    ...recoveryChild,
-    thread: { ...recoveryChild.thread, activeRunId: null },
-    execution: { ...recoveryChild.execution, status: "completed" },
-  });
-  f.t3.delegatedSettlements.set(JSON.stringify(["thread-2", executionId]), {
-    threadId: "thread-2",
+  f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", executionId]), {
+    threadId: "thread-1",
     runId: executionId,
     state: "settled",
     status: "completed",

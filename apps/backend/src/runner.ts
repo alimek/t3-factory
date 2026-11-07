@@ -4,6 +4,7 @@ import { rootFrontier } from "./run-root-frontier.ts";
 
 import { openCoordinatorQuestionReplies } from "./coordinator-question-reply.ts";
 import { openRunControlRecovery } from "./run-control-recovery.ts";
+import { openBlockTools } from "./runner-block-tools.ts";
 import { openRuntimeContext } from "./runtime-context.ts";
 import { openRootCommands } from "./run-coordinator-commands.ts";
 import { openRunCoordinator } from "./run-coordinator.ts";
@@ -63,7 +64,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     fiber.addObserver(() => detached.delete(fiber));
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
-  const rootRecovery = openRunControlRecovery(database, t3, lifecycle);
+  const rootRecovery = openRunControlRecovery(database, t3);
   const { consumeRuntimeReport } = openRunnerReports(database, lifecycle, t3);
   const { observe } = openRunnerObservation(database, t3, bindings);
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkSnapshot, observe);
@@ -187,6 +188,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
     recoverRunCoordinator: rootRecovery.recoverRunCoordinator,
+    readFactoryTool: openBlockTools(database, t3, getRun, liveContextId),
     runtimeContext: openRuntimeContext(
       database,
       t3,
@@ -219,7 +221,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     getRun,
     listAttention,
     getRunCreationPolicy: () =>
-      Effect.succeed({ ok: true as const, value: { executionContract: "run-worker-v1" as const } }),
+      Effect.succeed({ ok: true as const, value: { ready: true as const } }),
     startRun: (input: unknown) => starts.withPermit(start(input)).pipe(Effect.uninterruptible),
     listRuns: (projectId: string) =>
       Effect.gen(function* () {

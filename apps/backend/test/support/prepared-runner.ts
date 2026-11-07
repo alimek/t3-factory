@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 
-/** A ready single-worker Flow with an explicit Run coordinator and installed Factory reporting. */
+/** A ready single-worker Flow with Factory reporting installed beside the bridge. */
 export async function prepared(c: TestContext) {
   const h = await factoryHarness(c);
   const root = join(dirname(h.databasePath), "neutral");
@@ -36,8 +36,7 @@ export async function prepared(c: TestContext) {
     },
   });
   assert(a.ok);
-  const coordinator = { ...a.value.execution, modelOptions: [{ id: "reasoning", value: "low" }] };
-  const draft = await f.createFlow({ name: "Single worker", coordinator });
+  const draft = await f.createFlow({ name: "Single worker" });
   assert(draft.ok);
   const flow = await f.updateFlow(draft.value.id, {
     name: draft.value.name,
@@ -77,7 +76,6 @@ export async function prepared(c: TestContext) {
     h,
     f,
     t3,
-    coordinator,
     project: p.value,
     agent: a.value,
     flow: flow.value,

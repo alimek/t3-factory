@@ -20,7 +20,7 @@ it("a source-installed report reaches its owning backend despite stale build out
       url: "/api/runtime/report",
       header: "1",
       body: {
-        arguments: { key: "isolated", status: "finished" },
+        arguments: { to: "finished" },
         metadata: { callId: "source-call" },
       },
     },

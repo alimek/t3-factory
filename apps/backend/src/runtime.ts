@@ -3,13 +3,13 @@ import * as Effect from "effect/Effect";
 import type { RuntimeActivity, T3Adapter } from "./adapters/t3.ts";
 import { readNativeRuntimeCall } from "./adapters/runtime-call.ts";
 import type { RuntimeBinding, RuntimeReply, RuntimeReport } from "./runtime-types.ts";
-const REPORT_FIELDS = ["key", "status", "exit", "message"];
+const UPDATE_FIELDS = ["to", "exit", "message"];
 const REPORT_TOOL_NAMES = [
-  "factory-runtime.factory_report",
-  "mcp__factory-runtime__factory_report",
+  "factory-runtime.factory_update_block",
+  "mcp__factory-runtime__factory_update_block",
 ];
 
-/** A factory_report call as forwarded by the stdio runtime, before caller correlation. */
+/** A factory_update_block call as forwarded by the stdio runtime, before caller correlation. */
 interface ReportCall {
   readonly report: RuntimeReport;
   /** The harness's native call ID (`callId` or `claudecode/toolUseId`). */
@@ -24,26 +24,30 @@ interface CallerMatch {
   readonly active: boolean;
 }
 
-function isReportArguments(args: unknown): args is RuntimeReport {
-  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+/** The model names only the transition. Factory stores that transition as the report identity. */
+function blockUpdate(args: unknown): RuntimeReport | undefined {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return undefined;
   const fields = args as Record<string, unknown>;
-  return (
-    Object.keys(fields).every((k) => REPORT_FIELDS.includes(k)) &&
-    typeof fields.key === "string" &&
-    fields.key.trim() !== "" &&
-    (fields.status === "waiting" || fields.status === "finished") &&
-    (!("exit" in fields) || typeof fields.exit === "string") &&
-    (!("message" in fields) || typeof fields.message === "string")
-  );
+  if (!Object.keys(fields).every((key) => UPDATE_FIELDS.includes(key))) return undefined;
+  if (fields.to !== "waiting" && fields.to !== "finished") return undefined;
+  if ("exit" in fields && typeof fields.exit !== "string") return undefined;
+  if ("message" in fields && typeof fields.message !== "string") return undefined;
+  return {
+    key: fields.to,
+    status: fields.to,
+    ...("exit" in fields ? { exit: fields.exit as string } : {}),
+    ...("message" in fields ? { message: fields.message as string } : {}),
+  };
 }
 
 function parseReportCall(input: unknown): ReportCall | RuntimeReply {
   if (!input || typeof input !== "object") return { code: "INVALID_ARGUMENT" };
   const envelope = input as Record<string, unknown>;
-  if (!isReportArguments(envelope.arguments)) return { code: "INVALID_ARGUMENT" };
+  const report = blockUpdate(envelope.arguments);
+  if (!report) return { code: "INVALID_ARGUMENT" };
   const callId = nativeCallId(envelope.metadata);
   if (callId === undefined) return { code: "UNBOUND_CALLER" };
-  return { report: envelope.arguments, callId, inheritedThread: envelope.inheritedThreadId };
+  return { report, callId, inheritedThread: envelope.inheritedThreadId };
 }
 
 /** Undefined when the item is the report tool; otherwise the rejection for a mismatched call. */
@@ -94,6 +98,7 @@ export function createRuntime(
   contextCall?: (
     input: unknown,
   ) => Effect.Effect<import("./runtime-types.ts").RuntimeContextReply, unknown>,
+  readTool?: (kind: "block" | "run", input: unknown) => Effect.Effect<RuntimeReply, unknown>,
 ) {
   const bindings = new Map<string, RuntimeBinding>();
 
@@ -230,6 +235,10 @@ export function createRuntime(
   return {
     context: (input: unknown) =>
       contextCall ? contextCall(input) : Effect.succeed({ code: "RUNNER_UNAVAILABLE" }),
+    block: (input: unknown) =>
+      readTool ? readTool("block", input) : Effect.succeed({ code: "RUNNER_UNAVAILABLE" }),
+    run: (input: unknown) =>
+      readTool ? readTool("run", input) : Effect.succeed({ code: "RUNNER_UNAVAILABLE" }),
     bind(binding: RuntimeBinding) {
       const previous = bindings.get(binding.threadId);
       // An unchanged observation must not invalidate another in-progress correlation.

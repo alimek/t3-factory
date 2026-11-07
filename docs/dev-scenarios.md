@@ -32,7 +32,7 @@ data ([testing policy](testing.md)). Native T3 links in simulated Runs are fixtu
 ## Scenario catalog
 
 The Atlas demo repository has three saved Agents (product engineer, code reviewer, accessibility reviewer), four ready Flows (focused change, build/review/decision, parallel review, parallel review from
-one prompt) and an incomplete release-checklist Flow, all with a saved Run coordinator except the draft. Seeded Run titles start with `Demo ·`.
+one prompt) and an incomplete release-checklist Flow. Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
 
 The Atlas project has no explicit icon. Open the Run composer and its project picker
 to check the frontend's local folder fallback when T3 supplies no icon. Supplied emoji,
@@ -44,7 +44,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Waiting for your review | Pending Human occurrence after implementation/review | Approve or request changes with feedback |
 | Applying your requested changes | Answered Human occurrence and renewed Agent work | Inspect correction handoff and work history |
 | Two reviewers working in parallel | Two active reviewer blocks | Inspect independent branches and Stop |
-| Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect one Run conversation, two independent native workers and Stop |
+| Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect two independent top-level workers and Stop |
 | Problem · Search checks failed | Failed execution with unresolved Problem | Inspect attention and failure evidence |
 | Finished · Clearer onboarding copy | Finished in Settled | Inspect permanent history and Run again |
 | Stopped · Earlier navigation experiment | Confirmed stopped in Settled | Inspect Stop evidence and Run again |
@@ -52,8 +52,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
 | Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form); native reply continuation is covered by controlled backend fixtures |
 
-Fresh or reset homes install a disposable Codex reporting target before creating Runs, so Settings shows Installed for it; real harness homes are never configured. Seed Runs use `run-worker-v1` with
-`explicit-mcp-v2`: the simulator consumes the exact Factory-issued commands and publishes decoded native acceptance, ancestry and execution evidence, workers report through the public runtime boundary,
+Fresh or reset homes install a disposable Codex reporting target and the `$factory-block` skill before creating Runs, so Settings shows Installed for it; real harness homes are never configured. Seed Runs launch top-level Block workers: the simulator publishes decoded native acceptance and execution evidence, workers report through `factory_update_block`,
 and separate terminal observations release Agent and Human handoffs. Questions stay in the worker, Human corrections revisit the same worker with a new activation, the Problem case is a failed worker
 execution and the Finished and Stopped cases confirm the owned tree. The simulator retains execution states; it generates no code changes and finishes no work on its own. Ordinary restarts retain current-contract demo state; the contract-removal migration deletes obsolete Runs. Use a deliberate reset to restore the complete scenario baseline after upgrading an older demo home.
 

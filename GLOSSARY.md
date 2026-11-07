@@ -46,13 +46,13 @@ MCP contract, attributed to its exact worker execution. It is immutable; accepta
 separate facts.
 
 **Run coordinator**:
-The Flow's explicit model selection for a Run's primary conversation, which has whole-Flow context and delegates directly to Block workers. Factory determines eligible work and transitions.
+Retired. Factory no longer saves a model selection for a primary Run conversation. A closed Run may still display one when it was stored before this contract.
 
 **Run conversation**:
-The primary T3 conversation for a Run, from which its Block conversations descend. Each Run creates it from the Flow's saved Run coordinator settings; it is not a synthetic Flow block.
+Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The conversation that performs the Agent’s task and receives the user’s replies. It reports directly to Factory. Its completed turn alone does not establish a completed Block.
+The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block`. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block.
 
 **Block activation**:
 One accepted task at a Flow block, spanning its exact worker Work periods until its result is completed.

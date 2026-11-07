@@ -12,13 +12,13 @@ export async function workerWithOwnedControl(
 ) {
   const f = await directWorker(c, true, "");
   const input = nativeDelegation().input;
-  const delegated = nativeChild(input, "execution-2", 3, f.project.projectId);
+  const delegated = nativeChild(input, "execution-1", 3, f.project.projectId);
   supplyChild(f.t3, delegated, f.project);
   const child = f.t3.childEvidence.get("thread-3")!;
   const completed = {
     ...child,
-    target: { ...child.target, parentThreadId: "thread-2" },
-    thread: { ...child.thread!, parentThreadId: "thread-2", activeRunId: null },
+    target: { ...child.target, parentThreadId: "thread-1" },
+    thread: { ...child.thread!, parentThreadId: "thread-1", activeRunId: null },
     execution: { ...child.execution!, status: "completed" },
   };
   f.t3.childEvidence.set("thread-3", completed);
@@ -29,17 +29,12 @@ export async function workerWithOwnedControl(
     recentRuns: [{ runId: "execution-3", status: "completed", ordinal: 1 }],
   });
   const descendant = { ...completed.thread, relationship: "t3-owned" as const };
-  f.t3.descendantEvidence.set("thread-2", {
-    parentThreadId: "thread-2",
+  f.t3.descendantEvidence.set("thread-1", {
+    parentThreadId: "thread-1",
     descendants: [descendant],
     scanComplete: true,
     coverage: "incomplete",
     problem: "Bounded fixture scan",
-  });
-  const root = f.t3.descendantEvidence.get("thread-1")!;
-  f.t3.descendantEvidence.set("thread-1", {
-    ...root,
-    descendants: [...root.descendants, descendant],
   });
   const control =
     kind === "cancel"
@@ -55,16 +50,16 @@ export async function workerWithOwnedControl(
         };
   const envelopes = [nativeChildEnvelope(input, 3), control];
   f.t3.delegationActivities.set(
-    "thread-2",
+    "thread-1",
     delegationActivity({
-      threadId: "thread-2",
+      threadId: "thread-1",
       projectId: f.project.projectId,
       complete: true,
       items: envelopes.map((envelope, index) => ({
         position: index,
         itemId: `turn-item:provider:codex:native-item:control-${index}`,
-        sourceThreadId: "thread-2",
-        runId: "execution-2",
+        sourceThreadId: "thread-1",
+        runId: "execution-1",
         visibility: "local",
         type: "dynamic_tool",
         status: "completed",
@@ -74,7 +69,7 @@ export async function workerWithOwnedControl(
       })),
     }),
   );
-  const finalActivity = f.t3.delegationActivities.get("thread-2")!;
+  const finalActivity = f.t3.delegationActivities.get("thread-1")!;
   if (firstObservation !== "completed") {
     const prior =
       firstObservation === "unresolved"
@@ -83,14 +78,14 @@ export async function workerWithOwnedControl(
             commands: finalActivity.commands!.map((command) => ({ ...command, references: [] })),
           }
         : delegationActivity({
-            threadId: "thread-2",
+            threadId: "thread-1",
             projectId: f.project.projectId,
             complete: true,
             items: envelopes.map((envelope, index) => ({
               position: index,
               itemId: `turn-item:provider:codex:native-item:control-${index}`,
-              sourceThreadId: "thread-2",
-              runId: "execution-2",
+              sourceThreadId: "thread-1",
+              runId: "execution-1",
               visibility: "local",
               type: "dynamic_tool",
               status: index === 1 ? "inProgress" : "completed",
@@ -101,9 +96,9 @@ export async function workerWithOwnedControl(
               ),
             })),
           });
-    f.t3.delegationActivities.set("thread-2", prior);
+    f.t3.delegationActivities.set("thread-1", prior);
     assert((await f.f.reconcileRuns()).ok);
-    f.t3.delegationActivities.set("thread-2", finalActivity);
+    f.t3.delegationActivities.set("thread-1", finalActivity);
   }
   assert((await f.f.reconcileRuns()).ok);
   return f;
@@ -132,15 +127,15 @@ export async function reportedControlledWorker(
 export async function workerWithUnknownControl(c: TestContext) {
   const f = await workerWithOwnedControl(c);
   const extra = delegationActivity({
-    threadId: "thread-2",
+    threadId: "thread-1",
     projectId: f.project.projectId,
     complete: true,
     items: [
       {
         position: 3,
         itemId: "turn-item:provider:codex:native-item:foreign-control",
-        sourceThreadId: "thread-2",
-        runId: "execution-2",
+        sourceThreadId: "thread-1",
+        runId: "execution-1",
         visibility: "local",
         type: "dynamic_tool",
         status: "completed",
@@ -154,8 +149,8 @@ export async function workerWithUnknownControl(c: TestContext) {
       },
     ],
   });
-  const activity = f.t3.delegationActivities.get("thread-2")!;
-  f.t3.delegationActivities.set("thread-2", {
+  const activity = f.t3.delegationActivities.get("thread-1")!;
+  f.t3.delegationActivities.set("thread-1", {
     ...activity,
     commands: [...activity.commands!, ...extra.commands!],
   });
@@ -165,9 +160,9 @@ export async function workerWithUnknownControl(c: TestContext) {
 export async function workerWithLateControl(c: TestContext) {
   const f = await workerWithOwnedControl(c);
   assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
-  const activity = f.t3.delegationActivities.get("thread-2")!;
+  const activity = f.t3.delegationActivities.get("thread-1")!;
   const original = activity.commands![0]!;
-  f.t3.delegationActivities.set("thread-2", {
+  f.t3.delegationActivities.set("thread-1", {
     ...activity,
     commands: [
       ...activity.commands!,

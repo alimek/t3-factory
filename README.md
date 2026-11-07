@@ -21,8 +21,8 @@ workflow, routes work and records its history.
 
 - **Design Flows visually.** Connect Agent and Human blocks with named exits,
   correction loops and independent parallel branches. Save unfinished drafts and check readiness.
-- **Reuse Agents across projects.** Save prompts and worker settings once. Choose the
-  Flow's Run coordinator separately, using the environment, provider and model available in T3.
+- **Reuse Agents across projects.** Save prompts and worker settings once. Factory launches
+  each Block with that Agent's provider and model.
 - **Keep decisions with people.** Answer Human steps in Factory and open T3 for native
   agent questions or permissions. See which Runs need input or have a Problem.
 - **Follow durable execution.** Inspect the execution canvas, handoffs and timeline;
@@ -38,8 +38,8 @@ and exits; Factory does not impose a fixed development process.
 
 **Early development.** Source installation and the simulated demo are the best starting
 points. Controlled tests cover Factory behavior; live T3 compatibility depends on the
-specific build, harness and permissions. The current Run coordinator/worker lifecycle
-still needs further live qualification. See the [support limits](docs/installation.md#compatibility-and-support-limits).
+specific build, harness and permissions. Factory-launched workers and the `$factory-block`
+skill still need further live qualification. See the [support limits](docs/installation.md#compatibility-and-support-limits).
 
 The macOS Apple Silicon desktop app can be built from source. A developer package is
 not a signed, notarized public release; see [Release](docs/release.md).
@@ -106,8 +106,7 @@ T3 runs separately. Factory data is stored in `~/.t3-factory`, outside the check
 3. In **Settings → Agent reporting**, install Factory MCP for the supported local
    harness homes you intend to use. Start fresh harness sessions when required.
 4. In **Studio → Agents**, create reusable prompts and choose each Agent's worker settings.
-5. In **Studio → Flows**, connect blocks and exits, configure the **Run coordinator**,
-   save the Flow and check readiness.
+5. In **Studio → Flows**, connect blocks and exits, save the Flow and check readiness.
 6. Open **New Run**, choose the project and Flow, and enter your prompt.
 
 Start checks connection, project, settings and reporting readiness. It preserves

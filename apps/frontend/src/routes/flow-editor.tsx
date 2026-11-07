@@ -1,10 +1,8 @@
-import { FlowCoordinatorConfiguration } from "../components/flow-coordinator-configuration.tsx";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type {
   AgentDefinition,
-  AgentExecutionSettings,
   FlowBlock,
   FlowDraft,
   FlowGraph,
@@ -66,7 +64,6 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     flowInput: { position: { x: 40, y: 50 }, targetBlockIds: [] },
   });
   const [name, setName] = useState("");
-  const [coordinator, setCoordinator] = useState<AgentExecutionSettings | null>(null);
   const [dirty, setDirty] = useState(false);
   useEffect(() => reportDraft(id, dirty), [id, dirty, reportDraft]);
   const [busy, setBusy] = useState(false);
@@ -79,7 +76,6 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setSaved(flow);
     setGraph(flow.graph);
     setName(flow.name);
-    setCoordinator(flow.coordinator);
     setReadiness(flow.readiness);
     setDirty(false);
     setLatest(null);
@@ -117,9 +113,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setError("");
     setIssues([]);
     try {
-      load(
-        await api.updateFlow(id, { name, graph, coordinator, expectedRevision: saved.revision }),
-      );
+      load(await api.updateFlow(id, { name, graph, expectedRevision: saved.revision }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save Flow.");
       if (e instanceof ApiError) setIssues(e.detail.issues);
@@ -134,9 +128,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setError("");
     setIssues([]);
     try {
-      setReadiness(
-        await api.validateFlow({ name, graph, coordinator, expectedRevision: saved.revision }),
-      );
+      setReadiness(await api.validateFlow({ name, graph, expectedRevision: saved.revision }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not check Flow.");
       if (e instanceof ApiError) setIssues(e.detail.issues);
@@ -161,12 +153,6 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
   }
   return {
     saved,
-    coordinator,
-    configureCoordinator: (next: AgentExecutionSettings | null) => {
-      setCoordinator(next);
-      setDirty(true);
-      setReadiness(null);
-    },
     graph,
     name,
     dirty,
@@ -424,11 +410,6 @@ export function FlowDetail({
         revision={saved.revision}
         flowId={id}
         onClearDirty={() => reportDraft(id, false)}
-      />
-      <FlowCoordinatorConfiguration
-        value={draft.coordinator}
-        busy={draft.busy}
-        onChange={draft.configureCoordinator}
       />
       <DraftProblems draft={draft} onSelect={select} />
       <div inert={draft.busy} className="flex min-h-0 flex-1">
@@ -725,7 +706,6 @@ function DraftProblems({
         <ConflictPanel
           name={draft.name}
           graph={draft.graph}
-          coordinator={draft.coordinator}
           latest={draft.latest}
           onCompare={draft.compareLatest}
           onTakeLatest={draft.takeLatest}
@@ -811,7 +791,6 @@ function BlockPanel({
 }
 
 function ConflictPanel({
-  coordinator,
   name,
   graph,
   latest,
@@ -820,7 +799,6 @@ function ConflictPanel({
   onKeepLocal,
 }: {
   name: string;
-  coordinator: AgentExecutionSettings | null;
   graph: FlowGraph;
   latest: FlowDraft | null;
   onCompare: () => Promise<void>;
@@ -847,17 +825,13 @@ function ConflictPanel({
             <div className="min-w-0">
               <h3 className="mb-1.5 text-base font-semibold">Your local draft</h3>
               <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify({ name, coordinator, graph }, null, 2)}
+                {JSON.stringify({ name, graph }, null, 2)}
               </pre>
             </div>
             <div className="min-w-0">
               <h3 className="mb-1.5 text-base font-semibold">Saved revision {latest.revision}</h3>
               <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify(
-                  { name: latest.name, coordinator: latest.coordinator, graph: latest.graph },
-                  null,
-                  2,
-                )}
+                {JSON.stringify({ name: latest.name, graph: latest.graph }, null, 2)}
               </pre>
             </div>
           </div>

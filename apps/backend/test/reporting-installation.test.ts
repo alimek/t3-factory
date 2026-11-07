@@ -181,11 +181,12 @@ it("the installed portable bridge exposes report and scoped context over stdio",
 
   // Assert
   expect(response.result.tools.map((tool: { name: string }) => tool.name)).toStrictEqual([
-    "factory_report",
-    "factory_context",
+    "factory_update_block",
+    "factory_get_block",
+    "factory_get_run",
   ]);
-  expect(response.result.tools[0].name).toBe("factory_report");
-  expect(response.result.tools[0].inputSchema.required).toStrictEqual(["key", "status"]);
+  expect(response.result.tools[0].name).toBe("factory_update_block");
+  expect(response.result.tools[0].inputSchema.required).toStrictEqual(["to"]);
 });
 
 const bundled = (executable = process.execPath) => ({ kind: "bundled" as const, executable });
@@ -203,8 +204,9 @@ it("a desktop installation's reporting bridge runs without Node on the harness P
 
   // Assert
   expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toStrictEqual([
-    "factory_report",
-    "factory_context",
+    "factory_update_block",
+    "factory_get_block",
+    "factory_get_run",
   ]);
 });
 
@@ -228,4 +230,65 @@ it("repairing for the desktop runtime replaces only Factory's own Codex entry", 
   expect(saved).toMatch(/^# keep this comment\nmodel = "sample"\n/);
   expect(saved.match(/\[mcp_servers\.factory-runtime\]/g)).toHaveLength(1);
   expect(saved).toMatch(/command = ".*\/reporting\/factory-runtime-node"/);
+});
+
+it("Repair installs the Factory Block skill for Claude next to the bridge", async (context) => {
+  // Arrange
+  const { home, harness } = await installedReportingFixture(context);
+  const harnessSkill = join(home, ".claude", "skills", "factory-block", "SKILL.md");
+  const canonical = join(harness.processHome, "reporting", "skills", "factory-block", "SKILL.md");
+
+  // Act
+  const installed = await readFile(harnessSkill, "utf8");
+
+  // Assert
+  expect(installed).toBe(await readFile(canonical, "utf8"));
+  expect(installed).toContain("name: factory-block");
+  expect(installed).toContain("factory_get_block");
+  expect(installed).toContain("retryAfterMs");
+  expect(installed).toContain("BINDING_PENDING");
+  expect(installed).toContain('to: "waiting"');
+  expect(installed).toContain('to: "finished"');
+  expect(installed).toContain("allowedTransitions");
+  expect(installed).toContain("allowedExits");
+  expect(installed).toContain("original acknowledgement");
+  expect(installed).toContain("Subagents never call Factory tools");
+  expect(installed).toContain("factory_get_run");
+  expect(installed).toContain("$factory-block");
+});
+
+it("Repair installs the Factory Block skill beside a Codex config", async (context) => {
+  // Arrange
+  const { factory, home } = await reportingFixture(context, "codex");
+  const targets = await factory.getReportingInstallations();
+  assert(targets.ok);
+
+  // Act
+  const result = await factory.installReporting({ targetId: targets.value[0]!.id });
+
+  // Assert
+  assert(result.ok);
+  const installed = await readFile(join(home, "skills", "factory-block", "SKILL.md"), "utf8");
+  expect(installed).toContain("name: factory-block");
+  expect(installed).toContain("$factory-block");
+});
+
+it("a missing Factory Block skill stays repairable and Repair rewrites it", async (context) => {
+  // Arrange
+  const fixture = await installedReportingFixture(context);
+  const skill = join(fixture.home, ".claude", "skills", "factory-block", "SKILL.md");
+  await rm(skill);
+  const before = await fixture.factory.getReportingInstallations();
+  assert(before.ok);
+  expect(before.value[0]!.status).toBe("needs-attention");
+  expect(before.value[0]!.actions.repair).toBe(true);
+  expect(before.value[0]!.message).toMatch(/Factory Block skill/);
+
+  // Act
+  const result = await fixture.factory.installReporting({ targetId: fixture.targetId });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.status).toBe("installed");
+  expect(await readFile(skill, "utf8")).toContain("name: factory-block");
 });

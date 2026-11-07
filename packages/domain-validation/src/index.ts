@@ -134,15 +134,7 @@ export function validateCreateFlow(input: unknown): Result<CreateFlowInput> {
       },
     };
   }
-  const coordinator = parseCoordinator(input);
-  if (!coordinator.ok) return coordinator;
-  return {
-    ok: true,
-    value: {
-      name: name.trim(),
-      ...(coordinator.value !== undefined ? { coordinator: coordinator.value } : {}),
-    },
-  };
+  return { ok: true, value: { name: name.trim() } };
 }
 
 function agentNameIssue(): ValidationIssue {
@@ -266,24 +258,6 @@ export function validateExecutionSettings(execution: unknown): Result<AgentExecu
       providerInstanceId: providerInstanceId.value,
       modelId: modelId.value,
       modelOptions: modelOptions.value,
-    },
-  };
-}
-
-function parseCoordinator(input: unknown): Result<AgentExecutionSettings | null | undefined> {
-  if (typeof input !== "object" || input === null || !("coordinator" in input))
-    return { ok: true, value: undefined };
-  if (input.coordinator === null) return { ok: true, value: null };
-  const parsed = parseExecution({ execution: input.coordinator });
-  if (parsed.ok) return parsed;
-  return {
-    ok: false,
-    error: {
-      ...parsed.error,
-      issues: parsed.error.issues.map((issue) => ({
-        ...issue,
-        path: issue.path.replace(/^execution/, "coordinator"),
-      })),
     },
   };
 }

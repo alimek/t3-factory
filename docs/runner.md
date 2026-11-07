@@ -9,45 +9,53 @@ behavior is in [Runs](runs.md); live-support limits are in
 
 ## Current execution contract
 
-Every Run uses `run-worker-v1`: explicit MCP reporting (`explicit-mcp-v2`) and coordination
-instruction version 5. It is the only execution contract;
-migration `049` deleted Runs captured under earlier contracts or reporting protocols.
+Factory launches each Agent Block's first visit as its own top-level T3 worker. There is
+no Run conversation and no native-delegation turn that copies the Agent. Migration `050`
+deletes open Runs captured under the replaced contract. Closed Runs stay readable history.
+Snapshots no longer store an execution contract, coordination instruction version or
+reporting protocol.
 
-- One **Run conversation** (P), configured by the Flow's explicit Run coordinator
-  setting, receives exact Factory-issued commands and native-delegates directly to one
-  **worker** (W) per eligible Block activation. Agent definitions select only the
-  worker's provider, model and options.
-- Each activation binds its exact worker and executions. W receives the Agent prompt,
-  activation input and reporting instructions, asks questions in its own conversation
-  and reports its own result. P never reports a Block result or decides a Human step.
-- Factory alone owns routing, handoff release, Human occurrences and closure. A completed
-  model turn is not a business result. Unknown native acceptance never authorizes
-  replacement work. Stop closes dispatch first and requires fresh evidence across the
-  whole owned tree and queues.
+- Each Flow-input Agent starts independently. The worker uses that Agent's captured
+  provider, model and options, the project-root workspace, and the runtime mode from T3
+  and project defaults. Nothing is inherited from another thread. Two Blocks that share
+  one Agent still get separate workers.
+- The saved launch title is `Factory #<number> · <block position> <Block name>`, sliced to
+  200 characters. The number is a durable Run sequence. The position is the 1-based index
+  in the captured block list. Later renames do not change the title recovery searches for.
+- The first message starts with `$factory-block`. The worker calls `factory_get_block`,
+  then `factory_update_block`. `factory_get_run` is read-only and grants no routing
+  authority. Subagents do not call Factory tools.
+- Factory alone owns routing, handoff release, Human occurrences, Stop and closure. A
+  completed model turn is not a business result. A definitive launch rejection is an
+  error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
-  Waiting and reply turns stay within their activation.
+  Waiting stays on that worker until a positively attributed user reply in the same thread
+  resumes it.
 
 ## Start and delivery guarantees
 
-Start checks the connection, project, graph, saved Agent and Run coordinator settings,
-reporting installation and launch support. Accepted Start atomically claims the Task slot,
-captures the snapshot and records the intended work before contacting T3. An accepted
-request key is unique across the database: the same content returns the same Run; changed
-content conflicts. Flow input targets start independently and are not handoffs.
+Start checks the connection, project, graph, saved Agent settings, the `$factory-block`
+skill, reporting installation and launch support. It does not require a Run coordinator.
+Accepted Start atomically claims the Task slot, assigns the Run number, captures the
+snapshot and records each launch intent before contacting T3. An accepted request key is
+unique across the database: the same content returns the same Run; changed content
+conflicts. Flow input targets start independently and are not handoffs.
 
-A worker is bound only when fresh native evidence proves the exact issued command,
-captured selection, parentage, workspace and inherited permission mode. Unknown or
-conflicting acceptance holds that command; it never authorizes replacement work.
+A worker is bound from the launch acknowledgement, or from exactly one search candidate
+whose title matches and whose thread, workspace, provider, model, options and execution
+match the saved launch. Title alone is not ownership. An empty, delayed or ambiguous
+search never causes another launch or a guessed binding. An unresolved launch stays
+visible, blocks closure and release, and resumes after restart.
 
 Delivery can be pending, reserved, acknowledged or uncertain. A crash or lost response
 after reservation leaves uncertainty, not a fresh attempt. An acknowledgement proves
 acceptance only, not execution or completion. Later arrivals to the same Block wait for
-its unresolved command; unrelated branches may continue.
+its unresolved launch; unrelated branches may continue.
 
 Run again resolves the source snapshot on the backend, validates its captured settings
 against current availability and uses the same Task-slot and request-key rules. It never
-trusts a client-supplied replacement graph or infers a missing coordinator. The composer
-requires the server's creation policy before Start.
+trusts a client-supplied replacement graph. The composer requires the server's creation
+policy before Start.
 
 ## Ownership and restart
 
@@ -59,12 +67,18 @@ or Linux; network filesystems and remote backend ownership are unsupported.
 Startup reconciles every open Run before dispatching. Local changes serialize per Run,
 and no SQL transaction spans T3 I/O. Shutdown releases ownership without requesting Stop.
 
-An uncertain launch or send may replay only with the identical saved body, key, target
-and authorization context, plus independent operation-specific proof of server continuity
-and key retention. The live adapter supplies no such proof by default. A matching version
-or OAuth grant is insufficient; launch proof does not authorize send replay. Without proof,
-the operation and Task slot remain unresolved with a visible reason. Acknowledged threads
-are observed, never relaunched. There is no Resume or fresh-attempt escape hatch.
+An uncertain worker launch is never replayed, including with the same key. While Factory
+is running, recovery searches the same T3 environment and project for the saved title,
+then binds only a uniquely verified thread and its exact execution. The first search is
+immediate; each completed search that does not bind waits longer, from 1 second doubling
+up to 60 seconds. Empty, delayed, ambiguous or incomplete evidence stays unresolved.
+Model options must be readable; otherwise live recovery can remain pending. A matching
+version or OAuth grant is not ownership. A definitive T3 rejection is an error and is
+not searched back into service. A thread T3 created before that rejection is an accepted
+limit. Uncertain queue sends still need the identical saved body, key, target and
+authorization context plus independent retention proof. The live adapter supplies no such
+proof by default. Acknowledged threads are observed, never relaunched. There is no Resume
+or fresh-attempt escape hatch.
 
 ## Report acceptance
 
@@ -208,20 +222,19 @@ safety and activation-scoped worker reporting are separate obligations.
 - Closure needs every retained exact execution, complete bounded descendant coverage,
   empty queues, no native requests and settled aggregate work. Each sweep may discover
   at most 100 new members; unread members remain obligations.
-- A failed, cancelled or interrupted owned control execution blocks successful closure
-  and new worker commands until explicit **Recover Run control** succeeds. Recovery needs
-  that failed execution to be the latest, an idle primary conversation, empty queues,
-  no native requests and complete native evidence. It queues one continuation carrying
-  the next unissued command or no new Block work. Later arbitrary chat is not recovery;
-  a rolled-back control execution requires Stop.
+- Factory does not recover a Run conversation or issue root commands. Historical closed
+  Runs may still display a stored conversation. New Runs have none. A failed worker
+  execution stays a Problem; Factory does not launch a replacement worker for it.
 - Unknown peer membership or inaccessible remote work keeps Stop uncertain. Peer work
   never becomes local execution membership merely because it was discovered.
 - A worker final needs fresh provider/model proof against captured Agent settings and
   freezes its activation-scoped native frontier. Unverified proof is
   `ASSESSMENT_UNVERIFIED`. Later work raises attention and holds release without changing
   the accepted final result.
-- `factory_context` is read-only and grants no Block or Human authority, including after
-  Stop or closure.
+- `factory_get_block` and `factory_get_run` are read-only. `factory_get_run` grants no
+  routing authority. Before the worker is bound, a proven in-flight launch returns
+  `BINDING_PENDING` with `retryAfterMs`; that wait grants no authority. A title match,
+  subagent or unseen call id does not.
 
 ## Manual missing-report recovery
 

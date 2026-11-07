@@ -21,8 +21,7 @@ async function waitingForReview(context: SeedContext, flowId: string, correction
     "Improve Atlas search when there are no results. Keep the search query visible and offer a clear action to reset filters.",
   );
   run = await report(context, run, "worker", {
-    key: `${key}:implementation`,
-    status: "finished",
+    to: "finished",
     exit: "Ready for review",
     message:
       "The empty state now preserves the query and offers Reset filters. Ready for a review.",
@@ -32,8 +31,7 @@ async function waitingForReview(context: SeedContext, flowId: string, correction
     detail.blocks.some((block) => block.blockId === "reviewer" && block.threadId !== null),
   );
   run = await report(context, run, "reviewer", {
-    key: `${key}:review`,
-    status: "finished",
+    to: "finished",
     exit: "Ready for your decision",
     message:
       "The search behavior looks good. Please review the empty-state wording and decide whether the reset action is clear enough.",
@@ -81,8 +79,7 @@ async function settledScenarios(context: SeedContext, flowId: string) {
     "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
   );
   finished = await report(context, finished, "worker", {
-    key: "finished:done",
-    status: "finished",
+    to: "finished",
     exit: "Done",
     message: "Updated the welcome text and checked that every action has a descriptive label.",
   });
@@ -142,8 +139,7 @@ async function conversationWaitingScenario(context: SeedContext, flowId: string)
     "Talk through the empty-state wording for Atlas search with me before changing anything.",
   );
   run = await report(context, run, "worker", {
-    key: "conversation-waiting:questions",
-    status: "waiting",
+    to: "waiting",
     message:
       "I asked three questions in the T3 thread: preferred tone, whether to mention filters, and the button label. Reply there so I can continue.",
   });
@@ -171,8 +167,7 @@ async function parallelScenario(context: SeedContext, flowId: string) {
     "Review the new project picker for code quality and keyboard accessibility. Each reviewer should report independently.",
   );
   run = await report(context, run, "worker", {
-    key: "parallel:review",
-    status: "finished",
+    to: "finished",
     exit: "Ready for review",
     message:
       "The picker is ready. Please review both implementation quality and keyboard navigation.",

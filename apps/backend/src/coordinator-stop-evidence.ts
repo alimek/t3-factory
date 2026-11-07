@@ -59,7 +59,9 @@ export async function collectStopMembers(
       (c) =>
         !rejected.has(c.threadId) &&
         !members.some((m) => m.threadId === c.threadId) &&
-        (c.parentThreadId === null || members.some((m) => m.threadId === c.parentThreadId)),
+        (c.parentThreadId === null ||
+          c.parentThreadId === c.threadId ||
+          members.some((m) => m.threadId === c.parentThreadId)),
     );
     if (!next) break;
     if (
@@ -116,6 +118,7 @@ export async function collectStopMembers(
   };
 }
 async function trustedMember(t3: T3Adapter, run: RunRow, member: StopMember, retain: RetainLocal) {
+  if (member.parentThreadId === member.threadId) return factoryOwnedMember(t3, run, member, retain);
   if (member.parentThreadId === null) return false;
   const child = await t3
     .readChildEvidence(runTarget(run), {
@@ -158,6 +161,34 @@ export async function stopAggregate(
     isTerminal(aggregate.status ?? "")
   );
 }
+/** Factory launched this worker. Its self marker is not T3 parentage, and a failed read is not idle. */
+async function factoryOwnedMember(
+  t3: T3Adapter,
+  run: RunRow,
+  member: StopMember,
+  retain: RetainLocal,
+) {
+  try {
+    const identity = await t3.readThreadIdentity(runTarget(run), member.threadId);
+    if (
+      identity.threadId !== member.threadId ||
+      identity.projectId !== run.t3_project_id ||
+      identity.parentThreadId !== null ||
+      identity.workspaceRoot !== run.workspace_root
+    )
+      return false;
+    const observation = await t3.readExecution(runTarget(run), member.threadId);
+    await retain({
+      threadId: member.threadId,
+      parentThreadId: member.parentThreadId,
+      executionIds: [observation.activeRunId, observation.latestRunId],
+    });
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 /** Persist parents first even when offset pages or native outputs arrive child-first. */
 function orderedCandidates(candidates: Map<string, StopMember>) {
   const pending = new Map(candidates);

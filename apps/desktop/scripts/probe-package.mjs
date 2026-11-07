@@ -118,8 +118,8 @@ async function bridgeReport(bridge) {
   const initialized = await call(1, "initialize", { protocolVersion: "2025-06-18" });
   const listed = await call(2, "tools/list", {});
   const reported = await call(3, "tools/call", {
-    name: "factory_report",
-    arguments: { key: "probe", status: "finished" },
+    name: "factory_update_block",
+    arguments: { to: "finished" },
     _meta: { callId: "probe-call" },
   });
   child.kill();

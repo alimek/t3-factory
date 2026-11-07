@@ -1,16 +1,10 @@
 import * as Effect from "effect/Effect";
-import type * as SqlClient from "effect/sql/SqlClient";
-import type { T3Adapter, ExecutionObservation } from "./adapters/t3.ts";
+import type { T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunRow } from "./runner-types.ts";
-import {
-  ownedRootControlExecutions,
-  rootControlDispatchAllowed,
-} from "./run-control-recovery-proof.ts";
+import { ownedRootControlExecutions } from "./run-control-recovery-proof.ts";
 import { runTarget } from "./runner-utils.ts";
 import { now } from "./time.ts";
-const ROOT_CONTROL_HOLD =
-  "Run control is held until exact execution evidence and any required explicit recovery are verified.";
 
 /** Retain unsuccessful terminal control observations before any dependent native read. */
 export function observeRootControl(
@@ -53,57 +47,5 @@ export function observeRootControl(
       }),
     );
     return observation;
-  });
-}
-
-/** A missing owned execution is a hold, even when a newer read-only P turn completed. */
-function rootControlCoverage(
-  sql: SqlClient.SqlClient,
-  runId: string,
-  observation: ExecutionObservation,
-) {
-  return Effect.gen(function* () {
-    const owned = yield* ownedRootControlExecutions(sql, runId);
-    return owned.every((source) =>
-      observation.recentRuns.some(
-        (execution) => execution.runId === source.runId && execution.status !== "unknown",
-      ),
-    );
-  });
-}
-
-export function rootControlReady(
-  sql: SqlClient.SqlClient,
-  runId: string,
-  observation: ExecutionObservation,
-) {
-  return Effect.gen(function* () {
-    if (!(yield* rootControlCoverage(sql, runId, observation))) return false;
-    return yield* rootControlDispatchAllowed(sql, runId);
-  });
-}
-
-/** A legacy command keeps its original policy; a new one needs fresh exact control coverage. */
-export function rootControlPreflight(
-  database: RunnerDatabase,
-  t3: T3Adapter,
-  run: RunRow,
-  threadId: string,
-) {
-  return Effect.gen(function* () {
-    const observation = yield* observeRootControl(database, t3, run, threadId);
-    if (yield* database.transaction((sql) => rootControlReady(sql, run.id, observation))) {
-      yield* database.mutate(
-        run.id,
-        (sql) =>
-          sql`UPDATE run_coordinators SET problem=NULL WHERE run_id=${run.id} AND problem=${ROOT_CONTROL_HOLD}`,
-      );
-      return observation;
-    }
-    yield* database.mutate(
-      run.id,
-      (sql) => sql`UPDATE run_coordinators SET problem=${ROOT_CONTROL_HOLD} WHERE run_id=${run.id}`,
-    );
-    return null;
   });
 }

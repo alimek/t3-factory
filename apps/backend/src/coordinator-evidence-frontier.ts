@@ -1,5 +1,5 @@
 import { commandsCovered } from "./native-command-creation.ts";
-import { directWorkerSelection } from "./run-worker-selection.ts";
+import { directWorkerSelection, factoryOwnedSelection } from "./run-worker-selection.ts";
 import { retainedSelection, type LocalExecution } from "./coordinator-selection.ts";
 import type { RetainLocal } from "./coordinator-local-observations.ts";
 import { observeRemoteWork, REMOTE_HOLD, type RemoteSource } from "./coordinator-remote.ts";
@@ -555,7 +555,9 @@ export async function readCoordination(
     ? (JSON.parse(saved.accepted_json) as Invocation)
     : undefined;
   const designated =
-    !!accepted && (await directWorkerSelection(t3, run, block, saved, retainLocal));
+    saved.workerParentThreadId === threadId
+      ? await factoryOwnedSelection(t3, run, block, saved)
+      : !!accepted && (await directWorkerSelection(t3, run, block, saved, retainLocal));
   const candidates = candidatesFor(saved, tree, activity);
   const read = await readMembers(
     t3,

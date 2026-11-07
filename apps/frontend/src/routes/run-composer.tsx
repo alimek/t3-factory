@@ -81,15 +81,13 @@ const connectionNotices: Record<
   },
 };
 
-/** A Flow launches when it is ready and has a saved Run coordinator. */
+/** A Flow launches when its captured Agents and graph are ready. */
 function flowCanLaunch(flow: FlowDraft) {
-  return flow.readiness.ready && !!flow.coordinator;
+  return flow.readiness.ready;
 }
 
 function flowLaunchIssues(flow: FlowDraft) {
-  const issues = flow.readiness.issues.map((issue) => issue.message);
-  if (!flow.coordinator) issues.push("Choose a Run coordinator in the Flow editor.");
-  return issues.join(" ");
+  return flow.readiness.issues.map((issue) => issue.message).join(" ");
 }
 
 function launchConfiguration(draft: ReturnType<typeof useRunDraft>, flow: FlowDraft | undefined) {
@@ -199,7 +197,7 @@ function composerHelp({ presentation, snapshotMode }: Composer) {
     return "Project and Flow lists show their last known values while disconnected.";
   if (snapshotMode)
     return "Uses the saved Flow and Agent snapshot in fresh threads. Project and prompt can change.";
-  return "One Run conversation follows the whole Flow. Agent blocks work in their own conversations.";
+  return "Each Agent Block starts in its own worker. Factory keeps the Flow’s routing.";
 }
 
 export function RunComposer() {
@@ -673,9 +671,8 @@ function FlowNotice({ model }: { model: Composer }) {
         </NoticeStudioLink>
       }
     >
-      {!flow.coordinator
-        ? "Choose a Run coordinator in the Flow editor. Your project and prompt stay."
-        : "Fix its readiness issues in the Flow editor, or pick another Flow. Your project and prompt stay."}
+      Fix its readiness issues in the Flow editor, or pick another Flow. Your project and prompt
+      stay.
     </Notice>
   );
 }

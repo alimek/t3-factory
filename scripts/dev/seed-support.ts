@@ -63,27 +63,27 @@ export async function report(
   context: SeedContext,
   run: RunDetail,
   blockId: string,
-  value: { key: string; status: "finished" | "waiting"; exit?: string; message?: string },
+  value: { to: "finished" | "waiting"; exit?: string; message?: string },
 ) {
   const block = executionBlock(run, blockId);
   bindRuntimeReportCaller(
     context.t3,
     context.t3ProjectId,
     block.executionId,
-    value.key,
+    `${block.blockId}:${value.to}`,
     block.threadId,
   );
   const reply = await context.factory.runtime.submit({
     arguments: value,
-    metadata: { callId: value.key },
+    metadata: { callId: `${block.blockId}:${value.to}` },
   });
   if (reply.code !== "ACCEPTED") throw Error(`Development report: ${reply.code}`);
   return reconcileUntil(context, run.id, (detail) =>
-    value.status === "waiting"
+    value.to === "waiting"
       ? detail.attention.some(
           (item) => item.kind === "conversation-waiting" && item.settledAt === null,
         )
-      : detail.reports.some((item) => item.key === value.key),
+      : detail.reports.some((item) => item.blockId === blockId && item.key === value.to),
   );
 }
 
