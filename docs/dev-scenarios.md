@@ -67,6 +67,10 @@ T3 settlement or active-list behavior.
   Agent to try removal (an Agent referenced by a saved Flow cannot be removed), and search and select Flows in the Run composer. Unsaved drafts survive cancelled navigation. For Auto-arrange, overlap
   blocks in the build/review/decision or parallel-review Flow, arrange, save and reload; working, Human-wait and correction Runs exercise local arrangement without editing the captured Flow revision. On both canvases
   ordinary scroll pans while pinch or **Mod**+wheel zooms at the pointer (20%–200%) and **+**/**−** zoom around the center; synthetic-event tests cover both, and real trackpad calibration is a manual check.
+- **Captured Flow revision.** Open **Demo · Working · Improve the project picker**: the canvas badge reads **Flow revision**
+  with no note. Edit and save its Flow in Studio, then return: the badge adds **Flow edited since** and the canvas and block
+  exits still show the captured revision. Remove that Flow and return: the badge reads **Flow removed since** and the Run
+  stays readable. A failed Flow read never shows a removal. `db:reset` restores the Flow.
 - **Pending Start recovery.** The seed has no lost-response state; the worker E2E journey drops Start's response after the server accepts it. By hand, set the
   browser's network to offline, press **Start** for **Demo · Focused change** in Atlas (the outcome is unknown), reload, restore the network and press
   **Check same request**: exactly one Run opens. Pending Starts are browser-local and not reset by `db:reset`.
