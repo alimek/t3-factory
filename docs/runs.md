@@ -25,7 +25,8 @@ Failures explain recovery and keep the draft.
   work concurrently in the shared project checkout. A Run stays open, including unresolved work or an in-progress Stop,
   until its closure is recorded.
 - **Snapshot.** The Run keeps immutable input, the full Flow graph and each referenced Agent's prompt, settings, revision and
-  labels. Later edits affect only future Runs.
+  labels, and references the Flow revision and the Agent revisions it froze at Start. Agent edits need no Flow save: the
+  next Start uses the current saved Agents. Later edits affect only future Runs.
 - **Launch.** Factory launches one top-level worker per Agent block visit, using that Agent's saved provider, model and
   options. Agents connected to the Flow input start in parallel and independently (no Agent is told about the others). There
   is no Run conversation. A lost launch is searched for by its saved title and verified thread evidence; Factory does not

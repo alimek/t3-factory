@@ -1,4 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
+import { frozenRevisions, snapshotDefinitions } from "./support/frozen-revisions.ts";
 import { releasedUpgradeData } from "./support/released-upgrade.ts";
 
 it("upgrading v0.2.0 preserves clients, current definitions and closed and active Run history", async (c) => {
@@ -50,6 +51,16 @@ it("upgrading v0.2.0 preserves clients, current definitions and closed and activ
   ]);
   expect(active.value.executions).toMatchObject([
     { activationId: execution.activationId, executionId: execution.executionId },
+  ]);
+  const closedRevisions = frozenRevisions(fixture.h.databasePath, fixture.closed.id);
+  expect(closedRevisions).toMatchObject(snapshotDefinitions(fixture.closed.snapshot));
+  expect(closedRevisions.activations).toMatchObject([
+    { agentId: fixture.closed.snapshot.agents[0]!.id, revision: 1 },
+  ]);
+  const activeRevisions = frozenRevisions(fixture.h.databasePath, fixture.active.id);
+  expect(activeRevisions).toMatchObject(snapshotDefinitions(fixture.active.snapshot));
+  expect(activeRevisions.activations).toMatchObject([
+    { id: activation.id, agentId: fixture.agent.id, revision: 1 },
   ]);
   const navigation = await factory.listRunNavigation();
   assert(navigation.ok);

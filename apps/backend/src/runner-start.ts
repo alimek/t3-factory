@@ -141,7 +141,10 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
       n: number;
     }>`SELECT COALESCE(MAX(number),0)+1 AS n FROM runs`;
     const number = allocated!.n;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number})`;
+    const { flow, agents } = plan.snapshot;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number,flow_revision_id) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number},(SELECT id FROM flow_revisions WHERE flow_id=${flow.id} AND revision=${flow.revision}))`;
+    for (const agent of agents)
+      yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
     yield* sql`INSERT INTO run_snapshots(run_id,snapshot_json) VALUES(${plan.runId},${JSON.stringify(plan.snapshot)})`;
     for (const block of plan.snapshot.flow.graph.blocks)
       yield* sql`INSERT INTO run_blocks(run_id,block_id,name) VALUES(${plan.runId},${block.id},${block.name})`;

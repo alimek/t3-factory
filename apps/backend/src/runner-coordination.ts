@@ -16,7 +16,8 @@ export function persistActivation(
   cause = "start:" + blockId,
 ) {
   return Effect.gen(function* () {
-    yield* sql`INSERT INTO run_activations(id,run_id,block_id,cause,created_at) VALUES(${plan.activationId},${runId},${blockId},${cause},${time})`;
+    // An Agent block runs with the revision its Run froze at Start, never the current one.
+    yield* sql`INSERT INTO run_activations(id,run_id,block_id,cause,created_at,agent_revision_id) VALUES(${plan.activationId},${runId},${blockId},${cause},${time},(SELECT f.agent_revision_id FROM runs r JOIN flow_revision_blocks b ON b.flow_revision_id=r.flow_revision_id AND b.block_id=${blockId} JOIN run_agent_revisions f ON f.run_id=r.id AND f.agent_id=b.agent_id WHERE r.id=${runId}))`;
     yield* sql`INSERT INTO run_delegations(activation_id,request_key,input_fingerprint) VALUES(${plan.activationId},${plan.requestKey},${plan.inputFingerprint})`;
   });
 }

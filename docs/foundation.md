@@ -18,7 +18,10 @@ and restricted OAuth credentials live outside project repositories.
   Each Flow save appends an immutable relational revision and each Agent save an immutable
   Agent revision; removing either hides it from Studio and Start but keeps its revisions.
 - Start atomically captures the Run input, full Flow graph and referenced Agent prompts,
-  settings, labels and revisions. Later definition changes cannot rewrite history.
+  settings, labels and revisions. The Run references its Flow revision and freezes the
+  current revision of every Agent that Flow references, including blocks it may never
+  visit; each Agent activation references that frozen revision. Later definition changes
+  cannot rewrite history.
   External skill files are not frozen.
 - Each Start creates a new Task, Run and threads; a Task never has more than one
   non-closed Run, and closed Runs are never reopened.
