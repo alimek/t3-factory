@@ -100,3 +100,29 @@ it("starting a removed Flow is rejected without creating a Run", async (c) => {
   expect(started.error.code).toBe("not_found");
   expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
 });
+
+it("a removed Agent rejects saves, leaves the catalog and removing it again succeeds", async (c) => {
+  // Arrange
+  const { f } = await prepared(c);
+  const saved = await f.createAgent(sampleAgentInput("Retired"));
+  assert(saved.ok);
+  assert((await f.removeAgent(saved.value.id)).ok);
+
+  // Act
+  const edited = await f.updateAgent(saved.value.id, {
+    ...sampleAgentInput("Revived"),
+    expectedRevision: saved.value.revision,
+  });
+  const duplicated = await f.duplicateAgent(saved.value.id, {});
+  const removedAgain = await f.removeAgent(saved.value.id);
+
+  // Assert
+  assert(!edited.ok);
+  expect(edited.error.code).toBe("not_found");
+  assert(!duplicated.ok);
+  expect(duplicated.error.code).toBe("not_found");
+  expect(removedAgain).toStrictEqual({ ok: true, value: undefined });
+  const listed = await f.listAgents();
+  assert(listed.ok);
+  expect(listed.value.some((agent) => agent.id === saved.value.id)).toBe(false);
+});

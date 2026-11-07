@@ -15,8 +15,8 @@ and restricted OAuth credentials live outside project repositories.
 
 - Agent and Flow definitions are editable. Saves compare revisions; stale writes conflict.
   Structural validity permits incomplete drafts, while readiness is a separate launch gate.
-  Each Flow save appends an immutable relational revision; removing a Flow hides it from
-  Studio and Start but keeps its revisions.
+  Each Flow save appends an immutable relational revision and each Agent save an immutable
+  Agent revision; removing either hides it from Studio and Start but keeps its revisions.
 - Start atomically captures the Run input, full Flow graph and referenced Agent prompts,
   settings, labels and revisions. Later definition changes cannot rewrite history.
   External skill files are not frozen.

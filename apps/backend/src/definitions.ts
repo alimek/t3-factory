@@ -3,7 +3,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type {
   AgentCapabilities,
   AgentDefinition,
-  AgentExecutionSettings,
   FactoryOperations,
   FlowDraft,
   Result,
@@ -28,40 +27,17 @@ import {
   readCurrentFlows,
   type FlowRevision,
 } from "./flow-revisions.ts";
+import { appendAgentRevision, readCurrentAgents, type AgentRevision } from "./agent-revisions.ts";
 /** A new Flow starts with its Flow input block at the top-left of the canvas. */
 const NEW_FLOW_INPUT_POSITION = { x: 40, y: 50 };
 
-type AgentRow = {
-  id: string;
-  name: string;
-  prompt: string;
-  revision: number;
-  environment_id: string;
-  provider_instance_id: string;
-  model_id: string;
-  model_options_json: string;
-  created_at: string;
-  updated_at: string;
-};
-const executionFromRow = (row: AgentRow): AgentExecutionSettings => ({
-  environmentId: row.environment_id,
-  providerInstanceId: row.provider_instance_id,
-  modelId: row.model_id,
-  modelOptions: JSON.parse(row.model_options_json) as AgentExecutionSettings["modelOptions"],
+const toAgent = (
+  agent: AgentRevision,
+  capabilities: AgentCapabilities | null,
+): AgentDefinition => ({
+  ...agent,
+  settingsStatus: agentSettingsStatus(agent.execution, capabilities),
 });
-const toAgent = (row: AgentRow, capabilities: AgentCapabilities | null): AgentDefinition => {
-  const execution = executionFromRow(row);
-  return {
-    id: row.id,
-    name: row.name,
-    prompt: row.prompt,
-    revision: row.revision,
-    execution,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    settingsStatus: agentSettingsStatus(execution, capabilities),
-  };
-};
 const toDraft = (flow: FlowRevision, agentIds?: ReadonlySet<string>): FlowDraft => ({
   ...flow,
   readiness: flowReadiness(flow.graph, agentIds),
@@ -76,7 +52,7 @@ export const makeDefinitions = (
     const sql = yield* SqlClient.SqlClient;
     const provideSql = <A>(operation: Effect.Effect<Result<A>, unknown, SqlClient.SqlClient>) =>
       operation.pipe(Effect.provideService(SqlClient.SqlClient, sql));
-    const savedAgentIds = sql<{ id: string }>`SELECT id FROM agents`.pipe(
+    const savedAgentIds = sql<{ id: string }>`SELECT id FROM agents WHERE removed_at IS NULL`.pipe(
       Effect.map((agents) => new Set(agents.map((agent) => agent.id))),
     );
     const loadCapabilities = Effect.fn("Definitions.loadCapabilities")(function* () {
@@ -123,15 +99,15 @@ export const makeDefinitions = (
       id: string,
       operation: (
         sql: SqlClient.SqlClient,
-        row: AgentRow,
+        agent: AgentRevision,
         capabilities: AgentCapabilities,
       ) => Effect.Effect<Result<AgentDefinition>, unknown, SqlClient.SqlClient>,
     ): Effect.Effect<Result<AgentDefinition>, unknown> {
       return agentOperation((sql, capabilities) =>
         Effect.gen(function* () {
-          const [row] = yield* sql<AgentRow>`SELECT * FROM agents WHERE id = ${id}`;
-          if (!row) return failure("not_found", "This Agent does not exist.");
-          return yield* operation(sql, row, capabilities);
+          const [agent] = yield* readCurrentAgents(sql, id);
+          if (!agent) return failure("not_found", "This Agent does not exist.");
+          return yield* operation(sql, agent, capabilities);
         }),
       );
     }
@@ -259,53 +235,44 @@ export const makeDefinitions = (
       listAgents: () =>
         agentOperation((sql, capabilities) =>
           Effect.gen(function* () {
-            const rows =
-              yield* sql<AgentRow>`SELECT * FROM agents ORDER BY updated_at DESC, id ASC`;
-            return { ok: true as const, value: rows.map((row) => toAgent(row, capabilities)) };
+            const agents = yield* readCurrentAgents(sql);
+            return {
+              ok: true as const,
+              value: agents.map((agent) => toAgent(agent, capabilities)),
+            };
           }),
         ),
       getAgent: (id) =>
-        savedAgentOperation(id, (_sql, row, capabilities) =>
-          Effect.sync(() => ({ ok: true as const, value: toAgent(row, capabilities) })),
+        savedAgentOperation(id, (_sql, agent, capabilities) =>
+          Effect.sync(() => ({ ok: true as const, value: toAgent(agent, capabilities) })),
         ),
       createAgent(input) {
         const validated = validateCreateAgent(input);
         if (!validated.ok) return Effect.succeed(validated);
         return agentOperation((sql, capabilities) =>
           Effect.gen(function* () {
-            const id = yield* newId;
             const now = yield* currentTime;
-            const execution = validated.value.execution;
-            yield* sql`INSERT INTO agents (
-            id, name, prompt, revision, environment_id, provider_instance_id, model_id,
-            model_options_json, created_at, updated_at
-          ) VALUES (
-            ${id}, ${validated.value.name}, ${validated.value.prompt}, 1,
-            ${execution.environmentId}, ${execution.providerInstanceId}, ${execution.modelId},
-            ${JSON.stringify(execution.modelOptions)}, ${now}, ${now}
-          )`;
-            const row: AgentRow = {
-              id,
+            const agent: AgentRevision = {
+              id: yield* newId,
               name: validated.value.name,
               prompt: validated.value.prompt,
+              execution: validated.value.execution,
               revision: 1,
-              environment_id: execution.environmentId,
-              provider_instance_id: execution.providerInstanceId,
-              model_id: execution.modelId,
-              model_options_json: JSON.stringify(execution.modelOptions),
-              created_at: now,
-              updated_at: now,
+              createdAt: now,
+              updatedAt: now,
             };
-            return { ok: true as const, value: toAgent(row, capabilities) };
+            yield* sql`INSERT INTO agents (id, created_at) VALUES (${agent.id}, ${now})`;
+            yield* appendAgentRevision(sql, agent);
+            return { ok: true as const, value: toAgent(agent, capabilities) };
           }),
         );
       },
       updateAgent(id, input) {
         const validated = validateUpdateAgent(input);
         if (!validated.ok) return Effect.succeed(validated);
-        return savedAgentOperation(id, (sql, row, capabilities) =>
+        return savedAgentOperation(id, (sql, saved, capabilities) =>
           Effect.gen(function* () {
-            if (row.revision !== validated.value.expectedRevision)
+            if (saved.revision !== validated.value.expectedRevision)
               return failure(
                 "conflict",
                 "A newer revision exists. Keep your edits and reconcile before saving again.",
@@ -318,63 +285,35 @@ export const makeDefinitions = (
                   },
                 ],
               );
-            const now = yield* currentTime;
-            const execution = validated.value.execution;
-            const nextRevision = row.revision + 1;
-            yield* sql`UPDATE agents SET
-            name = ${validated.value.name},
-            prompt = ${validated.value.prompt},
-            revision = ${nextRevision},
-            environment_id = ${execution.environmentId},
-            provider_instance_id = ${execution.providerInstanceId},
-            model_id = ${execution.modelId},
-            model_options_json = ${JSON.stringify(execution.modelOptions)},
-            updated_at = ${now}
-          WHERE id = ${id} AND revision = ${validated.value.expectedRevision}`;
-            const updated: AgentRow = {
-              ...row,
+            const agent: AgentRevision = {
+              ...saved,
               name: validated.value.name,
               prompt: validated.value.prompt,
-              revision: nextRevision,
-              environment_id: execution.environmentId,
-              provider_instance_id: execution.providerInstanceId,
-              model_id: execution.modelId,
-              model_options_json: JSON.stringify(execution.modelOptions),
-              updated_at: now,
+              execution: validated.value.execution,
+              revision: saved.revision + 1,
+              updatedAt: yield* currentTime,
             };
-            return { ok: true as const, value: toAgent(updated, capabilities) };
+            yield* appendAgentRevision(sql, agent);
+            return { ok: true as const, value: toAgent(agent, capabilities) };
           }),
         );
       },
       duplicateAgent(id, input) {
         const validated = validateDuplicateAgent(input);
         if (!validated.ok) return Effect.succeed(validated);
-        return savedAgentOperation(id, (sql, row, capabilities) =>
+        return savedAgentOperation(id, (sql, saved, capabilities) =>
           Effect.gen(function* () {
-            const execution = executionFromRow(row);
             const now = yield* currentTime;
-            const copyId = yield* newId;
-            const name = validated.value.name ?? `${row.name.trim()} copy`;
-            yield* sql`INSERT INTO agents (
-            id, name, prompt, revision, environment_id, provider_instance_id, model_id,
-            model_options_json, created_at, updated_at
-          ) VALUES (
-            ${copyId}, ${name}, ${row.prompt}, 1,
-            ${execution.environmentId}, ${execution.providerInstanceId}, ${execution.modelId},
-            ${row.model_options_json}, ${now}, ${now}
-          )`;
-            const copy: AgentRow = {
-              id: copyId,
-              name,
-              prompt: row.prompt,
+            const copy: AgentRevision = {
+              ...saved,
+              id: yield* newId,
+              name: validated.value.name ?? `${saved.name.trim()} copy`,
               revision: 1,
-              environment_id: execution.environmentId,
-              provider_instance_id: execution.providerInstanceId,
-              model_id: execution.modelId,
-              model_options_json: row.model_options_json,
-              created_at: now,
-              updated_at: now,
+              createdAt: now,
+              updatedAt: now,
             };
+            yield* sql`INSERT INTO agents (id, created_at) VALUES (${copy.id}, ${now})`;
+            yield* appendAgentRevision(sql, copy);
             return { ok: true as const, value: toAgent(copy, capabilities) };
           }),
         );
@@ -383,15 +322,16 @@ export const makeDefinitions = (
         return provideSql<void>(
           sql.withTransaction(
             Effect.gen(function* () {
-              const sql = yield* SqlClient.SqlClient;
-              const [agent] = yield* sql<{ id: string }>`SELECT id FROM agents WHERE id=${id}`;
+              const [agent] = yield* sql<{
+                id: string;
+              }>`SELECT id FROM agents WHERE id=${id} AND removed_at IS NULL`;
               if (!agent) return { ok: true as const, value: undefined };
               if (yield* currentFlowsReferenceAgent(sql, id))
                 return failure(
                   "conflict",
                   "This Agent is used in saved Flows. Remove those references before deleting it.",
                 );
-              yield* sql`DELETE FROM agents WHERE id=${id}`;
+              yield* sql`UPDATE agents SET removed_at=${yield* currentTime} WHERE id=${id}`;
               return { ok: true as const, value: undefined };
             }),
           ),

@@ -47,11 +47,13 @@ editing** or **Discard changes**; a retained Flow draft keeps its own guard.
 Availability is separate from verified execution support. Omitted thinking-option lists use defaults; malformed lists are rejected. Factory launches each Block worker with these saved settings
 ([Run execution](runner.md#current-execution-contract)); the API's `execution` field holds the worker settings and `settingsStatus` their availability.
 
-**Saving.** Accepted saves increment the revision; a stale save returns a conflict and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
+**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt and settings, and Studio shows the latest; a stale or invalid save returns an error,
+appends nothing and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
 
-**Deleting.** **Delete** confirms by name, is permanent and rejects Agents referenced by any saved Flow; the backend checks saved graphs at deletion time even if the usage count is stale. An unsaved Flow draft
-may still reference a removed Agent and needs repair before running. Run snapshots and history are intact, and deleting an absent definition succeeds.
+**Deleting.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
+rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at deletion time even if the usage count is stale, while removed Flows and Runs never block
+deletion. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Run snapshots and history are intact, and deleting an absent or removed definition succeeds.
 
 See [T3 integration](t3-integration.md) for authorization and capability reads.
 

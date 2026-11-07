@@ -37,9 +37,9 @@ it("duplicateAgent copies execution settings under a new identity", async (conte
   expect(duplicate.value.execution).toStrictEqual(saved.value.execution);
 });
 
-it("updateAgent rejects a stale expectedRevision with conflict", async (context) => {
+it("a stale Agent save conflicts and the accepted save survives restart", async (context) => {
   // Arrange
-  const { factory } = await openFactoryWithApprovedT3(context);
+  const { harness, factory } = await openFactoryWithApprovedT3(context);
   const saved = await factory.createAgent(sampleAgentInput());
   assert(saved.ok);
   const updated = await factory.updateAgent(saved.value.id, {
@@ -57,6 +57,14 @@ it("updateAgent rejects a stale expectedRevision with conflict", async (context)
   // Assert
   assert(!conflict.ok);
   expect(conflict.error.code).toBe("conflict");
+  await factory.close();
+  const recovered = await readAgentAfterRestart(harness, saved.value.id);
+  expect(recovered.value).toMatchObject({
+    name: "Coder updated",
+    revision: 2,
+    createdAt: saved.value.createdAt,
+    updatedAt: updated.value.updatedAt,
+  });
 });
 
 it("listAgents preserves saved execution when capabilities are unavailable", async (context) => {

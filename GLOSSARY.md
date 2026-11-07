@@ -26,6 +26,9 @@ _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
 **Agent**:
 A reusable worker definition consisting of a prompt and execution settings, independent of a particular project. An agent block uses this definition within a Flow; its execution belongs to a Run.
 
+**Agent revision**:
+One immutable saved version of an Agent's name, prompt and execution settings. Every successful create or save appends the next revision; Studio shows the latest, and removing an Agent keeps its revisions.
+
 **Studio**:
 The modal authoring surface for global Flows and reusable Agent definitions. It opens over the current Run or composer from the sidebar icon beside Settings, and closing it returns to that underlying screen. Settings holds the T3 connection and does not edit Agents or Flows.
 _Avoid_: Settings as the Agent editor; a Flows destination in the Run sidebar.

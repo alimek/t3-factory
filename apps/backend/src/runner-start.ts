@@ -26,6 +26,7 @@ import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { currentFlowRevisionNumber } from "./flow-revisions.ts";
+import { currentAgentRevisionNumber } from "./agent-revisions.ts";
 import { now } from "./time.ts";
 function validStartInput(input: StartRunInput | undefined): input is StartRunInput {
   return (
@@ -114,10 +115,7 @@ function startConfigurationConflict(sql: SqlClient.SqlClient, plan: StartPlan) {
         "Configuration changed while validating. Check setup and retry this Start.",
       );
     for (const agent of plan.snapshot.agents) {
-      const [saved] = yield* sql<{
-        revision: number;
-      }>`SELECT revision FROM agents WHERE id=${agent.id}`;
-      if (saved?.revision !== agent.revision)
+      if ((yield* currentAgentRevisionNumber(sql, agent.id)) !== agent.revision)
         return failure("conflict", "An Agent changed while validating. Check setup and retry.");
     }
     return undefined;
