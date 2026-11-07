@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promi
 import { join } from "node:path";
 import { reportingClient } from "./support/reporting-client.ts";
 import {
+  driverHomes,
   reportingFixture,
   installedReportingClient,
   installedReportingFixture,
@@ -58,7 +59,7 @@ it("Codex installation preserves existing settings and survives backend restart 
 
 it("a provider without Factory reporting is listed as unsupported with nothing to install", async (context) => {
   // Arrange
-  const { factory } = await reportingFixture(context, "cursor");
+  const { factory } = await reportingFixture(context, "pi");
 
   // Act
   const targets = await factory.getReportingInstallations();
@@ -67,7 +68,7 @@ it("a provider without Factory reporting is listed as unsupported with nothing t
   assert(targets.ok);
   expect(targets.value).toMatchObject([
     {
-      provider: "cursor",
+      provider: "pi",
       instances: ["test-provider"],
       status: "unsupported",
       path: null,
@@ -158,6 +159,77 @@ it("default provider homes resolve from the user home without explicit homePath"
   expect(result.value.find((target) => target.provider === "claudeAgent")!.path).toBe(
     join(await realpath(home), ".claude.json"),
   );
+});
+
+it("installing Cursor reporting writes the user MCP file", async (context) => {
+  // Arrange
+  const { factory, home } = await driverHomes(context, {
+    cursor: { driver: "cursor", config: {} },
+  });
+  const targets = await factory.getReportingInstallations();
+  assert(targets.ok);
+  const cursor = targets.value.find((target) => target.provider === "cursor")!;
+
+  // Act
+  const installed = await factory.installReporting({ targetId: cursor.id });
+
+  // Assert
+  assert(installed.ok);
+  expect(installed.value.status).toBe("installed");
+  expect(cursor.path).toBe(join(home, ".cursor", "mcp.json"));
+  expect(
+    JSON.parse(await readFile(cursor.path!, "utf8")).mcpServers["factory-runtime"].command,
+  ).toBe("/usr/bin/env");
+});
+
+it("Grok reporting uses the standard home and stays not installed until install", async (context) => {
+  // Arrange
+  const { factory, home } = await driverHomes(context, { grok: { driver: "grok", config: {} } });
+  await mkdir(join(home, ".grok"));
+
+  // Act
+  const result = await factory.getReportingInstallations();
+
+  // Assert
+  assert(result.ok);
+  const grok = result.value.find((target) => target.provider === "grok")!;
+  expect(grok.path).toBe(join(await realpath(join(home, ".grok")), "config.toml"));
+  expect(grok.status).toBe("not-installed");
+});
+
+it("a provider without reporting shows the stdio entry and no install action", async (context) => {
+  // Arrange
+  const { factory } = await driverHomes(context, { pi: { driver: "pi", config: {} } });
+
+  // Act
+  const result = await factory.getReportingInstallations();
+
+  // Assert
+  assert(result.ok);
+  const pi = result.value.find((target) => target.provider === "pi")!;
+  expect(pi.path).toBe(null);
+  expect(pi.message).toMatch(/factory-runtime/);
+  expect(pi.message).toMatch(/\/usr\/bin\/env/);
+  expect(pi.actions).toStrictEqual({ install: false, repair: false, reinstall: false });
+});
+
+it("an unresolvable Codex home keeps its discovery message", async (context) => {
+  // Arrange
+  const { factory, state } = await reportingFixture(context);
+  await writeFile(
+    join(state, "settings.json"),
+    JSON.stringify({
+      providerInstances: { codex: { driver: "codex", config: { homePath: "relative/codex" } } },
+    }),
+  );
+
+  // Act
+  const result = await factory.getReportingInstallations();
+
+  // Assert
+  assert(result.ok);
+  expect(result.value[0]!.message).toMatch(/Relative provider homes/);
+  expect(result.value[0]!.message).not.toMatch(/no installer/);
 });
 
 it("a different execution host never receives a local installation target", async (context) => {

@@ -7,7 +7,12 @@ import { createHash } from "node:crypto";
 import type { ReportingInstallation, T3Connection } from "@t3-factory/contracts";
 import { isLocalEndpoint } from "./endpoint-local.ts";
 import { withReportingInstallationActions } from "./reporting-installation-actions.ts";
-import { isReportingDriver, providerReporting, type ReportingDriver } from "./reporting-drivers.ts";
+import {
+  isReportingDriver,
+  providerReporting,
+  reportingHome,
+  type ReportingDriver,
+} from "./reporting-drivers.ts";
 
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -51,13 +56,16 @@ function assertDirectHomeSupported(instance: Record<string, unknown>) {
     );
 }
 
-function resolveReportingHome(instance: Record<string, unknown>, driver: ReportingDriver) {
+function resolveReportingHome(
+  instance: Record<string, unknown>,
+  driver: Exclude<ReportingDriver, "cursor">,
+) {
   assertDirectHomeSupported(instance);
+  const home = reportingHome(driver);
   const config = record(instance.config ?? {});
   const variables = Array.isArray(instance.environment) ? instance.environment.map(record) : [];
-  const envName = driver === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
   const configuredHome = typeof config.homePath === "string" ? config.homePath.trim() : "";
-  const environmentHome = variables.findLast((item) => item.name === envName)?.value;
+  const environmentHome = variables.findLast((item) => item.name === home.envName)?.value;
   const rawHome =
     configuredHome.length > 0
       ? configuredHome
@@ -73,10 +81,10 @@ function resolveReportingHome(instance: Record<string, unknown>, driver: Reporti
       );
     return { directory: expanded, assumedDefault: false };
   }
-  if (driver === "codex") {
-    return { directory: join(userHome, ".codex"), assumedDefault: true };
-  }
-  return { directory: userHome, assumedDefault: true };
+  return {
+    directory: home.defaultDirectory ? join(userHome, home.defaultDirectory) : userHome,
+    assumedDefault: true,
+  };
 }
 
 const targetFor = Effect.fn(function* (
@@ -106,11 +114,31 @@ const targetFor = Effect.fn(function* (
     ReportingInstallation,
     never
   > {
+    if (driver === "cursor") {
+      // The Cursor SDK always reads os.homedir()/.cursor/mcp.json. A provider homePath would
+      // point Factory at a file the harness never loads.
+      const directory = join(homedir(), ".cursor");
+      const resolved = yield* boundary(() => realpath(directory)).pipe(
+        Effect.catch((error) =>
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+            ? Effect.succeed(directory)
+            : Effect.fail(error),
+        ),
+      );
+      return withReportingInstallationActions({
+        ...base,
+        id: createHash("sha256").update(join(resolved, "mcp.json")).digest("hex"),
+        path: join(resolved, "mcp.json"),
+        status: "not-installed",
+        message:
+          "Cursor loads this user MCP file for every project. Install once; both Cursor provider instances share it.",
+      });
+    }
     const resolved = resolveReportingHome(instance, driver);
     const directory = yield* boundary(() => realpath(resolved.directory));
     if (!(yield* boundary(() => stat(directory))).isDirectory())
       throw Error("Harness home is not a directory.");
-    const path = join(directory, driver === "codex" ? "config.toml" : ".claude.json");
+    const path = join(directory, reportingHome(driver).file);
     return withReportingInstallationActions({
       ...base,
       id: createHash("sha256").update(path).digest("hex"),

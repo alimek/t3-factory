@@ -1,21 +1,24 @@
 import { nativeCallId } from "./runtime-caller.ts";
+import { factoryToolAliases, findInFlightFactoryCall } from "./reporting-call.ts";
 import * as Effect from "effect/Effect";
 import type { RuntimeActivity, T3Adapter } from "./adapters/t3.ts";
 import { readNativeRuntimeCall } from "./adapters/runtime-call.ts";
 import type { RuntimeBinding, RuntimeReply, RuntimeReport } from "./runtime-types.ts";
 const UPDATE_FIELDS = ["to", "exit", "message"];
-const REPORT_TOOL_NAMES = [
+const REPORT_TOOL_NAMES = factoryToolAliases([
   "factory-runtime.factory_update_block",
   "mcp__factory-runtime__factory_update_block",
-];
+]);
 
 /** A factory_update_block call as forwarded by the stdio runtime, before caller correlation. */
 interface ReportCall {
   readonly report: RuntimeReport;
   /** The harness's native call ID (`callId` or `claudecode/toolUseId`). */
-  readonly callId: string;
+  readonly callId: string | undefined;
   /** Any truthy hint restricts candidates; only a string names a thread. */
   readonly inheritedThread: unknown;
+  /** Original tool arguments, including `ref`, for harnesses that omit a call id. */
+  readonly args: unknown;
 }
 /** One public activity item proving the native call ran in the candidate's thread. */
 interface CallerMatch {
@@ -27,7 +30,11 @@ interface CallerMatch {
 /** The model names only the transition. Factory stores that transition as the report identity. */
 function blockUpdate(args: unknown): RuntimeReport | undefined {
   if (!args || typeof args !== "object" || Array.isArray(args)) return undefined;
-  const fields = args as Record<string, unknown>;
+  const fields = { ...(args as Record<string, unknown>) };
+  if ("ref" in fields) {
+    if (typeof fields.ref !== "string" || !fields.ref) return undefined;
+    delete fields.ref;
+  }
   if (!Object.keys(fields).every((key) => UPDATE_FIELDS.includes(key))) return undefined;
   if (fields.to !== "waiting" && fields.to !== "finished") return undefined;
   if ("exit" in fields && typeof fields.exit !== "string") return undefined;
@@ -46,8 +53,7 @@ function parseReportCall(input: unknown): ReportCall | RuntimeReply {
   const report = blockUpdate(envelope.arguments);
   if (!report) return { code: "INVALID_ARGUMENT" };
   const callId = nativeCallId(envelope.metadata);
-  if (callId === undefined) return { code: "UNBOUND_CALLER" };
-  return { report, callId, inheritedThread: envelope.inheritedThreadId };
+  return { report, callId, inheritedThread: envelope.inheritedThreadId, args: envelope.arguments };
 }
 
 /** Undefined when the item is the report tool; otherwise the rejection for a mismatched call. */
@@ -170,6 +176,7 @@ export function createRuntime(
     const binding = bindings.get(candidate.threadId) ?? candidate;
     if (binding.contextId !== (yield* context())) return undefined;
     if (call.inheritedThread && call.inheritedThread !== binding.threadId) return undefined;
+    if (!call.callId) return { code: "UNBOUND_CALLER" };
     return yield* scanActivity(binding, registered !== undefined, call.callId, matches);
   });
 
@@ -189,6 +196,31 @@ export function createRuntime(
     return undefined;
   });
 
+  const withActivityCall = Effect.fn(function* (
+    call: ReportCall,
+    candidates: ReadonlyMap<string, RuntimeBinding>,
+  ) {
+    if (call.callId !== undefined) return call;
+    const hint = typeof call.inheritedThread === "string" ? call.inheritedThread : undefined;
+    const pool = [...candidates.values()].filter(
+      (candidate) => hint === undefined || candidate.threadId === hint,
+    );
+    const located = yield* boundary(() =>
+      findInFlightFactoryCall(
+        t3,
+        pool.map((candidate) => ({
+          threadId: candidate.threadId,
+          projectId: candidate.projectId,
+          target: { endpoint: candidate.endpoint },
+        })),
+        REPORT_TOOL_NAMES,
+        call.args,
+      ),
+    );
+    if (!located) return { code: "UNBOUND_CALLER" as const };
+    return { ...call, callId: located.callId, inheritedThread: located.threadId };
+  });
+
   /** Requires exactly one public activity item for the native call across all candidates. */
   const correlate = Effect.fn(function* (call: ReportCall) {
     const inheritedThreadId =
@@ -200,6 +232,8 @@ export function createRuntime(
       : [];
     const candidates = new Map(historical.map((b) => [b.threadId, b]));
     for (const b of bindings.values()) candidates.set(b.threadId, b);
+    const locatedCall = yield* withActivityCall(call, candidates);
+    if ("code" in locatedCall) return locatedCall;
     if (
       inheritedThreadId !== undefined &&
       !candidates.has(inheritedThreadId) &&
@@ -209,11 +243,16 @@ export function createRuntime(
       return { code: "RUN_CLOSED" };
     const matches: CallerMatch[] = [];
     for (const candidate of candidates.values()) {
-      const rejection = yield* correlateCandidate(candidate, call, matches);
+      const rejection = yield* correlateCandidate(candidate, locatedCall, matches);
       if (rejection) return rejection;
     }
     if (!matches.length) {
-      const rejection = yield* discoverCaller(call, inheritedThreadId, candidates, matches);
+      const rejection = yield* discoverCaller(
+        locatedCall,
+        typeof locatedCall.inheritedThread === "string" ? locatedCall.inheritedThread : undefined,
+        candidates,
+        matches,
+      );
       if (rejection) return rejection;
     }
 

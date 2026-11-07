@@ -1,6 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
-import { writeReportingState } from "./reporting-home.ts";
-import { mkdir } from "node:fs/promises";
+import { isolatedUserHome, writeReportingState } from "./reporting-home.ts";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { FactoryOptions } from "@t3-factory/backend";
 import { factoryHarness } from "./factory.ts";
@@ -29,6 +29,19 @@ export async function reportingFixture(
   assert((await factory.configureConnection({ endpoint: "http://127.0.0.1:3773/mcp" })).ok);
   const config = join(home, driver === "codex" ? "config.toml" : ".claude.json");
   return { harness, factory, options, home, state, config, t3 };
+}
+
+export async function driverHomes(
+  context: TestContext,
+  instances: Record<string, { driver: string; config: Record<string, unknown> }>,
+) {
+  const userHome = await isolatedUserHome(context);
+  const fixture = await reportingFixture(context);
+  await writeFile(
+    join(fixture.state, "settings.json"),
+    JSON.stringify({ providerInstances: instances }),
+  );
+  return { ...fixture, home: userHome };
 }
 
 export async function installedReportingFixture(context: TestContext) {

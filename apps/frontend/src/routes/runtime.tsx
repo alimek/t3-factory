@@ -15,6 +15,7 @@ const providerNames: Record<string, string> = {
   claudeAgent: "Claude",
   codex: "Codex",
   cursor: "Cursor",
+  grok: "Grok",
 };
 export function RuntimeSettings() {
   // Installation changes the host's harness homes; remote clients only see its status.

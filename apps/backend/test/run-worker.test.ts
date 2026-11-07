@@ -68,8 +68,12 @@ it("a Flow with two entry Agents launches an independent top-level worker for ea
     "Factory #1 · 1 Review",
     "Factory #1 · 2 Draft",
   ]);
-  expect(launches[0]!.message).toBe("$factory-block\n\nFollow repository instructions.");
-  expect(launches[1]!.message).toBe("$factory-block\n\nEdit the draft.");
+  expect(launches[0]!.message).toBe(
+    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launches[0]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
+  );
+  expect(launches[1]!.message).toBe(
+    `$factory-block\n\nEdit the draft.\n\nFactory tool ref: ${launches[1]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
+  );
   expect(launches[0]!.modelSelection).toEqual({
     instanceId: "codex-main",
     model: "gpt-6.1-sol",
@@ -120,8 +124,8 @@ it("two Blocks that share one Agent still launch separate workers", async (c) =>
     "Factory #1 · 2 Second review",
   ]);
   expect(launches.map((launch) => launch.message)).toStrictEqual([
-    "$factory-block\n\nFollow repository instructions.",
-    "$factory-block\n\nFollow repository instructions.",
+    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launches[0]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
+    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launches[1]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
   ]);
   expect(launches[0]!.clientRequestId).not.toBe(launches[1]!.clientRequestId);
   expect(result.value.blocks.map((block) => block.threadId)).toStrictEqual([
@@ -148,7 +152,9 @@ it("normal Start launches the entry worker with its own Agent settings and no Ru
   expect(f.t3.launches.size).toBe(1);
   const payload = [...f.t3.launches.values()][0]!.payload;
   expect(payload.title).toBe("Factory #1 · 1 Entry worker");
-  expect(payload.message).toBe("$factory-block\n\nFollow repository instructions.");
+  expect(payload.message).toBe(
+    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${payload.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
+  );
   expect(payload.modelSelection.model).toBe(f.agent.execution.modelId);
   expect(payload.modelSelection.instanceId).toBe(f.agent.execution.providerInstanceId);
 });

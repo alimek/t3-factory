@@ -1,5 +1,6 @@
 import type { AgentEnvironment } from "@t3-factory/contracts";
 import { LaunchRejected } from "../../src/adapters/t3.ts";
+import { isReportingDriver } from "../../src/reporting-drivers.ts";
 import type {
   AuthorizationResumption,
   T3Adapter,
@@ -12,7 +13,6 @@ import type {
   T3ProjectTarget,
   T3ProviderCapability,
 } from "../../src/adapters/t3.ts";
-import { isReportingDriver } from "../../src/reporting-drivers.ts";
 
 /** Independent external-engine lifetime; no SQL or Factory internals. */
 export class ControlledT3 implements T3Adapter {

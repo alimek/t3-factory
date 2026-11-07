@@ -6,13 +6,17 @@ import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunRow } from "./runner-types.ts";
 import type { RuntimeReply } from "./runtime-types.ts";
 import { nativeCallId } from "./runtime-caller.ts";
+import { factoryToolAliases, findInFlightFactoryCall } from "./reporting-call.ts";
 import { runTarget } from "./runner-utils.ts";
 
-const BLOCK_TOOLS = [
+const BLOCK_TOOLS = factoryToolAliases([
   "factory-runtime.factory_get_block",
   "mcp__factory-runtime__factory_get_block",
-];
-const RUN_TOOLS = ["factory-runtime.factory_get_run", "mcp__factory-runtime__factory_get_run"];
+]);
+const RUN_TOOLS = factoryToolAliases([
+  "factory-runtime.factory_get_run",
+  "mcp__factory-runtime__factory_get_run",
+]);
 const RETRY_AFTER_MS = 500;
 
 type ToolKind = "block" | "run";
@@ -28,10 +32,57 @@ export function openBlockTools(
   getRun: (id: string) => Effect.Effect<{ ok: true; value: RunDetail } | { ok: false }, unknown>,
   liveContextId: () => Effect.Effect<string | null, unknown>,
 ) {
+  const locateTool = (
+    kind: ToolKind,
+    parsed: ParsedTool,
+  ): Effect.Effect<ToolCall | { readonly code: "UNBOUND_CALLER" }, unknown> =>
+    Effect.gen(function* () {
+      const rows = yield* database.transaction(
+        (sql) =>
+          sql<{
+            thread_id: string;
+            run_id: string;
+          }>`SELECT b.thread_id,b.run_id FROM run_blocks b JOIN runs r ON r.id=b.run_id WHERE b.thread_id IS NOT NULL AND r.closed_at IS NULL`,
+      );
+      const threads: {
+        threadId: string;
+        projectId: string;
+        target: ReturnType<typeof runTarget>;
+      }[] = [];
+      for (const row of rows) {
+        if (parsed.threadId && row.thread_id !== parsed.threadId) continue;
+        const run = yield* database.row(row.run_id);
+        if (!run || run.context_id !== (yield* liveContextId())) continue;
+        threads.push({
+          threadId: row.thread_id,
+          projectId: run.t3_project_id,
+          target: runTarget(run),
+        });
+      }
+      const located = yield* Effect.tryPromise(() =>
+        findInFlightFactoryCall(t3, threads, toolNames(kind), parsed.args),
+      );
+      if (!located) return { code: "UNBOUND_CALLER" as const };
+      if (
+        (parsed.callId && parsed.callId !== located.callId) ||
+        (parsed.threadId && parsed.threadId !== located.threadId)
+      )
+        return { code: "UNBOUND_CALLER" as const };
+      return { callId: located.callId, threadId: located.threadId };
+    });
+
   const readFactoryTool = (kind: ToolKind, input: unknown): Effect.Effect<RuntimeReply, unknown> =>
     Effect.gen(function* () {
-      const call = parseToolCall(input);
-      if ("code" in call) return call;
+      const parsed = parseToolCall(input);
+      if ("code" in parsed) return parsed;
+      let call: ToolCall;
+      if (parsed.callId && parsed.threadId)
+        call = { callId: parsed.callId, threadId: parsed.threadId };
+      else {
+        const located = yield* locateTool(kind, parsed);
+        if ("code" in located) return located;
+        call = located;
+      }
       const rows = yield* database.transaction(
         (sql) =>
           sql<{
@@ -110,16 +161,27 @@ type BoundWorker = {
   readonly executionId: string | null;
 };
 
-function parseToolCall(input: unknown): ToolCall | RuntimeReply {
+type ParsedTool = {
+  readonly callId?: string;
+  readonly threadId?: string;
+  readonly args: unknown;
+};
+
+function parseToolCall(input: unknown): ParsedTool | RuntimeReply {
   if (!input || typeof input !== "object") return { code: "INVALID_ARGUMENT" };
   const envelope = input as Record<string, unknown>;
   const args = envelope.arguments ?? {};
-  if (typeof args !== "object" || Array.isArray(args) || Object.keys(args).length)
+  if (typeof args !== "object" || Array.isArray(args)) return { code: "INVALID_ARGUMENT" };
+  const fields = args as Record<string, unknown>;
+  if (Object.keys(fields).some((key) => key !== "ref")) return { code: "INVALID_ARGUMENT" };
+  if ("ref" in fields && (typeof fields.ref !== "string" || !fields.ref))
     return { code: "INVALID_ARGUMENT" };
   const callId = nativeCallId(envelope.metadata);
-  if (!callId || typeof envelope.inheritedThreadId !== "string" || !envelope.inheritedThreadId)
-    return { code: "UNBOUND_CALLER" };
-  return { callId, threadId: envelope.inheritedThreadId };
+  const threadId =
+    typeof envelope.inheritedThreadId === "string" && envelope.inheritedThreadId
+      ? envelope.inheritedThreadId
+      : undefined;
+  return { ...(callId ? { callId } : {}), ...(threadId ? { threadId } : {}), args };
 }
 
 function toolNames(kind: ToolKind) {
