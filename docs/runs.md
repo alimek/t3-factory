@@ -12,6 +12,10 @@ Failures explain recovery and keep the draft.
 - **Idempotency.** A stable request key belongs to one composer submission. Retrying an accepted request returns the same Run,
   even after a lost response or restart; reusing the key with changed content conflicts. An unknown response keeps the
   submitted fields read-only and offers **Check same request**; only confirmed success clears the prompt and opens the Run.
+  The submitted request is saved in browser storage before it is sent, so reloading or reopening the client during an
+  in-flight or unknown Start offers the same check instead of a fresh request. It is kept per selected Factory server (a
+  desktop client never checks it against another server) and removed after a confirmed acceptance or rejection. When
+  storage is blocked, the unknown-outcome notice says the request survives only while the window stays open.
 - **Active slot.** One non-closed Run (including unresolved work or an in-progress Stop) occupies its Task's slot. Different
   Tasks run concurrently in the shared project checkout.
 - **Snapshot.** The Run keeps immutable input, the full Flow graph and each referenced Agent's prompt, settings, revision and
@@ -23,7 +27,7 @@ Failures explain recovery and keep the draft.
   Factory works in the project root with no isolated worktrees, omits `runtimeMode` and leaves execution permissions to T3
   and its OAuth grant, so effective autonomy is not guaranteed by Factory. Use a repository you are willing to let agents
   change.
-- **Composer.** Project and Flow choices are remembered locally; the prompt stays in memory across in-app navigation. Each
+- **Composer.** Project and Flow choices are remembered locally; an unsubmitted prompt stays in memory across in-app navigation. Each
   blocking condition is a notice with a recovery action, and fields that cause it are marked. The Project picker keeps
   searchable paths, **Recheck projects** and **Add repository**; unavailable references stay visible in history but cannot be
   selected for a new Run.

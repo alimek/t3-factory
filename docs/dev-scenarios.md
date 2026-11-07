@@ -67,6 +67,9 @@ T3 settlement or active-list behavior.
   Agent to try deletion (an Agent referenced by a saved Flow cannot be deleted), and search and select Flows in the Run composer. Unsaved drafts survive cancelled navigation. For Auto-arrange, overlap
   blocks in the build/review/decision or parallel-review Flow, arrange, save and reload; working, Human-wait and correction Runs exercise local arrangement without editing snapshots. On both canvases
   ordinary scroll pans while pinch or **Mod**+wheel zooms at the pointer (20%–200%) and **+**/**−** zoom around the center; synthetic-event tests cover both, and real trackpad calibration is a manual check.
+- **Pending Start recovery.** The seed has no lost-response state; the worker E2E journey drops Start's response after the server accepts it. By hand, set the
+  browser's network to offline, press **Start** for **Demo · Focused change** in Atlas (the outcome is unknown), reload, restore the network and press
+  **Check same request**: exactly one Run opens. Pending Starts are browser-local and not reset by `db:reset`.
 - **Shortcuts.** In Settings → Keyboard shortcuts change Command palette, reload and use the new chord; Reset all restores defaults. Preferences are browser-local and not reset by `db:reset`.
 - **Devices and connection.** The seed includes approved **Demo · Office browser** and revoked **Demo · Retired laptop** clients in Settings → Devices & access (pending requests expire, so request one
   from another browser profile). The Vite proxy is host-local; controlled remote-client journeys cover pending, approved, revoked, offline and incompatible clients, and desktop fixtures simulate updater

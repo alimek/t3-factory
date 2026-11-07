@@ -86,8 +86,11 @@ Browser storage is optional: blocked or malformed storage must leave in-memory p
 usable and must not turn a confirmed Start into an unknown outcome. Shortcut schema
 changes must migrate or explicitly invalidate saved preferences under the
 [current-contract policy](../AGENTS.md#one-current-contract). The composer retains an
-unknown Start's identical key and payload for an explicit check; only confirmed success
-clears its prompt. Backend idempotency remains authoritative.
+unknown Start's identical key and payload for an explicit check, across reloads when
+storage allows; only confirmed success clears its prompt. Client-local state that belongs
+to a server is scoped by that server: browsers are isolated by origin, while the desktop
+renderer shares one origin and names its role and selected server. Backend idempotency
+remains authoritative.
 
 The UI must work over plain HTTP on a LAN or Tailscale address as well as loopback.
 Browser APIs requiring a secure context must not be the only way to generate identifiers.

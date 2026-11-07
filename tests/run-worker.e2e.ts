@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { findRun, readHistoryRun } from "./support/run-history.ts";
+import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { workerEvent } from "./support/worker.ts";
 import { openComposerWithFlow } from "./support/composer.ts";
@@ -77,6 +77,43 @@ test("Start launches a top-level Block worker and no Run conversation", async ({
       .getByRole("link", "Open worker in T3", { exact: true }),
   ).toHaveAttribute("href", run.threadBindings[0]!.link!);
   await app.screenshot("direct-root-worker-after-reload");
+});
+
+test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openComposerWithFlow(app, screen, "Demo · Focused change");
+  await screen.getByLabel("Initial prompt", { exact: false }).fill("UI recovered lost Start");
+  await browser.route("**/api/runs", async (route) => {
+    if (route.request.method !== "POST") return route.continue();
+    await route.fetch();
+    await route.abort();
+  });
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+  await expect(screen.getByRole("button", "Check same request", { exact: true })).toBeVisible();
+  await browser.unrouteAll();
+  await browser.reload();
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(
+    "UI recovered lost Start",
+  );
+  await app.screenshot("lost-start-pending-after-reload");
+
+  // Act
+  await screen.getByRole("button", "Check same request", { exact: true }).tap();
+
+  // Assert
+  await expect(
+    screen.getByRole("heading", "UI recovered lost Start", { exact: true }),
+  ).toBeVisible();
+  expect(await runsTitled(app.baseUrl, "UI recovered lost Start")).toHaveLength(1);
+  await browser.reload();
+  await expect(
+    screen.getByRole("heading", "UI recovered lost Start", { exact: true }),
+  ).toBeVisible();
+  await app.screenshot("lost-start-recovered");
 });
 
 test("reloading a waiting worker retains its exact question link", async ({
