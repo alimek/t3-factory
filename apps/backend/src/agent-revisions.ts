@@ -53,20 +53,36 @@ export const readCurrentAgents = Effect.fnUntraced(function* (
       AND r.revision = (SELECT max(revision) FROM agent_revisions WHERE agent_id = a.id)
     WHERE a.removed_at IS NULL ${agentId === undefined ? sql`` : sql`AND a.id = ${agentId}`}
     ORDER BY r.saved_at DESC, a.id ASC`;
-  return rows.map((row): AgentRevision => ({
-    id: row.agent_id,
-    name: row.name,
-    prompt: row.prompt,
-    revision: row.revision,
-    execution: {
-      environmentId: row.environment_id,
-      providerInstanceId: row.provider_instance_id,
-      modelId: row.model_id,
-      modelOptions: JSON.parse(row.model_options_json) as AgentExecutionSettings["modelOptions"],
-    },
-    createdAt: row.created_at,
-    updatedAt: row.saved_at,
-  }));
+  return rows.map(toRevision);
+});
+
+/** The Agent revisions a Run froze at Start, in the order its Flow first places them. */
+export const readRunAgentRevisions = Effect.fnUntraced(function* (
+  sql: SqlClient.SqlClient,
+  run: { id: string; flowRevisionId: string },
+) {
+  const rows = yield* sql<RevisionRow>`SELECT r.*, a.created_at FROM run_agent_revisions f
+    JOIN agent_revisions r ON r.id = f.agent_revision_id
+    JOIN agents a ON a.id = r.agent_id
+    WHERE f.run_id = ${run.id}
+    ORDER BY (SELECT min(ordinal) FROM flow_revision_blocks
+      WHERE flow_revision_id = ${run.flowRevisionId} AND agent_id = f.agent_id)`;
+  return rows.map(toRevision);
+});
+
+const toRevision = (row: RevisionRow): AgentRevision => ({
+  id: row.agent_id,
+  name: row.name,
+  prompt: row.prompt,
+  revision: row.revision,
+  execution: {
+    environmentId: row.environment_id,
+    providerInstanceId: row.provider_instance_id,
+    modelId: row.model_id,
+    modelOptions: JSON.parse(row.model_options_json) as AgentExecutionSettings["modelOptions"],
+  },
+  createdAt: row.created_at,
+  updatedAt: row.saved_at,
 });
 
 /** The current saved revision number, absent once the Agent is removed. */

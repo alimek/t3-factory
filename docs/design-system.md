@@ -37,7 +37,7 @@ specified in [Studio](studio.md) and [Keyboard shortcuts](keyboard-shortcuts.md)
 
 Canvas blocks, ports and wires use the same tokens as the rest of the UI. State indicators
 and attention remain distinct. The execution canvas is read-only; its local arrangement
-and viewport never mutate the saved Run snapshot. Product behavior is defined in
+and viewport never mutate the Run's captured Flow revision. Product behavior is defined in
 [Flow authoring](studio.md#canvas-and-block-configuration) and [Runs](runs.md#execution-canvas).
 
 ## Changing the design system

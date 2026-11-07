@@ -197,12 +197,12 @@ function classifyCall(
 
 function blockView(detail: RunDetail, blockId: string): RuntimeReply {
   const block = detail.blocks.find((entry) => entry.blockId === blockId);
-  const graphBlock = detail.snapshot.flow.graph.blocks.find((entry) => entry.id === blockId);
+  const graphBlock = detail.definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
   if (!block || !graphBlock) return { code: "UNBOUND_CALLER" };
   const visits = detail.activations.filter((activation) => activation.blockId === blockId);
   const cause = visits[visits.length - 1]?.cause ?? "";
   const sources = new Set(
-    detail.snapshot.flow.graph.connections
+    detail.definitions.flow.graph.connections
       .filter((edge) => edge.targetBlockId === blockId)
       .map((edge) => edge.sourceBlockId),
   );

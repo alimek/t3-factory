@@ -32,7 +32,7 @@ it("removing an Agent referenced by a saved Flow is rejected and keeps the defin
   assert((await f.getAgent(agent.id)).ok);
 });
 
-it("removing an Agent after its Flow was removed preserves the Run snapshot", async (c) => {
+it("removing an Agent after its Flow was removed preserves the Run definitions", async (c) => {
   // Arrange
   const { f, input, flow, agent } = await prepared(c);
   const started = await f.startRun(input);
@@ -46,11 +46,11 @@ it("removing an Agent after its Flow was removed preserves the Run snapshot", as
   assert(removed.ok);
   const run = await f.getRun(started.value.id);
   assert(run.ok);
-  expect(run.value.snapshot.agents.some((item) => item.id === agent.id)).toBe(true);
+  expect(run.value.definitions.agents.some((item) => item.id === agent.id)).toBe(true);
   assert(!(await f.getAgent(agent.id)).ok);
 });
 
-it("removing a Flow preserves its active Run snapshot and shared Agent", async (c) => {
+it("removing a Flow preserves its active Run definitions and shared Agent", async (c) => {
   // Arrange
   const { f, input, flow, agent } = await prepared(c);
   const started = await f.startRun(input);
@@ -69,7 +69,7 @@ it("removing a Flow preserves its active Run snapshot and shared Agent", async (
   assert(run.ok);
   expect(run.value.closedAt).toBe(null);
   expect(run.value.stopRequestedAt).toBe(null);
-  expect(run.value.snapshot).toStrictEqual(started.value.snapshot);
+  expect(run.value.definitions).toStrictEqual(started.value.definitions);
   assert((await f.getAgent(agent.id)).ok);
 });
 

@@ -82,7 +82,7 @@ export function RunConversationNotice({
 /** A Run-owned conversation stays primary even while its launch has no confirmed link. */
 function preferredLink(run: RunDetail) {
   if (run.runCoordinator) return run.runCoordinator.link;
-  const [first] = run.snapshot.flow.graph.flowInput.targetBlockIds;
+  const [first] = run.definitions.flow.graph.flowInput.targetBlockIds;
   return (
     run.blocks.find((block) => block.blockId === first)?.link ??
     run.blocks.find((block) => block.link)?.link ??

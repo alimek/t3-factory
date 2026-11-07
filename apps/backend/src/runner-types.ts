@@ -4,12 +4,13 @@ import type {
   Result,
   RunBlock,
   RunDetail,
-  RunSnapshot,
+  RunDefinitions,
   RuntimeReadiness,
 } from "@t3-factory/contracts";
 import type { T3Target } from "./adapters/t3.ts";
 import type { RuntimeBinding } from "./runtime-types.ts";
 
+/** A Run's row with the definitions it captured at Start. */
 export type RunRow = {
   id: string;
   task_id: string;
@@ -18,7 +19,8 @@ export type RunRow = {
   title: string;
   input: string;
   request_fingerprint: string;
-  snapshot_json: string;
+  flow_revision_id: string;
+  definitions: RunDefinitions;
   context_id: string;
   workspace_root: string;
   gate_open: number;
@@ -126,7 +128,8 @@ export type TaskRunRow = {
   closed_at: string | null;
   outcome: RunDetail["outcome"];
   stop_requested_at: string | null;
-  snapshot_json: string;
+  flow_id: string;
+  flow_name: string;
 };
 
 export type TaskRow = { id: string; title: string; project_id: string; created_at: string };
@@ -141,7 +144,7 @@ export type ReportRunRow = Pick<
   | "gate_open"
   | "closed_at"
   | "context_id"
-  | "snapshot_json"
+  | "definitions"
 > & { token: string };
 
 export type StoredTarget = T3Target & {
@@ -165,8 +168,8 @@ export interface RunnerLifecycle {
 }
 export interface RunnerOptions {
   bindings: { bind(binding: RuntimeBinding): void; unbind(threadId: string): void };
-  checkSnapshot: (
+  checkAgent: (
     projectId: string,
-    agent: RunSnapshot["agents"][number],
+    agent: RunDefinitions["agents"][number],
   ) => Effect.Effect<Result<RuntimeReadiness>, unknown>;
 }

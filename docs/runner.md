@@ -12,7 +12,7 @@ behavior is in [Runs](runs.md); live-support limits are in
 Factory launches each Agent Block's first visit as its own top-level T3 worker. There is
 no Run conversation and no native-delegation turn that copies the Agent. Migration `050`
 deletes open Runs captured under the replaced contract. Closed Runs stay readable history.
-Snapshots no longer store an execution contract, coordination instruction version or
+Captured definitions carry no execution contract, coordination instruction version or
 reporting protocol.
 
 - Each Flow-input Agent starts independently. The worker uses that Agent's captured
@@ -36,8 +36,9 @@ reporting protocol.
 
 Start checks the connection, project, graph, saved Agent settings, the `$factory-block`
 skill, reporting installation and launch support. It does not require a Run coordinator.
-Accepted Start atomically creates the Run's Task, assigns the Run number, captures the
-snapshot and records each launch intent before contacting T3. An accepted request key is
+Accepted Start atomically creates the Run's Task, assigns the Run number, references the
+Flow revision and freezes the current revision of each referenced Agent, and records each
+launch intent before contacting T3. An accepted request key is
 unique across the database: the same content returns the same Run; changed content
 conflicts. Content is the project, Flow, input, title and creation time. Rejected requests record nothing, and the
 accepted key is also the Run's navigation creation key. Flow input targets start independently and are not handoffs.
@@ -54,7 +55,7 @@ acceptance only, not execution or completion. Later arrivals to the same Block w
 its unresolved launch; unrelated branches may continue.
 
 Start always resolves the current saved Flow and Agents on the backend; it never trusts a
-client-supplied graph or launches from an earlier Run's snapshot. The composer requires the
+client-supplied graph or launches from an earlier Run's captured revisions. The composer requires the
 server's creation policy before Start.
 
 ## Ownership and restart
@@ -87,7 +88,7 @@ or fresh-attempt escape hatch.
 
 Report authority belongs to the exact worker execution of one activation. There is no Run
 conversation. Identity and recipients come from verified
-native evidence and the saved snapshot, never model arguments. New reports require an
+native evidence and the Run's captured Flow revision, never model arguments. New reports require an
 open gate and fresh active-execution evidence. Acceptance and creation of outgoing
 handoffs are durable before the acknowledgement is returned.
 
@@ -159,7 +160,7 @@ not secure erasure.
 ### Human occurrences
 
 Every arrival creates a distinct pending Human occurrence with no T3 thread. Parallel and
-repeated arrivals stay independent. Answers validate against the snapshot: a sole exit may
+repeated arrivals stay independent. Answers validate against the Run's captured Flow revision: a sole exit may
 be omitted, multiple exits require a configured ID, and feedback is required only when
 that exit demands it (up to 100,000 characters).
 

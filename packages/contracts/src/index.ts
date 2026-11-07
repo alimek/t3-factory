@@ -565,9 +565,13 @@ export interface RunThreadBinding {
   readonly role: "worker" | "descendant";
   readonly parentBindingId: string | null;
 }
-export interface RunSnapshot {
-  readonly flow: FlowDraft;
-  readonly agents: readonly AgentDefinition[];
+/**
+ * The Flow revision and the Agent revisions a Run captured at Start, read from stored revisions.
+ * Readiness and settings availability are live authoring checks, not part of a revision.
+ */
+export interface RunDefinitions {
+  readonly flow: Omit<FlowDraft, "readiness">;
+  readonly agents: readonly Omit<AgentDefinition, "settingsStatus">[];
 }
 export interface RunBlock {
   readonly blockId: string;
@@ -629,7 +633,7 @@ export interface RunPresentation {
   readonly snoozed: boolean;
   readonly woke: boolean;
 }
-/** Global navigation reads durable Run identity without loading snapshots or Task hierarchies. */
+/** Global navigation reads durable Run identity without loading definitions or Task hierarchies. */
 export interface RunNavigationEntry {
   readonly id: string;
   readonly title: string;
@@ -699,7 +703,7 @@ export interface RunDetail extends RunSummary {
   readonly title: string;
   readonly closure: RunClosure | null;
   readonly input: string;
-  readonly snapshot: RunSnapshot;
+  readonly definitions: RunDefinitions;
   readonly activations: readonly RunActivation[];
   readonly remoteWork: readonly RemoteWork[];
   readonly threadBindings: readonly RunThreadBinding[];

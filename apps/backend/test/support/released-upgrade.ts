@@ -11,6 +11,9 @@ type Success<T> = T extends { ok: true; value: infer V } ? V : never;
 type Value<K extends keyof Factory> = Factory[K] extends (...args: never[]) => infer R
   ? Success<Awaited<R>>
   : never;
+/** v0.2.0 returned a Run's definitions as the snapshot it stored at Start. */
+type ReleasedSnapshot = { flow: Value<"getFlow">; agents: Value<"getAgent">[] };
+type ReleasedRun = Omit<Value<"getRun">, "definitions"> & { snapshot: ReleasedSnapshot };
 interface ReleasedCapture {
   t3: Record<string, unknown>;
   project: Value<"addRepository">;
@@ -21,9 +24,21 @@ interface ReleasedCapture {
   agent: Value<"getAgent">;
   /** Edited after the closed Run started, then removed from the catalog. */
   retired: { flow: Value<"getFlow">; agent: Value<"getAgent"> };
-  closed: Value<"getRun">;
-  active: Value<"getRun">;
+  closed: ReleasedRun;
+  active: ReleasedRun;
   tasks: Value<"listTasks">;
+}
+
+/**
+ * The definitions a Run read from revisions must show for a released snapshot: the same saved
+ * content, without the readiness and settings availability that were live checks at Start.
+ */
+export function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
+  const { readiness: _readiness, ...savedFlow } = flow;
+  return {
+    flow: savedFlow,
+    agents: agents.map(({ settingsStatus: _settingsStatus, ...saved }) => saved),
+  };
 }
 
 /** The one released-version capture, restored without rewriting its durable state. */

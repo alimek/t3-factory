@@ -127,6 +127,25 @@ export const readCurrentFlows = Effect.fnUntraced(function* (
       AND r.revision = (SELECT max(revision) FROM flow_revisions WHERE flow_id = f.id)
     WHERE f.removed_at IS NULL ${flowId === undefined ? sql`` : sql`AND f.id = ${flowId}`}
     ORDER BY f.created_at DESC, f.id ASC`;
+  return yield* withGraphs(sql, revisions);
+});
+
+/** One stored revision by its id, also after a later save or the Flow's removal. */
+export const readFlowRevision = Effect.fnUntraced(function* (
+  sql: SqlClient.SqlClient,
+  revisionId: string,
+) {
+  const revisions = yield* sql<RevisionRow>`SELECT r.*, f.created_at FROM flow_revisions r
+    JOIN flows f ON f.id = r.flow_id WHERE r.id = ${revisionId}`;
+  const [flow] = yield* withGraphs(sql, revisions);
+  if (!flow) return yield* Effect.die(new Error(`Flow revision ${revisionId} is missing`));
+  return flow;
+});
+
+const withGraphs = Effect.fnUntraced(function* (
+  sql: SqlClient.SqlClient,
+  revisions: readonly RevisionRow[],
+) {
   if (!revisions.length) return [];
   const ids = sql.in(revisions.map((revision) => revision.id));
   const [blocks, exits, connections, targets] = yield* Effect.all([

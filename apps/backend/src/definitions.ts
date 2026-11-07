@@ -339,13 +339,6 @@ export const makeDefinitions = (
       },
     };
     return {
-      /** Authoring availability is live metadata, excluded from immutable Flow capture. */
-      getFlowForSnapshot: (id: string) =>
-        operations.getFlow(id).pipe(
-          Effect.map((result) => {
-            return result;
-          }),
-        ),
       createFlow: (...args: Parameters<typeof operations.createFlow>) =>
         Effect.suspend(() => operations.createFlow(...args)).pipe(
           Effect.withSpan("Definitions.createFlow"),

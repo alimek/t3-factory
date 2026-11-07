@@ -1,6 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { frozenRevisions, snapshotDefinitions } from "./support/frozen-revisions.ts";
-import { releasedUpgradeData } from "./support/released-upgrade.ts";
+import { capturedDefinitions, releasedUpgradeData } from "./support/released-upgrade.ts";
 
 it("upgrading v0.2.0 preserves clients, current definitions and closed and active Run history", async (c) => {
   // Arrange
@@ -30,9 +29,10 @@ it("upgrading v0.2.0 preserves clients, current definitions and closed and activ
   const retiredAgent = await factory.getAgent(fixture.retired.agent.id);
   assert(!retiredAgent.ok);
   expect(retiredAgent.error.code).toBe("not_found");
+  const { snapshot: closedSnapshot, ...closed } = fixture.closed;
   expect(await factory.getRun(fixture.closed.id)).toStrictEqual({
     ok: true,
-    value: fixture.closed,
+    value: { ...closed, definitions: capturedDefinitions(closedSnapshot) },
   });
   const active = await factory.getRun(fixture.active.id);
   assert(active.ok);
@@ -40,9 +40,9 @@ it("upgrading v0.2.0 preserves clients, current definitions and closed and activ
     id: fixture.active.id,
     closedAt: null,
     outcome: null,
-    snapshot: fixture.active.snapshot,
     threadBindings: fixture.active.threadBindings,
   });
+  expect(active.value.definitions).toStrictEqual(capturedDefinitions(fixture.active.snapshot));
   const [activation] = fixture.active.activations;
   const [execution] = fixture.active.executions;
   assert(activation && execution);
@@ -51,16 +51,6 @@ it("upgrading v0.2.0 preserves clients, current definitions and closed and activ
   ]);
   expect(active.value.executions).toMatchObject([
     { activationId: execution.activationId, executionId: execution.executionId },
-  ]);
-  const closedRevisions = frozenRevisions(fixture.h.databasePath, fixture.closed.id);
-  expect(closedRevisions).toMatchObject(snapshotDefinitions(fixture.closed.snapshot));
-  expect(closedRevisions.activations).toMatchObject([
-    { agentId: fixture.closed.snapshot.agents[0]!.id, revision: 1 },
-  ]);
-  const activeRevisions = frozenRevisions(fixture.h.databasePath, fixture.active.id);
-  expect(activeRevisions).toMatchObject(snapshotDefinitions(fixture.active.snapshot));
-  expect(activeRevisions.activations).toMatchObject([
-    { id: activation.id, agentId: fixture.agent.id, revision: 1 },
   ]);
   const navigation = await factory.listRunNavigation();
   assert(navigation.ok);

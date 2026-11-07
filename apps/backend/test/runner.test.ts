@@ -20,7 +20,7 @@ it("Start atomically deduplicates concurrent requests for the same Run", async (
   expect(one.value.id).toBe(two.value.id);
 });
 
-it("editing an Agent preserves the dispatched Run snapshot", async (c) => {
+it("editing an Agent preserves the dispatched Run definitions", async (c) => {
   // Arrange
   const { f, t3, input, agent } = await prepared(c);
   const started = await f.startRun(input);
@@ -38,7 +38,7 @@ it("editing an Agent preserves the dispatched Run snapshot", async (c) => {
   // Assert
   const run = await f.getRun(started.value.id);
   assert(run.ok);
-  expect(run.value.snapshot.agents[0]?.prompt).toBe("Follow repository instructions.");
+  expect(run.value.definitions.agents[0]?.prompt).toBe("Follow repository instructions.");
   expect(t3.launches.size).toBe(1);
 });
 

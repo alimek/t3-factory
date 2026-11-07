@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { RunSnapshot } from "@t3-factory/contracts";
+import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import {
@@ -42,19 +42,19 @@ function workerTitle(number: number, index: number, name: string) {
 }
 
 export function workerLaunchPayload(
-  snapshot: RunSnapshot,
+  definitions: RunDefinitions,
   blockId: string,
   target: Pick<T3Target, "environmentId" | "projectId">,
   key: string,
   number: number,
 ): LaunchPayload {
-  const blocks = snapshot.flow.graph.blocks;
+  const blocks = definitions.flow.graph.blocks;
   const index = blocks.findIndex((entry) => entry.id === blockId);
   const block = blocks[index];
   if (!block || block.kind !== "agent") throw Error("Launch target is not an Agent Block");
-  const agent = snapshot.agents.find((entry) => entry.id === block.agentId);
-  if (!agent) throw Error("Launch target Agent is not in the snapshot");
-  const payload = launchPayload(snapshot, blockId, target, key, "");
+  const agent = definitions.agents.find((entry) => entry.id === block.agentId);
+  if (!agent) throw Error("Launch target Agent is not in the definitions");
+  const payload = launchPayload(definitions, blockId, target, key, "");
   return {
     ...payload,
     title: workerTitle(number, index, block.name),
@@ -68,7 +68,7 @@ export function persistEntryLaunches(
   plan: {
     runId: string;
     number: number;
-    snapshot: RunSnapshot;
+    definitions: RunDefinitions;
     project: Pick<T3Target, "endpoint" | "environmentId" | "projectId" | "workspaceRoot">;
     contextId: string;
     retryScope: string | null;
@@ -76,13 +76,13 @@ export function persistEntryLaunches(
   },
 ) {
   return Effect.gen(function* () {
-    for (const blockId of plan.snapshot.flow.graph.flowInput.targetBlockIds) {
-      const block = plan.snapshot.flow.graph.blocks.find((entry) => entry.id === blockId);
+    for (const blockId of plan.definitions.flow.graph.flowInput.targetBlockIds) {
+      const block = plan.definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
       if (!block || block.kind !== "agent") continue;
       const activationId = yield* newId;
       const requestKey = yield* newId;
       const payload = workerLaunchPayload(
-        plan.snapshot,
+        plan.definitions,
         blockId,
         plan.project,
         requestKey,
@@ -108,10 +108,10 @@ export function persistEntryLaunches(
   });
 }
 
-export function entryMessagesTooLong(snapshot: RunSnapshot) {
-  return snapshot.flow.graph.flowInput.targetBlockIds.some((blockId) => {
-    const block = snapshot.flow.graph.blocks.find((entry) => entry.id === blockId);
-    const agent = snapshot.agents.find(
+export function entryMessagesTooLong(definitions: RunDefinitions) {
+  return definitions.flow.graph.flowInput.targetBlockIds.some((blockId) => {
+    const block = definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
+    const agent = definitions.agents.find(
       (entry) => block?.kind === "agent" && entry.id === block.agentId,
     );
     return !!agent && workerTurn(agent.prompt).length > 120000;

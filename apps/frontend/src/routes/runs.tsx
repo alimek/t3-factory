@@ -220,7 +220,7 @@ function RunDetailView({
   onSelect: (blockId: string | null) => void;
   onToggleContext: () => void;
 }) {
-  const graphBlock = run.snapshot.flow.graph.blocks.find((block) => block.id === selected);
+  const graphBlock = run.definitions.flow.graph.blocks.find((block) => block.id === selected);
   const recorded = run.blocks.find((block) => block.blockId === selected);
   const stop = useStopRun(run, observed.setRun);
   const unavailable = !!observed.error;
@@ -313,7 +313,7 @@ function lastObservedAt(run: RunDetail) {
 function snapshotNote(run: RunDetail, definition: SnapshotDefinition | undefined) {
   if (!definition) return null;
   if (definition === "missing") return "Original snapshot";
-  return definition.revision === run.snapshot.flow.revision ? null : "Flow edited since";
+  return definition.revision === run.definitions.flow.revision ? null : "Flow edited since";
 }
 
 function projectIsUnavailable(project: FactoryProject | undefined, loaded: boolean) {
@@ -405,7 +405,7 @@ function SnapshotBadge({ run, note }: { run: RunDetail; note: string | null }) {
       <Lock aria-hidden strokeWidth={1.75} className="text-muted-foreground" />
       <span className="font-semibold tracking-section text-foreground">Flow snapshot</span>
       <span className="truncate tracking-label text-muted-foreground">
-        {run.snapshot.flow.name} · saved at Start
+        {run.definitions.flow.name} · saved at Start
       </span>
       <span className="sr-only"> · </span>
       <span aria-hidden className="h-3 w-px bg-border" />
@@ -547,8 +547,8 @@ function blockAttentionLabel(run: RunDetail, blockId: string) {
 
 function blockKindLine(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "Human step · asks you";
-  const agent = run.snapshot.agents.find((item) => item.id === block.agentId)?.name;
-  const input = run.snapshot.flow.graph.flowInput.targetBlockIds.includes(block.id)
+  const agent = run.definitions.agents.find((item) => item.id === block.agentId)?.name;
+  const input = run.definitions.flow.graph.flowInput.targetBlockIds.includes(block.id)
     ? " · receives the Flow input"
     : "";
   return `Agent · ${agent ?? "not chosen"}${input}`;
@@ -653,7 +653,7 @@ function BlockDetails({
         <DetailSection title="Exits in snapshot">
           <ul className="flex flex-col gap-1.5 px-2">
             {block.exits.map((exit) => {
-              const recipients = exitRecipients(run.snapshot.flow.graph, block.id, exit.id);
+              const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
               return (
                 <li key={exit.id} className="flex items-baseline gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{exit.name || "Unnamed exit"}</span>
@@ -735,7 +735,7 @@ function RunContext({
       </ContextSection>
       <ContextSection title="Flow snapshot">
         <p className="text-sm text-emphasis-foreground">
-          {run.snapshot.flow.name} — captured at Start. Later Flow edits do not change this Run.
+          {run.definitions.flow.name} — captured at Start. Later Flow edits do not change this Run.
         </p>
       </ContextSection>
       <ContextSection title="Project">

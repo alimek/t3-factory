@@ -24,9 +24,10 @@ Failures explain recovery and keep the draft.
 - **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Runs
   work concurrently in the shared project checkout. A Run stays open, including unresolved work or an in-progress Stop,
   until its closure is recorded.
-- **Snapshot.** The Run keeps immutable input, the full Flow graph and each referenced Agent's prompt, settings, revision and
-  labels, and references the Flow revision and the Agent revisions it froze at Start. Agent edits need no Flow save: the
-  next Start uses the current saved Agents. Later edits affect only future Runs.
+- **Captured definitions.** The Run keeps its immutable input and references the Flow revision it started with and the
+  revision of every Agent that Flow references, frozen at Start. Every read and every later activation, also after restart,
+  uses those revisions: the full graph and each Agent's prompt, settings and labels. Agent edits need no Flow save: the next
+  Start uses the current saved Agents. Later edits and removals affect only future Runs.
 - **Launch.** Factory launches one top-level worker per Agent block visit, using that Agent's saved provider, model and
   options. Agents connected to the Flow input start in parallel and independently (no Agent is told about the others). There
   is no Run conversation. A lost launch is searched for by its saved title and verified thread evidence; Factory does not
@@ -51,9 +52,9 @@ Failures explain recovery and keep the draft.
 
 ## Execution canvas
 
-Opening a Run shows its saved Flow snapshot on a read-only canvas. Positions, exits, connections and Agent labels come from the
-snapshot, even after the Flow is edited or removed or the project is unavailable; a changed later definition is labelled, never
-substituted.
+Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow snapshot**). Positions, exits,
+connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
+project is unavailable; a changed later definition is labelled, never substituted.
 
 - The **Flow input** block shows the Run's truncated prompt and has no state or details panel.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped. Several blocks can be
@@ -64,7 +65,7 @@ substituted.
   block differs from stale; a block that never ran says **Not visited**.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
-  lays out left to right, changes neither the Flow nor the snapshot and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
+  lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
 - The top bar shows title, project, snapshot, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Stop Run** (open) and a ··· menu. The timeline starts collapsed; the context rail (attention, Stop/closure
@@ -96,7 +97,7 @@ stale) and chips. Missing projects keep readable history; an unavailable open Ru
   empty composition with the same choices. While a draft's Start is in flight or its outcome is unknown, both are
   unavailable: the draft keeps its exact request until **Check same request** settles it.
 - A closed Run is read-only history and is never reopened or relaunched. To work on the matter again, start a **New Run**: it
-  uses the current saved Flow and Agent definitions, not an earlier Run's snapshot.
+  uses the current saved Flow and Agent definitions, not an earlier Run's captured revisions.
 
 ### Snooze and Woke
 
@@ -162,8 +163,8 @@ quality or one reviewed revision. Confirmed Stop keeps finished blocks, leaves u
 blocks stopped.
 
 Finished and Stopped Runs stay closed: later T3 conversations neither reopen them nor extend their timeline, and new reports and
-Human answers are rejected (identical accepted report retries still return the saved acknowledgement). History, input, snapshots,
-events and closure evidence remain; no transcript or response-body archive exists.
+Human answers are rejected (identical accepted report retries still return the saved acknowledgement). History, input, captured
+definitions, events and closure evidence remain; no transcript or response-body archive exists.
 
 ## Stop
 

@@ -30,13 +30,13 @@ function nameOf(run: RunDetail, blockId: string | null) {
   if (!blockId) return "Run";
   return (
     run.blocks.find((block) => block.blockId === blockId)?.name ??
-    run.snapshot.flow.graph.blocks.find((block) => block.id === blockId)?.name ??
+    run.definitions.flow.graph.blocks.find((block) => block.id === blockId)?.name ??
     blockId
   );
 }
 
 function exitLabel(run: RunDetail, blockId: string, exitId: string | null) {
-  const block = run.snapshot.flow.graph.blocks.find((item) => item.id === blockId);
+  const block = run.definitions.flow.graph.blocks.find((item) => item.id === blockId);
   return block?.exits.find((exit) => exit.id === exitId)?.name ?? exitId ?? "an exit";
 }
 
@@ -182,7 +182,7 @@ function phrase(run: RunDetail, event: RunEvent): EventPhrase {
 }
 
 function ActorIcon({ run, actorId }: { run: RunDetail; actorId: string | null }) {
-  const kind = run.snapshot.flow.graph.blocks.find((block) => block.id === actorId)?.kind;
+  const kind = run.definitions.flow.graph.blocks.find((block) => block.id === actorId)?.kind;
   const Icon = !actorId ? Flag : kind === "human" ? User : Bot;
   return <Icon aria-hidden className="size-3 shrink-0 text-link" strokeWidth={1.75} />;
 }

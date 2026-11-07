@@ -4,7 +4,7 @@ import { COORDINATOR_HOLD } from "./runner-coordination.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { recoveryDispatchGeneration } from "./runner-recovery.ts";
-import type { FactoryOperations, RunSnapshot } from "@t3-factory/contracts";
+import type { FactoryOperations } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SendPayload, SendReference, T3Adapter } from "./adapters/t3.ts";
@@ -57,7 +57,7 @@ export function openRunnerDispatch(
   database: RunnerDatabase,
   ops: EffectOperations<FactoryOperations>,
   t3: T3Adapter,
-  checkSnapshot: RunnerOptions["checkSnapshot"],
+  checkAgent: RunnerOptions["checkAgent"],
   observe: (run: RunRow, block: BlockRow, contextId: string | null) => Effect.Effect<void, unknown>,
 ) {
   const { run, mutate, row, owner, problem, reserveIntent } = database;
@@ -67,9 +67,10 @@ export function openRunnerDispatch(
     intent: IntentRow,
   ): Effect.Effect<IntentRow | undefined, unknown> {
     return Effect.gen(function* () {
-      const snapshot = JSON.parse(runRow.snapshot_json) as RunSnapshot;
+      const { definitions } = runRow;
       if (
-        snapshot.flow.graph.blocks.find((block) => block.id === intent.block_id)?.kind !== "agent"
+        definitions.flow.graph.blocks.find((block) => block.id === intent.block_id)?.kind !==
+        "agent"
       ) {
         yield* activatePendingHumanHandoff(database, t3, runRow, intent);
         return;
@@ -226,7 +227,7 @@ export function openRunnerDispatch(
   /** Even replay may create work if the original request never reached T3. */
   function rebindOrReadinessProblem(runRow: RunRow) {
     return Effect.gen(function* () {
-      const ready = yield* snapshotReady(runRow);
+      const ready = yield* agentsReady(runRow);
       const target = catalogProject(yield* ops.listProjects(), runRow.project_id);
       if (
         !target ||
@@ -239,11 +240,11 @@ export function openRunnerDispatch(
       return null;
     });
   }
-  function snapshotReady(runRow: RunRow) {
+  function agentsReady(runRow: RunRow) {
     return Effect.gen(function* () {
-      const snapshot = JSON.parse(runRow.snapshot_json) as RunSnapshot;
-      for (const agent of snapshot.agents) {
-        const readiness = yield* checkSnapshot(runRow.project_id, agent);
+      const { definitions } = runRow;
+      for (const agent of definitions.agents) {
+        const readiness = yield* checkAgent(runRow.project_id, agent);
         if (!readiness.ok || !readiness.value.ready) return false;
       }
       return true;

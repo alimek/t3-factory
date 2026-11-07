@@ -86,7 +86,7 @@ it("renaming a Run trims its title without changing its sibling or its Task", as
   // Assert
   assert(renamed.ok);
   expect(renamed.value.title).toBe("Independent name");
-  expect(renamed.value.snapshot).toStrictEqual(first.snapshot);
+  expect(renamed.value.definitions).toStrictEqual(first.definitions);
   expect(renamed.value.events).toStrictEqual(first.events);
   expect(renamed.value.input).toBe(first.input);
   expect(renamed.value.task.title).toBe(first.task.title);

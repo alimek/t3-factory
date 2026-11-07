@@ -142,7 +142,7 @@ function runContext(
     closedAt: detail.closedAt,
     outcome: detail.outcome,
     stopRequestedAt: detail.stopRequestedAt,
-    snapshot: { flow: detail.snapshot.flow },
+    definitions: { flow: detail.definitions.flow },
     blocks: detail.blocks.map(({ blockId, name, state, problem, freshness }) => ({
       blockId,
       name,

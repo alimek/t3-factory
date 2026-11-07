@@ -95,7 +95,7 @@ and global navigation entry.
 The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, and closure. Each Run has its own timeline, distinct from conversations in its T3 threads.
 
 **Execution canvas**:
-The read-only view of the Flow snapshot saved with a Run. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
+The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
 
 **Flow input**:
 The data supplied to a particular flow execution: the plain text entered when starting a Run. Every Agent block connected to the Flow input block receives it, each in its own independent session.
@@ -117,7 +117,7 @@ The user's request to close a Run's handoff gate and reconcile cancellation of q
 **Handoff**:
 An accepted delivery from a block's selected exit to one connected recipient.
 Under the explicit contract it is held until fresh source completion and clear
-queue/native evidence permit reservation; acceptance alone does not start work. Each recipient and repeated arrival proceeds independently, using the Run snapshot's routing rules.
+queue/native evidence permit reservation; acceptance alone does not start work. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
 
 **Human occurrence**:
 One arrival at a Human step within a Run, with its own pending context and settlement. Under the explicit reporting contract, the occurrence activates only after the source completion gate permits release; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
@@ -159,7 +159,7 @@ the current saved Flow and Agent definitions.
 **Run draft**:
 A client-local composition saved in browser storage while its prompt has a
 non-whitespace character: the exact prompt, Project/Flow references, title and
-creation time. It has no Task, Run or snapshot until Start is accepted, which removes
+creation time. It has no Task, Run or captured revisions until Start is accepted, which removes
 it; the Run keeps its title and creation time. Not to be confused with an unsaved Flow draft in Studio.
 
 **Request report**:

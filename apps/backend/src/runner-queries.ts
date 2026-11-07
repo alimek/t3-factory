@@ -4,17 +4,12 @@ import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "./thread-link.ts";
 import { recoveryRows } from "./runner-recovery.ts";
-import type {
-  Result,
-  RunAttention,
-  RunDetail,
-  RunSnapshot,
-  TaskSummary,
-} from "@t3-factory/contracts";
+import type { Result, RunAttention, RunDetail, TaskSummary } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
+import { readRunDefinitions } from "./run-definitions.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type {
@@ -182,11 +177,10 @@ function runClosure(closure: ClosureRow | undefined): RunDetail["closure"] {
 }
 
 function runEntry(row: TaskRunRow): TaskSummary["runs"][number] {
-  const snapshot = JSON.parse(row.snapshot_json) as RunSnapshot;
   return {
     id: row.id,
-    flowId: snapshot.flow.id,
-    flowName: snapshot.flow.name,
+    flowId: row.flow_id,
+    flowName: row.flow_name,
     input: row.input,
     startedAt: row.started_at,
     closedAt: row.closed_at,
@@ -224,7 +218,7 @@ function buildTaskSummary(
 function taskSummary(sql: SqlClient.SqlClient, task: TaskRow) {
   return Effect.gen(function* () {
     const runs =
-      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.closed_at,r.outcome,r.stop_requested_at,s.snapshot_json FROM runs r JOIN run_snapshots s ON s.run_id=r.id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
+      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.closed_at,r.outcome,r.stop_requested_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
     const [activeRun] = yield* sql<{
       id: string;
     }>`SELECT id FROM runs WHERE task_id=${task.id} AND closed_at IS NULL`;
@@ -238,9 +232,11 @@ export function openRunnerQueries(database: RunnerDatabase) {
     // One read transaction gives UI a coherent frontier of the local state.
     return transaction((sql) =>
       Effect.gen(function* () {
-        const [runRow] =
-          yield* sql<RunRow>`SELECT r.*,t.project_id,t.title AS task_title,s.snapshot_json FROM runs r JOIN tasks t ON t.id=r.task_id JOIN run_snapshots s ON s.run_id=r.id WHERE r.id=${id}`;
-        if (!runRow) return failure("not_found", "This Run does not exist.");
+        const [saved] = yield* sql<
+          Omit<RunRow, "definitions">
+        >`SELECT r.*,t.project_id,t.title AS task_title FROM runs r JOIN tasks t ON t.id=r.task_id WHERE r.id=${id}`;
+        if (!saved) return failure("not_found", "This Run does not exist.");
+        const runRow: RunRow = { ...saved, definitions: yield* readRunDefinitions(sql, saved) };
         const blocks =
           yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${id} ORDER BY rowid`;
         const intents =
@@ -257,7 +253,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
           yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE run_id=${id} ORDER BY rowid`;
         const attention = yield* attentionRows(sql, id);
         const [closure] = yield* sql<ClosureRow>`SELECT * FROM run_closures WHERE run_id=${id}`;
-        const snapshot = JSON.parse(runRow.snapshot_json) as RunSnapshot;
+        const { definitions } = runRow;
         return {
           ok: true as const,
           value: {
@@ -266,9 +262,9 @@ export function openRunnerQueries(database: RunnerDatabase) {
             title: runRow.title,
             task: { id: runRow.task_id, title: runRow.task_title, projectId: runRow.project_id },
             input: runRow.input,
-            flowId: snapshot.flow.id,
-            flowName: snapshot.flow.name,
-            snapshot,
+            flowId: definitions.flow.id,
+            flowName: definitions.flow.name,
+            definitions,
             runCoordinator: yield* readRunCoordinator(sql, id),
             coordinationActions: yield* readCoordinationActions(sql, runRow),
             rootWork: yield* readRootWork(sql, id),
