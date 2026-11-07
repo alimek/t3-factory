@@ -1,3 +1,4 @@
+import { bindRuntimeReportCaller } from "../../apps/backend/test/support/lifecycle-setup.ts";
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
 import { delegateNativeWork } from "./native-simulation.ts";
 import {
@@ -152,6 +153,38 @@ async function conversationWaitingScenario(context: SeedContext, flowId: string)
   );
 }
 
+/** A rejected final is distinct from completed work with no accepted report. */
+async function rejectedReportScenario(context: SeedContext, flowId: string) {
+  const run = await startScenario(
+    context,
+    flowId,
+    "rejected-report",
+    "Problem · Report exit needs correction",
+    "Review the existing navigation wording and report through the Flow's captured exit.",
+  );
+  const worker = executionBlock(run);
+  bindRuntimeReportCaller(
+    context.t3,
+    context.t3ProjectId,
+    worker.executionId,
+    "demo-rejected-report",
+    worker.threadId,
+  );
+  const reply = await context.factory.runtime.submit({
+    arguments: {
+      to: "finished",
+      exit: "Unknown exit",
+      message: "The review is complete; the exit needs correction.",
+    },
+    metadata: { callId: "demo-rejected-report" },
+  });
+  if (reply.code !== "INVALID_EXIT") throw Error(`Development rejection: ${reply.code}`);
+  await observeTerminal(context.t3, worker, "completed");
+  await reconcileUntil(context, run.id, (detail) =>
+    detail.attention.some((item) => item.kind === "missing-report" && !item.settledAt),
+  );
+}
+
 const bothReviewersWorking = (context: SeedContext, runId: string) =>
   reconcileUntil(
     context,
@@ -196,6 +229,7 @@ export async function seedScenarios(
   await settledScenarios(context, flows.simple);
   await attentionScenarios(context, flows.simple);
   await conversationWaitingScenario(context, flows.simple);
+  await rejectedReportScenario(context, flows.simple);
   await waitingForReview(context, flows.review);
   await waitingForReview(context, flows.review, true);
   await parallelScenario(context, flows.parallel);

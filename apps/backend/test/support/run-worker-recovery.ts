@@ -1,5 +1,5 @@
 import { assert, type TestContext } from "@effect/vitest";
-import { missingWorkerReport, workerFinal, type directWorker } from "./run-worker.ts";
+import { missingWorkerReport, workerFinal, directWorker } from "./run-worker.ts";
 import { bindThreadReportCaller } from "./lifecycle-setup.ts";
 
 export async function workerRecoveryTurn(
@@ -49,4 +49,19 @@ export async function completedWorkerRecovery(c: TestContext) {
   });
   await f.f.reconcileRuns();
   return { ...f, executionId };
+}
+
+export async function rejectedWorkerReport(c: TestContext) {
+  const f = await directWorker(c, true, "");
+  assert(
+    (await f.f.runtime.submit({ ...workerFinal(), arguments: { to: "finished", exit: "unknown" } }))
+      .code === "INVALID_EXIT",
+  );
+  return f;
+}
+
+export async function recoveringRejectedWorker(c: TestContext) {
+  const f = await missingWorkerReport(c, await rejectedWorkerReport(c));
+  const recovery = await workerRecoveryTurn(f, f.missing.id);
+  return { ...recovery, sourceExecutionId: f.missing.executionId };
 }

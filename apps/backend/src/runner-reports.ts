@@ -1,3 +1,4 @@
+import { recordReportVerdict } from "./runner-report-diagnostics.ts";
 import { prepareCheckpoint } from "./coordinator-evidence.ts";
 import { checkpointRejection, persistCheckpoint } from "./coordinator-checkpoint.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
@@ -203,35 +204,38 @@ export function openRunnerReports(
               const caller = yield* reportCaller(sql, binding, retryOnly);
               if (!caller.ok) return caller.reply;
               const { runRow, block } = caller;
-              const protocol = waitingRejection(report);
-              if (protocol) return protocol;
-              const content = reportFingerprint(report);
-              const rejection = yield* workerReport(sql, binding, report, content);
-              if (rejection) return conflictDetail(rejection, block, runRow);
-              const priorReply = yield* reportRetry(sql, binding, report.key, content);
-              if (priorReply) return conflictDetail(priorReply, block, runRow);
-              if (!runRow.gate_open || runRow.closed_at) return { code: "RUN_CLOSED" };
-              if (retryOnly || block.execution_id !== binding.runId)
-                return { code: "STALE_EXECUTION" };
-              if (block.freshness !== "fresh") return { code: "INCOMPLETE_EXECUTION_EVIDENCE" };
-              const route = reportRoute(runRow.definitions, binding.blockId, report);
-              if (!route.ok) return route.reply;
-              if (report.status === "waiting")
-                return yield* acceptCoordinatorWait(sql, binding, report, content);
-              const checkpointError = yield* checkpointRejection(sql, checkpoint);
-              if (checkpointError) return checkpointError;
-              const reply = yield* acceptReport(
-                sql,
-                runRow,
-                block,
-                binding,
-                report,
-                content,
-                route,
-              );
-              yield* persistCheckpoint(sql, binding, reply.reportId, checkpoint);
-              acceptedNew = true;
-              return reply;
+              const reply = yield* Effect.gen(function* () {
+                const protocol = waitingRejection(report);
+                if (protocol) return protocol;
+                const content = reportFingerprint(report);
+                const rejection = yield* workerReport(sql, binding, report, content);
+                if (rejection) return conflictDetail(rejection, block, runRow);
+                const priorReply = yield* reportRetry(sql, binding, report.key, content);
+                if (priorReply) return conflictDetail(priorReply, block, runRow);
+                if (!runRow.gate_open || runRow.closed_at) return { code: "RUN_CLOSED" };
+                if (retryOnly || block.execution_id !== binding.runId)
+                  return { code: "STALE_EXECUTION" };
+                if (block.freshness !== "fresh") return { code: "INCOMPLETE_EXECUTION_EVIDENCE" };
+                const route = reportRoute(runRow.definitions, binding.blockId, report);
+                if (!route.ok) return route.reply;
+                if (report.status === "waiting")
+                  return yield* acceptCoordinatorWait(sql, binding, report, content);
+                const checkpointError = yield* checkpointRejection(sql, checkpoint);
+                if (checkpointError) return checkpointError;
+                const reply = yield* acceptReport(
+                  sql,
+                  runRow,
+                  block,
+                  binding,
+                  report,
+                  content,
+                  route,
+                );
+                yield* persistCheckpoint(sql, binding, reply.reportId, checkpoint);
+                acceptedNew = true;
+                return reply;
+              });
+              return yield* recordReportVerdict(sql, binding, runRow, block, reply, retryOnly);
             }),
           );
           if (acceptedNew && !isClosed())
