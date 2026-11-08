@@ -206,6 +206,17 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      - name: Check this is still the latest Release
+        # A re-run for an older Release must not replace the page of a newer one.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [[ "$latest" != "$RELEASE_TAG" ]]; then
+            echo "::error::$RELEASE_TAG is not the latest Release ($latest); the page is not deployed."
+            exit 1
+          fi
       - id: pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - run: pnpm install --frozen-lockfile
