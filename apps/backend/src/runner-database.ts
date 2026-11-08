@@ -5,6 +5,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { now } from "./time.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
+import { readRunWorkspace } from "./run-workspace.ts";
 import type { LiveChanges } from "./live-changes.ts";
 /**
  * The sole owner of local Run mutation lanes and SQL transaction boundaries. Writers outside
@@ -41,9 +42,15 @@ export function openRunnerDatabase(
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const [runRow] = yield* sql<
-            Omit<RunRow, "definitions">
+            Omit<RunRow, "definitions" | "workspace">
           >`SELECT r.*, t.project_id, t.title, c.endpoint, c.environment_id, p.project_id AS t3_project_id FROM runs r JOIN tasks t ON t.id=r.task_id JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN projects p ON p.id=t.project_id WHERE r.id=${id}`;
-          return runRow && { ...runRow, definitions: yield* readRunDefinitions(sql, runRow) };
+          return (
+            runRow && {
+              ...runRow,
+              definitions: yield* readRunDefinitions(sql, runRow),
+              workspace: yield* readRunWorkspace(sql, runRow.id),
+            }
+          );
         }),
       );
     });

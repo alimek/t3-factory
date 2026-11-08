@@ -52,6 +52,8 @@ export class ControlledT3 implements T3Adapter {
   retryScope: string | null = "controlled-durable-server-1";
   loseLaunchReply = false;
   beforeLaunch?: () => Promise<void>;
+  /** Every launch call received, including same-key replays T3 would not deduplicate. */
+  launchCalls = 0;
   readonly launches = new Map<string, { payload: LaunchPayload; reference: LaunchReference }>();
   /** Threads launched with no message: no run until a send. */
   readonly idleLaunches = new Map<
@@ -107,6 +109,7 @@ export class ControlledT3 implements T3Adapter {
   ): Promise<R> {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     await this.beforeLaunch?.();
+    this.launchCalls++;
     let launch = accepted.get(payload.clientRequestId);
     if (launch && JSON.stringify(launch.payload) !== JSON.stringify(payload))
       throw Error("Key conflict");
@@ -134,6 +137,8 @@ export class ControlledT3 implements T3Adapter {
   private launchedThread(threadId: string) {
     return this.launchedThreads().find((entry) => entry.reference.threadId === threadId);
   }
+  /** While true, worktree-creating threads show no path or branch yet, as T3 before it creates the worktree. */
+  worktreeMetadataPending = false;
   /** Root threads report `checkout`; worktree threads report T3's path and the requested branch. */
   private threadWorkspace(
     payload: LaunchPayload | IdleLaunchPayload,
@@ -144,6 +149,7 @@ export class ControlledT3 implements T3Adapter {
     if (strategy.type === "root") return { workspaceRoot: checkout, branch: null };
     if (strategy.type === "existing_worktree")
       return { workspaceRoot: strategy.worktreePath, branch: strategy.branch };
+    if (this.worktreeMetadataPending) return { workspaceRoot: null, branch: null };
     return { workspaceRoot: `/t3-worktrees/${threadId}`, branch: strategy.branch };
   }
   rejectLaunch = false;

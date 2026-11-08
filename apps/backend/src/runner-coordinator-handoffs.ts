@@ -6,6 +6,7 @@ import type { IntentRow, RunRow, StoredTarget } from "./runner-types.ts";
 import { persistActivation } from "./runner-coordination.ts";
 import { workerLaunchPayload, workerTurn } from "./runner-block-workers.ts";
 import { fingerprint } from "./runner-utils.ts";
+import { launchStrategy } from "./run-workspace.ts";
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
 
@@ -37,6 +38,9 @@ export function prepareCoordinatorHandoff(
         sql`SELECT id FROM operation_intents WHERE run_id=${run.id} AND block_id=${intent.block_id} AND kind='launch' AND state NOT IN ('acknowledged','cancelled')`,
     );
     if (pending.length) return undefined;
+    // A worktree Run's later workers join its worktree, so they wait until it is bound.
+    const strategy = launchStrategy(current.workspace, intent.block_id);
+    if (!strategy) return undefined;
     // A revisit waits until the target's previous activation has its current result released.
     if (
       prior &&
@@ -65,6 +69,7 @@ export function prepareCoordinatorHandoff(
           intent.request_key,
           current.number,
           block!.public_id,
+          strategy,
         );
         const plan = {
           activationId,

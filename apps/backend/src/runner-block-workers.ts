@@ -16,20 +16,18 @@ import { recoverOperation } from "./runner-effects.ts";
 import { launchPayload } from "./runner-handoffs.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
-import {
-  checkoutWorkspace,
-  fingerprint,
-  intactPayload,
-  runTarget,
-  unverified,
-  verified,
-} from "./runner-utils.ts";
+import { fingerprint, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
+import { launchedInWorkspace, launchStrategy, sameStrategy } from "./run-workspace.ts";
+import type { RunWorkspace } from "./run-workspace.ts";
 import { scopedThreadHref } from "./thread-link.ts";
 import { now } from "./time.ts";
 import { newId } from "./ids.ts";
 
 const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
+
+const WORKTREE_REJECTED =
+  "T3 rejected the worker that creates the Run worktree. This worker was not launched.";
 
 /** The installed Block skill, the Block id its Factory tools take, and the turn to act on. */
 export function workerTurn(body: string, blockId: string) {
@@ -48,6 +46,7 @@ export function workerLaunchPayload(
   key: string,
   number: number,
   publicId: string,
+  workspaceStrategy: LaunchPayload["workspaceStrategy"],
 ): LaunchPayload {
   const blocks = definitions.flow.graph.blocks;
   const index = blocks.findIndex((entry) => entry.id === blockId);
@@ -60,26 +59,36 @@ export function workerLaunchPayload(
     ...payload,
     title: workerTitle(number, index, block.name),
     message: workerTurn(agent.prompt, publicId),
+    workspaceStrategy,
   };
 }
 
-/** Entry launches are durable before any T3 call. One worker per Flow-input target. */
+/** Flow-input targets that launch with the accepted Start; a worktree Run starts only its creator. */
+export function startLaunchTargets(definitions: RunDefinitions, workspace: RunWorkspace) {
+  const targets = definitions.flow.graph.flowInput.targetBlockIds;
+  return workspace.mode === "checkout" ? targets : [workspace.creatorBlockId];
+}
+
+/** Entry launches are durable before any T3 call. One worker per given Flow-input target. */
 export function persistEntryLaunches(
   sql: SqlClient.SqlClient,
   plan: {
     runId: string;
     number: number;
     definitions: RunDefinitions;
+    workspace: RunWorkspace;
     project: Pick<T3Target, "endpoint" | "environmentId" | "projectId" | "workspaceRoot">;
     contextId: string;
     retryScope: string | null;
     time: string;
   },
+  blockIds: readonly string[],
 ) {
   return Effect.gen(function* () {
-    for (const blockId of plan.definitions.flow.graph.flowInput.targetBlockIds) {
+    for (const blockId of blockIds) {
       const block = plan.definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
-      if (!block || block.kind !== "agent") continue;
+      const strategy = launchStrategy(plan.workspace, blockId);
+      if (!block || block.kind !== "agent" || !strategy) continue;
       const activationId = yield* newId;
       const requestKey = yield* newId;
       const [saved] = yield* sql<{
@@ -92,6 +101,7 @@ export function persistEntryLaunches(
         requestKey,
         plan.number,
         saved!.public_id,
+        strategy,
       );
       yield* persistActivation(
         sql,
@@ -138,8 +148,13 @@ export function dispatchBlockLaunch(
     }
     if (intent.state === "pending") {
       if (!runRow.gate_open) return;
+      const target = runTarget(runRow);
       const support = yield* Effect.tryPromise({
-        try: () => t3.inspectLaunchSupport(runTarget(runRow)).catch(() => null),
+        try: () =>
+          (checked.value.workspaceStrategy.type === "root"
+            ? t3.inspectLaunchSupport(target)
+            : t3.inspectWorktreeLaunchSupport(target)
+          ).catch(() => null),
         catch: () => null,
       });
       if (!support?.supported) {
@@ -188,7 +203,8 @@ function verifiedLaunchPayload(run: RunRow, intent: IntentRow) {
     target.workspaceRoot !== run.workspace_root ||
     payload.environmentId !== run.environment_id ||
     payload.projectId !== run.t3_project_id ||
-    payload.workspaceStrategy?.type !== "root" ||
+    !payload.workspaceStrategy ||
+    !sameStrategy(payload.workspaceStrategy, launchStrategy(run.workspace, intent.block_id)) ||
     payload.interactionMode !== "default" ||
     !payload.title ||
     !payload.message ||
@@ -247,8 +263,7 @@ function launchMatches(payload: LaunchPayload, run: RunRow, candidate: LaunchCan
   return (
     candidate.projectId === run.t3_project_id &&
     candidate.parentThreadId === null &&
-    payload.workspaceStrategy.type === "root" &&
-    checkoutWorkspace(candidate.workspaceRoot, run.workspace_root) &&
+    launchedInWorkspace(payload.workspaceStrategy, candidate, run.workspace_root) &&
     candidate.interactionMode === "default" &&
     candidate.providerInstanceId === payload.modelSelection.instanceId &&
     candidate.model === payload.modelSelection.model &&
@@ -321,6 +336,12 @@ function rejectLaunchedWorker(database: RunnerDatabase, runRow: RunRow, intent: 
       const time = yield* now;
       yield* sql`UPDATE run_blocks SET state='error',problem='T3 rejected the worker launch.' WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem='T3 rejected the worker launch.',reconciled_at=${time} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
+      // Without the Run worktree no other Flow-input worker launches, and none falls back to the project root.
+      const failed =
+        yield* sql`UPDATE run_workspaces SET state='failed' WHERE run_id=${runRow.id} AND creator_block_id=${intent.block_id} AND state='preparing' RETURNING run_id`;
+      if (failed.length)
+        for (const blockId of runRow.definitions.flow.graph.flowInput.targetBlockIds)
+          yield* sql`UPDATE run_blocks SET state='error',problem=${WORKTREE_REJECTED} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
     }),
   );

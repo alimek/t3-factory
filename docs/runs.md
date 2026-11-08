@@ -29,8 +29,8 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   own pending request, and per selected Factory server (a desktop client never checks it against another server); it is
   removed after a confirmed acceptance or rejection. When
   storage is blocked, the unknown-outcome notice says the request survives only while the window stays open.
-- **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Runs
-  work concurrently in the shared project checkout. A Run stays Active, including unresolved work, until it
+- **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Checkout
+  Runs work concurrently in the shared project checkout; each worktree Run works in its own worktree. A Run stays Active, including unresolved work, until it
   [settles](#settled-runs) or is [archived](#archive).
 - **Captured definitions.** The Run keeps its immutable input and references the Flow revision it started with, including
   its workspace setting, and the revision of every Agent that Flow references, frozen at Start. Every read and every later activation, also after restart,
@@ -40,7 +40,8 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   options. Agents connected to the Flow input start in parallel and independently (no Agent is told about the others). There
   is no Run conversation. A lost launch is searched for by its saved title and verified thread evidence; Factory does not
   launch a second worker for it. A definitive rejection is an error. Other workers keep going.
-  Factory works in the project root with no isolated worktrees, omits `runtimeMode` and leaves execution permissions to T3
+  Factory works in the Run's workspace: the project root, or for a worktree Flow one worktree that all of the Run's
+  workers share ([Run workspace](runner.md#run-workspace)). It omits `runtimeMode` and leaves execution permissions to T3
   and its OAuth grant, so effective autonomy is not guaranteed by Factory. Use a repository you are willing to let agents
   change.
 - **Composer.** Project and Flow choices are remembered locally per selected Factory server, like drafts. Each blocking condition is a notice with a recovery action, and

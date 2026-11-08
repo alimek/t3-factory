@@ -21,9 +21,6 @@ export const replayUnproven = (intent: IntentRow, retryScope: string | null) =>
   intent.state !== "pending" && (!intent.retry_scope || intent.retry_scope !== retryScope);
 export const catalogProject = (catalog: Result<ProjectCatalog>, projectId: string) =>
   catalog.ok ? catalog.value.projects.find((project) => project.id === projectId) : undefined;
-/** Null is T3's project checkout. Any other path must be that checkout. */
-export const checkoutWorkspace = (workspaceRoot: string | null, checkout: string) =>
-  workspaceRoot === null || workspaceRoot === checkout;
 
 /** Convert the accepted, persisted Run context without reading current connection settings. */
 export function runTarget(

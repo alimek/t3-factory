@@ -17,7 +17,7 @@ Captured definitions carry no execution contract, coordination instruction versi
 reporting protocol.
 
 - Each Flow-input Agent starts independently. The worker uses that Agent's captured
-  provider, model and options, the project-root workspace, and the runtime mode from T3
+  provider, model and options, the [Run workspace](#run-workspace), and the runtime mode from T3
   and project defaults. Nothing is inherited from another thread. Two Blocks that share
   one Agent still get separate workers.
 - The saved launch title is `Factory #<number> · <block position> <Block name>`, sliced to
@@ -33,6 +33,39 @@ reporting protocol.
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
   Conversation with the user stays in that worker thread; Factory does not track it.
+
+### Run workspace
+
+The captured Flow revision's [workspace setting](studio.md#workspace-setting) decides where
+every worker of a Run works. A checkout Run works in the project root. A worktree Run's
+workers share one worktree; its project root stays the Run's project identity.
+
+- Start of a worktree Flow also requires T3's worktree launch support, otherwise it fails
+  with `launch_unsupported`. The accepted Start records the Run workspace: the resolved base
+  ref, the planned branch, the creator Block (the first Flow-input target) and the
+  preparation state, `preparing`, `bound` or `failed`, plus the path and branch once bound.
+- The creator launches with its normal first message on
+  `{type: "worktree", baseRef, branch}`. Factory always names the branch
+  `factory/run-<Run number>-<first 8 characters of the Run id>`, so T3 does not rename it
+  after the first turn and Runs of different Factory homes on one repository do not share
+  it. T3 rejects the launch if that branch already exists.
+- Observation reads the creator's thread. Once it shows both a worktree path and a branch,
+  Factory binds them to the Run. The path is not readiness: T3 queues each worker's turn
+  behind that worker's own workspace preparation.
+- After binding, every other Flow-input target launches once with its normal first message
+  on `{type: "existing_worktree", worktreePath, branch}`, and a later Block's first visit
+  launches the same way. Until then those launches wait. A launch with a message, rather
+  than an idle thread that a send activates later, keeps T3's preparation fence for each
+  worker's own setup script.
+- Worker reads, send-target checks, launch verification and recovery compare a worktree
+  Run's threads with the bound path; before binding only a thread that shows no path yet
+  is accepted. A thread that shows another path is a scope change. Checkout Runs keep the
+  project-root rule.
+- An uncertain creator launch is recovered by search and never repeated, so no second
+  worktree is created; the other workers keep waiting. A definitive creator rejection is an
+  error on the creator Block and on every other Flow-input Block, and none of them launches
+  into the project root. Automatic settlement waits while the worktree is unbound.
+- Factory never removes the worktree; T3's own cleanup rules apply to it.
 
 ## Start and delivery guarantees
 
@@ -76,7 +109,9 @@ is running, recovery searches the same T3 environment and project for the saved 
 then binds only a uniquely verified thread and its exact execution. A missing parent, a
 non-string parent, or a missing workspace withholds the search. T3 reports a project-checkout
 thread with a null workspace, and that null matches a root-strategy launch. Any other
-workspace must equal the Run's project root. The first search is
+workspace must equal the Run's project root. A worktree-creating launch matches a thread
+with a worktree path on its planned branch; a launch joining a bound worktree matches its
+exact path and branch. A null branch never matches a worktree launch. The first search is
 immediate; each completed search that does not bind waits longer, from 1 second doubling
 up to 60 seconds. Empty, delayed, ambiguous or incomplete evidence stays unresolved.
 Model options must be readable; otherwise live recovery can remain pending. A matching
@@ -228,7 +263,7 @@ followed by the captured Agent prompt. A revisit queues a turn on the same worke
 the previous activation's current result is released and, at send time, the worker thread is
 finished. Two Blocks using the same
 Agent still have separate workers. Parallel arrivals never join or batch their feedback.
-Threads share the project-root checkout; Factory guarantees neither edit-conflict handling
+Threads share the Run's workspace, the project-root checkout or the Run's worktree; Factory guarantees neither edit-conflict handling
 nor agreement on one repository revision.
 
 Partial fan-out survives restart. Each pending delivery retains its own body until

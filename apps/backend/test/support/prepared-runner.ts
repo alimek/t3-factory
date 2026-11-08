@@ -166,3 +166,21 @@ export async function preparedWorkspaceFlow(c: TestContext, workspace: FlowWorks
   assert(flow.ok);
   return { ...setup, flow: flow.value };
 }
+
+/** A worktree Flow from the default branch whose input starts two Agents: Entry worker and Second entry. */
+export async function preparedWorktreeFlow(c: TestContext) {
+  const setup = await prepared(c);
+  const entry = setup.flow.graph.blocks[0]!;
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    workspace: { mode: "worktree", base: { kind: "default" } },
+    graph: {
+      ...setup.flow.graph,
+      flowInput: { ...setup.flow.graph.flowInput, targetBlockIds: [entry.id, "second"] },
+      blocks: [entry, { ...entry, id: "second", name: "Second entry" }],
+    },
+  });
+  assert(flow.ok);
+  return { ...setup, flow: flow.value };
+}

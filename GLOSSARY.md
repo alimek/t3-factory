@@ -23,6 +23,10 @@ One immutable saved version of a Flow's name, graph and workspace setting. Every
 The Flow's choice of where its Runs work: the selected Project's checkout or a new worktree, with the worktree's base (the Project repository's default branch or a custom Git ref). It belongs to the Flow revision, not the Run draft; Start resolves a worktree base against the selected Project and rejects a missing one.
 _Avoid_: Copying workspace choices into a Run draft.
 
+**Run workspace**:
+Where all workers of one Run work, fixed at Start: the project checkout, or for a worktree Flow one worktree that the Run's creator worker creates on a Factory-named branch and every other worker joins once Factory has bound its path and branch. The Run's project root stays its project identity.
+_Avoid_: A worktree per worker.
+
 **Flow block**:
 A constituent element of a flow: the Flow input block, an agent block or a human step.
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.

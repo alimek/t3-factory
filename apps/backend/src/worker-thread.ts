@@ -1,8 +1,12 @@
 import type { ExecutionObservation, T3Adapter } from "./adapters/t3.ts";
 import type { RunRow } from "./runner-types.ts";
-import { checkoutWorkspace, runTarget } from "./runner-utils.ts";
+import { inRunWorkspace } from "./run-workspace.ts";
+import { runTarget } from "./runner-utils.ts";
 
-type ThreadRun = Pick<RunRow, "endpoint" | "environment_id" | "t3_project_id" | "workspace_root">;
+type ThreadRun = Pick<
+  RunRow,
+  "endpoint" | "environment_id" | "t3_project_id" | "workspace_root" | "workspace"
+>;
 
 /** One Block's worker thread as T3 reports it now. */
 export interface WorkerThread {
@@ -37,7 +41,7 @@ export async function readWorkerThread(
   if (
     thread.threadId !== threadId ||
     thread.projectId !== run.t3_project_id ||
-    !checkoutWorkspace(thread.workspaceRoot, run.workspace_root)
+    !inRunWorkspace(run, thread.workspaceRoot)
   )
     throw Error("Worker thread scope changed.");
   const latestId = thread.activeRunId ?? thread.latestRunId ?? null;

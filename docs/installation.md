@@ -145,7 +145,7 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
 
 ### Execution and safety boundaries
 
-- Threads share the project checkout: no isolated worktrees, conflict-free editing or exactly-once guarantee.
+- A Run's threads share its workspace, the project checkout or that Run's one worktree: no conflict-free editing or exactly-once guarantee. Worktree Runs are not yet qualified against live T3.
 - Uncertain launch/send retries need unchanged authorization and independent, operation-specific continuity and retention proof; the default live proof is absent, and server restart, changed grants and
   unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and a Block id does not isolate adversarial processes sharing the OS user.
 - Automatic settlement relies on each worker thread as T3 reported it finished, not atomic cross-thread completion, repository quality or agreement on one revision. Native settlement is best effort with no compare-and-set or replay key; a possibly

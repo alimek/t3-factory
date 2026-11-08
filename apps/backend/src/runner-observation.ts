@@ -9,6 +9,7 @@ import { newId } from "./ids.ts";
 import { attention, settlePending } from "./runner-attention.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { now } from "./time.ts";
+import { bindRunWorkspace } from "./run-workspace-binding.ts";
 import { failedRun, readWorkerThread, type WorkerThread } from "./worker-thread.ts";
 
 /** Observes each Block's worker thread and derives its execution failure, missing report and
@@ -18,7 +19,9 @@ export function openRunnerObservation(database: RunnerDatabase, t3: T3Adapter) {
     return recoverOperation(
       Effect.gen(function* () {
         if (contextId !== runRow.context_id) throw Error("Authorization context changed.");
-        const run = yield* database.row(runRow.id);
+        const before = yield* database.row(runRow.id);
+        const bound = !!before && (yield* bindRunWorkspace(database, t3, before));
+        const run = bound ? yield* database.row(runRow.id) : before;
         const [current] = yield* database.transaction(
           (sql) =>
             sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${block.block_id}`,

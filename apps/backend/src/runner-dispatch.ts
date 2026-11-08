@@ -26,6 +26,7 @@ import {
   verified,
 } from "./runner-utils.ts";
 import { activatePendingHumanHandoff, reservePendingExplicitHandoff } from "./runner-release.ts";
+import { inRunWorkspace } from "./run-workspace.ts";
 import { now } from "./time.ts";
 function storedPayload(intent: IntentRow): Checked<SendPayload> {
   if (!intactPayload(intent)) return unverified("Stored operation payload cannot be verified.");
@@ -215,7 +216,7 @@ export function openRunnerDispatch(
         (yield* sendTargetChanged(runRow, payload.value, target.value))
       )
         return unverified(
-          "The target thread project or checkout changed; this send remains unresolved.",
+          "The target thread project or workspace changed; this send remains unresolved.",
         );
       return verified({ payload: payload.value, retryScope: support.retryScope });
     });
@@ -255,7 +256,7 @@ export function openRunnerDispatch(
       return (
         observed.threadId !== target.threadId ||
         observed.projectId !== runRow.t3_project_id ||
-        (observed.workspaceRoot !== null && observed.workspaceRoot !== runRow.workspace_root)
+        !inRunWorkspace(runRow, observed.workspaceRoot)
       );
     });
   }

@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { entryMessagesTooLong, persistEntryLaunches } from "./runner-block-workers.ts";
+import {
+  entryMessagesTooLong,
+  persistEntryLaunches,
+  startLaunchTargets,
+} from "./runner-block-workers.ts";
+import { worktreeBranch, type RunWorkspace } from "./run-workspace.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { newId } from "./ids.ts";
 import type {
@@ -199,18 +204,39 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
       yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
     for (const block of plan.definitions.flow.graph.blocks)
       yield* sql`INSERT INTO run_blocks(run_id,block_id,name,public_id) VALUES(${plan.runId},${block.id},${block.name},${block.kind === "agent" ? randomUUID() : null})`;
-    yield* persistEntryLaunches(sql, {
-      runId: plan.runId,
-      number,
-      definitions: plan.definitions,
-      project,
-      contextId: plan.contextId,
-      retryScope: plan.retryScope,
-      time: plan.time,
-    });
+    const workspace = runWorkspace(plan, number);
+    if (workspace.mode === "worktree")
+      yield* sql`INSERT INTO run_workspaces(run_id,base_ref,planned_branch,creator_block_id) VALUES(${plan.runId},${workspace.baseRef},${workspace.plannedBranch},${workspace.creatorBlockId})`;
+    yield* persistEntryLaunches(
+      sql,
+      {
+        runId: plan.runId,
+        number,
+        definitions: plan.definitions,
+        workspace,
+        project,
+        contextId: plan.contextId,
+        retryScope: plan.retryScope,
+        time: plan.time,
+      },
+      startLaunchTargets(plan.definitions, workspace),
+    );
     yield* sql`INSERT INTO run_events(run_id,kind,source_key,observed_at) VALUES(${plan.runId},'started','start',${plan.time})`;
     return { ok: true as const, value: plan.runId };
   });
+}
+/** A worktree Run's first Flow-input target creates the worktree on the Run's own branch. */
+function runWorkspace(plan: StartPlan, number: number): RunWorkspace {
+  if (plan.workspace.mode === "checkout") return { mode: "checkout" };
+  return {
+    mode: "worktree",
+    baseRef: plan.workspace.baseRef,
+    plannedBranch: worktreeBranch(number, plan.runId),
+    creatorBlockId: plan.definitions.flow.graph.flowInput.targetBlockIds[0]!,
+    state: "preparing",
+    worktreePath: null,
+    branch: null,
+  };
 }
 /** The first worker message is checked before the acceptance transaction commits. */
 function prepareStartWork(definitions: RunDefinitions) {
@@ -327,7 +353,11 @@ export function openRunnerStart(
         return failure("validation", "Fix Flow readiness before starting.", readiness.issues);
       const agents = yield* readyAgents(flow, target.project.id);
       const support = yield* Effect.tryPromise({
-        try: () => t3.inspectLaunchSupport(target.project).catch(() => null),
+        try: () =>
+          (flow.workspace.mode === "worktree"
+            ? t3.inspectWorktreeLaunchSupport(target.project)
+            : t3.inspectLaunchSupport(target.project)
+          ).catch(() => null),
         catch: (error) => error,
       });
       const workspace = yield* resolveStartWorkspace(t3, flow, target.project);

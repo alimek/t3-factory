@@ -61,3 +61,22 @@ it("saving a different workspace after Start leaves the Run's captured project c
   assert(run.ok);
   expect(run.value.definitions.flow.workspace).toStrictEqual({ mode: "checkout" });
 });
+
+it("a worktree Start is rejected before any Run when T3 cannot launch into worktrees", async (c) => {
+  // Arrange
+  const { f, t3, input, project } = await preparedWorkspaceFlow(c, {
+    mode: "worktree",
+    base: { kind: "default" },
+  });
+  t3.worktreeLaunchSupported = false;
+
+  // Act
+  const result = await f.startRun(input);
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues).toMatchObject([
+    { code: "launch_unsupported", path: "connection.contract" },
+  ]);
+  expect(await f.listRuns(project.id)).toStrictEqual({ ok: true, value: [] });
+});
