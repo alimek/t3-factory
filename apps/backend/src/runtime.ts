@@ -8,8 +8,8 @@ function blockUpdate(input: unknown): { publicId: string; report: RuntimeReport 
   const publicId = blockIdArgument(input, ["to", "exit", "message"]);
   if (typeof publicId !== "string") return publicId;
   const fields = (input as { arguments: Record<string, unknown> }).arguments;
-  if (fields.to !== "working" && fields.to !== "waiting" && fields.to !== "finished")
-    return { code: "INVALID_ARGUMENT" };
+  if (fields.to === "waiting") return { code: "WAITING_RETIRED" };
+  if (fields.to !== "working" && fields.to !== "finished") return { code: "INVALID_ARGUMENT" };
   if ("exit" in fields && typeof fields.exit !== "string") return { code: "INVALID_ARGUMENT" };
   if ("message" in fields && typeof fields.message !== "string")
     return { code: "INVALID_ARGUMENT" };

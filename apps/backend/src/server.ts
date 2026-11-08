@@ -132,14 +132,6 @@ function runResponseRoutes(factory: Factory): readonly ApiRoute[] {
   return [
     {
       method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/coordinator-question-replies$/,
-      body: { bytes: 131_072, message: "Send a scoped answer as JSON up to 128 KiB." },
-      handle: fromCall((id, input: { attentionId: string; requestId: string; message: string }) =>
-        factory.replyCoordinatorQuestion(id, input),
-      ),
-    },
-    {
-      method: "POST",
       path: /^\/api\/runs\/([^/]+)\/request-report$/,
       body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
       handle: fromCall((id, input: { blockId: string }) => factory.requestReport(id, input)),

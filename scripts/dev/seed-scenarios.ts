@@ -129,42 +129,15 @@ async function attentionScenarios(context: SeedContext, flowId: string) {
   await nativeAttention(context, woke);
 }
 
-/** The reporting worker asks a question in its own conversation. */
-async function conversationWaitingScenario(context: SeedContext, flowId: string) {
-  let run = await startScenario(
-    context,
-    flowId,
-    "conversation-waiting",
-    "Needs input · Agent asked about empty-state wording",
-    "Talk through the empty-state wording for Atlas search with me before changing anything.",
-  );
-  run = await report(context, run, "worker", {
-    to: "waiting",
-    message:
-      "I asked three questions in the T3 thread: preferred tone, whether to mention filters, and the button label. Reply there so I can continue.",
-  });
-  await observeTerminal(context.t3, executionBlock(run), "completed");
-  await reconcileUntil(context, run.id, (detail) =>
-    detail.attention.some(
-      (item) => item.kind === "conversation-waiting" && item.settledAt === null,
-    ),
-  );
-}
-
-/** The worker reports working while CI runs and ends its turn; no missing report appears. */
-async function workingReportScenario(context: SeedContext, flowId: string) {
-  let run = await startScenario(
-    context,
-    flowId,
-    "working-report",
-    "Monitoring · Agent is watching CI for the search fix",
-    "Fix the search ranking regression, open a pull request and wait for its CI checks before reporting.",
-  );
-  run = await report(context, run, "worker", {
-    to: "working",
-    message:
-      "Opened pull request #42 with the ranking fix. CI checks are still running; I will report when they finish.",
-  });
+/** The worker reports working and ends its turn, for example while CI runs or after asking the
+ * user questions; no missing report or Needs input appears. */
+async function idleWorkingScenario(
+  context: SeedContext,
+  flowId: string,
+  scenario: { key: string; title: string; input: string; message: string },
+) {
+  let run = await startScenario(context, flowId, scenario.key, scenario.title, scenario.input);
+  run = await report(context, run, "worker", { to: "working", message: scenario.message });
   await observeTerminal(context.t3, executionBlock(run), "completed");
   await reconcileUntil(context, run.id, (detail) =>
     detail.blocks.some(
@@ -251,13 +224,26 @@ export async function seedScenarios(
 ) {
   await settledAndArchivedScenarios(context, flows.simple);
   await attentionScenarios(context, flows.simple);
-  await conversationWaitingScenario(context, flows.simple);
+  await idleWorkingScenario(context, flows.simple, {
+    key: "conversation",
+    title: "Discussing · Agent asked about empty-state wording",
+    input:
+      "Talk through the empty-state wording for Atlas search with me before changing anything.",
+    message: "Discussing the empty-state wording in T3: tone, filters and the button label.",
+  });
   await rejectedReportScenario(context, flows.simple);
   await waitingForReview(context, flows.review);
   await waitingForReview(context, flows.review, true);
   await parallelScenario(context, flows.parallel);
   await parallelStartScenario(context, flows.parallelStart);
-  await workingReportScenario(context, flows.simple);
+  await idleWorkingScenario(context, flows.simple, {
+    key: "working-report",
+    title: "Monitoring · Agent is watching CI for the search fix",
+    input:
+      "Fix the search ranking regression, open a pull request and wait for its CI checks before reporting.",
+    message:
+      "Opened pull request #42 with the ranking fix. CI checks are still running; I will report when they finish.",
+  });
   const working = await startScenario(
     context,
     flows.simple,

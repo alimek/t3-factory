@@ -114,7 +114,6 @@ export const makeFactoryService = (
       installReporting: (input) => reporting.installReporting(input),
       answerHumanOccurrence: (id, input) => runner.answerHumanOccurrence(id, input),
       listAttention: () => runner.listAttention(),
-      replyCoordinatorQuestion: (id, input) => runner.replyCoordinatorQuestion(id, input),
       requestReport: (id, input) => runner.requestReport(id, input),
       archiveRun: (id) => runner.archiveRun(id),
       settleRun: (id) => runner.settleRun(id),

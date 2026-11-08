@@ -1,6 +1,6 @@
 /** Report protocol shapes shared by the runtime boundary and the Runner that consumes it. */
 export interface RuntimeReport {
-  readonly status: "working" | "waiting" | "finished";
+  readonly status: "working" | "finished";
   readonly exit?: string;
   readonly message?: string;
 }
@@ -44,11 +44,9 @@ export type RuntimeReply = {
 
 const NEXT: Record<RuntimeReport["status"], string> = {
   working:
-    "Factory shows this message on your Block and raises no missing-report Problem while it is your latest report. Report again when that changes: working replaces this message, waiting asks the user, finished completes the Block.",
-  waiting:
-    "Factory waits for a user reply in this thread. Report again from any later turn: working or waiting replaces this question, finished completes the Block.",
+    "Factory shows this message on your Block and raises no missing-report Problem while it is your latest report. It stays current across later turns of this visit, including questions to the user and their replies, so do not report again for those. Report finished when the task is complete, or working again only to replace this message.",
   finished:
-    "This is the Block's result. Factory hands it off after this thread and its delegated work settle. A later finished report replaces it: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks.",
+    "This is the Block's result. Factory hands it off after this thread and its delegated work settle. A later finished report replaces it: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks. If you reopen the task, report working first.",
 };
 
 /** Replies that report success to the harness; every other code is a tool error. */
@@ -63,7 +61,7 @@ export const RUN_ARCHIVED: RuntimeReply = {
 };
 
 /** The reports a current visit accepts; the latest one is the Block's current report. */
-export const OPEN_TRANSITIONS = ["working", "waiting", "finished"] as const;
+export const OPEN_TRANSITIONS = ["working", "finished"] as const;
 
 /** The acknowledgement the model can act on: current Block state, remaining transitions, and Factory's next step. */
 export function acceptedTransition<T extends RuntimeReply>(

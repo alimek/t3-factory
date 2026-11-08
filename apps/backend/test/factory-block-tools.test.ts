@@ -30,7 +30,7 @@ it("factory_get_block reads the Block named by the id in its launch message", as
       results: [],
       feedback: null,
     },
-    allowedTransitions: ["working", "waiting", "finished"],
+    allowedTransitions: ["working", "finished"],
   });
 });
 
@@ -107,7 +107,7 @@ it("a worker resumed by the user's reply reads its Block and may report again", 
   expect(result).toMatchObject({
     code: "BLOCK",
     visit: 1,
-    allowedTransitions: ["working", "waiting", "finished"],
+    allowedTransitions: ["working", "finished"],
   });
 });
 
@@ -214,7 +214,7 @@ it("a worker reports its result by naming its Block id", async (c) => {
   expect(result).toMatchObject({
     code: "ACCEPTED",
     state: "working",
-    allowedTransitions: ["working", "waiting", "finished"],
+    allowedTransitions: ["working", "finished"],
     next: expect.stringContaining("A later finished report replaces it"),
   });
   const run = await fixture.f.getRun(fixture.runId);
@@ -240,9 +240,10 @@ it("an identical repeated final succeeds again without a second result", async (
   expect(run.value.reports).toHaveLength(1);
 });
 
-it("a waiting Block update tells the worker to wait for a user reply", async (c) => {
+it("a retired waiting report is refused with guidance and leaves the Block's working report current", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
+  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -251,60 +252,18 @@ it("a waiting Block update tells the worker to wait for a user reply", async (c)
 
   // Assert
   expect(result).toMatchObject({
-    code: "ACCEPTED",
-    state: "waiting",
-    allowedTransitions: ["working", "waiting", "finished"],
-    next: expect.stringContaining("waits for a user reply"),
+    code: "WAITING_RETIRED",
+    reason: expect.stringContaining("questions to the user need no report"),
+    next: expect.stringContaining("final chat message"),
   });
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);
-  expect(run.value.blocks.find((block) => block.blockId === "worker")?.state).toBe("waiting");
-});
-
-it("an identical repeated waiting report keeps one pending question", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  const waiting = {
-    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which audience?" },
-  };
-  const first = await fixture.f.runtime.submit(waiting);
-  assert(first.code === "ACCEPTED");
-
-  // Act
-  const result = await fixture.f.runtime.submit(waiting);
-
-  // Assert
-  expect(result).toStrictEqual(first);
-  const run = await fixture.f.getRun(fixture.runId);
-  assert(run.ok);
-  expect(run.value.attention.filter((a) => a.kind === "conversation-waiting")).toHaveLength(1);
-});
-
-it("a newer waiting report replaces the Block's question", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  const first = await fixture.f.runtime.submit({
-    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which audience?" },
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "working",
+    reportStatus: "working",
+    workingMessage: "Opened PR #42; waiting for its CI checks.",
   });
-  assert(first.code === "ACCEPTED");
-
-  // Act
-  const result = await fixture.f.runtime.submit({
-    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which tone?" },
-  });
-
-  // Assert
-  expect(result).toMatchObject({ code: "ACCEPTED", state: "waiting" });
-  const run = await fixture.f.getRun(fixture.runId);
-  assert(run.ok);
-  expect(
-    run.value.attention
-      .filter((a) => a.kind === "conversation-waiting")
-      .map(({ message, settledAt }) => ({ message, settled: settledAt !== null })),
-  ).toStrictEqual([
-    { message: "Which tone?", settled: false },
-    { message: "Which audience?", settled: true },
-  ]);
+  expect(run.value.attention).toStrictEqual([]);
 });
 
 it("a working Block update is accepted with its message and selects no result", async (c) => {
@@ -324,7 +283,7 @@ it("a working Block update is accepted with its message and selects no result", 
   expect(result).toMatchObject({
     code: "ACCEPTED",
     state: "working",
-    allowedTransitions: ["working", "waiting", "finished"],
+    allowedTransitions: ["working", "finished"],
     next: expect.stringContaining("no missing-report Problem"),
   });
   const run = await fixture.f.getRun(fixture.runId);
@@ -356,26 +315,6 @@ it("a later finished report replaces the Block's working report", async (c) => {
   expect(run.value.reports).toMatchObject([{ status: "finished", exitId: "done" }]);
 });
 
-it("a later waiting report replaces the Block's working report with a question", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
-
-  // Act
-  const result = await fixture.f.runtime.submit({
-    arguments: { blockId: fixture.blockId, to: "waiting", message: "Merge with failing lint?" },
-  });
-
-  // Assert
-  expect(result.code).toBe("ACCEPTED");
-  const run = await fixture.f.getRun(fixture.runId);
-  assert(run.ok);
-  expect(run.value.blocks[0]).toMatchObject({ state: "waiting", workingMessage: null });
-  expect(
-    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
-  ).toMatchObject([{ message: "Merge with failing lint?" }]);
-});
-
 it("a working report without a message is refused with repair guidance", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
@@ -389,7 +328,7 @@ it("a working report without a message is refused with repair guidance", async (
   expect(result).toMatchObject({
     code: "MESSAGE_REQUIRED",
     reason: expect.stringContaining("needs a message"),
-    next: expect.stringContaining("what you are still doing or waiting on"),
+    next: expect.stringContaining("what you are doing or waiting on"),
   });
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);

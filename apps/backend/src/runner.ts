@@ -1,4 +1,3 @@
-import { openCoordinatorQuestionReplies } from "./coordinator-question-reply.ts";
 import { openBlockTools } from "./runner-block-tools.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
@@ -151,7 +150,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
     readFactoryTool: openBlockTools(database, getRun),
     answerHumanOccurrence,
-    replyCoordinatorQuestion: openCoordinatorQuestionReplies(database, lifecycle),
     archiveRun,
     settleRun,
     ...openRunNavigation(database, getRun),

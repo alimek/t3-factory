@@ -293,7 +293,7 @@ it("an installed Claude entry reaches the Factory tools on the listening backend
     ["blockId"],
   ]);
   expect(listed.tools[0]?.inputSchema.properties?.to).toMatchObject({
-    enum: ["working", "waiting", "finished"],
+    enum: ["working", "finished"],
   });
 });
 
@@ -334,7 +334,6 @@ it("Repair installs the Factory Block skill under the Claude home", async (conte
   expect(installed).toContain("factory_get_block");
   expect(installed).toContain("factory_get_run");
   expect(installed).toContain('to: "working"');
-  expect(installed).toContain('to: "waiting"');
   expect(installed).toContain('to: "finished"');
   expect(installed).toContain("`blockId`");
   expect(installed).toContain("$factory-block");

@@ -122,7 +122,7 @@ export function openRunnerRecovery(
             return failure("conflict", "The Run is stopped, closed, or its authorization changed.");
           const eligible =
             yield* sql`SELECT r.id FROM runs r JOIN run_blocks b ON b.run_id=r.id JOIN run_executions e ON e.run_id=r.id AND e.block_id=b.block_id AND e.execution_id=b.execution_id
-        WHERE r.id=${current.id} AND r.generation=${detail.value.generation} AND b.block_id=${blockId} AND b.execution_id=${executionId} AND e.engine_status='completed' AND e.thread_id=${threadId} AND (e.report_status IS NULL OR e.report_status='working')
+        WHERE r.id=${current.id} AND r.generation=${detail.value.generation} AND b.block_id=${blockId} AND b.execution_id=${executionId} AND e.engine_status='completed' AND e.thread_id=${threadId}
         AND NOT EXISTS(SELECT 1 FROM runtime_reports WHERE activation_id=${visit.id})
         AND NOT EXISTS(SELECT 1 FROM operation_intents WHERE run_id=r.id AND block_id=b.block_id AND state NOT IN ('acknowledged','cancelled'))`;
           if (!eligible.length)
@@ -147,7 +147,7 @@ export function openRunnerRecovery(
             mode: "queue",
             clientRequestId: key,
             message: workerTurn(
-              "Factory Request report: assess the existing work without repeating the task. If questions you asked the user are still unanswered, report waiting with what you still need instead of forcing completion; if CI, review, delegated or background work is still running, report working with what you are waiting on; report finished only when the task or discussion is actually complete.\n\n" +
+              "Factory Request report: assess the existing work without repeating the task. If questions you asked the user are still unanswered, or CI, review, delegated or background work is still running, report working with what remains open instead of forcing completion; report finished only when the task, including its discussion, is actually complete.\n\n" +
                 conversationReportInstructions(exits),
               block!.public_id,
             ),

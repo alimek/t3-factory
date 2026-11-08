@@ -12,8 +12,8 @@ import { now } from "./time.ts";
  * execution to a successful final report. Acceptance and pre-send eligibility live in
  * runner-recovery.ts. */
 /** A later linked execution ends the obligation with an explicit, completed report:
- * a completion-eligible final result, or a waiting report for the user, after which
- * later conversation turns own their own reports. */
+ * a completion-eligible final result, or a historical waiting report accepted before waiting
+ * reports were retired, after which later conversation turns own their own reports. */
 function endsObligation(
   detail: RunDetail,
   blockId: string,
@@ -32,8 +32,15 @@ function endsObligation(
     )
   );
 }
-/** Follow only explicit missing-only links; a final or waiting report on an intermediate execution
- * ends or conflicts, while a working report leaves the obligation open. */
+/** An execution with no report yet, or only a working one, still owes a report. A waiting status on
+ * the source predates the retirement of waiting reports: the upgrade made the activation's current
+ * report working, so that source still owes its report too. */
+function owesReport(execution: RunDetail["executions"][number], source: boolean) {
+  const status = execution.reportStatus;
+  return status === null || status === "working" || (source && status === "waiting");
+}
+/** Follow only explicit missing-only links; a final or historical waiting report on an intermediate
+ * execution ends or conflicts, while a working report leaves the obligation open. */
 function recoveryChain(
   detail: RunDetail,
   blockId: string,
@@ -53,8 +60,7 @@ function recoveryChain(
     );
     if (executionId !== sourceId && endsObligation(detail, blockId, execution))
       return { executionId, executionIds: [...executionIds] };
-    if ((execution.reportStatus !== null && execution.reportStatus !== "working") || report)
-      return null;
+    if (!owesReport(execution, executionId === sourceId) || report) return null;
     const links = detail.recoveries.filter(
       (r) => r.blockId === blockId && r.sourceExecutionId === executionId,
     );

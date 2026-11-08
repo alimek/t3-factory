@@ -1,5 +1,4 @@
 import { recordReportVerdict } from "./runner-report-diagnostics.ts";
-import { acceptWaiting } from "./block-waiting.ts";
 import { repeatedReport, settleForReport } from "./block-report.ts";
 import { newId } from "./ids.ts";
 import type { RunDefinitions } from "@t3-factory/contracts";
@@ -62,7 +61,7 @@ function replaceHeldResults(
     return !released || released.exit_id !== exitId;
   });
 }
-/** Working and waiting reports are non-final: they never select an exit and must carry a message. */
+/** A working report is non-final: it never selects an exit and must carry a message. */
 function nonFinalRejection(report: RuntimeReport) {
   if (report.status === "finished") return undefined;
   if (report.exit !== undefined) return { code: "EXIT_NOT_ALLOWED" };
@@ -143,7 +142,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
     });
   }
   /** One verdict for the Block's current activation: the latest report is its current state, so a
-   * newer finished report replaces the result and a newer waiting report the question. */
+   * newer finished report replaces the result. */
   function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeReport) {
     return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
       const { runRow, block } = target;
@@ -155,7 +154,6 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       if (repeated) return repeated;
       const route = reportRoute(runRow.definitions, block.block_id, report);
       if (!route.ok) return route.reply;
-      if (report.status === "waiting") return yield* acceptWaiting(sql, target, report, content);
       if (report.status === "working") return yield* acceptWorking(sql, target, report, content);
       return yield* acceptReport(sql, target, report, content, route);
     });

@@ -16,12 +16,12 @@ const tools: Tool[] = [
   {
     name: "factory_update_block",
     description:
-      "Report your Block's state. working needs a nonempty message saying what you are still doing or waiting on and no exit; report it before ending a turn while CI, review, delegated or background work continues. waiting needs a nonempty message for the user and no exit; report it from any turn while you still need a reply. finished needs one configured exit and a message for the next Block (required when the exit asks for feedback); the newest finished report is the visit's result, so a later one replaces it (after hand-off the same exit only updates the result, and a different exit also starts that exit's next Blocks); never report finished while CI, review, delegated or background work is still pending. Your latest report is the Block's current report. Repeating the same report returns the same acknowledgement.",
+      "Report your Block's state. working needs a nonempty message saying what you are doing or waiting on and no exit; report it when you start this visit's work, and again only to replace that message or when you reopen the task. It stays current across later turns of the visit, so asking the user questions and reading their replies need no report: end a questioning turn with the questions as your final message. finished needs one configured exit and a message for the next Block (required when the exit asks for feedback); report it only when the task is complete, never while questions, CI, review, delegated or background work are still open. The newest finished report is the visit's result, so a later one replaces it (after hand-off the same exit only updates the result, and a different exit also starts that exit's next Blocks). Your latest report is the Block's current report. Repeating the same report returns the same acknowledgement.",
     inputSchema: {
       type: "object",
       properties: {
         blockId: blockIdProperty,
-        to: { type: "string", enum: ["working", "waiting", "finished"] },
+        to: { type: "string", enum: ["working", "finished"] },
         exit: {
           type: "string",
           description:
@@ -30,7 +30,7 @@ const tools: Tool[] = [
         message: {
           type: "string",
           description:
-            "working: what you are still doing or waiting on. waiting: what you need from the user. finished: the result for the next Block.",
+            "working: what you are doing or waiting on. finished: the result for the next Block.",
         },
       },
       required: ["blockId", "to"],

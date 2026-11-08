@@ -214,10 +214,6 @@ export interface FactoryOperations {
   installReporting(input: unknown): Promise<Result<ReportingInstallation>>;
   answerHumanOccurrence(id: string, input: unknown): Promise<Result<RunDetail>>;
   listAttention(): Promise<Result<readonly RunAttention[]>>;
-  replyCoordinatorQuestion(
-    runId: string,
-    input: { attentionId: string; requestId: string; message: string },
-  ): Promise<Result<RunDetail>>;
   /** Asks an idle Agent Block without a finished result to assess its existing work and report. */
   requestReport(runId: string, input: { blockId: string }): Promise<Result<RunDetail>>;
   /**
@@ -517,7 +513,7 @@ export interface RunActivation {
   readonly id: string;
   readonly blockId: string;
   readonly cause: string;
-  readonly phase: "delegating" | "waiting-worker" | "assessing" | "reported" | "finished";
+  readonly phase: "delegating" | "assessing" | "reported" | "finished";
   readonly problem: string | null;
   readonly createdAt: string;
   readonly delegation: {
@@ -559,7 +555,7 @@ export interface RunBlock {
   readonly executionId: string | null;
   readonly link: string | null;
   readonly engineStatus: string | null;
-  readonly reportStatus: "working" | "waiting" | "finished" | null;
+  readonly reportStatus: "working" | "finished" | null;
   /** The Agent's message while `working` is the current report of the Block's current visit. */
   readonly workingMessage: string | null;
   readonly problem: string | null;
@@ -604,6 +600,7 @@ export interface RunNavigationEntry {
   readonly attention: RunAttentionSummary;
   readonly presentation: RunPresentation;
 }
+/** Answers sent from Factory to retired conversation-waiting questions, kept as history. */
 export interface RunCoordinationActions {
   readonly questionReplies: readonly {
     readonly attentionId: string;
@@ -742,7 +739,10 @@ export interface RunAttention {
   readonly appearedAt: string;
   readonly settledAt: string | null;
   readonly settlementReason: string | null;
-  /** The Agent's explanation for `conversation-waiting`; null for every other kind. */
+  /**
+   * The Agent's question for `conversation-waiting`, a retired kind kept only as settled history;
+   * null for every other kind.
+   */
   readonly message: string | null;
 }
 

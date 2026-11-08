@@ -1,4 +1,4 @@
-import { currentReports, settleQuestions, type CurrentReport } from "./block-report.ts";
+import { currentReports, type CurrentReport } from "./block-report.ts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { RunAttention } from "@t3-factory/contracts";
@@ -81,7 +81,6 @@ function recordWorkerThread(
     // A later run of the thread that completes recovers earlier execution failures.
     if (latest?.status === "completed")
       yield* settlePending(sql, run.id, block.block_id, "execution-failed", "completed", time);
-    yield* settleQuestions(sql, run.id, block.block_id, time);
     yield* recordActivation(sql, run, block, worker, time);
     yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
   });
@@ -118,7 +117,6 @@ function missingReport({ finished, latest }: WorkerThread, current: ReportStatus
 
 function blockState(problem: string | null, { finished }: WorkerThread, current: ReportStatus) {
   if (problem) return "error";
-  if (current === "waiting") return "waiting";
   return current === "finished" && finished ? "finished" : "working";
 }
 
@@ -146,8 +144,7 @@ function recordActivation(
       kind: RunAttention["kind"];
     }>`SELECT kind FROM run_attention WHERE run_id=${run.id} AND block_id=${block.block_id} AND kind IN ('execution-failed','missing-report') AND settled_at IS NULL ORDER BY kind LIMIT 1`;
     const problem = pending?.kind ?? null;
-    const phase =
-      current === "waiting" ? "waiting-worker" : current === "finished" ? "reported" : "assessing";
+    const phase = current === "finished" ? "reported" : "assessing";
     yield* sql`UPDATE run_activations SET phase=CASE WHEN phase='finished' THEN phase ELSE ${phase} END,problem=${problem} WHERE id=${activation.activationId}`;
     yield* sql`UPDATE run_blocks SET execution_id=${latest?.runId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${worker.thread.pendingRequestCount},problem=${problem},state=${blockState(problem, worker, current)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
   });
