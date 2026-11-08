@@ -1,5 +1,6 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
+import { manualRunView } from "./support/canvas.ts";
 import { liveReport, liveRun } from "./support/live.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
@@ -33,14 +34,9 @@ test("a fitted Run preserves manual pan and zoom through resize and live updates
   await browser.setViewport({ width: 1600, height: 1000 });
   const run = await liveRun(app, "canvas");
   await app.open(`/runs/${run}`);
-  const canvas = screen.getByRole("region", "Execution canvas");
   await screen.getByRole("button", "Auto-arrange", { exact: true }).tap();
   await expect(screen.getByRole("button", "Auto-arrange", { exact: true })).toBeEnabled();
-  await screen.getByRole("button", "Zoom in", { exact: true }).tap();
-  await canvas.press("ArrowRight");
-  const zoom = await canvas.getAttribute("data-zoom");
-  const layer = browser.locator('[aria-label="Execution canvas"] > div[style]');
-  const transform = await layer.getAttribute("style");
+  const expectViewKept = await manualRunView(screen, browser);
   await app.screenshot("run-manual-view");
 
   // Act
@@ -51,7 +47,6 @@ test("a fitted Run preserves manual pan and zoom through resize and live updates
   await expect(
     screen.getByText("Still aligning the picker spacing.", { exact: true }).first(),
   ).toBeVisible();
-  await expect(canvas).toHaveAttribute("data-zoom", zoom!);
-  await expect(layer).toHaveAttribute("style", transform!);
+  await expectViewKept();
   await app.screenshot("run-view-preserved-after-resize-and-live-update");
 });
