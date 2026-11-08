@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Run composer attachments — throwaway prototype</title>
+    <style>
+      /* Throwaway UI prototype of /runs/new, three layouts via ?variant=A|B|C.
+   Standalone for inline review; no API, durable draft or real Start. */
+      :root {
+        color-scheme: dark;
+        --font-sans: Inter, system-ui, sans-serif;
+        --font-mono: ui-monospace, monospace;
+        --background: #09090b;
+        --foreground: #fafafa;
+        --muted: #121214;
+        --muted-foreground: #a1a1aa;
+        --card: #18181b;
+        --secondary: #1c1c1f;
+        --border: #27272a;
+        --ring: #818cf8;
+        --primary: #6366f1;
+        --primary-foreground: white;
+        --accent: #1c1c1f;
+        --destructive: #ef4444;
+        --warning: #f59e0b;
+        --success: #22c55e;
+        --radius: 8px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        font-family: var(--font-sans);
+        font-size: 12.5px;
+        color: var(--foreground);
+      }
+      button,
+      textarea,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      button,
+      select {
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--muted);
+        padding: 7px 10px;
+        cursor: pointer;
+      }
+      button:hover,
+      select:hover {
+        background: var(--accent);
+      }
+      button:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 3px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button svg {
+        width: 15px;
+        height: 15px;
+        vertical-align: middle;
+      }
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      button.primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--primary-foreground);
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        line-height: 1.5;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      .small {
+        font-size: 11px;
+      }
+      .flex {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .between {
+        justify-content: space-between;
+      }
+      .tag {
+        padding: 3px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 10px;
+        color: var(--muted-foreground);
+      }
+      .lab {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .lab-title {
+        font-size: 12px;
+      }
+      .lab-tools {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .lab button,
+      .lab select {
+        font-size: 11px;
+        padding: 5px 7px;
+      }
+      .shell {
+        display: grid;
+        grid-template-columns: 142px minmax(0, 1fr);
+        min-height: 498px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--background);
+      }
+      aside {
+        padding: 14px 9px;
+        background: var(--muted);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      aside .brand {
+        font-weight: 600;
+        padding: 0 6px 6px;
+      }
+      aside button {
+        width: 100%;
+        justify-content: flex-start;
+        background: var(--secondary);
+      }
+      .navrow {
+        padding: 7px;
+        border-radius: 5px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-size: 11px;
+      }
+      .navrow.selected {
+        background: var(--secondary);
+      }
+      .sidefooter {
+        margin-top: auto;
+        font-size: 10px;
+        padding: 5px;
+        line-height: 1.6;
+      }
+      .green {
+        color: var(--success);
+      }
+      .workspace {
+        min-width: 0;
+      }
+      .topbar {
+        height: 42px;
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+      }
+      .main {
+        padding: 27px 22px 22px;
+        max-width: 850px;
+        margin: auto;
+      }
+      h1 {
+        font-size: 20px;
+        line-height: 1.25;
+        letter-spacing: -0.4px;
+        margin: 0 0 8px;
+        font-weight: 600;
+      }
+      h2 {
+        font-size: 13px;
+        margin: 0;
+      }
+      .intro {
+        margin-bottom: 20px;
+      }
+      .choices {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .fieldlabel {
+        font-size: 11.5px;
+        font-weight: 500;
+        margin-bottom: 7px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .choice {
+        height: 34px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 9px;
+        background: var(--muted);
+        font-size: 11.5px;
+      }
+      .choice svg {
+        width: 14px;
+        height: 14px;
+      }
+      .prompt-box {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--muted);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .prompt-box:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
+      }
+      textarea {
+        border: 0;
+        resize: vertical;
+        min-height: 99px;
+        display: block;
+        width: 100%;
+        background: transparent;
+        line-height: 1.6;
+        outline: none !important;
+        font-size: 12.5px;
+        padding: 0;
+      }
+      .prompt-help {
+        font-size: 10px;
+        color: var(--muted-foreground);
+      }
+      .attachment-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .attachment-toolbar button {
+        font-size: 11px;
+        padding: 5px 8px;
+        background: transparent;
+      }
+      .thumbs {
+        display: flex;
+        gap: 9px;
+        flex-wrap: wrap;
+      }
+      .thumb {
+        position: relative;
+        min-width: 0;
+      }
+      .thumb-preview {
+        display: block;
+        width: 73px;
+        height: 56px;
+        overflow: hidden;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
+      }
+      .thumb-preview img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .remove {
+        position: absolute;
+        right: -5px;
+        top: -5px;
+        width: 19px;
+        height: 19px;
+        padding: 0;
+        border-radius: 50%;
+        background: var(--card);
+        font-size: 13px;
+        box-shadow: 0 0 0 2px var(--muted);
+      }
+      .thumb-name {
+        display: none;
+      }
+      .separate {
+        margin-top: 14px;
+        padding: 12px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        background: var(--muted);
+      }
+      .separate .thumbs {
+        margin-top: 12px;
+      }
+      .separate .thumb-preview {
+        width: 96px;
+        height: 66px;
+      }
+      .separate .thumb-name {
+        display: block;
+        max-width: 96px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 10px;
+        color: var(--muted-foreground);
+        padding-top: 6px;
+      }
+      .separate .attachment-toolbar button {
+        border-style: solid;
+        background: var(--secondary);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 166px;
+        gap: 14px;
+      }
+      .split-panel {
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--muted);
+      }
+      .split-panel .attachment-toolbar {
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .split-panel .thumbs {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+      }
+      .split-panel .thumb {
+        display: grid;
+        grid-template-columns: 50px minmax(0, 1fr);
+        align-items: center;
+        gap: 7px;
+      }
+      .split-panel .thumb-preview {
+        width: 50px;
+        height: 40px;
+      }
+      .split-panel .thumb-name {
+        display: block;
+        overflow-wrap: anywhere;
+        font-size: 10px;
+        padding-right: 6px;
+        color: var(--muted-foreground);
+      }
+      .split-panel .remove {
+        right: -5px;
+        top: -5px;
+      }
+      .split-panel .attachment-toolbar button {
+        padding: 5px 6px;
+      }
+      .split-panel .limit {
+        width: 100%;
+      }
+      .split-panel .split-hint {
+        display: block;
+        margin-top: 14px;
+      }
+      .split-hint {
+        display: none;
+      }
+      .submit {
+        margin-top: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .submit p {
+        max-width: 290px;
+        font-size: 10px;
+      }
+      .notice {
+        margin-top: 12px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--card);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .notice.problem {
+        border-color: color-mix(in srgb, var(--destructive) 60%, var(--border));
+        color: var(--destructive);
+      }
+      .notice.waiting {
+        border-color: color-mix(in srgb, var(--warning) 60%, var(--border));
+      }
+      .notice[hidden] {
+        display: none;
+      }
+      .drop-overlay {
+        display: none;
+        position: absolute;
+        inset: 0;
+        border: 2px dashed var(--ring);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--card) 96%, transparent);
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 10;
+      }
+      .drop-area {
+        position: relative;
+      }
+      .dragging .drop-overlay {
+        display: flex;
+      }
+      .canvas {
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+      }
+      .canvas-heading {
+        margin-bottom: 12px;
+        font-size: 11px;
+      }
+      .flow {
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+      .flow-node {
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 10px;
+        background: var(--card);
+        width: 211px;
+        flex-shrink: 0;
+        min-width: 0;
+      }
+      .flow-node p {
+        font-size: 10px;
+        margin: 7px 0;
+      }
+      .flow-node .thumb-preview {
+        width: 42px;
+        height: 32px;
+      }
+      .flow-node .thumbs {
+        gap: 5px;
+        flex-wrap: nowrap;
+      }
+      .flow-node .more {
+        font-size: 10px;
+        padding: 7px;
+        background: var(--secondary);
+        border-radius: 4px;
+      }
+      .wire {
+        height: 1px;
+        width: 30px;
+        flex-shrink: 1;
+        min-width: 12px;
+        background: var(--border);
+      }
+      .worker {
+        font-size: 10px;
+        line-height: 1.8;
+        min-width: 0;
+      }
+      .worker small {
+        color: var(--muted-foreground);
+        display: block;
+      }
+      .state {
+        margin: 12px 0 52px;
+        padding: 10px 0;
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        flex-wrap: wrap;
+        font: 10px/1.6 var(--font-mono);
+        color: var(--muted-foreground);
+        overflow-wrap: anywhere;
+        min-width: 0;
+      }
+      .state span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .switcher {
+        position: fixed;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px;
+        border: 1px solid var(--ring);
+        border-radius: 40px;
+        background: var(--card);
+        box-shadow: 0 4px 18px color-mix(in srgb, var(--background) 80%, transparent);
+        z-index: 30;
+        white-space: nowrap;
+        font-size: 11px;
+      }
+      .switcher button {
+        border: 0;
+        border-radius: 50%;
+        padding: 5px 8px;
+        background: transparent;
+      }
+      .switcher .current {
+        min-width: 165px;
+        text-align: center;
+      }
+      .switcher .label {
+        font: 9px var(--font-mono);
+        color: var(--muted-foreground);
+        padding: 0 7px;
+      }
+      dialog {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--card);
+        color: var(--foreground);
+        width: min(94%, 950px);
+        max-height: 92%;
+        padding: 16px;
+      }
+      dialog::backdrop {
+        background: color-mix(in srgb, var(--background) 90%, transparent);
+      }
+      dialog img {
+        display: block;
+        max-width: 100%;
+        max-height: 540px;
+        object-fit: contain;
+        margin: 16px auto;
+      }
+      dialog .controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      dialog button {
+        font-size: 11px;
+      }
+      .empty {
+        padding: 6px 0;
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+      @media (max-width: 600px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+        aside {
+          display: none;
+        }
+        .main {
+          padding: 22px 15px;
+        }
+        .split {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .split-panel .thumbs {
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+        .split-panel .thumb {
+          display: block;
+        }
+        .split-panel .thumb-preview {
+          width: 73px;
+          height: 56px;
+        }
+        .split-panel .thumb-name {
+          max-width: 73px;
+          margin-top: 6px;
+        }
+        .split-panel .split-hint {
+          display: none;
+        }
+        .split-panel .limit {
+          width: auto;
+        }
+        .flow-node {
+          width: 190px;
+        }
+        .lab-tools {
+          gap: 4px;
+        }
+        h1 {
+          font-size: 19px;
+        }
+        .submit p {
+          max-width: 200px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lab">
+      <div>
+        <strong class="lab-title">Composer attachments</strong>
+        <span class="tag">PROTOTYPE · IN MEMORY</span>
+        <p class="small muted">Three layouts of the existing New Run form. Start is simulated.</p>
+      </div>
+      <div class="lab-tools">
+        <label for="scenario" class="small muted">Try state</label
+        ><select id="scenario">
+          <option value="edit">Editing</option>
+          <option value="empty">No images</option>
+          <option value="full">8 images</option>
+          <option value="error">Rejected files</option>
+          <option value="starting">Starting</option>
+          <option value="unknown">Unknown Start</option></select
+        ><button id="reset">Reset</button>
+      </div>
+    </div>
+    <div class="shell">
+      <aside>
+        <div class="brand">◈ T3 Factory</div>
+        <button disabled>＋ New Run</button>
+        <div class="small muted" style="padding: 5px">Runs</div>
+        <div class="navrow selected">✎ Fix the settings panel</div>
+        <div class="navrow muted">Review API changes</div>
+        <div class="navrow muted">Keyboard shortcuts</div>
+        <div class="sidefooter">
+          <span class="green">● Connected</span><br />Settings &nbsp; · &nbsp; Studio
+        </div>
+      </aside>
+      <section class="workspace">
+        <header class="topbar"><span class="muted">New Run</span></header>
+        <main class="main">
+          <div class="intro">
+            <h1>What should we work on in Factory?</h1>
+            <p class="muted">
+              A Run gives this prompt to each Agent the Flow input connects to, each in a new agent
+              thread.
+            </p>
+          </div>
+          <div class="choices">
+            <div>
+              <div class="fieldlabel">Project</div>
+              <div class="choice">◈ Factory <span class="muted">⌄</span></div>
+            </div>
+            <div>
+              <div class="fieldlabel">Flow</div>
+              <div class="choice">◇ Build &amp; review <span class="muted">⌄</span></div>
+            </div>
+          </div>
+          <div id="layout"></div>
+          <div id="error" role="alert" class="notice problem" hidden></div>
+          <div id="pending" class="notice waiting" role="status" hidden></div>
+          <div class="submit">
+            <p class="muted">
+              Each Agent Block starts in its own worker. Factory keeps the Flow’s routing.
+            </p>
+            <button class="primary" id="start">
+              ▷ Start <span style="opacity: 0.7; font-size: 10px">⌘↵</span>
+            </button>
+          </div>
+          <div class="canvas">
+            <div class="canvas-heading muted">RUN SCREEN · Flow input preview</div>
+            <div class="flow">
+              <div class="flow-node">
+                <div class="flex between">
+                  <h2>Flow input</h2>
+                  <span id="image-count" class="tag"></span>
+                </div>
+                <p class="muted" id="flow-text"></p>
+                <div class="thumbs" id="flow-images"></div>
+              </div>
+              <span class="wire"></span>
+              <div class="worker">
+                ◇ Implement<small>Same images at launch</small>◇ Review<small
+                  >Same images at launch</small
+                >
+              </div>
+            </div>
+          </div>
+        </main>
+      </section>
+    </div>
+    <div class="state" aria-live="polite">
+      <strong>Prototype state:</strong> <span id="state"></span>
+    </div>
+    <div class="switcher" aria-label="Prototype layout switcher">
+      <span class="label">LAYOUT</span
+      ><button id="prev" title="Previous layout" aria-label="Previous layout">←</button>
+      <div class="current" id="variant-label"></div>
+      <button id="next" title="Next layout" aria-label="Next layout">→</button>
+    </div>
+    <input
+      hidden
+      id="files"
+      type="file"
+      multiple
+      accept="image/png,image/jpeg,image/gif,image/webp"
+    />
+    <dialog id="preview" aria-labelledby="preview-title">
+      <div class="controls">
+        <strong id="preview-title"></strong><button id="close">Close · Esc</button>
+      </div>
+      <img id="preview-image" alt="" />
+      <div class="controls">
+        <span class="small muted" id="preview-meta"></span>
+        <div class="flex">
+          <button id="previous-image" aria-label="Previous image">← Previous</button
+          ><button id="next-image" aria-label="Next image">Next →</button>
+        </div>
+      </div>
+    </dialog>
+    <script>
+      const $ = (id) => document.getElementById(id),
+        variants = ["A", "B", "C"],
+        names = { A: "Inline with prompt", B: "Separate image section", C: "Side image panel" };
+      let variant = new URLSearchParams(location.search).get("variant") || "A";
+      if (!variants.includes(variant)) variant = "A";
+      let images = [],
+        phase = "edit",
+        prompt =
+          "Fix the settings panel layout\nUse the screenshots to reproduce the clipped menu.",
+        rejected = [],
+        previewIndex = 0,
+        opener;
+      const icon =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></svg>';
+      function esc(s) {
+        return s.replace(
+          /[&<>"']/g,
+          (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[x],
+        );
+      }
+      function sample(i) {
+        const light = i % 2;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="620"><rect width="960" height="620" fill="${light ? "#f4f4f5" : "#18181b"}"/><rect width="215" height="620" fill="${light ? "#e4e4e7" : "#27272a"}"/><g font-family="system-ui" fill="${light ? "#18181b" : "#fafafa"}"><text x="28" y="48" font-size="23">Settings</text><text x="28" y="124" font-size="18">General</text><text x="28" y="172" font-size="18">Appearance</text><text x="28" y="220" font-size="18">Shortcuts</text><text x="252" y="60" font-size="26">${light ? "Expected layout" : "Menu clipped at the edge"}</text><text x="252" y="110" font-size="16">Display and appearance</text></g><rect x="252" y="146" width="660" height="67" rx="8" fill="${light ? "#e4e4e7" : "#27272a"}"/><rect x="252" y="244" width="660" height="67" rx="8" fill="${light ? "#e4e4e7" : "#27272a"}"/><rect x="${light ? 660 : 820}" y="174" width="228" height="218" rx="8" fill="${light ? "#ffffff" : "#3f3f46"}" stroke="#818cf8" stroke-width="2"/><g fill="${light ? "#18181b" : "#fafafa"}" font-family="system-ui" font-size="18"><text x="${light ? 686 : 846}" y="218">System default</text><text x="${light ? 686 : 846}" y="270">Dark</text><text x="${light ? 686 : 846}" y="322">Light</text></g><rect x="252" y="440" width="130" height="42" rx="7" fill="#6366f1"/><text x="289" y="467" font-family="system-ui" font-size="18" fill="white">Save</text></svg>`;
+        return {
+          id: "sample-" + i,
+          name:
+            i < 2
+              ? light
+                ? "expected.png"
+                : "clipped-menu.png"
+              : "screenshot-" + (i + 1) + ".png",
+          src: "data:image/svg+xml;base64," + btoa(svg),
+          size: "640 KB",
+          sample: true,
+        };
+      }
+      function locked() {
+        return phase !== "edit";
+      }
+      function thumb(image, i, history = false) {
+        return `<div class="thumb"><button class="thumb-preview" data-preview="${i}" title="Preview ${esc(image.name)}" aria-label="Preview ${esc(image.name)}"><img alt="${esc(image.name)}" src="${image.src}"></button>${history ? "" : `<button class="remove" data-remove="${i}" ${locked() ? "disabled" : ""} title="Remove ${esc(image.name)}" aria-label="Remove ${esc(image.name)}">×</button><div class="thumb-name" title="${esc(image.name)}">${esc(image.name)}</div>`}</div>`;
+      }
+      function attachments() {
+        return `<div class="attachment-toolbar"><button data-add ${locked() || images.length === 8 ? "disabled" : ""}>${icon} Add images</button><span class="limit small muted">${images.length}/8 · 10 MB each</span></div><div class="thumbs">${images.map((v, i) => thumb(v, i)).join("")}</div>${!images.length ? '<p class="empty">Paste, drop or choose screenshots.</p>' : ""}<p class="split-hint small muted">PNG, JPEG, GIF or WebP<br>Paste or drop images here.</p>`;
+      }
+      function promptBox() {
+        return `<div><label class="fieldlabel" for="prompt">Initial prompt <span class="muted small">Required</span></label><div class="prompt-box"><textarea id="prompt" ${locked() ? "readonly" : ""}>${esc(prompt)}</textarea>${variant === "A" ? attachments() : ""}<p class="prompt-help">The first non-empty line becomes the Run title.</p></div></div>`;
+      }
+      function render() {
+        const panel =
+          variant === "A"
+            ? promptBox()
+            : variant === "B"
+              ? promptBox() +
+                `<section class="separate" aria-label="Images"><div class="fieldlabel">Images <span class="muted small">Optional</span></div>${attachments()}</section>`
+              : `<div class="split">${promptBox()}<section class="split-panel" aria-label="Images"><div class="fieldlabel">Images <span class="muted small">Optional</span></div>${attachments()}</section></div>`;
+        $("layout").innerHTML =
+          `<div class="drop-area">${panel}<div class="drop-overlay"><strong>Drop images to attach</strong><span class="small muted">PNG, JPEG, GIF, WebP · up to 8 images</span></div></div>`;
+        $("variant-label").textContent = variant + " · " + names[variant];
+        $("prompt").addEventListener("input", (e) => {
+          prompt = e.target.value;
+          $("start").disabled = phase === "starting" || !prompt.trim();
+          renderHistory();
+          renderState();
+        });
+        $("layout")
+          .querySelectorAll("[data-add]")
+          .forEach((b) => (b.onclick = () => $("files").click()));
+        $("layout")
+          .querySelectorAll("[data-remove]")
+          .forEach(
+            (b) =>
+              (b.onclick = () => {
+                if (locked()) return;
+                images.splice(+b.dataset.remove, 1);
+                render();
+              }),
+          );
+        wirePreview($("layout"));
+        $("error").hidden = !rejected.length;
+        $("error").textContent = rejected.join(" ");
+        $("pending").hidden = !locked();
+        $("pending").textContent =
+          phase === "starting"
+            ? "Starting… Your prompt and images are read-only while Factory checks this request."
+            : "Start outcome is unknown. Your exact prompt and images are kept. Check the same request to find out whether the Run was created.";
+        $("start").disabled = phase === "starting" || !prompt.trim();
+        $("start").innerHTML =
+          phase === "unknown"
+            ? "Check same request"
+            : phase === "starting"
+              ? "Starting…"
+              : '▷ Start <span style="opacity:.7;font-size:10px">⌘↵</span>';
+        renderHistory();
+        renderState();
+      }
+      function renderHistory() {
+        $("flow-text").textContent = prompt.split("\n")[0] || "Initial prompt";
+        $("image-count").textContent = images.length + " images";
+        $("flow-images").innerHTML =
+          images
+            .slice(0, 3)
+            .map((v, i) => thumb(v, i, true))
+            .join("") +
+          (images.length > 3
+            ? `<button class="more" data-preview="3" aria-label="View all ${images.length} images">+${images.length - 3}</button>`
+            : "");
+        wirePreview($("flow-images"));
+      }
+      function renderState() {
+        $("state").textContent = JSON.stringify({
+          layout: variant,
+          start: phase,
+          images: images.length,
+          promptRequired: true,
+          editable: !locked(),
+          saved: false,
+          realRequests: 0,
+        });
+      }
+      function wirePreview(root) {
+        root.querySelectorAll("[data-preview]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              opener = b;
+              previewIndex = +b.dataset.preview;
+              showImage();
+              $("preview").showModal();
+            }),
+        );
+      }
+      function showImage() {
+        const image = images[previewIndex];
+        if (!image) return;
+        $("preview-title").textContent = image.name;
+        $("preview-image").src = image.src;
+        $("preview-image").alt = image.name;
+        $("preview-meta").textContent =
+          `${previewIndex + 1} of ${images.length} · ${image.size}${image.sample ? " · example screenshot" : ""}`;
+        $("previous-image").disabled = previewIndex === 0;
+        $("next-image").disabled = previewIndex === images.length - 1;
+      }
+      async function addFiles(files) {
+        if (locked()) return;
+        const errors = [];
+        for (const file of files) {
+          if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) {
+            errors.push(`${file.name}: use PNG, JPEG, GIF or WebP.`);
+            continue;
+          }
+          if (file.size > 10 * 1024 * 1024) {
+            errors.push(`${file.name}: larger than 10 MB.`);
+            continue;
+          }
+          if (images.length >= 8) {
+            errors.push(`${file.name}: limit of 8 images reached.`);
+            continue;
+          }
+          images.push({
+            id: crypto.randomUUID(),
+            name: file.name,
+            size: (file.size / 1024 / 1024).toFixed(1) + " MB",
+            src: URL.createObjectURL(file),
+          });
+        }
+        rejected = errors;
+        render();
+      }
+      $("files").onchange = async (e) => {
+        await addFiles(Array.from(e.target.files));
+        e.target.value = "";
+      };
+      document.addEventListener("paste", (e) => {
+        if ($("preview").open || locked()) return;
+        const files = Array.from(e.clipboardData.files);
+        if (!files.length) return;
+        e.preventDefault();
+        void addFiles(files);
+      });
+      let depth = 0;
+      $("layout").addEventListener("dragenter", (e) => {
+        if (!e.dataTransfer.types.includes("Files") || locked()) return;
+        e.preventDefault();
+        depth++;
+        $("layout").classList.add("dragging");
+      });
+      $("layout").addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = locked() ? "none" : "copy";
+      });
+      $("layout").addEventListener("dragleave", () => {
+        depth--;
+        if (depth <= 0) $("layout").classList.remove("dragging");
+      });
+      $("layout").addEventListener("drop", (e) => {
+        e.preventDefault();
+        depth = 0;
+        $("layout").classList.remove("dragging");
+        void addFiles(Array.from(e.dataTransfer.files));
+      });
+      function switchVariant(step) {
+        variant = variants[(variants.indexOf(variant) + step + 3) % 3];
+        const url = new URL(location.href);
+        url.searchParams.set("variant", variant);
+        try {
+          history.replaceState({}, "", url);
+        } catch {}
+        render();
+      }
+      $("prev").onclick = () => switchVariant(-1);
+      $("next").onclick = () => switchVariant(1);
+      document.addEventListener("keydown", (e) => {
+        if ($("preview").open) return;
+        if (
+          ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
+          e.target.isContentEditable
+        )
+          return;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          switchVariant(e.key === "ArrowLeft" ? -1 : 1);
+        }
+      });
+      $("close").onclick = () => $("preview").close();
+      $("preview").addEventListener("close", () => opener?.focus());
+      $("previous-image").onclick = () => {
+        previewIndex--;
+        showImage();
+      };
+      $("next-image").onclick = () => {
+        previewIndex++;
+        showImage();
+      };
+      $("preview").addEventListener("click", (e) => {
+        if (e.target === $("preview")) $("preview").close();
+      });
+      $("start").onclick = () => {
+        phase = phase === "unknown" ? "edit" : "starting";
+        $("scenario").value = phase;
+        render();
+      };
+      $("scenario").onchange = (e) => {
+        const mode = e.target.value;
+        phase = ["starting", "unknown"].includes(mode) ? mode : "edit";
+        rejected = [];
+        if (mode === "empty") images = [];
+        else if (mode === "full") images = Array.from({ length: 8 }, (_, i) => sample(i));
+        else if (mode === "error") {
+          if (!images.length) images = [sample(0), sample(1)];
+          rejected = [
+            "large-capture.png: larger than 10 MB.",
+            "notes.pdf: use PNG, JPEG, GIF or WebP.",
+            "Valid images were kept.",
+          ];
+        }
+        render();
+      };
+      $("reset").onclick = () => {
+        phase = "edit";
+        images = [sample(0), sample(1)];
+        rejected = [];
+        prompt =
+          "Fix the settings panel layout\nUse the screenshots to reproduce the clipped menu.";
+        $("scenario").value = "edit";
+        render();
+      };
+      $("reset").click();
+    </script>
+  </body>
+</html>
