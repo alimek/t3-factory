@@ -29,9 +29,6 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
   const visits = detail.activations.filter((activation) => activation.blockId === blockId);
   const current = visits[visits.length - 1];
   const cause = current?.cause ?? "";
-  const finished = detail.reports.some(
-    (report) => report.activationId === current?.id && report.status === "finished",
-  );
   const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
   return {
     code: "BLOCK",
@@ -57,7 +54,7 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
         : null,
     },
-    allowedTransitions: current && !finished ? OPEN_TRANSITIONS : [],
+    allowedTransitions: current ? OPEN_TRANSITIONS : [],
   };
 }
 

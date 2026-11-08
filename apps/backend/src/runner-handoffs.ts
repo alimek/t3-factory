@@ -12,11 +12,11 @@ function reportExitChoices(exits: RunDefinitions["flow"]["graph"]["blocks"][numb
   );
   return choices.join("\n");
 }
-/** Explicit reporting: one immutable final per execution plus a non-final conversation waiting report. */
+/** Explicit reporting: the newest finished report is the activation's result; waiting is a non-final question. */
 export function conversationReportInstructions(
   exits: RunDefinitions["flow"]["graph"]["blocks"][number]["exits"],
 ) {
-  return `Report through factory_update_block. Chat alone is not a report. If you still need a user reply, call {to: "waiting", message: nonempty summary of what you need}, with no exit, then end this turn. Waiting is non-final and does not advance the Flow. The user replies in this T3 thread; Factory resumes this Block. If you end this turn while CI, review, delegated or background work is still running, call {to: "working", message: nonempty summary of what you are waiting on}, with no exit; working is non-final, does not advance the Flow and keeps Factory from reporting a missing report. Only when the task is actually complete, call {to: "finished", exit: exact name below, message: context for the next step; nonempty when feedback is required}. The first finished result for this activation is immutable. An identical retry returns the original acknowledgement. Never treat unanswered questions or your recommendations as user decisions.\nExits:\n${reportExitChoices(exits)}`;
+  return `Report through factory_update_block. Chat alone is not a report. If you still need a user reply, call {to: "waiting", message: nonempty summary of what you need}, with no exit, then end this turn. Waiting is non-final and does not advance the Flow. The user replies in this T3 thread; Factory resumes this Block. If you end this turn while CI, review, delegated or background work is still running, call {to: "working", message: nonempty summary of what you are waiting on}, with no exit; working is non-final, does not advance the Flow and keeps Factory from reporting a missing report. Only when the task is actually complete, call {to: "finished", exit: exact name below, message: context for the next step; nonempty when feedback is required}. Your newest finished report is the result. To change it, report finished again from a later turn: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks. An identical retry returns the original acknowledgement. Never treat unanswered questions or your recommendations as user decisions.\nExits:\n${reportExitChoices(exits)}`;
 }
 /** A worker's launch settings; its first message is the worker's own activation message. */
 export function launchPayload(

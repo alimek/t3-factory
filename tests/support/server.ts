@@ -364,6 +364,11 @@ const fixtureRoutes: Record<string, () => unknown> = {
   },
   async "/__fixture/worker/report"() {
     const current = requireSuccess(await factory.getRun(releasing.id));
+    await report(context, current, "worker", {
+      to: "finished",
+      exit: "review",
+      message: "A first draft of the project picker change.",
+    });
     const accepted = await report(context, current, "worker", {
       to: "finished",
       exit: "review",

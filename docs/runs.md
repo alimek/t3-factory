@@ -122,8 +122,11 @@ message and no exit.
 A report from any turn of the worker's thread, including a user reply or a notification after delegated work, applies to the
 Block's current visit. Factory returns acceptance only after saving it. The model supplies no report key or Run id.
 
-- An identical retry returns the original acknowledgement, also after renewed work, Stop or closure; a changed final for the
-  same visit conflicts.
+- The newest finished report is the visit's result, so the user can continue the conversation and have the Agent report an
+  updated outcome. Before hand-off a newer result replaces the held one and only it is passed on. Afterwards the same exit only
+  updates the result and message without relaunching the next Blocks; a different exit also hands off to that exit's Blocks,
+  while Blocks started from the earlier exit keep running. Repeating the current result returns the original
+  acknowledgement, also after renewed work, Stop or closure.
 - Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
   delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
@@ -138,7 +141,8 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - **Working**: an Agent still on its task, for example watching CI or review, reports `to: "working"` with a message. The block
   stays working and shows the message on the canvas, in its details and in the Run row; it selects no exit, releases nothing
   and is not attention. While it is the visit's latest report, a finished worker thread is not a missing-report Problem. A
-  later working, waiting or finished report replaces it.
+  later working, waiting or finished report replaces it. Reported after a result, it shows the block working without
+  withdrawing the result, and the Run stays open until a later report.
 - **Request report** on a missing-report Problem, or in the details of a block idle in working, starts one extra turn on the
   same thread asking the Agent to assess existing work and report. Eligibility is rechecked at acceptance (a newer run, an unfinished thread, changed authorization, accepted results,
   Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
@@ -150,15 +154,18 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - **Conversation waiting**: an Agent that asked questions in chat reports `to: "waiting"` with a message. The block
   shows waiting, the Run shows **Needs input** with that message and **Open in T3**; reply in the worker's T3 thread. When Factory
   observes any later turn of that thread the attention settles, the waiting report stays in history and that turn reports
-  again. A later working or waiting report replaces the question and a final settles it. Factory never parses chat; a model may still
+  again. A later working or waiting report replaces the question and a final settles it. A question asked after a result shows
+  the block waiting until its next report, without withdrawing the result. Factory never parses chat; a model may still
   omit or misuse the report. See
   [waiting reports](runner.md#report-acceptance).
 - **Attention panel** (per Run, optionally per block): Pending by default, Settled keeping times, reasons and selected Human exit.
   Native questions and permissions link to **Open in T3** and are answered there; Factory has no native answer controls. A fresh
   read showing none records `withdrawn`; unavailable reads keep matters pending and mark the observation stale.
 - **Timeline** entries are plain sentences derived from recorded facts ("entered · new T3 thread", "handed off to Reviewer via
-  Review", "finished · exit Approved", "you answered", Stop and closure). **Work periods** list each exact execution with its own
-  state and T3 link; elapsed times are approximate observations.
+  Review", "finished · exit Approved", "result version 2 replaces the earlier result", "you answered", Stop and closure). Every
+  result version keeps its exit, message and deliveries; an earlier version reads **Replaced by version N** and its cancelled
+  handoffs **Cancelled**, and a same-exit update after hand-off says it was not handed off again. Activations show the current
+  result. **Work periods** list each exact execution with its own state and T3 link; elapsed times are approximate observations.
 
 ## Human steps
 
@@ -172,8 +179,8 @@ acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
 
 ## Completion and permanent history
 
-A Run closes **Finished** only when every Block's current visit has its worker's accepted final result, every Human step is
-answered, no delivery, launch, handoff or send is outstanding, no attention is pending, and a fresh read finds every worker thread
+A Run closes **Finished** only when every Block's current visit has its worker's accepted final result and no later working
+report, every Human step is answered, no delivery, launch, handoff or send is outstanding, no attention is pending, and a fresh read finds every worker thread
 finished in T3. Never-visited branches need not run. A report or T3 completion alone keeps the Run open.
 
 Run detail shows the **recorded worker threads**: each thread's runs, statuses and native request count with their read times.
@@ -182,7 +189,7 @@ quality or one reviewed revision. Confirmed Stop keeps finished blocks, leaves u
 blocks stopped.
 
 Finished and Stopped Runs stay closed: later T3 conversations neither reopen them nor extend their timeline, and new reports and
-Human answers are rejected (identical accepted report retries still return the saved acknowledgement). History, input, captured
+Human answers are rejected (repeating a Block's current result still returns the saved acknowledgement). History, input, captured
 definitions, events and closure evidence remain; no transcript or response-body archive exists.
 
 ## Stop

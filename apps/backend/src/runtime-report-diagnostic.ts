@@ -17,10 +17,6 @@ const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
     "The selected exit does not identify exactly one captured Block exit.",
     "Use factory_get_block to read the allowed exits, then correct the report without repeating the task.",
   ],
-  FINAL_CONFLICT: [
-    "This visit already has a final result with different content.",
-    "Read the accepted result with factory_get_run. Do not repeat the task or replace that final result.",
-  ],
   EXIT_NOT_ALLOWED: [
     "Only a finished report selects an exit; working and waiting reports cannot.",
     "Remove the exit. Report finished with an exit only when the task is complete.",

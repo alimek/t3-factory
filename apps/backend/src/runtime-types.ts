@@ -48,10 +48,10 @@ const NEXT: Record<RuntimeReport["status"], string> = {
   waiting:
     "Factory waits for a user reply in this thread. Report again from any later turn: working or waiting replaces this question, finished completes the Block.",
   finished:
-    "Factory keeps this final and releases downstream work after this thread and its delegated work settle.",
+    "This is the Block's result. Factory hands it off after this thread and its delegated work settle. A later finished report replaces it: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks.",
 };
 
-/** The reports a visit still accepts before its finished result. */
+/** The reports a current visit accepts; the latest one is the Block's current report. */
 export const OPEN_TRANSITIONS = ["working", "waiting", "finished"] as const;
 
 /** The acknowledgement the model can act on: current Block state, remaining transitions, and Factory's next step. */
@@ -63,7 +63,7 @@ export function acceptedTransition<T extends RuntimeReply>(
   return {
     ...reply,
     state,
-    allowedTransitions: status === "finished" ? [] : OPEN_TRANSITIONS,
+    allowedTransitions: OPEN_TRANSITIONS,
     next: NEXT[status],
   };
 }

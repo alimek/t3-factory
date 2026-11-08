@@ -39,18 +39,34 @@ function reportRoute(definitions: RunDefinitions, blockId: string, report: Runti
     return rejected("INVALID_RECIPIENT");
   return { ok: true as const, exitId: exit?.id ?? null, recipients };
 }
-/** A changed final names the Block's current state and the exits it captured. */
-function conflictDetail(reply: RuntimeReply, block: BlockRow, runRow: ReportRunRow): RuntimeReply {
-  if (reply.code !== "FINAL_CONFLICT") return reply;
-  const flowBlock = runRow.definitions.flow.graph.blocks.find(
-    (entry) => entry.id === block.block_id,
+/** The activation's newest result, unless the Block has a pending question or execution failure
+ * that only a new report settles. */
+function currentResult(sql: SqlClient.SqlClient, { runRow, block, activationId }: ReportTarget) {
+  return Effect.map(
+    sql<{
+      fingerprint: string;
+      acknowledgement_json: string;
+    }>`SELECT fingerprint,acknowledgement_json FROM runtime_reports WHERE activation_id=${activationId} AND status='finished' AND NOT EXISTS(SELECT 1 FROM run_attention WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND settled_at IS NULL AND kind IN ('conversation-waiting','execution-failed')) ORDER BY rowid DESC LIMIT 1`,
+    ([row]) => row,
   );
-  return {
-    ...reply,
-    state: block.state,
-    allowedTransitions: [],
-    allowedExits: flowBlock?.kind === "agent" ? flowBlock.exits.map((exit) => exit.name) : [],
-  };
+}
+/** Held handoffs of the activation's earlier results are cancelled, so only the newest result is
+ * handed off. After a release, only a different exit hands off again; Blocks started from the
+ * released result keep running. */
+function replaceHeldResults(
+  sql: SqlClient.SqlClient,
+  runId: string,
+  activationId: string,
+  exitId: string | null,
+  time: string,
+) {
+  return Effect.gen(function* () {
+    yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,reconciled_at=${time} WHERE run_id=${runId} AND kind='handoff' AND state='pending' AND report_id IN (SELECT r.id FROM runtime_reports r WHERE r.activation_id=${activationId} AND NOT EXISTS(SELECT 1 FROM result_releases x WHERE x.report_id=r.id))`;
+    const [released] = yield* sql<{
+      exit_id: string | null;
+    }>`SELECT r.exit_id FROM result_releases x JOIN runtime_reports r ON r.id=x.report_id WHERE x.activation_id=${activationId} ORDER BY r.rowid DESC LIMIT 1`;
+    return !released || released.exit_id !== exitId;
+  });
 }
 /** Working and waiting reports are non-final: they never select an exit and must carry a message. */
 function nonFinalRejection(report: RuntimeReport) {
@@ -113,16 +129,18 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         state,
       );
       const recipients = JSON.stringify(route.recipients);
-      yield* sql`INSERT INTO runtime_reports(id,run_id,block_id,execution_id,fingerprint,status,exit_id,recipients_json,pending_message,acknowledgement_json,accepted_at,activation_id,result_message) VALUES(${id},${runRow.id},${block.block_id},${block.execution_id},${content},${report.status},${route.exitId},${recipients},${route.recipients.length ? (report.message ?? "") : null},${JSON.stringify(reply)},${time},${activationId},${report.message ?? null})`;
+      const handsOff = yield* replaceHeldResults(sql, runRow.id, activationId, route.exitId, time);
+      yield* sql`INSERT INTO runtime_reports(id,run_id,block_id,execution_id,fingerprint,status,exit_id,recipients_json,pending_message,acknowledgement_json,accepted_at,activation_id,result_message) VALUES(${id},${runRow.id},${block.block_id},${block.execution_id},${content},${report.status},${route.exitId},${recipients},${handsOff && route.recipients.length ? (report.message ?? "") : null},${JSON.stringify(reply)},${time},${activationId},${report.message ?? null})`;
       yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${block.execution_id},'report-accepted',${"report:" + id},${id},${time})`;
-      yield* createHandoffs(sql, runRow, {
-        id,
-        block_id: block.block_id,
-        exit_id: route.exitId,
-        recipients_json: recipients,
-        pending_message: report.message ?? "",
-        accepted_at: time,
-      });
+      if (handsOff)
+        yield* createHandoffs(sql, runRow, {
+          id,
+          block_id: block.block_id,
+          exit_id: route.exitId,
+          recipients_json: recipients,
+          pending_message: report.message ?? "",
+          accepted_at: time,
+        });
       yield* sql`UPDATE run_executions SET report_status=${report.status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
       yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
       yield* settlePending(
@@ -150,21 +168,19 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       return reply;
     });
   }
-  /** One verdict for the Block's current activation; the latest waiting report replaces an earlier one. */
+  /** One verdict for the Block's current activation: the latest report is its current state, so a
+   * newer finished report replaces the result and a newer waiting report the question. */
   function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeReport) {
     return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
-      const { runRow, block, activationId } = target;
+      const { runRow, block } = target;
       const protocol = nonFinalRejection(report);
       if (protocol) return protocol;
       const content = reportFingerprint(report);
-      const [final] = yield* sql<{
-        fingerprint: string;
-        acknowledgement_json: string;
-      }>`SELECT fingerprint,acknowledgement_json FROM runtime_reports WHERE activation_id=${activationId}`;
-      if (final)
-        return final.fingerprint === content
-          ? (JSON.parse(final.acknowledgement_json) as RuntimeReply)
-          : conflictDetail({ code: "FINAL_CONFLICT" }, block, runRow);
+      if (report.status === "finished") {
+        const current = yield* currentResult(sql, target);
+        if (current?.fingerprint === content)
+          return JSON.parse(current.acknowledgement_json) as RuntimeReply;
+      }
       if (!runRow.gate_open || runRow.closed_at) return { code: "RUN_CLOSED" };
       const route = reportRoute(runRow.definitions, block.block_id, report);
       if (!route.ok) return route.reply;

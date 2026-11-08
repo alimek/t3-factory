@@ -16,7 +16,7 @@ const tools: Tool[] = [
   {
     name: "factory_update_block",
     description:
-      "Report your Block's state. working needs a nonempty message saying what you are still doing or waiting on and no exit; report it before ending a turn while CI, review, delegated or background work continues. waiting needs a nonempty message for the user and no exit; report it from any turn while you still need a reply. finished needs one configured exit, a message for the next Block (required when the exit asks for feedback), and is accepted once per visit; never report finished while CI, review, delegated or background work is still pending. Your latest report replaces an earlier working or waiting one. Repeating the same report returns the same acknowledgement.",
+      "Report your Block's state. working needs a nonempty message saying what you are still doing or waiting on and no exit; report it before ending a turn while CI, review, delegated or background work continues. waiting needs a nonempty message for the user and no exit; report it from any turn while you still need a reply. finished needs one configured exit and a message for the next Block (required when the exit asks for feedback); the newest finished report is the visit's result, so a later one replaces it (after hand-off the same exit only updates the result, and a different exit also starts that exit's next Blocks); never report finished while CI, review, delegated or background work is still pending. Your latest report is the Block's current report. Repeating the same report returns the same acknowledgement.",
     inputSchema: {
       type: "object",
       properties: {

@@ -63,7 +63,7 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
     run.activations
       .filter((a) => a.blockId === activation.blockId)
       .findIndex((a) => a.id === activation.id) + 1;
-  const report = run.reports.find((r) => r.activationId === activation.id);
+  const report = run.reports.findLast((r) => r.activationId === activation.id);
   const block = run.blocks.find((b) => b.blockId === activation.blockId);
   return (
     <article className="flex flex-col gap-2 rounded-md border bg-muted p-3 text-xs break-words">
@@ -91,6 +91,18 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
   );
 }
 
+/** A visit's finished reports in order; the newest is its result. */
+function visitResults(run: RunDetail, report: RunDetail["reports"][number]) {
+  if (!report.activationId || report.status !== "finished") return [report];
+  return run.reports.filter(
+    (r) => r.activationId === report.activationId && r.status === "finished",
+  );
+}
+
+export function resultVersion(run: RunDetail, report: RunDetail["reports"][number]) {
+  return visitResults(run, report).indexOf(report) + 1;
+}
+
 export function RetainedResult({
   run,
   report,
@@ -101,41 +113,60 @@ export function RetainedResult({
   const exit = run.definitions.flow.graph.blocks
     .find((b) => b.id === report.blockId)
     ?.exits.find((e) => e.id === report.exitId);
+  const results = visitResults(run, report);
+  const version = results.indexOf(report) + 1;
+  const completion =
+    results.at(-1) !== report
+      ? `Replaced by version ${results.length}`
+      : report.completionEligibleAt
+        ? "Completion confirmed"
+        : "Completion held";
   return (
     <div className="flex min-w-0 flex-col gap-1 text-xs">
       <p className="font-medium">
         Report accepted · exit {exit?.name ?? report.exitId ?? "unspecified"}
+        {version > 1 && ` · version ${version}`}
       </p>
       <p className="text-muted-foreground">
-        {report.completionEligibleAt ? "Completion confirmed" : "Completion held"} · execution{" "}
-        {report.executionId}
+        {completion} · execution {report.executionId}
       </p>
-      <ResultDelivery run={run} reportId={report.id} />
+      <ResultDelivery run={run} report={report} />
       {report.resultMessage && <SessionResult text={report.resultMessage} />}
     </div>
   );
 }
 
-function ResultDelivery({ run, reportId }: { run: RunDetail; reportId: string }) {
-  return run.intents
-    .filter((i) => i.reportId === reportId)
-    .map((intent) => {
-      const released = run.events.some(
-        (e) => e.kind === "handoff-released" && e.causeId === intent.id,
-      );
-      const state =
-        intent.state === "acknowledged"
-          ? "Delivered"
-          : intent.state === "cancelled"
-            ? "Cancelled"
-            : released
-              ? "Released · delivery unconfirmed"
-              : "Held";
-      return (
-        <p key={intent.id} className="text-muted-foreground">
-          {state} → {run.blocks.find((b) => b.blockId === intent.blockId)?.name ?? intent.blockId}
-          {intent.problem ? ` · ${intent.problem}` : ""}
-        </p>
-      );
-    });
+function blockName(run: RunDetail, blockId: string) {
+  return run.blocks.find((b) => b.blockId === blockId)?.name ?? blockId;
+}
+
+function ResultDelivery({ run, report }: { run: RunDetail; report: RunDetail["reports"][number] }) {
+  const intents = run.intents.filter((i) => i.reportId === report.id);
+  // A same-exit replacement after hand-off creates no handoffs of its own.
+  if (!intents.length && report.recipients.length)
+    return (
+      <p className="text-muted-foreground">
+        Result updated · not handed off again to{" "}
+        {report.recipients.map((id) => blockName(run, id)).join(", ")}
+      </p>
+    );
+  return intents.map((intent) => {
+    const released = run.events.some(
+      (e) => e.kind === "handoff-released" && e.causeId === intent.id,
+    );
+    const state =
+      intent.state === "acknowledged"
+        ? "Delivered"
+        : intent.state === "cancelled"
+          ? "Cancelled"
+          : released
+            ? "Released · delivery unconfirmed"
+            : "Held";
+    return (
+      <p key={intent.id} className="text-muted-foreground">
+        {state} → {blockName(run, intent.blockId)}
+        {intent.problem ? ` · ${intent.problem}` : ""}
+      </p>
+    );
+  });
 }

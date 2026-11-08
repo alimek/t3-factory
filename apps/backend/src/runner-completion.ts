@@ -8,8 +8,8 @@ import { recoverOperation } from "./runner-effects.ts";
 import { runTarget } from "./runner-utils.ts";
 import { now } from "./time.ts";
 
-/** Every visited Block's current activation has a finished result, nothing is pending locally,
- * and every worker thread is finished under the shared rule. */
+/** Every visited Block's current activation has a finished result and no later working report,
+ * nothing is pending locally, and every worker thread is finished under the shared rule. */
 function finishedAttempt(database: RunnerDatabase, t3: T3Adapter, run: RunRow) {
   return Effect.gen(function* () {
     const local = yield* database.transaction((sql) =>
@@ -18,13 +18,15 @@ function finishedAttempt(database: RunnerDatabase, t3: T3Adapter, run: RunRow) {
           block_id: string;
           thread_id: string;
           reported: number;
-        }>`SELECT b.block_id,b.thread_id,EXISTS(SELECT 1 FROM runtime_reports r WHERE r.activation_id=(SELECT a.id FROM run_activations a WHERE a.run_id=b.run_id AND a.block_id=b.block_id ORDER BY a.rowid DESC LIMIT 1)) AS reported FROM run_blocks b WHERE b.run_id=${run.id} AND b.thread_id IS NOT NULL ORDER BY b.rowid`;
+          working: number;
+        }>`SELECT b.block_id,b.thread_id,EXISTS(SELECT 1 FROM runtime_reports r WHERE r.activation_id=a.id) AS reported,EXISTS(SELECT 1 FROM working_reports w WHERE w.activation_id=a.id AND w.replaced_at IS NULL) AS working FROM run_blocks b LEFT JOIN run_activations a ON a.id=(SELECT id FROM run_activations WHERE run_id=b.run_id AND block_id=b.block_id ORDER BY rowid DESC LIMIT 1) WHERE b.run_id=${run.id} AND b.thread_id IS NOT NULL ORDER BY b.rowid`;
         const pending =
           yield* sql`SELECT id FROM run_attention WHERE run_id=${run.id} AND settled_at IS NULL`;
         return { blocks, pending: pending.length > 0 };
       }),
     );
-    if (!local.blocks.length || local.pending || local.blocks.some((b) => !b.reported)) return null;
+    if (!local.blocks.length || local.pending || local.blocks.some((b) => !b.reported || b.working))
+      return null;
     const observed = yield* observeWorkers(t3, run, local.blocks);
     if (observed.some(({ worker }) => !worker.finished)) return null;
     return {
@@ -56,8 +58,9 @@ export function completeRun(
       if (!fresh || (yield* liveContextId()) !== run.context_id) return;
       yield* database.mutate(id, (sql) =>
         Effect.gen(function* () {
+          // A replaced result's held handoffs are cancelled and owe no delivery.
           const pending =
-            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered'`;
+            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (kind='handoff' AND state='cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered'`;
           if (pending.length) return;
           if (!(yield* confirmClosure(sql, database.owner.token, fresh, "finished"))) return;
           yield* sql`UPDATE run_activations SET phase='finished',problem=NULL WHERE run_id=${id}`;

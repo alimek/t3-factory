@@ -25,7 +25,7 @@ export function recordReportVerdict(
       yield* settleReportRejections(sql, run.id, block.block_id, time);
       return diagnostic;
     }
-    // A failed attempt to overwrite an accepted final cannot create a new obligation.
+    // A rejected replacement leaves the visit's accepted result standing and owes nothing.
     const accepted = yield* sql`SELECT id FROM runtime_reports WHERE activation_id=${activationId}`;
     if (accepted.length) return diagnostic;
     const scope = { block_id: block.block_id, bindingId: binding.id };

@@ -125,7 +125,8 @@ environment/provider/model/options, the public T3 interface and the installed Fa
 covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. When the blocking problem is the reporting installation, the rejected-Start notice links to **Settings → Agent reporting**; other readiness problems link to **Studio → Agents**. Readiness never
 launches diagnostic work, answers approvals or substitutes settings.
 
-A final result is immutable; a worker's handoffs stay held until its worker thread is
+A worker's newest `finished` report is its Block's result, and a later one from the same thread
+[replaces it](runner.md#report-acceptance). Its handoffs stay held until its worker thread is
 [finished](runner.md#worker-thread-completion), while a Human answer releases its handoffs directly. A finished
 thread without a report shows a Problem, and **Request report** is an explicit user action, never automatic.
 
@@ -267,6 +268,7 @@ The launch message contains the captured Agent prompt. The worker retrieves the 
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source
 `blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. These `blockId` values name Flow blocks, not Block
 ids. Other visits' reports and unrelated graph neighbors are not inputs to that visit. Flow-input visits have no incoming result.
+A result the source Block replaces after hand-off does not change the inputs of a visit it already started.
 
 The result message is plain text: it can describe decisions, include artifact URLs or give repository paths. No output schema
 declaration is required, and Factory does not automatically fetch linked artifacts. An Agent's prompt can specify an expected

@@ -104,10 +104,19 @@ worker reports.
 
 - An unknown id is `UNKNOWN_BLOCK` and a missing one is `BLOCK_ID_REQUIRED`, both with
   repair guidance. Neither attaches attention to any Run.
-- `finished` is unique per activation. An identical repeat returns the stored
-  acknowledgement, also after Stop or closure; a changed final is `FINAL_CONFLICT` with the
-  current Block state and `allowedExits`. Reports cannot erase engine failure, prove
-  semantic correctness or close a Run. A new report on a closed Run is `RUN_CLOSED`.
+- The newest `finished` report of an activation is its result. Every version stays in the
+  Run's reports and timeline as an immutable record. A later `finished` from any turn of the
+  worker thread:
+  - before release, replaces the held result: the earlier version's handoffs are cancelled
+    and only the newest version is handed off;
+  - after release with the same exit, updates the recorded result and message; it creates no
+    handoff and relaunches no recipient;
+  - after release with a different exit, creates handoffs to that exit's recipients, held under
+    the same release rule, while Blocks started from the earlier exit keep running.
+- Repeating the current result returns its acknowledgement, also after Stop or closure. While
+  a question or execution failure is pending on the Block, a repeat is a new version that
+  settles it. Reports cannot erase engine failure, prove semantic correctness
+  or close a Run. A new report on a closed Run is `RUN_CLOSED`.
 - Exits must match the captured ID or unambiguous exact name, with non-empty feedback
   when required. Accepted results remain held until the
   [handoff release](#routing-and-independent-queues) rule passes.
@@ -116,14 +125,17 @@ worker reports.
   it is the current activation's latest report, so a finished worker thread raises no missing
   report, for example while the worker waits for CI or review. A newer `working` replaces the
   message, an identical one returns its acknowledgement, and a later `waiting` or `finished`
-  replaces it. Every working report is kept as history.
+  replaces it. Every working report is kept as history. A `working` after a result is the
+  Block's current state until its next report; it withdraws neither the result nor its handoffs,
+  but it holds Finished closure.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
   The user replies in the same worker thread. Any later turn of that thread settles the
   question; the worker reports again from that turn. A newer `waiting` or a `working` replaces
   the pending question, an identical one returns its acknowledgement, and `finished` settles
-  it. A later accepted report settles earlier missing-report and execution-failed attention on
-  the Block.
+  it. A `waiting` after a result is the Block's current state until its next report; it
+  withdraws neither the result nor its handoffs. A later accepted report settles earlier
+  missing-report and execution-failed attention on the Block.
 - A `working` or `waiting` report with an exit is `EXIT_NOT_ALLOWED`, and one without a message
   is `MESSAGE_REQUIRED`, both with repair guidance.
 - Earlier waiting history does not prevent closure once the activation has a final result
@@ -189,12 +201,13 @@ Each validated recipient of an accepted final result gets an independent handoff
 handoffs stay held until the source activation has its `finished` result, its worker thread
 is [finished](#worker-thread-completion) and no execution failure is pending on that Block.
 The owner, authorization, gate and local generation must still match when release is
-recorded. Release is recorded once per activation and is never re-derived from saved
-presentation data. A Human answer directly authorizes its outgoing handoffs.
+recorded. Release is recorded once per result version, only while that version is its
+activation's newest result, and is never re-derived from saved presentation data. A Human
+answer directly authorizes its outgoing handoffs.
 
 A first visit launches that Block's own top-level worker. The message is `$factory-block`
 followed by the captured Agent prompt. A revisit queues a turn on the same worker after
-the previous activation's result is released and, at send time, the worker thread is
+the previous activation's current result is released and, at send time, the worker thread is
 finished. Two Blocks using the same
 Agent still have separate workers. Parallel arrivals never join or batch their feedback.
 Threads share the project-root checkout; Factory guarantees neither edit-conflict handling
@@ -222,9 +235,11 @@ without inventing answers.
 
 Successful closure requires all of the following:
 
-- Every visited Block's current activation has its worker's accepted final result and no
-  attention is pending; every Human occurrence is answered. Unvisited branches need not run.
-- Every delivery is acknowledged, with no outstanding launch, handoff or send.
+- Every visited Block's current activation has its worker's accepted final result with no
+  later `working` report, and no attention is pending; every Human occurrence is answered.
+  Unvisited branches need not run.
+- Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
+  cancelled because their result was replaced owe no delivery.
 - A fresh read finds every Block's worker thread [finished](#worker-thread-completion), with
   no failed latest run.
 
@@ -238,7 +253,7 @@ Unavailable or mismatched reads keep the Run open. Closure certifies that T3 rep
 worker thread finished, not result quality or a common repository revision.
 
 Closed Runs never dispatch, reopen or extend their history after later T3 activity.
-New reports and Human answers are rejected; an identical accepted report retry can still
+New reports and Human answers are rejected; repeating a Block's current result can still
 return its original acknowledgement.
 
 ## Gate-first Stop
@@ -273,8 +288,8 @@ conversation; Factory no longer observes or commands it.
 - A failed worker execution stays a Problem until the thread recovers or the Block reports;
   Factory does not launch a replacement worker for it.
 - Later turns of the worker thread, including ones after an accepted final, are ordinary
-  thread work: they hold release until the thread is finished and never replace the
-  accepted result.
+  thread work: they hold release until the thread is finished, and a `finished` report from
+  one of them replaces the result under the [report rules](#report-acceptance).
 - `factory_get_block` and `factory_get_run` are read-only. `factory_get_run` grants no
   routing authority. Both answer from the Block id even while a launch is still being
   confirmed.
