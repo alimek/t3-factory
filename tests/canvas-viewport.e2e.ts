@@ -163,6 +163,8 @@ test("period recenters the focused Run canvas and resumes following after a pan"
   await canvas.press(".");
 
   // Assert
-  await expectFollowingReview(screen);
+  expect(await runCanvasHorizontalOffset(screen, "Review implementation")).toBeLessThan(2);
+  await expect(canvas).toHaveAttribute("data-following", "true");
+  await expect(screen.getByRole("button", "Follow active", { exact: true })).toBeVisible();
   await app.screenshot("follow-active-shortcut-resumed");
 });

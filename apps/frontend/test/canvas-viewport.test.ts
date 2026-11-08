@@ -93,18 +93,6 @@ it("an invalid Safari ratio preserves the viewport scale", () => {
   expect(next).toBe(scale);
 });
 
-it("entry framing centers the target rather than its asymmetric context", () => {
-  // Arrange
-  const target = { minX: 500, minY: 100, width: 200, height: 100 };
-  const neighbors = [{ minX: 0, minY: 100, width: 200, height: 100 }];
-
-  // Act
-  const view = frameCanvasTargets(target, neighbors, 1200, 800, { x: 0, top: 0, bottom: 0 });
-
-  // Assert
-  expect(view).toStrictEqual({ x: 0, y: 250, scale: 1 });
-});
-
 it("a working Block takes precedence over an error Block", () => {
   // Arrange
   const blocks = [
@@ -124,7 +112,7 @@ it("entry framing never enlarges a small target above 100 percent", () => {
   const target = { minX: 0, minY: 0, width: 200, height: 100 };
 
   // Act
-  const view = frameCanvasTargets(target, [], 1200, 800, { x: 0, top: 0, bottom: 0 });
+  const view = frameCanvasTargets(target, 1200, 800, { x: 0, top: 0, bottom: 0 });
 
   // Assert
   expect(view).toStrictEqual({ x: 500, y: 350, scale: 1 });
@@ -136,19 +124,21 @@ it("a tall predecessor can be clipped without displacing the target", () => {
   const predecessor = { minX: 0, minY: -5000, width: 200, height: 10000 };
 
   // Act
-  const view = frameCanvasTargets(target, [predecessor], 1200, 800, { x: 0, top: 0, bottom: 0 });
+  const view = frameCanvasTargets(target, 1200, 800, { x: 0, top: 0, bottom: 0 });
 
   // Assert
-  expect(view).toStrictEqual({ x: 480, y: 370, scale: 0.2 });
+  expect(view).toStrictEqual({ x: 0, y: 250, scale: 1 });
+  expect(view.x + (target.minX + target.width / 2) * view.scale).toBe(600);
+  expect(view.y + (target.minY + target.height / 2) * view.scale).toBe(400);
+  expect(predecessor.height * view.scale).toBeGreaterThan(800);
 });
 
-it("an edge target stays centered with its successor visible", () => {
+it("a target at the graph edge stays centered", () => {
   // Arrange
   const target = { minX: -1000, minY: 0, width: 200, height: 100 };
-  const successor = { minX: -600, minY: 0, width: 200, height: 100 };
 
   // Act
-  const view = frameCanvasTargets(target, [successor], 1000, 600, { x: 0, top: 0, bottom: 0 });
+  const view = frameCanvasTargets(target, 1000, 600, { x: 0, top: 0, bottom: 0 });
 
   // Assert
   expect(view).toStrictEqual({ x: 1400, y: 250, scale: 1 });
@@ -159,7 +149,7 @@ it("parallel target bounds fit together inside the padded viewport", () => {
   const targets = { minX: 200, minY: 100, width: 200, height: 1000 };
 
   // Act
-  const view = frameCanvasTargets(targets, [], 1200, 800, { x: 48, top: 64, bottom: 80 });
+  const view = frameCanvasTargets(targets, 1200, 800, { x: 48, top: 64, bottom: 80 });
 
   // Assert
   expect(view.scale).toBeCloseTo(0.656);
@@ -286,7 +276,7 @@ it("returning to the canvas jumps once to Blocks that became active while hidden
   expect(action).toBe("jump");
 });
 
-it("returning to the canvas with unchanged active Blocks replays nothing", () => {
+it("returning after an interrupted animation jumps to its already seen destination", () => {
   // Arrange
   const change = { seen: ["reviewer"], targets: ["reviewer"] };
 
@@ -295,6 +285,38 @@ it("returning to the canvas with unchanged active Blocks replays nothing", () =>
     ...change,
     following: true,
     visibility: "returned",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("jump");
+});
+
+it("returning with following off preserves the manually chosen view for an already seen target", () => {
+  // Arrange
+  const change = { seen: ["reviewer"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: false,
+    visibility: "returned",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("nothing");
+});
+
+it("a visible canvas does not repeat the jump after returning to its seen target", () => {
+  // Arrange
+  const change = { seen: ["reviewer"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: true,
+    visibility: "visible",
     reducedMotion: false,
   });
 

@@ -16,7 +16,7 @@ export function selectExecutionTargets(
 
 export type AutoFollowAction = "animate" | "jump" | "indicate" | "nothing";
 
-/** Hidden canvases never move; `returned` is the first evaluation after the document is shown again. */
+/** Hidden canvases never move; `returned` is the first evaluation after the canvas is shown again. */
 export function decideAutoFollow(input: {
   /** Targets the view last followed or indicated. */
   seen: readonly string[];
@@ -25,10 +25,12 @@ export function decideAutoFollow(input: {
   visibility: "visible" | "hidden" | "returned";
   reducedMotion: boolean;
 }): AutoFollowAction {
-  if (!input.targets.length || sameTargets(input.seen, input.targets)) return "nothing";
+  if (!input.targets.length) return "nothing";
+  if (input.following && input.visibility === "returned") return "jump";
+  if (sameTargets(input.seen, input.targets)) return "nothing";
   if (!input.following) return "indicate";
   if (input.visibility === "hidden") return "nothing";
-  return input.reducedMotion || input.visibility === "returned" ? "jump" : "animate";
+  return input.reducedMotion ? "jump" : "animate";
 }
 
 function sameTargets(left: readonly string[], right: readonly string[]) {

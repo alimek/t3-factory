@@ -107,7 +107,7 @@ function graphBounds(graph: FlowGraph, blockHeight: (block: FlowBlock) => number
   return bounds;
 }
 
-/** Direct context only: distant ancestors and descendants must not determine the focus zoom. */
+/** Only the focus targets determine zoom and center. */
 function executionFocusView(
   targetIds: readonly string[],
   graph: FlowGraph,
@@ -126,33 +126,7 @@ function executionFocusView(
   const targets = graph.blocks.filter((block) => ids.has(block.id)).map(rect);
   const [first, ...rest] = targets;
   if (!first) return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
-  const neighbors = new Set<string>();
-  for (const edge of graph.connections) {
-    if (ids.has(edge.sourceBlockId)) neighbors.add(edge.targetBlockId);
-    if (ids.has(edge.targetBlockId)) neighbors.add(edge.sourceBlockId);
-  }
-  const context = graph.blocks
-    .filter((block) => neighbors.has(block.id) && !ids.has(block.id))
-    .map(rect);
-  if (graph.flowInput.targetBlockIds.some((id) => ids.has(id))) {
-    context.push({
-      ...graph.flowInput.position,
-      width: FLOW_INPUT_WIDTH,
-      height: EXECUTION_FLOW_INPUT_HEIGHT,
-    });
-  }
-  return frameCanvasTargets(
-    mergeGraphBounds(first, rest),
-    context.map((block) => ({
-      minX: block.x,
-      minY: block.y,
-      width: block.width,
-      height: block.height,
-    })),
-    width,
-    height,
-    FIT_PADDING,
-  );
+  return frameCanvasTargets(mergeGraphBounds(first, rest), width, height, FIT_PADDING);
 }
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -549,12 +523,14 @@ export function ExecutionCanvas({
   run,
   selected,
   observationUnavailable,
+  shown,
   onSelect,
   overlay,
 }: {
   run: RunDetail;
   selected: string | null;
   observationUnavailable: boolean;
+  shown: boolean;
   onSelect: (blockId: string | null) => void;
   /** Top-left badges and notices (Figma "Overlay · top-left"); they never block panning. */
   overlay?: ReactNode;
@@ -578,6 +554,7 @@ export function ExecutionCanvas({
     useCanvasViewport({
       surface,
       scope: run.id,
+      shown,
       getBounds: () => graphBounds(graph, wireLayout.blockHeight),
       getFocusView: (width, height) =>
         executionFocusView(focusTargets, graph, wireLayout.blockHeight, width, height),

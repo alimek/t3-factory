@@ -42,32 +42,12 @@ export function fitGraphView(
   };
 }
 
-/** Keep the target centered, allowing direct neighbors into the symmetric frame where possible. */
+/** Fit only the target bounds; surrounding blocks remain visible wherever they fit at this scale. */
 export function frameCanvasTargets(
   target: GraphBounds,
-  neighbors: readonly GraphBounds[],
   width: number,
   height: number,
   padding: { x: number; top: number; bottom: number },
 ): CanvasView {
-  const centerX = target.minX + target.width / 2;
-  const centerY = target.minY + target.height / 2;
-  let halfWidth = target.width / 2;
-  let halfHeight = target.height / 2;
-  for (const bounds of neighbors) {
-    halfWidth = Math.max(halfWidth, centerX - bounds.minX, bounds.minX + bounds.width - centerX);
-    halfHeight = Math.max(halfHeight, centerY - bounds.minY, bounds.minY + bounds.height - centerY);
-  }
-  return fitGraphView(
-    {
-      minX: centerX - halfWidth,
-      minY: centerY - halfHeight,
-      width: halfWidth * 2,
-      height: halfHeight * 2,
-    },
-    width,
-    height,
-    padding,
-    0,
-  );
+  return fitGraphView(target, width, height, padding, 0);
 }

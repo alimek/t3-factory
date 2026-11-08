@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -21,6 +20,8 @@ type CanvasViewportOptions = {
   /** Null until the canvas and its graph are ready. A new scope fits again. */
   scope: string | null;
   getBounds: () => GraphBounds;
+  /** Whether this canvas is shown rather than covered by another screen. */
+  shown?: boolean;
   /** Frames `focusTargets` on entry and while following; explicit Fit and accepted layouts still fit the whole graph. */
   getFocusView?: (width: number, height: number) => CanvasView;
   /** Ids the focus view frames, in a stable order. Providing them enables following. */
@@ -79,6 +80,27 @@ function useViewAnimation(viewRef: { current: CanvasView }, setView: (view: Canv
   return { move, stop };
 }
 
+/** Document visibility and modal screens share the same suspend/return behavior. */
+function useCanvasVisibility(
+  shown: boolean,
+  evaluate: (visibility: "visible" | "hidden" | "returned") => void,
+  stopAnimation: () => void,
+) {
+  const hidden = useRef(document.hidden || !shown);
+  useLayoutEffect(() => {
+    const onVisibilityChange = () => {
+      const nextHidden = document.hidden || !shown;
+      const returned = hidden.current && !nextHidden;
+      hidden.current = nextHidden;
+      if (nextHidden) stopAnimation();
+      else if (returned) evaluate("returned");
+    };
+    onVisibilityChange();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [shown, evaluate, stopAnimation]);
+}
+
 /**
  * Following is per screen session: a new scope starts following again and nothing is persisted.
  * The scope's first targets are the entry focus, so they count as already seen.
@@ -88,6 +110,8 @@ function useCanvasFollow(
   focusKey: string | undefined,
   liveRef: { current: CanvasViewportOptions },
   moveToFocus: (motion: Motion) => void,
+  shown: boolean,
+  stopAnimation: () => void,
 ) {
   const [stored, setStored] = useState(() => initialFollow(scope));
   const state = stored.scope === scope ? stored : initialFollow(scope);
@@ -126,33 +150,29 @@ function useCanvasFollow(
     },
     [liveRef, moveToFocus, update],
   );
+  useCanvasVisibility(shown, evaluate, stopAnimation);
   useLayoutEffect(() => {
     if (scope === null || focusKey === undefined) return;
     if (evaluatedScope.current === scope) {
-      evaluate(document.hidden ? "hidden" : "visible");
+      evaluate(document.hidden || !shown ? "hidden" : "visible");
       return;
     }
     evaluatedScope.current = scope;
     seen.current = liveRef.current.focusTargets ?? [];
-  }, [scope, focusKey, liveRef, evaluate]);
-  useEffect(() => {
-    if (scope === null) return;
-    const onVisibilityChange = () => {
-      if (!document.hidden) evaluate("returned");
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [scope, evaluate]);
+  }, [scope, focusKey, liveRef, evaluate, shown]);
   const stopFollowing = useCallback(() => {
     if (current.current.following) update({ following: false });
   }, [update]);
-  const followActive = useCallback(() => {
-    const targets = liveRef.current.focusTargets;
-    if (!targets?.length) return;
-    seen.current = targets;
-    update({ following: true, changed: false });
-    moveToFocus(preferredMotion());
-  }, [liveRef, moveToFocus, update]);
+  const followActive = useCallback(
+    (options?: { immediate?: boolean }) => {
+      const targets = liveRef.current.focusTargets;
+      if (!targets?.length) return;
+      seen.current = targets;
+      update({ following: true, changed: false });
+      moveToFocus(options?.immediate ? "jump" : preferredMotion());
+    },
+    [liveRef, moveToFocus, update],
+  );
   return { ...state, stopFollowing, followActive };
 }
 
@@ -245,7 +265,14 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     },
     [surfaceSize, animateView],
   );
-  const follow = useCanvasFollow(scope, options.focusTargets?.join("\n"), liveRef, moveToFocus);
+  const follow = useCanvasFollow(
+    scope,
+    options.focusTargets?.join("\n"),
+    liveRef,
+    moveToFocus,
+    options.shown ?? true,
+    stopAnimation,
+  );
   const { stopFollowing } = follow;
   /** Manual input always wins: it stops any animation and turns following off. */
   const changeViewManually: Dispatch<SetStateAction<CanvasView>> = useCallback(
@@ -275,7 +302,7 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
       surface.current,
       changeViewManually,
       fitFlow,
-      options.focusTargets ? follow.followActive : undefined,
+      options.focusTargets ? () => follow.followActive({ immediate: true }) : undefined,
     );
   const zoom = (factor: number) =>
     changeViewManually((current) => zoomCanvasBy(surface.current, current, factor));
