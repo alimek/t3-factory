@@ -197,6 +197,26 @@ it("an accepted result stays held while T3 has not settled the worker's delegate
   expect(run.value.blocks[0]?.state).toBe("working");
   expect(f.t3.launches.size).toBe(1);
 });
+
+it("a worker rolled back after reporting shows a Problem and holds its prior result", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c, "rolled_back");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ state: "error", problem: "execution-failed" });
+  expect(run.value.attention.find((a) => a.kind === "execution-failed")).toMatchObject({
+    executionId: "execution-1",
+    settledAt: null,
+  });
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.sends.size).toBe(0);
+  expect(run.value.lifecycle).toBe("active");
+});
 it("an accepted result stays held while the worker thread has a pending native request", async (c) => {
   // Arrange
   const f = await reportedWorker(c);

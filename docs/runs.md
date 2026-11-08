@@ -77,7 +77,7 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
   prompt, Flow revision, project, work periods) opens from 1280 px wide.
-- Verified running worker work is ordinary progress; unavailable native evidence is a coordination Problem.
+- Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
 
 Engine termination alone never settles a Run; automatic settlement needs every condition in [Settled Runs](#settled-runs).
 

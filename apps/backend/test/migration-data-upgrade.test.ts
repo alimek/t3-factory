@@ -1,9 +1,11 @@
 import { assert, expect, it } from "@effect/vitest";
 import { currentRun, releasedUpgradeData } from "./support/released-upgrade.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions, settles the Finished Run, archives the Stopped Run with their history and removes the open Run", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions, settles Finished, archives Stopped and pending Stop with their history and removes the open Run", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
+  expect(fixture.pendingStop.closedAt).toBeNull();
+  expect(fixture.pendingStop.stopRequestedAt).toEqual(expect.any(String));
 
   // Act
   const factory = await fixture.h.open({ t3: fixture.t3, connectionRetryMs: 60_000 });
@@ -37,6 +39,10 @@ it("upgrading v0.2.0 keeps clients and definitions, settles the Finished Run, ar
     ok: true,
     value: currentRun(fixture.stopped, "archived"),
   });
+  expect(await factory.getRun(fixture.pendingStop.id)).toStrictEqual({
+    ok: true,
+    value: currentRun(fixture.pendingStop, "archived"),
+  });
   const active = await factory.getRun(fixture.active.id);
   assert(!active.ok);
   expect(active.error.code).toBe("not_found");
@@ -48,6 +54,7 @@ it("upgrading v0.2.0 keeps clients and definitions, settles the Finished Run, ar
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);
   expect(tasks.value.map((task) => task.id)).toStrictEqual([
+    fixture.pendingStop.task.id,
     fixture.stopped.task.id,
     fixture.closed.task.id,
   ]);

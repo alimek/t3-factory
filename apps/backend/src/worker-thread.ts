@@ -13,9 +13,12 @@ export interface WorkerThread {
   readonly finished: boolean;
 }
 
-/** A failed, cancelled or interrupted run is an execution failure of its Block. */
+/** A failed, cancelled, interrupted or rolled-back run is an execution failure of its Block. */
 export const failedRun = (status: string | undefined) =>
-  status === "failed" || status === "cancelled" || status === "interrupted";
+  status === "failed" ||
+  status === "cancelled" ||
+  status === "interrupted" ||
+  status === "rolled_back";
 
 /**
  * Factory trusts T3 to decide when a worker thread is finished. It is finished when the thread

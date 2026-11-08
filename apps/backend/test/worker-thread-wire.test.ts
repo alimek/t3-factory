@@ -43,6 +43,24 @@ it("a timed-out delegated wait leaves the worker thread unsettled", async (c) =>
   expect(evidence.state).toBe("pending");
 });
 
+it("a rolled-back delegated wait is terminal rather than unavailable completion evidence", async (c) => {
+  // Arrange
+  const { adapter, endpoint } = await threadWire(c, {
+    wait: { ...settledWait, status: "rolled_back" },
+  });
+
+  // Act
+  const evidence = await adapter.readDelegatedSettlement({ endpoint }, "worker", "latest-run");
+
+  // Assert
+  expect(evidence).toStrictEqual({
+    threadId: "worker",
+    runId: "latest-run",
+    state: "settled",
+    status: "rolled_back",
+  });
+});
+
 it("a delegated wait answered for another run is not completion evidence", async (c) => {
   // Arrange
   const { adapter, endpoint } = await threadWire(c, {

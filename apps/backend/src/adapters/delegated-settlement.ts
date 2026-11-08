@@ -9,7 +9,7 @@ export interface DelegatedSettlement {
   readonly status: string | null;
   readonly problem?: string;
 }
-const terminal = ["completed", "failed", "cancelled", "interrupted"];
+const terminal = ["completed", "failed", "cancelled", "interrupted", "rolled_back"];
 const statuses = ["queued", "running", "waiting", ...terminal];
 
 /** Settled means a terminal status that did not time out. `resultRun` names whichever run T3

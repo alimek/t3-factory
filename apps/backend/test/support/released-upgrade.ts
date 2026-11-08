@@ -57,6 +57,8 @@ interface ReleasedCapture {
   active: ReleasedRun;
   /** Closed Stopped, created and stopped by v0.2.0 after the other Runs were captured. */
   stopped: ReleasedRun;
+  /** Stop requested, but the worker thread has not confirmed termination. */
+  pendingStop: ReleasedRun;
   tasks: Value<"listTasks">;
 }
 

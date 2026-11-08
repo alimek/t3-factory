@@ -1,6 +1,7 @@
 -- Agents report by naming their Block id instead of having Factory correlate native tool
 -- calls with exact worker executions. Open Runs captured under per-turn report authority are
--- deleted (accepted by the user); closed Runs, Tasks that still hold a Run, Projects, Flows,
+-- deleted (accepted by the user); closed Runs, Runs awaiting Stop confirmation,
+-- Tasks that still hold a Run, Projects, Flows,
 -- Agents, client access and the T3 connection are kept. Storage that existed only for
 -- per-turn authority is dropped: assessment checkpoints, native reply and continuation
 -- provenance, report keys and the execution-scoped report uniqueness.
@@ -20,7 +21,7 @@ DROP TRIGGER run_worker_activations_immutable_delete
 -- statement-breakpoint
 DROP TRIGGER immutable_run_agent_revision_delete
 -- statement-breakpoint
-CREATE TEMP TABLE open_runs AS SELECT id FROM runs WHERE closed_at IS NULL
+CREATE TEMP TABLE open_runs AS SELECT id FROM runs WHERE closed_at IS NULL AND stop_requested_at IS NULL
 -- statement-breakpoint
 CREATE TEMP TABLE open_activations AS
   SELECT id FROM run_activations WHERE run_id IN (SELECT id FROM open_runs)

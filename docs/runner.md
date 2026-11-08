@@ -166,7 +166,7 @@ thread is finished when all of these hold:
 - the `t3_thread_read` of the thread shows no active run and zero pending native requests;
 - `t3_thread_wait` for its latest run, with `timeoutMs: 0` and
   `untilDelegatedWorkSettled: true`, answers that thread and run with a terminal status
-  (`completed`, `failed`, `cancelled` or `interrupted`) and `timedOut: false`.
+  (`completed`, `failed`, `cancelled`, `interrupted` or `rolled_back`) and `timedOut: false`.
 
 T3's `resultRun` is informational only: it names the run T3 answered from, which can be an
 earlier run when a notification resumed the thread, so Factory never compares it with the
@@ -188,8 +188,8 @@ close the Run.
   Block's current activation has no `finished` result, pending question or current `working`
   report, the Block shows a missing-report Problem for that run. The Problem persists through later
   runs until the Block reports or a linked Request report settles it.
-- **Execution failure.** When the latest run of the thread failed, was cancelled or was
-  interrupted, the Block shows an execution-failed Problem for that run. It settles when a
+- **Execution failure.** When the latest run of the thread failed, was cancelled, interrupted or
+  rolled back, the Block shows an execution-failed Problem for that run, holding any prior result. It settles when a
   later run of the same thread completes or when the Block reports, and is not raised again for
   that run; a later failed run raises a new one. Factory never retries failed work automatically.
 - A rejected report for a known Block of an open Run records a report-problem with a

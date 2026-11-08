@@ -378,7 +378,7 @@
           "title": "New repository",
           "workspace_root": "/fixture/upgrade-repository",
           "availability": "available",
-          "observed_at": "2026-11-08T02:08:01.097Z",
+          "observed_at": "2026-11-08T09:22:28.177Z",
           "project_icon_json": null,
           "favicon_path": null
         }
@@ -412,6 +412,12 @@
           "project_id": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
           "title": "Try a compact Run list",
           "created_at": "2026-11-08T02:08:01.119Z"
+        },
+        {
+          "id": "53798247-5f6e-4941-9821-c2473b54b73d",
+          "project_id": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+          "title": "Preserve a Stop request still awaiting confirmation.",
+          "created_at": "2026-11-08T09:22:28.198Z"
         }
       ]
     },
@@ -444,7 +450,7 @@
           "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
           "workspace_root": "/fixture/upgrade-repository",
           "gate_open": 1,
-          "generation": 9,
+          "generation": 13,
           "started_at": "2026-11-07T09:57:10.228Z",
           "closed_at": null,
           "outcome": null,
@@ -468,6 +474,23 @@
           "stop_requested_at": "2026-11-08T02:08:01.132Z",
           "title": "Try a compact Run list",
           "number": 3
+        },
+        {
+          "id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "task_id": "53798247-5f6e-4941-9821-c2473b54b73d",
+          "request_id": "upgrade-pending-stop",
+          "request_fingerprint": "0231ace1c5a030b648d37f24d0edea3fe35b189cb72214143f611cc4f4394345",
+          "input": "Preserve a Stop request still awaiting confirmation.",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "workspace_root": "/fixture/upgrade-repository",
+          "gate_open": 0,
+          "generation": 6,
+          "started_at": "2026-11-08T09:22:28.198Z",
+          "closed_at": null,
+          "outcome": null,
+          "stop_requested_at": "2026-11-08T09:22:28.212Z",
+          "title": "Preserve a Stop request still awaiting confirmation.",
+          "number": 4
         }
       ]
     },
@@ -484,6 +507,10 @@
         },
         {
           "run_id": "12d3ee1b-e6f5-42ad-8ce5-46cbe0dd0156",
+          "snapshot_json": "{\"flow\":{\"id\":\"daff11c1-9ba9-4f2d-afa3-89e274401c2f\",\"name\":\"Single worker\",\"revision\":2,\"graph\":{\"flowInput\":{\"position\":{\"x\":0,\"y\":0},\"targetBlockIds\":[\"worker\"]},\"blocks\":[{\"id\":\"worker\",\"name\":\"Entry worker\",\"kind\":\"agent\",\"agentId\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"position\":{\"x\":0,\"y\":0},\"exits\":[{\"id\":\"done\",\"name\":\"Done\",\"description\":\"Completed\",\"outcome\":\"completion\",\"requiresFeedback\":false}]}],\"connections\":[]},\"createdAt\":\"2026-11-07T09:57:10.199Z\",\"updatedAt\":\"2026-11-07T09:57:10.199Z\",\"readiness\":{\"ready\":true,\"issues\":[]}},\"agents\":[{\"id\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"name\":\"Worker\",\"prompt\":\"Follow repository instructions and update the changelog.\",\"revision\":2,\"execution\":{\"environmentId\":\"controlled-environment\",\"providerInstanceId\":\"codex-main\",\"modelId\":\"gpt-6.1-sol\",\"modelOptions\":[{\"id\":\"reasoning\",\"value\":\"high\"}]},\"createdAt\":\"2026-11-07T09:57:10.199Z\",\"updatedAt\":\"2026-11-07T09:57:10.235Z\",\"settingsStatus\":{\"environment\":{\"state\":\"available\"},\"provider\":{\"state\":\"available\"},\"model\":{\"state\":\"available\"},\"options\":[{\"id\":\"reasoning\",\"state\":\"available\"}]}}]}"
+        },
+        {
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
           "snapshot_json": "{\"flow\":{\"id\":\"daff11c1-9ba9-4f2d-afa3-89e274401c2f\",\"name\":\"Single worker\",\"revision\":2,\"graph\":{\"flowInput\":{\"position\":{\"x\":0,\"y\":0},\"targetBlockIds\":[\"worker\"]},\"blocks\":[{\"id\":\"worker\",\"name\":\"Entry worker\",\"kind\":\"agent\",\"agentId\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"position\":{\"x\":0,\"y\":0},\"exits\":[{\"id\":\"done\",\"name\":\"Done\",\"description\":\"Completed\",\"outcome\":\"completion\",\"requiresFeedback\":false}]}],\"connections\":[]},\"createdAt\":\"2026-11-07T09:57:10.199Z\",\"updatedAt\":\"2026-11-07T09:57:10.199Z\",\"readiness\":{\"ready\":true,\"issues\":[]}},\"agents\":[{\"id\":\"f9673149-8672-4886-8f94-a7282b8249ad\",\"name\":\"Worker\",\"prompt\":\"Follow repository instructions and update the changelog.\",\"revision\":2,\"execution\":{\"environmentId\":\"controlled-environment\",\"providerInstanceId\":\"codex-main\",\"modelId\":\"gpt-6.1-sol\",\"modelOptions\":[{\"id\":\"reasoning\",\"value\":\"high\"}]},\"createdAt\":\"2026-11-07T09:57:10.199Z\",\"updatedAt\":\"2026-11-07T09:57:10.235Z\",\"settingsStatus\":{\"environment\":{\"state\":\"available\"},\"provider\":{\"state\":\"available\"},\"model\":{\"state\":\"available\"},\"options\":[{\"id\":\"reasoning\",\"state\":\"available\"}]}}]}"
         }
       ]
@@ -517,7 +544,7 @@
           "engine_status": "running",
           "report_status": null,
           "pending_request_count": 0,
-          "observed_at": "2026-11-08T02:08:01.142Z",
+          "observed_at": "2026-11-08T09:22:28.213Z",
           "freshness": "fresh",
           "problem": "Coordinator descendant or native obligation coverage is unverified."
         },
@@ -535,6 +562,21 @@
           "observed_at": "2026-11-08T02:08:01.130Z",
           "freshness": "fresh",
           "problem": null
+        },
+        {
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "name": "Entry worker",
+          "state": "working",
+          "thread_id": "thread-4",
+          "execution_id": "execution-4",
+          "link": "https://app.t3.codes/threads/controlled-environment/thread-4",
+          "engine_status": "running",
+          "report_status": null,
+          "pending_request_count": 0,
+          "observed_at": "2026-11-08T09:22:28.209Z",
+          "freshness": "fresh",
+          "problem": "Stop awaiting fresh parent, worker and descendant confirmation."
         }
       ]
     },
@@ -609,6 +651,31 @@
           "result_json": "{\"projectId\":\"created-1\",\"threadId\":\"thread-3\",\"runId\":\"execution-3\",\"link\":\"t3://threads/thread-3\",\"status\":\"running\"}",
           "problem": null,
           "reconciled_at": "2026-11-08T02:08:01.125Z",
+          "report_id": null,
+          "source_block_id": null,
+          "exit_id": null,
+          "occurrence_id": null,
+          "recovery_attempt": 0,
+          "recovery_not_before": null
+        },
+        {
+          "id": "2535fd9a-400b-4ce0-99f2-b2fadfddbeb2",
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "kind": "launch",
+          "cause": "start:worker",
+          "target_json": "{\"id\":\"4caac952-e21e-4c4d-8aca-86be2a3f4951\",\"endpoint\":\"http://127.0.0.1:3773/mcp\",\"environmentId\":\"controlled-environment\",\"projectId\":\"created-1\",\"title\":\"New repository\",\"workspaceRoot\":\"/fixture/upgrade-repository\",\"availability\":\"available\",\"observedAt\":\"2026-11-08T09:22:28.175Z\",\"projectIcon\":null,\"faviconUrl\":null,\"blockId\":\"worker\"}",
+          "request_key": "70439c37-ddc0-48df-a793-e277824f1e68",
+          "payload_json": null,
+          "fingerprint": "722e5801c98a61cce9279d1adb7ef3bb5a32ef4835da6c1e11642d93c4d087b0",
+          "context_id": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "retry_scope": "controlled-durable-server-1",
+          "state": "acknowledged",
+          "reserved_by": "43ece89c-39ea-4b91-ad91-d85cadbfe26b",
+          "reserved_at": "2026-11-08T09:22:28.204Z",
+          "result_json": "{\"projectId\":\"created-1\",\"threadId\":\"thread-4\",\"runId\":\"execution-4\",\"link\":\"t3://threads/thread-4\",\"status\":\"running\"}",
+          "problem": null,
+          "reconciled_at": "2026-11-08T09:22:28.204Z",
           "report_id": null,
           "source_block_id": null,
           "exit_id": null,
@@ -763,6 +830,45 @@
           "source_at": null,
           "engine_status": null,
           "binding_id": null
+        },
+        {
+          "sequence": 12,
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": null,
+          "kind": "started",
+          "source_key": "start",
+          "observed_at": "2026-11-08T09:22:28.198Z",
+          "execution_id": null,
+          "cause_id": null,
+          "source_at": null,
+          "engine_status": null,
+          "binding_id": null
+        },
+        {
+          "sequence": 13,
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "kind": "launch-acknowledged",
+          "source_key": "ack:2535fd9a-400b-4ce0-99f2-b2fadfddbeb2",
+          "observed_at": "2026-11-08T09:22:28.204Z",
+          "execution_id": "execution-4",
+          "cause_id": "2535fd9a-400b-4ce0-99f2-b2fadfddbeb2",
+          "source_at": null,
+          "engine_status": "running",
+          "binding_id": null
+        },
+        {
+          "sequence": 14,
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": null,
+          "kind": "stop-requested",
+          "source_key": "stop",
+          "observed_at": "2026-11-08T09:22:28.212Z",
+          "execution_id": null,
+          "cause_id": null,
+          "source_at": null,
+          "engine_status": null,
+          "binding_id": null
         }
       ]
     },
@@ -855,6 +961,13 @@
           "input_fingerprint": "b7a010f8861376b23d4176d9394a7476e0e46b94c96f73398764b6d5c105232d",
           "state": "planned",
           "accepted_json": null
+        },
+        {
+          "activation_id": "ee3e6246-a1a8-4e0b-b2e9-0d5cb868982a",
+          "request_key": "70439c37-ddc0-48df-a793-e277824f1e68",
+          "input_fingerprint": "b7a010f8861376b23d4176d9394a7476e0e46b94c96f73398764b6d5c105232d",
+          "state": "planned",
+          "accepted_json": null
         }
       ]
     },
@@ -890,6 +1003,16 @@
           "role": "worker",
           "parent_binding_id": "c396acd4-307f-4fe8-8424-2b5e4b98de1e",
           "link": "t3://threads/thread-3"
+        },
+        {
+          "id": "c4b88ba0-e791-46a6-b538-3fa09eda108f",
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "environment_id": "controlled-environment",
+          "thread_id": "thread-4",
+          "role": "worker",
+          "parent_binding_id": "c4b88ba0-e791-46a6-b538-3fa09eda108f",
+          "link": "t3://threads/thread-4"
         }
       ]
     },
@@ -946,7 +1069,7 @@
           "execution_id": "execution-2",
           "engine_status": "running",
           "report_status": null,
-          "observed_at": "2026-11-08T02:08:01.142Z",
+          "observed_at": "2026-11-08T09:22:28.213Z",
           "ordinal": 1,
           "source_at": null,
           "problem": null,
@@ -968,6 +1091,21 @@
           "native_request_count": 0,
           "binding_id": "c396acd4-307f-4fe8-8424-2b5e4b98de1e",
           "activation_id": "253f56d6-f3fa-4da6-9b04-7d861de1faef"
+        },
+        {
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "thread_id": "thread-4",
+          "execution_id": "execution-4",
+          "engine_status": "running",
+          "report_status": null,
+          "observed_at": "2026-11-08T09:22:28.220Z",
+          "ordinal": 1,
+          "source_at": null,
+          "problem": null,
+          "native_request_count": 0,
+          "binding_id": "c4b88ba0-e791-46a6-b538-3fa09eda108f",
+          "activation_id": "ee3e6246-a1a8-4e0b-b2e9-0d5cb868982a"
         }
       ]
     },
@@ -1012,7 +1150,7 @@
           "phase": "assessing",
           "coverage": "unverified",
           "created_at": "2026-11-07T09:57:10.228Z",
-          "evidence_json": "{\"version\":1,\"observedAt\":\"2026-11-08T02:08:01.142Z\",\"designation\":true,\"lineageCoverage\":\"unknown\",\"lineageScanComplete\":false,\"aggregateState\":\"unknown\",\"holdReason\":\"Coordinator descendant or native obligation coverage is unverified.\",\"release\":false,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-2\",\"role\":\"worker\",\"executionIds\":[\"execution-2\"]}]}",
+          "evidence_json": "{\"version\":1,\"observedAt\":\"2026-11-08T09:22:28.213Z\",\"designation\":true,\"lineageCoverage\":\"unknown\",\"lineageScanComplete\":false,\"aggregateState\":\"unknown\",\"holdReason\":\"Coordinator descendant or native obligation coverage is unverified.\",\"release\":false,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-2\",\"role\":\"worker\",\"executionIds\":[\"execution-2\"]}]}",
           "problem": "Coordinator descendant or native obligation coverage is unverified."
         },
         {
@@ -1025,6 +1163,17 @@
           "created_at": "2026-11-08T02:08:01.119Z",
           "evidence_json": "{\"version\":1,\"observedAt\":\"2026-11-08T02:08:01.130Z\",\"designation\":true,\"lineageCoverage\":\"incomplete\",\"lineageScanComplete\":true,\"aggregateState\":\"unknown\",\"holdReason\":\"Controlled delegated settlement has not been supplied.\",\"release\":false,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-3\",\"role\":\"worker\",\"executionIds\":[\"execution-3\"]}]}",
           "problem": null
+        },
+        {
+          "id": "ee3e6246-a1a8-4e0b-b2e9-0d5cb868982a",
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "cause": "start:worker",
+          "phase": "assessing",
+          "coverage": "unverified",
+          "created_at": "2026-11-08T09:22:28.198Z",
+          "evidence_json": "{\"version\":1,\"observedAt\":\"2026-11-08T09:22:28.209Z\",\"designation\":true,\"lineageCoverage\":\"unknown\",\"lineageScanComplete\":false,\"aggregateState\":\"unknown\",\"holdReason\":\"Coordinator descendant or native obligation coverage is unverified.\",\"release\":false,\"limitations\":[\"Local bounded observations are not atomic; remote coverage is unavailable.\",\"Independent child reads omit options; settings are verified against native acceptance.\"],\"members\":[{\"threadId\":\"thread-4\",\"role\":\"worker\",\"executionIds\":[\"execution-4\"]}]}",
+          "problem": "Coordinator descendant or native obligation coverage is unverified."
         }
       ]
     },
@@ -1056,6 +1205,12 @@
           "block_id": "worker",
           "thread_id": "thread-3",
           "execution_id": "execution-3"
+        },
+        {
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "block_id": "worker",
+          "thread_id": "thread-4",
+          "execution_id": "execution-4"
         }
       ]
     },
@@ -1093,6 +1248,15 @@
           "thread_id": "thread-3",
           "execution_id": "execution-3",
           "parent_thread_id": "thread-3",
+          "provider_instance_id": null,
+          "model": null,
+          "ordinal": 1
+        },
+        {
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "thread_id": "thread-4",
+          "execution_id": "execution-4",
+          "parent_thread_id": "thread-4",
           "provider_instance_id": null,
           "model": null,
           "ordinal": 1
@@ -1171,6 +1335,12 @@
           "binding_id": "c396acd4-307f-4fe8-8424-2b5e4b98de1e",
           "initial_execution_id": "execution-3",
           "parent_thread_id": "thread-3"
+        },
+        {
+          "activation_id": "ee3e6246-a1a8-4e0b-b2e9-0d5cb868982a",
+          "binding_id": "c4b88ba0-e791-46a6-b538-3fa09eda108f",
+          "initial_execution_id": "execution-4",
+          "parent_thread_id": "thread-4"
         }
       ]
     },
@@ -1183,6 +1353,13 @@
           "thread_id": "thread-3",
           "payload_json": "{\"threadId\":\"thread-3\",\"clientRequestId\":\"79269ab411ed27b2b4c21be082e97a50c5a60efc7d83d2dcbbcfcb59bcd64783\"}",
           "state": "acknowledged"
+        },
+        {
+          "run_id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "cause": "[\"controlled-environment\",\"tree:thread-4:6048f6be6364208b8e379a3fb0019937c4475a80f404e3cbe367d6741894bb96\"]",
+          "thread_id": "thread-4",
+          "payload_json": "{\"threadId\":\"thread-4\",\"clientRequestId\":\"eee2b5f787b965268100b06c806177512d7510624934c2dffade9b0a1390d71a\"}",
+          "state": "uncertain"
         }
       ]
     }
@@ -1207,6 +1384,10 @@
         {
           "threadId": "thread-3",
           "clientRequestId": "79269ab411ed27b2b4c21be082e97a50c5a60efc7d83d2dcbbcfcb59bcd64783"
+        },
+        {
+          "threadId": "thread-4",
+          "clientRequestId": "eee2b5f787b965268100b06c806177512d7510624934c2dffade9b0a1390d71a"
         }
       ],
       "launchSupported": true,
@@ -1300,6 +1481,36 @@
                 "threadId": "thread-3",
                 "runId": "execution-3",
                 "link": "t3://threads/thread-3",
+                "status": "running"
+              }
+            }
+          ],
+          [
+            "70439c37-ddc0-48df-a793-e277824f1e68",
+            {
+              "payload": {
+                "environmentId": "controlled-environment",
+                "projectId": "created-1",
+                "clientRequestId": "70439c37-ddc0-48df-a793-e277824f1e68",
+                "title": "Factory #4 · 1 Entry worker",
+                "message": "$factory-block\n\nFollow repository instructions and update the changelog.",
+                "workspaceStrategy": {
+                  "type": "root"
+                },
+                "interactionMode": "default",
+                "modelSelection": {
+                  "instanceId": "codex-main",
+                  "model": "gpt-6.1-sol",
+                  "options": {
+                    "reasoning": "high"
+                  }
+                }
+              },
+              "reference": {
+                "projectId": "created-1",
+                "threadId": "thread-4",
+                "runId": "execution-4",
+                "link": "t3://threads/thread-4",
                 "status": "running"
               }
             }
@@ -2159,7 +2370,7 @@
           "problem": "Coordinator descendant or native obligation coverage is unverified.",
           "evidence": {
             "version": 1,
-            "observedAt": "2026-11-08T02:08:01.142Z",
+            "observedAt": "2026-11-08T09:22:28.213Z",
             "designation": true,
             "lineageCoverage": "unknown",
             "lineageScanComplete": false,
@@ -2202,7 +2413,7 @@
       "closure": null,
       "stopRequestedAt": null,
       "gateOpen": true,
-      "generation": 9,
+      "generation": 13,
       "blocks": [
         {
           "blockId": "worker",
@@ -2215,7 +2426,7 @@
           "reportStatus": null,
           "problem": "Coordinator descendant or native obligation coverage is unverified.",
           "pendingRequestCount": 0,
-          "observedAt": "2026-11-08T02:08:01.142Z",
+          "observedAt": "2026-11-08T09:22:28.213Z",
           "freshness": "fresh",
           "recovery": null
         }
@@ -2230,7 +2441,7 @@
           "engineStatus": "running",
           "reportStatus": null,
           "problem": null,
-          "observedAt": "2026-11-08T02:08:01.142Z",
+          "observedAt": "2026-11-08T09:22:28.213Z",
           "observedStartedAt": "2026-11-07T09:57:10.231Z",
           "observedEndedAt": null
         }
@@ -2287,6 +2498,34 @@
       ]
     },
     "tasks": [
+      {
+        "id": "53798247-5f6e-4941-9821-c2473b54b73d",
+        "title": "Preserve a Stop request still awaiting confirmation.",
+        "projectId": "4caac952-e21e-4c4d-8aca-86be2a3f4951",
+        "createdAt": "2026-11-08T09:22:28.198Z",
+        "activeRunId": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+        "latestRun": {
+          "id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+          "flowId": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+          "flowName": "Single worker",
+          "startedAt": "2026-11-08T09:22:28.198Z",
+          "closedAt": null,
+          "outcome": null,
+          "stopRequestedAt": "2026-11-08T09:22:28.212Z"
+        },
+        "runs": [
+          {
+            "id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+            "flowId": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+            "flowName": "Single worker",
+            "input": "Preserve a Stop request still awaiting confirmation.",
+            "startedAt": "2026-11-08T09:22:28.198Z",
+            "closedAt": null,
+            "outcome": null,
+            "stopRequestedAt": "2026-11-08T09:22:28.212Z"
+          }
+        ]
+      },
       {
         "id": "593799a7-5f75-4caa-90ba-3258788913bc",
         "title": "Try a compact Run list",
@@ -2658,6 +2897,255 @@
           "engineStatus": null,
           "executionId": null,
           "causeId": "12d3ee1b-e6f5-42ad-8ce5-46cbe0dd0156",
+          "blockId": null
+        }
+      ]
+    },
+    "pendingStop": {
+      "id": "ec1c76f8-0e63-42b5-ab77-262429aabf94",
+      "number": 4,
+      "title": "Preserve a Stop request still awaiting confirmation.",
+      "task": {
+        "id": "53798247-5f6e-4941-9821-c2473b54b73d",
+        "title": "Preserve a Stop request still awaiting confirmation.",
+        "projectId": "4caac952-e21e-4c4d-8aca-86be2a3f4951"
+      },
+      "input": "Preserve a Stop request still awaiting confirmation.",
+      "flowId": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+      "flowName": "Single worker",
+      "snapshot": {
+        "flow": {
+          "id": "daff11c1-9ba9-4f2d-afa3-89e274401c2f",
+          "name": "Single worker",
+          "revision": 2,
+          "graph": {
+            "flowInput": {
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "targetBlockIds": ["worker"]
+            },
+            "blocks": [
+              {
+                "id": "worker",
+                "name": "Entry worker",
+                "kind": "agent",
+                "agentId": "f9673149-8672-4886-8f94-a7282b8249ad",
+                "position": {
+                  "x": 0,
+                  "y": 0
+                },
+                "exits": [
+                  {
+                    "id": "done",
+                    "name": "Done",
+                    "description": "Completed",
+                    "outcome": "completion",
+                    "requiresFeedback": false
+                  }
+                ]
+              }
+            ],
+            "connections": []
+          },
+          "createdAt": "2026-11-07T09:57:10.199Z",
+          "updatedAt": "2026-11-07T09:57:10.199Z",
+          "readiness": {
+            "ready": true,
+            "issues": []
+          }
+        },
+        "agents": [
+          {
+            "id": "f9673149-8672-4886-8f94-a7282b8249ad",
+            "name": "Worker",
+            "prompt": "Follow repository instructions and update the changelog.",
+            "revision": 2,
+            "execution": {
+              "environmentId": "controlled-environment",
+              "providerInstanceId": "codex-main",
+              "modelId": "gpt-6.1-sol",
+              "modelOptions": [
+                {
+                  "id": "reasoning",
+                  "value": "high"
+                }
+              ]
+            },
+            "createdAt": "2026-11-07T09:57:10.199Z",
+            "updatedAt": "2026-11-07T09:57:10.235Z",
+            "settingsStatus": {
+              "environment": {
+                "state": "available"
+              },
+              "provider": {
+                "state": "available"
+              },
+              "model": {
+                "state": "available"
+              },
+              "options": [
+                {
+                  "id": "reasoning",
+                  "state": "available"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "runCoordinator": null,
+      "coordinationActions": {
+        "questionReplies": [],
+        "controlRecoveries": []
+      },
+      "rootWork": [],
+      "remoteWork": [],
+      "activations": [
+        {
+          "id": "ee3e6246-a1a8-4e0b-b2e9-0d5cb868982a",
+          "blockId": "worker",
+          "cause": "start:worker",
+          "phase": "assessing",
+          "coverage": "unverified",
+          "createdAt": "2026-11-08T09:22:28.198Z",
+          "problem": "Coordinator descendant or native obligation coverage is unverified.",
+          "evidence": {
+            "version": 1,
+            "observedAt": "2026-11-08T09:22:28.209Z",
+            "designation": true,
+            "lineageCoverage": "unknown",
+            "lineageScanComplete": false,
+            "aggregateState": "unknown",
+            "holdReason": "Coordinator descendant or native obligation coverage is unverified.",
+            "release": false,
+            "limitations": [
+              "Local bounded observations are not atomic; remote coverage is unavailable.",
+              "Independent child reads omit options; settings are verified against native acceptance."
+            ],
+            "members": [
+              {
+                "threadId": "thread-4",
+                "role": "worker",
+                "executionIds": ["execution-4"]
+              }
+            ]
+          },
+          "delegation": {
+            "requestKey": "70439c37-ddc0-48df-a793-e277824f1e68",
+            "inputFingerprint": "b7a010f8861376b23d4176d9394a7476e0e46b94c96f73398764b6d5c105232d",
+            "state": "planned"
+          }
+        }
+      ],
+      "threadBindings": [
+        {
+          "id": "c4b88ba0-e791-46a6-b538-3fa09eda108f",
+          "blockId": "worker",
+          "environmentId": "controlled-environment",
+          "threadId": "thread-4",
+          "role": "worker",
+          "link": "t3://threads/thread-4",
+          "parentBindingId": "c4b88ba0-e791-46a6-b538-3fa09eda108f"
+        }
+      ],
+      "startedAt": "2026-11-08T09:22:28.198Z",
+      "closedAt": null,
+      "outcome": null,
+      "closure": null,
+      "stopRequestedAt": "2026-11-08T09:22:28.212Z",
+      "gateOpen": false,
+      "generation": 6,
+      "blocks": [
+        {
+          "blockId": "worker",
+          "name": "Entry worker",
+          "state": "working",
+          "threadId": "thread-4",
+          "executionId": "execution-4",
+          "link": "https://app.t3.codes/threads/controlled-environment/thread-4",
+          "engineStatus": "running",
+          "reportStatus": null,
+          "problem": "Stop awaiting fresh parent, worker and descendant confirmation.",
+          "pendingRequestCount": 0,
+          "observedAt": "2026-11-08T09:22:28.209Z",
+          "freshness": "fresh",
+          "recovery": null
+        }
+      ],
+      "reports": [],
+      "executions": [
+        {
+          "bindingId": "c4b88ba0-e791-46a6-b538-3fa09eda108f",
+          "activationId": "ee3e6246-a1a8-4e0b-b2e9-0d5cb868982a",
+          "blockId": "worker",
+          "executionId": "execution-4",
+          "engineStatus": "running",
+          "reportStatus": null,
+          "problem": null,
+          "observedAt": "2026-11-08T09:22:28.220Z",
+          "observedStartedAt": "2026-11-08T09:22:28.204Z",
+          "observedEndedAt": null
+        }
+      ],
+      "humanOccurrences": [],
+      "recoveries": [],
+      "attention": [],
+      "intents": [
+        {
+          "id": "2535fd9a-400b-4ce0-99f2-b2fadfddbeb2",
+          "kind": "launch",
+          "blockId": "worker",
+          "reportId": null,
+          "occurrenceId": null,
+          "sourceBlockId": null,
+          "exitId": null,
+          "payloadRetained": false,
+          "reference": {
+            "projectId": "created-1",
+            "threadId": "thread-4",
+            "runId": "execution-4",
+            "link": "t3://threads/thread-4",
+            "status": "running"
+          },
+          "state": "acknowledged",
+          "requestKey": "70439c37-ddc0-48df-a793-e277824f1e68",
+          "fingerprint": "722e5801c98a61cce9279d1adb7ef3bb5a32ef4835da6c1e11642d93c4d087b0",
+          "contextId": "6ce8f563-77cb-4891-bdcf-d1744dfe1ea7",
+          "reservedAt": "2026-11-08T09:22:28.204Z",
+          "problem": null
+        }
+      ],
+      "events": [
+        {
+          "sequence": 12,
+          "kind": "started",
+          "observedAt": "2026-11-08T09:22:28.198Z",
+          "sourceAt": null,
+          "engineStatus": null,
+          "executionId": null,
+          "causeId": null,
+          "blockId": null
+        },
+        {
+          "sequence": 13,
+          "kind": "launch-acknowledged",
+          "observedAt": "2026-11-08T09:22:28.204Z",
+          "sourceAt": null,
+          "engineStatus": "running",
+          "executionId": "execution-4",
+          "causeId": "2535fd9a-400b-4ce0-99f2-b2fadfddbeb2",
+          "blockId": "worker"
+        },
+        {
+          "sequence": 14,
+          "kind": "stop-requested",
+          "observedAt": "2026-11-08T09:22:28.212Z",
+          "sourceAt": null,
+          "engineStatus": null,
+          "executionId": null,
+          "causeId": null,
           "blockId": null
         }
       ]
