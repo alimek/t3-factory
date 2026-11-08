@@ -59,7 +59,7 @@ After the merge, release-please creates tag `vX.Y.Z` on that exact merge commit 
 
 `build-macos` calls the reusable **Desktop build** workflow (`.github/workflows/desktop-build.yml`), which beta builds share. It runs only on a macOS arm64 runner and checks out that exact commit. It verifies that root and desktop package versions equal the tag version, then runs `pnpm check`, controlled e2e browser journeys, Developer ID signing and notarization, `codesign`, `stapler` and `spctl` validation, the isolated packaged probe, DMG/ZIP checks and SHA-256 checksums. Missing Apple credentials fail the build; there is no silent unsigned release. This job writes only Actions artifacts: `release-<tag>` holds downloads and `release-evidence-<tag>` holds evidence retained even on failure. It never writes release assets.
 
-A maintainer qualifies the downloaded Actions artifact as described below, then approves `publish` through the GitHub environment **release**, which requires a reviewer. `publish` alone writes release assets: it re-checks the draft and tag commit, verifies the complete artifact file set (DMG, ZIP, their blockmaps, `latest-mac.yml` and `SHA256SUMS.txt`) and checksums, removes any assets left on the still-draft release by an earlier failed attempt, and uploads the complete set. It verifies asset names and SHA-256 digests on GitHub before setting `draft=false` and marking the Release latest.
+`publish` starts as soon as `build-macos` succeeds, without a second approval: merging the Release PR is the only human gate. `publish` alone writes release assets: it re-checks the draft and tag commit, verifies the complete artifact file set (DMG, ZIP, their blockmaps, `latest-mac.yml` and `SHA256SUMS.txt`) and checksums, removes any assets left on the still-draft release by an earlier failed attempt, and uploads the complete set. It verifies asset names and SHA-256 digests on GitHub before setting `draft=false` and marking the Release latest.
 
 ### Landing page
 
@@ -67,11 +67,11 @@ The product landing page in `apps/landing` is one static HTML page styled with T
 
 After `publish` succeeds, `pages` builds the page from the release commit with the Pages base URL and deploys it to GitHub Pages, so the page never links a DMG before its assets are public. Beta builds do not change the page. When only `pages` failed, **Re-run failed jobs** deploys again without touching the Release. `pages` deploys only while its tag is the latest published Release, so re-running an older Release never replaces a newer page. Product screenshots and the social card come from the Figma file's Marketing screens; replace the files in `apps/landing/public` when those screens change.
 
-### Retry and rejected qualification
+### Retry and failed qualification
 
-Neither retry path bumps the version or moves the tag; both use the same tag and commit. **Re-run failed jobs** in the same run reruns only what failed: when only `publish` failed, it reuses the artifact from that run's successful build, which is the artifact already qualified. When `build-macos` reruns, it replaces that run's artifacts, so qualify the new artifact. Manually dispatching **Release** from `main` with `tag` naming an existing draft starts a new run with a new build that needs its own qualification. After publication nothing is overwritten: a fix needs a new commit and a new version.
+Neither retry path bumps the version or moves the tag; both use the same tag and commit. **Re-run failed jobs** in the same run reruns only what failed: when only `publish` failed, it reuses the artifact from that run's successful build. When `build-macos` reruns, it replaces that run's artifacts and `publish` uploads the new build. Manually dispatching **Release** from `main` with `tag` naming an existing draft starts a new run with a new build. After publication nothing is overwritten: a fix needs a new commit and a new version.
 
-If qualification fails, decline the approval. The draft and tag remain, and the next Release PR proposes the next version. That version number is consumed; reusing it requires deleting the draft and tag, a destructive maintainer decision.
+If the build fails, the draft and tag remain. Retry as above, or leave them: the next Release PR proposes the next version. That version number is consumed; reusing it requires deleting the draft and tag, a destructive maintainer decision. If qualification of a published Release fails, fix it in a new version.
 
 ### Publication boundary
 
@@ -93,7 +93,6 @@ Developer ID requires active Apple Developer Program membership. The Account Hol
 
 Also configure:
 
-- A GitHub environment named **release** with required reviewer(s) for the `publish` approval.
 - Squash as the only merge method (repository settings and the main ruleset), with the PR title as commit title and a blank commit message. The default **commit or PR title** would use a single commit's message instead, and a PR body in the commit could add unintended changelog entries: release-please also reads Conventional Commit lines and footers in the commit body.
 - **Allow GitHub Actions to create and approve pull requests** in Actions settings, so release-please can open the Release PR with `GITHUB_TOKEN`. `pull_request` runs for PRs opened or updated by `GITHUB_TOKEN` require a maintainer's manual **Approve and run** before the required **Quality gate** runs. A GitHub App token would avoid that approval but is not configured.
 - **PR title** as a required check in the main ruleset, alongside the normal required checks.
@@ -106,9 +105,9 @@ The workflows require a public repository and use its GitHub Releases as the upd
 
 ### Maintainer qualification
 
-Review generated notes, artifact hashes and verification evidence from the workflow before approving `publish`; the evidence includes the packaged probe report for exactly this build. Before approval, install the downloaded artifact on a clean Mac. For later Releases, also install it over the previous signed Release on disposable data and verify data and bridge preservation, server restart and reconciliation, and client reconnect. Keep hashes and results; never probe a production installation. Complete the applicable packaged, clean-user and live-integration checks below and record unverified cases explicitly. CI's Gatekeeper assessment on the build runner proves neither clean-user installation nor updates between signed Releases.
+Qualification happens after publication, because `publish` runs without an approval. Review generated notes, artifact hashes and verification evidence from the workflow; the evidence includes the packaged probe report for exactly this build. Install the published DMG on a clean Mac. For later Releases, also install it over the previous signed Release on disposable data and verify data and bridge preservation, server restart and reconciliation, and client reconnect. Keep hashes and results; never probe a production installation. Complete the applicable packaged, clean-user and live-integration checks below and record unverified cases explicitly. CI's Gatekeeper assessment on the build runner proves neither clean-user installation nor updates between signed Releases.
 
-The in-app update path cannot be qualified before approval: a previous signed build reads only published GitHub Releases, and the candidate stays a draft without assets until `publish`. Verify an update from the previous signed Release through the app (download, **Cancel** in the review, ordinary Quit and relaunch with the update still offered, download again, **Upgrade**, and a client with its remote server) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so an update defect is fixed by a new version.
+Verify an update from the previous signed Release through the app (download, **Cancel** in the review, ordinary Quit and relaunch with the update still offered, download again, **Upgrade**, and a client with its remote server) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so a defect found in qualification is fixed by a new version.
 
 Recipients install the first signed DMG manually; developer packages cannot bootstrap into the update feed. Release and beta builds check on launch and every six hours, and from the footer or Application settings.
 Downloads and installation are explicit: the footer control downloads, and the upgrade review confirms installation; ordinary Quit never installs. A client connected to a remote server upgrades the server
@@ -124,7 +123,7 @@ The build is the same **Desktop build** job as a Release (quality gate, browser 
 `publish` job of the Beta workflow then creates a draft prerelease targeting the built commit with notes generated since the previous beta, uploads the complete asset set, compares SHA-256 digests and publishes it
 as a prerelease that is never marked latest. A failed attempt deletes its own still-draft prerelease, which has no tag yet; the next run uses a new number.
 
-Beta builds deliberately skip the release PR, the **release** environment approval and maintainer qualification: they reach beta installations without a human gate. Choose the beta channel only for installations
+Beta builds deliberately skip the release PR and maintainer qualification: they reach beta installations without a human gate. Choose the beta channel only for installations
 that accept that risk. Stable installations never see prereleases because the updater asks GitHub only for the latest Release. Beta installations take the newest entry in the repository's release feed that is a
 Release or a beta build; a Release has no `beta-mac.yml`, so the updater falls back to its `latest-mac.yml`. The updater never installs an older version: an installation that leaves the beta channel keeps its
 beta until a newer Release is published.
