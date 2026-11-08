@@ -104,6 +104,7 @@ async function prepareWorkerRuns() {
     review: review.id,
     parallel: flow("Demo · Parallel review"),
     parallelStart: flow("Demo · Parallel review from one prompt"),
+    worktree: flow("Demo · Build and review in a worktree"),
   });
   releasing = await startScenario(
     workerContext,

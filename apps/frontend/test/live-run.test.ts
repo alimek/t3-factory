@@ -18,6 +18,7 @@ it("a committed Run update preserves entity order and untouched identities witho
     flowName: run.flowName,
     startedAt: run.startedAt,
     input: run.input,
+    workspace: run.workspace,
     coordinationActions: run.coordinationActions,
     runCoordinator: run.runCoordinator,
     gateOpen: run.gateOpen,

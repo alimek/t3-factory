@@ -104,10 +104,14 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, live Run updates and container resize preserve the Run viewport.
-- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
+- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). An unvisited Block of a
+  worktree Run names the idle worker prepared for it. There is no editing here.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
-  prompt, Flow revision, project, work periods) opens from 1280 px wide.
+  prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
+  checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path** with the
+  number of prepared idle workers, or **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery
+  note. The timeline says **entered · prepared idle T3 thread** for a first visit queued on a prepared worker.
 - Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
 
 Engine termination alone never settles a Run; automatic settlement needs every condition in [Settled Runs](#settled-runs).

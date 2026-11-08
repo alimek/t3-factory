@@ -103,6 +103,8 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     lifecycle,
     gateOpen: lifecycle === "settled",
     definitions: capturedDefinitions(snapshot),
+    // Released Runs worked in the project checkout.
+    workspace: { mode: "checkout" },
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),
     activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),

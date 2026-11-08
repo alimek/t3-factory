@@ -80,6 +80,39 @@ test("Start launches a top-level Block worker and no Run conversation", async ({
   await app.screenshot("direct-root-worker-after-reload");
 });
 
+test("a worktree Run shows the worktree its workers share and the idle worker prepared for its later Block", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await openComposerWithFlow(app, screen, "Demo · Build and review in a worktree");
+  await screen.getByLabel("Initial prompt", { exact: false }).fill("UI worktree Run");
+
+  // Act
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("heading", "UI worktree Run", { exact: true })).toBeVisible();
+  const created = await findRun(app.baseUrl, "UI worktree Run");
+  await expect
+    .poll(async () => (await readHistoryRun(app.baseUrl, created.id)).workspace)
+    .toMatchObject({ state: "bound", preparedWorkers: [{ blockId: "reviewer" }] });
+  const run = await readHistoryRun(app.baseUrl, created.id);
+  assert(run.workspace.mode === "worktree");
+  await expect(screen.getByRole("region", "Run workspace")).toContainText(
+    `Worktree · ${run.workspace.branch} · ${run.workspace.path}`,
+  );
+  await expect(screen.getByRole("region", "Run workspace")).toContainText(
+    "1 idle worker is prepared for later Blocks.",
+  );
+  await app.screenshot("worktree-run-workspace");
+  await screen.getByRole("button", "Agent Review implementation", { exact: false }).tap();
+  await expect(screen.getByRole("complementary", "Block details")).toContainText(
+    `Prepared idle worker, not visited: ${run.workspace.preparedWorkers[0]!.threadId}`,
+  );
+  await app.screenshot("worktree-run-prepared-worker");
+});
+
 test("an unfinished prompt reopens as a Draft after reload and Starts exactly one Run in its place", async ({
   app,
   screen,

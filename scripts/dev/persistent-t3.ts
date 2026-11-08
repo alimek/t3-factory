@@ -5,6 +5,7 @@ import { writeState } from "./write-state.ts";
 import { join } from "node:path";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
 import type {
+  IdleLaunchPayload,
   LaunchPayload,
   SendPayload,
   T3Endpoint,
@@ -42,7 +43,7 @@ export class PersistentT3 extends ControlledT3 {
       const saved = JSON.parse(readFileSync(this.statePath, "utf8")) as ReturnType<
         PersistentT3["snapshot"]
       >;
-      if (saved.version !== 3) throw new Error("Unsupported demo engine state; run pnpm db:reset.");
+      if (saved.version !== 4) throw new Error("Unsupported demo engine state; run pnpm db:reset.");
       this.identity = saved.identity;
       for (const [key, value] of saved.subagents) this.subagents.set(key, value);
       for (const [key, value] of saved.delegatedSettlements)
@@ -51,6 +52,7 @@ export class PersistentT3 extends ControlledT3 {
       this.projects = saved.projects;
       this.projectCreates = saved.projectCreates;
       for (const [key, value] of saved.launches) this.launches.set(key, value);
+      for (const [key, value] of saved.idleLaunches) this.idleLaunches.set(key, value);
       for (const [key, value] of saved.sends) this.sends.set(key, value);
       for (const [key, value] of saved.executions) this.executionObservations.set(key, value);
       for (const threadId of saved.settledThreads ?? []) this.settledThreads.add(threadId);
@@ -64,7 +66,7 @@ export class PersistentT3 extends ControlledT3 {
 
   private snapshot() {
     return {
-      version: 3,
+      version: 4,
       identity: this.identity,
       subagents: [...this.subagents],
       delegatedSettlements: [...this.delegatedSettlements],
@@ -72,6 +74,7 @@ export class PersistentT3 extends ControlledT3 {
       projects: this.projects,
       projectCreates: this.projectCreates,
       launches: [...this.launches],
+      idleLaunches: [...this.idleLaunches],
       sends: [...this.sends],
       executions: [...this.executionObservations],
       settledThreads: [...this.settledThreads],
@@ -145,6 +148,13 @@ export class PersistentT3 extends ControlledT3 {
 
   override async launchThread(target: T3Endpoint, payload: LaunchPayload) {
     const reference = await super.launchThread(target, payload);
+    await recordThread(this, reference.threadId);
+    this.save();
+    return reference;
+  }
+
+  override async launchIdleThread(target: T3Endpoint, payload: IdleLaunchPayload) {
+    const reference = await super.launchIdleThread(target, payload);
     await recordThread(this, reference.threadId);
     this.save();
     return reference;

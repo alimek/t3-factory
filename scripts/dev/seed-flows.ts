@@ -1,5 +1,10 @@
 import type { Factory } from "../../apps/backend/src/index.ts";
-import type { BlockExit, FlowBlock, FlowGraph } from "../../packages/contracts/src/index.ts";
+import type {
+  BlockExit,
+  FlowBlock,
+  FlowGraph,
+  FlowWorkspace,
+} from "../../packages/contracts/src/index.ts";
 import { requireSuccess } from "./seed-support.ts";
 
 const exit = (id: string, name: string, requiresFeedback = false): BlockExit => ({
@@ -27,13 +32,18 @@ const flowInput = (...targetBlockIds: string[]): FlowGraph["flowInput"] => ({
   targetBlockIds,
 });
 
-async function saveFlow(factory: Factory, name: string, graph: FlowGraph) {
+async function saveFlow(
+  factory: Factory,
+  name: string,
+  graph: FlowGraph,
+  workspace: FlowWorkspace = { mode: "checkout" },
+) {
   const flow = requireSuccess(await factory.createFlow({ name }));
   const saved = requireSuccess(
     await factory.updateFlow(flow.id, {
       name,
       expectedRevision: flow.revision,
-      workspace: { mode: "checkout" },
+      workspace,
       graph,
     }),
   );
@@ -98,5 +108,20 @@ export async function createDemoFlows(
     ],
     connections: [],
   });
-  return { simple, review, parallel, parallelStart };
+  const worktree = await saveFlow(
+    factory,
+    "Demo · Build and review in a worktree",
+    {
+      flowInput: flowInput("worker"),
+      blocks: [
+        worker,
+        agentBlock("reviewer", "Review implementation", agents.reviewer, 700, 180, [
+          exit("done", "Approved"),
+        ]),
+      ],
+      connections: [{ sourceBlockId: "worker", exitId: "review", targetBlockId: "reviewer" }],
+    },
+    { mode: "worktree", base: { kind: "default" } },
+  );
+  return { simple, review, parallel, parallelStart, worktree };
 }

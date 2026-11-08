@@ -31,9 +31,10 @@ data ([testing policy](testing.md)). Native T3 links in simulated Runs are fixtu
 
 ## Scenario catalog
 
-The Atlas demo repository has three saved Agents (product engineer, code reviewer, accessibility reviewer), four ready Flows (focused change, build/review/decision, parallel review, parallel review from
-one prompt) and an incomplete release-checklist Flow. Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
-The ready Flows that seeded Runs use are saved with the **Project checkout** workspace; the unsaved release-checklist Flow
+The Atlas demo repository has three saved Agents (product engineer, code reviewer, accessibility reviewer), five ready Flows (focused change, build/review/decision, parallel review, parallel review from
+one prompt, build and review in a worktree) and an incomplete release-checklist Flow. Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
+The worktree Flow is saved with **New worktree · default branch** (the simulator resolves it to `origin/main`); every other
+ready Flow is saved with the **Project checkout** workspace, and the unsaved release-checklist Flow
 shows a new Flow's default, **New worktree · default branch**. Choose a missing **Custom ref** on a ready Flow and Start it to
 see the `workspace.*` blocker with **Open Studio → Flows**; no Run is created.
 
@@ -49,6 +50,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Applying your requested changes | Answered Human occurrence and renewed Agent work | Inspect correction handoff and work history |
 | Two reviewers working in parallel | Two active reviewer blocks; the implementer replaced its first result before handoff | Inspect independent branches and both result versions in the timeline: the first reads **Replaced by version 2** with cancelled handoffs, and only the second reached the reviewers; Archive |
 | Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect two independent top-level workers and Archive |
+| Worktree · Search fix on its own branch | Worktree Run: the implementer created the Run worktree and is working; the reviewer Block is unvisited with a prepared idle worker on the same path and branch | Read **Worktree · branch · path** and the prepared-worker count in the context rail, select the reviewer to see its prepared idle worker; any checkout Run reads **Project checkout**. The simulator reports a fixture path and creates no Git worktree; idle-thread setup and real worktree creation need live qualification |
 | Problem · Report exit needs correction | Completed worker with a rejected final and no accepted report | Inspect the rejection reason separately from the missing-report obligation; Request report assesses existing work only while the worker thread is finished |
 | Problem · Search checks failed | Failed execution with unresolved Problem | Inspect attention and failure evidence; backend tests also cover a rolled-back worker holding its prior result, and the Problem settling after a later completed run or a Block report |
 | Settled · Clearer onboarding copy | Settled automatically after its worker's result and finished thread | Inspect history and the **Settled** canvas badge; a report from its worker would return it to Active. Use any open row's ··· menu (or right click) and **Settle** to settle a Run by hand |
@@ -77,8 +79,9 @@ Fresh or reset homes install a disposable Codex reporting target and the `$facto
 and separate terminal observations release Agent and Human handoffs. Questions stay in the worker, Human corrections revisit the same worker with a new activation, the Problem case is a failed worker
 execution, the Settled case settles automatically once its worker thread is finished and the Archived case asks the simulator to interrupt its worker thread. The simulator retains execution states; it generates no code changes and finishes no work on its own. Ordinary restarts retain current-contract demo state; contract-removal migrations delete open Runs, most recently when Block ids replaced native call correlation. Use a deliberate reset to restore the complete scenario baseline after upgrading an older demo home. An upgrade that changes the `$factory-block` skill also leaves a retained home's Codex reporting needing attention until **Repair installation** or a reset.
 
-The supported saved simulator format is version 3, which records simulated subagents instead
-of native delegation and descendant evidence. Earlier versions need an explicit reset;
+The supported saved simulator format is version 4, which records idle worker threads and each
+thread's worktree branch; version 3 introduced simulated subagents instead of native delegation and
+descendant evidence. Earlier versions need an explicit reset;
 startup never invents missing state for retained Runs. A simulated delegated wait stays
 pending while a saved subagent is active; this is not proof of real T3 settlement or
 active-list behavior.

@@ -70,6 +70,7 @@ export function runDetail(): RunDetail {
       },
       agents: [],
     },
+    workspace: { mode: "checkout" },
     coordinationActions: { questionReplies: [] },
     runCoordinator: null,
     blocks: [block("worker"), block("untouched"), block("removed")],

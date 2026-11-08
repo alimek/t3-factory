@@ -573,9 +573,30 @@ export interface RunBlock {
   readonly pendingRequestCount: number | null;
   readonly observedAt: string | null;
   readonly freshness: "unknown" | "fresh" | "stale";
-  /** An unresolved Factory launch for this Block. Title search has not bound a worker. */
+  /** An unresolved Factory launch, or idle-worker preparation, for this Block. Title search has
+   * not bound its thread. */
   readonly recovery: "pending" | null;
 }
+/** An idle worker a worktree Run prepared for a later Agent Block; not a visit. */
+export interface RunPreparedWorker {
+  readonly blockId: string;
+  readonly threadId: string;
+  readonly link: string | null;
+  readonly preparedAt: string;
+}
+/** The workspace every worker of a Run shares. */
+export type RunWorkspaceDetail =
+  | { readonly mode: "checkout" }
+  | {
+      readonly mode: "worktree";
+      readonly baseRef: string;
+      readonly state: "preparing" | "bound" | "failed";
+      /** The worktree path and branch T3 reported; null until bound. */
+      readonly path: string | null;
+      readonly branch: string | null;
+      readonly problem: string | null;
+      readonly preparedWorkers: readonly RunPreparedWorker[];
+    };
 /**
  * Active Runs are in the main navigation. Settled Runs are done, automatically or because the
  * user settled them; an accepted Block report returns them to Active. Archived Runs are final
@@ -651,6 +672,7 @@ export interface RunDetail extends RunSummary {
   readonly title: string;
   readonly input: string;
   readonly definitions: RunDefinitions;
+  readonly workspace: RunWorkspaceDetail;
   readonly activations: readonly RunActivation[];
   readonly threadBindings: readonly RunThreadBinding[];
   readonly gateOpen: boolean;

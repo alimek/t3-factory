@@ -169,6 +169,12 @@ it("a rejected worktree-creating launch is a Block error and launches no other w
         "T3 rejected the worker that creates the Run worktree. This worker was not launched.",
     },
   ]);
+  expect(run.value.workspace).toMatchObject({
+    state: "failed",
+    path: null,
+    problem:
+      "T3 rejected the worker that creates the Run worktree. No worker was launched into it.",
+  });
 });
 
 it("once the worktree is bound, every later Agent Block gets one idle worker on its path and branch, none of them visited", async (c) => {
@@ -206,6 +212,18 @@ it("once the worktree is bound, every later Agent Block gets one idle worker on 
     { threadId: null, state: "not-started" },
   ]);
   expect(run.value.attention).toStrictEqual([]);
+  expect(run.value.workspace).toStrictEqual({
+    mode: "worktree",
+    baseRef: "origin/main",
+    state: "bound",
+    path: "/t3-worktrees/thread-1",
+    branch: joined.branch,
+    problem: null,
+    preparedWorkers: [
+      expect.objectContaining({ blockId: run.value.blocks[2]!.blockId, threadId: "thread-2" }),
+      expect.objectContaining({ blockId: run.value.blocks[3]!.blockId, threadId: "thread-3" }),
+    ],
+  });
 });
 
 it("after a Human step, the first arrival at a prepared Block queues its task on the prepared thread and launches nothing", async (c) => {
@@ -336,6 +354,12 @@ it("a worktree setup script that became blocking after Start holds idle-worker c
   const run = await f.getRun(started.value.id);
   assert(run.ok);
   expect(t3.idleLaunches.size).toBe(0);
+  expect(run.value.blocks.map(({ recovery }) => recovery)).toStrictEqual([
+    null,
+    null,
+    "pending",
+    "pending",
+  ]);
   expect(
     run.value.intents
       .filter(({ kind }) => kind === "prepare")
