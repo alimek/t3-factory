@@ -60,7 +60,11 @@ export interface T3Adapter {
   inspectSendSupport(target: T3Endpoint): Promise<LaunchSupport>;
   sendMessage(target: T3Endpoint, payload: SendPayload): Promise<SendReference>;
   inspectLaunchSupport(target: T3Endpoint): Promise<LaunchSupport>;
+  /** Launch support plus idle `worktree` and `existing_worktree` launches. */
+  inspectWorktreeLaunchSupport(target: T3Endpoint): Promise<LaunchSupport>;
   launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference>;
+  /** Creates a thread bound to its workspace with no turn and no run. */
+  launchIdleThread(target: T3Endpoint, payload: IdleLaunchPayload): Promise<IdleLaunchReference>;
   /** Search one project for a launch that may already exist. Incomplete scans withhold candidates. */
   discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery>;
   /** Independent thread identity. Callers still prove it is the saved worker. */
@@ -96,19 +100,36 @@ export interface T3Project {
   readonly faviconPath?: string | null;
 }
 
-export interface LaunchPayload {
+/** `root` is the project checkout. Worktree strategies name the branch every Run worker shares. */
+type WorkspaceStrategy =
+  | { readonly type: "root" }
+  | {
+      readonly type: "worktree";
+      readonly baseRef: string;
+      readonly branch: string;
+      readonly startFromOrigin?: boolean;
+    }
+  | { readonly type: "existing_worktree"; readonly worktreePath: string; readonly branch: string };
+interface LaunchSettings {
   readonly environmentId: string;
   readonly projectId: string;
   readonly clientRequestId: string;
   readonly title: string;
-  readonly message: string;
-  readonly workspaceStrategy: { readonly type: "root" };
+  readonly workspaceStrategy: WorkspaceStrategy;
   readonly interactionMode: "default";
   readonly modelSelection: {
     readonly instanceId: string;
     readonly model: string;
     readonly options: Readonly<Record<string, string | boolean>>;
   };
+}
+/** Starts the thread's first turn with `message`. */
+export interface LaunchPayload extends LaunchSettings {
+  readonly message: string;
+}
+/** T3 treats a launch without a message as idle. */
+export interface IdleLaunchPayload extends LaunchSettings {
+  readonly message?: never;
 }
 export interface LaunchSupport {
   readonly supported: boolean;
@@ -124,6 +145,7 @@ export interface LaunchReference {
   readonly link: string | null;
   readonly status: string;
 }
+export type IdleLaunchReference = Pick<LaunchReference, "projectId" | "threadId" | "link">;
 /** T3 refused the launch before accepting it. The outcome is not uncertain. */
 export class LaunchRejected extends Error {
   override readonly name = "LaunchRejected";
@@ -139,6 +161,7 @@ export interface LaunchCandidate {
   readonly projectId: string;
   readonly parentThreadId: string | null;
   readonly workspaceRoot: string | null;
+  readonly branch: string | null;
   readonly interactionMode: string | null;
   readonly providerInstanceId: string;
   readonly model: string;
@@ -155,6 +178,7 @@ export interface ThreadIdentityRead {
   readonly projectId: string;
   readonly parentThreadId: string | null;
   readonly workspaceRoot: string | null;
+  readonly branch: string | null;
   readonly providerInstanceId: string;
   readonly model: string;
   readonly executions: readonly LaunchCandidateExecution[];
@@ -164,7 +188,10 @@ export interface ExecutionObservation {
   readonly threadId: string;
   readonly activeRunId: string | null;
   readonly link: string | null;
+  /** T3's `worktreePath`: null is the project checkout. */
   readonly workspaceRoot: string | null;
+  /** Null while T3 shows no branch, including when the read omits it. */
+  readonly branch: string | null;
   readonly pendingRequestCount: number;
   readonly latestRunId?: string | null;
   readonly recentRuns: readonly {
