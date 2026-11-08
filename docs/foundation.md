@@ -67,10 +67,14 @@ Each scope starts with an authoritative snapshot, followed by committed changes.
 owning modules publish only after a successful durable commit, or an authoritative
 in-memory connection transition. This covers reports, including committed rejection
 diagnostics, as well as background observation, recovery and lifecycle changes.
-Subscription registration precedes the snapshot read so a racing commit is retained.
+Subscription registration precedes the snapshot read. A hint during that read triggers a
+fresh read before synchronization, up to three reads; under continuous writes the latest
+snapshot is emitted and the retained dirty hint drives the next diff.
 
 Delivery replaces changed entities or logical sections by stable identity, sends navigation
-upserts/removals and appends timeline entries by sequence. Observation-only timestamps
+upserts/removals and appends timeline entries by sequence. Worker executions use the pair
+of binding id and execution id, including observation metadata, so later turns preserve
+earlier executions. Observation-only timestamps
 travel as compact metadata rather than repeated Run data. Changes may coalesce into the
 latest committed state; delivery is not a record of every intermediate state, but preserves
 recorded timeline history. Related committed state is read and applied together.

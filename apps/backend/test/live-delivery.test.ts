@@ -11,8 +11,17 @@ import type {
 } from "@t3-factory/contracts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
-import { appliedRun, subscribe, withoutGeneration } from "./support/live.ts";
-import { directWorker, finishWorker, workerFinal, workerWorking } from "./support/run-worker.ts";
+import { appliedRun, raceFirstRead, subscribe, withoutGeneration } from "./support/live.ts";
+import {
+  directWorker,
+  finishWorker,
+  startWorkerTurn,
+  workerFinal,
+  workerWorking,
+} from "./support/run-worker.ts";
+
+import { makeLiveChanges } from "../src/live-changes.ts";
+import { makeLiveStreams } from "../src/live-streams.ts";
 
 const WORKING = "Opened PR #42; waiting for its CI checks.";
 
@@ -42,6 +51,30 @@ it("an accepted Block report reaches open Run and navigation subscribers without
     ),
   );
   expect(rows.filter((message) => message._tag === "snapshot")).toHaveLength(1);
+});
+
+it("a later turn preserves both executions of the same worker binding", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  const run = subscribe(c, f.f.live.watchRun(f.runId));
+  await run.until((messages) => messages.length > 0);
+  startWorkerTurn(f, "reply-execution", 2);
+
+  // Act
+  const reconciled = await f.f.reconcileRuns();
+
+  // Assert
+  assert(reconciled.ok);
+  const current = await f.f.getRun(f.runId);
+  assert(current.ok);
+  const delivered = await run.until((messages) => messages.length > 1);
+  const executions = appliedRun(delivered)?.executions;
+  expect(executions).toStrictEqual(current.value.executions);
+  expect(executions?.map((execution) => execution.executionId)).toStrictEqual([
+    "execution-1",
+    "reply-execution",
+  ]);
+  expect(executions?.[0]?.bindingId).toBe(executions?.[1]?.bindingId);
 });
 
 it("a report on another Run sends nothing to an open Run's subscriber", async (c) => {
@@ -82,19 +115,33 @@ it("an unchanged worker observation sends only its observation times", async (c)
   expect(delivered.map((message) => message._tag)).toStrictEqual(["snapshot", "observed"]);
 });
 
-it("a report committed while a Run subscription starts is delivered once", async (c) => {
+it("the first Run snapshot includes a report committed during its read", async (c) => {
   // Arrange
   const f = await directWorker(c);
 
+  const changes = makeLiveChanges();
+  const live = makeLiveStreams(changes, {
+    getConnection: () => Effect.promise(() => f.f.getConnection()),
+    listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+    getRun: () =>
+      raceFirstRead(
+        Effect.promise(() => f.f.getRun(f.runId)),
+        async () => {
+          expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+          changes.runChanged(f.runId);
+        },
+      ),
+  });
+
   // Act
-  const [run, reply] = await Promise.all([
-    Promise.resolve(subscribe(c, f.f.live.watchRun(f.runId))),
-    f.f.runtime.submit(workerWorking(f.blockId)),
-  ]);
+  const run = subscribe(c, live.watchRun(f.runId));
 
   // Assert
-  expect(reply.code).toBe("ACCEPTED");
   const delivered = await run.until(showsWorking);
+  expect(delivered[0]).toMatchObject({
+    _tag: "snapshot",
+    run: { blocks: expect.arrayContaining([expect.objectContaining({ workingMessage: WORKING })]) },
+  });
   const current = await f.f.getRun(f.runId);
   assert(current.ok);
   expect(withoutGeneration(appliedRun(delivered))).toStrictEqual(withoutGeneration(current.value));

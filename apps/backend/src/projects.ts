@@ -149,6 +149,7 @@ export const makeProjects = (
               problem =
                 "Project discovery failed. Recheck T3 and its project contract. Saved references are retained.";
               yield* sql`UPDATE projects SET availability = 'connection-unavailable' WHERE endpoint = ${c.endpoint} AND environment_id = ${c.environmentId}`;
+              changes.navigationChanged();
             }),
         }),
       );

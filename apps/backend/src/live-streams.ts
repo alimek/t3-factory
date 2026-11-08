@@ -49,6 +49,12 @@ function watch<A, M>(
     Effect.gen(function* () {
       const dirty = yield* changes.watch(scope);
       let sent = yield* current;
+      // Retry the synchronization barrier when a commit raced the read. Keep the final
+      // dirty hint open after the bound so continuous writes cannot starve the snapshot.
+      for (let attempt = 1; dirty.isOpen() && attempt < 3; attempt++) {
+        dirty.closeUnsafe();
+        sent = yield* current;
+      }
       const next = Effect.gen(function* () {
         while (true) {
           yield* dirty.await;
@@ -165,13 +171,24 @@ function runDiff(sent: RunDetail, current: RunDetail): RunLiveMessage[] {
     if (diff.upserts.length || diff.removals.length)
       entities[collection] = { upserts: diff.upserts, removals: diff.removals };
   }
-  const lastSequence = Math.max(0, ...sent.events.map((event) => event.sequence));
+  const lastSequence = sent.events.reduce((max, event) => Math.max(max, event.sequence), 0);
   const events = current.events.filter((event) => event.sequence > lastSequence);
   const blocks = (observed.blocks ?? []).map(({ id, observedAt }) => ({ blockId: id, observedAt }));
-  const executions = (observed.executions ?? []).map(({ id, observedAt }) => ({
-    bindingId: id,
-    observedAt,
-  }));
+  const executionObservations = new Map(
+    (observed.executions ?? []).map(({ id, observedAt }) => [id, observedAt]),
+  );
+  const executions = current.executions.flatMap((execution) => {
+    const id = runEntityKeys.executions(execution);
+    return executionObservations.has(id)
+      ? [
+          {
+            bindingId: execution.bindingId,
+            executionId: execution.executionId,
+            observedAt: executionObservations.get(id)!,
+          },
+        ]
+      : [];
+  });
   const messages: RunLiveMessage[] = [];
   if (header || Object.keys(entities).length || events.length)
     messages.push({

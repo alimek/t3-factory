@@ -68,13 +68,18 @@ it("observation metadata updates only matching Blocks, bindings and the historic
     engineStatus: null,
     problem: null,
   };
-  const before = { ...run, runCoordinator: coordinator };
+  const otherTurn = { ...run.executions[0]!, executionId: "other-turn" };
+  const before = {
+    ...run,
+    executions: [...run.executions, otherTurn],
+    runCoordinator: coordinator,
+  };
 
   // Act
   const next = runScope(run.id).apply(before, {
     _tag: "observed",
     blocks: [{ blockId: "worker", observedAt: "later" }],
-    executions: [{ bindingId: "binding", observedAt: "later" }],
+    executions: [{ bindingId: "binding", executionId: "execution", observedAt: "later" }],
     runCoordinatorObservedAt: null,
   });
 
@@ -83,6 +88,7 @@ it("observation metadata updates only matching Blocks, bindings and the historic
   expect(next.blocks[1]).toBe(run.blocks[1]);
   expect(next.executions[0]).toStrictEqual({ ...run.executions[0], observedAt: "later" });
   expect(next.executions[1]).toBe(run.executions[1]);
+  expect(next.executions[2]).toBe(otherTurn);
   expect(next.runCoordinator).toStrictEqual({ ...coordinator, observedAt: null });
   expect(next.events).toBe(run.events);
   expect(next.reports).toBe(run.reports);

@@ -34,7 +34,8 @@ export const runEntityKeys = {
   recoveries: (recovery: Entity<"recoveries">) => recovery.intentId,
   humanOccurrences: (occurrence: Entity<"humanOccurrences">) => occurrence.id,
   attention: (matter: Entity<"attention">) => matter.id,
-  executions: (execution: Entity<"executions">) => execution.bindingId,
+  executions: (execution: Pick<Entity<"executions">, "bindingId" | "executionId">) =>
+    JSON.stringify([execution.bindingId, execution.executionId]),
   intents: (intent: Entity<"intents">) => intent.id,
   rootWork: (work: Entity<"rootWork">) => work.executionId,
 } as const;
@@ -75,6 +76,7 @@ export type RunLiveMessage =
       readonly blocks: readonly { readonly blockId: string; readonly observedAt: string | null }[];
       readonly executions: readonly {
         readonly bindingId: string;
+        readonly executionId: string;
         readonly observedAt: string | null;
       }[];
       readonly runCoordinatorObservedAt?: string | null;
@@ -127,7 +129,10 @@ export function applyRunChange(
   }
   const blocks = new Map(message.blocks.map((block) => [block.blockId, block.observedAt]));
   const executions = new Map(
-    message.executions.map((execution) => [execution.bindingId, execution.observedAt]),
+    message.executions.map((execution) => [
+      runEntityKeys.executions(execution),
+      execution.observedAt,
+    ]),
   );
   return {
     ...run,
@@ -135,8 +140,8 @@ export function applyRunChange(
       blocks.has(block.blockId) ? { ...block, observedAt: blocks.get(block.blockId)! } : block,
     ),
     executions: run.executions.map((execution) =>
-      executions.has(execution.bindingId)
-        ? { ...execution, observedAt: executions.get(execution.bindingId)! }
+      executions.has(runEntityKeys.executions(execution))
+        ? { ...execution, observedAt: executions.get(runEntityKeys.executions(execution))! }
         : execution,
     ),
     runCoordinator:

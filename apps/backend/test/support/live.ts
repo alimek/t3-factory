@@ -121,3 +121,15 @@ export async function liveClient(context: TestContext, endpoint: LiveEndpoint) {
     }).pipe(Effect.provideService(Scope.Scope, scope)),
   );
 }
+
+/** Commit after capturing the first read, before the subscriber receives its value. */
+export function raceFirstRead<A, E>(read: Effect.Effect<A, E>, commit: () => Promise<void>) {
+  let first = true;
+  return read.pipe(
+    Effect.tap(() => {
+      if (!first) return Effect.void;
+      first = false;
+      return Effect.promise(commit);
+    }),
+  );
+}
