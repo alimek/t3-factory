@@ -77,7 +77,7 @@ test("restoring the last snoozed Run hides its group and focuses the restored ro
   await expect(toggle).toBeHidden();
   await expect(actions).toBeFocused();
   await expect(
-    screen.getByRole("navigation", "Open Runs").getByRole("link", /^Demo · Snoozed/),
+    screen.getByRole("navigation", "Open Runs").getByRole("link", /Demo · Snoozed/),
   ).toBeVisible();
   await app.screenshot("snoozed-empty-hidden");
   expect((await findRun(app.baseUrl, snoozedTitle)).presentation.snoozed).toBe(false);
@@ -105,7 +105,7 @@ test("snoozing a restored Run restores its group expansion and focuses the toggl
   await expect(toggle).toBeFocused();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(
-    screen.getByRole("navigation", "Snoozed Runs").getByRole("link", /^Demo · Snoozed/),
+    screen.getByRole("navigation", "Snoozed Runs").getByRole("link", /Demo · Snoozed/),
   ).toBeVisible();
   await app.screenshot("snoozed-returned-expanded");
   expect((await findRun(app.baseUrl, snoozedTitle)).presentation.snoozed).toBe(true);
@@ -134,8 +134,8 @@ test("title search combines drafts and all Run states in creation order", async 
   await expect(open.getByRole("link")).toHaveCount(titles.length + 1);
   await expect(open.getByRole("link")).toContainText(["Demo · Sidebar search draft", ...titles]);
   await expect(open.getByText(`Runs · ${titles.length + 1}`)).toBeVisible();
-  await expect(open.getByRole("link", /^Demo · Snoozed/)).toBeVisible();
-  await expect(open.getByRole("link", /^Demo · Settled/)).toBeVisible();
+  await expect(open.getByRole("link", /Demo · Snoozed/)).toBeVisible();
+  await expect(open.getByRole("link", /Demo · Settled/)).toBeVisible();
   await app.screenshot("flat-search-muted-states");
 });
 
@@ -193,7 +193,29 @@ test("settle during search keeps focus on the matching row", async ({ app, scree
   await app.screenshot("search-settle-row-focused");
 });
 
-test("Run repository details retain branch ownership and count shared PRs once", async ({
+test("Run rows summarize independent branches and count shared PRs once", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const title = "Demo · Parallel review from one prompt";
+  const row = screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link")
+    .filter({ hasText: title });
+
+  // Act
+  await app.open("/runs/new");
+
+  // Assert
+  await expect(row).toContainText("2 branches");
+  await expect(row.getByLabel("2 pull requests", { exact: true })).toBeVisible();
+  await expect(screen.getByRole("button", `Actions for ${title}`)).toBeHidden();
+});
+
+test("Run repository details retain branch ownership and PR links after reload", async ({
   app,
   screen,
   browser,
@@ -201,12 +223,10 @@ test("Run repository details retain branch ownership and count shared PRs once",
   // Arrange
   const title = "Demo · Parallel review from one prompt";
   const { row } = await prepareSidebarPreview({ app, screen, browser }, title);
-  await expect(row).toContainText("2 branches");
-  await expect(row.getByLabel("2 pull requests", { exact: true })).toBeVisible();
-  await expect(screen.getByRole("button", `Actions for ${title}`)).toBeHidden();
+  await row.tap();
+  await expect(screen.getByRole("region", "Run repositories")).toBeVisible();
 
   // Act
-  await row.tap();
   await browser.reload();
 
   // Assert
@@ -225,7 +245,30 @@ test("Run repository details retain branch ownership and count shared PRs once",
   await app.screenshot("run-branches-and-pull-requests");
 });
 
-test("Settled stays a compact single line with details in its side preview", async ({
+test("expanding Settled shows compact single-line rows without repository metadata", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  await app.open("/runs/new");
+  const row = screen
+    .getByRole("navigation", "Settled Runs")
+    .getByRole("link", /Demo · Settled · Clearer onboarding copy/);
+
+  // Act
+  await screen.getByRole("button", /^Settled \d+$/).tap();
+
+  // Assert
+  await expect(row).toBeVisible();
+  const bounds = await row.boundingBox();
+  expect(bounds!.height).toBeLessThanOrEqual(36);
+  await expect(row).not.toContainText("copy/welcome");
+  await app.screenshot("sidebar-compact-settled");
+});
+
+test("the Settled preview exposes repository details omitted from its compact row", async ({
   app,
   screen,
   browser,
@@ -236,11 +279,7 @@ test("Settled stays a compact single line with details in its side preview", asy
   await screen.getByRole("button", /^Settled \d+$/).tap();
   const row = screen
     .getByRole("navigation", "Settled Runs")
-    .getByRole("link", "Demo · Settled · Clearer onboarding copy", { exact: true });
-  const bounds = await row.boundingBox();
-  expect(bounds!.height).toBeLessThanOrEqual(36);
-  await expect(row).not.toContainText("copy/welcome");
-  await app.screenshot("sidebar-compact-settled");
+    .getByRole("link", /Demo · Settled · Clearer onboarding copy/);
 
   // Act
   await row.hover();
@@ -253,13 +292,16 @@ test("Settled stays a compact single line with details in its side preview", asy
   await app.screenshot("sidebar-settled-preview");
 });
 
-test("cancelling a keyboard-opened Rename returns focus without reopening the preview", async ({
+test("cancelling Rename returns focus with Run state and attention available without a preview", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
-  const { row, preview } = await prepareSidebarPreview({ app, screen, browser }, workingTitle);
+  const { row, preview } = await prepareSidebarPreview(
+    { app, screen, browser },
+    "Demo · Problem · Search checks failed",
+  );
   await row.press("Shift+F10");
   await expect(screen.getByRole("menu")).toBeVisible();
   await screen.getByRole("menuitem", "Rename", { exact: false }).tap();
@@ -271,5 +313,8 @@ test("cancelling a keyboard-opened Rename returns focus without reopening the pr
 
   // Assert
   await expect(row).toBeFocused();
+  await expect(row).toHaveAccessibleName(
+    /Demo · Problem · Search checks failed.*Problem.*,\s*(Waiting|Observation unknown or stale)$/,
+  );
   await expect(preview).toBeHidden();
 });

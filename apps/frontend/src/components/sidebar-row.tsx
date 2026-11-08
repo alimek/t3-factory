@@ -173,7 +173,7 @@ export function SidebarRow({
                 {...interaction.link}
                 id={`run-row-${id}`}
                 onClick={onClick}
-                aria-label={kind === "draft" ? `${title} Draft` : title}
+                aria-label={kind === "draft" ? `${title} Draft` : undefined}
                 aria-current={selected ? "page" : undefined}
                 className={cn(
                   "flex min-w-0 flex-1 rounded-md px-2.5 text-foreground no-underline hover:no-underline",

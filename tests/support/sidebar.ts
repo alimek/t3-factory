@@ -59,7 +59,7 @@ export async function openSidebarAction(
   const toggle = screen.getByRole("button", /^Snoozed 1$/);
   if (searching) await screen.getByRole("textbox", "Search Run titles").fill("Navigation research");
   else await toggle.tap();
-  const actions = screen.getByRole("link", title, { exact: true });
+  const actions = screen.getByRole("link").filter({ hasText: title });
   await actions.secondaryTap();
   return { toggle, actions };
 }
@@ -72,7 +72,10 @@ export async function prepareSidebarPreview(
   await browser.setViewport({ width: 1440, height: 1100 });
   await browser.emulateMedia({ reducedMotion: "reduce" });
   await app.open("/runs/new");
-  const row = screen.getByRole("navigation", "Open Runs").getByRole("link", title, { exact: true });
+  const row = screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link")
+    .filter({ hasText: title });
   const preview = browser.locator('[data-slot="tooltip-content"]');
   if (opened) {
     await row.hover();

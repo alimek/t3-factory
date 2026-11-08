@@ -89,8 +89,8 @@ test("an unfinished prompt reopens as a Draft after reload and Starts exactly on
   const prompt = "UI saved draft\n  Keep the second line exactly.";
   const openRuns = screen.getByRole("navigation", "Open Runs");
   const draftRow = openRuns.getByRole("link", /^UI saved draft\s*Draft$/);
-  const journeyRows = openRuns.getByRole("link", /^UI (saved|newer) draft/);
-  const workingRun = openRuns.getByRole("link", /^Demo · Working · Improve the project picker/);
+  const journeyRows = openRuns.getByRole("link", /UI (saved|newer) draft/);
+  const workingRun = openRuns.getByRole("link", /Demo · Working · Improve the project picker/);
   const projectChoice = screen.getByLabel(/^Select project: /);
   await openComposerWithFlow(app, screen, "Demo · Focused change");
   await screen.getByLabel("Initial prompt", { exact: false }).fill(prompt);
@@ -201,7 +201,7 @@ test("a worker idle in working shows its message on the canvas and in its Run pr
   await app.open(`/runs/${found.id}`);
   await screen
     .getByRole("navigation", "Open Runs")
-    .getByRole("link", /^UI worker · Monitoring · Agent is watching CI/)
+    .getByRole("link", /UI worker · Monitoring · Agent is watching CI/)
     .hover();
 
   // Assert
@@ -373,7 +373,7 @@ test("the row menu opened by right click settles an open Run into the Settled gr
   await app.open(`/runs/${found.id}`);
   await screen
     .getByRole("navigation", "Open Runs")
-    .getByRole("link", new RegExp(`^${title}`))
+    .getByRole("link", new RegExp(title))
     .secondaryTap();
 
   // Act
@@ -386,10 +386,10 @@ test("the row menu opened by right click settles an open Run into the Settled gr
   await browser.reload();
   await screen.getByRole("button", /^Settled/).tap();
   await expect(
-    screen.getByRole("navigation", "Settled Runs").getByRole("link", new RegExp(`^${title}`)),
+    screen.getByRole("navigation", "Settled Runs").getByRole("link", new RegExp(title)),
   ).toBeVisible();
   await expect(
-    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(`^${title}`)),
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title)),
   ).toHaveCount(0);
   await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
   await app.screenshot("run-settled-from-row-menu");
@@ -412,10 +412,7 @@ test("a report from the Agent of a Settled Run returns it to the open Runs", asy
 
   // Act
   await workerEvent(app.baseUrl, "working");
-  await screen
-    .getByRole("navigation", "Open Runs")
-    .getByRole("link", new RegExp(`^${title}`))
-    .hover();
+  await screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title)).hover();
 
   // Assert
   await expect(browser.locator('[data-slot="tooltip-content"]')).toContainText(
@@ -471,9 +468,7 @@ test("the row menu opened with Shift+F10 archives a Run after confirmation", asy
   const title = "UI worker · Two reviewers working in parallel";
   const found = await findRun(app.baseUrl, title);
   await app.open("/runs/new");
-  const row = screen
-    .getByRole("navigation", "Open Runs")
-    .getByRole("link", new RegExp(`^${title}`));
+  const row = screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title));
   await row.press("Shift+F10");
   await screen.getByRole("menuitem", "Archive…", { exact: true }).tap();
   const confirmation = screen.getByRole("dialog", `Archive “${title}”?`);
