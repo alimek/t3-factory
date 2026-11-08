@@ -2,7 +2,8 @@
 // with a temporary HOME, `PATH=/usr/bin:/bin` and no developer tools. It proves existing
 // source data adoption, server startup, the Factory MCP endpoint, window close, Quit
 // releasing ownership, restart, client-only startup and the live delivery relay (the
-// renderer's live socket shim through the main process to a pinned TLS WebSocket stand-in).
+// renderer's live socket shim through the main process to the packaged backend's live
+// stream, and to a pinned TLS WebSocket stand-in).
 // It never touches the real ~/.t3-factory, Keychain (mock keychain) or login items, and
 // starts no T3 workload.
 //
@@ -287,14 +288,45 @@ try {
 
   await stage("the packaged backend serves Factory MCP to harnesses", mcpReport);
 
-  await stage("the host relay opens the live socket or signals the refused upgrade", async () => {
+  await stage("the host relay streams the backend's live connection snapshot", async () => {
     await evaluate(9441, liveShim);
     const outcome = await withTimeout(evaluate(9441, openLiveSocket("hostLive")), 15_000);
-    // Before the backend serves /api/live, the refusal must arrive as 4000 + HTTP status.
-    if (!outcome.open && !(outcome.code >= 4400 && outcome.code <= 4599))
-      throw new Error(`Unsignalled live outcome ${JSON.stringify(outcome)}`);
+    if (!outcome.open) throw new Error(`Live socket did not open: ${JSON.stringify(outcome)}`);
+    // One Effect RPC stream request in the JSON serialization the frontend uses.
+    await evaluate(
+      9441,
+      `window.hostLive.socket.send(${JSON.stringify(
+        JSON.stringify({
+          _tag: "Request",
+          id: "1",
+          tag: "WatchConnection",
+          payload: null,
+          headers: [],
+        }),
+      )})`,
+    );
+    const frame = await withTimeout(
+      evaluate(
+        9441,
+        `(async () => {
+          const record = window.hostLive;
+          const chunk = () => record.frames.find((frame) => typeof frame === "string" && frame.includes('"Chunk"'));
+          for (let i = 0; i < 100 && !chunk(); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+          // Without a chunk, the failure reports every frame received instead.
+          return chunk() ?? JSON.stringify({ frames: record.frames.map(String) });
+        })()`,
+      ),
+      10_000,
+    );
     await evaluate(9441, "window.hostLive.socket.close()");
-    return outcome;
+    const chunk = JSON.parse(frame);
+    const message = chunk?.values?.[0];
+    if (chunk?.requestId !== "1" || message?._tag !== "snapshot")
+      throw new Error(`No live snapshot frame: ${frame}`);
+    return {
+      ...outcome,
+      frame: { tag: chunk._tag, message: message._tag, state: message.connection?.state },
+    };
   });
 
   await stage("closing the last window keeps the server running", async () => {
