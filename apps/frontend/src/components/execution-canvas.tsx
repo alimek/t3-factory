@@ -107,20 +107,15 @@ function graphBounds(graph: FlowGraph, blockHeight: (block: FlowBlock) => number
   return bounds;
 }
 
-/** Direct context only: distant ancestors and descendants must not determine entry zoom. */
-function executionEntryView(
-  run: RunDetail,
+/** Direct context only: distant ancestors and descendants must not determine the focus zoom. */
+function executionFocusView(
+  targetIds: readonly string[],
   graph: FlowGraph,
   blockHeight: (block: FlowBlock) => number,
   width: number,
   height: number,
 ) {
-  const ids = new Set(
-    selectExecutionTargets(
-      run.blocks,
-      run.blocks.some((block) => block.state === "error"),
-    ),
-  );
+  const ids = new Set(targetIds);
   if (!ids.size)
     return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
   const rect = (block: FlowBlock) => ({
@@ -547,8 +542,8 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
 }
 
 /**
- * Read-only canvas of a captured Flow revision. The viewport is local UI state: polling replaces
- * block facts in place and does not fit or move the view again.
+ * Read-only canvas of a captured Flow revision. The viewport is local UI state: live updates
+ * replace block facts in place and move the view only while it follows the active Blocks.
  */
 export function ExecutionCanvas({
   run,
@@ -575,22 +570,29 @@ export function ExecutionCanvas({
     autoArrange,
   } = useExecutionLayout(run, observationUnavailable);
   const surface = useRef<HTMLElement>(null);
-  const { view, fit, zoom, startPan, onKeyDown } = useCanvasViewport({
-    surface,
-    scope: run.id,
-    getBounds: () => graphBounds(graph, wireLayout.blockHeight),
-    getEntryView: (width, height) =>
-      executionEntryView(run, graph, wireLayout.blockHeight, width, height),
-    padding: FIT_PADDING,
-    resize: "preserve",
-    fitRevision: accepted,
-    onTap: () => onSelect(null),
-  });
+  const focusTargets = selectExecutionTargets(
+    run.blocks,
+    run.blocks.some((block) => block.state === "error"),
+  );
+  const { view, fitFlow, zoom, startPan, onKeyDown, following, focusChanged, followActive } =
+    useCanvasViewport({
+      surface,
+      scope: run.id,
+      getBounds: () => graphBounds(graph, wireLayout.blockHeight),
+      getFocusView: (width, height) =>
+        executionFocusView(focusTargets, graph, wireLayout.blockHeight, width, height),
+      focusTargets,
+      padding: FIT_PADDING,
+      resize: "preserve",
+      fitRevision: accepted,
+      onTap: () => onSelect(null),
+    });
   return (
     <section
       ref={surface}
       aria-label="Execution canvas"
       data-zoom={view.scale.toFixed(3)}
+      data-following={following}
       tabIndex={0}
       onKeyDown={onKeyDown}
       className="relative h-full min-h-0 w-full overflow-hidden bg-background outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
@@ -646,14 +648,19 @@ export function ExecutionCanvas({
         <CanvasZoomControls
           scale={view.scale}
           onZoom={zoom}
-          onFit={() => fit()}
+          onFit={fitFlow}
+          follow={{
+            available: focusTargets.length > 0,
+            changed: focusChanged,
+            onFollow: followActive,
+          }}
           trailing={
             <>
               <span aria-hidden className="h-5 w-px bg-border" />
               <AutoArrangeButton pending={arrangePending} onClick={() => void autoArrange()} />
             </>
           }
-          hint="Opens centered on active Blocks. Fit Flow shows the whole graph."
+          hint="The view follows active Blocks until you move it."
         />
         <AutoArrangeStatus error={arrangeError} onDismiss={dismissError} />
       </div>

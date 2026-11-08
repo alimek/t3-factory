@@ -10,14 +10,16 @@ parallel stylesheets, global element styling or per-screen color palettes.
   links; a selected Run row uses a neutral fill rather than the brand color.
 - Keep status meaning consistent: cyan for working, indigo for waiting, green for success,
   amber for attention, red for problems and muted neutral for stopped work. Pair color
-  with a label or icon; project icon colors identify projects, not availability.
+  with a label or icon; project icon colors identify projects, not availability. The dot
+  on **Follow active** marking unseen Run progress uses the working color.
 - Use Inter for interface text and Geist Mono for keys, exit names and zoom levels.
   Fonts are bundled; rendering must not require network font services.
 - Keep the interface compact, with consistent field, button, panel and sidebar dimensions.
   Secondary/helper text must remain readable; faint uppercase section labels are not a
   substitute for readable helper text.
 - Focus must stay visible. Respect reduced motion: remove spatial transitions and keep
-  modal changes short. Interactive controls must remain outside desktop drag regions.
+  modal changes short; programmatic canvas viewport moves jump instead of animating.
+  Interactive controls must remain outside desktop drag regions.
 
 ## Components and interaction
 

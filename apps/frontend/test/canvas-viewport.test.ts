@@ -1,4 +1,4 @@
-import { selectExecutionTargets } from "../src/execution-focus.ts";
+import { decideAutoFollow, selectExecutionTargets } from "../src/execution-focus.ts";
 import { frameCanvasTargets } from "../src/canvas-fit.ts";
 import { expect, it } from "vite-plus/test";
 import {
@@ -204,4 +204,137 @@ it("a failed Run targets its error-state Blocks", () => {
 
   // Assert
   expect(targets).toStrictEqual(["failed"]);
+});
+
+it("auto-follow animates to a newly active Block while following", () => {
+  // Arrange
+  const change = { seen: ["worker"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: true,
+    visibility: "visible",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("animate");
+});
+
+it("auto-follow jumps instead of animating under reduced motion", () => {
+  // Arrange
+  const change = { seen: ["worker"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: true,
+    visibility: "visible",
+    reducedMotion: true,
+  });
+
+  // Assert
+  expect(action).toBe("jump");
+});
+
+it("auto-follow only indicates a changed active Block when following is off", () => {
+  // Arrange
+  const change = { seen: ["worker"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: false,
+    visibility: "visible",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("indicate");
+});
+
+it("auto-follow does not move a hidden canvas", () => {
+  // Arrange
+  const change = { seen: ["worker"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: true,
+    visibility: "hidden",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("nothing");
+});
+
+it("returning to the canvas jumps once to Blocks that became active while hidden", () => {
+  // Arrange
+  const change = { seen: ["worker"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: true,
+    visibility: "returned",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("jump");
+});
+
+it("returning to the canvas with unchanged active Blocks replays nothing", () => {
+  // Arrange
+  const change = { seen: ["reviewer"], targets: ["reviewer"] };
+
+  // Act
+  const action = decideAutoFollow({
+    ...change,
+    following: true,
+    visibility: "returned",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("nothing");
+});
+
+it("a Run that fails while following animates to its error Block", () => {
+  // Arrange
+  const blocks = [
+    { blockId: "worker", state: "finished" as const },
+    { blockId: "reviewer", state: "error" as const },
+  ];
+
+  // Act
+  const action = decideAutoFollow({
+    seen: ["worker"],
+    targets: selectExecutionTargets(blocks, true),
+    following: true,
+    visibility: "visible",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("animate");
+});
+
+it("a Run that succeeds while following keeps the view on its last Block", () => {
+  // Arrange
+  const blocks = [{ blockId: "worker", state: "finished" as const }];
+
+  // Act
+  const action = decideAutoFollow({
+    seen: ["worker"],
+    targets: selectExecutionTargets(blocks, false),
+    following: true,
+    visibility: "visible",
+    reducedMotion: false,
+  });
+
+  // Assert
+  expect(action).toBe("nothing");
 });

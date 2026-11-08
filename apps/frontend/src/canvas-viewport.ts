@@ -78,6 +78,14 @@ export function zoomCanvasBy(
   );
 }
 
+export function interpolateCanvasView(from: CanvasView, to: CanvasView, progress: number) {
+  return {
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress,
+    scale: from.scale + (to.scale - from.scale) * progress,
+  };
+}
+
 /** Maps a viewport client point to graph coordinates inside a transformed canvas layer. */
 export function clientToGraphPoint(
   surface: HTMLElement,

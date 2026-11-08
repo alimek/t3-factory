@@ -10,13 +10,16 @@ async function liveFixture<A>(app: FixtureApp, action: string, query: Record<str
   return (response.status === 204 ? undefined : await response.json()) as A;
 }
 
-/** A Run of the focused-change Flow the fixture starts once per `key`, under the current T3 context. */
-export const liveRun = async (app: FixtureApp, key: string) =>
-  (await liveFixture<{ id: string }>(app, "run", { key })).id;
+/** A Run of `flow` (default: the focused-change Flow) the fixture starts once per `key`, under the current T3 context. */
+export const liveRun = async (app: FixtureApp, key: string, flow?: string) =>
+  (await liveFixture<{ id: string }>(app, "run", flow ? { key, flow } : { key })).id;
 
 /** The Run's worker reports through Factory MCP: `working` with `message`, else finished and settled. */
 export const liveReport = (app: FixtureApp, key: string, message?: string) =>
   liveFixture(app, "report", message ? { key, message } : { key });
+
+/** On a build-and-review Run, the implementing Agent finishes and the reviewer becomes active. */
+export const liveHandoff = (app: FixtureApp, key: string) => liveFixture(app, "handoff", { key });
 
 export const resetBrowserRequests = (app: FixtureApp) => liveFixture(app, "requests/reset");
 

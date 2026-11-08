@@ -77,8 +77,12 @@ Factory's single completion rule for a worker, decided by T3 alone: the thread r
 _Avoid_: quiet frontier, owned tree, descendant coverage.
 
 **Active block**:
-A Run Block in `working` or `waiting` state. Several Blocks can be active at once; the execution canvas centers their combined bounds on entry. When none is active, entry shows error-state Blocks for failed execution, or the whole graph.
+A Run Block in `working` or `waiting` state. Several Blocks can be active at once; the execution canvas centers their combined bounds on entry and while following them. When none is active, entry shows error-state Blocks for failed execution, or the whole graph.
 _Avoid_: current step.
+
+**Follow active**:
+The execution canvas keeping its view on the active Blocks (or the error-state Blocks of failed execution) as they change. It is on whenever a Run is opened, turns off on manual pan or zoom, and is turned back on by the zoom-control button of the same name. Not saved.
+_Avoid_: auto-scroll, tracking mode.
 
 **Block id**:
 The identifier Factory mints for an Agent Block when a Run starts and states in every launch, visit and Request report message to that Block's worker. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.

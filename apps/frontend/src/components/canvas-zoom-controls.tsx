@@ -1,6 +1,6 @@
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import type { ReactNode } from "react";
-import { Minus, Plus, Scan } from "lucide-react";
+import { LocateFixed, Minus, Plus, Scan } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 function ControlButton({
@@ -26,16 +26,57 @@ function ControlButton({
   );
 }
 
+type FollowControl = {
+  /** False with no active or failed Block to focus, so the button never does nothing silently. */
+  available: boolean;
+  /** The active Blocks changed while following was off. */
+  changed: boolean;
+  onFollow: () => void;
+};
+
+function FollowActiveButton({ available, changed, onFollow }: FollowControl) {
+  const indicated = available && changed;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          className="relative h-8 gap-1.5 rounded-sm pr-3 pl-2.5 text-2xs"
+          aria-label={indicated ? "Follow active, active Blocks changed" : "Follow active"}
+          disabled={!available}
+          onClick={onFollow}
+        >
+          <LocateFixed aria-hidden className="size-3.5" strokeWidth={1.5} />
+          Follow active
+          {indicated && (
+            <span
+              aria-hidden
+              className="absolute top-1 right-1 size-1.5 rounded-full bg-status-working"
+            />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {indicated ? "Active Blocks changed · follow them" : "Follow active Blocks"}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function CanvasZoomControls({
   scale,
   onZoom,
   onFit,
+  follow,
   trailing,
   hint,
 }: {
   scale: number;
   onZoom: (factor: number) => void;
   onFit: () => void;
+  /** Run execution canvas only; the authoring canvas has nothing to follow. */
+  follow?: FollowControl;
   trailing?: ReactNode;
   hint?: string;
 }) {
@@ -84,6 +125,7 @@ export function CanvasZoomControls({
           </TooltipTrigger>
           <TooltipContent>{fitHint}</TooltipContent>
         </Tooltip>
+        {follow && <FollowActiveButton {...follow} />}
         {trailing}
       </div>
       {hint && (

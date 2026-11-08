@@ -1,7 +1,12 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { manualRunView } from "./support/canvas.ts";
-import { liveReport, liveRun } from "./support/live.ts";
+import {
+  manualRunView,
+  openFollowedReviewRun,
+  runCanvasCenterOffset,
+  runCanvasHorizontalOffset,
+} from "./support/canvas.ts";
+import { liveHandoff, liveReport, liveRun } from "./support/live.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
   // Arrange
@@ -64,23 +69,81 @@ test("opening a working Run centers the active Block without enlarging it", asyn
   await app.open(`/runs/${run}`);
 
   // Assert
+  await expect
+    .poll(async () => {
+      const offset = await runCanvasCenterOffset(screen, "Implement change");
+      return Math.max(Math.abs(offset.x), Math.abs(offset.y));
+    })
+    .toBeLessThan(2);
   const canvas = screen.getByRole("region", "Execution canvas");
-  const active = screen.getByRole("article", "Block Implement change", { exact: true });
-  await expect(active).toBeVisible();
-  await expect
-    .poll(async () => {
-      const surface = (await canvas.boundingBox())!;
-      const block = (await active.boundingBox())!;
-      return Math.abs(block.x + block.width / 2 - (surface.x + surface.width / 2));
-    })
-    .toBeLessThan(2);
-  await expect
-    .poll(async () => {
-      const surface = (await canvas.boundingBox())!;
-      const block = (await active.boundingBox())!;
-      return Math.abs(block.y + block.height / 2 - (surface.y + (surface.height + 64 - 80) / 2));
-    })
-    .toBeLessThan(2);
   expect(Number(await canvas.getAttribute("data-zoom"))).toBeLessThanOrEqual(1);
   await app.screenshot("working-run-entry-focus");
+});
+
+test("a followed Run moves the view to the newly active Block", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const canvas = await openFollowedReviewRun(app, screen, browser, "follow");
+
+  // Act
+  await liveHandoff(app, "follow");
+
+  // Assert
+  await expect
+    .poll(() => runCanvasHorizontalOffset(screen, "Review implementation"))
+    .toBeLessThan(2);
+  await expect(canvas).toHaveAttribute("data-following", "true");
+  await app.screenshot("followed-run-moves-to-reviewer");
+});
+
+test("after a pan, a newly active Block marks Follow active instead of moving the view", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const canvas = await openFollowedReviewRun(app, screen, browser, "follow-off");
+  await canvas.press("ArrowRight");
+  const layer = browser.locator('[aria-label="Execution canvas"] > div[style]');
+  const panned = await layer.getAttribute("style");
+
+  // Act
+  await liveHandoff(app, "follow-off");
+
+  // Assert
+  await expect(
+    screen.getByRole("button", "Follow active, active Blocks changed", { exact: true }),
+  ).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-following", "false");
+  await expect(layer).toHaveAttribute("style", panned!);
+  await app.screenshot("follow-active-marked-after-pan");
+});
+
+test("Follow active resumes following on the newly active Block", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const canvas = await openFollowedReviewRun(app, screen, browser, "follow-resume");
+  await canvas.press("ArrowRight");
+  await liveHandoff(app, "follow-resume");
+  const marked = screen.getByRole("button", "Follow active, active Blocks changed", {
+    exact: true,
+  });
+  await expect(marked).toBeVisible();
+
+  // Act
+  await marked.tap();
+
+  // Assert
+  await expect
+    .poll(() => runCanvasHorizontalOffset(screen, "Review implementation"))
+    .toBeLessThan(2);
+  await expect(canvas).toHaveAttribute("data-following", "true");
+  await expect(screen.getByRole("button", "Follow active", { exact: true })).toBeVisible();
+  await app.screenshot("follow-active-resumed");
 });

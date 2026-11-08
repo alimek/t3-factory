@@ -13,3 +13,25 @@ export function selectExecutionTargets(
       : [];
   return targets.map((block) => block.blockId);
 }
+
+export type AutoFollowAction = "animate" | "jump" | "indicate" | "nothing";
+
+/** Hidden canvases never move; `returned` is the first evaluation after the document is shown again. */
+export function decideAutoFollow(input: {
+  /** Targets the view last followed or indicated. */
+  seen: readonly string[];
+  targets: readonly string[];
+  following: boolean;
+  visibility: "visible" | "hidden" | "returned";
+  reducedMotion: boolean;
+}): AutoFollowAction {
+  if (!input.targets.length || sameTargets(input.seen, input.targets)) return "nothing";
+  if (!input.following) return "indicate";
+  if (input.visibility === "hidden") return "nothing";
+  return input.reducedMotion || input.visibility === "returned" ? "jump" : "animate";
+}
+
+function sameTargets(left: readonly string[], right: readonly string[]) {
+  const known = new Set(left);
+  return left.length === right.length && right.every((id) => known.has(id));
+}
