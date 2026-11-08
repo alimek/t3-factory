@@ -213,6 +213,8 @@ test("Mod+/ opens the shortcuts cheat sheet with current hints and a Settings li
   await expect(sheet).toBeVisible();
   await expect(sheet.getByText("New Run")).toBeVisible();
   await expect(sheet.getByText(desktopNewRunHint)).toBeVisible();
+  await expect(sheet.getByText("Follow active", { exact: true })).toBeVisible();
+  await expect(sheet.getByText(".", { exact: true })).toBeVisible();
   await expect(sheet.getByRole("link", "Open Settings → Keyboard shortcuts")).toBeVisible();
   await app.screenshot("shortcuts-cheat-sheet-desktop");
 });

@@ -56,6 +56,17 @@ it.each(["desktop", "browser"] as const)(
   },
 );
 
+it.each(["desktop", "browser"] as const)("%s uses period to follow active Blocks", (platform) => {
+  // Arrange
+  const expected = { key: ".", mod: false, alt: false, shift: false };
+
+  // Act
+  const defaults = getDefaultShortcutBindings(platform);
+
+  // Assert
+  expect(defaults.followActive).toEqual(expected);
+});
+
 it("v1 New Run left at its old default follows the desktop default", () => {
   // Arrange
   const raw = JSON.stringify({ version: 1, bindings: v1Defaults });

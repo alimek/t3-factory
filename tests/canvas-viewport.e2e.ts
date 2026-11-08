@@ -1,6 +1,7 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import {
+  expectFollowingReview,
   manualRunView,
   openFollowedReviewRun,
   runCanvasCenterOffset,
@@ -140,10 +141,28 @@ test("Follow active resumes following on the newly active Block", async ({
   await marked.tap();
 
   // Assert
-  await expect
-    .poll(() => runCanvasHorizontalOffset(screen, "Review implementation"))
-    .toBeLessThan(2);
-  await expect(canvas).toHaveAttribute("data-following", "true");
-  await expect(screen.getByRole("button", "Follow active", { exact: true })).toBeVisible();
+  await expectFollowingReview(screen);
   await app.screenshot("follow-active-resumed");
+});
+
+test("period recenters the focused Run canvas and resumes following after a pan", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const canvas = await openFollowedReviewRun(app, screen, browser, "follow-shortcut");
+  await canvas.press("ArrowRight");
+  await liveHandoff(app, "follow-shortcut");
+  await expect(canvas).toHaveAttribute("data-following", "false");
+  await expect(
+    screen.getByRole("button", "Follow active, active Blocks changed", { exact: true }),
+  ).toBeVisible();
+
+  // Act
+  await canvas.press(".");
+
+  // Assert
+  await expectFollowingReview(screen);
+  await app.screenshot("follow-active-shortcut-resumed");
 });

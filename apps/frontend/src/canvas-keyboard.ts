@@ -15,6 +15,7 @@ export function handleCanvasViewportKeyDown(
   surface: HTMLElement | null,
   onViewChange: ViewChange,
   onFit: () => void,
+  onFollowActive?: () => void,
 ) {
   const { bindings, recording } = getShortcutPreferences();
   if (recording || event.target !== event.currentTarget || !shouldHandleShortcut(event.nativeEvent))
@@ -25,6 +26,8 @@ export function handleCanvasViewportKeyDown(
       : undefined;
   if (pan) onViewChange((current) => ({ ...current, x: current.x + pan.x, y: current.y + pan.y }));
   else if (matchesShortcut(event.nativeEvent, bindings.fit)) onFit();
+  else if (onFollowActive && matchesShortcut(event.nativeEvent, bindings.followActive))
+    onFollowActive();
   else if (matchesShortcut(event.nativeEvent, bindings.zoomIn))
     onViewChange((current) => zoomCanvasBy(surface, current, 1.1));
   else if (matchesShortcut(event.nativeEvent, bindings.zoomOut))

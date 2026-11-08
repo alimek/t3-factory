@@ -270,7 +270,13 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     );
   };
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) =>
-    handleCanvasViewportKeyDown(event, surface.current, changeViewManually, fitFlow);
+    handleCanvasViewportKeyDown(
+      event,
+      surface.current,
+      changeViewManually,
+      fitFlow,
+      options.focusTargets ? follow.followActive : undefined,
+    );
   const zoom = (factor: number) =>
     changeViewManually((current) => zoomCanvasBy(surface.current, current, factor));
   return {

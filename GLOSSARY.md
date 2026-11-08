@@ -81,7 +81,7 @@ A Run Block in `working` or `waiting` state. Several Blocks can be active at onc
 _Avoid_: current step.
 
 **Follow active**:
-The execution canvas keeping its view on the active Blocks (or the error-state Blocks of failed execution) as they change. It is on whenever a Run is opened, turns off on manual pan or zoom, and is turned back on by the zoom-control button of the same name. Not saved.
+The execution canvas keeping its view on the active Blocks (or the error-state Blocks of failed execution) as they change. It is on whenever a Run is opened, turns off on manual pan or zoom, and is turned back on by the zoom-control button of the same name or its shortcut (default **.**) on the focused execution canvas. Not saved.
 _Avoid_: auto-scroll, tracking mode.
 
 **Block id**:

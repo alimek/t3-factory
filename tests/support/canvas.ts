@@ -48,3 +48,15 @@ export async function openFollowedReviewRun(
   await expect.poll(() => runCanvasHorizontalOffset(screen, "Implement change")).toBeLessThan(2);
   return screen.getByRole("region", "Execution canvas");
 }
+
+/** The reviewer is centered, following has resumed, and the unseen-progress marker is cleared. */
+export async function expectFollowingReview(screen: Screen) {
+  await expect
+    .poll(() => runCanvasHorizontalOffset(screen, "Review implementation"))
+    .toBeLessThan(2);
+  await expect(screen.getByRole("region", "Execution canvas")).toHaveAttribute(
+    "data-following",
+    "true",
+  );
+  await expect(screen.getByRole("button", "Follow active", { exact: true })).toBeVisible();
+}

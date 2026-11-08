@@ -35,6 +35,7 @@ type FollowControl = {
 };
 
 function FollowActiveButton({ available, changed, onFollow }: FollowControl) {
+  const { hint: shortcutHint } = useShortcutPreferences();
   const indicated = available && changed;
   return (
     <Tooltip>
@@ -58,7 +59,7 @@ function FollowActiveButton({ available, changed, onFollow }: FollowControl) {
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        {indicated ? "Active Blocks changed · follow them" : "Follow active Blocks"}
+        {`${indicated ? "Active Blocks changed · follow them" : "Follow active Blocks"} · ${shortcutHint("followActive")}`}
       </TooltipContent>
     </Tooltip>
   );
