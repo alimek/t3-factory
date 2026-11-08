@@ -14,7 +14,7 @@ export async function approvedBrowser(app: FixtureApp, screen: Screen, path = "/
   await remoteFixture(app, "approve");
 }
 
-/** What the host's controlled T3 observed, and remote connection status reads since a reset. */
+/** What the host's controlled T3 observed, and remote connection status GETs since a reset. */
 export async function hostT3Observations(app: FixtureApp) {
   const response = await remoteFixture(app, "t3-observations");
   return (await response.json()) as {

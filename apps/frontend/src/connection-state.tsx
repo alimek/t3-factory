@@ -1,21 +1,10 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { ConnectionState, T3Connection } from "@t3-factory/contracts";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { api } from "./api.ts";
-import { useSettings, useStudio } from "./settings-navigation.ts";
-import { useRefreshSchedule } from "./use-refresh-schedule.ts";
+import { useLiveConnectionStatus } from "./live/live-connection.ts";
 
-export type ConnectionPresentation = "unknown" | "loading" | ConnectionState | "load-error";
+export type ConnectionPresentation = "loading" | ConnectionState | "load-error";
 
 const stateLabels: Record<ConnectionState, string> = {
   unavailable: "Disconnected",
@@ -35,7 +24,6 @@ const badgeVariant: Record<ConnectionState, "success" | "attention" | "destructi
 const footerText: Record<ConnectionPresentation, string> = {
   ready: "",
   loading: "",
-  unknown: "T3 status unknown",
   "load-error": "T3 status unavailable",
   unavailable: "T3 disconnected",
   "authorization-required": "T3 needs authorization",
@@ -47,102 +35,48 @@ export function connectionFooterText(presentation: ConnectionPresentation): stri
   return footerText[presentation];
 }
 
-/**
- * `untilReady`: a connection or waiting screen, polled quickly until T3 is ready.
- * `always`: a screen whose actions depend on readiness (Run composer, Run detail),
- * polled quickly while mounted so a disconnection appears promptly.
- */
-type WatchMode = "untilReady" | "always";
-
 type ConnectionStateContextValue = {
   connection: T3Connection | null;
   loadError: string;
   presentation: ConnectionPresentation;
-  /** Publishes an operation's result; any older poll still in flight is discarded. */
+  /** Shows an operation's result until the live stream delivers its next value. */
   setConnection: (connection: T3Connection) => void;
-  /** Registers a mounted watcher; returns its cleanup. */
-  watch: (mode: WatchMode) => () => void;
-  refresh: () => void;
 };
 
 const ConnectionStateContext = createContext<ConnectionStateContextValue | null>(null);
 
-type ConnectionReads = {
-  connection: T3Connection | null;
-  loadError: string;
-  loadedOnce: boolean;
-};
-
-/** At most one read in flight; a read superseded by a newer read or operation is dropped. */
-function useConnectionReads() {
-  const [reads, setReads] = useState<ConnectionReads>({
-    connection: null,
-    loadError: "",
-    loadedOnce: false,
-  });
-  const latest = useRef(0);
-  const inFlight = useRef(false);
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const refresh = useCallback(() => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const ticket = ++latest.current;
-    const publish = (next: (previous: ConnectionReads) => ConnectionReads) => {
-      if (mounted.current && ticket === latest.current) setReads(next);
-    };
-    void api
-      .getConnection()
-      .then(
-        (connection) => publish(() => ({ connection, loadError: "", loadedOnce: true })),
-        () =>
-          publish((previous) => ({
-            ...previous,
-            loadError: "Factory could not load connection status. Check the backend and recheck.",
-            loadedOnce: true,
-          })),
-      )
-      .finally(() => {
-        inFlight.current = false;
-      });
-  }, []);
-  const setConnection = useCallback((connection: T3Connection) => {
-    latest.current++;
-    setReads({ connection, loadError: "", loadedOnce: true });
-  }, []);
-  return { ...reads, refresh, setConnection };
-}
-
-function presentationOf(reads: ConnectionReads): ConnectionPresentation {
-  if (reads.loadError) return "load-error";
-  if (!reads.loadedOnce) return "loading";
-  return reads.connection ? reads.connection.state : "unknown";
+function presentationOf(
+  connection: T3Connection | null,
+  loadError: string,
+): ConnectionPresentation {
+  if (loadError) return "load-error";
+  return connection ? connection.state : "loading";
 }
 
 /**
- * One frontend connection source for the sidebar, Settings badge and panel. Loads once,
- * refreshes when the window regains focus or visibility, polls quickly only while a
- * watching screen is mounted, slowly otherwise, and never while the document is hidden.
+ * One frontend connection source for the sidebar, Settings badge, panel and Run controls,
+ * delivered by the window's live connection: an authoritative snapshot, then changes.
  */
 export function ConnectionStateProvider({ children }: { children: ReactNode }) {
-  const reads = useConnectionReads();
-  const { connection, loadError, refresh, setConnection } = reads;
-  const [watchers, setWatchers] = useState({ untilReady: 0, always: 0 });
-  const watch = useCallback((mode: WatchMode) => {
-    setWatchers((count) => ({ ...count, [mode]: count[mode] + 1 }));
-    return () => setWatchers((count) => ({ ...count, [mode]: count[mode] - 1 }));
-  }, []);
-  const presentation = presentationOf(reads);
-  const watching = watchers.always > 0 || (watchers.untilReady > 0 && presentation !== "ready");
-  useRefreshSchedule(refresh, watching);
+  const live = useLiveConnectionStatus();
+  // A command response may update the cached value; the stream stays authoritative, so the
+  // response is shown only until the stream's view moves on.
+  const [commanded, setCommanded] = useState<{
+    connection: T3Connection;
+    basis: typeof live;
+  } | null>(null);
+  const connection = commanded?.basis === live ? commanded.connection : live.value;
+  const loadError = live.error
+    ? "Factory could not load connection status. Check the backend and recheck."
+    : "";
+  const setConnection = useCallback(
+    (next: T3Connection) => setCommanded({ connection: next, basis: live }),
+    [live],
+  );
+  const presentation = presentationOf(connection, loadError);
   const value = useMemo(
-    () => ({ connection, loadError, presentation, setConnection, watch, refresh }),
-    [connection, loadError, presentation, setConnection, watch, refresh],
+    () => ({ connection, loadError, presentation, setConnection }),
+    [connection, loadError, presentation, setConnection],
   );
   return (
     <ConnectionStateContext.Provider value={value}>{children}</ConnectionStateContext.Provider>
@@ -153,20 +87,6 @@ export function useConnectionState() {
   const value = useContext(ConnectionStateContext);
   if (!value) throw new Error("useConnectionState requires ConnectionStateProvider");
   return value;
-}
-
-/** Keeps status fresh while the calling screen is mounted: rereads on entry, then polls. */
-export function useConnectionWatch(mode: WatchMode = "untilReady") {
-  const { watch, refresh } = useConnectionState();
-  // Studio and Settings overlay the Run app; a covered Run screen is not being watched.
-  const studio = useStudio();
-  const settings = useSettings();
-  const active = mode === "untilReady" || (!studio && !settings);
-  useEffect(() => {
-    if (!active) return;
-    refresh();
-    return watch(mode);
-  }, [watch, refresh, mode, active]);
 }
 
 function dotClass(presentation: ConnectionPresentation): string {
@@ -205,7 +125,6 @@ export function ConnectionStateDot({
 
 export function connectionStatusLabel(presentation: ConnectionPresentation): string {
   if (presentation === "loading") return "Checking connection…";
-  if (presentation === "unknown") return "Connection status unknown";
   if (presentation === "load-error") return "Connection status unavailable";
   return stateLabels[presentation];
 }
@@ -218,8 +137,7 @@ export function ConnectionStateBadge({
   className?: string;
 }) {
   const label = connectionStatusLabel(presentation);
-  const neutral =
-    presentation === "loading" || presentation === "unknown" || presentation === "load-error";
+  const neutral = presentation === "loading" || presentation === "load-error";
   return (
     <Badge
       variant={neutral ? "secondary" : badgeVariant[presentation]}

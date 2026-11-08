@@ -12,7 +12,6 @@ import { api } from "../api.ts";
 import {
   ConnectionStateBadge,
   useConnectionState,
-  useConnectionWatch,
   type ConnectionPresentation,
 } from "../connection-state.tsx";
 
@@ -113,7 +112,6 @@ type Operation = ReturnType<typeof useConnectionOperation>;
 
 /** Shared T3 connection status, details and actions for the Settings modal. */
 export function ConnectionSettingsPanel() {
-  useConnectionWatch();
   const { connection, presentation } = useConnectionState();
   const host = useClientScope() === "host";
   const operation = useConnectionOperation();

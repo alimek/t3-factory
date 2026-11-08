@@ -44,32 +44,14 @@ test("opening authorization from a remote browser starts approval in the host's 
   await app.screenshot("remote-connection-waiting");
 });
 
-test("leaving the waiting connection screen stops its fast status polling", async ({
+test("the waiting connection screen turns Connected from the live connection, without status reads", async ({
   app,
   screen,
 }) => {
-  // Arrange: the waiting panel polls every few seconds.
+  // Arrange: longer than two former 2.5 s polling periods passes without any status read.
   await openWaitingConnection(app, screen);
   await remoteFixture(app, "reset-connection-reads");
-  await elapse(10_000);
-  expect((await hostT3Observations(app)).connectionReads).toBeGreaterThanOrEqual(3);
-
-  // Act
-  await app.open("/studio/flows");
-
-  // Assert: over the same period in Studio only entry/focus reads happen, no 2.5 s polling.
-  await expect(screen.getByRole("heading", "Flows", { exact: true })).toBeVisible();
-  await remoteFixture(app, "reset-connection-reads");
-  await elapse(10_000);
-  expect((await hostT3Observations(app)).connectionReads).toBeLessThanOrEqual(2);
-});
-
-test("the waiting connection screen turns Connected on its own after approval on the host", async ({
-  app,
-  screen,
-}) => {
-  // Arrange
-  await openWaitingConnection(app, screen);
+  await elapse(6_000);
 
   // Act: the owner approves in T3 on the host; nobody touches this screen.
   await remoteFixture(app, "t3-approve");
@@ -83,5 +65,6 @@ test("the waiting connection screen turns Connected on its own after approval on
   );
   await expect(screen.getByRole("button", "Open authorization on server")).toHaveCount(0);
   await expect(screen.getByRole("button", /Reauthorize/)).toHaveCount(0);
+  expect((await hostT3Observations(app)).connectionReads).toBe(0);
   await app.screenshot("remote-connection-connected");
 });

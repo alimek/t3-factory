@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
@@ -26,7 +27,7 @@ import {
   requireSuccess,
   startScenario,
 } from "../../scripts/dev/seed-support.ts";
-import { proxyFixture } from "./proxy.ts";
+import { proxyFixture, proxyFixtureUpgrade } from "./proxy.ts";
 
 const home = await mkdtemp(join(tmpdir(), "factory-e2e-"));
 const config = await loadConfiguration({
@@ -298,6 +299,12 @@ let dropAccessRequest = false;
 let target: Awaited<ReturnType<typeof remoteFactory>> = current;
 /** Connection status reads the remote UI made since the last reset. */
 let connectionReads = 0;
+/** Remote live sockets end when the fixture drops the network or replaces the server. */
+const remoteLiveSockets = new Set<Duplex>();
+const dropRemoteLiveSockets = () => {
+  for (const socket of remoteLiveSockets) socket.destroy();
+  remoteLiveSockets.clear();
+};
 
 async function host<A>(path: string, method = "GET"): Promise<Result<A>> {
   const response = await fetch(`http://127.0.0.1:${current.server.address.port}${path}`, {
@@ -413,6 +420,7 @@ const fixtureRoutes: Record<string, () => unknown> = {
   "/__fixture/revoke": () => decideAll("approved", "revoke"),
   "/__fixture/offline": () => {
     offline = true;
+    dropRemoteLiveSockets();
   },
   "/__fixture/online": () => {
     offline = false;
@@ -422,12 +430,15 @@ const fixtureRoutes: Record<string, () => unknown> = {
   },
   "/__fixture/compatible": () => {
     target = current;
+    dropRemoteLiveSockets();
   },
   "/__fixture/older-server": () => {
     target = older;
+    dropRemoteLiveSockets();
   },
   "/__fixture/incompatible": () => {
     target = newer;
+    dropRemoteLiveSockets();
   },
   // The owner saved a T3 endpoint on the host; T3 approval happens in the host's browser.
   "/__fixture/t3-endpoint": async () => {
@@ -501,6 +512,19 @@ const proxy = createServer((incoming, outgoing) => {
     return;
   }
   proxyFixture(incoming, outgoing, target.server.remoteAddress()!.port, { ca: target.anchor });
+});
+proxy.on("upgrade", (incoming: IncomingMessage, socket: Duplex) => {
+  if (!incoming.headers.cookie?.includes("fixture_remote=1")) {
+    proxyFixtureUpgrade(incoming, socket, server.address.port);
+    return;
+  }
+  if (offline) {
+    socket.destroy();
+    return;
+  }
+  remoteLiveSockets.add(socket);
+  socket.on("close", () => remoteLiveSockets.delete(socket));
+  proxyFixtureUpgrade(incoming, socket, target.server.remoteAddress()!.port, { ca: target.anchor });
 });
 await new Promise<void>((resolve) => proxy.listen(config.port, "127.0.0.1", resolve));
 let advancing: Promise<void> | undefined;

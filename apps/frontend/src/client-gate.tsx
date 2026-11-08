@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CircleAlert, CloudOff, Hourglass, KeyRound, ShieldX, WifiOff } from "lucide-react";
+import {
+  CircleAlert,
+  CloudOff,
+  Hourglass,
+  KeyRound,
+  RefreshCw,
+  ShieldX,
+  WifiOff,
+  type LucideIcon,
+} from "lucide-react";
 import type { ClientAccessState, FactoryClient } from "@t3-factory/contracts";
 import {
   FACTORY_MINIMUM_SERVER_PROTOCOL,
@@ -14,7 +23,7 @@ import { GateScreen } from "@/components/gate-screen";
 import { api, ApiError } from "./api.ts";
 import { ScopeContext } from "./client-scope.ts";
 import { desktopBridge } from "./desktop-bridge.ts";
-import { transport, useTransport } from "./transport.ts";
+import { transport, useLiveDelivery, useTransport } from "./transport.ts";
 
 type Gate =
   | { readonly kind: "checking" }
@@ -49,6 +58,16 @@ async function evaluate(): Promise<Gate> {
       return { kind: "incompatible", message: cause.detail.message };
     return { kind: "unreachable" };
   }
+}
+
+/**
+ * A live socket that cannot open says nothing about why; the handshake does. Incompatible or
+ * unapproved results hand the window to this gate, which re-evaluates and shows its screen.
+ */
+export async function recheckAccess() {
+  const gate = await evaluate();
+  if (gate.kind === "incompatible") transport.incompatible(gate.message);
+  if (gate.kind === "request" || gate.kind === "pending") transport.accessLost();
 }
 
 const recheckMs = 2000;
@@ -243,12 +262,17 @@ function RequestAccessScreen({
 
 function OfflineBoundary({ children }: { children: ReactNode }) {
   const current = useTransport();
-  const offline = current.kind === "offline";
+  const delivery = useLiveDelivery();
+  const offline = current.kind === "offline" || delivery === "offline";
+  const synchronizing = !offline && delivery === "synchronizing";
+  const observedAt =
+    current.kind === "online" || current.kind === "offline" ? current.observedAt : null;
   return (
     <>
-      {offline && <OfflineBanner observedAt={current.observedAt} />}
+      {offline && <OfflineBanner observedAt={observedAt} />}
+      {synchronizing && <SynchronizingBanner />}
       {/* Disabled controls make the stale view read-only; nothing is queued for later. */}
-      <fieldset disabled={offline} className="contents">
+      <fieldset disabled={offline || synchronizing} className="contents">
         {children}
       </fieldset>
     </>
@@ -258,16 +282,48 @@ function OfflineBoundary({ children }: { children: ReactNode }) {
 function OfflineBanner({ observedAt }: { observedAt: number | null }) {
   const time = observedAt === null ? "an earlier check" : new Date(observedAt).toLocaleTimeString();
   return (
+    <ConnectivityBanner label="Offline" icon={CloudOff}>
+      <strong className="font-medium">Offline.</strong> Showing the state last observed at {time}.
+      Actions are disabled and nothing is queued; Factory reconnects automatically.
+    </ConnectivityBanner>
+  );
+}
+
+/** Usual catch-up takes a moment; announce it only when it is noticeable. */
+const synchronizingNoticeDelayMs = 500;
+
+function SynchronizingBanner() {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(true), synchronizingNoticeDelayMs);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!shown) return null;
+  return (
+    <ConnectivityBanner label="Synchronizing" icon={RefreshCw}>
+      <strong className="font-medium">Synchronizing.</strong> Showing the last observed state while
+      Factory catches up. Actions are disabled until it is current; nothing is queued.
+    </ConnectivityBanner>
+  );
+}
+
+function ConnectivityBanner({
+  label,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
     <div
       role="status"
-      aria-label="Offline"
+      aria-label={label}
       className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 border-b border-attention/40 bg-background px-4 py-2 text-sm text-foreground shadow-floating"
     >
-      <CloudOff aria-hidden strokeWidth={1.5} className="size-4 shrink-0 text-attention" />
-      <span>
-        <strong className="font-medium">Offline.</strong> Showing the state last observed at {time}.
-        Actions are disabled and nothing is queued; Factory reconnects automatically.
-      </span>
+      <Icon aria-hidden strokeWidth={1.5} className="size-4 shrink-0 text-attention" />
+      <span>{children}</span>
     </div>
   );
 }

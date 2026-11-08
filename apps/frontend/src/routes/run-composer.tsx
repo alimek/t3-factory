@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 import type { FlowDraft, RunCreationPolicy } from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { usePolling } from "../use-polling.ts";
-import { useConnectionState, useConnectionWatch } from "../connection-state.tsx";
+import { useConnectionState } from "../connection-state.tsx";
 import { runDraft, useRunDraft } from "../run-draft.ts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -46,12 +46,6 @@ const connectionNotices: Record<
     icon: CircleHelp,
     title: "Checking T3 connection…",
     body: "Start is available once Factory confirms T3 is connected.",
-  },
-  unknown: {
-    tone: "neutral",
-    icon: CircleHelp,
-    title: "T3 connection status is unknown",
-    body: "Your draft is kept. Check the connection in Settings.",
   },
   "load-error": {
     tone: "critical",
@@ -144,7 +138,6 @@ function useComposer() {
   const projects = useProjectCatalog();
   const { flows, creationPolicy, error } = useComposerChoices();
   // Start and live observation depend on readiness: keep it current while shown.
-  useConnectionWatch("always");
   const { presentation } = useConnectionState();
   const initialized = useRef(false);
   useEffect(() => {

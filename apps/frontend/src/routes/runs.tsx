@@ -38,7 +38,7 @@ import { blockVisits, ExecutionCanvas } from "../components/execution-canvas.tsx
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
 import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { sectionLabelClass } from "../components/page.tsx";
-import { useConnectionState, useConnectionWatch } from "../connection-state.tsx";
+import { useConnectionState } from "../connection-state.tsx";
 import { exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
 import { usePolling } from "../use-polling.ts";
@@ -455,7 +455,6 @@ function CanvasOverlay({
   seenError: string;
 }) {
   // Start and live observation depend on readiness: keep it current while shown.
-  useConnectionWatch("always");
   const { presentation } = useConnectionState();
   const unavailable = projectIsUnavailable(observed.project, observed.projectsLoaded);
   const projectTitle = observed.project?.title ?? "This project";
