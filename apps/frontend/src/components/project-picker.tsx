@@ -1,3 +1,4 @@
+import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { FactoryProject, ProjectCatalog } from "@t3-factory/contracts";
 import { ChevronsUpDownIcon, FolderPlusIcon, RefreshCwIcon } from "lucide-react";
@@ -87,6 +88,8 @@ function ProjectChoices({
   listRef: RefObject<HTMLDivElement | null>;
   onSelect: (value: string) => void;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
+  const selectionDisabled = busy || !mutationsAllowed;
   const query = search.trim().toLocaleLowerCase();
   const projects = (catalog?.projects ?? []).filter((project) =>
     `${project.title} ${project.workspaceRoot}`.toLocaleLowerCase().includes(query),
@@ -109,7 +112,7 @@ function ProjectChoices({
       <DropdownMenuRadioGroup value={catalog?.selectedProjectId ?? ""} onValueChange={onSelect}>
         <DropdownMenuRadioItem
           value=""
-          disabled={busy}
+          disabled={selectionDisabled}
           aria-label="No project selected"
           indicatorPosition="right"
           className="my-0.5 rounded-md py-2.5 data-[state=checked]:bg-brand-soft data-[state=checked]:ring-1 data-[state=checked]:ring-brand-soft-border data-[state=checked]:ring-inset data-[state=checked]:focus:bg-brand-soft data-[state=checked]:focus-visible:ring-2 data-[state=checked]:focus-visible:ring-ring"
@@ -117,7 +120,7 @@ function ProjectChoices({
           <span className="text-sm text-muted-foreground">No project selected</span>
         </DropdownMenuRadioItem>
         {projects.map((project) => (
-          <ProjectOption key={project.id} project={project} busy={busy} />
+          <ProjectOption key={project.id} project={project} busy={selectionDisabled} />
         ))}
       </DropdownMenuRadioGroup>
       {projects.length === 0 && (
@@ -271,9 +274,11 @@ function AddRepositoryDialog({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <Button type="submit" disabled={busy || !path.trim()}>
-            Add existing repository
-          </Button>
+          <MutationGate>
+            <Button type="submit" disabled={busy || !path.trim()}>
+              Add existing repository
+            </Button>
+          </MutationGate>
         </form>
       </DialogContent>
     </Dialog>
@@ -374,27 +379,16 @@ export function ProjectPicker({
               }}
             />
             <DropdownMenuSeparator className="m-0 shrink-0" />
-            <div className="shrink-0 p-1">
-              <DropdownMenuItem
-                disabled={busy}
-                onSelect={() => {
-                  void act(api.recheckProjects);
-                }}
-              >
-                <RefreshCwIcon aria-hidden />
-                Recheck projects
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={busy}
-                onSelect={() => {
-                  clearError();
-                  setAddDialogOpen(true);
-                }}
-              >
-                <FolderPlusIcon aria-hidden />
-                Add repository
-              </DropdownMenuItem>
-            </div>
+            <ProjectMutationItems
+              busy={busy}
+              onRecheck={() => {
+                void act(api.recheckProjects);
+              }}
+              onAdd={() => {
+                clearError();
+                setAddDialogOpen(true);
+              }}
+            />
           </PickerMenuContent>
         </DropdownMenu>
       </div>
@@ -453,5 +447,28 @@ function ProjectAvailability({
         </p>
       )}
     </>
+  );
+}
+
+function ProjectMutationItems({
+  busy,
+  onRecheck,
+  onAdd,
+}: {
+  busy: boolean;
+  onRecheck: () => void;
+  onAdd: () => void;
+}) {
+  const mutationsAllowed = useMutationsAllowed();
+  const disabled = busy || !mutationsAllowed;
+  return (
+    <div className="shrink-0 p-1">
+      <DropdownMenuItem disabled={disabled} onSelect={onRecheck}>
+        <RefreshCwIcon aria-hidden /> Recheck projects
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={disabled} onSelect={onAdd}>
+        <FolderPlusIcon aria-hidden /> Add repository
+      </DropdownMenuItem>
+    </div>
   );
 }

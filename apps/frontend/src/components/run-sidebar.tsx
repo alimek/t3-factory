@@ -1,5 +1,6 @@
+import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
-import { useCallback, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import {
@@ -31,7 +32,7 @@ import {
 } from "../run-draft.ts";
 import { AppLink as Link } from "./app-link.tsx";
 import { useNavigate } from "@tanstack/react-router";
-import { usePolling } from "../use-polling.ts";
+import { useLiveNavigation } from "../live/navigation.ts";
 import { ArchiveRunDialog } from "./archive-run-dialog.tsx";
 import { RunStatusChip } from "./run-status-chip.tsx";
 import { Button } from "./ui/button";
@@ -74,54 +75,43 @@ function execution(run: RunNavigationEntry) {
 }
 
 function useRunNavigation() {
-  const [runs, setRuns] = useState<readonly RunNavigationEntry[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  usePolling({
-    intervalMs: 1500,
-    onPoll: useCallback(async (isActive) => {
-      try {
-        const rows = await api.listRunNavigation();
-        if (isActive()) {
-          setRuns(rows);
-          setLoaded(true);
-          setLoadError("");
-        }
-      } catch {
-        if (isActive()) setLoadError("Run navigation unavailable. Saved history is retained.");
-      }
-    }, []),
-  });
-  return { runs, setRuns, loaded, loadError };
+  const { value, error } = useLiveNavigation();
+  return {
+    runs: value ?? [],
+    loaded: value !== null,
+    loadError: error ? "Run navigation unavailable. Saved history is retained." : "",
+  };
 }
 
 function NewRunButton({ current }: { current: boolean }) {
   const { hint } = useShortcutPreferences();
   const navigate = useNavigate();
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="New Run (+)"
-          aria-current={current ? "page" : undefined}
-          className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
-          onClick={() => {
-            runDraft.openFresh();
-            void navigate({ to: "/runs/new" });
-          }}
-        >
-          <Plus aria-hidden strokeWidth={1.5} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
-    </Tooltip>
+    <MutationGate>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="New Run (+)"
+            aria-current={current ? "page" : undefined}
+            className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
+            onClick={() => {
+              runDraft.openFresh();
+              void navigate({ to: "/runs/new" });
+            }}
+          >
+            <Plus aria-hidden strokeWidth={1.5} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
+      </Tooltip>
+    </MutationGate>
   );
 }
 
 export function RunSidebar({ path }: { path: string }) {
-  const { runs, setRuns, loaded, loadError } = useRunNavigation();
+  const { runs, loaded, loadError } = useRunNavigation();
   const drafts = useRunDrafts();
   const composition = useRunDraft();
   const [search, setSearch] = useState("");
@@ -131,7 +121,7 @@ export function RunSidebar({ path }: { path: string }) {
   const [archiving, setArchiving] = useState<RunNavigationEntry>();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
-  const { act, busy, actionError } = useRunActions(setRuns, !!query);
+  const { act, busy, actionError } = useRunActions(!!query, runs);
   return (
     <section aria-label="Run navigation" className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
@@ -169,9 +159,6 @@ export function RunSidebar({ path }: { path: string }) {
           open
           returnFocusId={`run-actions-${archiving.id}`}
           onOpenChange={(open) => !open && setArchiving(undefined)}
-          onArchived={() => {
-            void api.listRunNavigation().then(setRuns, () => undefined);
-          }}
         />
       )}
       {renaming && "presentation" in renaming && (
@@ -182,10 +169,7 @@ export function RunSidebar({ path }: { path: string }) {
           description="Change the title of this execution."
           onClose={() => setRenaming(undefined)}
           save={async (title) => {
-            const result = await api.renameRun(renaming.id, { title });
-            setRuns((rows) =>
-              rows.map((row) => (row.id === renaming.id ? { ...row, title: result.title } : row)),
-            );
+            await api.renameRun(renaming.id, { title });
           }}
         />
       )}
@@ -217,13 +201,25 @@ const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
 /** The group a Run moves to, whose toggle takes focus after the row leaves the open list. */
 const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
 
-/** Snooze, Restore and Settle from the row menu, refreshing navigation afterwards. */
-function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void, searching: boolean) {
-  // A new request object also refocuses the same target after consecutive row actions.
-  const [focusAfterRender, setFocusAfterRender] = useState<{ id: string }>();
+/** Snooze, Restore and Settle from the row menu. */
+function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) {
+  // A new request object also refocuses the same target after consecutive row actions. The
+  // command's response can arrive before live navigation moves the row, so the request waits
+  // until navigation shows the Run where the action puts it, then focuses that target.
+  const [focusAfterRender, setFocusAfterRender] = useState<{
+    readonly id: string;
+    readonly runId: string;
+    readonly action: RunAction;
+  }>();
   useLayoutEffect(() => {
-    if (focusAfterRender) document.getElementById(focusAfterRender.id)?.focus();
-  }, [focusAfterRender]);
+    if (!focusAfterRender) return;
+    const run = runs.find((candidate) => candidate.id === focusAfterRender.runId);
+    if (run && !moved(run, focusAfterRender.action)) return;
+    const target = document.getElementById(focusAfterRender.id);
+    if (!target) return;
+    target.focus();
+    setFocusAfterRender(undefined);
+  }, [focusAfterRender, runs]);
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState<string>();
   const act = async (run: RunNavigationEntry, action: RunAction) => {
@@ -231,12 +227,11 @@ function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void, s
     setActionError("");
     try {
       await runActions[action](run.id);
-      setRuns(await api.listRunNavigation());
       const id =
         searching || action === "restore"
           ? `run-actions-${run.id}`
           : `${actionGroup[action]}-toggle`;
-      setFocusAfterRender({ id });
+      setFocusAfterRender({ id, runId: run.id, action });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the Run.");
     } finally {
@@ -244,6 +239,12 @@ function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void, s
     }
   };
   return { act, busy, actionError };
+}
+
+/** Navigation already shows the Run where `action` puts it. */
+function moved(run: RunNavigationEntry, action: RunAction) {
+  if (action === "settle") return run.lifecycle === "settled";
+  return run.presentation.snoozed === (action === "snooze");
 }
 
 /** Snooze and Settle apply to Active Runs. */
@@ -517,13 +518,13 @@ const rowClassName = (selected: boolean) =>
   );
 
 /** Row link handlers: Shift+F10, the context-menu key and right click open the menu; F2 renames. */
-function rowMenuKeys(openMenu: () => void, onRename: () => void) {
+function rowMenuKeys(openMenu: () => void, onRename: () => void, renameDisabled = false) {
   return {
     onKeyDown(event: React.KeyboardEvent) {
       if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
         event.preventDefault();
         openMenu();
-      } else if (event.key === "F2") {
+      } else if (event.key === "F2" && !renameDisabled) {
         event.preventDefault();
         onRename();
       }
@@ -662,6 +663,7 @@ function RunRow({
   onAction: (action: RunAction) => void;
   busy: boolean;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   const state = execution(run);
   const muted = searchMuted && !selected;
   const titleColor = muted ? "text-muted-foreground" : "text-foreground";
@@ -682,7 +684,7 @@ function RunRow({
       <TooltipTrigger asChild>
         <div className={rowClassName(selected)}>
           <Link
-            {...rowMenuKeys(() => setMenuOpen(true), onRename)}
+            {...rowMenuKeys(() => setMenuOpen(true), onRename, !mutationsAllowed)}
             to="/runs/$runId"
             params={{ runId: run.id }}
             aria-current={selected ? "page" : undefined}
@@ -712,12 +714,7 @@ function RunRow({
                 <span className="truncate" title={run.project.workspaceRoot}>
                   {run.project.title}
                 </span>
-                {run.presentation.woke && <RunStatusChip kind="woke" />}
-                {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
-                {run.attention.problem && <RunStatusChip kind="problem" />}
-                {run.project.availability !== "available" && (
-                  <RunStatusChip kind="project-unavailable" />
-                )}
+                <RunRowIndicators run={run} />
               </span>
               {working && (
                 <span className="block truncate text-2xs leading-tight text-muted-foreground">
@@ -735,7 +732,7 @@ function RunRow({
             open={menuOpen}
             onOpenChange={setMenuOpen}
           >
-            <RenameItem onSelect={onRename} />
+            <RenameItem onSelect={onRename} disabled={!mutationsAllowed} />
             <RunActionItems run={run} onAction={onAction} onArchive={onArchive} />
           </RowMenu>
         </div>
@@ -753,6 +750,17 @@ function RunRow({
   );
 }
 
+function RunRowIndicators({ run }: { run: RunNavigationEntry }) {
+  return (
+    <>
+      {run.presentation.woke && <RunStatusChip kind="woke" />}
+      {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
+      {run.attention.problem && <RunStatusChip kind="problem" />}
+      {run.project.availability !== "available" && <RunStatusChip kind="project-unavailable" />}
+    </>
+  );
+}
+
 function RunActionItems({
   run,
   onAction,
@@ -762,10 +770,12 @@ function RunActionItems({
   onAction: (action: RunAction) => void;
   onArchive: (run: RunNavigationEntry) => void;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   return (
     <>
       {isActive(run) && (
         <DropdownMenuItem
+          disabled={!mutationsAllowed}
           onSelect={() => onAction(run.presentation.snoozed ? "restore" : "snooze")}
         >
           {run.presentation.snoozed ? (
@@ -777,12 +787,12 @@ function RunActionItems({
         </DropdownMenuItem>
       )}
       {isActive(run) && (
-        <DropdownMenuItem onSelect={() => onAction("settle")}>
+        <DropdownMenuItem disabled={!mutationsAllowed} onSelect={() => onAction("settle")}>
           <CircleCheck aria-hidden strokeWidth={1.5} />
           Settle
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem onSelect={() => onArchive(run)}>
+      <DropdownMenuItem disabled={!mutationsAllowed} onSelect={() => onArchive(run)}>
         <Archive aria-hidden strokeWidth={1.5} />
         Archive…
       </DropdownMenuItem>
@@ -853,7 +863,9 @@ function RenameDialog({
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={busy || !title.trim()}>Save title</Button>
+            <MutationGate>
+              <Button disabled={busy || !title.trim()}>Save title</Button>
+            </MutationGate>
           </DialogFooter>
         </form>
       </DialogContent>

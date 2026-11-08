@@ -1,9 +1,10 @@
+import { MutationGate } from "@/client-gate";
 import { ScreenLayout } from "../components/screen-layout.tsx";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { FlowDraft, RunCreationPolicy } from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { usePolling } from "../use-polling.ts";
-import { useConnectionState, useConnectionWatch } from "../connection-state.tsx";
+import { useConnectionState } from "../connection-state.tsx";
 import { runDraft, useRunDraft } from "../run-draft.ts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -46,12 +47,6 @@ const connectionNotices: Record<
     icon: CircleHelp,
     title: "Checking T3 connection…",
     body: "Start is available once Factory confirms T3 is connected.",
-  },
-  unknown: {
-    tone: "neutral",
-    icon: CircleHelp,
-    title: "T3 connection status is unknown",
-    body: "Your draft is kept. Check the connection in Settings.",
   },
   "load-error": {
     tone: "critical",
@@ -144,7 +139,6 @@ function useComposer() {
   const projects = useProjectCatalog();
   const { flows, creationPolicy, error } = useComposerChoices();
   // Start and live observation depend on readiness: keep it current while shown.
-  useConnectionWatch("always");
   const { presentation } = useConnectionState();
   const initialized = useRef(false);
   useEffect(() => {
@@ -243,27 +237,30 @@ export function RunComposer() {
             <p className="flex-1 text-2xs tracking-label text-subtle-foreground">
               {composerHelp(model)}
             </p>
-            <Button
-              type="submit"
-              disabled={draft.busy || (!draft.pending && !model.ready && !!draft.input.trim())}
-              aria-disabled={inactive}
-              className={cn(
-                "group/start h-9 shrink-0 gap-2 pr-3 pl-3.5 font-semibold has-[>svg]:pr-3 has-[>svg]:pl-3.5",
-                inactive && "bg-accent text-subtle-foreground hover:bg-accent disabled:opacity-100",
-              )}
-            >
-              <Play aria-hidden className="size-3" strokeWidth={2} />
-              {draft.busy ? "Starting…" : draft.pending ? "Check same request" : "Start"}
-              <kbd
-                aria-hidden
+            <MutationGate>
+              <Button
+                type="submit"
+                disabled={draft.busy || (!draft.pending && !model.ready && !!draft.input.trim())}
+                aria-disabled={inactive}
                 className={cn(
-                  "rounded-sm px-1 py-px font-sans text-2xs font-medium",
-                  inactive ? "bg-foreground/8" : "bg-primary-foreground/14",
+                  "group/start h-9 shrink-0 gap-2 pr-3 pl-3.5 font-semibold has-[>svg]:pr-3 has-[>svg]:pl-3.5",
+                  inactive &&
+                    "bg-accent text-subtle-foreground hover:bg-accent disabled:opacity-100",
                 )}
               >
-                ⌘↵
-              </kbd>
-            </Button>
+                <Play aria-hidden className="size-3" strokeWidth={2} />
+                {draft.busy ? "Starting…" : draft.pending ? "Check same request" : "Start"}
+                <kbd
+                  aria-hidden
+                  className={cn(
+                    "rounded-sm px-1 py-px font-sans text-2xs font-medium",
+                    inactive ? "bg-foreground/8" : "bg-primary-foreground/14",
+                  )}
+                >
+                  ⌘↵
+                </kbd>
+              </Button>
+            </MutationGate>
           </div>
         </form>
       </main>
@@ -575,12 +572,14 @@ function ProjectNotice({ model }: { model: Composer }) {
       icon={Info}
       title={none ? "Add a project in T3 first" : "Choose a project"}
       action={
-        <NoticeButton
-          disabled={projects.busy}
-          onClick={() => void projects.act(api.recheckProjects)}
-        >
-          Refresh projects
-        </NoticeButton>
+        <MutationGate>
+          <NoticeButton
+            disabled={projects.busy}
+            onClick={() => void projects.act(api.recheckProjects)}
+          >
+            Refresh projects
+          </NoticeButton>
+        </MutationGate>
       }
     >
       {none
@@ -631,9 +630,11 @@ function StartNotice({ model }: { model: Composer }) {
         icon={CircleHelp}
         title="We couldn’t confirm the start"
         action={
-          <NoticeButton disabled={draft.busy} onClick={() => void start()}>
-            Check now
-          </NoticeButton>
+          <MutationGate>
+            <NoticeButton disabled={draft.busy} onClick={() => void start()}>
+              Check now
+            </NoticeButton>
+          </MutationGate>
         }
       >
         {draft.error}

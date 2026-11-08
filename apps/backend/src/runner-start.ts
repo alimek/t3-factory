@@ -240,6 +240,7 @@ export function openRunnerStart(
       };
       const accepted = yield* transaction((sql) => acceptStart(sql, plan));
       if (!accepted.ok) return accepted;
+      database.changes.runChanged(accepted.value);
       // Deliberately detached from the response. The accepted Run survives a lost HTTP reply.
       if (!isClosed()) yield* lifecycle.fork(drive(accepted.value));
       return yield* getRun(accepted.value);

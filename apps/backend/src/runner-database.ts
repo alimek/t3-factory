@@ -5,8 +5,16 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { now } from "./time.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
-/** The sole owner of local Run mutation lanes and SQL transaction boundaries. */
-export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { token: string }) {
+import type { LiveChanges } from "./live-changes.ts";
+/**
+ * The sole owner of local Run mutation lanes and SQL transaction boundaries. Writers outside
+ * `mutate` publish their committed Run changes through `changes` themselves.
+ */
+export function openRunnerDatabase(
+  sqlClient: SqlClient.SqlClient,
+  owner: { token: string },
+  changes: LiveChanges,
+) {
   const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>): Effect.Effect<A, E> =>
     effect.pipe(Effect.provideService(SqlClient.SqlClient, sqlClient));
   const transaction = <A>(
@@ -19,10 +27,14 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
       }),
     );
   const { serial, drain } = makeRunLanes();
+  /** Publishes after the transaction commits; a rolled-back mutation publishes nothing. */
   const mutate = <A>(
     id: string,
     fn: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown, SqlClient.SqlClient>,
-  ) => serial(id, () => transaction(fn));
+  ) =>
+    serial(id, () =>
+      transaction(fn).pipe(Effect.tap(() => Effect.sync(() => changes.runChanged(id)))),
+    );
   function row(id: string) {
     return Effect.gen(function* () {
       return yield* run(
@@ -105,6 +117,7 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
   return {
     run,
     owner,
+    changes,
     serial,
     mutate,
     row,

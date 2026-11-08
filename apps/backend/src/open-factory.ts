@@ -6,9 +6,12 @@ import type { FactoryOptions } from "./factory-options.ts";
 import { FactoryService } from "./factory-service.ts";
 import type { RuntimeReports } from "./runtime.ts";
 import type { RuntimeReply } from "./runtime-types.ts";
+import type { LiveStreams } from "./live-streams.ts";
 
 export interface Factory extends FactoryOperations {
   readonly runtime: { [K in keyof RuntimeReports]: (input: unknown) => Promise<RuntimeReply> };
+  /** Scoped live observation; each stream needs no services and runs on any Effect runtime. */
+  readonly live: LiveStreams;
   setRuntimeBackendUrl(url: string): void;
   close(): Promise<void>;
 }
@@ -46,7 +49,7 @@ export async function openFactory(options: FactoryOptions): Promise<Factory> {
     await runtime.dispose();
     throw error;
   }
-  const { runtime: reports, setRuntimeBackendUrl, ...operations } = service;
+  const { runtime: reports, setRuntimeBackendUrl, live, ...operations } = service;
   // Assigning to FactoryOperations proves the derived facade still matches the public contract.
   const facade: FactoryOperations = promiseOperations(runtime, operations);
   let closing: Promise<void> | undefined;
@@ -54,6 +57,7 @@ export async function openFactory(options: FactoryOptions): Promise<Factory> {
     ...facade,
     runtime: promiseOperations(runtime, reports),
     setRuntimeBackendUrl,
+    live,
     close: () => (closing ??= runtime.dispose()),
   };
 }

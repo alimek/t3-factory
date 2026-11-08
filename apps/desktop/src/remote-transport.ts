@@ -2,6 +2,7 @@ import { X509Certificate, createHash } from "node:crypto";
 import { Agent, request } from "node:https";
 import { isIP } from "node:net";
 import { checkServerIdentity, connect, type DetailedPeerCertificate } from "node:tls";
+import { WebSocket } from "ws";
 import type { ServerTrust } from "./settings-store.ts";
 
 /** Uppercase colon-separated SHA-256 of the DER certificate, matching the host panel. */
@@ -86,9 +87,11 @@ export interface RemoteReply {
   readonly body: Buffer;
 }
 
-/** One selected server's TLS pool; the Approved client owns its lifetime. */
+/** One selected server's TLS pool and live sockets; the Approved client owns their lifetime. */
 export class RemoteTransport {
   private readonly agent: Agent;
+  // Upgraded sockets leave the agent's pool, so destroying the agent does not close them.
+  private readonly sockets = new Set<WebSocket>();
   private closed = false;
 
   constructor(private readonly server: { url: string; trust: ServerTrust }) {
@@ -102,6 +105,23 @@ export class RemoteTransport {
   close() {
     this.closed = true;
     this.agent.destroy();
+    for (const socket of this.sockets) socket.terminate();
+  }
+
+  /** A WebSocket through the same pinned agent and hostname verification as requests. */
+  openSocket(path: string, headers: Record<string, string>): WebSocket {
+    if (this.closed) throw new Error("The server connection was closed.");
+    const url = new URL(path, this.server.url);
+    url.protocol = "wss:";
+    const socket = new WebSocket(url, {
+      agent: this.agent,
+      headers,
+      origin: new URL(this.server.url).origin,
+      handshakeTimeout: 10_000,
+    });
+    this.sockets.add(socket);
+    socket.once("close", () => this.sockets.delete(socket));
+    return socket;
   }
 
   request(

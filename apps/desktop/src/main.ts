@@ -11,6 +11,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  MessageChannelMain,
   nativeImage,
   nativeTheme,
   protocol,
@@ -28,6 +29,7 @@ import type {
 import { ApprovedClient } from "./approved-client.ts";
 import { BackendSupervisor } from "./backend.ts";
 import { channels } from "./ipc.ts";
+import { hostLiveSocket, livePath, refuseLive, relayLive, type LivePort } from "./live-relay.ts";
 import { appOrigin, factoryProtocolHandler, type ApiTarget } from "./protocol.ts";
 import { SettingsStore } from "./settings-store.ts";
 import { buildChannel, Updates } from "./updates.ts";
@@ -77,6 +79,8 @@ function desktopState() {
     launchAtLogin: settings.launchAtLogin,
     updateChannel: updateChannel(),
     update: updates.current,
+    // macOS keeps a minimized window's document "visible"; live delivery detaches on this.
+    minimized: window !== null && !window.isDestroyed() && window.isMinimized(),
   };
 }
 
@@ -183,6 +187,8 @@ function openWindow() {
     if (!url.startsWith(`${appOrigin}/`)) event.preventDefault();
   });
   created.once("ready-to-show", () => created.show());
+  created.on("minimize", broadcast);
+  created.on("restore", broadcast);
   // Closing the window never stops the backend; the tray and Dock reopen it.
   created.on("closed", () => {
     window = null;
@@ -311,10 +317,33 @@ async function runServerUpdate(action: ServerUpdateAction): Promise<OperationRes
   return { ok: true, value: null };
 }
 
+const liveChannels = new Set<{ close(reason: string): void }>();
+
+function closeLive(reason: string) {
+  for (const channel of liveChannels) channel.close(reason);
+}
+
+/** Captures the current target: a later selection or backend change closes this channel. */
+function openLive(query: string, port: LivePort) {
+  const target = apiTarget();
+  if (!target) return refuseLive(port, "The Factory server is unreachable.");
+  const path = livePath(query);
+  const socket =
+    target.kind === "host" ? hostLiveSocket(target.base, path) : target.connection.openSocket(path);
+  const channel = relayLive(socket, port, () => liveChannels.delete(channel));
+  liveChannels.add(channel);
+}
+
 /** Only the bundled UI in this app's own window may use the native bridge. */
+function trustedFrame(event: IpcMainInvokeEvent) {
+  const frame = event.senderFrame;
+  if (!frame?.url.startsWith(`${appOrigin}/`)) throw new Error("Untrusted sender.");
+  return frame;
+}
+
 function handle<A extends unknown[]>(channel: string, run: (...args: A) => unknown) {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    if (!event.senderFrame?.url.startsWith(`${appOrigin}/`)) throw new Error("Untrusted sender.");
+    trustedFrame(event);
     return run(...(args as A));
   });
 }
@@ -361,6 +390,16 @@ function registerBridge() {
   });
   handle(channels.installUpdate, () => installUpdate());
   handle(channels.setUpdateChannel, (channel: unknown) => setUpdateChannel(channel));
+  // A MessagePort cannot be an invoke result; it goes to the requesting frame, keyed by nonce.
+  ipcMain.handle(channels.openLive, (event, query: unknown, nonce: unknown) => {
+    const frame = trustedFrame(event);
+    if (typeof query !== "string" || typeof nonce !== "string")
+      return failed("Invalid live request.");
+    const { port1, port2 } = new MessageChannelMain();
+    frame.postMessage(channels.livePort, nonce, [port2]);
+    openLive(query, port1);
+    return { ok: true };
+  });
 }
 
 function registerUi() {
@@ -411,7 +450,10 @@ async function start() {
       FACTORY_UI_DIRECTORY: uiDirectory,
       FACTORY_APPLICATION_VERSION: app.getVersion(),
     },
-    broadcast,
+    (state) => {
+      if (state.state !== "running") closeLive("The Factory server stopped.");
+      broadcast();
+    },
     {
       status: () => ({
         channel: updates.current.state === "unsupported" ? null : updateChannel(),

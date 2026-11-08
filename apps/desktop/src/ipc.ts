@@ -12,4 +12,7 @@ export const channels = {
   downloadUpdate: "factory:download-update",
   installUpdate: "factory:install-update",
   setUpdateChannel: "factory:set-update-channel",
+  openLive: "factory:open-live",
+  /** Main → preload: the live port; the preload forwards it to the page by window message. */
+  livePort: "factory:live-port",
 } as const;

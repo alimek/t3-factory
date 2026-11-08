@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { FACTORY_MINIMUM_SERVER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
+import type { LiveDelivery } from "./live/owner.ts";
 
 /**
  * What this client last learned about its server. `offline` keeps the last observed
@@ -13,11 +14,17 @@ export type TransportState =
   | { readonly kind: "incompatible"; readonly message: string };
 
 let state: TransportState = { kind: "online", observedAt: null };
+/** Live scopes held by this window: product mutations wait until every one is current. */
+let liveDelivery: LiveDelivery = "current";
 const listeners = new Set<() => void>();
+
+function notify() {
+  for (const listener of listeners) listener();
+}
 
 function publish(next: TransportState) {
   state = next;
-  for (const listener of listeners) listener();
+  notify();
 }
 
 export const transport = {
@@ -43,10 +50,22 @@ export const transport = {
   incompatible: (message: string) => publish({ kind: "incompatible", message }),
   /** The gate re-established access; product requests may resume. */
   reset: () => publish({ kind: "online", observedAt: Date.now() }),
+  liveDelivery: () => liveDelivery,
+  setLiveDelivery(next: LiveDelivery) {
+    if (next === liveDelivery) return;
+    liveDelivery = next;
+    notify();
+  },
+  /** Mutations are sent only while reachable and every live scope reflects the current state. */
+  acceptsMutations: () => state.kind === "online" && liveDelivery === "current",
 };
 
 export function useTransport(): TransportState {
   return useSyncExternalStore(transport.subscribe, transport.get, transport.get);
+}
+
+export function useLiveDelivery(): LiveDelivery {
+  return useSyncExternalStore(transport.subscribe, transport.liveDelivery, transport.liveDelivery);
 }
 
 /** Every request declares this bundle's protocol range before the server runs an operation. */

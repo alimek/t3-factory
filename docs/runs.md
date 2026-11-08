@@ -54,6 +54,27 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
   survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
+## Live viewing
+
+The Run screen and sidebar update live, including reports, attention, timeline and
+navigation membership. Shared T3 connection status also updates live. The selected Run
+and the sidebar share one view subscription; switching Runs refreshes that view with the
+new Run and releases the previous one. Live updates preserve the canvas viewport and
+selected Block.
+
+Project descriptions and the comparison with the current saved Flow load on screen entry.
+Edits in another window need not update those values until the Run is reopened or the page
+is reloaded; the Run's Captured definitions stay unchanged.
+
+During reconnect or **Synchronizing**, retained information stays visible and mutations
+are disabled until active scopes have fresh snapshots and any catch-up those snapshots
+needed, and again while a failed read is retried. The open Run and the sidebar share one
+subscription and show one commit's changes together. Browsing and navigation remain
+available; no command is queued for later. Hidden browser tabs and minimized or closed
+desktop windows detach live delivery; returning obtains current snapshots. A visible
+unfocused window keeps updating. These visibility changes never stop the Runner.
+The [foundation contract](foundation.md#live-delivery) describes consistency and delivery limits.
+
 ## Execution canvas
 
 Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow revision**). Positions, exits,
@@ -72,7 +93,7 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
   block differs from stale; a block that never ran says **Not visited**.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
-  lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
+  lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, live Run updates and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,

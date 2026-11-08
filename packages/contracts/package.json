@@ -8,10 +8,18 @@
       "factory-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./live-rpc": {
+      "factory-source": "./src/live-rpc.ts",
+      "types": "./dist/live-rpc.d.ts",
+      "default": "./dist/live-rpc.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "effect": "4.1.2"
   }
 }

@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { useCallback, useEffect, useState } from "react";
 import type { ReportingInstallation } from "@t3-factory/contracts";
 import { api } from "../api.ts";
@@ -72,19 +73,25 @@ export function RuntimeSettings() {
           <p className="text-sm">{target.message}</p>
           <div className="flex flex-wrap gap-2">
             {target.actions.install && (
-              <Button disabled={busy} onClick={() => void install(target.id)}>
-                Install Factory MCP
-              </Button>
+              <MutationGate>
+                <Button disabled={busy} onClick={() => void install(target.id)}>
+                  Install Factory MCP
+                </Button>
+              </MutationGate>
             )}
             {target.actions.repair && (
-              <Button disabled={busy} onClick={() => void install(target.id)}>
-                Repair installation
-              </Button>
+              <MutationGate>
+                <Button disabled={busy} onClick={() => void install(target.id)}>
+                  Repair installation
+                </Button>
+              </MutationGate>
             )}
             {target.actions.reinstall && (
-              <Button variant="secondary" disabled={busy} onClick={() => void install(target.id)}>
-                Reinstall Factory MCP
-              </Button>
+              <MutationGate>
+                <Button variant="secondary" disabled={busy} onClick={() => void install(target.id)}>
+                  Reinstall Factory MCP
+                </Button>
+              </MutationGate>
             )}
           </div>
         </article>

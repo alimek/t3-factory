@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
@@ -562,12 +563,16 @@ function EditorToolbar({
       <Button variant="outline" disabled={draft.busy} onClick={() => void draft.check()}>
         <ListChecks aria-hidden /> Check readiness
       </Button>
-      <Button disabled={draft.busy || draft.conflict} onClick={() => void draft.save()}>
-        <Save aria-hidden /> Save Flow
-      </Button>
-      <Button disabled={draft.busy || draft.dirty} onClick={() => openFlowComposer(flowId)}>
-        Start Run
-      </Button>
+      <MutationGate>
+        <Button disabled={draft.busy || draft.conflict} onClick={() => void draft.save()}>
+          <Save aria-hidden /> Save Flow
+        </Button>
+      </MutationGate>
+      <MutationGate>
+        <Button disabled={draft.busy || draft.dirty} onClick={() => openFlowComposer(flowId)}>
+          Start Run
+        </Button>
+      </MutationGate>
       <RemoveFlowAction
         flowId={flowId}
         flowName={draft.name}
@@ -613,18 +618,20 @@ function RemoveFlowAction({
   }
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        disabled={busy || removing}
-        className="text-destructive hover:text-destructive"
-        onClick={() => {
-          setError("");
-          setOpen(true);
-        }}
-      >
-        <Trash2 aria-hidden /> Remove
-      </Button>
+      <MutationGate>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || removing}
+          className="text-destructive hover:text-destructive"
+          onClick={() => {
+            setError("");
+            setOpen(true);
+          }}
+        >
+          <Trash2 aria-hidden /> Remove
+        </Button>
+      </MutationGate>
       <Dialog open={open} onOpenChange={(next) => !removing && setOpen(next)}>
         <DialogContent
           onKeyDownCapture={(event) => {
@@ -661,14 +668,16 @@ function RemoveFlowAction({
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={removing}
-              onClick={() => void confirmRemove()}
-            >
-              {removing ? "Removing…" : "Remove Flow"}
-            </Button>
+            <MutationGate>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={removing}
+                onClick={() => void confirmRemove()}
+              >
+                {removing ? "Removing…" : "Remove Flow"}
+              </Button>
+            </MutationGate>
           </DialogFooter>
         </DialogContent>
       </Dialog>

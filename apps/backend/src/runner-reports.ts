@@ -183,6 +183,8 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
               return yield* recordReportVerdict(sql, found.target, reply);
             }),
           );
+          // Rejected reports may also have committed diagnostics.
+          database.changes.runChanged(located.run_id);
           if (report.status === "finished" && verdict.code === "ACCEPTED" && !lifecycle.isClosed())
             yield* lifecycle.fork(lifecycle.drive(located.run_id, "dispatch"));
           return verdict;

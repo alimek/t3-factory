@@ -212,11 +212,13 @@ export class ControlledT3 implements T3Adapter {
     import("../../src/adapters/t3.ts").ExecutionObservation
   >();
   executionObservation?: import("../../src/adapters/t3.ts").ExecutionObservation;
+  executionReads = 0;
   async readExecution(
     _target: T3Endpoint,
     threadId: string,
   ): ReturnType<T3Adapter["readExecution"]> {
     if (!this.available || !this.authorized) throw Error("Unavailable");
+    this.executionReads++;
     const observation = this.executionObservations.get(threadId) ?? this.executionObservation;
     if (observation) return observation;
     const accepted = [...this.launches.values()].find((x) => x.reference.threadId === threadId);

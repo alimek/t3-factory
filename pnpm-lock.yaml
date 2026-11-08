@@ -229,12 +229,18 @@ importers:
       '@types/fs-ext':
         specifier: 2.0.3
         version: 2.0.3
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
       vite-plus:
         specifier: 1.4.0
         version: 1.4.0(@types/node@24.10.1)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(typescript@5.9.3)
       vitest:
         specifier: 5.0.5
         version: 5.0.5(@types/node@24.10.1)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(typescript@5.9.3))(esbuild@0.28.2)(jiti@2.7.0)(typescript@5.9.3)
+      ws:
+        specifier: 8.22.1
+        version: 8.22.1
 
   apps/desktop:
     dependencies:
@@ -250,6 +256,9 @@ importers:
       electron-updater:
         specifier: 6.8.11
         version: 6.8.11(supports-color@10.2.2)
+      ws:
+        specifier: 8.22.1
+        version: 8.22.1
     devDependencies:
       '@electron/rebuild':
         specifier: 4.2.1
@@ -257,6 +266,9 @@ importers:
       '@t3-factory/frontend':
         specifier: workspace:*
         version: link:../frontend
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
       electron:
         specifier: 45.2.1
         version: 45.2.1(supports-color@10.2.2)
@@ -293,6 +305,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      effect:
+        specifier: 4.1.2
+        version: 4.1.2
       elkjs:
         specifier: 0.10.0
         version: 0.10.0
@@ -334,7 +349,11 @@ importers:
         specifier: 1.4.0
         version: 1.4.0(@types/node@24.10.1)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(typescript@5.9.3)
 
-  packages/contracts: {}
+  packages/contracts:
+    dependencies:
+      effect:
+        specifier: 4.1.2
+        version: 4.1.2
 
   packages/domain-validation:
     dependencies:

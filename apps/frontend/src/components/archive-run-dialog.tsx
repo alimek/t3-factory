@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { api } from "../api.ts";
@@ -87,14 +88,16 @@ export function ArchiveRunDialog({
           >
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={busy}
-            onClick={() => void archive()}
-          >
-            {busy ? "Archiving…" : "Archive Run"}
-          </Button>
+          <MutationGate>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => void archive()}
+            >
+              {busy ? "Archiving…" : "Archive Run"}
+            </Button>
+          </MutationGate>
         </DialogFooter>
       </DialogContent>
     </Dialog>

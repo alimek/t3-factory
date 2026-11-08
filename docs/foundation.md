@@ -59,6 +59,49 @@ issues. Storage failures are sanitized at this boundary. Validate untrusted inpu
 keep transports limited to translating requests and responses. Product routes are shared
 by host and approved clients, with explicit [host-only boundaries](desktop-and-clients.md#two-listeners-two-trust-domains).
 
+## Live delivery
+
+Run detail, sidebar navigation and shared T3 connection status use typed Effect RPC
+streams over WebSocket at `/api/live`; commands and other reads remain HTTP operations.
+A window holds one connection-status subscription and one view subscription carrying
+navigation and its open Runs. Each read of a view covers navigation and those Runs in one
+read transaction, and its changes travel in one delivery that the window applies at once,
+so one commit's lifecycle, attention and report changes appear together in Run detail and
+the sidebar. Opening or leaving a Run resubscribes the view with a fresh joint snapshot.
+Each subscription starts with an authoritative snapshot, followed by committed changes. The
+owning modules publish only after a successful durable commit, or an authoritative
+in-memory connection transition. This covers reports, including committed rejection
+diagnostics, as well as background observation, recovery and lifecycle changes.
+Subscription registration precedes the snapshot read. A relevant hint during that read
+triggers a fresh read, up to three reads. A delivery is current only when no relevant
+change arrived while it was read and no later read failed; a scope counts as synchronized,
+and mutations are enabled, only while its latest applied delivery is current. A snapshot
+or a later read raced by another commit stays unsynchronized until its catch-up arrives, and
+a failed re-read keeps the last value, marks the scope unsynchronized and retries. An unknown
+Run is final for that Run only, as is a Run beyond the view's capacity of 20 Runs per window;
+any other refused subscription is retried with backoff and keeps mutations disabled.
+
+Delivery replaces changed entities or logical sections by stable identity, sends navigation
+upserts/removals and appends timeline entries by sequence. Worker executions use the pair
+of binding id and execution id, including observation metadata, so later turns preserve
+earlier executions. Observation-only timestamps
+travel as compact metadata rather than repeated Run data. Changes may coalesce into the
+latest committed state; delivery is not a record of every intermediate state, but preserves
+recorded timeline history.
+
+Pending change hints are bounded to one dirty marker per subscription. Slow consumers
+re-read committed state against the last value sent rather than accumulating a queue of
+changes, and publication never waits for network delivery or turns an accepted mutation
+into a failure. Snapshots and retained Run history still grow with the underlying data;
+this is not a fixed byte limit on a Run or a durable delivery log.
+
+Every reconnect or visibility gap starts fresh snapshots for active scopes. There is no
+replay cursor or polling fallback for these consumers, and reconnect never replays commands.
+Obsolete subscriptions cannot replace the current view. Runner observation, dispatch,
+recovery and handoff scheduling belong to the server: zero subscribers stop no execution,
+and additional subscribers create no additional Runner schedules. See [Run viewing](runs.md#live-viewing)
+and [transport admission](desktop-and-clients.md#two-listeners-two-trust-domains).
+
 ## SQL migrations
 
 Add the next unique `NNN_description.sql` under `apps/backend/src/migrations/`; never edit
@@ -106,6 +149,6 @@ remains authoritative.
 
 The UI must work over plain HTTP on a LAN or Tailscale address as well as loopback.
 Browser APIs requiring a secure context must not be the only way to generate identifiers.
-Canvas routing and viewport geometry are transient; pan, zoom and polling never modify
+Canvas routing and viewport geometry are transient; pan, zoom and live updates never modify
 saved definitions or the revisions a Run captured. Authoring positions change only through explicit
 edits or Auto-arrange followed by Save; see [canvas behavior](studio.md#automatic-layout-and-canvas-view).

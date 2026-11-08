@@ -1,6 +1,7 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { findRun } from "./support/run-history.ts";
+import { manualRunView } from "./support/canvas.ts";
+import { liveReport, liveRun } from "./support/live.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
   // Arrange
@@ -24,33 +25,28 @@ test("resizing the Flow editor refits a manually zoomed view", async ({ app, scr
   await app.screenshot("flow-refitted-on-resize");
 });
 
-test("a fitted Run preserves manual pan and zoom through resize and status polling", async ({
+test("a fitted Run preserves manual pan and zoom through resize and live updates", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
   await browser.setViewport({ width: 1600, height: 1000 });
-  const run = await findRun(app.baseUrl, "Demo · Working · Improve the project picker");
-  await app.open(`/runs/${run.id}`);
-  const canvas = screen.getByRole("region", "Execution canvas");
+  const run = await liveRun(app, "canvas");
+  await app.open(`/runs/${run}`);
   await screen.getByRole("button", "Auto-arrange", { exact: true }).tap();
   await expect(screen.getByRole("button", "Auto-arrange", { exact: true })).toBeEnabled();
-  await screen.getByRole("button", "Zoom in", { exact: true }).tap();
-  await canvas.press("ArrowRight");
-  const zoom = await canvas.getAttribute("data-zoom");
-  const layer = browser.locator('[aria-label="Execution canvas"] > div[style]');
-  const transform = await layer.getAttribute("style");
+  const expectViewKept = await manualRunView(screen, browser);
   await app.screenshot("run-manual-view");
-  const poll = browser.waitForResponse(`**/api/runs/${run.id}`);
 
   // Act
   await browser.setViewport({ width: 1800, height: 1000 });
-  await poll;
-  await browser.waitForResponse(`**/api/runs/${run.id}`);
+  await liveReport(app, "canvas", "Still aligning the picker spacing.");
 
   // Assert
-  await expect(canvas).toHaveAttribute("data-zoom", zoom!);
-  await expect(layer).toHaveAttribute("style", transform!);
-  await app.screenshot("run-view-preserved-after-resize-and-poll");
+  await expect(
+    screen.getByText("Still aligning the picker spacing.", { exact: true }).first(),
+  ).toBeVisible();
+  await expectViewKept();
+  await app.screenshot("run-view-preserved-after-resize-and-live-update");
 });

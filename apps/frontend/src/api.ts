@@ -58,8 +58,9 @@ async function request<A>(path: string, init?: RequestInit): Promise<A> {
   const mutation = !["GET", "HEAD"].includes(init?.method ?? "GET");
   if (mutation) headers.set("X-Factory-Request", "1");
   for (const [name, value] of Object.entries(protocolHeaders)) headers.set(name, value);
-  // A disconnected client never sends or queues a new command; the user retries deliberately.
-  if (mutation && transport.get().kind !== "online") throw new OfflineError("not-sent");
+  // A disconnected or synchronizing client never sends or queues a new command; the user
+  // retries deliberately once the view is current.
+  if (mutation && !transport.acceptsMutations()) throw new OfflineError("not-sent");
   const response = await send(path, { ...init, headers });
   const result = (await response.json().catch(() => undefined)) as Result<A> | undefined;
   if (!result) {
@@ -107,7 +108,6 @@ export const api = {
   getRunCreationPolicy: () => request<RunCreationPolicy>("/api/run-creation-policy"),
   archiveRun: (id: string) =>
     request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
-  getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   listRuns: (projectId: string) =>
     request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),
   updateTask: (id: string, input: { title: string }) =>

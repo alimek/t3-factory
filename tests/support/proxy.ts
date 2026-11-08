@@ -1,16 +1,19 @@
-import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  request as httpRequest,
+  type ClientRequest,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { request as httpsRequest } from "node:https";
+import type { Duplex } from "node:stream";
+
+type FixtureTls = { readonly ca: string };
 
 /**
  * Keep the browser origin check meaningful when fixtures use a private backend port.
  * With `tls`, the fixture reaches an approved-client listener trusting only its CA.
  */
-export function proxyFixture(
-  incoming: IncomingMessage,
-  outgoing: ServerResponse,
-  port: number,
-  tls?: { readonly ca: string },
-) {
+function forwardRequest(incoming: IncomingMessage, port: number, tls?: FixtureTls): ClientRequest {
   const headers = { ...incoming.headers, host: `127.0.0.1:${port}` };
   const scheme = tls ? "https" : "http";
   if (headers.origin === `http://${incoming.headers.host}`)
@@ -22,16 +25,62 @@ export function proxyFixture(
     method: incoming.method,
     headers,
   };
-  const forward = (response: IncomingMessage) => {
+  return tls ? httpsRequest({ ...options, ca: tls.ca }) : httpRequest(options);
+}
+
+export function proxyFixture(
+  incoming: IncomingMessage,
+  outgoing: ServerResponse,
+  port: number,
+  tls?: FixtureTls,
+) {
+  const forwarded = forwardRequest(incoming, port, tls);
+  forwarded.on("response", (response) => {
     outgoing.writeHead(response.statusCode ?? 502, response.headers);
     response.pipe(outgoing);
-  };
-  const forwarded = tls
-    ? httpsRequest({ ...options, ca: tls.ca }, forward)
-    : httpRequest(options, forward);
+  });
   forwarded.on("error", () => {
     outgoing.writeHead(502);
     outgoing.end();
   });
   incoming.pipe(forwarded);
+}
+
+function statusHead(response: IncomingMessage) {
+  const lines = [`HTTP/1.1 ${response.statusCode} ${response.statusMessage}`];
+  for (let index = 0; index < response.rawHeaders.length; index += 2)
+    lines.push(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}`);
+  return `${lines.join("\r\n")}\r\n\r\n`;
+}
+
+/**
+ * Relays the live WebSocket upgrade, including a refusal answered before the upgrade.
+ * `delayMs` holds back the server's frames after the socket opens.
+ */
+export function proxyFixtureUpgrade(
+  incoming: IncomingMessage,
+  socket: Duplex,
+  port: number,
+  tls?: FixtureTls,
+  delayMs = 0,
+) {
+  const forwarded = forwardRequest(incoming, port, tls);
+  forwarded.on("upgrade", (response, upstream, head) => {
+    socket.write(statusHead(response));
+    upstream.on("error", () => socket.destroy());
+    socket.on("close", () => upstream.destroy());
+    socket.pipe(upstream);
+    setTimeout(() => {
+      if (socket.destroyed) return;
+      if (head.length > 0) socket.write(head);
+      upstream.pipe(socket);
+    }, delayMs);
+  });
+  forwarded.on("response", (response) => {
+    socket.write(statusHead(response));
+    response.pipe(socket);
+  });
+  forwarded.on("error", () => socket.destroy());
+  socket.on("error", () => forwarded.destroy());
+  forwarded.end();
 }

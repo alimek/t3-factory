@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { ExecutionSettingsFields, useExecutionSettings } from "../execution-settings-fields.tsx";
 import { useEffect, useState, type FormEvent } from "react";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
@@ -246,16 +247,18 @@ function AgentEditorHeader({
         </span>
         <span className="flex-1" />
         {onDuplicate && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={saving || dirty}
-            title={dirty ? "Save your changes before duplicating this Agent." : undefined}
-            aria-label="Duplicate"
-            onClick={onDuplicate}
-          >
-            {duplicating ? "Duplicating…" : "Duplicate…"}
-          </Button>
+          <MutationGate>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || dirty}
+              title={dirty ? "Save your changes before duplicating this Agent." : undefined}
+              aria-label="Duplicate"
+              onClick={onDuplicate}
+            >
+              {duplicating ? "Duplicating…" : "Duplicate…"}
+            </Button>
+          </MutationGate>
         )}
         {agent && (
           <DeleteAgentButton
@@ -265,9 +268,11 @@ function AgentEditorHeader({
             onDeleted={onDeleted}
           />
         )}
-        <Button type="submit" disabled={saving}>
-          {saving ? "Saving…" : saveLabel}
-        </Button>
+        <MutationGate>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : saveLabel}
+          </Button>
+        </MutationGate>
       </div>
       <p className="mt-1.5 text-2xs text-subtle-foreground">{statusLine}</p>
     </header>
@@ -309,17 +314,19 @@ function DeleteAgentButton({
   }
   return (
     <>
-      <Button
-        type="button"
-        variant="destructive"
-        disabled={disabled}
-        onClick={() => {
-          setError("");
-          setOpen(true);
-        }}
-      >
-        Delete
-      </Button>
+      <MutationGate>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={disabled}
+          onClick={() => {
+            setError("");
+            setOpen(true);
+          }}
+        >
+          Delete
+        </Button>
+      </MutationGate>
       <Dialog
         open={open}
         onOpenChange={(value) => {
@@ -349,14 +356,16 @@ function DeleteAgentButton({
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={deleting}
-              onClick={() => void confirmDelete()}
-            >
-              {deleting ? "Deleting…" : "Delete Agent"}
-            </Button>
+            <MutationGate>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={deleting}
+                onClick={() => void confirmDelete()}
+              >
+                {deleting ? "Deleting…" : "Delete Agent"}
+              </Button>
+            </MutationGate>
           </DialogFooter>
         </DialogContent>
       </Dialog>

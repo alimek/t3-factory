@@ -2,6 +2,7 @@ import { assert, type TestContext } from "@effect/vitest";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import type { ClientScope, Result } from "@t3-factory/contracts";
 import { mkdtemp, rm } from "node:fs/promises";
+import type { RequestListener } from "node:http";
 import { createServer } from "node:https";
 import { ensureRemoteCertificate } from "../../src/remote-certificates.ts";
 import { tmpdir } from "node:os";
@@ -147,21 +148,15 @@ export async function readDesktopAccess(client: ApprovedClient) {
   return result.value.access;
 }
 
-/** Real pinned TLS with a response held until the client disposes its active connection. */
-export async function heldDesktopServer(context: TestContext) {
-  const directory = await mkdtemp(join(tmpdir(), "t3-factory-held-desktop-"));
+/** Real TLS under a Factory authority: answers the handshake, hands other requests to `handle`. */
+export async function handshakeServer(context: TestContext, handle: RequestListener) {
+  const directory = await mkdtemp(join(tmpdir(), "t3-factory-desktop-tls-"));
   context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const certificate = await ensureRemoteCertificate(directory, { dns: [], ips: ["127.0.0.1"] });
-  const received = completionSignal();
-  const closed = completionSignal();
   const server = createServer(certificate, (request, response) => {
-    if (request.url === "/api/protocol") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ ok: true, value: { protocol: FACTORY_PROTOCOL } }));
-    } else {
-      response.once("close", () => closed.resolve());
-      received.resolve();
-    }
+    if (request.url !== "/api/protocol") return handle(request, response);
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true, value: { protocol: FACTORY_PROTOCOL } }));
   });
   context.onTestFinished(
     () =>
@@ -173,9 +168,16 @@ export async function heldDesktopServer(context: TestContext) {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert(address && typeof address !== "string");
-  return {
-    url: `https://127.0.0.1:${address.port}`,
-    received: received.promise,
-    closed: closed.promise,
-  };
+  return { server, url: `https://127.0.0.1:${address.port}` };
+}
+
+/** Real pinned TLS with a response held until the client disposes its active connection. */
+export async function heldDesktopServer(context: TestContext) {
+  const received = completionSignal();
+  const closed = completionSignal();
+  const { url } = await handshakeServer(context, (_request, response) => {
+    response.once("close", () => closed.resolve());
+    received.resolve();
+  });
+  return { url, received: received.promise, closed: closed.promise };
 }
