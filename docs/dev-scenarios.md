@@ -62,6 +62,12 @@ loss, TLS or revocation: controlled transport and UI fixtures cover those bounda
 Project descriptions and current Flow comparisons reload on Run entry, so another window's
 catalog edit need not appear immediately. See [live viewing](runs.md#live-viewing).
 
+**Native T3 settlement coverage.** Per-Block settlement after a current `finished`
+report and confirmed worker completion is covered by the controlled backend Run
+settlement tests, including handoff Blocks while the Run remains Active and
+terminal Blocks. Demo thread links do not establish actual T3 list organization; native
+settlement and manual reopen behavior require live T3 evidence.
+
 **Worker thread completion coverage.** The Working scenario shows a worker held by
 unsettled delegated work; Factory reads only the worker thread and T3's delegated wait, never
 the subagents. HTTP adapter tests cover the

@@ -1,14 +1,169 @@
 import { assert, expect, it } from "@effect/vitest";
 import {
+  archivedWorker,
   directWorker,
   finishWorker,
   finishedWorker,
+  missingWorkerReport,
   nextSettlement,
+  reportedWorker,
+  reopenDuringSettlement,
+  replacedBeforeRelease,
+  revisitReportingWorker,
+  settleThread,
   settledWorker,
   startWorkerTurn,
   workerFinal,
   workerWorking,
 } from "./support/run-worker.ts";
+
+it("a finished terminal Block settles its worker thread in T3 without waiting for Run settlement", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c, "completed", "");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("a replaced finished report in the same T3 run is not settled again", async (c) => {
+  // Arrange
+  const f = await replacedBeforeRelease(c);
+  assert((await f.f.reconcileRuns()).ok);
+
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Another pass."))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("a revisited Block settles its thread again after a new T3 run finishes", async (c) => {
+  // Arrange
+  const f = await revisitReportingWorker(c);
+  await f.f.reconcileRuns();
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Second pass."))).code === "ACCEPTED");
+  const runBeforeFinish = await f.f.getRun(f.runId);
+  assert(runBeforeFinish.ok);
+  const producingExecution = runBeforeFinish.value.reports.at(-1)?.executionId;
+  assert(producingExecution);
+  expect(producingExecution).toBe(f.workerExecutionId);
+  finishWorker(f);
+  settleThread(f.t3, f.workerExecutionId);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements.map((entry) => entry.threadId)).toStrictEqual(["thread-1", "thread-1"]);
+});
+
+it("a finished Block on a snoozed Run still settles its worker thread", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  assert((await f.f.snoozeRun(f.runId)).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("an open missing-report Problem leaves the worker thread unsettled", async (c) => {
+  // Arrange
+  const f = await missingWorkerReport(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("a Block whose latest report is working leaves its worker thread unsettled", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("Run settlement does not request a thread the per-Block pass already settled", async (c) => {
+  // Arrange
+  const f = await finishedWorker(c);
+
+  assert((await f.f.reconcileRuns()).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("an archived Run receives no per-Block thread settlement", async (c) => {
+  // Arrange
+  const f = await archivedWorker(c);
+  f.t3.settlements.length = 0;
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("per-Block settlement is a no-op when T3 lacks native settle support", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  f.t3.settleSupported = false;
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("a failed per-Block T3 thread settlement leaves the Run unchanged", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  f.t3.settleThread = () => Promise.reject(Error("T3 could not settle the thread"));
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+});
+
+it("a finished handoff Block settles its worker thread in T3 while the Run stays Active", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
 
 it("a Run settles automatically once its reported worker's thread is finished", async (c) => {
   // Arrange
@@ -171,4 +326,61 @@ it("a reply turn in a worker thread without a report leaves the Settled Run Sett
   expect(run.value.lifecycle).toBe("settled");
   expect(run.value.executions.map((e) => e.executionId)).not.toContain("chat-execution");
   expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
+
+it("an execution-failed Problem prevents settling a Block with a finished report", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c, "failed");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention.filter((a) => !a.settledAt).map((a) => a.kind)).toContain(
+    "execution-failed",
+  );
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("a working report accepted during the completion read prevents stale settlement", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  reopenDuringSettlement(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]?.workingMessage).toBe("Opened PR #42; waiting for its CI checks.");
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("a newer active turn prevents settlement for an older finished result", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  startWorkerTurn(f, "newer-execution", 2);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("a newer idle turn with pending delegated work prevents settlement for an older result", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  startWorkerTurn(f, "newer-execution", 2);
+  finishWorker(f);
+  settleThread(f.t3, "newer-execution", "completed", "pending");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
 });

@@ -338,16 +338,30 @@ automatically.
 ## Native thread organization
 
 T3 Settled is separate from Factory attention. When native settle is supported, Factory
-best-effort settles each worker thread after the Run settles: within the reconciliation pass
-for automatic settlement, in the background after the user's Settle. It claims one request
-per thread and latest recorded run while the Run is still Settled. New Runs have no Run
-conversation to organize, and historical Run conversations are not settled. Factory never
-unsettles, also when the Run returns to Active.
+best-effort settles a Block's bound worker thread while the Run is still in progress when that
+Block's current report is an accepted `finished` result, the [completion rule](#worker-thread-completion)
+confirms the worker thread is done, no execution-failed attention is pending on the Block, and
+the Run is not [Archived](#archive). A current `working` report, a missing-report Problem, or
+open execution-failed attention leaves the thread unsettled. The sweep runs in each
+reconciliation pass for Active, Snoozed and [Settled](#settled-runs) Runs that still owe
+operations—handoff Blocks, terminal activations and long-running Flows alike.
 
-A possibly issued settlement is never replayed for the same run, protecting manual reopen.
-Failure does not change results or the Run's Settled state, and Runs settled by the upgrade
-are not backfilled. With no native compare-and-set or replay key, direct activity can race
-the request.
+[Run settlement](#settled-runs) keeps its thread sweep as fallback for threads without
+`finished`, and shares one settlement claim keyed on Run, thread and T3 run so no thread is
+requested twice. The claimed T3 run is the one that produced the Block's result, not the
+thread's latest active run. The claim is recorded before the T3 request is sent; a possibly
+issued request is never replayed. A replaced result or changed exit in the same T3 run does not
+settle again; a revisited Block that starts a new T3 run on the same thread may be settled
+again after it finishes.
+
+Automatic Run settlement settles remaining threads within its reconciliation pass; manual
+Settle triggers the Run sweep in the background. Factory never unsettles. New Runs have no Run
+conversation to organize, and historical Run conversations are not settled. Runs created
+before this behavior was introduced retain Run-level settlement only;
+new Runs use per-Block settlement. The migration preserves existing data and does not
+reorganize existing threads. Failure changes no results or Run state; without native settle support this is
+a no-op. With no native compare-and-set or replay key, direct activity can still race the
+request; that existing limitation now applies while the Run is still in progress.
 
 ## Navigation and presentation
 

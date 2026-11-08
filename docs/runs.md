@@ -249,7 +249,9 @@ fails startup. Shutdown neither archives a Run nor interrupts T3; reopening the 
 
 ## Completed stages in T3
 
-When native settle is supported, Factory best-effort marks each worker thread **Settled** in T3 once the Run settles; after the
-user's Settle this happens in the background. New Runs have no Run conversation to settle, and historical Run conversations are
-not settled. Factory never unsettles, also when the Run returns to Active. This is best-effort organization: failure never changes
-results or the Run's Settled state, and a request already attempted for a thread's latest run is never replayed.
+When native settle is supported, Factory best-effort marks a worker thread **Settled** in T3
+once its Block's current `finished` result is confirmed by worker completion, even while the
+Run continues. Run settlement remains the fallback for remaining threads. Factory never
+unsettles a thread, and an attempted request is not repeated for the same thread and T3 run.
+See [native thread organization](runner.md#native-thread-organization) for guards, failure
+handling and the limits of this best-effort organization.
