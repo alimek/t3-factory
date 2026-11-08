@@ -29,6 +29,7 @@ import type {
 import { ApprovedClient } from "./approved-client.ts";
 import { BackendSupervisor } from "./backend.ts";
 import { channels } from "./ipc.ts";
+import { buildApplicationMenu, parseMenuState, withoutOpenRun, type MenuState } from "./menu.ts";
 import { hostLiveSocket, livePath, refuseLive, relayLive, type LivePort } from "./live-relay.ts";
 import { appOrigin, factoryProtocolHandler, type ApiTarget } from "./protocol.ts";
 import { SettingsStore } from "./settings-store.ts";
@@ -49,6 +50,7 @@ protocol.registerSchemesAsPrivileged([
 const here = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = join(here, "ui");
 const uiPartition = "persist:factory-ui";
+const documentationUrl = "https://github.com/alimek/t3-factory/tree/main/docs#readme";
 
 type Result = { readonly ok: true } | { readonly ok: false; readonly message: string };
 const failed = (message: string): Result => ({ ok: false, message });
@@ -59,6 +61,7 @@ let backend: BackendSupervisor;
 let updates: Updates;
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let menuState: MenuState = {};
 /** Set only after the local user confirmed and the backend stopped in order. */
 let quitting = false;
 let installingUpdate = false;
@@ -169,6 +172,8 @@ function openWindow() {
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 17 },
     backgroundColor: "#09090b",
+    // Windows and Linux show the application menu bar on Alt; macOS ignores this option.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(here, "preload.cjs"),
       partition: uiPartition,
@@ -177,6 +182,7 @@ function openWindow() {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
+      devTools: !app.isPackaged,
     },
   });
   created.webContents.setWindowOpenHandler(({ url }) => {
@@ -192,6 +198,7 @@ function openWindow() {
   // Closing the window never stops the backend; the tray and Dock reopen it.
   created.on("closed", () => {
     window = null;
+    applyMenuState(withoutOpenRun(menuState));
   });
   window = created;
   void created.loadURL(`${appOrigin}/`);
@@ -220,6 +227,28 @@ function refreshTray() {
       { label: "Open Factory", click: openWindow },
       { label: "Quit Factory", click: () => app.quit() },
     ]),
+  );
+}
+
+function applyMenuState(state: MenuState) {
+  menuState = state;
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      buildApplicationMenu(
+        menuState,
+        { platform: process.platform, development: !app.isPackaged },
+        {
+          run: (id) => {
+            // Without a window the command has no renderer; reopening it is the useful answer.
+            const target = window;
+            openWindow();
+            target?.webContents.send(channels.menuCommand, id);
+          },
+          checkForUpdates: () => void updates.check(),
+          openDocumentation: () => void shell.openExternal(documentationUrl),
+        },
+      ),
+    ),
   );
 }
 
@@ -390,6 +419,10 @@ function registerBridge() {
   });
   handle(channels.installUpdate, () => installUpdate());
   handle(channels.setUpdateChannel, (channel: unknown) => setUpdateChannel(channel));
+  handle(channels.setMenuState, (commands: unknown) => {
+    applyMenuState(parseMenuState(commands));
+    return { ok: true };
+  });
   // A MessagePort cannot be an invoke result; it goes to the requesting frame, keyed by nonce.
   ipcMain.handle(channels.openLive, (event, query: unknown, nonce: unknown) => {
     const frame = trustedFrame(event);
@@ -487,6 +520,7 @@ async function start() {
   });
   registerUi();
   registerBridge();
+  applyMenuState({});
   if (store.get().role === "server") backend.start();
   updates.start(updateChannel());
   tray = new Tray(trayImage());

@@ -28,6 +28,16 @@ export async function openDesktopComposer(app: App, screen: Screen, browser: Bro
   await expectFactoryConnected(screen);
 }
 
+/** Records Mod+Shift+N for New Run in Settings on a desktop composer, before Save. */
+export async function recordDesktopNewRunCandidate(app: App, screen: Screen, browser: Browser) {
+  await openDesktopComposer(app, screen, browser);
+  await openKeyboardSettings(screen, browser);
+  const newRunGroup = screen.getByRole("group", "New Run");
+  await newRunGroup.getByRole("button", "Change New Run").tap();
+  await browser.keyboard.press(`${shortcutMod}+Shift+n`);
+  return newRunGroup;
+}
+
 export async function fillHumanReviewChanges(screen: Screen, message: string) {
   const answer = screen.getByRole("form", "Answer Your review", { exact: true });
   await answer.getByRole("combobox", "Exit").selectOption({ label: "Request changes" });

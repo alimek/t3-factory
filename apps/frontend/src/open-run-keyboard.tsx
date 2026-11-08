@@ -30,12 +30,21 @@ const unavailable: OpenRunCommandSurface = {
 };
 
 let surface = unavailable;
+const surfaceListeners = new Set<() => void>();
 export function getOpenRunCommandSurface() {
   return surface;
 }
 
+export function subscribeOpenRunCommandSurface(listener: () => void) {
+  surfaceListeners.add(listener);
+  return () => {
+    surfaceListeners.delete(listener);
+  };
+}
+
 function setSurface(next: OpenRunCommandSurface) {
   surface = next;
+  for (const listener of surfaceListeners) listener();
 }
 
 function availability(run: RunNavigationEntry | undefined, detail: RunDetail | undefined) {

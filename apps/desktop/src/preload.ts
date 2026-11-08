@@ -25,6 +25,14 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
   setUpdateChannel: (channel: string) =>
     ipcRenderer.invoke(channels.setUpdateChannel, String(channel)),
+  setMenuState: (commands: unknown) => ipcRenderer.invoke(channels.setMenuState, commands),
+  onMenuCommand(listener: (id: string) => void) {
+    const handler = (_event: IpcRendererEvent, id: unknown) => listener(String(id));
+    ipcRenderer.on(channels.menuCommand, handler);
+    return () => {
+      ipcRenderer.removeListener(channels.menuCommand, handler);
+    };
+  },
   /**
    * contextBridge cannot pass a MessagePort: the port arrives here and is forwarded to the
    * page as a same-origin window message `{ type: "factory:live-port", nonce }`.

@@ -86,14 +86,18 @@ export function getShortcutPreferences() {
   loadPreferences();
   return preferences;
 }
-function subscribe(listener: () => void) {
+export function subscribeShortcutPreferences(listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 export function useShortcutPreferences() {
-  const state = useSyncExternalStore(subscribe, getShortcutPreferences, () => initial);
+  const state = useSyncExternalStore(
+    subscribeShortcutPreferences,
+    getShortcutPreferences,
+    () => initial,
+  );
   return {
     ...state,
     hint: (id: ShortcutId) => formatShortcut(state.bindings[id]),
