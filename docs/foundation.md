@@ -23,15 +23,15 @@ and restricted OAuth credentials live outside project repositories.
   execution, recovery and Run history read these revisions, so later edits and removals
   cannot rewrite history.
   External skill files are not frozen.
-- Each Start creates a new Task, Run and threads; a Task never has more than one
-  non-closed Run, and closed Runs are never reopened.
+- Each Start creates a new Task, Run and threads. A Settled Run returns to Active when one of
+  its Blocks reports; stopped Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
   context needed to resolve uncertain outcomes. An acknowledgement is not completion.
 - Reports name their Block by the Block id Factory issued; Run and Block identity never come
   from other model-supplied references.
-  Attention settlement and Run closure remain separate, with cancelled Human work never
+  Attention settlement, Settled Runs and Run closure remain separate, with cancelled Human work never
   represented as an answer.
 
 **Transactions and restart.** One backend owns a database. Start, reports, Human answers,

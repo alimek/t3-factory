@@ -1,7 +1,7 @@
 # Durable Runner
 
 The Runner turns accepted Starts, reports, Human answers and Stop requests into
-durable operations against T3, and decides when a Run is permanently closed. It owns
+durable operations against T3, and decides when a Run settles or is permanently closed. It owns
 the SQL tables, transaction boundaries and recovery rules below. Persistence
 principles are in [Application foundation](foundation.md#persistence-model); user
 behavior is in [Runs](runs.md); live-support limits are in
@@ -27,7 +27,7 @@ reporting protocol.
   report message repeats the same id. The worker passes it to `factory_get_block`, then
   `factory_update_block`. `factory_get_run` is read-only and grants no routing authority.
   Subagents do not call Factory tools.
-- Factory alone owns routing, handoff release, Human occurrences, Stop and closure. A
+- Factory alone owns routing, handoff release, Human occurrences, settling, Stop and closure. A
   completed model turn is not a business result. A definitive launch rejection is an
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
@@ -48,7 +48,7 @@ A worker is bound from the launch acknowledgement, or from exactly one search ca
 whose title matches and whose thread, workspace, provider, model, options and execution
 match the saved launch. Title alone is not ownership. An empty, delayed or ambiguous
 search never causes another launch or a guessed binding. An unresolved launch stays
-visible, blocks closure and release, and resumes after restart.
+visible, blocks automatic settlement and release, and resumes after restart.
 
 Delivery can be pending, reserved, acknowledged or uncertain. A crash or lost response
 after reservation leaves uncertainty, not a fresh attempt. An acknowledgement proves
@@ -66,7 +66,7 @@ a second owner fails startup. Never delete a live lock file. Process exit releas
 ownership without a takeover timer. Storage requires local-filesystem locking on macOS
 or Linux; network filesystems and remote backend ownership are unsupported.
 
-Startup reconciles every open Run before dispatching. Local changes serialize per Run,
+Startup reconciles every Run it [drives](#settled-runs) before dispatching. Local changes serialize per Run,
 and no SQL transaction spans T3 I/O. Shutdown releases ownership without requesting Stop.
 
 An uncertain worker launch is never replayed, including with the same key. While Factory
@@ -113,10 +113,13 @@ worker reports.
     handoff and relaunches no recipient;
   - after release with a different exit, creates handoffs to that exit's recipients, held under
     the same release rule, while Blocks started from the earlier exit keep running.
-- Repeating the current result returns its acknowledgement, also after Stop or closure. While
+- Repeating the current result returns its acknowledgement, also after settling or Stop. While
   a question or execution failure is pending on the Block, a repeat is a new version that
   settles it. Reports cannot erase engine failure, prove semantic correctness
-  or close a Run. A new report on a closed Run is `RUN_CLOSED`.
+  or settle a Run. A new report on a stopped Run is `RUN_CLOSED`.
+- Any accepted report on a [Settled](#settled-runs) Run, including a repeat of the current
+  result, returns the Run to Active in the same transaction and records `run-activated`
+  naming the Block.
 - Exits must match the captured ID or unambiguous exact name, with non-empty feedback
   when required. Accepted results remain held until the
   [handoff release](#routing-and-independent-queues) rule passes.
@@ -127,7 +130,7 @@ worker reports.
   message, an identical one returns its acknowledgement, and a later `waiting` or `finished`
   replaces it. Every working report is kept as history. A `working` after a result is the
   Block's current state until its next report; it withdraws neither the result nor its handoffs,
-  but it holds Finished closure.
+  but it keeps the Run from settling automatically.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
   The user replies in the same worker thread. Any later turn of that thread settles the
@@ -138,8 +141,8 @@ worker reports.
   missing-report and execution-failed attention on the Block.
 - A `working` or `waiting` report with an exit is `EXIT_NOT_ALLOWED`, and one without a message
   is `MESSAGE_REQUIRED`, both with repair guidance.
-- Earlier waiting history does not prevent closure once the activation has a final result
-  and its worker thread is finished. A pending question keeps it open. An incoming handoff can
+- Earlier waiting history does not prevent automatic settlement once the activation has a final
+  result and its worker thread is finished. A pending question keeps the Run Active. An incoming handoff can
   take over a waiting conversation like a reply.
 
 Report metadata retains fingerprints and references, not a second message archive.
@@ -148,7 +151,7 @@ Report metadata retains fingerprints and references, not a second message archiv
 ## Worker thread completion
 
 Factory trusts T3 to say when a Block's worker thread is finished. One shared rule decides it,
-and handoff release, missing report, closure, Stop and Request report all use it. A worker
+and handoff release, missing report, automatic settlement, Stop and Request report all use it. A worker
 thread is finished when all of these hold:
 
 - the `t3_thread_read` of the thread shows no active run and zero pending native requests;
@@ -231,30 +234,40 @@ conflict. Pending context is cleared after settlement. A Human Block stays waiti
 any occurrence is pending; it never closes the Run by itself. Stop cancels occurrences
 without inventing answers.
 
-## Closure
+## Settled Runs
 
-Successful closure requires all of the following:
+A Run is Active or Settled; Stop separately closes it. Each reconciliation pass tries to
+settle an Active Run with an open gate automatically. That requires all of the following:
 
 - Every visited Block's current activation has its worker's accepted final result with no
   later `working` report, and no attention is pending; every Human occurrence is answered.
   Unvisited branches need not run.
 - Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
   cancelled because their result was replaced owe no delivery.
-- A fresh read finds every Block's worker thread [finished](#worker-thread-completion), with
-  no failed latest run.
+- A fresh read finds every Block's worker thread [finished](#worker-thread-completion).
 
-Engine termination or a final report alone is insufficient. Before closure, native thread
-settlement is best effort and every worker thread is read again. The confirmation must still
-match the observed Run generation, gate, authorization and owner; concurrent local reports or
-answers invalidate it. Only durable confirmation records Finished or Stopped, together with
-each worker thread as observed. Closure evidence is immutable.
+Engine termination or a final report alone is insufficient. The local decision must still
+match the Run generation observed before the reads, its gate, authorization and owner;
+concurrent local reports, answers or observations invalidate it. Unavailable or mismatched
+reads keep the Run Active. Settling certifies that T3 reported every worker thread finished,
+not result quality or a common repository revision. Automatic settlement records
+`run-settled` (`automatic`), marks every result version completion-eligible and settles the
+Blocks' report-rejection diagnostics.
 
-Unavailable or mismatched reads keep the Run open. Closure certifies that T3 reported every
-worker thread finished, not result quality or a common repository revision.
+The user can settle an Active or Snoozed Run at any time (`run-settled`, `manual`). Settling
+changes no execution: the gate stays open, owed operations continue and attention stays
+pending. Both ways clear Snooze and Woke.
 
-Closed Runs never dispatch, reopen or extend their history after later T3 activity.
-New reports and Human answers are rejected; repeating a Block's current result can still
-return its original acknowledgement.
+A Settled Run is reconciled only while it owes an operation in pending, reserved or uncertain
+state, so owed handoffs are still released and delivered. Otherwise Factory does not read its
+worker threads: later turns without a report record no work periods or attention and leave
+the Run Settled. Reports, Human answers and Request report are accepted as for an Active Run;
+only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
+
+Stopped Runs are closed: they never dispatch, reopen or extend their history after later T3
+activity. New reports and Human answers are rejected; repeating a Block's current result can
+still return its original acknowledgement. Only durable confirmation records Stopped, together
+with each worker thread as observed; closure evidence is immutable.
 
 ## Gate-first Stop
 
@@ -316,19 +329,22 @@ automatically.
 
 ## Native thread organization
 
-T3 Settled is separate from Factory closure and attention. When native settle is supported,
-Factory best-effort settles each worker thread before recording Finished. New Runs have no
-Run conversation to organize, and historical Run conversations are not settled after
-closure. Factory never unsettles.
+T3 Settled is separate from Factory attention. When native settle is supported, Factory
+best-effort settles each worker thread after the Run settles: within the reconciliation pass
+for automatic settlement, in the background after the user's Settle. It claims one request
+per thread and latest recorded run while the Run is still Settled. New Runs have no Run
+conversation to organize, and historical Run conversations are not settled. Factory never
+unsettles, also when the Run returns to Active.
 
-A possibly issued settlement is never replayed, protecting manual reopen. Failure does not
-change results or closure, and existing closed Runs are not backfilled. With no native
-compare-and-set or replay key, direct activity can race the final read.
+A possibly issued settlement is never replayed for the same run, protecting manual reopen.
+Failure does not change results or the Run's Settled state, and Runs settled by the upgrade
+are not backfilled. With no native compare-and-set or replay key, direct activity can race
+the request.
 
 ## Navigation and presentation
 
-[Run navigation](runs.md#run-list) reflects recorded closure and
-unsettled attention without settling either. Snooze, Restore and acknowledging Woke change
-presentation only. New attention identities or an increased pending native count wake a
-snoozed open Run; a replacement request with an unchanged count is undetectable. Closure
-clears snooze and Woke.
+[Run navigation](runs.md#run-list) reflects the Run's lifecycle, recorded Stopped closure and
+unsettled attention without settling any. Snooze, Restore and acknowledging Woke change
+presentation only and apply to Active Runs. New attention identities or an increased pending
+native count wake a snoozed Run; a replacement request with an unchanged count is
+undetectable. Settling and Stopped closure clear snooze and Woke.

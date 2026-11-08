@@ -65,7 +65,7 @@ Retired as the way a Run starts. Factory launches each Agent Block as its own to
 The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
 
 **Worker thread finished**:
-Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, closure, Stop and Request report use it.
+Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement, Stop and Request report use it.
 _Avoid_: quiet frontier, owned tree, descendant coverage.
 
 **Block id**:
@@ -113,7 +113,7 @@ The Flow revision a Run started with and the Agent revision of every Agent that 
 _Avoid_: Run snapshot.
 
 **Run timeline**:
-The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, and closure. Each Run has its own timeline, distinct from conversations in its T3 threads.
+The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, settling, returning to Active, and closure. Each Run has its own timeline, distinct from conversations in its T3 threads.
 
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
@@ -148,20 +148,25 @@ One arrival at a Human step within a Run, with its own pending context and settl
 One T3 run of a Block's worker thread, including repeated visits, queued turns, user replies and automatic continuations after delegated or background work. Closed Runs may also show work periods of a historical Run conversation.
 
 **Settled**:
-In Run navigation, the group of executions with confirmed whole-Run Finished or
-Stopped closure. On a Run, matters that no longer await attention retain
-their appearance and settlement times and reasons; attention settlement does not
-by itself establish Run closure.
+A Run lifecycle state for work that is done. A Run settles automatically when every
+visited Block has its Final result with no later working report, every Human
+occurrence is answered, nothing is owed or pending and every worker thread is
+finished; the user can also settle an Active or Snoozed Run at any time. Settling
+changes no execution. Any accepted report from one of its Blocks returns it to
+Active; chat without a report does not. Navigation groups Settled Runs together.
+On a Run, settled attention matters no longer await attention and keep their
+appearance and settlement times and reasons; settling attention does not settle the Run.
+_Avoid_: Finished (the retired permanent outcome).
 
 **T3 thread settlement**:
 T3's presentation state for a conversation whose current work is complete; the
 same conversation can return to the active list when it receives new work.
-It is independent of Factory Run closure and attention settlement.
+Factory best-effort settles worker threads when their Run settles and never unsettles them; it is independent of attention settlement.
 
 **Snoozed**:
-Durable presentation for an open Run set aside from the main navigation list.
+Durable presentation for an Active Run set aside from the main navigation list.
 Execution continues. New actionable attention can wake it; manual Restore returns
-it without Woke. Confirmed closure always moves it to Settled.
+it without Woke. Settling it or confirmed Stopped closure clears it.
 
 **Woke**:
 An unseen presentation marker showing that new attention returned a snoozed Run
@@ -170,7 +175,7 @@ pending. Resnoozing accounts for existing attention identities so they cannot
 repeatedly wake the same Run.
 
 **Run closure**:
-The permanent local confirmation of a Run's finished or stopped outcome, backed by each worker thread as observed finished and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
+The permanent local confirmation of a Run's stopped outcome, backed by each worker thread as observed finished and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required
