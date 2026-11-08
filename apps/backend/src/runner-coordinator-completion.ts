@@ -70,17 +70,9 @@ export function completeCoordinator(
             // Terminal activations have no handoff release to settle their recovery diagnostics.
             const reports = yield* sql<{
               block_id: string;
-              execution_id: string;
-            }>`SELECT block_id,execution_id FROM runtime_reports WHERE run_id=${id}`;
+            }>`SELECT DISTINCT block_id FROM runtime_reports WHERE run_id=${id}`;
             for (const report of reports)
-              yield* settleReportRejections(
-                sql,
-                id,
-                report.block_id,
-                report.execution_id,
-                time,
-                true,
-              );
+              yield* settleReportRejections(sql, id, report.block_id, time);
           }
         }),
       );

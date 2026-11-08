@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { reportedWorker } from "./support/run-worker.ts";
+import { reportedWorker, workerMessage } from "./support/run-worker.ts";
 
 it("each Start of the same Flow revision shows the Agent revision current when it started", async (c) => {
   // Arrange
@@ -56,12 +56,8 @@ it("a block first activated after its Agent was edited and removed and the backe
   assert(run.ok);
   expect(run.value.activations.map((a) => a.blockId)).toStrictEqual(["worker", "parallel-block"]);
   const launches = [...f.t3.launches.values()].map((launch) => launch.payload);
-  expect(launches.map((launch) => launch.message)).toStrictEqual(
-    launches.map(
-      (launch) =>
-        `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launch.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
-    ),
-  );
+  expect(launches[0]!.message).toMatch(workerMessage("Follow repository instructions."));
+  expect(launches[1]!.message).toMatch(workerMessage("Follow repository instructions."));
   expect(launches[1]!.modelSelection).toEqual({
     instanceId: "codex-main",
     model: "gpt-6.1-sol",

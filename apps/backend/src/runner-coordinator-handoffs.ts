@@ -56,12 +56,16 @@ export function prepareCoordinatorHandoff(
         const target = JSON.parse(intent.target_json) as StoredTarget;
         const message = (JSON.parse(intent.payload_json) as { message: string }).message;
         const activationId = yield* newId;
+        const [block] = yield* sql<{
+          public_id: string;
+        }>`SELECT public_id FROM run_blocks WHERE run_id=${run.id} AND block_id=${intent.block_id}`;
         const launched = workerLaunchPayload(
           definitions,
           intent.block_id,
           target,
           intent.request_key,
           current.number,
+          block!.public_id,
         );
         const plan = {
           activationId,
@@ -78,7 +82,7 @@ export function prepareCoordinatorHandoff(
             threadId: prior.thread_id,
             mode: "queue",
             clientRequestId: intent.request_key,
-            message: workerTurn(message, intent.request_key),
+            message: workerTurn(message, block!.public_id),
           };
           yield* sql`UPDATE run_delegations SET accepted_json=${prior.accepted_json} WHERE activation_id=${plan.activationId}`;
           yield* sql`INSERT INTO coordinator_revisits(activation_id,original_activation_id) VALUES(${plan.activationId},${prior.original_id})`;

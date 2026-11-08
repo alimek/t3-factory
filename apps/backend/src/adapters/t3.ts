@@ -25,32 +25,6 @@ export interface T3Inspection {
   readonly authorizationIdentity?: string;
   readonly contract?: T3Contract;
 }
-/** Extend this capability seam with typed operations as later tickets require them. */
-export interface RuntimeActivity {
-  readonly thread: {
-    readonly threadId?: string;
-    readonly projectId: string;
-    readonly activeRunId: string | null;
-    readonly runtimeMode?: string;
-  };
-  readonly items: readonly {
-    readonly createdBy?: "user" | "agent" | "system" | null;
-    readonly creationSource?: "web" | "mobile" | "mcp" | "provider" | "server" | null;
-    readonly senderThreadId?: string | null;
-    readonly itemId: string;
-    readonly type: string;
-    readonly status?: string;
-    readonly runId: string;
-    readonly text: string | null;
-    readonly visibility?: string;
-    readonly subagentId?: string;
-    readonly sourceThreadId?: string;
-    readonly textTruncated?: boolean;
-    readonly nextTextOffset?: number | null;
-  }[];
-  readonly hasMore: boolean;
-  readonly nextPosition: number | null;
-}
 /** A bounded, fresh scan. Only complete local assistant items carry verified full text. */
 export interface ReportActivityItem {
   readonly position: number;
@@ -159,12 +133,6 @@ export interface T3Adapter {
     threadId: string,
     recorded?: readonly RecordedExecution[],
   ): Promise<ExecutionObservation>;
-  readRuntimeActivity(
-    target: T3Endpoint,
-    threadId: string,
-    afterPosition?: number,
-    itemId?: string,
-  ): Promise<RuntimeActivity>;
   listProjects(target: T3EnvironmentTarget): Promise<readonly T3Project[]>;
   resolveRepository(path: string): Promise<string>;
   createProject(target: T3ProjectTarget): Promise<T3Project>;

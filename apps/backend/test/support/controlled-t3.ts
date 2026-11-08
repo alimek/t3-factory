@@ -443,28 +443,6 @@ export class ControlledT3 implements T3Adapter {
     const execution = await this.readExecution(target, threadId);
     return { threadId, projectId: execution.projectId, items: [], complete: true };
   }
-  runtimeActivity: import("../../src/adapters/t3.ts").RuntimeActivity = {
-    thread: { projectId: "neutral", activeRunId: "execution-1" },
-    items: [],
-    hasMore: false,
-    nextPosition: null,
-  };
-  async readRuntimeActivity(
-    _target: T3Endpoint,
-    _threadId: string,
-    _afterPosition?: number,
-    itemId?: string,
-  ) {
-    if (!this.available) throw Error("Unavailable");
-    if (itemId)
-      return {
-        ...this.runtimeActivity,
-        items: this.runtimeActivity.items.filter((item) => item.itemId === itemId),
-        hasMore: false,
-        nextPosition: null,
-      };
-    return this.runtimeActivity;
-  }
   projects: T3Project[] = [];
   projectCreates = 0;
   async listProjects(_target: T3EnvironmentTarget) {

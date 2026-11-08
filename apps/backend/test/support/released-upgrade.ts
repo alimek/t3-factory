@@ -13,7 +13,12 @@ type Value<K extends keyof Factory> = Factory[K] extends (...args: never[]) => i
   : never;
 /** v0.2.0 returned a Run's definitions as the snapshot it stored at Start. */
 type ReleasedSnapshot = { flow: Value<"getFlow">; agents: Value<"getAgent">[] };
-type ReleasedRun = Omit<Value<"getRun">, "definitions"> & { snapshot: ReleasedSnapshot };
+type RunReport = Value<"getRun">["reports"][number];
+/** v0.2.0 also returned each report's key, retired with per-turn report authority. */
+type ReleasedRun = Omit<Value<"getRun">, "definitions" | "reports"> & {
+  snapshot: ReleasedSnapshot;
+  reports: readonly (RunReport & { key: string })[];
+};
 interface ReleasedCapture {
   t3: Record<string, unknown>;
   project: Value<"addRepository">;
@@ -50,6 +55,8 @@ export async function releasedUpgradeData(c: TestContext) {
   );
   const t3 = new ControlledT3();
   for (const [key, value] of Object.entries(observations)) {
+    // The capture's native call activity served retired per-turn report correlation.
+    if (key === "runtimeActivity") continue;
     assert(Object.hasOwn(t3, key), `Unknown captured adapter field: ${key}`);
     const restored =
       value && typeof value === "object" && "map" in value && Array.isArray(value.map)

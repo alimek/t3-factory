@@ -1,7 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { prepared } from "./prepared-runner.ts";
-import { bindThreadReportCaller } from "./lifecycle-setup.ts";
 
 const WORKER_THREAD = "thread-1";
 const WORKER_EXECUTION = "execution-1";
@@ -73,6 +72,21 @@ function seedFactoryWorker(
   });
 }
 
+/** A first or later visit message: the Block skill, the Block id line, then the turn's body. */
+export function workerMessage(body: string) {
+  return new RegExp(
+    `^\\$factory-block\\n\\nFactory Block id: [0-9a-f-]{36}\\. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block\\.\\n\\n${body.replaceAll(".", "\\.")}$`,
+  );
+}
+
+/** The Block id Factory stated in a worker's launch message, as an Agent reads it. */
+export function launchedBlockId(t3: ControlledT3, blockName = "Entry worker") {
+  const launch = [...t3.launches.values()].find((entry) =>
+    entry.payload.title.endsWith(` ${blockName}`),
+  );
+  return /Factory Block id: ([^.\s]+)/.exec(launch?.payload.message ?? "")?.[1] ?? "";
+}
+
 export async function directWorker(
   c: TestContext,
   observe = true,
@@ -85,22 +99,15 @@ export async function directWorker(
   assert(started.ok, JSON.stringify(started));
   await fixture.f.reconcileRuns();
   if (observe) assert((await fixture.f.reconcileRuns()).ok);
-  bindThreadReportCaller(
-    fixture.t3,
-    fixture.project.projectId,
-    WORKER_THREAD,
-    WORKER_EXECUTION,
-    "worker-report",
-  );
-  return { ...fixture, runId: started.value.id };
+  return { ...fixture, runId: started.value.id, blockId: launchedBlockId(fixture.t3) };
 }
-export const workerFinal = () => ({
+export const workerFinal = (blockId: string) => ({
   arguments: {
+    blockId,
     to: "finished",
     exit: "done",
     message: "Implemented the requested result.",
   },
-  metadata: { callId: "worker-report" },
 });
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {
   const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
@@ -125,7 +132,7 @@ export async function reportedWorker(
   targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
 ) {
   const f = await directWorker(c, true, targetBlockId);
-  assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   finishWorker(f, status);
   return f;
 }
@@ -154,8 +161,7 @@ export async function waitingWorker(c: TestContext) {
   assert(
     (
       await f.f.runtime.submit({
-        arguments: { to: "waiting", message: "Which audience?" },
-        metadata: { callId: "worker-report" },
+        arguments: { blockId: f.blockId, to: "waiting", message: "Which audience?" },
       })
     ).code === "ACCEPTED",
   );
@@ -187,22 +193,27 @@ export async function revisitedWorker(c: TestContext) {
   return f;
 }
 
-/** Direct native replies omit senderThreadId; overrides exercise rejection at the public boundary. */
-export async function workerNativeReply(
-  c: TestContext,
-  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
-) {
+/** The user's reply in the worker thread starts a new execution of that thread. */
+export async function repliedWorker(c: TestContext) {
   const f = await waitingWorker(c);
-  supplyWorkerReply(f, reply);
+  startWorkerTurn(f, "answer-execution", 2);
   return f;
 }
 
-/** Publish native reply evidence independently of the backend's observation lifetime. */
-function supplyWorkerReply(
-  f: Awaited<ReturnType<typeof waitingWorker>>,
-  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
-  executionId = "answer-execution",
-  ordinal = 2,
+/** A completed reply turn that omitted its report, followed by another user reply. */
+export async function followupReplyWorker(c: TestContext) {
+  const f = await repliedWorker(c);
+  assert((await f.f.reconcileRuns()).ok);
+  finishWorker(f);
+  assert((await f.f.reconcileRuns()).ok);
+  startWorkerTurn(f, "followup-execution", 3);
+  return f;
+}
+
+function startWorkerTurn(
+  f: Awaited<ReturnType<typeof directWorker>>,
+  executionId: string,
+  ordinal: number,
 ) {
   const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
   f.t3.executionObservations.set(WORKER_THREAD, {
@@ -211,36 +222,6 @@ function supplyWorkerReply(
     latestRunId: executionId,
     recentRuns: [...prior.recentRuns, { runId: executionId, status: "running", ordinal }],
   });
-  bindThreadReportCaller(f.t3, f.project.projectId, WORKER_THREAD, executionId, "worker-report");
-  f.t3.runtimeActivity = {
-    ...f.t3.runtimeActivity,
-    items: [
-      ...f.t3.runtimeActivity.items,
-      {
-        itemId: "user-answer-" + executionId,
-        type: "message",
-        runId: executionId,
-        text: "Public audience.",
-        visibility: "local",
-        sourceThreadId: WORKER_THREAD,
-        createdBy: "user",
-        ...reply,
-      },
-    ],
-  };
-}
-
-/** A second native answer follows a completed reply turn that omitted its report. */
-export async function workerFollowupReply(
-  c: TestContext,
-  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
-) {
-  const f = await workerNativeReply(c);
-  assert((await f.f.reconcileRuns()).ok);
-  finishWorker(f);
-  assert((await f.f.reconcileRuns()).ok);
-  supplyWorkerReply(f, reply, "followup-execution", 3);
-  return f;
 }
 
 export async function revisitReportingWorker(c: TestContext) {
@@ -253,7 +234,6 @@ export async function revisitReportingWorker(c: TestContext) {
     latestRunId: runId,
     recentRuns: [...prior.recentRuns, { runId, status: "running", ordinal: 3 }],
   });
-  bindThreadReportCaller(f.t3, f.project.projectId, WORKER_THREAD, runId, "worker-report");
   return { ...f, workerExecutionId: runId };
 }
 

@@ -18,7 +18,6 @@ import { runTarget, isTerminal } from "./runner-utils.ts";
 import type { CoordinationSaved, NativeSource } from "./coordinator-evidence-saved.ts";
 
 type Invocation = DelegationActivity["invocations"][number];
-type UnobservedMember = { threadId: string; parentThreadId: string | null };
 function nativeSources(activity: DelegationActivity): NativeSource[] {
   return [
     ...activity.invocations,
@@ -49,7 +48,6 @@ async function memberRead(
   role: MemberObservation["role"],
   retainLocal: RetainLocal,
   localExecutions: readonly LocalExecution[],
-  recovered: CoordinationSaved["recoveredFailures"] = [],
   executions: CoordinationSaved["executions"] = [],
   runlessNativeIdle = false,
 ): Promise<MemberObservation> {
@@ -98,16 +96,12 @@ async function memberRead(
     role,
     observation,
     requestsClear,
-    clear: requestsClear && memberExecutionsComplete(observation, recovered, runlessNativeIdle),
+    clear: requestsClear && memberExecutionsComplete(observation, runlessNativeIdle),
   };
 }
 
-function memberExecutionsComplete(
-  observation: ExecutionObservation,
-  recovered: NonNullable<CoordinationSaved["recoveredFailures"]>,
-  runlessNativeIdle: boolean,
-) {
-  const { activeRunId, latestRunId, recentRuns, threadId } = observation;
+function memberExecutionsComplete(observation: ExecutionObservation, runlessNativeIdle: boolean) {
+  const { activeRunId, latestRunId, recentRuns } = observation;
   if (activeRunId) return false;
   // Native projections have no execution to finish; aggregate settlement still gates release.
   if (runlessNativeIdle && latestRunId === null && recentRuns.length === 0) return true;
@@ -115,12 +109,7 @@ function memberExecutionsComplete(
     !!latestRunId &&
     recentRuns.some((r) => r.runId === latestRunId) &&
     new Set(recentRuns.map((r) => r.runId)).size === recentRuns.length &&
-    recentRuns.every(
-      (r) =>
-        r.status === "completed" ||
-        (r.status === "failed" &&
-          recovered.some((e) => e.threadId === threadId && e.executionId === r.runId)),
-    )
+    recentRuns.every((r) => r.status === "completed")
   );
 }
 function retainExecutionOrder(
@@ -237,7 +226,6 @@ async function readCandidate(
     "descendant",
     retainLocal,
     localExecutions,
-    [],
     executions,
     child.runlessNativeIdle === true,
   );
@@ -268,7 +256,6 @@ async function readMembers(
 ) {
   const members = [parent];
   const sources: NativeSource[] = [];
-  const workSources: NativeSource[] = [];
   const commands: import("./adapters/native-command.ts").NativeCommand[] = [];
   const remoteSources: RemoteSource[] = [];
   const attempted = new Set<string>();
@@ -295,7 +282,6 @@ async function readMembers(
       continue;
     }
     sources.push(...nativeSources(read.native));
-    workSources.push(...nativeSources({ ...read.native, taskResults: [] }));
     commands.push(...(read.native.commands ?? []));
     remoteSources.push(
       ...(read.native.remoteTasks ?? []).map((s) => ({ ...s, parentThreadId: threadId })),
@@ -310,7 +296,6 @@ async function readMembers(
     members,
     verified,
     sources,
-    workSources,
     commands,
     unobserved,
     remoteSources,
@@ -350,16 +335,11 @@ function coordinationProblem(
   members: readonly MemberObservation[],
   designated: boolean,
   verified: boolean,
-  recovered: CoordinationSaved["recoveredFailures"] = [],
 ) {
   if (
     members.some((m) =>
-      m.observation.recentRuns.some(
-        (r) =>
-          ["failed", "cancelled", "interrupted"].includes(r.status) &&
-          !recovered.some(
-            (e) => e.threadId === m.threadId && e.executionId === r.runId && r.status === "failed",
-          ),
+      m.observation.recentRuns.some((r) =>
+        ["failed", "cancelled", "interrupted"].includes(r.status),
       ),
     )
   )
@@ -376,10 +356,9 @@ function coordinationEvidence(
     release: boolean;
     aggregate: Awaited<ReturnType<T3Adapter["readDelegatedSettlement"]>> | null;
     tree: Awaited<ReturnType<T3Adapter["readDescendants"]>>;
-    recoveredFailures: CoordinationSaved["recoveredFailures"];
   },
 ): CoordinatorEvidence {
-  const { designated, verified, remoteHeld, release, tree, aggregate, recoveredFailures } = context;
+  const { designated, verified, remoteHeld, release, tree, aggregate } = context;
   return {
     version: 1,
     observedAt: new Date().toISOString(),
@@ -391,7 +370,7 @@ function coordinationEvidence(
       ? REMOTE_HOLD
       : release
         ? null
-        : coordinationHold(members, designated, verified, aggregate, recoveredFailures),
+        : coordinationHold(members, designated, verified, aggregate),
     release,
     limitations: [
       "Local bounded observations are not atomic; remote coverage is unavailable.",
@@ -410,10 +389,9 @@ function coordinationHold(
   designated: boolean,
   verified: boolean,
   aggregate: Awaited<ReturnType<T3Adapter["readDelegatedSettlement"]>> | null,
-  recovered: CoordinationSaved["recoveredFailures"],
 ) {
   return (
-    coordinationProblem(members, designated, verified, recovered) ??
+    coordinationProblem(members, designated, verified) ??
     aggregate?.problem ??
     "Associated executions, queues or native requests remain unresolved."
   );
@@ -478,50 +456,7 @@ function coversNativeExecutions(
   );
 }
 
-/** Checkpoint evidence is an immutable frontier, not permission for later commands. */
-function checkpointWork(
-  saved: CoordinationSaved,
-  members: readonly MemberObservation[],
-  sources: readonly NativeSource[],
-  unobserved: readonly UnobservedMember[],
-) {
-  const checkpoint = saved.checkpointEvidence;
-  if (!checkpoint) return false;
-  const assignedElsewhere = (threadId: string, executionId: string) =>
-    saved.executions.some(
-      (e) =>
-        e.thread_id === threadId &&
-        e.execution_id === executionId &&
-        e.activation_id !== null &&
-        e.activation_id !== saved.id,
-    );
-  return (
-    unobserved.some(
-      (m) =>
-        !checkpoint.members.some((old) => old.threadId === m.threadId) &&
-        !saved.executions.some(
-          (e) =>
-            e.thread_id === m.threadId && e.activation_id !== null && e.activation_id !== saved.id,
-        ),
-    ) ||
-    members.some((m) =>
-      m.observation.recentRuns.some(
-        (e) =>
-          !checkpoint.members.some(
-            (old) => old.threadId === m.threadId && old.executionIds.includes(e.runId),
-          ) && !assignedElsewhere(m.threadId, e.runId),
-      ),
-    ) ||
-    sources.some(
-      (s) =>
-        !checkpoint.sources.some((old) => isDeepStrictEqual(old, s)) &&
-        !assignedElsewhere(s.threadId, s.executionId),
-    )
-  );
-}
-
 function observedProblem(
-  unauthorized: boolean,
   remoteHeld: boolean,
   members: readonly MemberObservation[],
   designated: boolean,
@@ -529,12 +464,11 @@ function observedProblem(
   saved: CoordinationSaved,
   commandsKnown: boolean,
 ) {
-  if (unauthorized) return "Unauthorized post-checkpoint work requires attention.";
   if (!commandsKnown) return "Worker native command target or result is unverified.";
   if (!designated && saved.workerParentThreadId)
     return "Worker execution selection or lineage differs from the captured settings or is unavailable.";
   if (remoteHeld) return REMOTE_HOLD;
-  return coordinationProblem(members, designated, verified, saved.recoveredFailures);
+  return coordinationProblem(members, designated, verified);
 }
 
 /** A bounded local frontier rooted at the direct worker; P and sibling Blocks stay outside it.
@@ -559,7 +493,6 @@ export async function readCoordination(
     "worker",
     retainLocal,
     saved.localExecutions,
-    saved.recoveredFailures,
     executions,
   );
   const accepted = saved.accepted_json
@@ -588,14 +521,13 @@ export async function readCoordination(
     read.remoteSources,
     retainRemoteInput,
   );
-  const { sources, retained, unauthorized } = checkpointFrontier(saved, activity, read);
+  const { sources, retained } = nativeSourceFrontier(saved, activity, read);
   const commandScope = commandsCovered(
     observedCommands(activity, read),
     run.environment_id,
     new Set(read.members.map((m) => m.threadId)),
   );
   const verified =
-    !unauthorized &&
     commandScope &&
     activityMatches(activity, run, threadId) &&
     coversNativeExecutions(executions, read.members) &&
@@ -611,7 +543,6 @@ export async function readCoordination(
     remoteSources,
     commands: [...(activity.commands ?? []), ...read.commands],
     remoteObservations,
-    assessmentReady: designated && verified,
     members: read.members,
     sources,
     unobserved: read.unobserved,
@@ -623,17 +554,8 @@ export async function readCoordination(
       release,
       aggregate,
       tree,
-      recoveredFailures: saved.recoveredFailures,
     }),
-    problem: observedProblem(
-      unauthorized,
-      remoteHeld,
-      read.members,
-      designated,
-      verified,
-      saved,
-      commandScope,
-    ),
+    problem: observedProblem(remoteHeld, read.members, designated, verified, saved, commandScope),
   };
 }
 
@@ -681,7 +603,7 @@ async function remoteFrontier(
   };
 }
 /** Read-only task observations extend evidence without extending executable work authority. */
-function checkpointFrontier(
+function nativeSourceFrontier(
   saved: CoordinationSaved,
   activity: DelegationActivity,
   read: Awaited<ReturnType<typeof readMembers>>,
@@ -691,12 +613,6 @@ function checkpointFrontier(
     sources,
     retained: saved.sources.every((prior) =>
       sources.some((source) => isDeepStrictEqual({ ...prior }, source)),
-    ),
-    unauthorized: checkpointWork(
-      saved,
-      read.members,
-      [...nativeSources({ ...activity, taskResults: [] }), ...read.workSources],
-      read.unobserved,
     ),
   };
 }

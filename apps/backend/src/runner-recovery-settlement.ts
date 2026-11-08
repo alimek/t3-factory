@@ -123,13 +123,7 @@ export function settleRecoveries(
         if (!held.length) return;
         const time = yield* now;
         for (const recovery of settlements) {
-          yield* settleReportRejections(
-            sql,
-            id,
-            recovery.blockId,
-            recovery.sourceExecutionId,
-            time,
-          );
+          yield* settleReportRejections(sql, id, recovery.blockId, time);
           yield* sql`UPDATE report_recoveries SET settled_at=${time} WHERE attention_id=${recovery.attentionId} AND settled_at IS NULL`;
           yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason=${"recovered-by:" + recovery.executionId} WHERE id=${recovery.attentionId} AND settled_at IS NULL`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${id},${recovery.blockId},${recovery.executionId},'attention-settled',${"attention-settled:" + recovery.attentionId},${recovery.attentionId},${time}) ON CONFLICT DO NOTHING`;

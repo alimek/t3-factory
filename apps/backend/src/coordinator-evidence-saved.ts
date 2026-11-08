@@ -1,6 +1,5 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { CoordinatorEvidence } from "@t3-factory/contracts";
 import type { LocalExecution } from "./coordinator-selection.ts";
 import type { BlockRow, RunRow } from "./runner-types.ts";
 import { readRemoteReferences } from "./coordinator-remote.ts";
@@ -9,10 +8,6 @@ export interface CoordinationSaved {
   workerParentThreadId?: string | undefined;
   localExecutions: readonly LocalExecution[];
   remoteWork: readonly import("@t3-factory/contracts").RemoteWork[];
-  checkpointEvidence?:
-    | { members: CoordinatorEvidence["members"]; sources: readonly NativeSource[] }
-    | undefined;
-  recoveredFailures?: readonly { threadId: string; executionId: string }[];
   id: string;
   accepted_json: string | null;
   executions: readonly { thread_id: string; execution_id: string; activation_id: string | null }[];
@@ -49,18 +44,12 @@ export function savedCoordination(
     >`SELECT thread_id,execution_id,activation_id FROM run_executions WHERE run_id=${run.id} AND block_id=${block.block_id}
     UNION SELECT thread_id,execution_id,NULL FROM coordinator_native_obligations WHERE run_id=${run.id} AND block_id=${block.block_id} AND NOT EXISTS(SELECT 1 FROM run_executions e WHERE e.run_id=${run.id} AND e.thread_id=coordinator_native_obligations.thread_id AND e.execution_id=coordinator_native_obligations.execution_id)
     UNION SELECT o.thread_id,o.reference,NULL FROM run_root_obligations o JOIN run_thread_bindings b ON b.run_id=o.run_id AND b.thread_id=o.thread_id WHERE o.run_id=${run.id} AND b.block_id=${block.block_id} AND o.kind='execution' AND NOT EXISTS(SELECT 1 FROM run_executions e WHERE e.run_id=o.run_id AND e.thread_id=o.thread_id AND e.execution_id=o.reference)`;
-    const [checkpoint] = yield* sql<{
-      evidence_json: string;
-    }>`SELECT evidence_json FROM assessment_checkpoints WHERE activation_id=${saved.id}`;
     return {
       ...saved,
       workerParentThreadId: (yield* sql<{
         parent_thread_id: string;
       }>`SELECT parent_thread_id FROM run_worker_activations WHERE activation_id=${saved.id}`)[0]
         ?.parent_thread_id,
-      checkpointEvidence: checkpoint
-        ? (JSON.parse(checkpoint.evidence_json) as CoordinationSaved["checkpointEvidence"])
-        : undefined,
       localExecutions: yield* sql<
         import("./coordinator-selection.ts").LocalExecution
       >`SELECT thread_id,execution_id,parent_thread_id,provider_instance_id,model,ordinal FROM coordinator_local_executions WHERE run_id=${run.id}`,
@@ -68,10 +57,6 @@ export function savedCoordination(
       members,
       sources,
       executions,
-      recoveredFailures: yield* sql<{
-        threadId: string;
-        executionId: string;
-      }>`SELECT c.reporter_thread_id AS threadId,c.reporter_execution_id AS executionId FROM assessment_checkpoints c JOIN run_activations a ON a.id=c.activation_id WHERE a.run_id=${run.id} AND a.block_id=${block.block_id}`,
     };
   });
 }

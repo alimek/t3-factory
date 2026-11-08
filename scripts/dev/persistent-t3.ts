@@ -14,7 +14,6 @@ import type {
 /** A local simulated engine. Its accepted keys outlive the Factory process. */
 export class PersistentT3 extends ControlledT3 {
   private readonly statePath: string;
-  private readonly nativeRuntimeModes = new Map<string, string>();
 
   constructor(home: string, restore: boolean) {
     super();
@@ -43,7 +42,6 @@ export class PersistentT3 extends ControlledT3 {
       >;
       if (saved.version !== 2) throw new Error("Unsupported demo engine state; run pnpm db:reset.");
       this.identity = saved.identity;
-      for (const [key, value] of saved.nativeRuntimeModes) this.nativeRuntimeModes.set(key, value);
       for (const [key, value] of saved.delegationActivities)
         this.delegationActivities.set(key, value);
       for (const [key, value] of saved.childEvidence) this.childEvidence.set(key, value);
@@ -70,7 +68,6 @@ export class PersistentT3 extends ControlledT3 {
     return {
       version: 2,
       identity: this.identity,
-      nativeRuntimeModes: [...this.nativeRuntimeModes],
       delegationActivities: [...this.delegationActivities],
       childEvidence: [...this.childEvidence],
       descendantEvidence: [...this.descendantEvidence],
@@ -88,31 +85,6 @@ export class PersistentT3 extends ControlledT3 {
 
   save() {
     writeState(this.statePath, this.snapshot());
-  }
-
-  override async readRuntimeActivity(
-    target: T3Endpoint,
-    threadId: string,
-    cursor?: number,
-    itemId?: string,
-  ) {
-    if (this.runtimeActivity.thread.threadId === threadId)
-      return super.readRuntimeActivity(target, threadId, cursor, itemId);
-    const observation = this.executionObservations.get(threadId);
-    const child = this.childEvidence.get(threadId)?.thread;
-    const runtimeMode = this.nativeRuntimeModes.get(threadId) ?? child?.runtimeMode;
-    if (!observation || !runtimeMode) throw Error("Simulated native caller is not recorded.");
-    return {
-      thread: {
-        threadId,
-        projectId: observation.projectId,
-        activeRunId: observation.activeRunId,
-        runtimeMode,
-      },
-      items: [],
-      hasMore: false,
-      nextPosition: null,
-    };
   }
 
   private nativeTreeQuiet(threadId: string): boolean {
@@ -164,8 +136,6 @@ export class PersistentT3 extends ControlledT3 {
 
   override async launchThread(target: T3Endpoint, payload: LaunchPayload) {
     const reference = await super.launchThread(target, payload);
-    // Explicit effective permission mode of this synthetic engine, retained across restart.
-    this.nativeRuntimeModes.set(reference.threadId, "full-access");
     await recordRoot(this, reference.threadId, reference.projectId);
     this.save();
     return reference;

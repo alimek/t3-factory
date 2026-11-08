@@ -5,7 +5,6 @@ import { directWorker, finishWorker, waitingWorker, workerFinal } from "./run-wo
 import { childRead } from "./coordination-wire.ts";
 import { supplyChild } from "./native-root-evidence.ts";
 import { beginNativeTurn, finishNativeTurn } from "../../../../scripts/dev/native-simulation.ts";
-import type { RuntimeActivity } from "../../src/adapters/t3.ts";
 
 /** Serve the reduced capture unchanged, including exact-item selection. */
 export function capturedWorker(c: TestContext) {
@@ -79,7 +78,7 @@ export async function reportedNativeWorker(
     coverage: "incomplete",
     problem: "Bounded native child scan.",
   });
-  const accepted = await f.f.runtime.submit(workerFinal());
+  const accepted = await f.f.runtime.submit(workerFinal(f.blockId));
   assert(accepted.code === "ACCEPTED", JSON.stringify(accepted));
   finishWorker(f);
   return f;
@@ -92,24 +91,10 @@ export async function completedWireWorker(c: TestContext) {
   const threadId = "thread-1";
   const reply = workerActivity.items[1];
   const notification = workerActivity.items[3];
-  let items: readonly (RuntimeActivity["items"][number] & {
-    position: number;
-    updatedAt: string;
-  })[] = [];
-  let toolName = "factory-runtime.factory_get_block";
-  let toolInput: object = {};
+  let items: readonly Record<string, unknown>[] = [];
   const wire = await authorizedLiveOAuth(c, {
     runtimeActivity: (args) => {
       const observation = f.t3.executionObservations.get(threadId)!;
-      const call = {
-        ...workerActivity.items[0],
-        itemId: "turn-item:provider:codex:native-item:worker-report",
-        position: items.length,
-        runId: observation.latestRunId!,
-        status: "running",
-        text: JSON.stringify({ toolName, input: toolInput }),
-      };
-      const activity = [...items, call];
       return {
         ...workerActivity,
         thread: {
@@ -122,9 +107,9 @@ export async function completedWireWorker(c: TestContext) {
         items: args.runLimit
           ? []
           : args.itemId
-            ? activity.filter((item) => item.itemId === args.itemId)
-            : activity,
-        nextPosition: call.position,
+            ? items.filter((item) => item.itemId === args.itemId)
+            : items,
+        nextPosition: items.length,
       };
     },
   });
@@ -134,18 +119,10 @@ export async function completedWireWorker(c: TestContext) {
     id === threadId
       ? wire.adapter.readExecution(target, id, recorded)
       : readExecution(t, id, recorded);
-  const readActivity = f.t3.readRuntimeActivity.bind(f.t3);
-  f.t3.readRuntimeActivity = (t, id, cursor, itemId) =>
-    id === threadId
-      ? wire.adapter.readRuntimeActivity(target, id, cursor, itemId)
-      : readActivity(t, id, cursor, itemId);
 
   beginNativeTurn(f.t3, threadId, "answer-execution");
   items = [{ ...reply, position: 0, runId: "answer-execution" }];
-  assert(
-    (await f.f.runtime.block({ arguments: {}, metadata: { callId: "worker-report" } })).code ===
-      "BLOCK",
-  );
+  assert((await f.f.runtime.block({ arguments: { blockId: f.blockId } })).code === "BLOCK");
   finishNativeTurn(f.t3, threadId, "answer-execution");
   assert((await f.f.reconcileRuns()).ok);
 
@@ -154,10 +131,7 @@ export async function completedWireWorker(c: TestContext) {
     ...items,
     { ...reply, position: 1, itemId: "turn-item:message:followup", runId: "followup-execution" },
   ];
-  assert(
-    (await f.f.runtime.block({ arguments: {}, metadata: { callId: "worker-report" } })).code ===
-      "BLOCK",
-  );
+  assert((await f.f.runtime.block({ arguments: { blockId: f.blockId } })).code === "BLOCK");
   items = [...items, { ...workerActivity.items[2], position: 2, runId: "followup-execution" }];
   const delegation = await wire.adapter.readDelegationActivity(target, threadId);
   assert(delegation.complete, delegation.problem);
@@ -173,9 +147,7 @@ export async function completedWireWorker(c: TestContext) {
   finishNativeTurn(f.t3, "thread-3", "execution-3");
   beginNativeTurn(f.t3, threadId, "continuation-execution");
   items = [...items, { ...notification, position: 3, runId: "continuation-execution" }];
-  toolName = "factory-runtime.factory_update_block";
-  toolInput = workerFinal().arguments;
-  expect((await f.f.runtime.submit(workerFinal())).code).toBe("ACCEPTED");
+  expect((await f.f.runtime.submit(workerFinal(f.blockId))).code).toBe("ACCEPTED");
   const held = await f.f.getRun(f.runId);
   assert(held.ok);
   expect(held.value.reports[0]?.completionEligibleAt).toBeNull();

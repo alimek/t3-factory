@@ -8,7 +8,6 @@ import type {
   RuntimeReadiness,
 } from "@t3-factory/contracts";
 import type { T3Target } from "./adapters/t3.ts";
-import type { RuntimeBinding } from "./runtime-types.ts";
 
 /** A Run's row with the definitions it captured at Start. */
 export type RunRow = {
@@ -38,6 +37,8 @@ export type RunRow = {
 export type BlockRow = {
   run_id: string;
   block_id: string;
+  /** The Block id Agents name in Factory MCP calls; null for Human steps. */
+  public_id: string | null;
   name: string;
   state: RunBlock["state"];
   thread_id: string | null;
@@ -80,8 +81,8 @@ export type ReportRow = {
   result_message: string | null;
   id: string;
   block_id: string;
-  execution_id: string;
-  report_key: string;
+  /** The Block's latest execution when the report was accepted, if its worker was bound. */
+  execution_id: string | null;
   fingerprint: string;
   status: "waiting" | "finished";
   exit_id: string | null;
@@ -89,7 +90,6 @@ export type ReportRow = {
   acknowledgement_json: string;
   accepted_at: string;
   completion_eligible_at: string | null;
-  final_contract: number;
   pending_message: string | null;
 };
 
@@ -167,7 +167,6 @@ export interface RunnerLifecycle {
   getRun(id: string): Effect.Effect<Result<RunDetail>, unknown>;
 }
 export interface RunnerOptions {
-  bindings: { bind(binding: RuntimeBinding): void; unbind(threadId: string): void };
   checkAgent: (
     projectId: string,
     agent: RunDefinitions["agents"][number],

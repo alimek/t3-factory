@@ -48,7 +48,6 @@ export async function delegationWire(
     additionalPayloads?: readonly unknown[];
     threadId?: string;
     projectId?: string;
-    contextActivity?: import("../../src/adapters/t3.ts").RuntimeActivity;
   } = {},
 ) {
   const original = JSON.stringify(payload);
@@ -81,8 +80,6 @@ export async function delegationWire(
   const fixture = await authorizedLiveOAuth(c, {
     runtimeActivity: (args) => {
       reads.push(args);
-      if (settings.contextActivity && args.threadId === settings.contextActivity.thread.threadId)
-        return settings.contextActivity;
       const selected = extra.find((i) => i.itemId === args.itemId);
       if (selected)
         return {

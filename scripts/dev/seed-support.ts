@@ -1,4 +1,3 @@
-import { bindRuntimeReportCaller } from "../../apps/backend/test/support/lifecycle-setup.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { finishNativeTurn } from "./native-simulation.ts";
@@ -16,11 +15,18 @@ export function executionBlock(run: RunDetail, blockId = "worker") {
   return { ...block, threadId: block.threadId, executionId: block.executionId };
 }
 
+/** The Block id Factory stated in the worker's launch message, as its Agent reads it. */
+export function launchedBlockId(t3: PersistentT3, threadId: string) {
+  const launch = [...t3.launches.values()].find((entry) => entry.reference.threadId === threadId);
+  const blockId = /Factory Block id: ([^.\s]+)/.exec(launch?.payload.message ?? "")?.[1];
+  if (!blockId) throw Error(`Development seed: thread ${threadId} has no Block id.`);
+  return blockId;
+}
+
 export interface SeedContext {
   factory: Factory;
   t3: PersistentT3;
   projectId: string;
-  t3ProjectId: string;
 }
 
 /** Bounded reconciliation, with an observable condition rather than elapsed time. */
@@ -60,7 +66,7 @@ export async function startScenario(
   );
 }
 
-/** Simulated native calls enter the public runtime boundary; never parse messages. */
+/** Simulated Agent reports enter the public runtime boundary with the Block id. */
 export async function report(
   context: SeedContext,
   run: RunDetail,
@@ -68,16 +74,8 @@ export async function report(
   value: { to: "finished" | "waiting"; exit?: string; message?: string },
 ) {
   const block = executionBlock(run, blockId);
-  bindRuntimeReportCaller(
-    context.t3,
-    context.t3ProjectId,
-    block.executionId,
-    `${block.blockId}:${value.to}`,
-    block.threadId,
-  );
   const reply = await context.factory.runtime.submit({
-    arguments: value,
-    metadata: { callId: `${block.blockId}:${value.to}` },
+    arguments: { blockId: launchedBlockId(context.t3, block.threadId), ...value },
   });
   if (reply.code !== "ACCEPTED") throw Error(`Development report: ${reply.code}`);
   return reconcileUntil(context, run.id, (detail) =>
@@ -85,7 +83,7 @@ export async function report(
       ? detail.attention.some(
           (item) => item.kind === "conversation-waiting" && item.settledAt === null,
         )
-      : detail.reports.some((item) => item.blockId === blockId && item.key === value.to),
+      : detail.reports.some((item) => item.blockId === blockId && item.status === value.to),
   );
 }
 

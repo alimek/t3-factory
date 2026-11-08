@@ -1,10 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
-import { workerWithUnavailableRun } from "./support/run-worker-isolation.ts";
 import { completedWorkerRecovery } from "./support/run-worker-recovery.ts";
-import {
-  workerWithDroppedDescendant,
-  workerWithLostDescendantEvidence,
-} from "./support/run-worker-evidence.ts";
+import { workerWithDroppedDescendant } from "./support/run-worker-evidence.ts";
 import {
   workerStart,
   directWorker,
@@ -13,13 +9,14 @@ import {
   waitingWorker,
   missingWorkerReport,
   revisitedWorker,
-  workerNativeReply,
-  workerFollowupReply,
+  repliedWorker,
+  followupReplyWorker,
   finishedWorker,
+  launchedBlockId,
   pendingReview,
+  workerMessage,
   interruptRunConversation,
 } from "./support/run-worker.ts";
-import { bindThreadReportCaller } from "./support/lifecycle-setup.ts";
 import { prepared } from "./support/prepared-runner.ts";
 
 it("a Flow with two entry Agents launches an independent top-level worker for each", async (c) => {
@@ -69,12 +66,8 @@ it("a Flow with two entry Agents launches an independent top-level worker for ea
     "Factory #1 · 1 Review",
     "Factory #1 · 2 Draft",
   ]);
-  expect(launches[0]!.message).toBe(
-    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launches[0]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
-  );
-  expect(launches[1]!.message).toBe(
-    `$factory-block\n\nEdit the draft.\n\nFactory tool ref: ${launches[1]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
-  );
+  expect(launches[0]!.message).toMatch(workerMessage("Follow repository instructions."));
+  expect(launches[1]!.message).toMatch(workerMessage("Edit the draft."));
   expect(launches[0]!.modelSelection).toEqual({
     instanceId: "codex-main",
     model: "gpt-6.1-sol",
@@ -124,10 +117,9 @@ it("two Blocks that share one Agent still launch separate workers", async (c) =>
     "Factory #1 · 1 Review",
     "Factory #1 · 2 Second review",
   ]);
-  expect(launches.map((launch) => launch.message)).toStrictEqual([
-    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launches[0]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
-    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${launches[1]!.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
-  ]);
+  expect(launches[0]!.message).toMatch(workerMessage("Follow repository instructions."));
+  expect(launches[1]!.message).toMatch(workerMessage("Follow repository instructions."));
+  expect(launchedBlockId(f.t3, "Review")).not.toBe(launchedBlockId(f.t3, "Second review"));
   expect(launches[0]!.clientRequestId).not.toBe(launches[1]!.clientRequestId);
   expect(result.value.blocks.map((block) => block.threadId)).toStrictEqual([
     "thread-1",
@@ -153,9 +145,7 @@ it("normal Start launches the entry worker with its own Agent settings and no Ru
   expect(f.t3.launches.size).toBe(1);
   const payload = [...f.t3.launches.values()][0]!.payload;
   expect(payload.title).toBe("Factory #1 · 1 Entry worker");
-  expect(payload.message).toBe(
-    `$factory-block\n\nFollow repository instructions.\n\nFactory tool ref: ${payload.clientRequestId}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`,
-  );
+  expect(payload.message).toMatch(workerMessage("Follow repository instructions."));
   expect(payload.modelSelection.model).toBe(f.agent.execution.modelId);
   expect(payload.modelSelection.instanceId).toBe(f.agent.execution.providerInstanceId);
 });
@@ -186,40 +176,13 @@ it("a worker that fails after reporting cannot release downstream work", async (
   expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
   expect(f.t3.sends.size).toBe(0);
 });
-it("a worker on the project checkout can still report", async (c) => {
-  // Arrange
-  const f = await directWorker(c);
-  f.t3.reportCheckoutWorkspace = true;
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("ACCEPTED");
-});
-
-it("a foreign thread cannot report a worker final", async (c) => {
-  // Arrange
-  const f = await directWorker(c);
-  bindThreadReportCaller(f.t3, f.project.projectId, "thread-9", "execution-9", "worker-report");
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).not.toBe("ACCEPTED");
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports).toStrictEqual([]);
-});
-it("a worker clarification is scoped to its exact worker execution", async (c) => {
+it("a worker's waiting report is a question in its own worker thread", async (c) => {
   // Arrange
   const f = await directWorker(c);
 
   // Act
   const result = await f.f.runtime.submit({
-    arguments: { to: "waiting", message: "Which audience?" },
-    metadata: { callId: "worker-report" },
+    arguments: { blockId: f.blockId, to: "waiting", message: "Which audience?" },
   });
 
   // Assert
@@ -288,7 +251,7 @@ it("a revisit reuses the direct worker with distinct activation ownership", asyn
   ).toBe(run.value.activations[1]?.id);
   expect(f.t3.launches.size).toBe(1);
 });
-it("restart preserves direct worker authority without replaying accepted work", async (c) => {
+it("restart preserves the worker binding without replaying accepted work", async (c) => {
   // Arrange
   const f = await directWorker(c);
   await f.f.close();
@@ -303,22 +266,6 @@ it("restart preserves direct worker authority without replaying accepted work", 
   expect(run.value.executions[0]?.activationId).toBe(run.value.activations[0]?.id);
   expect(f.t3.launches.size).toBe(1);
   expect(f.t3.sends.size).toBe(0);
-});
-it("a descendant discovered by a failed assessment still holds a worker final after native history loss and restart", async (c) => {
-  // Arrange
-  const f = await workerWithLostDescendantEvidence(c);
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("ASSESSMENT_UNVERIFIED");
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports).toStrictEqual([]);
-  expect(run.value.threadBindings).toContainEqual(
-    expect.objectContaining({ threadId: "thread-3", role: "descendant" }),
-  );
 });
 it("Stop keeps a saved running descendant after it leaves the worker native activity", async (c) => {
   // Arrange
@@ -369,66 +316,49 @@ it("Stop retains the primary and worker tree until native completion is confirme
   expect(f.t3.treeStops.map((s) => s.threadId)).toContain("thread-1");
   expect(f.t3.launches.size).toBe(1);
 });
-it("a native user answer with omitted sender binds its exact continuation and settles the question before accepting its final", async (c) => {
+it("a worker resumed by the user's reply reports its finished result and settles its question", async (c) => {
   // Arrange
-  const f = await workerNativeReply(c);
+  const f = await repliedWorker(c);
 
   // Act
-  const result = await f.f.runtime.submit(workerFinal());
+  const result = await f.f.runtime.submit(workerFinal(f.blockId));
 
   // Assert
   expect(result.code).toBe("ACCEPTED");
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
-  expect(run.value.reports[0]?.executionId).toBe("answer-execution");
   expect(run.value.reports[0]?.activationId).toBe(run.value.activations[0]?.id);
-  expect(run.value.executions.find((e) => e.executionId === "answer-execution")?.activationId).toBe(
-    run.value.activations[0]?.id,
-  );
   expect(run.value.attention.find((a) => a.id === f.question.id)).toMatchObject({
     settledAt: expect.any(String),
     settlementReason: "completed",
   });
 });
-it("a native user answer with explicit null sender retains worker report authority", async (c) => {
+it("a later user reply can finish the activation after a reportless reply and backend restart", async (c) => {
   // Arrange
-  const f = await workerNativeReply(c, { senderThreadId: null });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("ACCEPTED");
-});
-it("a later native user reply can finish the activation after a reportless reply and backend restart", async (c) => {
-  // Arrange
-  const f = await workerFollowupReply(c);
+  const f = await followupReplyWorker(c);
   await f.f.close();
   const factory = await f.h.open({ t3: f.t3 });
 
   // Act
-  const result = await factory.runtime.submit(workerFinal());
+  const result = await factory.runtime.submit(workerFinal(f.blockId));
 
   // Assert
   expect(result.code).toBe("ACCEPTED");
   const run = await factory.getRun(f.runId);
   assert(run.ok);
   expect(run.value.activations).toHaveLength(1);
-  expect(run.value.reports).toMatchObject([
-    { executionId: "followup-execution", activationId: run.value.activations[0]?.id },
-  ]);
+  expect(run.value.reports).toMatchObject([{ activationId: run.value.activations[0]?.id }]);
   expect(
     run.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
   ).toStrictEqual([]);
 });
-it("a later native user reply can ask another question after a reportless reply", async (c) => {
+it("a later user reply can ask another question after a reportless reply", async (c) => {
   // Arrange
-  const f = await workerFollowupReply(c);
+  const f = await followupReplyWorker(c);
 
   // Act
   const result = await f.f.runtime.submit({
-    arguments: { to: "waiting", message: "Confirm the revised scope?" },
-    metadata: { callId: "worker-report" },
+    arguments: { blockId: f.blockId, to: "waiting", message: "Confirm the revised scope?" },
   });
 
   // Assert
@@ -439,123 +369,41 @@ it("a later native user reply can ask another question after a reportless reply"
   expect(run.value.reports).toStrictEqual([]);
   expect(
     run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
-  ).toMatchObject([{ executionId: "followup-execution", message: "Confirm the revised scope?" }]);
+  ).toMatchObject([{ message: "Confirm the revised scope?" }]);
   expect(
     run.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
   ).toStrictEqual([]);
 });
-it("an agent-authored follow-up cannot acquire report authority from a settled worker question", async (c) => {
+it("a worker resumed by the user's reply can ask a new question on the same activation", async (c) => {
   // Arrange
-  const f = await workerFollowupReply(c, { createdBy: "agent" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports).toStrictEqual([]);
-});
-it("a native user answer with omitted sender can ask a new question on the same activation", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c);
+  const f = await repliedWorker(c);
 
   // Act
   const result = await f.f.runtime.submit({
-    arguments: { to: "waiting", message: "Which tone?" },
-    metadata: { callId: "worker-report" },
+    arguments: { blockId: f.blockId, to: "waiting", message: "Which tone?" },
   });
 
   // Assert
   expect(result.code).toBe("ACCEPTED");
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
-  expect(run.value.executions.find((e) => e.executionId === "answer-execution")?.activationId).toBe(
-    run.value.activations[0]?.id,
-  );
+  expect(run.value.activations).toHaveLength(1);
   expect(run.value.attention.find((a) => a.id === f.question.id)?.settledAt).toEqual(
     expect.any(String),
   );
   expect(
     run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
-  ).toMatchObject([{ executionId: "answer-execution", message: "Which tone?" }]);
+  ).toMatchObject([{ message: "Which tone?" }]);
   expect(run.value.reports).toStrictEqual([]);
-});
-it("an agent-authored follow-up cannot acquire worker question authority", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c, { createdBy: "agent" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-it("a follow-up without actor provenance cannot acquire worker question authority", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c);
-  const { createdBy: _actor, ...reply } = f.t3.runtimeActivity.items.at(-1)!;
-  f.t3.runtimeActivity = {
-    ...f.t3.runtimeActivity,
-    items: [f.t3.runtimeActivity.items[0]!, reply],
-  };
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-it("a user-authored message forwarded from another thread cannot acquire worker question authority", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c, { senderThreadId: "thread-9" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-it("a user-authored message sourced from another thread cannot acquire worker question authority", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c, { sourceThreadId: "foreign-thread" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-it("an inherited user message cannot acquire worker question authority", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c, { visibility: "inherited" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-it("a native user answer for a different execution cannot authorize the reporting execution", async (c) => {
-  // Arrange
-  const f = await workerNativeReply(c, { runId: "other-execution" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
 });
 it("an accepted worker final cannot be replaced by a different final", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  expect((await f.f.runtime.submit(workerFinal())).code).toBe("ACCEPTED");
+  expect((await f.f.runtime.submit(workerFinal(f.blockId))).code).toBe("ACCEPTED");
 
   // Act
   const result = await f.f.runtime.submit({
-    ...workerFinal(),
-    arguments: { ...workerFinal().arguments, message: "Changed result" },
+    arguments: { ...workerFinal(f.blockId).arguments, message: "Changed result" },
   });
 
   // Assert
@@ -565,18 +413,6 @@ it("an accepted worker final cannot be replaced by a different final", async (c)
     allowedTransitions: [],
     allowedExits: ["Done"],
   });
-});
-
-it("a known worker report never reads an unrelated unavailable Run", async (c) => {
-  // Arrange
-  const f = await workerWithUnavailableRun(c);
-
-  // Act
-  const result = await f.f.runtime.submit({ ...workerFinal(), inheritedThreadId: "thread-1" });
-
-  // Assert
-  expect(result.code).toBe("ACCEPTED");
-  expect(f.unrelatedReads()).toBe(0);
 });
 
 it("completed direct worker recovery settles the original missing report only after source release", async (c) => {
@@ -688,23 +524,4 @@ it("a held worker handoff launches exactly one next worker after a backend resta
     }),
   );
   expect(f.t3.launches.size).toBe(2);
-});
-
-it("a subagent tool item cannot authorize its worker's final result", async (c) => {
-  // Arrange
-  const f = await directWorker(c);
-  const activity = f.t3.runtimeActivity;
-  f.t3.runtimeActivity = {
-    ...activity,
-    items: activity.items.map((item) => ({ ...item, subagentId: "subagent" })),
-  };
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("FOREIGN_CALLER");
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports).toStrictEqual([]);
 });

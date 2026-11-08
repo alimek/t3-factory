@@ -1,14 +1,8 @@
 import type { AgentProviderReporting } from "@t3-factory/contracts";
 
 /** Harnesses whose Block reports Factory can accept. */
-export const REPORTING_DRIVERS = ["codex", "claudeAgent", "cursor", "grok"] as const;
+const REPORTING_DRIVERS = ["codex", "claudeAgent", "cursor", "grok"] as const;
 export type ReportingDriver = (typeof REPORTING_DRIVERS)[number];
-
-/**
- * Cursor and Grok do not send a native call id. Their in-flight timeline item is the
- * locator: Cursor records the tool arguments directly, Grok nests them under `tool_input`.
- */
-export const ACTIVITY_REPORTING_DRIVERS = ["cursor", "grok"] as const;
 
 export const isReportingDriver = (driverKind: unknown): driverKind is ReportingDriver =>
   REPORTING_DRIVERS.some((driver) => driver === driverKind);

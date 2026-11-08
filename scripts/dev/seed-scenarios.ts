@@ -1,9 +1,9 @@
-import { bindRuntimeReportCaller } from "../../apps/backend/test/support/lifecycle-setup.ts";
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
 import { delegateNativeWork } from "./native-simulation.ts";
 import {
   executionBlock,
   failScenarioExecution,
+  launchedBlockId,
   nativeAttention,
   observeTerminal,
   reconcileUntil,
@@ -163,20 +163,13 @@ async function rejectedReportScenario(context: SeedContext, flowId: string) {
     "Review the existing navigation wording and report through the Flow's captured exit.",
   );
   const worker = executionBlock(run);
-  bindRuntimeReportCaller(
-    context.t3,
-    context.t3ProjectId,
-    worker.executionId,
-    "demo-rejected-report",
-    worker.threadId,
-  );
   const reply = await context.factory.runtime.submit({
     arguments: {
+      blockId: launchedBlockId(context.t3, worker.threadId),
       to: "finished",
       exit: "Unknown exit",
       message: "The review is complete; the exit needs correction.",
     },
-    metadata: { callId: "demo-rejected-report" },
   });
   if (reply.code !== "INVALID_EXIT") throw Error(`Development rejection: ${reply.code}`);
   await observeTerminal(context.t3, worker, "completed");

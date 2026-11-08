@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { entryMessagesTooLong, persistEntryLaunches } from "./runner-block-workers.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { newId } from "./ids.ts";
@@ -146,7 +147,7 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
     for (const agent of agents)
       yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
     for (const block of plan.definitions.flow.graph.blocks)
-      yield* sql`INSERT INTO run_blocks(run_id,block_id,name) VALUES(${plan.runId},${block.id},${block.name})`;
+      yield* sql`INSERT INTO run_blocks(run_id,block_id,name,public_id) VALUES(${plan.runId},${block.id},${block.name},${block.kind === "agent" ? randomUUID() : null})`;
     yield* persistEntryLaunches(sql, {
       runId: plan.runId,
       number,

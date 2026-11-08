@@ -4,7 +4,6 @@ import {
   workerWithOwnedControl,
   reportedControlledWorker,
   workerWithUnknownControl,
-  workerWithLateControl,
 } from "./support/run-worker-commands.ts";
 import { workerFinal, finishWorker } from "./support/run-worker.ts";
 
@@ -34,7 +33,7 @@ it("a retained verified control receipt does not poison a later explicit worker 
   const recovery = await workerRecoveryTurn(f, missing.id);
 
   // Act
-  const result = await f.f.runtime.submit(workerFinal());
+  const result = await f.f.runtime.submit(workerFinal(f.blockId));
 
   // Assert
   expect(result.code).toBe("ACCEPTED");
@@ -47,23 +46,7 @@ it("a retained verified control receipt does not poison a later explicit worker 
 it("an unverified native control target holds a worker final with a specific visible problem", async (c) => {
   // Arrange
   const f = await workerWithUnknownControl(c);
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).not.toBe("ACCEPTED");
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports).toStrictEqual([]);
-  expect(run.value.blocks[0]?.problem).toBe(
-    "Worker native command target or result is unverified.",
-  );
-});
-
-it("a new native control after an accepted worker final holds release without replacing the result", async (c) => {
-  // Arrange
-  const f = await workerWithLateControl(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
 
   // Act
   await f.f.reconcileRuns();
@@ -71,9 +54,8 @@ it("a new native control after an accepted worker final holds release without re
   // Assert
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
-  expect(run.value.reports).toHaveLength(1);
   expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
   expect(run.value.blocks[0]?.problem).toBe(
-    "Unauthorized post-checkpoint work requires attention.",
+    "Worker native command target or result is unverified.",
   );
 });

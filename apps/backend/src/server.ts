@@ -266,17 +266,6 @@ function reportingRoutes(factory: Factory): readonly ApiRoute[] {
     },
     {
       method: "POST",
-      path: /^\/api\/runtime\/context$/,
-      hostOnly: true,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.runtime.context(input)),
-          (body) => writeJsonResponse(200, body),
-        ),
-    },
-    {
-      method: "POST",
       path: /^\/api\/runtime\/recheck$/,
       hostOnly: true,
       body: standardBody,

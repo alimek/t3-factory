@@ -109,7 +109,7 @@ export async function reportedControlledWorker(
   firstObservation: "completed" | "in-progress" | "unresolved" = "completed",
 ) {
   const f = await workerWithOwnedControl(c, "interrupt", firstObservation);
-  assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   finishWorker(f);
   f.t3.engineStatus = "completed";
   f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", "execution-1"]), {
@@ -154,21 +154,5 @@ export async function workerWithUnknownControl(c: TestContext) {
     ...activity,
     commands: [...activity.commands!, ...extra.commands!],
   });
-  return f;
-}
-
-export async function workerWithLateControl(c: TestContext) {
-  const f = await workerWithOwnedControl(c);
-  assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
-  const activity = f.t3.delegationActivities.get("thread-1")!;
-  const original = activity.commands![0]!;
-  f.t3.delegationActivities.set("thread-1", {
-    ...activity,
-    commands: [
-      ...activity.commands!,
-      { ...original, itemId: "turn-item:provider:codex:native-item:late-control" },
-    ],
-  });
-  finishWorker(f);
   return f;
 }

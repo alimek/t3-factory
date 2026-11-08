@@ -181,7 +181,6 @@ it("a worker resumed after repeated replies and delegation releases one handoff 
   expect(run.value.reports).toMatchObject([
     {
       status: "finished",
-      executionId: "continuation-execution",
       activationId: run.value.activations[0]?.id,
       completionEligibleAt: expect.any(String),
       recipients: ["parallel-block"],

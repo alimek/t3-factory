@@ -46,7 +46,6 @@ import type {
   T3Target,
   ThreadIdentityRead,
   RecordedExecution,
-  RuntimeActivity,
   ReportActivity,
   ReportActivityItem,
   SendPayload,
@@ -70,7 +69,6 @@ import {
   type ChildEvidenceTarget,
   type EvidenceCall,
 } from "./coordination-evidence.ts";
-import { completeDynamicToolText, needsCompleteActivityText } from "../activity-text.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { parseProviderCapabilities } from "./t3-capabilities.ts";
 import {
@@ -1707,80 +1705,6 @@ export class LiveT3Adapter implements T3Adapter {
         "Report activity is unavailable or its public metadata is invalid; reconnect and recheck.",
       );
     }
-  }
-  async readRuntimeActivity(
-    target: T3Endpoint,
-    threadId: string,
-    afterPosition?: number,
-    itemId?: string,
-  ): Promise<RuntimeActivity> {
-    return this.withAuthorizedClient(target, async (client) => {
-      const body = this.structuredToolResult(
-        await client.callTool(
-          {
-            name: "t3_thread_read",
-            arguments: {
-              threadId,
-              view: "activity",
-              limit: 100,
-              maxCharsPerItem: 2000,
-              ...(afterPosition !== undefined ? { afterPosition } : {}),
-              ...(itemId !== undefined ? { itemId } : {}),
-            },
-          },
-          { timeout: 10000 },
-        ),
-      ) as RuntimeActivity;
-      if (
-        !body ||
-        typeof body.thread?.projectId !== "string" ||
-        !(body.thread.activeRunId === null || typeof body.thread.activeRunId === "string") ||
-        !Array.isArray(body.items) ||
-        typeof body.hasMore !== "boolean" ||
-        !(
-          body.nextPosition === null ||
-          (Number.isInteger(body.nextPosition) && body.nextPosition >= 0)
-        ) ||
-        body.items.some(
-          (item) =>
-            typeof item.itemId !== "string" ||
-            typeof item.type !== "string" ||
-            (item.text !== null && typeof item.text !== "string") ||
-            (item.type === "dynamic_tool" && typeof item.runId !== "string"),
-        )
-      )
-        throw Error("Invalid runtime activity");
-      const items = [];
-      for (const item of body.items) {
-        items.push(
-          needsCompleteActivityText(item)
-            ? await completeDynamicToolText(item, async (itemId, textOffset) => {
-                const page = this.structuredToolResult(
-                  await client.callTool(
-                    {
-                      name: "t3_thread_read",
-                      arguments: {
-                        threadId,
-                        view: "activity",
-                        itemId,
-                        textOffset,
-                        limit: 1,
-                        maxCharsPerItem: 50_000,
-                      },
-                    },
-                    { timeout: 10000 },
-                  ),
-                ) as RuntimeActivity;
-                const part = page.items?.[0];
-                if (!part || page.items.length !== 1)
-                  throw Error("Activity continuation is unavailable or ambiguous.");
-                return part;
-              })
-            : item,
-        );
-      }
-      return { ...body, items };
-    });
   }
   async close() {
     await this.completion;

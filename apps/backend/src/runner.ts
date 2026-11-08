@@ -5,7 +5,6 @@ import { rootFrontier } from "./run-root-frontier.ts";
 import { openCoordinatorQuestionReplies } from "./coordinator-question-reply.ts";
 import { openRunControlRecovery } from "./run-control-recovery.ts";
 import { openBlockTools } from "./runner-block-tools.ts";
-import { openRuntimeContext } from "./runtime-context.ts";
 import { openRootCommands } from "./run-coordinator-commands.ts";
 import { openRunCoordinator } from "./run-coordinator.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
@@ -21,7 +20,6 @@ import type { EffectOperations } from "./effect-operations.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { failure } from "./result.ts";
 import type { BlockRow, IntentRow, RunnerOptions, RunRow } from "./runner-types.ts";
-import type { RuntimeBinding } from "./runtime-types.ts";
 import { openRunnerDatabase } from "./runner-database.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
@@ -38,7 +36,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   ops: EffectOperations<FactoryOperations>,
   t3: T3Adapter,
   owner: { token: string },
-  bindings: RunnerOptions["bindings"],
   intervalMs: number,
   checkAgent: RunnerOptions["checkAgent"],
 ) {
@@ -48,8 +45,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { row } = database;
   const rootCommands = openRootCommands(database, t3);
   const runCoordinator = openRunCoordinator(database, t3);
-  const { getRun, listTasks, updateTask, reportBindings, isClosedThread, listAttention } =
-    openRunnerQueries(database);
+  const { getRun, listTasks, updateTask, listAttention } = openRunnerQueries(database);
   let closed = false;
   const starts = Semaphore.makeUnsafe(1);
   const sweeps = Semaphore.makeUnsafe(1);
@@ -65,8 +61,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
   const rootRecovery = openRunControlRecovery(database, t3);
-  const { consumeRuntimeReport } = openRunnerReports(database, lifecycle, t3);
-  const { observe } = openRunnerObservation(database, t3, bindings);
+  const { consumeBlockUpdate } = openRunnerReports(database, lifecycle);
+  const { observe } = openRunnerObservation(database, t3);
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
@@ -188,33 +184,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
     recoverRunCoordinator: rootRecovery.recoverRunCoordinator,
-    readFactoryTool: openBlockTools(database, t3, getRun, liveContextId, (id) =>
-      drive(id, "observe"),
-    ),
-    runtimeContext: openRuntimeContext(
-      database,
-      t3,
-      rootCommands,
-      observe,
-      drives.serial,
-      liveContextId,
-      getRun,
-    ),
-    reportBindings: (key: string, threadId?: string, discover = false) =>
-      Effect.gen(function* () {
-        if (!discover) return yield* reportBindings(key, threadId);
-        const known = threadId
-          ? yield* sql`SELECT run_id FROM run_blocks WHERE thread_id=${threadId}`
-          : [];
-        const pending = known.length
-          ? []
-          : yield* sql<{
-              id: string;
-            }>`SELECT r.id FROM runs r WHERE r.closed_at IS NULL AND r.gate_open=1 AND EXISTS(SELECT 1 FROM run_coordinator_commands c WHERE c.run_id=r.id AND c.state='issued')`;
-        for (const candidate of pending) yield* drive(candidate.id, "observe");
-        return yield* reportBindings(key, threadId);
-      }),
-    isClosedThread,
+    readFactoryTool: openBlockTools(database, getRun),
     answerHumanOccurrence,
     replyCoordinatorQuestion: openCoordinatorQuestionReplies(database, lifecycle),
     stopRun,
@@ -262,13 +232,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           scope,
         );
       }),
-    refreshRuntimeBinding: (binding: RuntimeBinding) =>
-      Effect.gen(function* () {
-        if (closed) return;
-        const run = yield* row(binding.factoryRunId);
-        if (run && !run.closed_at && run.gate_open) yield* drive(run.id, "observe");
-      }),
-    consumeRuntimeReport,
+    consumeBlockUpdate,
     close,
   };
 });

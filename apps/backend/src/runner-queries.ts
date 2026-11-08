@@ -22,7 +22,6 @@ import type {
   TaskRow,
   TaskRunRow,
 } from "./runner-types.ts";
-import type { RuntimeBinding } from "./runtime-types.ts";
 
 type ClosureRow = {
   outcome: NonNullable<RunDetail["outcome"]>;
@@ -76,13 +75,14 @@ function runReport(report: ReportRow): RunDetail["reports"][number] {
       : {}),
     blockId: report.block_id,
     executionId: report.execution_id,
-    key: report.report_key,
     fingerprint: report.fingerprint,
     status: report.status,
     exitId: report.exit_id,
     recipients: JSON.parse(report.recipients_json) as string[],
     acceptedAt: report.accepted_at,
-    ...(report.final_contract ? { completionEligibleAt: report.completion_eligible_at } : {}),
+    ...(report.status === "finished"
+      ? { completionEligibleAt: report.completion_eligible_at }
+      : {}),
   };
 }
 
@@ -356,33 +356,5 @@ export function openRunnerQueries(database: RunnerDatabase) {
     },
     listTasks,
     updateTask,
-    reportBindings(
-      key: string,
-      threadId?: string,
-    ): Effect.Effect<readonly RuntimeBinding[], unknown> {
-      return run(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return yield* sql<RuntimeBinding>`SELECT DISTINCT b.thread_id AS threadId,p.project_id AS projectId,
-          c.environment_id AS environmentId,r.workspace_root AS workspaceRoot,c.endpoint,c.id AS contextId,rp.execution_id AS runId,r.id AS factoryRunId,b.block_id AS blockId
-          FROM runtime_reports rp JOIN runs r ON r.id=rp.run_id
-          JOIN run_blocks b ON b.run_id=rp.run_id AND b.block_id=rp.block_id
-          JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
-          JOIN t3_authorization_contexts c ON c.id=r.context_id
-          WHERE (rp.report_key=${key} OR rp.final_contract=1) AND (${threadId ?? null} IS NULL OR b.thread_id=${threadId ?? null})`;
-        }),
-      );
-    },
-    isClosedThread(threadId: string) {
-      return run(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return (
-            (yield* sql`SELECT b.thread_id FROM run_blocks b JOIN runs r ON r.id=b.run_id WHERE b.thread_id=${threadId} AND r.closed_at IS NOT NULL`)
-              .length > 0
-          );
-        }),
-      );
-    },
   };
 }

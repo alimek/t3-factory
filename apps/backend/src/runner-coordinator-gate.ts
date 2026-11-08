@@ -34,16 +34,13 @@ export function coordinatorGate(
     if (!saved.blocks.length) return null;
     const frontierTargets = [];
     const coordination = [];
-    const recovered: { threadId: string; executionId: string }[] = [];
     for (const block of saved.blocks) {
       const [report] = yield* database.transaction(
         (sql) =>
-          sql<{
-            execution_id: string;
-          }>`SELECT execution_id FROM runtime_reports WHERE activation_id=${block.gate_activation_id}`,
+          sql`SELECT id FROM runtime_reports WHERE activation_id=${block.gate_activation_id}`,
       );
       if (!report) return null;
-      const { result, recoveredFailures } = yield* collectCoordination(
+      const { result } = yield* collectCoordination(
         database,
         t3,
         run,
@@ -52,16 +49,6 @@ export function coordinatorGate(
       );
       if (!result.evidence.release || result.problem) return null;
       coordination.push(result.evidence);
-      recovered.push(...(recoveredFailures ?? []));
-      if (
-        !saved.executions.some(
-          (e) =>
-            e.thread_id === block.thread_id &&
-            e.execution_id === report.execution_id &&
-            e.activation_id === block.gate_activation_id,
-        )
-      )
-        return null;
       const targets = memberTargets(result.members, saved.executions, block.block_id);
       if (!targets) return null;
       frontierTargets.push(...targets);
@@ -81,13 +68,7 @@ export function coordinatorGate(
           f.pendingRequestCount !== 0 ||
           f.executions.some(
             (e) =>
-              (e.status !== "completed" &&
-                !(
-                  e.status === "failed" &&
-                  recovered.some(
-                    (r) => r.threadId === f.threadId && r.executionId === e.executionId,
-                  )
-                )) ||
+              e.status !== "completed" ||
               !saved.executions.some(
                 (s) => s.thread_id === f.threadId && s.execution_id === e.executionId,
               ),

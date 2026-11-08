@@ -45,43 +45,30 @@ it("a completed child does not create a missing-report Problem while T3 still ha
   ).toStrictEqual([]);
 });
 
-it("a native completion notification lets the resumed worker finish its activation after restart", async (c) => {
+it("a worker resumed by a notification finishes its activation after restart", async (c) => {
   // Arrange
   const f = await continuedWorker(c);
   await f.f.close();
   const factory = await f.h.open({ t3: f.t3 });
 
   // Act
-  const result = await factory.runtime.submit(workerFinal());
+  const result = await factory.runtime.submit(workerFinal(f.blockId));
 
   // Assert
   expect(result.code).toBe("ACCEPTED");
   const run = await factory.getRun(f.runId);
   assert(run.ok);
   expect(run.value.activations).toHaveLength(1);
-  expect(run.value.reports).toMatchObject([
-    { executionId: "continuation-execution", activationId: run.value.activations[0]?.id },
-  ]);
+  expect(run.value.reports).toMatchObject([{ activationId: run.value.activations[0]?.id }]);
   expect(
     run.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
   ).toStrictEqual([]);
 });
 
-it("an agent-authored notification cannot acquire the worker activation", async (c) => {
-  // Arrange
-  const f = await continuedWorker(c, { createdBy: "agent", creationSource: "mcp" });
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-
 it("a delegated workflow closes after its resumed worker reports and its whole tree completes", async (c) => {
   // Arrange
   const f = await continuedDelegation(c);
-  assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   finishNativeTurn(f.t3, "thread-1", "continuation-execution");
 
   // Act
@@ -91,36 +78,23 @@ it("a delegated workflow closes after its resumed worker reports and its whole t
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
   expect(run.value.outcome).toBe("finished");
-  expect(run.value.reports).toMatchObject([
-    { executionId: "continuation-execution", completionEligibleAt: expect.any(String) },
-  ]);
+  expect(run.value.reports).toMatchObject([{ completionEligibleAt: expect.any(String) }]);
   expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
 });
 
-it("a notification forwarded from another thread cannot acquire the worker activation", async (c) => {
+it("a waiting worker resumed by a notification can finish and its question settles", async (c) => {
   // Arrange
-  const f = await continuedWorker(c, { senderThreadId: "foreign-thread" });
+  const f = await continuedWorker(c, true);
 
   // Act
-  const result = await f.f.runtime.submit(workerFinal());
+  const result = await f.f.runtime.submit(workerFinal(f.blockId));
 
   // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
-});
-
-it("a background completion notification cannot answer an outstanding worker question", async (c) => {
-  // Arrange
-  const f = await continuedWorker(c, {}, true);
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal());
-
-  // Assert
-  expect(result.code).toBe("UNBOUND_ACTIVATION");
+  expect(result.code).toBe("ACCEPTED");
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
   expect(run.value.attention).toContainEqual(
-    expect.objectContaining({ kind: "conversation-waiting", settledAt: null }),
+    expect.objectContaining({ kind: "conversation-waiting", settledAt: expect.any(String) }),
   );
-  expect(run.value.reports).toStrictEqual([]);
+  expect(run.value.reports).toMatchObject([{ status: "finished", exitId: "done" }]);
 });

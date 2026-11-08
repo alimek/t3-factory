@@ -721,8 +721,7 @@ export interface RunDetail extends RunSummary {
   readonly reports: readonly {
     readonly id: string;
     readonly blockId: string;
-    readonly executionId: string;
-    readonly key: string;
+    readonly executionId: string | null;
     readonly fingerprint: string;
     readonly status: "waiting" | "finished";
     readonly exitId: string | null;

@@ -31,12 +31,9 @@ import { newId } from "./ids.ts";
 const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
-/** The installed Block skill plus the turn the worker should act on. */
-export function workerTurn(body: string, ref?: string) {
-  const token = ref
-    ? `\n\nFactory tool ref: ${ref}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`
-    : "";
-  return `$factory-block\n\n${body}${token}`;
+/** The installed Block skill, the Block id its Factory tools take, and the turn to act on. */
+export function workerTurn(body: string, blockId: string) {
+  return `$factory-block\n\nFactory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block.\n\n${body}`;
 }
 
 /** Stable title saved with the launch. Later Block renames do not change recovery's target. */
@@ -50,6 +47,7 @@ export function workerLaunchPayload(
   target: Pick<T3Target, "environmentId" | "projectId">,
   key: string,
   number: number,
+  publicId: string,
 ): LaunchPayload {
   const blocks = definitions.flow.graph.blocks;
   const index = blocks.findIndex((entry) => entry.id === blockId);
@@ -61,7 +59,7 @@ export function workerLaunchPayload(
   return {
     ...payload,
     title: workerTitle(number, index, block.name),
-    message: workerTurn(agent.prompt, key),
+    message: workerTurn(agent.prompt, publicId),
   };
 }
 
@@ -84,12 +82,16 @@ export function persistEntryLaunches(
       if (!block || block.kind !== "agent") continue;
       const activationId = yield* newId;
       const requestKey = yield* newId;
+      const [saved] = yield* sql<{
+        public_id: string;
+      }>`SELECT public_id FROM run_blocks WHERE run_id=${plan.runId} AND block_id=${blockId}`;
       const payload = workerLaunchPayload(
         plan.definitions,
         blockId,
         plan.project,
         requestKey,
         plan.number,
+        saved!.public_id,
       );
       yield* persistActivation(
         sql,

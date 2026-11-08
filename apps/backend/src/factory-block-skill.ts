@@ -13,15 +13,17 @@ description: Work one Factory Block with the factory-runtime tools. Use when the
 
 This thread is one Block in a Factory Run. Factory takes the Block's result only from its tools, never from chat.
 
+Factory's messages in this thread give the Block id on a \`Factory Block id:\` line. Pass it as \`blockId\` on every Factory tool call.
+
 1. Call \`factory_get_block\` before any other work. Done when it returns your Block with its inputs and exits.
 2. Work from this Agent's prompt and those inputs. Call \`factory_get_run\` when you need the rest of the Run as context.
 3. Report with \`factory_update_block\`. Done when it returns an acknowledgement.
    - \`to: "waiting"\` when you need the user's reply, then end the turn.
    - \`to: "finished"\` with one of the Block's exits when the work is done.
 
-When the message gives a Factory tool ref, pass it as \`ref\` on every Factory tool call. Factory tools belong to this thread's own agent; subagents work without them.
+Factory tools belong to this thread's own agent; subagents work without them and never receive the Block id.
 
-Every later turn in this thread, including feedback and user replies, starts again at step 1.
+Every later turn in this thread, including feedback, notifications and user replies, starts again at step 1 with the same Block id.
 `;
 
 /** Codex keeps the skill next to config.toml. Claude's user config keeps it under `.claude/skills`. */
