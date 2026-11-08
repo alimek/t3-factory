@@ -7,7 +7,6 @@ import { persistActivation } from "./runner-coordination.ts";
 import { workerLaunchPayload, workerTurn } from "./runner-block-workers.ts";
 import { fingerprint } from "./runner-utils.ts";
 import { launchStrategy } from "./run-workspace.ts";
-import { preparedWorkerThread } from "./run-prepared-workers.ts";
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
 
@@ -34,15 +33,12 @@ export function prepareCoordinatorHandoff(
           result_id: string | null;
         }>`SELECT a.id,COALESCE(v.original_activation_id,a.id) AS original_id,d.accepted_json,b.thread_id,(SELECT r.id FROM runtime_reports r WHERE r.activation_id=a.id AND r.status='finished' ORDER BY r.rowid DESC LIMIT 1) AS result_id FROM run_activations a JOIN run_delegations d ON d.activation_id=COALESCE((SELECT original_activation_id FROM coordinator_revisits WHERE activation_id=a.id),a.id) JOIN run_blocks b ON b.run_id=a.run_id AND b.block_id=a.block_id LEFT JOIN coordinator_revisits v ON v.activation_id=a.id WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} ORDER BY a.rowid DESC LIMIT 1`,
     );
-    // An unresolved launch or idle worker preparation for the target holds its arrival.
+    // An unresolved launch for the target holds its arrival.
     const pending = yield* database.transaction(
       (sql) =>
-        sql`SELECT id FROM operation_intents WHERE run_id=${run.id} AND block_id=${intent.block_id} AND kind IN ('launch','prepare') AND state NOT IN ('acknowledged','cancelled')`,
+        sql`SELECT id FROM operation_intents WHERE run_id=${run.id} AND block_id=${intent.block_id} AND kind='launch' AND state NOT IN ('acknowledged','cancelled')`,
     );
     if (pending.length) return undefined;
-    const prepared = prior
-      ? undefined
-      : yield* database.transaction((sql) => preparedWorkerThread(sql, run.id, intent.block_id));
     // A worktree Run's later workers join its worktree, so they wait until it is bound.
     const strategy = launchStrategy(current.workspace, intent.block_id);
     if (!strategy) return undefined;
@@ -85,17 +81,6 @@ export function prepareCoordinatorHandoff(
         let payload:
           | import("./adapters/t3.ts").LaunchPayload
           | import("./adapters/t3.ts").SendPayload = launched;
-        // The first arrival at a prepared Block sends the task its launch would have carried.
-        if (prepared) {
-          payload = {
-            environmentId: target.environmentId,
-            threadId: prepared,
-            mode: "queue",
-            clientRequestId: intent.request_key,
-            message: launched.message,
-          };
-          yield* sql`UPDATE operation_intents SET target_json=${JSON.stringify({ ...target, threadId: prepared })} WHERE id=${intent.id}`;
-        }
         if (prior) {
           payload = {
             environmentId: target.environmentId,
@@ -110,7 +95,7 @@ export function prepareCoordinatorHandoff(
           yield* sql`UPDATE operation_intents SET target_json=${JSON.stringify({ ...target, threadId: prior.thread_id })} WHERE id=${intent.id}`;
         }
         const body = JSON.stringify(payload);
-        yield* sql`UPDATE operation_intents SET kind=${prior || prepared ? "send" : "launch"},payload_json=${body},fingerprint=${fingerprint(body)} WHERE id=${intent.id} AND kind='handoff' AND state='pending'`;
+        yield* sql`UPDATE operation_intents SET kind=${prior ? "send" : "launch"},payload_json=${body},fingerprint=${fingerprint(body)} WHERE id=${intent.id} AND kind='handoff' AND state='pending'`;
         yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
         return (yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE id=${intent.id}`)[0];
       }),

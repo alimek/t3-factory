@@ -228,14 +228,17 @@ export async function preparedWorktreeReviewFlow(c: TestContext) {
   return { ...setup, flow: flow.value };
 }
 
-/** The review Flow's Run with its worktree bound and idle workers prepared for Parallel work and
- * Unused branch, while Entry worker's first turn runs. */
-export async function preparedIdleWorkers(c: TestContext) {
+/** The review Flow's Run with its worktree bound while Entry worker's first turn runs; no later
+ * Block has a worker yet. */
+export async function boundWorktreeReview(c: TestContext) {
   const setup = await preparedWorktreeReviewFlow(c);
   const started = await setup.f.startRun(setup.input);
   assert(started.ok);
   assert((await setup.f.reconcileRuns()).ok);
-  assert(setup.t3.idleLaunches.size === 2);
+  const run = await setup.f.getRun(started.value.id);
+  assert(
+    run.ok && run.value.workspace.mode === "worktree" && run.value.workspace.state === "bound",
+  );
   const launch = [...setup.t3.launches.values()][0]!;
   const entryBlockId = /Factory Block id: ([^.\s]+)/.exec(launch.payload.message)![1]!;
   return { ...setup, runId: started.value.id, entryBlockId };

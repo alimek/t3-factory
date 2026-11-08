@@ -70,7 +70,7 @@ Retired. Factory no longer saves a model selection for a primary Run conversatio
 Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The top-level T3 thread Factory launches for one Agent Block. In a worktree Run, Factory may create it idle, with no turn, before the Block is reached; such a prepared worker is not a visit, and the visit starts with the first task sent to it. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
+The top-level T3 thread Factory launches for one Agent Block, with the Block's task, when the Block is first reached; no thread exists for a Block before then. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
 
 **Worker thread finished**:
 Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement and Request report use it.

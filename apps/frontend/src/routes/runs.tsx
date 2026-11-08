@@ -575,18 +575,6 @@ function blockKindLine(run: RunDetail, block: FlowBlock) {
   return `Agent · ${agent ?? "not chosen"}${input}`;
 }
 
-/** The Block's worker thread, or until its first activation the idle worker its worktree Run
- * prepared for it. */
-function threadReference(run: RunDetail, block: RunDetail["blocks"][number]) {
-  if (block.threadId) return `Thread: ${block.threadId}`;
-  const prepared =
-    run.workspace.mode === "worktree" &&
-    run.workspace.preparedWorkers.find((worker) => worker.blockId === block.blockId);
-  return prepared
-    ? `Prepared idle worker, not visited: ${prepared.threadId}`
-    : "Thread: unresolved";
-}
-
 /** Figma RD01b: block details float over the canvas; selection never answers or settles attention. */
 function BlockDetails({
   run,
@@ -717,7 +705,7 @@ function BlockDetails({
         </DetailSection>
         <DetailSection title="T3 references">
           <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
-            {threadReference(run, recorded)}
+            Thread: {recorded.threadId ?? "unresolved"}
             <br />
             Exact execution: {recorded.executionId ?? "unresolved"}
           </p>
@@ -809,7 +797,6 @@ function RunWorkspace({ run }: { run: RunDetail }) {
         <p className={railTextClass}>Every worker of this Run works in the project root.</p>
       </ContextSection>
     );
-  const prepared = workspace.preparedWorkers.length;
   return (
     <ContextSection title="Workspace" label="Run workspace">
       {workspace.state === "bound" && (
@@ -833,8 +820,6 @@ function RunWorkspace({ run }: { run: RunDetail }) {
       <p className={railTextClass}>
         New worktree from {workspace.baseRef}
         {worktreeNote[workspace.state]}
-        {prepared > 0 &&
-          ` ${prepared} idle ${prepared === 1 ? "worker is" : "workers are"} prepared for later Blocks.`}
       </p>
       {workspace.problem && (
         <p

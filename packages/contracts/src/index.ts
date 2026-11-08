@@ -573,16 +573,8 @@ export interface RunBlock {
   readonly pendingRequestCount: number | null;
   readonly observedAt: string | null;
   readonly freshness: "unknown" | "fresh" | "stale";
-  /** An unresolved Factory launch, or idle-worker preparation, for this Block. Title search has
-   * not bound its thread. */
+  /** An unresolved Factory launch for this Block. Title search has not bound a worker. */
   readonly recovery: "pending" | null;
-}
-/** An idle worker a worktree Run prepared for a later Agent Block; not a visit. */
-export interface RunPreparedWorker {
-  readonly blockId: string;
-  readonly threadId: string;
-  readonly link: string | null;
-  readonly preparedAt: string;
 }
 /** The workspace every worker of a Run shares. */
 export type RunWorkspaceDetail =
@@ -595,7 +587,6 @@ export type RunWorkspaceDetail =
       readonly path: string | null;
       readonly branch: string | null;
       readonly problem: string | null;
-      readonly preparedWorkers: readonly RunPreparedWorker[];
     };
 /**
  * Active Runs are in the main navigation. Settled Runs are done, automatically or because the

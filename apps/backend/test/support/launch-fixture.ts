@@ -1,5 +1,5 @@
 import { expect, type TestContext } from "@effect/vitest";
-import type { IdleLaunchPayload, LaunchPayload } from "../../src/adapters/t3.ts";
+import type { LaunchPayload } from "../../src/adapters/t3.ts";
 import { authorizedLiveOAuth } from "./boundaries-setup.ts";
 
 export async function launchFixture(c: TestContext) {
@@ -49,13 +49,12 @@ export async function launchFixture(c: TestContext) {
       },
       launch: (args) => {
         seen.push(args);
-        const idle = args.message === undefined;
         return {
           projectId: "neutral",
           threadId: "thread",
-          runId: idle || malformed ? null : "exact",
+          runId: malformed ? null : "exact",
           link: "t3://threads/thread",
-          status: idle ? null : "running",
+          status: "running",
         };
       },
       runtimeActivity: (args) => {
@@ -105,25 +104,11 @@ export async function launchFixture(c: TestContext) {
       options: { reasoning: "high" },
     },
   };
-  const idlePayload: IdleLaunchPayload = {
-    environmentId: payload.environmentId,
-    projectId: payload.projectId,
-    clientRequestId: "idle-key",
-    title: "Neutral review",
-    workspaceStrategy: {
-      type: "existing_worktree",
-      worktreePath: "/worktrees/factory-run-1",
-      branch: "factory/run-1",
-    },
-    interactionMode: payload.interactionMode,
-    modelSelection: payload.modelSelection,
-  };
   return {
     adapter,
     external,
     schema,
     payload,
-    idlePayload,
     seen,
     exactReads,
     setProof(value: string) {

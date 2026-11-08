@@ -4,7 +4,7 @@ import {
   persistEntryLaunches,
   startLaunchTargets,
 } from "./runner-block-workers.ts";
-import { blockingSetupScript, worktreeBranch, type RunWorkspace } from "./run-workspace.ts";
+import { worktreeBranch, type RunWorkspace } from "./run-workspace.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { newId } from "./ids.ts";
 import type {
@@ -98,30 +98,6 @@ const workspaceIssue = (code: string, path: string, message: string): WorkspaceC
   ok: false,
   issues: [{ code, path, message }],
 });
-/** A worktree Run's later workers attach idle, which a blocking setup script would outrun. */
-function blockingSetupIssue(
-  t3: T3Adapter,
-  project: FactoryProject,
-): Effect.Effect<WorkspaceCheck | undefined> {
-  return blockingSetupScript(t3, project).pipe(
-    Effect.map((blocking) =>
-      blocking
-        ? workspaceIssue(
-            "workspace_blocking_setup",
-            "workspace.mode",
-            `${project.title} runs "${blocking.name}" as a blocking worktree setup script, which a new worktree does not support yet. Make the script asynchronous in T3 or choose the project checkout for this Flow.`,
-          )
-        : undefined,
-    ),
-    Effect.orElseSucceed(() =>
-      workspaceIssue(
-        "workspace_setup_unreadable",
-        "workspace.mode",
-        `T3 could not read the setup scripts of ${project.title}. Recheck the T3 connection and retry.`,
-      ),
-    ),
-  );
-}
 /** Resolves a worktree Flow's base against the selected Project's repository on this host. */
 function resolveStartWorkspace(
   t3: T3Adapter,
@@ -159,8 +135,6 @@ function resolveStartWorkspace(
             "workspace.base.ref",
             `${workspace.base.ref} is not a commit in ${project.title}. Choose an existing ref.`,
           );
-    const setup = yield* blockingSetupIssue(t3, project);
-    if (setup) return setup;
     return { ok: true, workspace: { mode: "worktree", baseRef: resolved } };
   });
 }

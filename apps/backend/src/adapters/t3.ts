@@ -42,13 +42,6 @@ export interface T3Target {
 export type T3Endpoint = Pick<T3Target, "endpoint">;
 export type T3EnvironmentTarget = Pick<T3Target, "endpoint" | "environmentId">;
 export type T3ProjectTarget = Pick<T3Target, "endpoint" | "environmentId" | "workspaceRoot">;
-export type T3ProjectRef = Pick<T3Target, "endpoint" | "environmentId" | "projectId">;
-/** A project script T3 runs when it creates or attaches a thread's worktree. */
-export interface WorktreeSetupScript {
-  readonly name: string;
-  /** T3 holds the thread's first turn until the script finishes. */
-  readonly blocking: boolean;
-}
 export interface T3Adapter {
   /** `t3_thread_wait` for one run with its delegated and background work. Queues, native
    * requests and business completion stay separate. */
@@ -68,14 +61,12 @@ export interface T3Adapter {
   ): Promise<void>;
   inspectSendSupport(target: T3Endpoint): Promise<LaunchSupport>;
   sendMessage(target: T3Endpoint, payload: SendPayload): Promise<SendReference>;
-  /** A worktree Run's workers also need idle `worktree` and `existing_worktree` launches. */
+  /** A worktree Run's workers also need `worktree` and `existing_worktree` launches. */
   inspectLaunchSupport(
     target: T3Endpoint,
     workspace: FlowWorkspace["mode"],
   ): Promise<LaunchSupport>;
   launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference>;
-  /** Creates a thread bound to its workspace with no turn and no run. */
-  launchIdleThread(target: T3Endpoint, payload: IdleLaunchPayload): Promise<IdleLaunchReference>;
   /** Search one project for a launch that may already exist. Incomplete scans withhold candidates. */
   discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery>;
   /** Independent thread identity. Callers still prove it is the saved worker. */
@@ -86,9 +77,6 @@ export interface T3Adapter {
   resolveRepository(path: string): Promise<string>;
   /** Same-host Git: the ref a new worktree starts from, or null when the repository lacks it. */
   resolveBaseRef(workspaceRoot: string, base: FlowWorkspaceBase): Promise<string | null>;
-  /** The project's saved worktree setup scripts, read from T3 each call. T3 settings can replace
-   * them with scripts no public read exposes. */
-  readWorktreeSetupScripts(target: T3ProjectRef): Promise<readonly WorktreeSetupScript[]>;
   createProject(target: T3ProjectTarget): Promise<T3Project>;
   inspect(target: T3Endpoint): Promise<T3Inspection>;
   /** Starts backend-host approval; returns without waiting for the human. */
@@ -119,7 +107,8 @@ type WorkspaceStrategy =
   | { readonly type: "root" }
   | { readonly type: "worktree"; readonly baseRef: string; readonly branch: string }
   | { readonly type: "existing_worktree"; readonly worktreePath: string; readonly branch: string };
-interface LaunchSettings {
+/** Starts the thread's first turn with `message`. */
+export interface LaunchPayload {
   readonly environmentId: string;
   readonly projectId: string;
   readonly clientRequestId: string;
@@ -131,14 +120,7 @@ interface LaunchSettings {
     readonly model: string;
     readonly options: Readonly<Record<string, string | boolean>>;
   };
-}
-/** Starts the thread's first turn with `message`. */
-export interface LaunchPayload extends LaunchSettings {
   readonly message: string;
-}
-/** T3 treats a launch without a message as idle. */
-export interface IdleLaunchPayload extends LaunchSettings {
-  readonly message?: never;
 }
 export interface LaunchSupport {
   readonly supported: boolean;
@@ -154,7 +136,6 @@ export interface LaunchReference {
   readonly link: string | null;
   readonly status: string;
 }
-export type IdleLaunchReference = Pick<LaunchReference, "projectId" | "threadId" | "link">;
 /** T3 refused the launch before accepting it. The outcome is not uncertain. */
 export class LaunchRejected extends Error {
   override readonly name = "LaunchRejected";

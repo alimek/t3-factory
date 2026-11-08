@@ -5,7 +5,6 @@ import { writeState } from "./write-state.ts";
 import { join } from "node:path";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
 import type {
-  IdleLaunchPayload,
   LaunchPayload,
   SendPayload,
   T3Endpoint,
@@ -13,11 +12,8 @@ import type {
 } from "../../apps/backend/src/adapters/t3.ts";
 
 type Snapshot = ReturnType<PersistentT3["snapshot"]>;
-/** Version 4, or version 3 without idle launches. */
-type SavedState = Omit<Snapshot, "version" | "idleLaunches"> & {
-  version: number;
-  idleLaunches?: Snapshot["idleLaunches"];
-};
+/** Version 5, or version 3 or 4, whose idle worker threads Factory no longer uses. */
+type SavedState = Omit<Snapshot, "version"> & { version: number };
 
 /** A local simulated engine. Its accepted keys outlive the Factory process. */
 export class PersistentT3 extends ControlledT3 {
@@ -48,7 +44,7 @@ export class PersistentT3 extends ControlledT3 {
   private restore() {
     try {
       const saved = JSON.parse(readFileSync(this.statePath, "utf8")) as SavedState;
-      if (saved.version !== 3 && saved.version !== 4)
+      if (saved.version < 3 || saved.version > 5)
         throw new Error("Unsupported demo engine state; run pnpm db:reset.");
       this.identity = saved.identity;
       for (const [key, value] of saved.subagents) this.subagents.set(key, value);
@@ -58,8 +54,6 @@ export class PersistentT3 extends ControlledT3 {
       this.projects = saved.projects;
       this.projectCreates = saved.projectCreates;
       for (const [key, value] of saved.launches) this.launches.set(key, value);
-      // Version 3 predates idle workers: its threads are checkout threads.
-      for (const [key, value] of saved.idleLaunches ?? []) this.idleLaunches.set(key, value);
       for (const [key, value] of saved.sends) this.sends.set(key, value);
       for (const [key, value] of saved.executions) this.executionObservations.set(key, value);
       for (const threadId of saved.settledThreads ?? []) this.settledThreads.add(threadId);
@@ -73,7 +67,7 @@ export class PersistentT3 extends ControlledT3 {
 
   private snapshot() {
     return {
-      version: 4,
+      version: 5,
       identity: this.identity,
       subagents: [...this.subagents],
       delegatedSettlements: [...this.delegatedSettlements],
@@ -81,7 +75,6 @@ export class PersistentT3 extends ControlledT3 {
       projects: this.projects,
       projectCreates: this.projectCreates,
       launches: [...this.launches],
-      idleLaunches: [...this.idleLaunches],
       sends: [...this.sends],
       executions: [...this.executionObservations],
       settledThreads: [...this.settledThreads],
@@ -155,13 +148,6 @@ export class PersistentT3 extends ControlledT3 {
 
   override async launchThread(target: T3Endpoint, payload: LaunchPayload) {
     const reference = await super.launchThread(target, payload);
-    await recordThread(this, reference.threadId);
-    this.save();
-    return reference;
-  }
-
-  override async launchIdleThread(target: T3Endpoint, payload: IdleLaunchPayload) {
-    const reference = await super.launchIdleThread(target, payload);
     await recordThread(this, reference.threadId);
     this.save();
     return reference;

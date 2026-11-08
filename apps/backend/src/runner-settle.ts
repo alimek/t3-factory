@@ -14,9 +14,6 @@ import { runTarget } from "./runner-utils.ts";
 import { now } from "./time.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 
-const UNUSED_PREPARATION =
-  "The Run settled before this Block was visited, so Factory stopped preparing its idle worker.";
-
 /** Settled leaves the main navigation and clears Snooze; execution and attention are unchanged. */
 function markSettled(
   sql: SqlClient.SqlClient,
@@ -107,15 +104,12 @@ export function openRunnerSettle(
             settled_at: string | null;
           }>`SELECT generation,settled_at FROM runs WHERE id=${id}`;
           if (current?.generation !== run.generation || current.settled_at) return false;
-          // A replaced result's held handoffs are cancelled and owe no delivery. An idle worker
-          // owes nothing: an arrival for its Block is an unresolved intent of its own. An unbound
-          // worktree still owes the launches that join it.
+          // Cancelled operations, such as a replaced result's held handoffs, owe no delivery. An
+          // unbound worktree still owes the launches that join it.
           const pending =
-            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND kind!='prepare' AND state!='acknowledged' AND NOT (kind='handoff' AND state='cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing'`;
+            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state NOT IN ('acknowledged','cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing'`;
           if (pending.length) return false;
           const time = yield* now;
-          // An uncertain idle launch is abandoned, never resent; a later arrival launches instead.
-          yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${UNUSED_PREPARATION},reconciled_at=${time} WHERE run_id=${id} AND kind='prepare' AND state IN ('pending','reserved','uncertain')`;
           yield* markSettled(sql, id, "automatic", time);
           yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${time}) WHERE run_id=${id}`;
           // Terminal activations have no handoff release to settle their recovery diagnostics.

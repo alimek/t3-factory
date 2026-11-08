@@ -4,8 +4,6 @@ import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import {
   LaunchRejected,
-  type IdleLaunchPayload,
-  type IdleLaunchReference,
   type LaunchCandidate,
   type LaunchDiscovery,
   type LaunchPayload,
@@ -19,7 +17,6 @@ import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
 import {
-  blockingSetupScript,
   launchedInWorkspace,
   launchStrategy,
   sameStrategy,
@@ -33,9 +30,6 @@ import { newId } from "./ids.ts";
 const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
-const PREPARATION_REJECTED =
-  "T3 rejected the idle worker. This Block's first activation launches its worker instead.";
-
 /** The installed Block skill, the Block id its Factory tools take, and the turn to act on. */
 export function workerTurn(body: string, blockId: string) {
   return `$factory-block\n\nFactory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block.\n\n${body}`;
@@ -46,15 +40,16 @@ function workerTitle(number: number, index: number, name: string) {
   return `Factory #${number} · ${index + 1} ${name}`.slice(0, 200);
 }
 
-/** A worker's thread settings: the Agent's captured provider, model and options. */
-export function preparedWorkerPayload(
+/** A worker launch with the Agent's captured provider, model and options and its first turn. */
+export function workerLaunchPayload(
   definitions: RunDefinitions,
   blockId: string,
   target: Pick<T3Target, "environmentId" | "projectId">,
   key: string,
   number: number,
+  publicId: string,
   workspaceStrategy: LaunchPayload["workspaceStrategy"],
-): IdleLaunchPayload {
+): LaunchPayload {
   const blocks = definitions.flow.graph.blocks;
   const index = blocks.findIndex((entry) => entry.id === blockId);
   const block = blocks[index];
@@ -75,27 +70,8 @@ export function preparedWorkerPayload(
         agent.execution.modelOptions.map((option) => [option.id, option.value]),
       ),
     },
+    message: workerTurn(agent.prompt, publicId),
   };
-}
-
-export function workerLaunchPayload(
-  definitions: RunDefinitions,
-  blockId: string,
-  target: Pick<T3Target, "environmentId" | "projectId">,
-  key: string,
-  number: number,
-  publicId: string,
-  workspaceStrategy: LaunchPayload["workspaceStrategy"],
-): LaunchPayload {
-  const payload = preparedWorkerPayload(
-    definitions,
-    blockId,
-    target,
-    key,
-    number,
-    workspaceStrategy,
-  );
-  return { ...payload, message: workerTurn(blockAgent(definitions, blockId)!.prompt, publicId) };
 }
 
 /** Flow-input targets that launch with the accepted Start; a worktree Run starts only its creator. */
@@ -170,8 +146,7 @@ function blockAgent(definitions: RunDefinitions, blockId: string) {
   return definitions.agents.find((entry) => block?.kind === "agent" && entry.id === block.agentId);
 }
 
-/** Pending launches, including idle worker preparations, are sent once. Reserved and uncertain
- * ones are only searched. */
+/** Pending launches are sent once. Reserved and uncertain ones are only searched. */
 export function dispatchBlockLaunch(
   database: RunnerDatabase,
   t3: T3Adapter,
@@ -200,22 +175,9 @@ export function dispatchBlockLaunch(
         return;
       }
       const payload = checked.value;
-      const setup = payload.message === undefined && (yield* blockingSetupProblem(t3, target));
-      if (setup) {
-        yield* database.problem(intent, setup);
-        return;
-      }
       if (!(yield* database.reserveIntent(runRow, intent, support.retryScope))) return;
       yield* recoverOperation(
         Effect.gen(function* () {
-          if (payload.message === undefined) {
-            const reference = yield* Effect.tryPromise({
-              try: () => t3.launchIdleThread(target, payload),
-              catch: (error) => error,
-            });
-            yield* bindPreparedWorker(database, runRow, intent, reference);
-            return;
-          }
           const reference = yield* Effect.tryPromise({
             try: () => t3.launchThread(target, payload),
             catch: (error) => error,
@@ -224,7 +186,7 @@ export function dispatchBlockLaunch(
         }),
         (error) =>
           isLaunchRejected(error)
-            ? rejectLaunchedWorker(database, runRow, intent, payload.message === undefined)
+            ? rejectLaunchedWorker(database, runRow, intent)
             : noteLaunchUncertain(database, intent),
       );
       return;
@@ -240,11 +202,10 @@ function isLaunchRejected(error: unknown): error is LaunchRejected {
   );
 }
 
-/** The stored launch still names the Run's environment, project, workspace and settings; an
- * idle worker preparation carries no message and every other launch one. */
+/** The stored launch still names the Run's environment, project, workspace, settings and turn. */
 function verifiedStoredLaunch(run: RunRow, intent: IntentRow) {
   if (!intactPayload(intent)) return unverified("Stored launch payload cannot be verified.");
-  const payload = JSON.parse(intent.payload_json) as IdleLaunchPayload | LaunchPayload;
+  const payload = JSON.parse(intent.payload_json) as LaunchPayload;
   const target = JSON.parse(intent.target_json) as T3Target;
   if (
     payload.clientRequestId !== intent.request_key ||
@@ -257,7 +218,7 @@ function verifiedStoredLaunch(run: RunRow, intent: IntentRow) {
     !sameStrategy(payload.workspaceStrategy, launchStrategy(run.workspace, intent.block_id)) ||
     payload.interactionMode !== "default" ||
     !payload.title ||
-    (intent.kind === "prepare") === !!payload.message ||
+    !payload.message ||
     !payload.modelSelection?.instanceId ||
     !payload.modelSelection.model
   )
@@ -283,13 +244,13 @@ function soleTitledCandidate(t3: T3Adapter, runRow: RunRow, title: string) {
   );
 }
 
-/** An idle worker matches only with no run yet; a launch with a message by its one execution. */
+/** A launch matches by its one execution. */
 function searchLaunchedWorker(
   database: RunnerDatabase,
   t3: T3Adapter,
   runRow: RunRow,
   intent: IntentRow,
-  payload: IdleLaunchPayload | LaunchPayload,
+  payload: LaunchPayload,
 ) {
   return Effect.gen(function* () {
     const current = yield* now;
@@ -297,19 +258,12 @@ function searchLaunchedWorker(
     const miss = noteLaunchSearchMiss(database, intent, current);
     const candidate = yield* soleTitledCandidate(t3, runRow, payload.title);
     if (!candidate || !sameWorkerSettings(payload, runRow, candidate)) return yield* miss;
-    const reference = {
-      projectId: candidate.projectId,
-      threadId: candidate.threadId,
-      link: candidate.link ?? null,
-    };
-    if (payload.message === undefined) {
-      if (candidate.executions.length) return yield* miss;
-      return yield* bindPreparedWorker(database, runRow, intent, reference);
-    }
     const executions = matchingExecutions(payload, candidate);
     if (executions.length !== 1) return yield* miss;
     yield* bindLaunchedWorker(database, runRow, intent, {
-      ...reference,
+      projectId: candidate.projectId,
+      threadId: candidate.threadId,
+      link: candidate.link ?? null,
       runId: executions[0]!.runId,
       status: executions[0]!.status,
     });
@@ -317,11 +271,7 @@ function searchLaunchedWorker(
 }
 
 /** A top-level thread of the Run's project with the saved workspace and Agent settings. */
-function sameWorkerSettings(
-  payload: IdleLaunchPayload | LaunchPayload,
-  run: RunRow,
-  candidate: LaunchCandidate,
-) {
+function sameWorkerSettings(payload: LaunchPayload, run: RunRow, candidate: LaunchCandidate) {
   return (
     candidate.projectId === run.t3_project_id &&
     candidate.parentThreadId === null &&
@@ -390,21 +340,14 @@ function bindLaunchedWorker(
   );
 }
 
-/** A rejected launch is a Block error. A Block without its idle worker is not: its first
- * activation launches one instead. */
-function rejectLaunchedWorker(
-  database: RunnerDatabase,
-  runRow: RunRow,
-  intent: IntentRow,
-  idle: boolean,
-) {
+/** A rejected launch is a Block error. */
+function rejectLaunchedWorker(database: RunnerDatabase, runRow: RunRow, intent: IntentRow) {
   return database.mutate(runRow.id, (sql) =>
     Effect.gen(function* () {
       if (!(yield* database.runHeldUnderContext(sql, runRow))) return;
       const time = yield* now;
-      const problem = idle ? PREPARATION_REJECTED : "T3 rejected the worker launch.";
-      if (!idle)
-        yield* sql`UPDATE run_blocks SET state='error',problem=${problem} WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
+      const problem = "T3 rejected the worker launch.";
+      yield* sql`UPDATE run_blocks SET state='error',problem=${problem} WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem},reconciled_at=${time} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
       // Without the Run worktree no other Flow-input worker launches, and none falls back to the project root.
       const failed =
@@ -435,45 +378,6 @@ function noteLaunchSearchMiss(database: RunnerDatabase, intent: IntentRow, curre
     Effect.gen(function* () {
       yield* sql`UPDATE operation_intents SET recovery_attempt=recovery_attempt+1,recovery_not_before=${notBefore},state=CASE WHEN state='reserved' THEN 'uncertain' ELSE state END,problem=${LAUNCH_RECOVERY},reconciled_at=${current} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${intent.run_id}`;
-    }),
-  );
-}
-
-/** Start refused blocking setup, but the Project's scripts may have changed since. */
-function blockingSetupProblem(t3: T3Adapter, target: T3Target) {
-  return blockingSetupScript(t3, target).pipe(
-    Effect.map((blocking) =>
-      blocking
-        ? `The Project runs "${blocking.name}" as a blocking worktree setup script, which idle workers do not support. Make it asynchronous in T3; Factory will retry creating this idle worker.`
-        : undefined,
-    ),
-    Effect.orElseSucceed(
-      () =>
-        "T3 could not read the Project's setup scripts. Factory will retry creating this idle worker.",
-    ),
-  );
-}
-
-function bindPreparedWorker(
-  database: RunnerDatabase,
-  runRow: RunRow,
-  intent: IntentRow,
-  reference: IdleLaunchReference,
-) {
-  return database.mutate(runRow.id, (sql) =>
-    Effect.gen(function* () {
-      if (!reference.threadId || reference.projectId !== runRow.t3_project_id)
-        return yield* Effect.fail(Error("Invalid idle launch reference; outcome is uncertain"));
-      if (!(yield* database.runHeldUnderContext(sql, runRow))) return;
-      const [reserved] = yield* sql<{
-        id: string;
-      }>`SELECT id FROM operation_intents WHERE id=${intent.id} AND state IN ('reserved','uncertain') AND payload_json IS NOT NULL`;
-      if (!reserved) return;
-      const time = yield* now;
-      const link = scopedThreadHref(runRow.environment_id, reference.threadId);
-      yield* sql`INSERT INTO run_prepared_workers(run_id,block_id,thread_id,link,intent_id,prepared_at) VALUES(${runRow.id},${intent.block_id},${reference.threadId},${link},${intent.id},${time})`;
-      yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${intent.id}`;
-      yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
     }),
   );
 }

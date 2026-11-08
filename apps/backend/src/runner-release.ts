@@ -29,15 +29,7 @@ function explicitSourceReleaseGeneration(
     }
     if (intent.kind === "send") {
       const { threadId } = JSON.parse(intent.target_json) as { threadId: string };
-      // A prepared worker's first activation has no earlier visit to wait for.
-      const visited = yield* database.transaction(
-        (sql) =>
-          sql`SELECT block_id FROM run_blocks WHERE run_id=${run.id} AND block_id=${intent.block_id} AND thread_id IS NOT NULL`,
-      );
-      if (
-        visited.length &&
-        !(yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId))).finished
-      )
+      if (!(yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId))).finished)
         return null;
     }
     return current.generation;

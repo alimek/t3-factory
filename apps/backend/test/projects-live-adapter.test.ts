@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { rm } from "node:fs/promises";
-import { authorizedLiveOAuth, liveProjectRepositories } from "./support/boundaries-setup.ts";
+import { liveProjectRepositories } from "./support/boundaries-setup.ts";
 
 it("a repository symlink resolves to the existing project", async (context) => {
   // Arrange
@@ -97,31 +97,4 @@ it("project recheck preserves distinct projects across live SDK pages", async (c
   // Assert
   assert(result.ok);
   expect(result.value.projects.length).toBe(2);
-});
-
-it("only a worktree setup script T3 marks async false blocks the first turn", async (context) => {
-  // Arrange
-  const { adapter, endpoint } = await authorizedLiveOAuth(context, {
-    projectRead: () => ({
-      id: "neutral",
-      scripts: [
-        { id: "install", name: "Install", command: "pnpm i", runOnWorktreeCreate: true },
-        { id: "env", name: "Env", command: "cp .env", runOnWorktreeCreate: true, async: false },
-        { id: "dev", name: "Dev", command: "pnpm dev", runOnWorktreeCreate: false, async: false },
-      ],
-    }),
-  });
-
-  // Act
-  const scripts = await adapter.readWorktreeSetupScripts({
-    endpoint,
-    environmentId: "fixture-environment",
-    projectId: "neutral",
-  });
-
-  // Assert
-  expect(scripts).toStrictEqual([
-    { name: "Install", blocking: false },
-    { name: "Env", blocking: true },
-  ]);
 });

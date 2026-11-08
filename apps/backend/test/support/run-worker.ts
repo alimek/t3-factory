@@ -1,6 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
-import { prepared, preparedIdleWorkers } from "./prepared-runner.ts";
+import { boundWorktreeReview, prepared } from "./prepared-runner.ts";
 
 const WORKER_THREAD = "thread-1";
 const WORKER_EXECUTION = "execution-1";
@@ -338,7 +338,7 @@ export async function revisitReportingWorker(c: TestContext) {
 
 /** Entry worker finished and the Review answered: Parallel work's first arrival waits to be sent. */
 export async function answeredReview(c: TestContext) {
-  const setup = await preparedIdleWorkers(c);
+  const setup = await boundWorktreeReview(c);
   const { f, t3, runId, entryBlockId } = setup;
   assert((await f.runtime.submit(workerFinal(entryBlockId))).code === "ACCEPTED");
   t3.engineStatus = "completed";
@@ -351,17 +351,17 @@ export async function answeredReview(c: TestContext) {
   return setup;
 }
 
-/** Parallel work's queued turn on its prepared thread finished with a "Done" result, which
- * returns to Entry worker. */
+/** Parallel work's first turn on its own worker finished with a "Done" result, which returns to
+ * Entry worker. */
 export async function finishedParallelWork(c: TestContext) {
   const setup = await answeredReview(c);
   const { f, t3, project } = setup;
   assert((await f.reconcileRuns()).ok);
-  const sent = [...t3.sends.values()][0]!;
-  const parallelBlockId = /Factory Block id: ([^.\s]+)/.exec(sent.payload.message)![1]!;
+  const launched = [...t3.launches.values()][1]!;
+  const parallelBlockId = /Factory Block id: ([^.\s]+)/.exec(launched.payload.message)![1]!;
   assert((await f.runtime.submit(workerFinal(parallelBlockId))).code === "ACCEPTED");
   const thread = await t3.readExecution(project, "thread-2");
-  const { runId } = sent.reference;
+  const { runId } = launched.reference;
   t3.executionObservations.set("thread-2", {
     ...thread,
     activeRunId: null,
