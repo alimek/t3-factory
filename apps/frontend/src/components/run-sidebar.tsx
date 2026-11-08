@@ -1,8 +1,9 @@
+import { RenameDialog } from "./rename-dialog.tsx";
 import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
-import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { publishSidebarNavigation, type SidebarRunAction } from "../sidebar-navigation.ts";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
-import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import {
   Archive,
   ChevronDown,
@@ -37,15 +38,6 @@ import { ArchiveRunDialog } from "./archive-run-dialog.tsx";
 import { RunStatusChip } from "./run-status-chip.tsx";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "./ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,17 +107,40 @@ export function RunSidebar({ path }: { path: string }) {
   const drafts = useRunDrafts();
   const composition = useRunDraft();
   const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [snoozedExpanded, setSnoozedExpanded] = useState(false);
-  const [renaming, setRenaming] = useState<RunNavigationEntry | SavedRunDraft>();
-  const [archiving, setArchiving] = useState<RunNavigationEntry>();
+  const { onRename, onArchive, dialogs } = useSidebarDialogs();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
   const { act, busy, actionError } = useRunActions(!!query, runs);
+  const actOnRun = useCallback(
+    (runId: string, action: SidebarRunAction) => {
+      const entry = runs.find((run) => run.id === runId);
+      if (entry) void act(entry, action);
+    },
+    [act, runs],
+  );
+  const queryKey = query;
+  useLayoutEffect(() => {
+    publishSidebarNavigation({
+      visibleRows: sidebarRows(open, snoozed, settled, queryKey, snoozedExpanded, expanded),
+      busy: !!busy,
+      focusSearch: () => searchRef.current?.focus(),
+      actOnRun,
+    });
+    return () =>
+      publishSidebarNavigation({
+        visibleRows: [],
+        busy: false,
+        focusSearch: () => undefined,
+        actOnRun: () => undefined,
+      });
+  }, [actOnRun, busy, open, snoozed, settled, expanded, queryKey, snoozedExpanded]);
   return (
     <section aria-label="Run navigation" className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
-        <RunSearchField value={search} onChange={setSearch} />
+        <RunSearchField ref={searchRef} value={search} onChange={setSearch} />
         <NewRunButton current={path === "/runs/new"} />
       </div>
       {(loadError || actionError) && (
@@ -150,45 +165,90 @@ export function RunSidebar({ path }: { path: string }) {
         total={total}
         matches={matches}
         onExpand={() => setExpanded(!expanded)}
-        onRename={setRenaming}
-        onArchive={setArchiving}
+        onRename={onRename}
+        onArchive={onArchive}
       />
-      {archiving && (
-        <ArchiveRunDialog
-          run={archiving}
-          open
-          returnFocusId={`run-actions-${archiving.id}`}
-          onOpenChange={(open) => !open && setArchiving(undefined)}
-        />
-      )}
-      {renaming && "presentation" in renaming && (
-        <RenameDialog
-          id={renaming.id}
-          title={renaming.title}
-          kind="Run"
-          description="Change the title of this execution."
-          onClose={() => setRenaming(undefined)}
-          save={async (title) => {
-            await api.renameRun(renaming.id, { title });
-          }}
-        />
-      )}
-      {renaming && !("presentation" in renaming) && (
-        <RenameDialog
-          id={renaming.id}
-          title={draftTitle(renaming)}
-          kind="draft"
-          description="Name this draft. Prompt edits keep the title you choose."
-          onClose={() => setRenaming(undefined)}
-          save={async (title) => {
-            if (!runDraft.rename(renaming.id, title))
-              throw new Error(
-                "This draft was discarded or is waiting for its Start outcome, so it keeps its title.",
-              );
-          }}
-        />
-      )}
+      {dialogs}
     </section>
+  );
+}
+
+function useSidebarDialogs() {
+  const [renaming, setRenaming] = useState<RunNavigationEntry | SavedRunDraft>();
+  const [archiving, setArchiving] = useState<RunNavigationEntry>();
+  return {
+    onRename: setRenaming,
+    onArchive: setArchiving,
+    dialogs: (
+      <>
+        {archiving && (
+          <ArchiveRunDialog
+            run={archiving}
+            open
+            returnFocusId={`run-actions-${archiving.id}`}
+            onOpenChange={(open) => !open && setArchiving(undefined)}
+          />
+        )}
+        {renaming && (
+          <SidebarRenameDialog entry={renaming} onClose={() => setRenaming(undefined)} />
+        )}
+      </>
+    ),
+  };
+}
+
+function sidebarRows(
+  open: readonly (RunNavigationEntry | SavedRunDraft)[],
+  snoozed: readonly RunNavigationEntry[],
+  settled: readonly RunNavigationEntry[],
+  query: string,
+  showSnoozed: boolean,
+  showSettled: boolean,
+) {
+  return [
+    ...open,
+    ...(!query && showSnoozed ? snoozed : []),
+    ...(!query && showSettled ? settled : []),
+  ].map((entry) => ({
+    kind: "presentation" in entry ? ("run" as const) : ("draft" as const),
+    id: entry.id,
+  }));
+}
+
+function SidebarRenameDialog({
+  entry,
+  onClose,
+}: {
+  entry: RunNavigationEntry | SavedRunDraft;
+  onClose: () => void;
+}) {
+  if ("presentation" in entry)
+    return (
+      <RenameDialog
+        id={entry.id}
+        title={entry.title}
+        kind="Run"
+        description="Change the title of this execution."
+        onClose={onClose}
+        save={async (title) => {
+          await api.renameRun(entry.id, { title });
+        }}
+      />
+    );
+  return (
+    <RenameDialog
+      id={entry.id}
+      title={draftTitle(entry)}
+      kind="draft"
+      description="Name this draft. Prompt edits keep the title you choose."
+      onClose={onClose}
+      save={async (title) => {
+        if (!runDraft.rename(entry.id, title))
+          throw new Error(
+            "This draft was discarded or is waiting for its Start outcome, so it keeps its title.",
+          );
+      }}
+    />
   );
 }
 
@@ -282,8 +342,16 @@ function mutedInSearch(run: RunNavigationEntry) {
 }
 
 /** Run title search with Escape and a clear button that keeps focus in the field. */
-function RunSearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const searchRef = useRef<HTMLInputElement>(null);
+function RunSearchField({
+  ref,
+  value,
+  onChange,
+}: {
+  ref: RefObject<HTMLInputElement | null>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { hint } = useShortcutPreferences();
   return (
     <div className="relative min-w-0 flex-1">
       <Search
@@ -292,8 +360,9 @@ function RunSearchField({ value, onChange }: { value: string; onChange: (value: 
         className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle-foreground"
       />
       <Input
-        ref={searchRef}
+        ref={ref}
         aria-label="Search Run titles"
+        title={`Search Runs · ${hint("searchRuns")}`}
         placeholder="Search Run titles"
         className={cn("bg-muted pl-8", value && "pr-8")}
         value={value}
@@ -312,7 +381,7 @@ function RunSearchField({ value, onChange }: { value: string; onChange: (value: 
               className="absolute top-1/2 right-1.5 size-5 -translate-y-1/2 text-muted-foreground"
               onClick={() => {
                 onChange("");
-                searchRef.current?.focus();
+                ref.current?.focus();
               }}
             >
               <X aria-hidden strokeWidth={1.5} className="size-3" />
@@ -517,16 +586,13 @@ const rowClassName = (selected: boolean) =>
     selected && "bg-accent ring-1 ring-border-strong ring-inset",
   );
 
-/** Row link handlers: Shift+F10, the context-menu key and right click open the menu; F2 renames. */
-function rowMenuKeys(openMenu: () => void, onRename: () => void, renameDisabled = false) {
+/** Row link handlers: Shift+F10, the context-menu key and right click open the menu. */
+function rowMenuKeys(openMenu: () => void) {
   return {
     onKeyDown(event: React.KeyboardEvent) {
       if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
         event.preventDefault();
         openMenu();
-      } else if (event.key === "F2" && !renameDisabled) {
-        event.preventDefault();
-        onRename();
       }
     },
     onContextMenu(event: React.MouseEvent) {
@@ -578,12 +644,18 @@ function RowMenu({
 }
 
 function RenameItem({ onSelect, disabled }: { onSelect: () => void; disabled?: boolean }) {
+  const { hint } = useShortcutPreferences();
+  const binding = hint("rename");
   return (
-    <DropdownMenuItem onSelect={onSelect} disabled={disabled} aria-keyshortcuts="F2">
+    <DropdownMenuItem
+      onSelect={onSelect}
+      disabled={disabled}
+      aria-keyshortcuts={binding === "Unbound" ? undefined : binding}
+    >
       <Pencil aria-hidden strokeWidth={1.5} />
       Rename
       <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
-        F2
+        {binding}
       </span>
     </DropdownMenuItem>
   );
@@ -608,7 +680,7 @@ function DraftRow({
   return (
     <div className={rowClassName(selected)}>
       <Link
-        {...rowMenuKeys(() => setMenuOpen(true), rename)}
+        {...rowMenuKeys(() => setMenuOpen(true))}
         to="/runs/new"
         onClick={() => runDraft.openDraft(draft.id)}
         aria-current={selected ? "page" : undefined}
@@ -684,7 +756,7 @@ function RunRow({
       <TooltipTrigger asChild>
         <div className={rowClassName(selected)}>
           <Link
-            {...rowMenuKeys(() => setMenuOpen(true), onRename, !mutationsAllowed)}
+            {...rowMenuKeys(() => setMenuOpen(true))}
             to="/runs/$runId"
             params={{ runId: run.id }}
             aria-current={selected ? "page" : undefined}
@@ -770,6 +842,10 @@ function RunActionItems({
   onAction: (action: RunAction) => void;
   onArchive: (run: RunNavigationEntry) => void;
 }) {
+  const { hint } = useShortcutPreferences();
+  const snoozeHint = hint("snoozeRestore");
+  const settleHint = hint("settle");
+  const archiveHint = hint("archive");
   const mutationsAllowed = useMutationsAllowed();
   return (
     <>
@@ -777,6 +853,7 @@ function RunActionItems({
         <DropdownMenuItem
           disabled={!mutationsAllowed}
           onSelect={() => onAction(run.presentation.snoozed ? "restore" : "snooze")}
+          aria-keyshortcuts={snoozeHint === "Unbound" ? undefined : snoozeHint}
         >
           {run.presentation.snoozed ? (
             <Undo2 aria-hidden strokeWidth={1.5} />
@@ -784,91 +861,35 @@ function RunActionItems({
             <Moon aria-hidden strokeWidth={1.5} />
           )}
           {run.presentation.snoozed ? "Restore" : "Snooze"}
+          <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
+            {snoozeHint}
+          </span>
         </DropdownMenuItem>
       )}
       {isActive(run) && (
-        <DropdownMenuItem disabled={!mutationsAllowed} onSelect={() => onAction("settle")}>
+        <DropdownMenuItem
+          disabled={!mutationsAllowed}
+          onSelect={() => onAction("settle")}
+          aria-keyshortcuts={settleHint === "Unbound" ? undefined : settleHint}
+        >
           <CircleCheck aria-hidden strokeWidth={1.5} />
           Settle
+          <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
+            {settleHint}
+          </span>
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem disabled={!mutationsAllowed} onSelect={() => onArchive(run)}>
+      <DropdownMenuItem
+        disabled={!mutationsAllowed}
+        onSelect={() => onArchive(run)}
+        aria-keyshortcuts={archiveHint === "Unbound" ? undefined : archiveHint}
+      >
         <Archive aria-hidden strokeWidth={1.5} />
         Archive…
+        <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
+          {archiveHint}
+        </span>
       </DropdownMenuItem>
     </>
-  );
-}
-
-function RenameDialog({
-  id,
-  title: initialTitle,
-  kind,
-  description,
-  save,
-  onClose,
-}: {
-  id: string;
-  title: string;
-  kind: "Run" | "draft";
-  description: string;
-  save: (title: string) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [title, setTitle] = useState(initialTitle);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      await save(title);
-      onClose();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : `Could not rename ${kind}.`);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <DialogContent
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          document.getElementById(`run-actions-${id}`)?.focus();
-        }}
-      >
-        <form className="space-y-4" onSubmit={(event) => void submit(event)}>
-          <DialogHeader>
-            <DialogTitle>Rename {kind}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
-          </DialogHeader>
-          <Label htmlFor="rename-run-title">{kind === "Run" ? "Run title" : "Draft title"}</Label>
-          <Input
-            id="rename-run-title"
-            autoFocus
-            required
-            maxLength={TASK_TITLE_LIMIT}
-            disabled={busy}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-          {error && <p role="alert">{error}</p>}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
-              Cancel
-            </Button>
-            <MutationGate>
-              <Button disabled={busy || !title.trim()}>Save title</Button>
-            </MutationGate>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

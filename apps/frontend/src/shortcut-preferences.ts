@@ -1,18 +1,27 @@
 import { useSyncExternalStore } from "react";
 import {
-  defaultShortcutBindings,
+  getDefaultShortcutBindings,
+  getShortcutPlatform,
   formatShortcut,
-  shortcutDefinitions,
+  parseShortcutStorage,
   validateShortcutBinding,
+  type ParsedShortcutStorage,
   type ShortcutBinding,
   type ShortcutBindings,
   type ShortcutId,
 } from "./keyboard-shortcuts.ts";
 
 const storageKey = "factory.keyboardShortcuts";
-type Preferences = { bindings: ShortcutBindings; recording: boolean; sessionOnly: boolean };
+type Preferences = {
+  bindings: ShortcutBindings;
+  conflicts: ShortcutId[];
+  storageIssue?: string | undefined;
+  recording: boolean;
+  sessionOnly: boolean;
+};
 const initial: Preferences = {
-  bindings: defaultShortcutBindings,
+  bindings: getDefaultShortcutBindings(),
+  conflicts: [],
   recording: false,
   sessionOnly: false,
 };
@@ -20,40 +29,8 @@ let preferences = initial;
 let loaded = false;
 const listeners = new Set<() => void>();
 
-function readBindings(raw: string): ShortcutBindings | undefined {
-  const data: unknown = JSON.parse(raw);
-  if (
-    !data ||
-    typeof data !== "object" ||
-    !("version" in data) ||
-    data.version !== 1 ||
-    !("bindings" in data) ||
-    !data.bindings ||
-    typeof data.bindings !== "object"
-  )
-    return undefined;
-  const bindings = data.bindings as Record<string, unknown>;
-  const result = {} as ShortcutBindings;
-  for (const { id } of shortcutDefinitions) {
-    const value = bindings[id];
-    if (
-      !value ||
-      typeof value !== "object" ||
-      !("key" in value) ||
-      typeof value.key !== "string" ||
-      !("mod" in value) ||
-      typeof value.mod !== "boolean" ||
-      !("alt" in value) ||
-      typeof value.alt !== "boolean" ||
-      !("shift" in value) ||
-      typeof value.shift !== "boolean"
-    )
-      return undefined;
-    result[id] = { key: value.key, mod: value.mod, alt: value.alt, shift: value.shift };
-  }
-  return shortcutDefinitions.some(({ id }) => validateShortcutBinding(id, result[id], result))
-    ? undefined
-    : result;
+function readStorage(raw: string): ParsedShortcutStorage | undefined {
+  return parseShortcutStorage(raw, getShortcutPlatform());
 }
 function emit() {
   for (const listener of listeners) listener();
@@ -63,20 +40,44 @@ function loadPreferences() {
   loaded = true;
   try {
     const raw = window.localStorage.getItem(storageKey);
-    if (raw)
-      preferences = { ...preferences, bindings: readBindings(raw) ?? defaultShortcutBindings };
-  } catch (error) {
-    // A malformed value is safe to ignore; inaccessible storage needs a visible notice.
-    if (!(error instanceof SyntaxError)) preferences = { ...preferences, sessionOnly: true };
+    if (raw) {
+      const parsed = readStorage(raw);
+      if (parsed) {
+        preferences = { ...preferences, ...parsed };
+        if (!parsed.storageIssue) persist(parsed.bindings, parsed.conflicts);
+      } else
+        preferences = {
+          ...preferences,
+          bindings: getDefaultShortcutBindings(),
+          conflicts: [],
+          storageIssue: "Stored keyboard shortcuts could not be restored. Defaults are in use.",
+        };
+    } else persist(preferences.bindings, preferences.conflicts);
+  } catch {
+    preferences = { ...preferences, sessionOnly: true };
   }
   window.addEventListener("storage", (event) => {
     if (event.key !== storageKey && event.key !== null) return;
     try {
-      const bindings = event.newValue ? readBindings(event.newValue) : defaultShortcutBindings;
-      preferences = { ...preferences, bindings: bindings ?? defaultShortcutBindings };
+      const parsed = event.newValue ? readStorage(event.newValue) : undefined;
+      preferences = {
+        ...preferences,
+        bindings: parsed?.bindings ?? getDefaultShortcutBindings(),
+        conflicts: parsed?.conflicts ?? [],
+        storageIssue:
+          parsed?.storageIssue ??
+          (event.newValue && !parsed
+            ? "Stored keyboard shortcuts could not be restored. Defaults are in use."
+            : undefined),
+      };
       emit();
     } catch {
-      preferences = { ...preferences, bindings: defaultShortcutBindings };
+      preferences = {
+        ...preferences,
+        bindings: getDefaultShortcutBindings(),
+        conflicts: [],
+        storageIssue: "Stored keyboard shortcuts could not be restored. Defaults are in use.",
+      };
       emit();
     }
   });
@@ -93,13 +94,22 @@ function subscribe(listener: () => void) {
 }
 export function useShortcutPreferences() {
   const state = useSyncExternalStore(subscribe, getShortcutPreferences, () => initial);
-  return { ...state, hint: (id: ShortcutId) => formatShortcut(state.bindings[id]) };
+  return {
+    ...state,
+    hint: (id: ShortcutId) => formatShortcut(state.bindings[id]),
+    isConflict: (id: ShortcutId) => state.conflicts.includes(id),
+  };
 }
-function persist(bindings: ShortcutBindings) {
+function persist(bindings: ShortcutBindings, conflicts: ShortcutId[]) {
   loadPreferences();
-  preferences = { ...preferences, bindings };
+  preferences = {
+    bindings,
+    conflicts,
+    recording: preferences.recording,
+    sessionOnly: preferences.sessionOnly,
+  };
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify({ version: 1, bindings }));
+    window.localStorage.setItem(storageKey, JSON.stringify({ version: 2, bindings, conflicts }));
     preferences = { ...preferences, sessionOnly: false };
   } catch {
     preferences = { ...preferences, sessionOnly: true };
@@ -107,15 +117,32 @@ function persist(bindings: ShortcutBindings) {
   emit();
 }
 export function saveShortcutBinding(id: ShortcutId, binding: ShortcutBinding) {
-  const error = validateShortcutBinding(id, binding, getShortcutPreferences().bindings);
+  const current = getShortcutPreferences();
+  const trial = { ...current.bindings, [id]: binding };
+  const error = validateShortcutBinding(id, binding, trial);
   if (error) return error;
-  persist({ ...preferences.bindings, [id]: binding });
+  persist(
+    trial,
+    current.conflicts.filter((entry) => entry !== id),
+  );
   return undefined;
 }
 /** Resetting one command can conflict with a binding moved onto its default. */
 export function resetShortcutBindings(id?: ShortcutId) {
-  if (id) return saveShortcutBinding(id, defaultShortcutBindings[id]);
-  persist(defaultShortcutBindings);
+  const defaults = getDefaultShortcutBindings();
+  if (id) {
+    const target = defaults[id];
+    if (!target) {
+      const current = getShortcutPreferences();
+      persist(
+        { ...current.bindings, [id]: null },
+        current.conflicts.filter((entry) => entry !== id),
+      );
+      return undefined;
+    }
+    return saveShortcutBinding(id, target);
+  }
+  persist(defaults, []);
   return undefined;
 }
 export function setShortcutRecording(recording: boolean) {

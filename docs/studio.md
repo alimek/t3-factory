@@ -25,12 +25,20 @@ unavailable; a fresh session opens `/runs/new`. `/settings` and `/settings/conne
 
 ## Keyboard shortcuts
 
-The [keyboard shortcut reference](keyboard-shortcuts.md) describes the command palette, Settings, New Run and canvas bindings. Defaults can be changed in **Settings → Keyboard shortcuts**.
+The [keyboard shortcuts](keyboard-shortcuts.md) topic is the authoritative reference for
+platform defaults, customization, migration and every registry command. Canvas zoom keys
+are listed there under **Canvas**; defaults can be changed in **Settings → Keyboard
+shortcuts**.
 
-While Studio or Settings is open, the Run composer and detail underneath are **inert** so hidden forms get no shortcuts. Escape closes only the topmost layer (palette, nested dialogs, block
-configuration, then Studio). Switching from a dirty Flow by shortcut or palette uses the same Keep editing / Discard changes guard; opening Settings from a clean Studio closes Studio. Palette
-navigation stays available while catalogs load or fail (errors name the section and offer Retry). Shortcuts match exact platform modifiers, ignore repeats, consumed events and IME composition,
-and follow the printed key on Latin layouts (Dvorak, AZERTY), falling back to the physical key only for dead keys or non-Latin characters.
+While Studio or Settings is open, the Run composer and detail underneath are **inert**.
+Run actions, sidebar navigation and the cheat sheet are blocked. Settings, New Run and
+Studio shortcuts remain available through the existing unsaved-change guards; nested
+dialogs and menus block them. **Mod+/** opens the read-only shortcuts cheat
+sheet from the same registry grouping as Settings. Escape closes only the topmost layer
+(palette, nested dialogs, block configuration, then Studio). Switching from a dirty Flow
+by shortcut or palette uses the same Keep editing / Discard changes guard; opening
+Settings from a clean Studio closes Studio. Palette navigation stays available while
+catalogs load or fail (errors name the section and offer Retry).
 
 ## Agent definitions
 

@@ -8,6 +8,14 @@ import {
   type SettingsSelection,
   type StudioSelection,
 } from "./settings-navigation.ts";
+import type { ShortcutId } from "./keyboard-shortcuts.ts";
+
+export const paletteActionShortcut: Partial<Record<string, ShortcutId>> = {
+  "action-new-run": "newRun",
+  "action-settings": "settings",
+  "action-studio-flows": "studio",
+  "action-studio-agents": "studio",
+};
 
 export type PaletteItem = {
   id: string;

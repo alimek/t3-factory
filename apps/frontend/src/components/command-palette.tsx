@@ -5,9 +5,11 @@ import type { AgentDefinition, FlowDraft, RunNavigationEntry } from "@t3-factory
 import { api } from "../api.ts";
 import {
   buildPaletteItems,
+  paletteActionShortcut,
   paletteMatchesQuery,
   type PaletteItem,
 } from "../command-palette-items.ts";
+import type { ShortcutId } from "../keyboard-shortcuts.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -64,15 +66,19 @@ function PaletteResults({
   listId,
   onActivate,
   onHover,
+  shortcutHint,
 }: {
   items: readonly PaletteItem[];
   activeIndex: number;
   listId: string;
   onActivate: (item: PaletteItem) => void;
   onHover: (index: number) => void;
+  shortcutHint: (id: ShortcutId) => string;
 }) {
   return items.map((item, index) => {
     const Icon = item.icon;
+    const shortcut = paletteActionShortcut[item.id];
+    const hint = shortcut ? shortcutHint(shortcut) : undefined;
     return (
       <button
         id={`${listId}-${index}`}
@@ -97,7 +103,7 @@ function PaletteResults({
           )}
         </span>
         <span className="text-2xs tracking-label text-subtle-foreground capitalize">
-          {item.kind}
+          {hint && hint !== "Unbound" ? hint : item.kind}
         </span>
       </button>
     );
@@ -208,6 +214,7 @@ function PaletteContent({
           listId={listId}
           onActivate={onActivate}
           onHover={setActiveIndex}
+          shortcutHint={hint}
         />
       </div>
       <p className="border-t px-3 py-2 text-2xs text-muted-foreground">

@@ -5,6 +5,7 @@ import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { workerEvent } from "./support/worker.ts";
 import { openComposerWithFlow } from "./support/composer.ts";
+import { fillHumanReviewChanges } from "./support/keyboard-shortcuts.ts";
 
 beforeEach(async ({ app }) => {
   await workerEvent(app.baseUrl, "prepare");
@@ -324,11 +325,7 @@ test("a Human correction revisits the same worker conversation with a distinct a
   const before = await readHistoryRun(app.baseUrl, found.id);
   const worker = before.blocks.find((b) => b.blockId === "worker")!;
   await app.open(`/runs/${found.id}`);
-  const answer = screen.getByRole("form", "Answer Your review", { exact: true });
-  await answer.getByRole("combobox", "Exit").selectOption({ label: "Request changes" });
-  await answer
-    .getByRole("textbox", "Requested changes")
-    .fill("Keep keyboard focus in the search field.");
+  const answer = await fillHumanReviewChanges(screen, "Keep keyboard focus in the search field.");
   await app.screenshot("human-correction-ready");
 
   // Act

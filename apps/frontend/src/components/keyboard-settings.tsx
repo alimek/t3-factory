@@ -8,9 +8,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  defaultShortcutBindings,
   formatShortcut,
+  getDefaultShortcutBindings,
   shortcutDefinitions,
+  shortcutGroupLabels,
   shortcutFromEvent,
   shortcutModifierError,
   validateShortcutBinding,
@@ -25,9 +26,12 @@ import {
 } from "../shortcut-preferences.ts";
 
 export function KeyboardSettings() {
-  const { bindings, sessionOnly, hint } = useShortcutPreferences();
+  const { bindings, conflicts, sessionOnly, storageIssue, hint, isConflict } =
+    useShortcutPreferences();
+  const defaults = getDefaultShortcutBindings();
   const [editing, setEditing] = useState<ShortcutId>();
   const [error, setError] = useState<string>();
+  const groups = [...new Set(shortcutDefinitions.map((command) => command.group))];
   return (
     <section className="grid gap-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -48,8 +52,13 @@ export function KeyboardSettings() {
         </Button>
       </div>
       {sessionOnly && (
-        <p role="status" className="text-sm text-warning-foreground">
+        <p role="status" className="text-sm text-attention">
           Browser storage is unavailable. Changes apply only for this session.
+        </p>
+      )}
+      {storageIssue && (
+        <p role="status" className="text-sm text-attention">
+          {storageIssue}
         </p>
       )}
       {error && (
@@ -57,47 +66,66 @@ export function KeyboardSettings() {
           {error}
         </p>
       )}
-      <div className="grid divide-y rounded-lg border">
-        {shortcutDefinitions.map((command) => (
-          <div
-            key={command.id}
-            role="group"
-            aria-label={command.label}
-            className="flex flex-wrap items-center gap-3 p-3"
-          >
-            <div className="min-w-32 flex-1">
-              <p className="text-sm font-medium">{command.label}</p>
-              <p className="text-xs text-muted-foreground">
-                {command.scope === "global" ? "Global" : "Focused canvas only"}
-              </p>
-            </div>
-            <kbd className="rounded border bg-muted px-2 py-1 text-sm">{hint(command.id)}</kbd>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={`Change ${command.label}`}
-              onClick={() => {
-                setError(undefined);
-                setEditing(command.id);
-              }}
-            >
-              Change
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={`Reset ${command.label}`}
-              disabled={
-                formatShortcut(bindings[command.id]) ===
-                formatShortcut(defaultShortcutBindings[command.id])
-              }
-              onClick={() => setError(resetShortcutBindings(command.id))}
-            >
-              Reset
-            </Button>
+      {groups.map((group) => (
+        <div key={group} className="grid gap-2">
+          <h3 className="text-sm font-medium">{shortcutGroupLabels[group]}</h3>
+          <div className="grid divide-y rounded-lg border">
+            {shortcutDefinitions
+              .filter((command) => command.group === group)
+              .map((command) => (
+                <div
+                  key={command.id}
+                  role="group"
+                  aria-label={command.label}
+                  className="flex flex-wrap items-center gap-3 p-3"
+                >
+                  <div className="min-w-32 flex-1">
+                    <p className="text-sm font-medium">{command.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {command.scope === "global"
+                        ? "Global"
+                        : command.scope === "contextual"
+                          ? "Open Run; outside text fields without Mod"
+                          : "Focused canvas only"}
+                    </p>
+                    {isConflict(command.id) && (
+                      <p className="text-xs text-destructive">
+                        Unbound because another command already uses the default combination. Change
+                        or reset the conflicting shortcut, then reset this one.
+                      </p>
+                    )}
+                  </div>
+                  <kbd className="rounded border bg-muted px-2 py-1 text-sm">
+                    {hint(command.id)}
+                  </kbd>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Change ${command.label}`}
+                    onClick={() => {
+                      setError(undefined);
+                      setEditing(command.id);
+                    }}
+                  >
+                    Change
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Reset ${command.label}`}
+                    disabled={
+                      formatShortcut(bindings[command.id]) ===
+                        formatShortcut(defaults[command.id]) && !conflicts.includes(command.id)
+                    }
+                    onClick={() => setError(resetShortcutBindings(command.id))}
+                  >
+                    Reset
+                  </Button>
+                </div>
+              ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
       <div className="grid gap-2 text-sm text-muted-foreground">
         <h3 className="font-medium text-foreground">Fixed controls</h3>
         <p>
@@ -105,8 +133,8 @@ export function KeyboardSettings() {
           navigate the palette. Tab moves focus.
         </p>
         <p>
-          Focused canvas: arrow keys pan. Selected Flow connection: Delete or Backspace removes it.
-          Focused Run row: F2 renames it; Shift+F10 or the Context Menu key opens its menu.
+          Focused canvas: arrow keys pan. Selected Flow connection: Delete removes it. Focused Run
+          row: Shift+F10 or the Context Menu key opens its menu.
         </p>
         <p>
           {formatShortcut({ key: "Enter", mod: true, alt: false, shift: false })} starts a ready Run
@@ -133,9 +161,9 @@ function ShortcutRecorder({ id, onClose }: { id: ShortcutId; onClose: () => void
     setShortcutRecording(true);
     const record = (event: KeyboardEvent) => {
       if (event.repeat || event.isComposing || event.keyCode === 229) return;
-      // Keep ordinary focus navigation and Radix's topmost Escape handling intact.
+      // Preserve focus navigation and Radix topmost Escape handling.
       if (event.key === "Tab" || event.key === "Escape") return;
-      // Buttons remain keyboard operable, without recording Enter/Space as a candidate.
+      // Keep buttons operable without recording Enter/Space as a candidate.
       if (
         event.target instanceof HTMLElement &&
         event.target.closest("button") &&
