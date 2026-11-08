@@ -78,6 +78,12 @@ closed; keyboard menus and Rename return focus to the row. Mouse layouts omit â‹
 devices retain it. Settled stays one line even with recorded repository details. These are simulated T3
 facts, not repository changes or live GitHub state.
 
+**Native T3 settlement coverage.** Per-Block settlement after a current `finished`
+report and confirmed worker completion is covered by the controlled backend Run
+settlement tests, including handoff Blocks while the Run remains Active and
+terminal Blocks. Demo thread links do not establish actual T3 list organization; native
+settlement and manual reopen behavior require live T3 evidence.
+
 **Worker thread completion coverage.** The Working scenario shows a worker held by
 unsettled delegated work; Factory reads only the worker thread and T3's delegated wait, never
 the subagents. HTTP adapter tests cover the
