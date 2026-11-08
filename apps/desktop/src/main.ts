@@ -198,7 +198,7 @@ function openWindow() {
   // Closing the window never stops the backend; the tray and Dock reopen it.
   created.on("closed", () => {
     window = null;
-    setMenuState(withoutOpenRun(menuState));
+    applyMenuState(withoutOpenRun(menuState));
   });
   window = created;
   void created.loadURL(`${appOrigin}/`);
@@ -230,7 +230,7 @@ function refreshTray() {
   );
 }
 
-function setMenuState(state: MenuState) {
+function applyMenuState(state: MenuState) {
   menuState = state;
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
@@ -420,7 +420,7 @@ function registerBridge() {
   handle(channels.installUpdate, () => installUpdate());
   handle(channels.setUpdateChannel, (channel: unknown) => setUpdateChannel(channel));
   handle(channels.setMenuState, (commands: unknown) => {
-    setMenuState(parseMenuState(commands));
+    applyMenuState(parseMenuState(commands));
     return { ok: true };
   });
   // A MessagePort cannot be an invoke result; it goes to the requesting frame, keyed by nonce.
@@ -520,7 +520,7 @@ async function start() {
   });
   registerUi();
   registerBridge();
-  setMenuState({});
+  applyMenuState({});
   if (store.get().role === "server") backend.start();
   updates.start(updateChannel());
   tray = new Tray(trayImage());

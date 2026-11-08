@@ -10,7 +10,7 @@ import {
   installDesktopBridge,
   openDesktopComposer,
   openKeyboardSettings,
-  rebindDesktopNewRun,
+  recordDesktopNewRunCandidate,
   shortcutMod,
 } from "./support/keyboard-shortcuts.ts";
 
@@ -94,7 +94,8 @@ test("Settings Reset restores the desktop default for New Run", async ({
   browser,
 }) => {
   // Arrange
-  const newRunGroup = await rebindDesktopNewRun(app, screen, browser);
+  const newRunGroup = await recordDesktopNewRunCandidate(app, screen, browser);
+  await screen.getByRole("button", "Save shortcut").tap();
   await expect(newRunGroup).toContainText("Shift");
 
   // Act
@@ -233,14 +234,26 @@ test("the shortcuts cheat sheet does not open over the command palette", async (
   await expect(screen.getByRole("dialog", "Keyboard shortcuts")).toBeHidden();
 });
 
-test("the desktop menu receives customized bindings and the open Run's availability", async ({
+test("a customized binding reaches the desktop menu", async ({ app, screen, browser }) => {
+  // Arrange
+  await recordDesktopNewRunCandidate(app, screen, browser);
+
+  // Act
+  await screen.getByRole("button", "Save shortcut").tap();
+
+  // Assert
+  await expect
+    .poll(() => browser.evaluate("window.__desktopMenu.newRun.binding"))
+    .toEqual({ key: "n", mod: true, alt: false, shift: true });
+});
+
+test("the desktop menu enables Run actions once an active Run is open", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
-  await rebindDesktopNewRun(app, screen, browser);
-  await browser.keyboard.press("Escape");
+  await openDesktopComposer(app, screen, browser);
   const active = await findRun(app.baseUrl, "Demo · Two reviewers working in parallel");
   await expect.poll(() => browser.evaluate("window.__desktopMenu.settle.enabled")).toBe(false);
 
@@ -249,12 +262,6 @@ test("the desktop menu receives customized bindings and the open Run's availabil
 
   // Assert
   await expect.poll(() => browser.evaluate("window.__desktopMenu.settle.enabled")).toBe(true);
-  expect(await browser.evaluate("window.__desktopMenu.newRun.binding")).toEqual({
-    key: "n",
-    mod: true,
-    alt: false,
-    shift: true,
-  });
 });
 
 test("choosing Settle in the desktop menu settles the open Run", async ({

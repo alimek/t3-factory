@@ -39,7 +39,16 @@ export function useDesktopMenu() {
   useEffect(() => {
     const bridge = desktopBridge();
     if (!bridge) return;
-    const publish = () => void bridge.setMenuState(menuCommands()).catch(() => undefined);
+    // Live Run updates re-register the open Run often; rebuilding an unchanged native menu
+    // would close it while the user has it open.
+    let published = "";
+    const publish = () => {
+      const commands = menuCommands();
+      const serialized = JSON.stringify(commands);
+      if (serialized === published) return;
+      published = serialized;
+      void bridge.setMenuState(commands);
+    };
     publish();
     const unsubscribe = [
       subscribeShortcutPreferences(publish),
@@ -50,7 +59,7 @@ export function useDesktopMenu() {
     ];
     return () => {
       for (const stop of unsubscribe) stop();
-      void bridge.setMenuState(null).catch(() => undefined);
+      void bridge.setMenuState(null);
     };
   }, []);
 }
