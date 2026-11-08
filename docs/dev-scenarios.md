@@ -48,7 +48,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect two independent top-level workers and Archive |
 | Problem · Report exit needs correction | Completed worker with a rejected final and no accepted report | Inspect the rejection reason separately from the missing-report obligation; Request report assesses existing work only while the worker thread is finished |
 | Problem · Search checks failed | Failed execution with unresolved Problem | Inspect attention and failure evidence; backend tests also cover a rolled-back worker holding its prior result, and the Problem settling after a later completed run or a Block report |
-| Settled · Clearer onboarding copy | Settled automatically after its worker's result and finished thread | Inspect history and the **Settled** canvas badge; a report from its worker would return it to Active. Use any open row's ··· menu (or right click) and **Settle** to settle a Run by hand |
+| Settled · Clearer onboarding copy | Settled automatically after its worker's result and finished thread; recorded welcome-copy branch and merged PR | Inspect its compact single-line project-icon/title row, full side preview, history and **Settled** canvas badge; a report from its worker would return it to Active. Use any open row's right-click menu and **Settle** to settle a Run by hand |
 | Archived · Earlier navigation experiment | Archived right after its worker launched; hidden from navigation | Check it is absent from the sidebar; open `/runs/<id>` (id from `/api/runs?projectId=<Atlas id>`) to read its history with the **Archived** badge and a stopped Block; no relaunch action |
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
@@ -61,6 +61,15 @@ information available for browsing. The persistent demo does not simulate connec
 loss, TLS or revocation: controlled transport and UI fixtures cover those boundaries.
 Project descriptions and current Flow comparisons reload on Run entry, so another window's
 catalog edit need not appear immediately. See [live viewing](runs.md#live-viewing).
+
+**Sidebar repository coverage.** The Atlas project has a monogram. Working · Improve the project picker
+has a long branch name and no PR; Monitoring · Agent is watching CI for the search fix has a PR and no
+branch. Parallel review from one prompt has two worker branches and two distinct PRs, one linked to both
+workers. Verify the branch/PR counters independently, full branch-to-worker mapping in the side preview
+and Run context, and the links after reload. Right click dismisses the preview and menu hover keeps it
+closed; keyboard menus and Rename return focus to the row. Mouse layouts omit ⋯, while coarse-pointer
+devices retain it. Settled stays one line even with recorded repository details. These are simulated T3
+facts, not repository changes or live GitHub state.
 
 **Worker thread completion coverage.** The Working scenario shows a worker held by
 unsettled delegated work; Factory reads only the worker thread and T3's delegated wait, never

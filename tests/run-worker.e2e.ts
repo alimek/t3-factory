@@ -116,7 +116,7 @@ test("an unfinished prompt reopens as a Draft after reload and Starts exactly on
   await expect(screen.getByRole("heading", "UI saved draft", { exact: true })).toBeVisible();
   expect(await runsTitled(app.baseUrl, "UI saved draft")).toHaveLength(1);
   await expect(draftRow).toHaveCount(0);
-  await expect(journeyRows).toHaveText([/^UI newer draft\s*Draft$/, /^UI saved draft/]);
+  await expect(journeyRows).toHaveText([/^UI newer draft\s*Draft$/, /UI saved draft/]);
   await app.screenshot("draft-started-once");
 });
 
@@ -186,9 +186,10 @@ test("a worker discussing in T3 stays working without Needs input after reload",
   await app.screenshot("worker-conversation-work-period");
 });
 
-test("a worker idle in working shows its message on the canvas and in its Run row", async ({
+test("a worker idle in working shows its message on the canvas and in its Run preview", async ({
   app,
   screen,
+  browser,
 }) => {
   // Arrange
   const found = await findRun(
@@ -198,16 +199,18 @@ test("a worker idle in working shows its message on the canvas and in its Run ro
 
   // Act
   await app.open(`/runs/${found.id}`);
+  await screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", /^UI worker · Monitoring · Agent is watching CI/)
+    .hover();
 
   // Assert
   await expect(screen.getByRole("article", "Block Implement change")).toContainText(
     "CI checks are still running",
   );
-  await expect(
-    screen
-      .getByRole("navigation", "Open Runs")
-      .getByRole("link", /^UI worker · Monitoring · Agent is watching CI/),
-  ).toContainText("CI checks are still running");
+  await expect(browser.locator('[data-slot="tooltip-content"]')).toContainText(
+    "CI checks are still running",
+  );
   await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   await app.screenshot("worker-working-message");
 });
@@ -395,6 +398,7 @@ test("the row menu opened by right click settles an open Run into the Settled gr
 test("a report from the Agent of a Settled Run returns it to the open Runs", async ({
   app,
   screen,
+  browser,
 }) => {
   // Arrange
   const title = "UI worker · Working · Improve the project picker";
@@ -408,11 +412,15 @@ test("a report from the Agent of a Settled Run returns it to the open Runs", asy
 
   // Act
   await workerEvent(app.baseUrl, "working");
+  await screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${title}`))
+    .hover();
 
   // Assert
-  await expect(
-    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(`^${title}`)),
-  ).toContainText("Two subagents are still checking the empty state.");
+  await expect(browser.locator('[data-slot="tooltip-content"]')).toContainText(
+    "Two subagents are still checking the empty state.",
+  );
   expect((await readHistoryRun(app.baseUrl, found.id)).lifecycle).toBe("active");
   await screen.getByRole("button", "Show timeline", { exact: true }).tap();
   await expect(screen.getByRole("region", "Timeline")).toContainText(

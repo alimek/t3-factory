@@ -179,6 +179,9 @@ it("navigation and the open Run share one view and apply one commit together", (
     title: run.title,
     createdAt: run.startedAt,
     creationKey: "key",
+    lastActivityAt: run.startedAt,
+    flowName: run.flowName,
+    repositories: [],
     project: {
       id: "project",
       title: "Project",

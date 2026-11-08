@@ -115,6 +115,9 @@ _Avoid_: Run snapshot.
 **Run timeline**:
 The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
 
+**Run activity**:
+A meaningful change in a Run's work, such as an accepted Agent report, an execution change, a new Needs input matter or an answer to a Human step. Viewing or renaming a Run and observing an unchanged state are not Run activity.
+
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
 

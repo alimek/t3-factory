@@ -23,7 +23,13 @@ async function createDemoProject(factory: Factory, t3: PersistentT3, home: strin
   );
   const project = requireSuccess(await factory.addRepository({ path: root }));
   t3.projects = t3.projects.map((item) =>
-    item.projectId === project.projectId ? { ...item, title: "Atlas demo" } : item,
+    item.projectId === project.projectId
+      ? {
+          ...item,
+          title: "Atlas demo",
+          projectIcon: { kind: "monogram", text: "A", color: "indigo" },
+        }
+      : item,
   );
   requireSuccess(await factory.recheckProjects());
   requireSuccess(await factory.selectProject({ id: project.id }));

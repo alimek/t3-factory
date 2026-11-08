@@ -59,9 +59,26 @@ export async function openSidebarAction(
   const toggle = screen.getByRole("button", /^Snoozed 1$/);
   if (searching) await screen.getByRole("textbox", "Search Run titles").fill("Navigation research");
   else await toggle.tap();
-  const actions = screen.getByRole("button", `Actions for ${title}`);
-  await actions.tap();
+  const actions = screen.getByRole("link", title, { exact: true });
+  await actions.secondaryTap();
   return { toggle, actions };
+}
+
+export async function prepareSidebarPreview(
+  { app, screen, browser }: SidebarFixtures,
+  title: string,
+  opened = false,
+) {
+  await browser.setViewport({ width: 1440, height: 1100 });
+  await browser.emulateMedia({ reducedMotion: "reduce" });
+  await app.open("/runs/new");
+  const row = screen.getByRole("navigation", "Open Runs").getByRole("link", title, { exact: true });
+  const preview = browser.locator('[data-slot="tooltip-content"]');
+  if (opened) {
+    await row.hover();
+    await expect(preview).toBeVisible();
+  }
+  return { row, preview };
 }
 
 export async function expectFlatSearch(screen: TestFixtures["screen"]) {

@@ -11,11 +11,11 @@ import type {
  * peer must understand; raise the minimum only when older peers can no longer
  * interoperate safely. Application release numbers never decide compatibility.
  */
-export const FACTORY_PROTOCOL = 3;
+export const FACTORY_PROTOCOL = 4;
 /** Server accepts historical clients; existing product operations remain supported. */
 export const FACTORY_MINIMUM_PEER_PROTOCOL = 1;
-/** The current UI receives Run, navigation and connection data through live delivery (protocol 3). */
-export const FACTORY_MINIMUM_SERVER_PROTOCOL = 3;
+/** The current UI requires worker repository metadata and navigation activity (protocol 4). */
+export const FACTORY_MINIMUM_SERVER_PROTOCOL = 4;
 
 export const CLIENT_LABEL_LIMIT = 80;
 

@@ -10,6 +10,7 @@ import { attention, settlePending } from "./runner-attention.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { now } from "./time.ts";
 import { failedRun, readWorkerThread, type WorkerThread } from "./worker-thread.ts";
+import { recordWorkerRepository } from "./worker-repositories.ts";
 
 /** Observes each Block's worker thread and derives its execution failure, missing report and
  * native-request attention from the shared thread-finished rule. */
@@ -64,6 +65,7 @@ function recordWorkerThread(
       id: string;
     }>`SELECT id FROM run_thread_bindings WHERE run_id=${run.id} AND thread_id=${thread.threadId}`;
     if (!binding) throw Error("Worker binding is missing.");
+    yield* recordWorkerRepository(sql, binding.id, thread.repository, time);
     yield* sql`UPDATE run_thread_bindings SET link=COALESCE(${thread.link},link) WHERE id=${binding.id}`;
     const scope = { block_id: block.block_id, bindingId: binding.id };
     yield* attention(
