@@ -145,7 +145,7 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
 
 ### Execution and safety boundaries
 
-- A Run's threads share its workspace, the project checkout or that Run's one worktree: no conflict-free editing or exactly-once guarantee. Worktree Runs are not yet qualified against live T3.
+- A Run's threads share its workspace, the project checkout or that Run's one worktree: no conflict-free editing or exactly-once guarantee. Worktree Runs were smoke-tested on T3 Code Nightly 0.1.8-nightly.20261108.4367: one shared worktree and branch, idle workers activated by a send after a Human step with the worktree deleted and recreated by T3, automatic settlement with an unvisited idle worker, and restart after settlement. Lost launch responses, restart during preparation, idle setup timing and failure, concurrent recreation and single-Agent cleanup remain unqualified.
 - A new worktree is not supported for a Project with a blocking (`async: false`) T3 worktree setup script, and Start refuses it. Factory attaches later workers to the
   Run's worktree as idle threads; T3's public reads expose no completion signal for an idle thread's setup and a queued send has no fence for a running setup, so a
   first activation could start before setup finishes or alongside its failure. Asynchronous setup matches an ordinary T3 launch, which does not wait either. An
