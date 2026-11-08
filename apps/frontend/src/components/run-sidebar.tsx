@@ -1,5 +1,5 @@
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
-import { useCallback, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import {
@@ -31,7 +31,7 @@ import {
 } from "../run-draft.ts";
 import { AppLink as Link } from "./app-link.tsx";
 import { useNavigate } from "@tanstack/react-router";
-import { usePolling } from "../use-polling.ts";
+import { useLiveNavigation } from "../live/navigation.ts";
 import { ArchiveRunDialog } from "./archive-run-dialog.tsx";
 import { RunStatusChip } from "./run-status-chip.tsx";
 import { Button } from "./ui/button";
@@ -74,25 +74,12 @@ function execution(run: RunNavigationEntry) {
 }
 
 function useRunNavigation() {
-  const [runs, setRuns] = useState<readonly RunNavigationEntry[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  usePolling({
-    intervalMs: 1500,
-    onPoll: useCallback(async (isActive) => {
-      try {
-        const rows = await api.listRunNavigation();
-        if (isActive()) {
-          setRuns(rows);
-          setLoaded(true);
-          setLoadError("");
-        }
-      } catch {
-        if (isActive()) setLoadError("Run navigation unavailable. Saved history is retained.");
-      }
-    }, []),
-  });
-  return { runs, setRuns, loaded, loadError };
+  const { value, error } = useLiveNavigation();
+  return {
+    runs: value ?? [],
+    loaded: value !== null,
+    loadError: error ? "Run navigation unavailable. Saved history is retained." : "",
+  };
 }
 
 function NewRunButton({ current }: { current: boolean }) {
@@ -121,7 +108,7 @@ function NewRunButton({ current }: { current: boolean }) {
 }
 
 export function RunSidebar({ path }: { path: string }) {
-  const { runs, setRuns, loaded, loadError } = useRunNavigation();
+  const { runs, loaded, loadError } = useRunNavigation();
   const drafts = useRunDrafts();
   const composition = useRunDraft();
   const [search, setSearch] = useState("");
@@ -131,7 +118,7 @@ export function RunSidebar({ path }: { path: string }) {
   const [archiving, setArchiving] = useState<RunNavigationEntry>();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
-  const { act, busy, actionError } = useRunActions(setRuns, !!query);
+  const { act, busy, actionError } = useRunActions(!!query);
   return (
     <section aria-label="Run navigation" className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
@@ -169,9 +156,6 @@ export function RunSidebar({ path }: { path: string }) {
           open
           returnFocusId={`run-actions-${archiving.id}`}
           onOpenChange={(open) => !open && setArchiving(undefined)}
-          onArchived={() => {
-            void api.listRunNavigation().then(setRuns, () => undefined);
-          }}
         />
       )}
       {renaming && "presentation" in renaming && (
@@ -182,10 +166,7 @@ export function RunSidebar({ path }: { path: string }) {
           description="Change the title of this execution."
           onClose={() => setRenaming(undefined)}
           save={async (title) => {
-            const result = await api.renameRun(renaming.id, { title });
-            setRuns((rows) =>
-              rows.map((row) => (row.id === renaming.id ? { ...row, title: result.title } : row)),
-            );
+            await api.renameRun(renaming.id, { title });
           }}
         />
       )}
@@ -217,8 +198,8 @@ const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
 /** The group a Run moves to, whose toggle takes focus after the row leaves the open list. */
 const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
 
-/** Snooze, Restore and Settle from the row menu, refreshing navigation afterwards. */
-function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void, searching: boolean) {
+/** Snooze, Restore and Settle from the row menu. */
+function useRunActions(searching: boolean) {
   // A new request object also refocuses the same target after consecutive row actions.
   const [focusAfterRender, setFocusAfterRender] = useState<{ id: string }>();
   useLayoutEffect(() => {
@@ -231,7 +212,6 @@ function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void, s
     setActionError("");
     try {
       await runActions[action](run.id);
-      setRuns(await api.listRunNavigation());
       const id =
         searching || action === "restore"
           ? `run-actions-${run.id}`
