@@ -76,7 +76,7 @@ function liveOwner(): LiveOwner {
  * Holds `scope` while the calling component is mounted. Pass a stable scope: a module
  * constant, or one memoized per identity (for example per Run id).
  */
-function useLiveScope<M extends { readonly _tag: string }, V>(
+export function useLiveScope<M extends { readonly _tag: string }, V>(
   scope: LiveScope<M, V>,
 ): LiveScopeView<V> {
   const live = liveOwner();
