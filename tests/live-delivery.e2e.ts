@@ -67,7 +67,7 @@ test("a lost live connection keeps the last Run read-only, then resynchronizes w
   await app.open("/__fixture/remote-browser");
   const run = await liveRun(app, "recovery");
   await openApproved(app, `/runs/${run}`);
-  const actions = screen.getByRole("button", "Run actions");
+  const actions = screen.getByRole("button", "Archive Run");
   await expect(actions).toBeEnabled();
   await remoteFixture(app, "offline");
   await expect(screen.getByRole("status", "Offline")).toBeVisible({ timeout: 10_000 });
