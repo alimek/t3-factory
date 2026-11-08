@@ -71,7 +71,7 @@ export async function report(
   context: SeedContext,
   run: RunDetail,
   blockId: string,
-  value: { to: "finished" | "waiting" | "working"; exit?: string; message?: string },
+  value: { to: "finished" | "working"; exit?: string; message?: string },
 ) {
   const block = executionBlock(run, blockId);
   const reply = await context.factory.runtime.submit({
@@ -79,10 +79,6 @@ export async function report(
   });
   if (reply.code !== "ACCEPTED") throw Error(`Development report: ${reply.code}`);
   return reconcileUntil(context, run.id, (detail) => {
-    if (value.to === "waiting")
-      return detail.attention.some(
-        (item) => item.kind === "conversation-waiting" && item.settledAt === null,
-      );
     if (value.to === "working")
       return detail.blocks.some(
         (item) => item.blockId === blockId && item.workingMessage === value.message,

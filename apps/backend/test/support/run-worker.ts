@@ -151,15 +151,6 @@ export async function replacedBeforeRelease(c: TestContext) {
   return f;
 }
 
-/** A worker with no next Block reported its result, then asked the user a question. */
-export async function askedAfterResult(c: TestContext) {
-  const f = await directWorker(c, true, "");
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  const question = { blockId: f.blockId, to: "waiting", message: "Should I update the docs too?" };
-  assert((await f.f.runtime.submit({ arguments: question })).code === "ACCEPTED");
-  return f;
-}
-
 export const workerFinal = (
   blockId: string,
   message = "Implemented the requested result.",
@@ -273,23 +264,13 @@ export async function reportedAfterFailure(c: TestContext) {
   return f;
 }
 
-export async function waitingWorker(c: TestContext) {
+/** A worker reported working and its turn completed, as after asking the user questions. */
+export async function idleWorkingWorker(c: TestContext) {
   const f = await directWorker(c);
-  assert(
-    (
-      await f.f.runtime.submit({
-        arguments: { blockId: f.blockId, to: "waiting", message: "Which audience?" },
-      })
-    ).code === "ACCEPTED",
-  );
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
   finishWorker(f);
-  await f.f.reconcileRuns();
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  const question = run.value.attention.find(
-    (a) => a.kind === "conversation-waiting" && !a.settledAt,
-  )!;
-  return { ...f, question };
+  assert((await f.f.reconcileRuns()).ok);
+  return f;
 }
 export async function missingWorkerReport(
   c: TestContext,
@@ -312,7 +293,7 @@ export async function revisitedWorker(c: TestContext) {
 
 /** The user's reply in the worker thread starts a new execution of that thread. */
 export async function repliedWorker(c: TestContext) {
-  const f = await waitingWorker(c);
+  const f = await idleWorkingWorker(c);
   startWorkerTurn(f, "answer-execution", 2);
   return f;
 }

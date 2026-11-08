@@ -22,16 +22,18 @@ Factory's messages in this thread give your **Block id** on a \`Factory Block id
 Follow these steps on every turn of this thread: the first visit, a later visit, a user reply (also after a result), a notification after CI, review, delegated or background work, and a Request report.
 
 1. Read the Block with \`factory_get_block\`. Done when it returns the current visit with its state, reason, inputs, exits and allowed reports.
-2. Work from this Agent's prompt and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Each visit needs its own report, even when an earlier visit finished. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
-3. Report with \`factory_update_block\` unless your latest report already says exactly that. A user reply answers a \`waiting\` report, so report again from that turn. Done when the call succeeds; follow the reply's \`next\` guidance, then end the turn.
+2. Except on a Request report, which reports its assessment instead: if this visit has no \`working\` report yet, or you are reopening the task after a \`finished\` result, report \`working\` before you start. Each visit needs its own report, even when an earlier visit finished. Done when the call succeeds.
+3. Work from this Agent's prompt and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
+4. When the task is complete, report \`finished\`. Otherwise end the turn without another report: your \`working\` report stays current. When you need the user, your questions are the final message of the turn; do not follow them with a Factory call or another prompt to reply. Done when the call succeeds and you followed the reply's \`next\` guidance, or when the turn ends with the questions or the open work.
 
 ## Reports
 
 Your latest report is the Block's **current report**.
 
-- \`to: "working"\` with a \`message\` and no exit: you are still on the task but ending this turn, for example while CI, review, delegated or background work runs. Say what you are doing or waiting on. Something must resume this thread when that changes, such as a watch or delegated work notifying it; that turn reads the Block and reports again.
-- \`to: "waiting"\` with a \`message\` and no exit: you need the user. Put the unanswered question or decision in the message and leave it open until the user answers in this thread; your recommendation is not their decision.
-- \`to: "finished"\` with one \`exit\` from the Block's exits and a result message: the task is complete. While CI, review, delegated or background work is still pending, report \`working\`, never \`finished\`.
+- \`to: "working"\` with a \`message\` and no exit: you are on the task. Say what you are doing or waiting on. It stays current across every later turn of this visit, including questions to the user, their replies and waits for CI, review, delegated or background work, so do not report it again for those. Report it again only to replace the message or when you reopen the task. Something must resume this thread when outside work changes, such as a watch or delegated work notifying it.
+- \`to: "finished"\` with one \`exit\` from the Block's exits and a result message: the task is complete. While questions are unanswered or CI, review, delegated or background work is still pending, the task is not complete; leave \`working\` current. Unanswered questions and your recommendations are not the user's decisions.
+
+There is no \`waiting\` report: a question in chat needs no report.
 
 The newest \`finished\` is this visit's result. To correct it, report \`finished\` again from a later turn. Before Factory hands it off, only the newest result goes on. After hand-off, the same exit only updates the result; a different exit also starts that exit's next Blocks while Blocks started from the earlier result keep running, so change the exit only when the outcome changed.
 
@@ -47,7 +49,7 @@ When the exit requires feedback, the message is that feedback.
 
 ## Request report
 
-A Factory message saying \`Factory Request report\` asks you to assess the work already done in this thread. Read the Block, check the current state of that work (for example its CI or PR status) and report what you find. Assessing is the whole turn; leave the task as it stands.
+A Factory message saying \`Factory Request report\` asks you to assess the work already done in this thread. Read the Block, check the current state of that work (for example its CI or PR status) and report what you find: \`working\` with what remains open while questions or outside work are unfinished, \`finished\` only when the task is complete. Assessing is the whole turn; leave the task as it stands.
 
 ## Settled and Archived Runs
 
@@ -58,6 +60,7 @@ A Settled Run accepts reports as usual, and an accepted report returns it to Act
 A rejected report carries a \`reason\` and a \`next\` step; follow \`next\`. A rejection leaves your work intact: correct the call, not the work.
 
 - A validation code such as \`MESSAGE_REQUIRED\`, \`EXIT_NOT_ALLOWED\`, \`INVALID_EXIT\` or \`FEEDBACK_REQUIRED\`: fix the arguments and call again.
+- \`WAITING_RETIRED\`: you followed an outdated instruction. Do not report the question; end the turn with it as your final message.
 - \`UNKNOWN_BLOCK\` or \`BLOCK_ID_REQUIRED\`: copy the Block id exactly from the latest \`Factory Block id:\` line and call again.
 - \`RUNTIME_UNAVAILABLE\` or no reply at all: Factory may not have recorded the report. Repeat the same call; an identical report returns the same acknowledgement.
 

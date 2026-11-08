@@ -41,7 +41,7 @@ function attentionExplanation(kind: RunAttention["kind"]) {
     case "native-request":
       return "Respond in T3. Factory cannot answer or approve this request.";
     case "conversation-waiting":
-      return "The Agent is waiting for your reply. Answer in its T3 thread; its reply turn continues this step.";
+      return "An Agent question recorded before questions in chat stopped needing a report.";
     case "missing-report":
       return "No report was accepted for this completed execution. Check any report rejection below before requesting a separate assessment turn.";
     case "report-problem":
@@ -241,7 +241,7 @@ function PendingMatter({
           Thread-level observation; questions and permission approvals may be grouped.
         </p>
       )}
-      {(item.kind === "conversation-waiting" || item.kind === "report-problem") && item.message && (
+      {item.kind === "report-problem" && item.message && (
         <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">
           {item.message}
         </p>
@@ -309,7 +309,7 @@ function SettledMatter({ run, item }: { run: RunDetail; item: RunAttention }) {
         <AttentionChip presentation={attentionPresentation(item.kind)} />
         <h3 className="truncate text-2xs font-medium text-muted-foreground">{item.blockName}</h3>
       </div>
-      {item.kind === "report-problem" && item.message && (
+      {(item.kind === "report-problem" || item.kind === "conversation-waiting") && item.message && (
         <p className="whitespace-pre-wrap">{item.message}</p>
       )}
       {exit && <p>Selected exit: {exit}</p>}

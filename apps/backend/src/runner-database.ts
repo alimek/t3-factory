@@ -90,7 +90,7 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
         AND (${intent.cause.startsWith("recovery:") && intent.state === "pending" ? 1 : 0}=0 OR EXISTS(
           SELECT 1 FROM report_recoveries rr JOIN run_executions e ON e.run_id=rr.run_id AND e.block_id=rr.block_id AND e.execution_id=rr.source_execution_id
           JOIN run_blocks b ON b.run_id=rr.run_id AND b.block_id=rr.block_id
-          WHERE rr.intent_id=${intent.id} AND e.engine_status='completed' AND (e.report_status IS NULL OR e.report_status='working') AND b.execution_id=e.execution_id AND b.pending_request_count=0))
+          WHERE rr.intent_id=${intent.id} AND e.engine_status='completed' AND e.report_status IS NOT 'finished' AND b.execution_id=e.execution_id AND b.pending_request_count=0))
         AND NOT EXISTS(SELECT 1 FROM operation_intents WHERE run_id=${runRow.id} AND state='reserved' AND id!=${intent.id}) RETURNING id`;
         if (changed.length && releaseGeneration !== undefined && intent.report_id) {
           yield* sql`INSERT INTO run_events(run_id,block_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${intent.block_id},'handoff-released',${"release:" + intent.id},${intent.id},${yield* now}) ON CONFLICT DO NOTHING`;

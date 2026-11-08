@@ -20,7 +20,6 @@ export function BindingLink({ binding }: { binding: RunThreadBinding }) {
 
 const phaseLabel: Record<RunActivation["phase"], string> = {
   delegating: "Delegating",
-  "waiting-worker": "Waiting for worker",
   assessing: "Assessing worker result",
   reported: "Report accepted",
   finished: "Activation completed",
@@ -41,21 +40,7 @@ export function CoordinatorActivations({ run, blockId }: { run: RunDetail; block
 
 function activationStateLabel(run: RunDetail, activation: RunActivation) {
   if (run.lifecycle === "archived") return "Archived";
-  const question = run.attention.find(
-    (item) =>
-      item.kind === "conversation-waiting" &&
-      !item.settledAt &&
-      run.executions.some(
-        (execution) =>
-          execution.activationId === activation.id &&
-          execution.executionId === item.executionId &&
-          execution.bindingId === item.bindingId,
-      ),
-  );
-  if (question) return "Needs input in T3";
-  return activation.phase === "assessing" || activation.phase === "waiting-worker"
-    ? "Worker active"
-    : phaseLabel[activation.phase];
+  return activation.phase === "assessing" ? "Worker active" : phaseLabel[activation.phase];
 }
 
 function Activation({ run, activation }: { run: RunDetail; activation: RunActivation }) {

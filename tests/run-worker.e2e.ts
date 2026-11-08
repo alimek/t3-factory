@@ -156,7 +156,7 @@ test("a Start whose response was lost is recovered after reload without a duplic
   await app.screenshot("lost-start-recovered");
 });
 
-test("reloading a waiting worker retains its exact question link", async ({
+test("a worker discussing in T3 stays working without Needs input after reload", async ({
   app,
   screen,
   browser,
@@ -164,29 +164,25 @@ test("reloading a waiting worker retains its exact question link", async ({
   // Arrange
   const found = await findRun(
     app.baseUrl,
-    "UI worker · Needs input · Agent asked about empty-state wording",
+    "UI worker · Discussing · Agent asked about empty-state wording",
   );
   const run = await readHistoryRun(app.baseUrl, found.id);
-  const question = run.attention.find((a) => a.kind === "conversation-waiting" && !a.settledAt);
-  assert(question);
   await app.open(`/runs/${run.id}`);
 
   // Act
   await browser.reload();
 
   // Assert
-  const input = screen.getByRole("region", "Needs input");
-  await expect(input).toContainText("preferred tone");
-  await expect(input).toContainText("Worker");
-  await expect(input.getByRole("link", "Open in T3", { exact: true })).toHaveAttribute(
-    "href",
-    question.link!,
+  await expect(screen.getByRole("article", "Block Implement change")).toContainText(
+    "Discussing the empty-state wording",
   );
+  await expect(screen.getByRole("region", "Needs input")).toHaveCount(0);
+  await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(run.activations);
-  await app.screenshot("worker-question-after-reload");
+  await app.screenshot("worker-conversation-after-reload");
   await screen.getByRole("heading", "Work periods", { exact: true }).scrollIntoView();
-  await expect(screen.getByText(/Report: accepted waiting/)).toBeVisible();
-  await app.screenshot("worker-waiting-work-period");
+  await expect(screen.getByText(/Report: accepted working/)).toBeVisible();
+  await app.screenshot("worker-conversation-work-period");
 });
 
 test("a worker idle in working shows its message on the canvas and in its Run row", async ({
@@ -242,7 +238,7 @@ test("Request report asks a worker idle in working to assess its existing work",
   await app.screenshot("worker-working-report-requested");
 });
 
-test("a native worker reply completes the same activation and preserves its waiting history", async ({
+test("a native worker reply completes the same activation without another working report", async ({
   app,
   screen,
   browser,
@@ -250,7 +246,7 @@ test("a native worker reply completes the same activation and preserves its wait
   // Arrange
   const found = await findRun(
     app.baseUrl,
-    "UI worker · Needs input · Agent asked about empty-state wording",
+    "UI worker · Discussing · Agent asked about empty-state wording",
   );
   const before = await readHistoryRun(app.baseUrl, found.id);
   await app.open(`/runs/${found.id}`);
@@ -268,7 +264,6 @@ test("a native worker reply completes the same activation and preserves its wait
   expect(saved.threadBindings).toEqual(before.threadBindings);
   expect(saved.executions.map((e) => e.executionId)).toContain("ui-worker-reply");
   expect(saved.reports[0]?.resultMessage).toContain("Clear filters");
-  expect(saved.attention.find((a) => a.kind === "conversation-waiting")?.settledAt).not.toBe(null);
   await expect(screen.getByRole("region", "Block activations")).toContainText(
     "Completion confirmed",
   );

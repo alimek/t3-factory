@@ -80,13 +80,13 @@ _Avoid_: bridge (the retired stdio copy installed per harness).
 One accepted task at a Flow block, from its launch or visit message until its result is completed. Reports naming the Block id apply to the Block's current activation, whichever turn of the worker thread sends them.
 
 **Needs input**:
-Pending questions or decisions on a Run. This covers Human occurrences answered in Factory, native T3 questions or permissions, and conversation waiting reports; the last two stay Open in T3. It is not an execution state.
+Pending questions or decisions on a Run. This covers Human occurrences answered in Factory and native T3 questions or permissions, which stay Open in T3. An Agent's question in chat is ordinary conversation, not Needs input. It is not an execution state.
 
 **Conversation waiting**:
-An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; any later turn of that thread settles it and reports again, and a later working or waiting report replaces it. It is neither a Final result nor a Human step.
+A retired, non-final `waiting` report with which an Agent once asked the user in chat. Factory now refuses it; recorded ones stay readable as history, and an upgrade turned pending ones into Working reports.
 
 **Working report**:
-An explicit, non-final `working` report from an Agent that is still on its Block's task, for example while CI or review runs. It carries a message shown on the Block and in its Run row, selects no exit, releases no handoff and is not attention. While it is the Block activation's latest report, a finished worker thread raises no missing report. A later working, waiting or finished report replaces it.
+An explicit, non-final `working` report an Agent sends when it starts its Block activation's task, or reopens it. It carries a message shown on the Block and in its Run row, selects no exit, releases no handoff and is not attention. It stays current across later turns of the activation, including questions to the user, their replies and waits for CI or review, so a finished worker thread raises no missing report. A later working or finished report replaces it.
 _Avoid_: progress report, heartbeat.
 
 **Problem**:

@@ -1,6 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
 import {
-  askedAfterResult,
   directWorker,
   finishWorker,
   launchedBlockId,
@@ -140,45 +139,6 @@ it("repeating the result from a later turn settles an execution failure recorded
     settlementReason: "report-accepted",
   });
   expect(run.value.reports).toHaveLength(2);
-});
-
-it("a finished report settles the question the worker asked after its earlier result", async (c) => {
-  // Arrange
-  const f = await askedAfterResult(c);
-
-  // Act
-  const result = await f.f.runtime.submit(workerFinal(f.blockId, "Updated the docs as well."));
-
-  // Assert
-  expect(result.code).toBe("ACCEPTED");
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.attention.find((a) => a.kind === "conversation-waiting")).toMatchObject({
-    settledAt: expect.any(String),
-    settlementReason: "completed",
-  });
-  expect(run.value.reports.map((report) => report.resultMessage)).toStrictEqual([
-    "Implemented the requested result.",
-    "Updated the docs as well.",
-  ]);
-});
-
-it("a question asked after a result keeps the Block waiting once its worker thread is finished", async (c) => {
-  // Arrange
-  const f = await askedAfterResult(c);
-  finishWorker(f);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.blocks[0]?.state).toBe("waiting");
-  expect(
-    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
-  ).toMatchObject([{ message: "Should I update the docs too?" }]);
-  expect(run.value.lifecycle).toBe("active");
 });
 
 it("a working report after a result keeps the Block working and its Run Active once its worker thread is finished", async (c) => {

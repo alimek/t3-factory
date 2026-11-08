@@ -226,7 +226,8 @@ Factory MCP is stateless Streamable HTTP on the host-local listener only: the ap
 listener answers `/mcp` with `host_only`, and a request whose `Origin` is not the listener's own
 origin is refused, so a browser page cannot drive it. It requires no credential. It exposes
 `factory_get_block({ blockId })`, read-only `factory_get_run({ blockId })` and
-`factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working`, `waiting` or `finished`.
+`factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working` or `finished`.
+A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED` and current guidance.
 `factory_report` and `factory_context` are not exposed.
 
 - **Block id.** Start mints one opaque id per Agent Block of the Run, and every launch, visit
@@ -243,13 +244,15 @@ origin is refused, so a browser page cannot drive it. It requires no credential.
 - **Installation freshness.** The `$factory-block` skill is part of installation readiness.
   Readiness compares each installed copy with the backend's exact skill text, so any skill change
   marks earlier copies outdated. A missing or outdated skill is repairable and blocks Start.
+  Repair does not rewrite running harness sessions: a worker keeps the instructions and tool
+  schema already in its context until the harness reloads them.
 - **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
   is `INVALID_EXIT`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.
 
 ## Reporting authority
 
-The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final working and conversation waiting reports, held handoffs and manual Request report. The `$factory-block` skill carries these obligations to the worker on every turn: it reports `working` rather than `finished` while CI, review, delegated or background work is pending, puts evidence and artifact references in its result, treats Request report as an assessment of existing work and keeps Factory tools with the Block's own agent. Request report repeats the report rules on the same worker thread.
+The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final working reports, held handoffs and manual Request report. The `$factory-block` skill carries these obligations to the worker on every turn: it reports `working` when it starts a visit's work, ends a questioning turn with the questions instead of another report, keeps `working` rather than `finished` while questions, CI, review, delegated or background work are pending, puts evidence and artifact references in its result, treats Request report as an assessment of existing work and keeps Factory tools with the Block's own agent. Request report repeats the report rules on the same worker thread.
 
 Report rejections return `code`, a static `reason` and a safe `next` step. A rejection for a
 known Block of an open Run also appears in Run attention; an unknown or missing Block id
@@ -257,7 +260,7 @@ returns guidance only. No rejection retries work.
 
 ### Worker reporting
 
-Factory-launched Block workers report for their Block from any turn of their thread. There is no Run conversation. Waiting and reply turns use the same worker, and a notification turn after delegated or background work may report too. Release waits only for the worker thread to be
+Factory-launched Block workers report for their Block from any turn of their thread. There is no Run conversation. Questions and reply turns use the same worker, and a notification turn after delegated or background work may report too. Release waits only for the worker thread to be
 [finished](runner.md#worker-thread-completion); Factory does not inspect the commands, subtasks or model selection of the turns that produced the result.
 
 ### Block and Run reads

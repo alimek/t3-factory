@@ -32,7 +32,7 @@ reporting protocol.
   completed model turn is not a business result. A definitive launch rejection is an
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
-  Waiting stays on that worker until a later turn in the same thread resumes it.
+  Conversation with the user stays in that worker thread; Factory does not track it.
 
 ## Start and delivery guarantees
 
@@ -115,14 +115,14 @@ worker reports.
     handoff and relaunches no recipient;
   - after release with a different exit, creates handoffs to that exit's recipients, held under
     the same release rule, while Blocks started from the earlier exit keep running.
-- The Block's current report is its pending question, else its current `working` report, else
-  the activation's newest result; acceptance, observation and automatic settlement all read it
+- The Block's current report is its current `working` report, else the activation's newest
+  result; acceptance, observation and automatic settlement all read it
   the same way. Repeating the current report returns its acknowledgement, also after settling,
   unless an execution failure or missing report is pending on the Block; then the repeat is a
-  new report that settles it. Repeating an earlier result after a later `working` or `waiting`
-  makes it a new result version. Reports cannot erase engine failure, prove semantic correctness
+  new report that settles it. Repeating an earlier result after a later `working` makes it a new
+  result version. Reports cannot erase engine failure, prove semantic correctness
   or settle a Run.
-- Every report for an [Archived](#archive) Run, `working`, `waiting` or `finished`, is
+- Every report for an [Archived](#archive) Run, `working` or `finished`, is
   answered with `RUN_ARCHIVED` before any validation. Factory MCP returns it as a successful
   tool result whose text says the Run is archived and the worker should stop work on the
   Block; nothing is recorded and no diagnostic attention is created.
@@ -132,27 +132,34 @@ worker reports.
 - Exits must match the captured ID or unambiguous exact name, with non-empty feedback
   when required. Accepted results remain held until the
   [handoff release](#routing-and-independent-queues) rule passes.
+- Workers report only `working` and `finished`. The worker reports `working` when it starts a
+  visit's work and `finished` when the task is complete. Each activation needs its own report;
+  Factory never reports for the worker and never infers state by parsing chat.
 - `working` requires a non-empty message and no exit. It is non-final: it selects no exit,
-  releases nothing and creates no attention. The Block shows working with the message while
-  it is the current activation's latest report, so a finished worker thread raises no missing
-  report, for example while the worker waits for CI or review. A newer `working` replaces the
-  message, an identical one is a repeat, and a later `waiting` or `finished` replaces it. Every
-  working report is kept as history. A `working` after a result is the Block's current state
+  releases nothing and creates no attention. It is scoped to the activation, not to one T3
+  turn: it stays the current report across later turns of the worker thread, including
+  questions to the user, their replies, idle periods and waits for CI or review, so a finished
+  worker thread raises no missing report. A newer `working` replaces the message, an identical
+  one is a repeat, and a later `finished` replaces it. Every working report is kept as history.
+  A `working` after a result, when the worker reopens the task, is the Block's current state
   until its next report; it withdraws neither the result nor its handoffs, but it keeps the Run
-  from settling automatically.
-- `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
-  on that worker and releases nothing. Factory never infers a question by parsing chat.
-  The user replies in the same worker thread. Any later turn of that thread settles the
-  question; the worker reports again from that turn. A newer `waiting` or a `working` replaces
-  the pending question, an identical one is a repeat, and `finished` settles it. A `waiting`
-  after a result is the Block's current state until its next report; it withdraws neither the
-  result nor its handoffs. A later accepted report settles earlier missing-report and
+  from settling automatically. A later accepted report settles earlier missing-report and
   execution-failed attention on the Block.
-- A `working` or `waiting` report with an exit is `EXIT_NOT_ALLOWED`, and one without a message
-  is `MESSAGE_REQUIRED`, both with repair guidance.
-- Earlier waiting history does not prevent automatic settlement once the activation has a final
-  result and its worker thread is finished. A pending question keeps the Run Active. An incoming handoff can
-  take over a waiting conversation like a reply.
+- A question in chat is ordinary conversation: it creates no Needs input and wakes no Snoozed
+  Run. Unfinished discussion keeps the Block on `working`, so the next Block cannot start on
+  unanswered questions. Native T3 questions and permissions and Human steps keep their own
+  attention.
+- `waiting` is retired: `factory_update_block` answers it with `WAITING_RETIRED` and guidance to
+  keep the question as the turn's final message, and records nothing. A `working` report with an
+  exit is `EXIT_NOT_ALLOWED`, and one without a message is `MESSAGE_REQUIRED`, all with repair
+  guidance.
+- Waiting reports accepted before retirement stay readable as history: their questions,
+  acknowledgements, settled attention and work-period report status are kept. Upgrading settles
+  each pending question as `upgraded-to-working` and makes the latest one of a Block's latest
+  activation that activation's current `working` report, with the question as its message, even
+  after an earlier result. That report is marked as derived by the upgrade, not reported by the
+  Agent; the upgrade sends nothing and resumes no worker. Request report treats the upgraded
+  work period like one idle in `working`, although it keeps its historical waiting status.
 
 Report metadata retains fingerprints and references, not a second message archive.
 [Block ids](t3-integration.md#factory-mcp-and-block-ids) defines the tool contract.
@@ -185,8 +192,7 @@ unavailable observation preserves prior facts, marks them stale and cannot relea
 close the Run.
 
 - **Missing report.** When the worker thread is finished, its latest run completed and the
-  Block's current activation has no `finished` result, pending question or current `working`
-  report, the Block shows a missing-report Problem for that run. The Problem persists through later
+  Block's current activation has no `finished` result or current `working` report, the Block shows a missing-report Problem for that run. The Problem persists through later
   runs until the Block reports or a linked Request report settles it.
 - **Execution failure.** When the latest run of the thread failed, was cancelled, interrupted or
   rolled back, the Block shows an execution-failed Problem for that run, holding any prior result. It settles when a
@@ -324,7 +330,7 @@ dispatch. Accepted results or competing work make the request stale; unknown acc
 authorizes another key.
 
 A linked missing-report Problem settles only after the linked execution completes and reports
-final or waiting, and the worker thread is finished. The original execution keeps its
+final (or reported waiting before waiting was retired), and the worker thread is finished. The original execution keeps its
 missing-report history. A `working` reply simply becomes the Block's latest report.
 Recovery can chain through completed reportless turns, but no failure path schedules it
 automatically.

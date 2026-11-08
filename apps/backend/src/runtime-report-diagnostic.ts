@@ -17,14 +17,15 @@ const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
     "The selected exit does not identify exactly one captured Block exit.",
     "Use factory_get_block to read the allowed exits, then correct the report without repeating the task.",
   ],
+  WAITING_RETIRED: [
+    "Factory no longer accepts waiting reports: questions to the user need no report.",
+    "Keep your questions as the final chat message of this turn and end it. If this visit has no working report yet, report working once; report finished only when the task is complete. Do not repeat the task.",
+  ],
   EXIT_NOT_ALLOWED: [
-    "Only a finished report selects an exit; working and waiting reports cannot.",
+    "Only a finished report selects an exit; a working report cannot.",
     "Remove the exit. Report finished with an exit only when the task is complete.",
   ],
-  MESSAGE_REQUIRED: [
-    "A working or waiting report needs a message.",
-    "For working, say what you are still doing or waiting on; for waiting, add the question or decision you need from the user.",
-  ],
+  MESSAGE_REQUIRED: ["A working report needs a message.", "Say what you are doing or waiting on."],
   FEEDBACK_REQUIRED: [
     "The selected exit requires a result message.",
     "Add the required feedback without repeating the task.",

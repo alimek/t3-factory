@@ -77,7 +77,7 @@ const flows = requireSuccess(await factory.listFlows());
 const review = flows.find((f) => f.name === "Demo · Build, review and decide")!;
 let workerRuns: Promise<void> | undefined;
 let releasing: { id: string };
-let waiting: { id: string };
+let conversing: { id: string };
 async function prepareWorkerRuns() {
   // The connection journey retires authorization. Create this suite's own Runs
   // against the current context instead of modifying or resetting the demo Runs.
@@ -110,8 +110,8 @@ async function prepareWorkerRuns() {
     "UI worker report release",
     "Implement the project picker change.",
   );
-  waiting = requireSuccess(await factory.listRunNavigation()).find(
-    (run) => run.title === "UI worker · Needs input · Agent asked about empty-state wording",
+  conversing = requireSuccess(await factory.listRunNavigation()).find(
+    (run) => run.title === "UI worker · Discussing · Agent asked about empty-state wording",
   )!;
 }
 
@@ -393,11 +393,11 @@ const fixtureRoutes: Record<string, () => unknown> = {
     return { ok: true };
   },
   async "/__fixture/worker/answer"() {
-    const current = requireSuccess(await factory.getRun(waiting.id));
+    const current = requireSuccess(await factory.getRun(conversing.id));
     const block = executionBlock(current);
     beginNativeTurn(t3, block.threadId, "ui-worker-reply");
     requireSuccess(await factory.reconcileRuns());
-    const replying = requireSuccess(await factory.getRun(waiting.id));
+    const replying = requireSuccess(await factory.getRun(conversing.id));
     const accepted = await report(context, replying, "worker", {
       to: "finished",
       exit: "done",

@@ -5,17 +5,17 @@ import type { ReportTarget } from "./runner-reports.ts";
 import type { RuntimeReply } from "./runtime-types.ts";
 
 export type CurrentReport = {
-  readonly status: "working" | "waiting" | "finished";
+  readonly status: "working" | "finished";
   readonly fingerprint: string;
   readonly acknowledgement: RuntimeReply;
   readonly message: string | null;
 };
 
 /**
- * The current report of each Block's latest activation, in one Run or all: its pending question,
- * else its current working report, else its newest result. Every accepted report first settles the
- * question and ends the working report (`settleForReport`), so either one is newer than every
- * result. A question that a later turn resumed is no longer current; the result before it stands.
+ * The current report of each Block's latest activation, in one Run or all: its current working
+ * report, else its newest result. Every accepted report first ends the working report
+ * (`settleForReport`), so a current one is newer than every result. A working report stays
+ * current across later turns of the worker thread until the next report replaces it.
  */
 export function currentReports(sql: SqlClient.SqlClient, runId: string | null) {
   return Effect.map(
@@ -25,7 +25,6 @@ export function currentReports(sql: SqlClient.SqlClient, runId: string | null) {
       activation_id: string;
       report: string | null;
     }>`SELECT a.run_id,a.block_id,a.id AS activation_id,COALESCE(
-      (SELECT json_object('status','waiting','fingerprint',w.fingerprint,'acknowledgement',json(w.acknowledgement_json),'message',q.message) FROM coordinator_waits w JOIN run_attention q ON q.id=w.attention_id WHERE w.activation_id=a.id AND q.settled_at IS NULL ORDER BY w.rowid DESC LIMIT 1),
       (SELECT json_object('status','working','fingerprint',fingerprint,'acknowledgement',json(acknowledgement_json),'message',message) FROM working_reports WHERE activation_id=a.id AND replaced_at IS NULL),
       (SELECT json_object('status','finished','fingerprint',fingerprint,'acknowledgement',json(acknowledgement_json),'message',result_message) FROM runtime_reports WHERE activation_id=a.id AND status='finished' ORDER BY rowid DESC LIMIT 1)) AS report
       FROM run_activations a WHERE (${runId} IS NULL OR a.run_id=${runId}) AND a.rowid=(SELECT MAX(l.rowid) FROM run_activations l WHERE l.run_id=a.run_id AND l.block_id=a.block_id)`,
@@ -70,7 +69,7 @@ export function repeatedReport(
 }
 
 /** What every accepted report ends before it is recorded: the activation's working report, the
- * Block's question, its execution failures and its missing reports, keeping their history.
+ * Block's execution failures and its missing reports, keeping their history.
  * Record the accepted status on the work period for presentation and linked recovery. */
 export function settleForReport(
   sql: SqlClient.SqlClient,
@@ -81,7 +80,6 @@ export function settleForReport(
   return Effect.gen(function* () {
     yield* sql`UPDATE run_executions SET report_status=${status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
     yield* sql`UPDATE working_reports SET replaced_at=${time} WHERE activation_id=${activationId} AND replaced_at IS NULL`;
-    yield* settleQuestions(sql, runRow.id, block.block_id, time, true);
     yield* settlePending(
       sql,
       runRow.id,
@@ -91,27 +89,6 @@ export function settleForReport(
       time,
     );
     yield* settleMissingReports(sql, runRow.id, block.block_id, time);
-  });
-}
-
-/** Any later turn in the worker thread resumes its question; a report always replaces it. */
-export function settleQuestions(
-  sql: SqlClient.SqlClient,
-  runId: string,
-  blockId: string,
-  time: string,
-  all = false,
-) {
-  return Effect.gen(function* () {
-    const rows = yield* sql<{
-      id: string;
-      execution_id: string;
-      binding_id: string | null;
-    }>`SELECT a.id,a.execution_id,a.binding_id FROM run_attention a JOIN coordinator_waits w ON w.attention_id=a.id WHERE a.run_id=${runId} AND a.block_id=${blockId} AND a.settled_at IS NULL AND (${all ? 1 : 0}=1 OR EXISTS(SELECT 1 FROM run_executions old JOIN run_executions next ON next.binding_id=old.binding_id AND next.ordinal>old.ordinal WHERE old.binding_id=w.target_binding_id AND old.execution_id=w.target_execution_id))`;
-    for (const row of rows) {
-      yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason='completed' WHERE id=${row.id}`;
-      yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${runId},${blockId},${row.execution_id},${row.binding_id},'attention-settled',${"attention-settled:" + row.id},${row.id},${time})`;
-    }
   });
 }
 

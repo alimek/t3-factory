@@ -8,7 +8,7 @@ beforeEach(async ({ app }) => {
   await workerEvent(app.baseUrl, "prepare");
 });
 
-test("long native identities remain readable in the selected waiting Block after reload", async ({
+test("long native identities remain readable in the selected Block's Needs input after reload", async ({
   app,
   screen,
   browser,
@@ -17,7 +17,7 @@ test("long native identities remain readable in the selected waiting Block after
   await browser.setViewport({ width: 1440, height: 1100 });
   const found = await findRun(
     app.baseUrl,
-    "UI worker · Needs input · Agent asked about empty-state wording",
+    "UI worker · Woke · A question about keyboard shortcuts",
   );
   const run = await readHistoryRun(app.baseUrl, found.id);
   const worker = run.blocks.find((block) => block.blockId === "worker");
@@ -36,7 +36,7 @@ test("long native identities remain readable in the selected waiting Block after
   await expect(input).toContainText(worker.executionId);
   await expect(input.getByRole("link", "Open in T3", { exact: true })).toHaveAttribute(
     "href",
-    run.attention.find((item) => item.kind === "conversation-waiting" && !item.settledAt)!.link!,
+    run.attention.find((item) => item.kind === "native-request" && !item.settledAt)!.link!,
   );
   await expect
     .poll(() =>
@@ -45,7 +45,7 @@ test("long native identities remain readable in the selected waiting Block after
       ),
     )
     .toBe(true);
-  await app.screenshot("waiting-long-identities");
+  await app.screenshot("needs-input-long-identities");
 });
 
 test("a worker whose own turn ended while its subagents still run stays working after reload", async ({

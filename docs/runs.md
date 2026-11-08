@@ -93,7 +93,7 @@ client's clock. Rows show project, execution indicator (Working, Waiting, Settle
 stale) and chips, and a working Block's `working` message on a third line. Missing projects keep readable history; an
 unavailable open Run stays open.
 
-- **Needs input**: a pending Human occurrence, native T3 question/permission or an Agent's conversation-waiting report.
+- **Needs input**: a pending Human occurrence or native T3 question/permission.
   **Problem**: a pending missing report, execution failure or report problem. Both can show. Stale observations or an unavailable
   project are not Problems and opening a Run clears no chip.
 - **Settled** (collapsed, with a count) holds Settled Runs. **Snoozed** sits above it. Each group appears only after navigation loads and while it contains Runs; hiding it preserves its expanded state. Archived Runs are not listed.
@@ -120,9 +120,9 @@ Settled Runs cannot be snoozed. T3 reports only a count, so a replacement questi
 
 ## Reports and attention
 
-For new Runs a worker calls `factory_update_block` with its Block id (stated in every Factory message to that worker) and
-`to: "finished"` (a configured exit and a message when feedback is required), or `to: "working"` or `to: "waiting"` with a
-message and no exit.
+For new Runs a worker calls `factory_update_block` with its Block id (stated in every Factory message to that worker):
+`to: "working"` with a message and no exit when it starts a visit's work, and `to: "finished"` (a configured exit and a message
+when feedback is required) when the task is complete. Questions and replies in between need no report.
 A report from any turn of the worker's thread, including a user reply or a notification after delegated work, applies to the
 Block's current visit. Factory returns acceptance only after saving it. The model supplies no report key or Run id.
 
@@ -131,7 +131,7 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   updates the result and message without relaunching the next Blocks; a different exit also hands off to that exit's Blocks,
   while Blocks started from the earlier exit keep running. Repeating the block's latest report returns the original
   acknowledgement, also after settling; while a missing report or execution failure is pending, the repeat is accepted again
-  and settles it. Repeating an earlier result after a working or waiting report makes it the result again.
+  and settles it. Repeating an earlier result after a working report makes it the result again.
 - Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
   delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
@@ -144,11 +144,17 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   a later run of that thread completes or the Block reports; it does not return for that run, and a later failed run is a new
   Problem. Missing-report Problems persist across restart and renewed work;
   there is no automatic retry or dismiss-as-success.
-- **Working**: an Agent still on its task, for example watching CI or review, reports `to: "working"` with a message. The block
-  stays working and shows the message on the canvas, in its details and in the Run row; it selects no exit, releases nothing
-  and is not attention. While it is the visit's latest report, a finished worker thread is not a missing-report Problem. A
-  later working, waiting or finished report replaces it. Reported after a result, it shows the block working without
-  withdrawing the result, and the Run stays Active until a later report.
+- **Working**: an Agent on its task reports `to: "working"` with a message when the visit's work starts. The block stays
+  working and shows the message on the canvas, in its details and in the Run row; it selects no exit, releases nothing and is
+  not attention. It stays the visit's current report across later turns, including questions to you, your replies in T3 and
+  waits for CI or review, so a finished worker thread is not a missing-report Problem. A later working or finished report
+  replaces it. Reported after a result, when the Agent reopens the task, it shows the block working without withdrawing the
+  result, and the Run stays Active until a later report.
+- **Conversation**: an Agent that asks questions in chat ends its turn with them; reply in the worker's T3 thread. The block
+  stays working and the Run shows no Needs input for it, so the next block cannot start on unanswered questions. Factory never
+  parses chat; a model may still omit or misuse a report. Earlier Agent questions recorded before this contract stay in Settled
+  attention with their text, and an upgrade turned questions still pending into the visit's working report without resuming the
+  worker. See [report acceptance](runner.md#report-acceptance).
 - **Request report** on a missing-report Problem, or in the details of a block idle in working, starts one extra turn on the
   same thread asking the Agent to assess existing work and report. Eligibility is rechecked at acceptance (a newer run, an unfinished thread, changed authorization, accepted results
   and Archive make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
@@ -157,13 +163,6 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   code, reason and repair guidance. Missing report means no report was accepted; the worker may have attempted one.
   Correct the reported issue without repeating work. Any accepted report on that Block or confirmed linked recovery settles
   the rejection while preserving its history; progress alone does not. Unknown or missing Block ids stay in MCP/T3.
-- **Conversation waiting**: an Agent that asked questions in chat reports `to: "waiting"` with a message. The block
-  shows waiting, the Run shows **Needs input** with that message and **Open in T3**; reply in the worker's T3 thread. When Factory
-  observes any later turn of that thread the attention settles, the waiting report stays in history and that turn reports
-  again. A later working or waiting report replaces the question and a final settles it. A question asked after a result shows
-  the block waiting until its next report, without withdrawing the result. Factory never parses chat; a model may still
-  omit or misuse the report. See
-  [waiting reports](runner.md#report-acceptance).
 - **Attention panel** (per Run, optionally per block): Pending by default, Settled keeping times, reasons and selected Human exit.
   Native questions and permissions link to **Open in T3** and are answered there; Factory has no native answer controls. A fresh
   read showing none records `withdrawn`; unavailable reads keep matters pending and mark the observation stale.
@@ -173,7 +172,7 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   result version keeps its exit, message and deliveries; an earlier version reads **Replaced by version N** and its cancelled
   handoffs **Cancelled**, and a same-exit update after hand-off says it was not handed off again. Activations show the current
   result, and the latest Agent visit shows the Block's current execution state. **Work periods** list each exact execution with
-  its own state, the finished, waiting or working report accepted during it, and its T3 link; elapsed times are approximate observations.
+  its own state, the finished or working report (or a historical waiting report) accepted during it, and its T3 link; elapsed times are approximate observations.
 
 ## Human steps
 
@@ -197,7 +196,7 @@ certify result quality or one reviewed revision.
 progress continues, owed handoffs are still released and delivered, and attention stays pending. Either way the Run moves to
 **Settled**, Snooze and Woke clear, and the timeline records why it settled.
 
-Any accepted report from one of its Blocks (`working`, `waiting` or `finished`, including a repeat of the current result) returns
+Any accepted report from one of its Blocks (`working` or `finished`, including a repeat of the current result) returns
 a Settled Run to **Active**, and the timeline names the Block that reported. Chat in a worker thread without a report leaves the
 Run Settled: Factory observes a Settled Run only while it still owes a launch, handoff, send or Request report, so later turns add
 no work periods or Problems. Human answers and Request report on a Settled Run are accepted and dispatched without returning it

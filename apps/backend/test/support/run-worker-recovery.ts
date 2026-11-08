@@ -4,6 +4,7 @@ import {
   workerFinal,
   directWorker,
   finishWorker,
+  idleWorkingWorker,
   workerWorking,
 } from "./run-worker.ts";
 
@@ -48,28 +49,18 @@ export async function completedWorkerRecovery(c: TestContext) {
   return reportedRecoveryTurn(await workerRecoveryTurn(f, f.missing.blockId));
 }
 
-/** The Request report turn asks the user a question and finishes in T3. */
-export async function waitingWorkerRecovery(c: TestContext) {
+/** The Request report turn finds the discussion unfinished, reports working and finishes in T3. */
+export async function unfinishedWorkerRecovery(c: TestContext) {
   const missing = await missingWorkerReport(c);
   const f = await workerRecoveryTurn(missing, missing.missing.blockId);
-  assert(
-    (
-      await f.f.runtime.submit({
-        arguments: { blockId: f.blockId, to: "waiting", message: "Which audience?" },
-      })
-    ).code === "ACCEPTED",
-  );
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
   completeRecoveryTurn(f);
   return f;
 }
 
 /** Request report on a worker idle in working, answered with the Block's result. */
 export async function completedWorkingRecovery(c: TestContext) {
-  const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
-  assert((await f.f.reconcileRuns()).ok);
-  return reportedRecoveryTurn(await workerRecoveryTurn(f, "worker"));
+  return reportedRecoveryTurn(await workerRecoveryTurn(await idleWorkingWorker(c), "worker"));
 }
 
 export async function rejectedWorkerReport(c: TestContext) {
