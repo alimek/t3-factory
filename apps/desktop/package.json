@@ -1,6 +1,6 @@
 {
   "name": "@t3-factory/desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "T3 Factory desktop application for macOS on Apple Silicon",
   "type": "module",
