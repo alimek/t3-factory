@@ -72,7 +72,7 @@ const factory = server.factory;
 factory.setRuntimeBackendUrl(`http://127.0.0.1:${server.address.port}`);
 await seedDevelopment(factory, t3, home);
 const project = requireSuccess(await factory.listProjects()).projects[0]!;
-const context = { factory, t3, projectId: project.id, t3ProjectId: project.projectId };
+const context = { factory, t3, projectId: project.id };
 const flows = requireSuccess(await factory.listFlows());
 const review = flows.find((f) => f.name === "Demo · Build, review and decide")!;
 let workerRuns: Promise<void> | undefined;
@@ -343,20 +343,11 @@ const fixtureRoutes: Record<string, () => unknown> = {
     );
     assert(summary);
     const current = requireSuccess(await factory.getRun(summary.id));
-    const source = requireSuccess(await factory.listProjects()).projects.find(
-      (item) => item.id === current.task.projectId,
-    );
-    assert(source);
-    const accepted = await report(
-      { ...context, t3ProjectId: source.projectId },
-      current,
-      "worker",
-      {
-        to: "finished",
-        exit: "review",
-        message: "Ready for parallel review.",
-      },
-    );
+    const accepted = await report(context, current, "worker", {
+      to: "finished",
+      exit: "review",
+      message: "Ready for parallel review.",
+    });
     await observeTerminal(t3, executionBlock(accepted), "completed");
     await reconcileUntil(context, current.id, (run) => run.activations.length === 3);
     return { ok: true };
@@ -388,30 +379,6 @@ const fixtureRoutes: Record<string, () => unknown> = {
     const current = requireSuccess(await factory.getRun(waiting.id));
     const block = executionBlock(current);
     beginNativeTurn(t3, block.threadId, "ui-worker-reply");
-    t3.runtimeActivity = {
-      thread: {
-        threadId: block.threadId,
-        projectId: project.projectId,
-        activeRunId: "ui-worker-reply",
-        runtimeMode: "full-access",
-      },
-      items: [
-        {
-          itemId: "native-user-answer",
-          type: "message",
-          runId: "ui-worker-reply",
-          createdBy: "user",
-          senderThreadId: null,
-          sourceThreadId: block.threadId,
-          visibility: "local",
-          textTruncated: false,
-          nextTextOffset: null,
-          text: "Use a concise tone and the Clear filters label.",
-        },
-      ],
-      hasMore: false,
-      nextPosition: null,
-    };
     requireSuccess(await factory.reconcileRuns());
     const replying = requireSuccess(await factory.getRun(waiting.id));
     const accepted = await report(context, replying, "worker", {

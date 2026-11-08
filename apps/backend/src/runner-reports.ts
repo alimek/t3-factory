@@ -174,6 +174,9 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
     return Effect.gen(function* () {
       const located = yield* transaction((sql) => resolveBlock(sql, publicId));
       if (!located) return { code: "UNKNOWN_BLOCK" };
+      // The report belongs to the thread's current turn, which T3 may not have shown Factory yet.
+      const run = yield* database.row(located.run_id);
+      if (run?.gate_open && !run.closed_at) yield* lifecycle.drive(run.id, "observe");
       return yield* serial(located.run_id, () =>
         Effect.gen(function* () {
           const verdict = yield* transaction((sql) =>

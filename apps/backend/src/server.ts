@@ -596,8 +596,8 @@ interface HttpBinding {
 }
 
 /**
- * Harness reporting over Streamable HTTP. Caller authority comes from native call
- * evidence, so the endpoint needs no credential, but browsers must not reach it.
+ * Harness reporting over Streamable HTTP. Calls name their Block by Block id and the
+ * endpoint needs no credential: it is host-local, and browsers must not reach it.
  */
 function serveMcp(
   request: HttpServerRequestType,

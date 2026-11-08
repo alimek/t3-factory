@@ -225,6 +225,7 @@ it("missing-report recovery targets the original worker and retains its activati
   // Assert
   assert(result.ok, JSON.stringify(result));
   expect([...f.t3.sends.values()][0]?.payload.threadId).toBe("thread-1");
+  expect([...f.t3.sends.values()][0]?.payload.message).toContain(`Factory Block id: ${f.blockId}.`);
   expect(
     result.value.executions.find(
       (e) => e.executionId === [...f.t3.sends.values()][0]?.reference.runId,
@@ -396,6 +397,26 @@ it("a worker resumed by the user's reply can ask a new question on the same acti
   ).toMatchObject([{ message: "Which tone?" }]);
   expect(run.value.reports).toStrictEqual([]);
 });
+it("a question asked in a reply turn stays pending when Factory observes that turn", async (c) => {
+  // Arrange
+  const f = await repliedWorker(c);
+  const asked = await f.f.runtime.submit({
+    arguments: { blockId: f.blockId, to: "waiting", message: "Which tone?" },
+  });
+  assert(asked.code === "ACCEPTED");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(
+    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
+  ).toMatchObject([{ message: "Which tone?" }]);
+  expect(run.value.blocks[0]?.state).toBe("waiting");
+});
+
 it("an accepted worker final cannot be replaced by a different final", async (c) => {
   // Arrange
   const f = await directWorker(c);

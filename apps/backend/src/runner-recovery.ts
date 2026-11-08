@@ -3,6 +3,7 @@ import type { BlockRow } from "./runner-types.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
+import { workerTurn } from "./runner-block-workers.ts";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -164,6 +165,9 @@ export function openRunnerRecovery(
           const intentId = yield* newId,
             key = yield* newId,
             time = yield* now;
+          const [block] = yield* sql<{
+            public_id: string;
+          }>`SELECT public_id FROM run_blocks WHERE run_id=${current.id} AND block_id=${a.blockId}`;
           const { definitions } = current;
           const exits = definitions.flow.graph.blocks.find(
             (block) => block.id === a.blockId,
@@ -173,9 +177,11 @@ export function openRunnerRecovery(
             threadId: b.threadId!,
             mode: "queue",
             clientRequestId: key,
-            message:
-              "Factory Request report: assess the existing work without repeating the task. If questions you asked the user are still unanswered, report waiting with what you still need instead of forcing completion; report finished only when the task or discussion is actually complete. Report for this new execution only; never backdate an earlier report.\n\n" +
-              conversationReportInstructions(exits),
+            message: workerTurn(
+              "Factory Request report: assess the existing work without repeating the task. If questions you asked the user are still unanswered, report waiting with what you still need instead of forcing completion; report finished only when the task or discussion is actually complete.\n\n" +
+                conversationReportInstructions(exits),
+              block!.public_id,
+            ),
           };
           const body = JSON.stringify(payload);
           yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id) VALUES(${intentId},${current.id},${a.blockId},'send',${"recovery:" + id},${JSON.stringify({ ...runTarget(current), blockId: a.blockId, threadId: b.threadId })},${key},${body},${fingerprint(body)},${current.context_id})`;
