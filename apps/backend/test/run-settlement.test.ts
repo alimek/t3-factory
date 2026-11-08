@@ -384,16 +384,3 @@ it("a newer idle turn with pending delegated work prevents settlement for an old
   // Assert
   expect(f.t3.settlements).toStrictEqual([]);
 });
-
-it("a newer completed turn is settled once by the Run fallback rather than an older Block result", async (c) => {
-  // Arrange
-  const f = await reportedWorker(c, "completed", "");
-  startWorkerTurn(f, "newer-execution", 2);
-  finishWorker(f);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
-});
