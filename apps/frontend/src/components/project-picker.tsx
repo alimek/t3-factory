@@ -1,5 +1,5 @@
 import { MutationGate, useMutationsAllowed } from "@/client-gate";
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { FactoryProject, ProjectCatalog } from "@t3-factory/contracts";
 import { ChevronsUpDownIcon, FolderPlusIcon, RefreshCwIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { PickerMenuContent, PickerMenuSearch } from "./picker-menu-search.tsx";
 import { Label } from "@/components/ui/label";
 import { api } from "../api.ts";
-import { usePolling } from "../use-polling.ts";
+import { useLiveLaunchChoices } from "../live/launch-choices.ts";
 import { fieldLabelClass, selectFieldClass } from "./page.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
 
@@ -167,37 +167,20 @@ function ProjectTriggerSummary({ selected }: { selected: FactoryProject | undefi
   );
 }
 
+/**
+ * The live catalog and its commands. A command's response is not applied here: the catalog
+ * follows live delivery, which publishes every committed project change.
+ */
 export function useProjectCatalog() {
-  const [catalog, setCatalog] = useState<ProjectCatalog | null>(null);
+  const catalog = useLiveLaunchChoices().value?.catalog ?? null;
   const [error, setError] = useState("");
-  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  usePolling({
-    intervalMs: 5_000,
-    onPoll: useCallback(
-      (isActive) =>
-        api
-          .listProjects()
-          .then((value) => {
-            if (isActive()) {
-              setCatalog(value);
-              setLoadError("");
-            }
-          })
-          .catch(() => {
-            if (isActive()) setLoadError("Could not load projects.");
-          }),
-      [],
-    ),
-  });
-
-  async function act(action: () => Promise<ProjectCatalog>) {
+  async function act(action: () => Promise<unknown>) {
     setBusy(true);
     setError("");
     try {
-      setCatalog(await action());
-      window.dispatchEvent(new Event("factory-project-changed"));
+      await action();
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Project operation failed.");
@@ -207,7 +190,7 @@ export function useProjectCatalog() {
     }
   }
 
-  return { catalog, error, loadError, busy, act, clearError: () => setError("") };
+  return { catalog, error, busy, act, clearError: () => setError("") };
 }
 
 function AddRepositoryDialog({
@@ -302,7 +285,7 @@ export function ProjectPicker({
   onSelect: (id: string) => void;
   disabled?: boolean;
 }) {
-  const { catalog, error, loadError, act, clearError } = state;
+  const { catalog, error, act, clearError } = state;
   const busy = state.busy || disabled;
   const choices = catalog && {
     ...catalog,
@@ -405,16 +388,15 @@ export function ProjectPicker({
         onAdd={(path) =>
           act(async () => {
             const project = await api.addRepository({ path });
-            const result = await api.selectProject({ id: project.id });
+            await api.selectProject({ id: project.id });
             setAddDialogOpen(false);
             onSelect(project.id);
-            return result;
           })
         }
       />
-      {(loadError || (error && !addDialogOpen)) && (
+      {error && !addDialogOpen && (
         <Alert variant="destructive" className="mt-3">
-          <AlertDescription>{loadError || error}</AlertDescription>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
     </div>

@@ -5,9 +5,13 @@ import * as Stream from "effect/Stream";
 import {
   runEntityKeys,
   type ConnectionLiveMessage,
+  type FlowDraft,
+  type LaunchChoices,
+  type LaunchChoicesLiveMessage,
   type LiveEnvelope,
   type NavigationLiveMessage,
   type OperationError,
+  type ProjectCatalog,
   type Result,
   type RunDetail,
   type RunEntityCollection,
@@ -30,6 +34,11 @@ export interface LiveStreams {
     readonly navigation: boolean;
     readonly runIds: readonly string[];
   }) => Stream.Stream<LiveEnvelope<RunViewLiveMessage>, OperationError>;
+  /** The Run composer's Project catalog and Flows with their readiness. */
+  readonly watchLaunchChoices: () => Stream.Stream<
+    LiveEnvelope<LaunchChoicesLiveMessage>,
+    OperationError
+  >;
 }
 
 type Read<A> = Effect.Effect<Result<A>, unknown>;
@@ -231,6 +240,45 @@ function runDiff(sent: RunDetail, current: RunDetail): RunLiveMessage[] {
   return messages;
 }
 
+const withoutProjectObservation = (catalog: ProjectCatalog) => ({
+  ...catalog,
+  projects: catalog.projects.map((project) => ({ ...project, observedAt: "" })),
+});
+
+/** The changed catalog, or only the projects whose observation time moved. */
+function catalogDiff(sent: ProjectCatalog, current: ProjectCatalog) {
+  if (Equal.equals(sent, current)) return {};
+  if (!Equal.equals(withoutProjectObservation(sent), withoutProjectObservation(current)))
+    return { catalog: current };
+  const observedAt = new Map(sent.projects.map((project) => [project.id, project.observedAt]));
+  return {
+    observed: current.projects
+      .filter((project) => observedAt.get(project.id) !== project.observedAt)
+      .map(({ id, observedAt }) => ({ id, observedAt })),
+  };
+}
+
+function launchChoicesDiff(
+  sent: LaunchChoices,
+  current: LaunchChoices,
+): LaunchChoicesLiveMessage[] {
+  const previous = new Map(sent.flows.map((flow) => [flow.id, flow]));
+  const upserts = current.flows.filter((flow) => !Equal.equals(previous.get(flow.id), flow));
+  const present = new Set(current.flows.map((flow) => flow.id));
+  const removals = sent.flows.filter((flow) => !present.has(flow.id)).map((flow) => flow.id);
+  const flowsChanged = upserts.length > 0 || removals.length > 0;
+  const { catalog, observed } = catalogDiff(sent.catalog, current.catalog);
+  const messages: LaunchChoicesLiveMessage[] = [];
+  if (catalog || flowsChanged)
+    messages.push({
+      _tag: "changed",
+      ...(catalog ? { catalog } : {}),
+      ...(flowsChanged ? { flows: { upserts, removals } } : {}),
+    });
+  if (observed) messages.push({ _tag: "observed", projects: observed });
+  return messages;
+}
+
 type RunState = RunDetail | OperationError;
 type RunView = {
   readonly navigation: readonly RunNavigationEntry[] | null;
@@ -276,6 +324,8 @@ export function makeLiveStreams(
     readonly getConnection: () => Read<T3Connection>;
     readonly listRunNavigation: () => Read<readonly RunNavigationEntry[]>;
     readonly getRun: (id: string) => Read<RunDetail>;
+    readonly readProjectCatalog: () => Read<ProjectCatalog>;
+    readonly listFlows: () => Read<readonly FlowDraft[]>;
   },
   /** One read transaction, so a view's navigation and Runs describe the same committed state. */
   consistently: <A>(read: Effect.Effect<A, OperationError>) => Effect.Effect<A, OperationError>,
@@ -312,6 +362,19 @@ export function makeLiveStreams(
         viewDiff,
       );
     },
+    watchLaunchChoices: () =>
+      watch(
+        changes,
+        { kind: "launchChoices" },
+        consistently(
+          Effect.all({
+            catalog: settled(reads.readProjectCatalog()),
+            flows: settled(reads.listFlows()),
+          }),
+        ),
+        (choices) => [{ _tag: "snapshot", choices }],
+        launchChoicesDiff,
+      ),
   };
 }
 
