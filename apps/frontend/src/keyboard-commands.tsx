@@ -55,13 +55,14 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
   }, [router]);
 
   const openStudio = useCallback(() => {
+    if (studioOpen) return;
     void router.navigate({
       to: pathname,
       search: { studio: { tab: "flows" } },
       mask: studioMask({ tab: "flows" }),
       resetScroll: false,
     });
-  }, [pathname, router]);
+  }, [pathname, router, studioOpen]);
 
   const focusSearch = useCallback(() => {
     getSidebarNavigation().focusSearch();

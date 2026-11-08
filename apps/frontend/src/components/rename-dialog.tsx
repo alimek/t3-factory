@@ -54,7 +54,10 @@ export function RenameDialog({
       <DialogContent
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          document.getElementById(`run-actions-${id}`)?.focus();
+          const target =
+            document.getElementById(`run-actions-${id}`) ??
+            document.querySelector<HTMLElement>("[data-app-main]");
+          target?.focus({ preventScroll: true });
         }}
       >
         <form className="space-y-4" onSubmit={(event) => void submit(event)}>
