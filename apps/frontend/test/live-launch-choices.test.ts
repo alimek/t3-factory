@@ -11,6 +11,7 @@ const flow = (id: string, createdAt: string): FlowDraft => ({
     connections: [],
     flowInput: { position: { x: 0, y: 0 }, targetBlockIds: [] },
   },
+  workspace: { mode: "checkout" },
   createdAt,
   updatedAt: createdAt,
   readiness: { ready: false, issues: [] },

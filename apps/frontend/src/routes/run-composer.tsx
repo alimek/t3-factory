@@ -643,7 +643,9 @@ function StartNotice({ model }: { model: Composer }) {
                 Open Studio → Agents
               </NoticeStudioLink>
             )}
-            {draft.issues.some((issue) => issue.path.startsWith("graph.")) && (
+            {draft.issues.some(
+              (issue) => issue.path.startsWith("graph.") || issue.path.startsWith("workspace."),
+            ) && (
               <NoticeStudioLink selection={{ tab: "flows", flowId: draft.flowId }}>
                 Open Studio → Flows
               </NoticeStudioLink>

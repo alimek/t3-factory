@@ -37,6 +37,7 @@ it("a Flow with two entry Agents launches an independent top-level worker for ea
   const updated = await f.f.updateFlow(f.flow.id, {
     name: f.flow.name,
     expectedRevision: f.flow.revision,
+    workspace: f.flow.workspace,
     graph: {
       flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["worker", "editor"] },
       blocks: [
@@ -98,6 +99,7 @@ it("two Blocks that share one Agent still launch separate workers", async (c) =>
   const updated = await f.f.updateFlow(f.flow.id, {
     name: f.flow.name,
     expectedRevision: f.flow.revision,
+    workspace: f.flow.workspace,
     graph: {
       flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["worker", "second"] },
       blocks: [

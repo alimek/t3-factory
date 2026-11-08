@@ -1,5 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { Factory } from "@t3-factory/backend";
+import type { FlowWorkspace } from "@t3-factory/contracts";
 import { loadConfiguration } from "@t3-factory/backend/config";
 import { startServer } from "@t3-factory/backend/server";
 import { writeReportingState } from "./reporting-home.ts";
@@ -46,6 +47,7 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
   const flow = await f.updateFlow(draft.value.id, {
     name: draft.value.name,
     expectedRevision: 1,
+    workspace: { mode: "checkout" },
     graph: {
       flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["worker"] },
       blocks: [
@@ -136,6 +138,7 @@ export async function preparedBlockedFlow(c: TestContext) {
       await f.updateFlow(flow.id, {
         name: flow.name,
         expectedRevision: flow.revision,
+        workspace: flow.workspace,
         graph: {
           ...flow.graph,
           blocks: [...flow.graph.blocks, ...blocks],
@@ -150,4 +153,90 @@ export async function preparedBlockedFlow(c: TestContext) {
   );
   t3.controlledProviders.pop();
   return setup;
+}
+
+/** The ready single-worker Flow saved with the given workspace setting. */
+export async function preparedWorkspaceFlow(c: TestContext, workspace: FlowWorkspace) {
+  const setup = await prepared(c);
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    workspace,
+  });
+  assert(flow.ok);
+  return { ...setup, flow: flow.value };
+}
+
+/** A worktree Flow from the default branch whose input starts two Agents: Entry worker and Second entry. */
+export async function preparedWorktreeFlow(c: TestContext) {
+  const setup = await prepared(c);
+  const entry = setup.flow.graph.blocks[0]!;
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    workspace: { mode: "worktree", base: { kind: "default" } },
+    graph: {
+      ...setup.flow.graph,
+      flowInput: { ...setup.flow.graph.flowInput, targetBlockIds: [entry.id, "second"] },
+      blocks: [entry, { ...entry, id: "second", name: "Second entry" }],
+    },
+  });
+  assert(flow.ok);
+  return { ...setup, flow: flow.value };
+}
+
+/**
+ * A worktree Flow with one Flow-input Agent: Entry worker's "Done" goes to a Human Review that
+ * hands to Parallel work, "Revise" to Unused branch, and "Ship" ends the Run. Parallel work
+ * returns to Entry worker.
+ */
+export async function preparedWorktreeReviewFlow(c: TestContext) {
+  const setup = await prepared(c);
+  const source = setup.flow.graph.blocks[0]!;
+  const exit = source.exits[0]!;
+  const entry = {
+    ...source,
+    exits: [exit, { ...exit, id: "revise", name: "Revise" }, { ...exit, id: "ship", name: "Ship" }],
+  };
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    workspace: { mode: "worktree", base: { kind: "default" } },
+    graph: {
+      ...setup.flow.graph,
+      blocks: [
+        entry,
+        {
+          id: "review",
+          kind: "human",
+          name: "Review",
+          position: { x: 400, y: 0 },
+          exits: [exit],
+        },
+        { ...source, id: "parallel-block", name: "Parallel work" },
+        { ...source, id: "unused", name: "Unused branch" },
+      ],
+      connections: [
+        { sourceBlockId: entry.id, exitId: "done", targetBlockId: "review" },
+        { sourceBlockId: entry.id, exitId: "revise", targetBlockId: "unused" },
+        { sourceBlockId: "review", exitId: "done", targetBlockId: "parallel-block" },
+        { sourceBlockId: "parallel-block", exitId: "done", targetBlockId: entry.id },
+      ],
+    },
+  });
+  assert(flow.ok, JSON.stringify(flow));
+  return { ...setup, flow: flow.value };
+}
+
+/** The review Flow's Run with its worktree bound and idle workers prepared for Parallel work and
+ * Unused branch, while Entry worker's first turn runs. */
+export async function preparedIdleWorkers(c: TestContext) {
+  const setup = await preparedWorktreeReviewFlow(c);
+  const started = await setup.f.startRun(setup.input);
+  assert(started.ok);
+  assert((await setup.f.reconcileRuns()).ok);
+  assert(setup.t3.idleLaunches.size === 2);
+  const launch = [...setup.t3.launches.values()][0]!;
+  const entryBlockId = /Factory Block id: ([^.\s]+)/.exec(launch.payload.message)![1]!;
+  return { ...setup, runId: started.value.id, entryBlockId };
 }

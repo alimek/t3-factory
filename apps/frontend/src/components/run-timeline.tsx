@@ -44,14 +44,20 @@ function intentOf(run: RunDetail, event: RunEvent) {
   return run.intents.find((intent) => intent.id === event.causeId);
 }
 
-/** A block received work: a fresh T3 thread, or a message into the thread it already has. */
-function entered(run: RunDetail, event: RunEvent, sameThread: boolean): EventPhrase {
+const threadWords = {
+  new: { again: "", thread: "new T3 thread" },
+  same: { again: " again", thread: "same T3 thread" },
+  prepared: { again: "", thread: "prepared idle T3 thread" },
+};
+
+/** A block received work: a fresh T3 thread, a message into the thread it already has, or the
+ * first message into the idle thread its worktree Run prepared. */
+function entered(run: RunDetail, event: RunEvent, kind: keyof typeof threadWords): EventPhrase {
   const intent = intentOf(run, event);
-  const again = sameThread ? " again" : "";
+  const { again, thread } = threadWords[kind];
   const from = intent?.sourceBlockId
     ? ` from ${nameOf(run, intent.sourceBlockId)} via ${exitLabel(run, intent.sourceBlockId, intent.exitId)}`
     : "";
-  const thread = sameThread ? "same T3 thread" : "new T3 thread";
   const status = event.engineStatus ? ` · ${event.engineStatus}` : "";
   return {
     actorId: event.blockId,
@@ -144,8 +150,9 @@ function said(text: string) {
 
 const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> = {
   started: (run) => ({ actorId: null, text: `started · “${run.title}”` }),
-  "launch-acknowledged": (run, event) => entered(run, event, false),
-  "send-acknowledged": (run, event) => entered(run, event, true),
+  "launch-acknowledged": (run, event) => entered(run, event, "new"),
+  "send-acknowledged": (run, event) => entered(run, event, "same"),
+  "prepared-worker-activated": (run, event) => entered(run, event, "prepared"),
   "handoff-created": handedOff,
   "handoff-held": said(
     "handoff held · awaiting fresh source completion and clear queue/native requests",

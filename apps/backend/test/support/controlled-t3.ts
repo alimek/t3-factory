@@ -1,8 +1,12 @@
-import type { AgentEnvironment } from "@t3-factory/contracts";
+import type { AgentEnvironment, FlowWorkspace, FlowWorkspaceBase } from "@t3-factory/contracts";
 import { LaunchRejected } from "../../src/adapters/t3.ts";
 import { isReportingDriver } from "../../src/reporting-drivers.ts";
 import type {
   AuthorizationResumption,
+  IdleLaunchPayload,
+  IdleLaunchReference,
+  LaunchPayload,
+  LaunchReference,
   T3Adapter,
   LaunchCandidate,
   T3Endpoint,
@@ -11,7 +15,9 @@ import type {
   T3Inspection,
   T3Project,
   T3ProjectTarget,
+  T3ProjectRef,
   T3ProviderCapability,
+  WorktreeSetupScript,
 } from "../../src/adapters/t3.ts";
 
 /** Independent external-engine lifetime; no SQL or Factory internals. */
@@ -48,17 +54,25 @@ export class ControlledT3 implements T3Adapter {
   retryScope: string | null = "controlled-durable-server-1";
   loseLaunchReply = false;
   beforeLaunch?: () => Promise<void>;
-  readonly launches = new Map<
+  /** Every launch call received, including same-key replays T3 would not deduplicate. */
+  launchCalls = 0;
+  readonly launches = new Map<string, { payload: LaunchPayload; reference: LaunchReference }>();
+  /** Threads launched with no message: no run until a send. */
+  readonly idleLaunches = new Map<
     string,
-    {
-      payload: import("../../src/adapters/t3.ts").LaunchPayload;
-      reference: import("../../src/adapters/t3.ts").LaunchReference;
-    }
+    { payload: IdleLaunchPayload; reference: IdleLaunchReference }
   >();
   engineStatus = "running";
   pendingRequestCount = 0;
-  async inspectLaunchSupport(_target: T3Endpoint) {
+  worktreeLaunchSupported = true;
+  async inspectLaunchSupport(_target: T3Endpoint, workspace: FlowWorkspace["mode"]) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
+    if (this.launchSupported && workspace === "worktree" && !this.worktreeLaunchSupported)
+      return {
+        supported: false,
+        retryScope: this.retryScope,
+        explanation: "T3 launch schema cannot express idle worktree launches.",
+      };
     return {
       supported: this.launchSupported,
       retryScope: this.retryScope,
@@ -70,32 +84,76 @@ export class ControlledT3 implements T3Adapter {
   protected launchIds(n: number) {
     return { threadId: `thread-${n}`, runId: `execution-${n}` };
   }
-  async launchThread(
-    _target: T3Endpoint,
-    payload: import("../../src/adapters/t3.ts").LaunchPayload,
-  ) {
+  async launchThread(_target: T3Endpoint, payload: LaunchPayload) {
+    return this.acceptLaunch(this.launches, payload, ({ threadId, runId }) => ({
+      projectId: payload.projectId,
+      threadId,
+      runId,
+      link: `t3://threads/${threadId}`,
+      status: "running",
+    }));
+  }
+  async launchIdleThread(_target: T3Endpoint, payload: IdleLaunchPayload) {
+    return this.acceptLaunch(this.idleLaunches, payload, ({ threadId }) => ({
+      projectId: payload.projectId,
+      threadId,
+      link: `t3://threads/${threadId}`,
+    }));
+  }
+  private async acceptLaunch<P extends LaunchPayload | IdleLaunchPayload, R>(
+    accepted: Map<string, { payload: P; reference: R }>,
+    payload: P,
+    reference: (ids: { threadId: string; runId: string }) => R,
+  ): Promise<R> {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     await this.beforeLaunch?.();
-    let accepted = this.launches.get(payload.clientRequestId);
-    if (accepted && JSON.stringify(accepted.payload) !== JSON.stringify(payload))
+    this.launchCalls++;
+    let launch = accepted.get(payload.clientRequestId);
+    if (launch && JSON.stringify(launch.payload) !== JSON.stringify(payload))
       throw Error("Key conflict");
-    if (!accepted) {
-      const { threadId, runId } = this.launchIds(this.launches.size + 1);
-      accepted = {
+    if (!launch) {
+      launch = {
         payload,
-        reference: {
-          projectId: payload.projectId,
-          threadId,
-          runId,
-          link: `t3://threads/${threadId}`,
-          status: "running",
-        },
+        reference: reference(this.launchIds(this.launches.size + this.idleLaunches.size + 1)),
       };
-      this.launches.set(payload.clientRequestId, accepted);
+      accepted.set(payload.clientRequestId, launch);
     }
     if (this.rejectLaunch) throw new LaunchRejected("T3 rejected the worker launch");
     if (this.loseLaunchReply) throw Error("Lost response after remote acceptance");
-    return accepted.reference;
+    return launch.reference;
+  }
+  /** Every launched thread; an idle launch has no run. */
+  private launchedThreads() {
+    return [
+      ...this.launches.values(),
+      ...[...this.idleLaunches.values()].map(({ payload, reference }) => ({
+        payload,
+        reference: { ...reference, runId: null, status: null },
+      })),
+    ];
+  }
+  private launchedThread(threadId: string) {
+    return this.launchedThreads().find((entry) => entry.reference.threadId === threadId);
+  }
+  /** While true, worktree-creating threads show no path or branch yet, as T3 before it creates the worktree. */
+  worktreeMetadataPending = false;
+  /** While true, worktree-creating threads show their path before their branch. */
+  worktreeBranchPending = false;
+  /** Root threads report `checkout`; worktree threads report T3's path and the requested branch. */
+  private threadWorkspace(
+    payload: LaunchPayload | IdleLaunchPayload,
+    threadId: string,
+    checkout: string | null,
+  ) {
+    const strategy = payload.workspaceStrategy;
+    if (strategy.type === "root") return { workspaceRoot: checkout, branch: null };
+    if (strategy.type === "existing_worktree")
+      return { workspaceRoot: strategy.worktreePath, branch: strategy.branch };
+    if (this.worktreeMetadataPending) return { workspaceRoot: null, branch: null };
+    return {
+      workspaceRoot: `/t3-worktrees/${threadId}`,
+      branch: this.worktreeBranchPending ? null : strategy.branch,
+    };
   }
   rejectLaunch = false;
   discoverAvailable = true;
@@ -108,25 +166,25 @@ export class ControlledT3 implements T3Adapter {
     _title: string,
   ): ReturnType<T3Adapter["discoverLaunchCandidates"]> {
     if (!this.discoverAvailable || !this.available || !this.authorized) return { available: false };
-    const candidates = [...this.launches.values()].map((launch) =>
-      this.launchCandidate(target, launch),
-    );
+    const candidates = this.launchedThreads().map((launch) => this.launchCandidate(target, launch));
     return { available: true, candidates: [...candidates, ...this.extraCandidates] };
   }
   async readThreadIdentity(
     target: T3Target,
     threadId: string,
   ): ReturnType<T3Adapter["readThreadIdentity"]> {
-    const launch = [...this.launches.values()].find(
-      (entry) => entry.reference.threadId === threadId,
-    );
+    const launch = this.launchedThread(threadId);
     if (!launch || !this.available || !this.authorized) throw Error("Unknown thread");
     const observation = await this.readExecution(target, threadId);
     return {
       threadId,
       projectId: launch.payload.projectId,
       parentThreadId: null,
-      workspaceRoot: this.reportCheckoutWorkspace ? null : target.workspaceRoot,
+      ...this.threadWorkspace(
+        launch.payload,
+        threadId,
+        this.reportCheckoutWorkspace ? null : target.workspaceRoot,
+      ),
       providerInstanceId: launch.payload.modelSelection.instanceId,
       model: launch.payload.modelSelection.model,
       executions: observation.recentRuns.map((run) => ({
@@ -139,30 +197,31 @@ export class ControlledT3 implements T3Adapter {
   }
   private launchCandidate(
     target: T3Target,
-    launch: {
-      payload: import("../../src/adapters/t3.ts").LaunchPayload;
-      reference: import("../../src/adapters/t3.ts").LaunchReference;
-    },
+    launch: ReturnType<ControlledT3["launchedThreads"]>[number],
   ): LaunchCandidate {
+    const { payload, reference } = launch;
     return {
-      title: launch.payload.title,
-      projectId: launch.payload.projectId,
+      title: payload.title,
+      projectId: payload.projectId,
       parentThreadId: null,
-      workspaceRoot: target.workspaceRoot,
-      interactionMode: launch.payload.interactionMode,
-      providerInstanceId: launch.payload.modelSelection.instanceId,
-      model: launch.payload.modelSelection.model,
-      options: this.omitCandidateOptions ? null : { ...launch.payload.modelSelection.options },
-      threadId: launch.reference.threadId,
-      executions: [
-        {
-          runId: launch.reference.runId,
-          providerInstanceId: launch.payload.modelSelection.instanceId,
-          model: launch.payload.modelSelection.model,
-          status: launch.reference.status,
-        },
-      ],
-      link: launch.reference.link,
+      ...this.threadWorkspace(payload, reference.threadId, target.workspaceRoot),
+      interactionMode: payload.interactionMode,
+      providerInstanceId: payload.modelSelection.instanceId,
+      model: payload.modelSelection.model,
+      options: this.omitCandidateOptions ? null : { ...payload.modelSelection.options },
+      threadId: reference.threadId,
+      executions:
+        reference.runId === null
+          ? []
+          : [
+              {
+                runId: reference.runId,
+                providerInstanceId: payload.modelSelection.instanceId,
+                model: payload.modelSelection.model,
+                status: reference.status,
+              },
+            ],
+      link: reference.link,
     };
   }
   sendSupported = true;
@@ -221,28 +280,30 @@ export class ControlledT3 implements T3Adapter {
     this.executionReads++;
     const observation = this.executionObservations.get(threadId) ?? this.executionObservation;
     if (observation) return observation;
-    const accepted = [...this.launches.values()].find((x) => x.reference.threadId === threadId);
-    if (!accepted) throw Error("Unknown thread");
-    return {
-      projectId: accepted.reference.projectId,
+    const launch = this.launchedThread(threadId);
+    if (!launch) throw Error("Unknown thread");
+    const { projectId, runId, link } = launch.reference;
+    const launchRun = runId === null ? [] : [{ runId, status: this.engineStatus }];
+    const sentRuns = [...this.sends.values()]
+      .filter((s) => s.payload.threadId === threadId)
+      .map((s) => ({ runId: s.reference.runId, status: s.reference.status }));
+    const { workspaceRoot, branch } = this.threadWorkspace(
+      launch.payload,
       threadId,
-      latestRunId: accepted.reference.runId,
-      activeRunId: this.engineStatus === "running" ? accepted.reference.runId : null,
-      link: accepted.reference.link,
-      workspaceRoot:
-        this.projects.find((p) => p.projectId === accepted.reference.projectId)?.workspaceRoot ??
-        null,
+      this.projects.find((p) => p.projectId === projectId)?.workspaceRoot ?? null,
+    );
+    return {
+      projectId,
+      threadId,
+      latestRunId: runId,
+      activeRunId: this.engineStatus === "running" ? runId : null,
+      link,
+      workspaceRoot,
+      ...(launch.payload.workspaceStrategy.type === "root"
+        ? {}
+        : { repository: { branch, pullRequests: [] } }),
       pendingRequestCount: this.pendingRequestCount,
-      recentRuns: [
-        { runId: accepted.reference.runId, status: this.engineStatus, ordinal: 1 },
-        ...[...this.sends.values()]
-          .filter((s) => s.payload.threadId === threadId)
-          .map((s, n) => ({
-            runId: s.reference.runId,
-            status: s.reference.status,
-            ordinal: n + 2,
-          })),
-      ],
+      recentRuns: [...launchRun, ...sentRuns].map((run, n) => ({ ...run, ordinal: n + 1 })),
     };
   }
   /** T3's delegated-work answer per `[threadId, runId]`; unanswered runs are unknown. */
@@ -283,6 +344,16 @@ export class ControlledT3 implements T3Adapter {
   }
   async resolveRepository(path: string) {
     return path;
+  }
+  defaultBranch: string | null = "origin/main";
+  readonly refs = new Set(["origin/main"]);
+  async resolveBaseRef(_workspaceRoot: string, base: FlowWorkspaceBase) {
+    if (base.kind === "default") return this.defaultBranch;
+    return this.refs.has(base.ref) ? base.ref : null;
+  }
+  worktreeSetupScripts: WorktreeSetupScript[] = [];
+  async readWorktreeSetupScripts(_target: T3ProjectRef) {
+    return this.worktreeSetupScripts;
   }
   async createProject(target: T3ProjectTarget) {
     await this.listProjects({

@@ -198,6 +198,7 @@ it("a live thread read proves identity from the nested thread and its worktree",
       projectId: "project-1",
       parentThreadId: null,
       worktreePath: "/repo",
+      branch: "factory/run-1",
       providerInstanceId: "codex-main",
       model: "gpt-6.1-sol",
     },
@@ -213,13 +214,14 @@ it("a live thread read proves identity from the nested thread and its worktree",
     projectId: "project-1",
     parentThreadId: null,
     workspaceRoot: "/repo",
+    branch: "factory/run-1",
     providerInstanceId: "codex-main",
     model: "gpt-6.1-sol",
     executions: [{ runId: "execution-1", providerInstanceId: "codex-main", model: "gpt-6.1-sol" }],
   });
 });
 
-it("a nested thread read supplies the project, parent and workspace the list omitted", async () => {
+it("a nested thread read supplies the project, parent, workspace and branch the list omitted", async () => {
   // Arrange
   let reads = 0;
   const call = async (name: string) => {
@@ -247,6 +249,7 @@ it("a nested thread read supplies the project, parent and workspace the list omi
         projectId: "project-from-thread",
         parentThreadId: null,
         worktreePath: "/repo",
+        branch: "factory/run-1",
         providerInstanceId: "codex-main",
         model: "gpt-6.1-sol",
       },
@@ -262,7 +265,12 @@ it("a nested thread read supplies the project, parent and workspace the list omi
   expect(found).toMatchObject({
     available: true,
     candidates: [
-      { projectId: "project-from-thread", parentThreadId: null, workspaceRoot: "/repo" },
+      {
+        projectId: "project-from-thread",
+        parentThreadId: null,
+        workspaceRoot: "/repo",
+        branch: "factory/run-1",
+      },
     ],
   });
 });

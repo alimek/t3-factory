@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { rm } from "node:fs/promises";
-import { liveProjectRepositories } from "./support/boundaries-setup.ts";
+import { authorizedLiveOAuth, liveProjectRepositories } from "./support/boundaries-setup.ts";
 
 it("a repository symlink resolves to the existing project", async (context) => {
   // Arrange
@@ -52,6 +52,39 @@ it("a deleted repository clone loses project readiness", async (context) => {
   expect(result.value.ready).toBe(false);
 });
 
+it("a worktree default base resolves to the clone's origin default branch", async (context) => {
+  // Arrange
+  const { adapter, second } = await liveProjectRepositories(context);
+
+  // Act
+  const ref = await adapter.resolveBaseRef(second, { kind: "default" });
+
+  // Assert
+  expect(ref).toBe("origin/main");
+});
+
+it("a repository without an origin default branch has no worktree default base", async (context) => {
+  // Arrange
+  const { adapter, first } = await liveProjectRepositories(context);
+
+  // Act
+  const ref = await adapter.resolveBaseRef(first, { kind: "default" });
+
+  // Assert
+  expect(ref).toBeNull();
+});
+
+it("a custom worktree ref that names no commit does not resolve", async (context) => {
+  // Arrange
+  const { adapter, second } = await liveProjectRepositories(context);
+
+  // Act
+  const ref = await adapter.resolveBaseRef(second, { kind: "ref", ref: "release/missing" });
+
+  // Assert
+  expect(ref).toBeNull();
+});
+
 it("project recheck preserves distinct projects across live SDK pages", async (context) => {
   // Arrange
   const { factory, second } = await liveProjectRepositories(context);
@@ -64,4 +97,31 @@ it("project recheck preserves distinct projects across live SDK pages", async (c
   // Assert
   assert(result.ok);
   expect(result.value.projects.length).toBe(2);
+});
+
+it("only a worktree setup script T3 marks async false blocks the first turn", async (context) => {
+  // Arrange
+  const { adapter, endpoint } = await authorizedLiveOAuth(context, {
+    projectRead: () => ({
+      id: "neutral",
+      scripts: [
+        { id: "install", name: "Install", command: "pnpm i", runOnWorktreeCreate: true },
+        { id: "env", name: "Env", command: "cp .env", runOnWorktreeCreate: true, async: false },
+        { id: "dev", name: "Dev", command: "pnpm dev", runOnWorktreeCreate: false, async: false },
+      ],
+    }),
+  });
+
+  // Act
+  const scripts = await adapter.readWorktreeSetupScripts({
+    endpoint,
+    environmentId: "fixture-environment",
+    projectId: "neutral",
+  });
+
+  // Assert
+  expect(scripts).toStrictEqual([
+    { name: "Install", blocking: false },
+    { name: "Env", blocking: true },
+  ]);
 });

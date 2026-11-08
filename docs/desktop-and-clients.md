@@ -235,9 +235,11 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 ## Protocol compatibility
 
 The current protocol is **4**. The server accepts historical protocol **1**, **2** and **3**
-clients and keeps their approved credentials and HTTP operations working. The current UI
-requires server protocol **4** for navigation activity and worker repository metadata; older servers show the existing update
-gate before product screens mount. Compatibility follows the declared protocol range,
+clients and keeps their approved credentials and HTTP operations working; they cannot see a
+Flow's workspace setting, and their Flow saves keep the saved one. The current UI requires
+server protocol **4** for Flow workspace settings, Run workspaces, navigation activity and
+worker repository metadata (protocol **3** added live delivery); older servers show the
+existing update gate before product screens mount. Compatibility follows the declared protocol range,
 not the application release.
 Product HTTP API requests declare `X-Factory-Protocol` and `X-Factory-Protocol-Minimum`;
 WebSocket upgrades declare the same range in the query as described above.

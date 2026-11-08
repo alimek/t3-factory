@@ -1,4 +1,5 @@
 import { dispatchBlockLaunch } from "./runner-block-workers.ts";
+import { activatePreparedWorker } from "./run-prepared-workers.ts";
 import { prepareCoordinatorHandoff } from "./runner-coordinator-handoffs.ts";
 import { COORDINATOR_HOLD } from "./runner-coordination.ts";
 import type { EffectOperations } from "./effect-operations.ts";
@@ -20,12 +21,14 @@ import type {
 import {
   catalogProject,
   intactPayload,
+  launchesWorker,
   replayUnproven,
   runTarget,
   unverified,
   verified,
 } from "./runner-utils.ts";
 import { activatePendingHumanHandoff, reservePendingExplicitHandoff } from "./runner-release.ts";
+import { inRunWorkspace } from "./run-workspace.ts";
 import { now } from "./time.ts";
 function storedPayload(intent: IntentRow): Checked<SendPayload> {
   if (!intactPayload(intent)) return unverified("Stored operation payload cannot be verified.");
@@ -96,20 +99,26 @@ export function openRunnerDispatch(
           if (!reserved) return;
           const time = yield* now;
           yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${intent.id}`;
+          const activated = yield* activatePreparedWorker(
+            sql,
+            runRow,
+            intent.block_id,
+            reference.threadId,
+          );
           yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,engine_status,binding_id,activation_id) VALUES(${runRow.id},${intent.block_id},${reference.threadId},${reference.runId},${reference.status},COALESCE((SELECT binding_id FROM coordinator_question_replies WHERE intent_id=${intent.id}),(SELECT id FROM run_thread_bindings WHERE run_id=${runRow.id} AND thread_id=${reference.threadId})),COALESCE((SELECT activation_id FROM coordinator_question_replies WHERE intent_id=${intent.id}),(SELECT id FROM run_activations WHERE run_id=${runRow.id} AND block_id=${intent.block_id} ORDER BY rowid DESC LIMIT 1))) ON CONFLICT DO NOTHING`;
           yield* sql`UPDATE run_blocks SET state='working',execution_id=${reference.runId},engine_status=${reference.status},report_status=NULL,problem=${COORDINATOR_HOLD},freshness='unknown' WHERE run_id=${runRow.id} AND block_id=${intent.block_id}`;
           yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
-          yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.runId},'send-acknowledged',${"ack:" + intent.id},${intent.id},${time},${reference.status})`;
+          yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.runId},${activated ? "prepared-worker-activated" : "send-acknowledged"},${"ack:" + intent.id},${intent.id},${time},${reference.status})`;
         }),
       );
     });
   }
   function dispatchIntent(runRow: RunRow, saved: IntentRow, contextId: string | null) {
     return Effect.gen(function* () {
-      const launchRecovery = saved.kind === "launch" && saved.state !== "pending";
+      const launchRecovery = launchesWorker(saved) && saved.state !== "pending";
       if (
         (!runRow.gate_open && !launchRecovery) ||
-        !["launch", "handoff", "send"].includes(saved.kind)
+        !["launch", "prepare", "handoff", "send"].includes(saved.kind)
       )
         return;
       if (contextId !== saved.context_id) {
@@ -119,7 +128,7 @@ export function openRunnerDispatch(
         );
         return;
       }
-      if (saved.kind === "launch") {
+      if (launchesWorker(saved)) {
         yield* dispatchBlockLaunch(database, t3, runRow, saved);
         const [block] = yield* run(
           Effect.gen(function* () {
@@ -215,7 +224,7 @@ export function openRunnerDispatch(
         (yield* sendTargetChanged(runRow, payload.value, target.value))
       )
         return unverified(
-          "The target thread project or checkout changed; this send remains unresolved.",
+          "The target thread project or workspace changed; this send remains unresolved.",
         );
       return verified({ payload: payload.value, retryScope: support.retryScope });
     });
@@ -255,7 +264,7 @@ export function openRunnerDispatch(
       return (
         observed.threadId !== target.threadId ||
         observed.projectId !== runRow.t3_project_id ||
-        (observed.workspaceRoot !== null && observed.workspaceRoot !== runRow.workspace_root)
+        !inRunWorkspace(runRow, observed)
       );
     });
   }

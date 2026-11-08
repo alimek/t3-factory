@@ -2,7 +2,6 @@ import { newId } from "./ids.ts";
 import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { LaunchPayload, T3Target } from "./adapters/t3.ts";
 import type { ReportRow, RunRow } from "./runner-types.ts";
 import { fingerprint, runTarget } from "./runner-utils.ts";
 function reportExitChoices(exits: RunDefinitions["flow"]["graph"]["blocks"][number]["exits"]) {
@@ -18,35 +17,6 @@ export function conversationReportInstructions(
   exits: RunDefinitions["flow"]["graph"]["blocks"][number]["exits"],
 ) {
   return `Report through factory_update_block. Chat alone is not a report. When you start this visit's work, call {to: "working", message: nonempty summary of what you are doing}, with no exit. Working is non-final, does not advance the Flow, keeps Factory from reporting a missing report and stays current across later turns of this visit: asking the user questions, reading their replies, and waiting for CI, review, delegated or background work need no further report. End a questioning turn with the questions as your final message. Report working again only to replace its message or when you reopen the task after a result. Only when the task is actually complete, call {to: "finished", exit: exact name below, message: context for the next step; nonempty when feedback is required}. Your newest finished report is the result. To change it, report finished again from a later turn: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks. An identical retry returns the original acknowledgement. Never treat unanswered questions or your recommendations as user decisions.\nExits:\n${reportExitChoices(exits)}`;
-}
-/** A worker's launch settings; its first message is the worker's own activation message. */
-export function launchPayload(
-  definitions: RunDefinitions,
-  blockId: string,
-  target: Pick<T3Target, "environmentId" | "projectId">,
-  key: string,
-  input: string,
-): LaunchPayload {
-  const entry = definitions.flow.graph.blocks.find((block) => block.id === blockId)!;
-  const agent = definitions.agents.find(
-    (agent) => entry.kind === "agent" && agent.id === entry.agentId,
-  )!;
-  return {
-    environmentId: target.environmentId,
-    projectId: target.projectId,
-    clientRequestId: key,
-    title: `${definitions.flow.name}: ${entry.name}`.slice(0, 200),
-    message: `${agent.prompt}\n\n${conversationReportInstructions(entry.exits)}\n\nFlow input:\n${input}`,
-    workspaceStrategy: { type: "root" },
-    interactionMode: "default",
-    modelSelection: {
-      instanceId: agent.execution.providerInstanceId,
-      model: agent.execution.modelId,
-      options: Object.fromEntries(
-        agent.execution.modelOptions.map((option) => [option.id, option.value]),
-      ),
-    },
-  };
 }
 export function createHandoffs(
   sql: SqlClient.SqlClient,

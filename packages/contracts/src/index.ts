@@ -62,10 +62,20 @@ export interface FlowGraph {
   readonly connections: readonly FlowConnection[];
   readonly flowInput: FlowInputBlock;
 }
+/** Where a new worktree starts: the Project repository's default branch or a named Git ref. */
+export type FlowWorkspaceBase =
+  | { readonly kind: "default" }
+  | { readonly kind: "ref"; readonly ref: string };
+/** The workspace every worker of a Run shares; saved on the Flow, outside its graph. */
+export type FlowWorkspace =
+  | { readonly mode: "checkout" }
+  | { readonly mode: "worktree"; readonly base: FlowWorkspaceBase };
 export interface UpdateFlowInput {
   readonly name: string;
   readonly expectedRevision: number;
   readonly graph: FlowGraph;
+  /** Protocol 1–3 clients cannot see it and omit it; such a save keeps the saved setting. */
+  readonly workspace?: FlowWorkspace;
 }
 
 export interface FlowReadiness {
@@ -78,6 +88,7 @@ export interface FlowDraft {
   readonly name: string;
   readonly revision: number;
   readonly graph: FlowGraph;
+  readonly workspace: FlowWorkspace;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly readiness: FlowReadiness;
@@ -562,9 +573,30 @@ export interface RunBlock {
   readonly pendingRequestCount: number | null;
   readonly observedAt: string | null;
   readonly freshness: "unknown" | "fresh" | "stale";
-  /** An unresolved Factory launch for this Block. Title search has not bound a worker. */
+  /** An unresolved Factory launch, or idle-worker preparation, for this Block. Title search has
+   * not bound its thread. */
   readonly recovery: "pending" | null;
 }
+/** An idle worker a worktree Run prepared for a later Agent Block; not a visit. */
+export interface RunPreparedWorker {
+  readonly blockId: string;
+  readonly threadId: string;
+  readonly link: string | null;
+  readonly preparedAt: string;
+}
+/** The workspace every worker of a Run shares. */
+export type RunWorkspaceDetail =
+  | { readonly mode: "checkout" }
+  | {
+      readonly mode: "worktree";
+      readonly baseRef: string;
+      readonly state: "preparing" | "bound" | "failed";
+      /** The worktree path and branch T3 reported; null until bound. */
+      readonly path: string | null;
+      readonly branch: string | null;
+      readonly problem: string | null;
+      readonly preparedWorkers: readonly RunPreparedWorker[];
+    };
 /**
  * Active Runs are in the main navigation. Settled Runs are done, automatically or because the
  * user settled them; an accepted Block report returns them to Active. Archived Runs are final
@@ -664,6 +696,7 @@ export interface RunDetail extends RunSummary {
   readonly title: string;
   readonly input: string;
   readonly definitions: RunDefinitions;
+  readonly workspace: RunWorkspaceDetail;
   readonly activations: readonly RunActivation[];
   readonly threadBindings: readonly RunThreadBinding[];
   readonly gateOpen: boolean;

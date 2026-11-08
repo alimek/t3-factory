@@ -3,7 +3,7 @@ import type { FlowDraft, Result } from "../packages/contracts/src/index.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
-test("author a loop and fan-out by dragging exit ports, delete stray connections, save an incomplete draft, connect the Flow input to fix readiness and reconcile a stale save", async ({
+test("author a loop and fan-out by dragging exit ports, delete stray connections, save an incomplete draft, connect the Flow input to fix readiness, choose a custom worktree base and reconcile a stale save", async ({
   app,
   screen,
   browser,
@@ -105,6 +105,14 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
     flowInput.y + flowInput.height / 2 + 150,
   );
   await browser.mouse.up();
+  await expect(
+    screen.getByRole("button", "Workspace: New worktree · default branch"),
+  ).toBeVisible();
+  await screen.getByRole("button", "Workspace: New worktree · default branch").tap();
+  await screen.getByLabel("Base").selectOption("Custom ref");
+  await screen.getByLabel("Custom ref").fill("develop");
+  await browser.keyboard.press("Escape");
+  await expect(screen.getByText("Draft changed · Check readiness")).toBeVisible();
   await screen.getByRole("button", "Check readiness").tap();
   await expect(screen.getByText("Graph ready")).toBeVisible();
   await screen.getByRole("button", "Save Flow").tap();
@@ -117,6 +125,7 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
   assert(result.ok);
   const saved = result.value;
   assert.equal(saved.graph.connections.length, 4);
+  assert.deepEqual(saved.workspace, { mode: "worktree", base: { kind: "ref", ref: "develop" } });
   assert.deepEqual(saved.graph.flowInput, {
     position: { x: 40, y: 200 },
     targetBlockIds: [saved.graph.blocks[0]!.id],
@@ -143,5 +152,6 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
   await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 5");
   await browser.reload();
   await expect(screen.getByLabel("Flow name")).toHaveValue("My preserved draft");
+  await expect(screen.getByRole("button", "Workspace: New worktree · develop")).toBeVisible();
   await expect(screen.getByText("Graph ready")).toBeVisible();
 });
