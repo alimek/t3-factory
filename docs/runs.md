@@ -119,8 +119,12 @@ unavailable open Run stays open.
 - When Runs exist but none are open, the open list shows **Nothing open** / **You're all caught up.**
   Snooze and Settle focus the destination group toggle after it appears. Restore focuses the restored row; during search, all three actions keep focus on that row.
 - **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
-  The row menu opens from ⋯ (shown on hover, focus or selection), right click, Shift+F10 or the context-menu key; F2 renames.
-  Active and Snoozed rows offer Snooze or Restore and **Settle**; every Run row offers **Archive…**. Draft rows offer Rename and
+  The row menu opens from ⋯ (shown on hover, focus or selection), right click, Shift+F10 or the context-menu key; Rename
+  in the menu shows the current binding from the shortcut registry (default F2). With a Run open in detail, the same
+  **Rename Run** command runs from that binding; customization is in [Keyboard shortcuts](keyboard-shortcuts.md).
+  Keyboard **Snooze or restore**, **Settle** and **Archive…** apply to the open Run under the same availability rules as
+  these menu items and show registry hints on tooltips where present. Active and Snoozed rows offer Snooze or Restore and
+  **Settle**; every Run row offers **Archive…**. Draft rows offer Rename and
   **Discard**, which removes the draft from this browser at once without confirmation; discarding the open draft leaves an
   empty composition with the same choices. While a draft's Start is in flight or its outcome is unknown, both are
   unavailable: the draft keeps its exact request until **Check same request** settles it.

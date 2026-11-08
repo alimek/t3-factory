@@ -39,6 +39,10 @@ import { clockTime, dayAndTime, StatePill } from "../components/execution-state.
 import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { sectionLabelClass } from "../components/page.tsx";
 import { useConnectionState } from "../connection-state.tsx";
+import { OpenRunKeyboardHost } from "../open-run-keyboard.tsx";
+import { useLiveNavigation } from "../live/navigation.ts";
+import { useShortcutPreferences } from "../shortcut-preferences.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
 import { useLiveRun } from "../live/run.ts";
@@ -165,6 +169,8 @@ function wideViewport() {
 
 export function RunScreen({ id }: { id: string }) {
   const observed = useRunObservation(id);
+  const { value: runs } = useLiveNavigation();
+  const navigationRun = runs?.find((run) => run.id === id);
   const [selected, setSelected] = useState<string | null>(null);
   const [contextOpen, setContextOpen] = useState(wideViewport);
   const deselect = useCallback(() => setSelected(null), []);
@@ -173,6 +179,11 @@ export function RunScreen({ id }: { id: string }) {
   const { run, error } = observed;
   return (
     <CanvasLayout>
+      <OpenRunKeyboardHost
+        unavailable={observed.unavailable}
+        run={run ?? undefined}
+        navigationRun={navigationRun}
+      />
       {run ? (
         <RunDetailView
           observed={observed}
@@ -321,6 +332,8 @@ function RunTopBar({
   const { project } = observed;
   const unavailable = projectIsUnavailable(project, observed.projectsLoaded);
   const [archiving, setArchiving] = useState(false);
+  const { hint } = useShortcutPreferences();
+  const archiveHint = hint("archive");
   const stale =
     run.lifecycle === "active" && observationText(run, observed.unavailable).startsWith("Not live");
   return (
@@ -348,10 +361,17 @@ function RunTopBar({
       </div>
       {run.lifecycle !== "archived" && (
         <>
-          <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
-            <Archive aria-hidden />
-            Archive Run
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
+                <Archive aria-hidden />
+                Archive Run
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Archive Run…{archiveHint !== "Unbound" ? ` · ${archiveHint}` : ""}
+            </TooltipContent>
+          </Tooltip>
           <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />
         </>
       )}

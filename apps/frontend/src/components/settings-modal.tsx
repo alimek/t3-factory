@@ -127,6 +127,7 @@ export function SettingsModal() {
       }}
     >
       <DialogContent
+        data-settings="true"
         presentation="workspace"
         showCloseButton={false}
         className="flex h-[min(90dvh,45rem)] w-full max-w-[min(calc(100%-2rem),65rem)] flex-col gap-0 overflow-hidden bg-muted p-0 sm:max-w-[min(calc(100%-2rem),65rem)]"

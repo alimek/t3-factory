@@ -73,7 +73,7 @@ export function SidebarFooter() {
           />
         </Link>
       </FooterIcon>
-      <FooterIcon label="Studio" active={!!studio}>
+      <FooterIcon label="Studio" shortcut={hint("studio")} active={!!studio}>
         <Link {...studioOptions} aria-label="Studio">
           <PencilRuler aria-hidden className="size-4" strokeWidth={1.5} />
         </Link>
