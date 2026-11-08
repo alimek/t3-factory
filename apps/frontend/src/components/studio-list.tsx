@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { Plus, Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -40,10 +41,12 @@ export function StudioListHeader({
           className="bg-muted pl-9"
         />
       </div>
-      <Button onClick={onCreate}>
-        <Plus aria-hidden strokeWidth={1.5} />
-        {createLabel}
-      </Button>
+      <MutationGate>
+        <Button onClick={onCreate}>
+          <Plus aria-hidden strokeWidth={1.5} />
+          {createLabel}
+        </Button>
+      </MutationGate>
     </header>
   );
 }

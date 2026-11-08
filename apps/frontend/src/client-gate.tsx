@@ -271,11 +271,24 @@ function OfflineBoundary({ children }: { children: ReactNode }) {
     <>
       {offline && <OfflineBanner observedAt={observedAt} />}
       {synchronizing && <SynchronizingBanner />}
-      {/* Disabled controls make the stale view read-only; nothing is queued for later. */}
-      <fieldset disabled={offline || synchronizing} className="contents">
-        {children}
-      </fieldset>
+      {children}
     </>
+  );
+}
+
+/** Product writes wait for every held live scope; local browsing stays available. */
+export function useMutationsAllowed() {
+  const current = useTransport();
+  const delivery = useLiveDelivery();
+  return current.kind === "online" && delivery === "current";
+}
+
+export function MutationGate({ children }: { children: ReactNode }) {
+  const mutationsAllowed = useMutationsAllowed();
+  return (
+    <fieldset disabled={!mutationsAllowed} className="contents">
+      {children}
+    </fieldset>
   );
 }
 
@@ -320,7 +333,7 @@ function ConnectivityBanner({
     <div
       role="status"
       aria-label={label}
-      className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 border-b border-attention/40 bg-background px-4 py-2 text-sm text-foreground shadow-floating"
+      className="pointer-events-none fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 border-b border-attention/40 bg-background px-4 py-2 text-sm text-foreground shadow-floating"
     >
       <Icon aria-hidden strokeWidth={1.5} className="size-4 shrink-0 text-attention" />
       <span>{children}</span>

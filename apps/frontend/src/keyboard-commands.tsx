@@ -4,6 +4,7 @@ import { CommandPalette } from "./components/command-palette.tsx";
 import { matchesShortcut, shouldHandleShortcut } from "./keyboard-shortcuts.ts";
 import { getShortcutPreferences } from "./shortcut-preferences.ts";
 import { useSettingsNavigation, validateAppSearch } from "./settings-navigation.ts";
+import { transport } from "./transport.ts";
 import { runDraft } from "./run-draft.ts";
 
 export function KeyboardCommandsProvider({ children }: { children: ReactNode }) {
@@ -27,6 +28,7 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
     }
   }, []);
   const newRun = useCallback(() => {
+    if (!transport.acceptsMutations()) return;
     void router.navigate({ to: "/runs/new", search: {}, resetScroll: false }).then(() => {
       const location = router.state.location;
       const search = validateAppSearch(location.search);

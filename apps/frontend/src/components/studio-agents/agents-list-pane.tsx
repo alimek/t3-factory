@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { Bot, Search } from "lucide-react";
 import type { AgentCapabilities, AgentDefinition, FlowDraft } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
@@ -49,9 +50,11 @@ export function AgentsListPane({
           </span>
         )}
         <span className="flex-1" />
-        <Button size="sm" aria-label="New Agent" onClick={onCreate}>
-          + Add agent
-        </Button>
+        <MutationGate>
+          <Button size="sm" aria-label="New Agent" onClick={onCreate}>
+            + Add agent
+          </Button>
+        </MutationGate>
       </div>
       <div className="shrink-0 px-3 pb-2">
         <div className="relative">
