@@ -14,6 +14,7 @@ import { acceptedTransition, type RuntimeReply, type RuntimeReport } from "./run
 import { resolveBlock } from "./runtime-block-id.ts";
 import { now } from "./time.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
+import { returnToActive } from "./runner-settle.ts";
 import { acceptWorking } from "./working-report.ts";
 
 /** Exact exit names and identities resolve against the captured Flow, never a later edit. */
@@ -205,6 +206,13 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
               const found = yield* reportTarget(sql, publicId);
               if (!found.ok) return found.reply;
               const reply = yield* decide(sql, found.target, report);
+              if (reply.code === "ACCEPTED")
+                yield* returnToActive(
+                  sql,
+                  found.target.runRow.id,
+                  found.target.block.block_id,
+                  reply.reportId,
+                );
               return yield* recordReportVerdict(sql, found.target, reply);
             }),
           );

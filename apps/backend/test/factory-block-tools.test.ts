@@ -198,7 +198,7 @@ it("factory_get_run returns the Run of the named Block and each Block's state", 
     number: 1,
     title: "Improve search",
     input: "Improve search\nKeep it accessible.",
-    state: "running",
+    state: "active",
     blocks: [{ blockId: "worker", name: "Entry worker", state: "working", result: null }],
   });
 });

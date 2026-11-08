@@ -29,6 +29,7 @@ export type RunRow = {
   started_at: string;
   closed_at: string | null;
   outcome: RunDetail["outcome"];
+  settled_at: string | null;
   endpoint: string;
   environment_id: string;
   t3_project_id: string;
@@ -128,6 +129,7 @@ export type TaskRunRow = {
   closed_at: string | null;
   outcome: RunDetail["outcome"];
   stop_requested_at: string | null;
+  settled_at: string | null;
   flow_id: string;
   flow_name: string;
 };

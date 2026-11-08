@@ -221,6 +221,8 @@ export interface FactoryOperations {
   /** Asks an idle Agent Block without a finished result to assess its existing work and report. */
   requestReport(runId: string, input: { blockId: string }): Promise<Result<RunDetail>>;
   stopRun(id: string): Promise<Result<RunDetail>>;
+  /** Moves an Active or Snoozed Run to Settled; an accepted Block report returns it to Active. */
+  settleRun(id: string): Promise<Result<RunDetail>>;
   getRunCreationPolicy(): Promise<Result<RunCreationPolicy>>;
   startRun(input: unknown): Promise<Result<RunDetail>>;
   listRunNavigation(): Promise<Result<readonly RunNavigationEntry[]>>;
@@ -324,7 +326,7 @@ export type ProtocolCompatibility =
 
 /** Host lifecycle facts used before Quit, role switch or update installation. */
 export interface HostLifecycle {
-  /** Runs that are not closed; Quit leaves them to T3 and later reconciliation, it never Stops them. */
+  /** Active Runs; Quit leaves them to T3 and later reconciliation, it never Stops them. */
   readonly openRunCount: number;
 }
 
@@ -483,6 +485,7 @@ export interface StartRunInput {
 export interface TaskRunEntry {
   readonly stopRequestedAt: string | null;
   readonly id: string;
+  readonly lifecycle: RunLifecycle;
   readonly flowId: string;
   readonly flowName: string;
   readonly input: string;
@@ -499,6 +502,7 @@ export interface TaskSummary {
   readonly latestRun: {
     readonly stopRequestedAt: string | null;
     readonly id: string;
+    readonly lifecycle: RunLifecycle;
     readonly flowId: string;
     readonly flowName: string;
     readonly startedAt: string;
@@ -570,7 +574,7 @@ export interface RunBlock {
 export interface RunClosure {
   /** Closed Runs from before Block workers may also record their Run conversation. */
   readonly rootFrontier?: readonly Omit<RunClosure["frontier"][number], "blockId">[];
-  readonly outcome: "finished" | "stopped";
+  readonly outcome: "stopped";
   readonly generation: number;
   readonly confirmedAt: string;
   readonly frontier: readonly {
@@ -593,9 +597,15 @@ export interface RunClosure {
     readonly pendingRequestCount: number;
   }[];
 }
+/**
+ * Active Runs are in the main navigation. Settled Runs are done, automatically or because the
+ * user settled them; an accepted Block report returns them to Active.
+ */
+export type RunLifecycle = "active" | "settled";
 export interface RunSummary {
   readonly stopRequestedAt: string | null;
   readonly id: string;
+  readonly lifecycle: RunLifecycle;
   readonly task: { readonly id: string; readonly title: string; readonly projectId: string };
   readonly flowId: string;
   readonly flowName: string;
@@ -618,6 +628,7 @@ export interface RunNavigationEntry {
    */
   readonly creationKey: string;
   readonly project: Pick<FactoryProject, "id" | "title" | "workspaceRoot" | "availability">;
+  readonly lifecycle: RunLifecycle;
   readonly closedAt: string | null;
   readonly outcome: RunClosure["outcome"] | null;
   readonly stopRequestedAt: string | null;

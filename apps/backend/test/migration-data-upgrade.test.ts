@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
-import { currentClosedRun, releasedUpgradeData } from "./support/released-upgrade.ts";
+import { currentSettledRun, releasedUpgradeData } from "./support/released-upgrade.ts";
 
-it("upgrading v0.2.0 keeps clients, definitions and closed Run history and removes the open Run", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions, settles the Finished Run with its history and removes the open Run", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
 
@@ -31,15 +31,15 @@ it("upgrading v0.2.0 keeps clients, definitions and closed Run history and remov
   expect(retiredAgent.error.code).toBe("not_found");
   expect(await factory.getRun(fixture.closed.id)).toStrictEqual({
     ok: true,
-    value: currentClosedRun(fixture.closed),
+    value: currentSettledRun(fixture.closed),
   });
   const active = await factory.getRun(fixture.active.id);
   assert(!active.ok);
   expect(active.error.code).toBe("not_found");
   const navigation = await factory.listRunNavigation();
   assert(navigation.ok);
-  expect(navigation.value.map((entry) => [entry.id, entry.outcome])).toStrictEqual([
-    [fixture.closed.id, "finished"],
+  expect(navigation.value.map((entry) => [entry.id, entry.lifecycle])).toStrictEqual([
+    [fixture.closed.id, "settled"],
   ]);
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);

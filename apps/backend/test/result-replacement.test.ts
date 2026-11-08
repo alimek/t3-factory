@@ -36,7 +36,7 @@ it("a newer finished report before release replaces the held result and only it 
   expect(next.inputs?.results).toMatchObject([{ message: "Final result." }]);
 });
 
-it("a Run whose result was replaced before handoff finishes once every worker is done", async (c) => {
+it("a Run whose result was replaced before handoff settles once every worker is done", async (c) => {
   // Arrange
   const f = await replacedBeforeRelease(c);
   assert((await f.f.reconcileRuns()).ok);
@@ -51,7 +51,7 @@ it("a Run whose result was replaced before handoff finishes once every worker is
   // Assert
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
-  expect(run.value.outcome).toBe("finished");
+  expect(run.value.lifecycle).toBe("settled");
 });
 
 it("after release a same-exit finished report updates the result without relaunching the next Block", async (c) => {
@@ -178,10 +178,10 @@ it("a question asked after a result keeps the Block waiting once its worker thre
   expect(
     run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
   ).toMatchObject([{ message: "Should I update the docs too?" }]);
-  expect(run.value.closedAt).toBeNull();
+  expect(run.value.lifecycle).toBe("active");
 });
 
-it("a working report after a result keeps the Block working and its Run open once its worker thread is finished", async (c) => {
+it("a working report after a result keeps the Block working and its Run Active once its worker thread is finished", async (c) => {
   // Arrange
   const f = await directWorker(c, true, "");
   assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
@@ -199,5 +199,5 @@ it("a working report after a result keeps the Block working and its Run open onc
     workingMessage: "Opened PR #42; waiting for its CI checks.",
   });
   expect(run.value.reports).toMatchObject([{ status: "finished" }]);
-  expect(run.value.closedAt).toBeNull();
+  expect(run.value.lifecycle).toBe("active");
 });

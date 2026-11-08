@@ -117,6 +117,7 @@ export const makeFactoryService = (
       replyCoordinatorQuestion: (id, input) => runner.replyCoordinatorQuestion(id, input),
       requestReport: (id, input) => runner.requestReport(id, input),
       stopRun: (id) => runner.stopRun(id),
+      settleRun: (id) => runner.settleRun(id),
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),
       startRun: (i) => runner.startRun(i),
       listRunNavigation: () => runner.listRunNavigation(),

@@ -14,19 +14,20 @@ type Value<K extends keyof Factory> = Factory[K] extends (...args: never[]) => i
 /** v0.2.0 returned a Run's definitions as the snapshot it stored at Start. */
 type ReleasedSnapshot = { flow: Value<"getFlow">; agents: Value<"getAgent">[] };
 type CurrentRun = Value<"getRun">;
-type Closure = NonNullable<CurrentRun["closure"]>;
-/** A closure frontier member as v0.2.0 recorded it, with queue coverage Factory no longer reads. */
-type ReleasedMember = Closure["frontier"][number] & {
-  queuedRunIds: readonly string[];
-  queueNextCursor: number | null;
-  queueObservedAt: string;
-};
-/** v0.2.0 also returned report keys (retired per-turn report authority) and Factory's own
- * completion evidence: activation coverage, remote work, closure coordination and queue
- * coverage, and Run-conversation control recoveries. It had no working reports. */
+/** v0.2.0 also returned report keys (retired per-turn report authority), Factory's own
+ * completion evidence (activation coverage, remote work, Run-conversation control recoveries)
+ * and the closed Run's permanent Finished outcome and closure. It had no working reports or
+ * Run lifecycle. */
 type ReleasedRun = Omit<
   CurrentRun,
-  "definitions" | "blocks" | "reports" | "activations" | "closure" | "coordinationActions"
+  | "definitions"
+  | "blocks"
+  | "reports"
+  | "activations"
+  | "closure"
+  | "coordinationActions"
+  | "lifecycle"
+  | "outcome"
 > & {
   snapshot: ReleasedSnapshot;
   blocks: readonly Omit<CurrentRun["blocks"][number], "workingMessage">[];
@@ -36,13 +37,8 @@ type ReleasedRun = Omit<
     evidence: unknown;
   })[];
   remoteWork: readonly unknown[];
-  closure:
-    | (Omit<Closure, "frontier" | "rootFrontier"> & {
-        coordination?: unknown;
-        frontier: readonly ReleasedMember[];
-        rootFrontier?: readonly Omit<ReleasedMember, "blockId">[];
-      })
-    | null;
+  outcome: "finished" | null;
+  closure: unknown;
   coordinationActions: CurrentRun["coordinationActions"] & { controlRecoveries: unknown };
 };
 interface ReleasedCapture {
@@ -72,36 +68,30 @@ function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
   };
 }
 
-type QueueFields = "queuedRunIds" | "queueNextCursor" | "queueObservedAt";
-function currentMember<M extends Pick<ReleasedMember, QueueFields>>(
-  member: M,
-): Omit<M, QueueFields> {
-  const { queuedRunIds: _ids, queueNextCursor: _cursor, queueObservedAt: _at, ...current } = member;
-  return current;
-}
-
-function currentClosure(closure: NonNullable<ReleasedRun["closure"]>): Closure {
-  const { coordination: _coordination, frontier, rootFrontier, ...recorded } = closure;
-  return {
-    ...recorded,
-    ...(rootFrontier ? { rootFrontier: rootFrontier.map(currentMember) } : {}),
-    frontier: frontier.map(currentMember),
-  };
-}
-
-/** The released closed Run as current Run detail shows it: the same history without the
- * retired report keys and completion evidence, and with no working message. */
-export function currentClosedRun(released: ReleasedRun): CurrentRun {
-  const { snapshot, remoteWork: _remote, closure, coordinationActions, ...run } = released;
+/** The released Finished Run as current Run detail shows it: Settled with its handoff gate open,
+ * keeping the same history without the retired report keys, completion evidence and closure,
+ * and with no working message. */
+export function currentSettledRun(released: ReleasedRun): CurrentRun {
+  const {
+    snapshot,
+    remoteWork: _remote,
+    closure: _closure,
+    coordinationActions,
+    ...run
+  } = released;
   const { controlRecoveries: _controls, ...actions } = coordinationActions;
   return {
     ...run,
+    lifecycle: "settled",
+    closedAt: null,
+    outcome: null,
+    gateOpen: true,
+    closure: null,
     definitions: capturedDefinitions(snapshot),
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),
     activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),
     coordinationActions: actions,
-    closure: closure && currentClosure(closure),
   };
 }
 

@@ -72,20 +72,20 @@ async function applyCorrection(context: SeedContext, run: RunDetail) {
 }
 
 async function settledScenarios(context: SeedContext, flowId: string) {
-  let finished = await startScenario(
+  let settled = await startScenario(
     context,
     flowId,
-    "finished",
-    "Finished · Clearer onboarding copy",
+    "settled",
+    "Settled · Clearer onboarding copy",
     "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
   );
-  finished = await report(context, finished, "worker", {
+  settled = await report(context, settled, "worker", {
     to: "finished",
     exit: "Done",
     message: "Updated the welcome text and checked that every action has a descriptive label.",
   });
-  await observeTerminal(context.t3, executionBlock(finished), "completed");
-  await reconcileUntil(context, finished.id, (run) => run.outcome === "finished");
+  await observeTerminal(context.t3, executionBlock(settled), "completed");
+  await reconcileUntil(context, settled.id, (run) => run.lifecycle === "settled");
 
   const stopped = await startScenario(
     context,

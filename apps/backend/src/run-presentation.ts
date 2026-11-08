@@ -12,10 +12,11 @@ export function openRunPresentation(database: RunnerDatabase) {
       Effect.gen(function* () {
         const [run] = yield* sql<{
           closed_at: string | null;
-        }>`SELECT closed_at FROM runs WHERE id=${id}`;
+          settled_at: string | null;
+        }>`SELECT closed_at,settled_at FROM runs WHERE id=${id}`;
         if (!run) return failure("not_found", "This Run does not exist.");
-        if (run.closed_at && action !== "seen")
-          return failure("conflict", "Closed Runs remain in Settled.");
+        if ((run.closed_at || run.settled_at) && action !== "seen")
+          return failure("conflict", "Only Active Runs can be snoozed or restored.");
         yield* sql`INSERT INTO run_presentation(run_id) VALUES(${id}) ON CONFLICT DO NOTHING`;
         if (action === "snooze") {
           yield* sql`DELETE FROM run_snooze_attention WHERE run_id=${id}`;

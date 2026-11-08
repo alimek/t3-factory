@@ -171,6 +171,7 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
         ["snooze", factory.snoozeRun],
         ["restore", factory.restoreRun],
         ["woke-seen", factory.markRunWokeSeen],
+        ["settle", factory.settleRun],
       ] as const
     ).map(([action, operation]): ApiRoute => ({
       method: "POST",

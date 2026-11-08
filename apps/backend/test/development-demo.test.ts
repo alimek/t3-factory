@@ -22,7 +22,7 @@ it("restored demo keeps a worker waiting on its running subagents as normal prog
   expect(after.value.executions.map((e) => [e.executionId, e.engineStatus])).toStrictEqual(
     before.executions.map((e) => [e.executionId, e.engineStatus]),
   );
-  expect(after.value.outcome).toBeNull();
+  expect(after.value.lifecycle).toBe("active");
   expect(after.value.blocks.some((block) => block.threadId !== null)).toBe(true);
   expect(after.value.blocks[0]).toMatchObject({
     state: "working",

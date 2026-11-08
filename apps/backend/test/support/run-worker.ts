@@ -213,6 +213,27 @@ export async function finishedWorker(c: TestContext) {
   return f;
 }
 
+/** Resolves once T3 receives the next thread settlement, which Factory sends in the background
+ * after a manual Settle. */
+export function nextSettlement(t3: ControlledT3) {
+  const settle = t3.settleThread.bind(t3);
+  return new Promise<void>((resolve) => {
+    t3.settleThread = async (target, payload) => {
+      await settle(target, payload);
+      resolve();
+    };
+  });
+}
+
+/** A reported single worker whose Run settled automatically once its thread finished. */
+export async function settledWorker(c: TestContext) {
+  const f = await finishedWorker(c);
+  assert((await f.f.reconcileRuns()).ok);
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok && run.value.lifecycle === "settled");
+  return f;
+}
+
 /** The worker's result is waiting in a Human review whose answer hands off to a second worker. */
 export async function pendingReview(c: TestContext) {
   const f = await reportedWorker(c, "completed", "review");

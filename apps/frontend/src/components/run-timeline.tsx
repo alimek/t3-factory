@@ -177,6 +177,14 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "operation-cancelled": operationCancelled,
   "human-cancelled-on-Stop": said("question cancelled by Stop"),
   "operation-unresolved": operationUnresolved,
+  "run-settled": (_run, event) => ({
+    actorId: null,
+    text:
+      event.causeId === "manual"
+        ? "settled by you"
+        : "settled · every visited Block has its result and its worker thread is finished",
+  }),
+  "run-activated": said("reported · the Run is Active again"),
   "run-closed": (run) => ({ actorId: null, text: `${run.outcome} · bounded closure recorded` }),
 };
 

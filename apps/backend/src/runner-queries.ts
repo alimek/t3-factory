@@ -177,6 +177,7 @@ function runClosure(closure: ClosureRow | undefined): RunDetail["closure"] {
 function runEntry(row: TaskRunRow): TaskSummary["runs"][number] {
   return {
     id: row.id,
+    lifecycle: row.settled_at ? "settled" : "active",
     flowId: row.flow_id,
     flowName: row.flow_name,
     input: row.input,
@@ -202,6 +203,7 @@ function buildTaskSummary(
     latestRun: latest
       ? {
           id: latest.id,
+          lifecycle: latest.lifecycle,
           flowId: latest.flowId,
           flowName: latest.flowName,
           startedAt: latest.startedAt,
@@ -216,10 +218,10 @@ function buildTaskSummary(
 function taskSummary(sql: SqlClient.SqlClient, task: TaskRow) {
   return Effect.gen(function* () {
     const runs =
-      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.closed_at,r.outcome,r.stop_requested_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
+      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.closed_at,r.outcome,r.stop_requested_at,r.settled_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
     const [activeRun] = yield* sql<{
       id: string;
-    }>`SELECT id FROM runs WHERE task_id=${task.id} AND closed_at IS NULL`;
+    }>`SELECT id FROM runs WHERE task_id=${task.id} AND closed_at IS NULL AND settled_at IS NULL`;
     return buildTaskSummary(task, runs, activeRun?.id ?? null);
   });
 }
@@ -253,7 +255,8 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const working = new Map(
           (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
         );
-        const [closure] = yield* sql<ClosureRow>`SELECT * FROM run_closures WHERE run_id=${id}`;
+        const [closure] =
+          yield* sql<ClosureRow>`SELECT * FROM run_closures WHERE run_id=${id} AND outcome='stopped'`;
         const { definitions } = runRow;
         return {
           ok: true as const,
@@ -271,6 +274,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
             rootWork: yield* readRootWork(sql, id),
             ...(yield* coordinationRead(sql, id)),
             startedAt: runRow.started_at,
+            lifecycle: runRow.settled_at ? "settled" : "active",
             closedAt: runRow.closed_at,
             outcome: runRow.outcome,
             closure: runClosure(closure),

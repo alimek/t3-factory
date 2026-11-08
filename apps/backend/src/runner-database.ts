@@ -122,8 +122,8 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
             yield* sql`UPDATE run_control_recoveries SET state='uncertain' WHERE state='reserved'`;
             yield* sql`UPDATE run_root_stop_intents SET state='uncertain' WHERE state='reserved'`;
             yield* sql`UPDATE run_coordinator_commands SET state='uncertain' WHERE state='reserved'`;
-            yield* sql`UPDATE run_coordinators SET freshness='stale' WHERE run_id IN(SELECT id FROM runs WHERE closed_at IS NULL)`;
-            yield* sql`UPDATE run_blocks SET freshness='stale' WHERE thread_id IS NOT NULL AND run_id IN(SELECT id FROM runs WHERE closed_at IS NULL)`;
+            yield* sql`UPDATE run_coordinators SET freshness='stale' WHERE run_id IN(SELECT id FROM runs WHERE closed_at IS NULL AND settled_at IS NULL)`;
+            yield* sql`UPDATE run_blocks SET freshness='stale' WHERE thread_id IS NOT NULL AND run_id IN(SELECT id FROM runs WHERE closed_at IS NULL AND settled_at IS NULL)`;
           }),
         );
       });

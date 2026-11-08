@@ -285,14 +285,17 @@ function RunDetailView({
   );
 }
 
-/** One header state per distinct recorded block state; untouched blocks only while nothing ran. */
+/** One header state per distinct recorded block state; untouched blocks only while nothing ran.
+ * A Settled Run leads with Settled; its blocks keep their recorded states. */
 function headerStates(run: RunDetail) {
-  if (run.outcome === "finished") return ["finished"];
   if (run.outcome === "stopped") return ["stopped"];
   if (run.stopRequestedAt) return ["stopping"];
   const states = [...new Set(run.blocks.map((block) => block.state))];
   const started = states.filter((state) => state !== "not-started");
-  return started.length ? started : states;
+  return [
+    ...(run.lifecycle === "settled" ? ["settled"] : []),
+    ...(started.length ? started : states),
+  ];
 }
 
 function startedBlocks(run: RunDetail) {
@@ -346,7 +349,10 @@ function RunTopBar({
 }) {
   const { project } = observed;
   const unavailable = projectIsUnavailable(project, observed.projectsLoaded);
-  const stale = !run.closedAt && observationText(run, !!observed.error).startsWith("Not live");
+  const stale =
+    run.lifecycle === "active" &&
+    !run.closedAt &&
+    observationText(run, !!observed.error).startsWith("Not live");
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-4 pl-5">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
@@ -428,16 +434,26 @@ function RevisionBadge({ run, note }: { run: RunDetail; note: string | null }) {
   );
 }
 
-/** Figma Run/CanvasStatus: Live, Not live (last observation) or History for a closed Run. */
+/** When the Run last became Settled; Runs settled by an upgrade have no such event. */
+function settledAt(run: RunDetail) {
+  return run.events.findLast((event) => event.kind === "run-settled")?.observedAt;
+}
+
+/** Figma Run/CanvasStatus: Live, Not live (last observation), Settled, or History for a closed Run. */
 function ObservationBadge({ run, unavailable }: { run: RunDetail; unavailable: boolean }) {
   const text = observationText(run, unavailable);
-  const notLive = text.startsWith("Not live");
+  const settled = run.lifecycle === "settled";
+  const notLive = !settled && text.startsWith("Not live");
   const last = notLive ? lastObservedAt(run) : undefined;
   let icon = <CircleHelp aria-hidden strokeWidth={1.75} />;
   let label = text;
   if (run.closedAt) {
     icon = <Archive aria-hidden strokeWidth={1.75} />;
     label = `History · execution closed ${dayAndTime(run.closedAt)}`;
+  } else if (settled) {
+    const at = settledAt(run);
+    icon = <CircleCheck aria-hidden strokeWidth={1.75} className="text-success" />;
+    label = at ? `Settled ${dayAndTime(at)}` : "Settled";
   } else if (notLive) {
     icon = <Unplug aria-hidden strokeWidth={1.75} />;
     label = last ? `Not live · last observed ${clockTime(last)}` : text;
@@ -837,16 +853,11 @@ function ClosureEvidence({
   run: RunDetail;
   closure: NonNullable<RunDetail["closure"]>;
 }) {
-  const finished = run.outcome === "finished";
   return (
     <section className="flex flex-col gap-2" aria-label="Closure evidence">
       <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-        {finished ? (
-          <CircleCheck aria-hidden className="size-3.5 text-success" />
-        ) : (
-          <CircleStop aria-hidden className="size-3.5 text-status-stopped" />
-        )}
-        {finished ? "Finished" : "Stopped"}
+        <CircleStop aria-hidden className="size-3.5 text-status-stopped" />
+        Stopped
       </h2>
       <p className="text-sm text-emphasis-foreground">
         Closed {new Date(closure.confirmedAt).toLocaleString()} · Run elapsed{" "}

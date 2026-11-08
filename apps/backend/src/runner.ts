@@ -21,6 +21,7 @@ import { openRunnerQueries } from "./runner-queries.ts";
 import { openRunnerReports } from "./runner-reports.ts";
 import { openRunnerStart } from "./runner-start.ts";
 import { openRunnerStop } from "./runner-stop.ts";
+import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
 
@@ -56,8 +57,12 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
-  const { stopRun, reconcileStop, stopObservationsUnavailable, attemptSuccessfulClosure } =
-    openRunnerStop(database, t3, lifecycle, liveContextId);
+  const { stopRun, reconcileStop, stopObservationsUnavailable } = openRunnerStop(
+    database,
+    t3,
+    lifecycle,
+  );
+  const { settleRun, settleWhenDone } = openRunnerSettle(database, t3, lifecycle, liveContextId);
 
   function drive(
     id: string,
@@ -115,9 +120,10 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       .withPermit(
         Effect.gen(function* () {
           if (closed) return failure("conflict", "Factory is shutting down.");
+          // A Settled Run is driven only while it still owes an operation, so its work continues.
           const ids = yield* sql<{
             id: string;
-          }>`SELECT id FROM runs WHERE closed_at IS NULL ORDER BY started_at,id`;
+          }>`SELECT id FROM runs WHERE closed_at IS NULL AND (settled_at IS NULL OR stop_requested_at IS NOT NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`;
           // Restart observes every Run before dispatching any pending intent.
           yield* Effect.forEach(ids, (run) => drive(run.id, "observe"), {
             concurrency: "unbounded",
@@ -125,7 +131,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* Effect.forEach(ids, (run) => drive(run.id, "dispatch"), {
             concurrency: "unbounded",
           });
-          yield* Effect.forEach(ids, (run) => attemptSuccessfulClosure(run.id), {
+          yield* Effect.forEach(ids, (run) => settleWhenDone(run.id), {
             concurrency: "unbounded",
           });
           return { ok: true as const, value: undefined };
@@ -155,6 +161,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     answerHumanOccurrence,
     replyCoordinatorQuestion: openCoordinatorQuestionReplies(database, lifecycle),
     stopRun,
+    settleRun,
     ...openRunNavigation(database, getRun),
     ...openRunPresentation(database),
     getRun,
@@ -175,6 +182,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
               flowId: run.flowId,
               flowName: run.flowName,
               startedAt: run.startedAt,
+              lifecycle: run.lifecycle,
               closedAt: run.closedAt,
               outcome: run.outcome,
               stopRequestedAt: run.stopRequestedAt,

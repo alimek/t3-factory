@@ -1,4 +1,3 @@
-import { completeRun } from "./runner-completion.ts";
 import { confirmClosure, observeWorkers } from "./runner-closure.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
@@ -15,7 +14,6 @@ export function openRunnerStop(
   database: RunnerDatabase,
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
-  liveContextId: () => Effect.Effect<string | null, unknown>,
 ) {
   const { mutate } = database;
   const owner = database.owner.token;
@@ -168,8 +166,5 @@ export function openRunnerStop(
       );
     });
   }
-  function attemptSuccessfulClosure(id: string) {
-    return completeRun(database, t3, id, liveContextId);
-  }
-  return { stopRun, reconcileStop, stopObservationsUnavailable, attemptSuccessfulClosure };
+  return { stopRun, reconcileStop, stopObservationsUnavailable };
 }

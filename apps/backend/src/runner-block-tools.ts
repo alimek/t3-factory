@@ -82,11 +82,7 @@ function runView(detail: RunDetail): RuntimeReply {
     number: detail.number,
     title: detail.title,
     input: detail.input,
-    state: detail.closedAt
-      ? (detail.outcome ?? "closed")
-      : detail.stopRequestedAt
-        ? "stopping"
-        : "running",
+    state: detail.outcome ?? (detail.stopRequestedAt ? "stopping" : detail.lifecycle),
     blocks: detail.blocks.map((block) => ({
       blockId: block.blockId,
       name: block.name,

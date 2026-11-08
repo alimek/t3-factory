@@ -67,8 +67,8 @@ it("removing a Flow preserves its active Run definitions and shared Agent", asyn
   expect(missing.error.code).toBe("not_found");
   const run = await f.getRun(started.value.id);
   assert(run.ok);
-  expect(run.value.closedAt).toBe(null);
-  expect(run.value.stopRequestedAt).toBe(null);
+  expect(run.value.lifecycle).toBe("active");
+  expect(run.value.gateOpen).toBe(true);
   expect(run.value.definitions).toStrictEqual(started.value.definitions);
   assert((await f.getAgent(agent.id)).ok);
 });

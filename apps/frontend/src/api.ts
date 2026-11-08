@@ -95,6 +95,8 @@ export const api = {
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/restore`, { method: "POST" }),
   markRunWokeSeen: (id: string) =>
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/woke-seen`, { method: "POST" }),
+  settleRun: (id: string) =>
+    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/settle`, { method: "POST" }),
   renameRun: (id: string, input: { title: string }) =>
     patch<RunDetail>(`/api/runs/${encodeURIComponent(id)}`, input),
   requestReport: (runId: string, blockId: string) =>

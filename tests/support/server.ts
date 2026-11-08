@@ -380,6 +380,18 @@ const fixtureRoutes: Record<string, () => unknown> = {
     );
     return { ok: true };
   },
+  // The Working scenario's Agent reports that it is still on its task, as after a user's settle.
+  async "/__fixture/worker/working"() {
+    const summary = requireSuccess(await factory.listRunNavigation()).find(
+      (run) => run.title === "UI worker · Working · Improve the project picker",
+    );
+    assert(summary);
+    await report(context, requireSuccess(await factory.getRun(summary.id)), "worker", {
+      to: "working",
+      message: "Two subagents are still checking the empty state.",
+    });
+    return { ok: true };
+  },
   async "/__fixture/worker/answer"() {
     const current = requireSuccess(await factory.getRun(waiting.id));
     const block = executionBlock(current);
@@ -392,7 +404,7 @@ const fixtureRoutes: Record<string, () => unknown> = {
       message: "Used the requested concise wording and Clear filters label.",
     });
     await observeTerminal(t3, executionBlock(accepted), "completed");
-    const settled = await reconcileUntil(context, current.id, (run) => run.outcome === "finished");
+    const settled = await reconcileUntil(context, current.id, (run) => run.lifecycle === "settled");
     assert.equal(settled.activations.length, 1);
     return { ok: true };
   },

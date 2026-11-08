@@ -255,8 +255,8 @@ test("a native worker reply completes the same activation and preserves its wait
 
   // Assert
   await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).outcome)
-    .toBe("finished");
+    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
+    .toBe("settled");
   await browser.reload();
   const saved = await readHistoryRun(app.baseUrl, found.id);
   expect(saved.activations.map((a) => a.id)).toEqual(before.activations.map((a) => a.id));
@@ -360,6 +360,68 @@ test("a Human correction revisits the same worker conversation with a distinct a
     "Implement change · Visit 2",
   );
   await app.screenshot("same-worker-second-visit");
+});
+
+test("the row menu opened by right click settles an open Run into the Settled group", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const title = "UI worker · Working · Improve the project picker";
+  const found = await findRun(app.baseUrl, title);
+  await app.open(`/runs/${found.id}`);
+  await screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${title}`))
+    .secondaryTap();
+
+  // Act
+  await screen.getByRole("menuitem", "Settle", { exact: true }).tap();
+
+  // Assert
+  await expect
+    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
+    .toBe("settled");
+  await browser.reload();
+  await screen.getByRole("button", /^Settled/).tap();
+  await expect(
+    screen.getByRole("navigation", "Settled Runs").getByRole("link", new RegExp(`^${title}`)),
+  ).toBeVisible();
+  await expect(
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(`^${title}`)),
+  ).toHaveCount(0);
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await app.screenshot("run-settled-from-row-menu");
+});
+
+test("a report from the Agent of a Settled Run returns it to the open Runs", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const title = "UI worker · Working · Improve the project picker";
+  const found = await findRun(app.baseUrl, title);
+  await fetch(new URL(`/api/runs/${found.id}/settle`, app.baseUrl), {
+    method: "POST",
+    headers: { "X-Factory-Request": "1" },
+  });
+  await app.open(`/runs/${found.id}`);
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+
+  // Act
+  await workerEvent(app.baseUrl, "working");
+
+  // Assert
+  await expect(
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(`^${title}`)),
+  ).toContainText("Two subagents are still checking the empty state.");
+  expect((await readHistoryRun(app.baseUrl, found.id)).lifecycle).toBe("active");
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText(
+    "reported · the Run is Active again",
+  );
+  await app.screenshot("settled-run-active-after-report");
 });
 
 test("Stop closes both direct worker branches durably", async ({ app, screen, browser }) => {

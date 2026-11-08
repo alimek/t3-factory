@@ -10,7 +10,6 @@ import {
   revisitedWorker,
   repliedWorker,
   followupReplyWorker,
-  finishedWorker,
   launchedBlockId,
   pendingReview,
   workerMessage,
@@ -583,57 +582,6 @@ it("completed direct worker recovery settles the original missing report only af
   expect(run.value.recoveries[0]?.settledAt).not.toBeNull();
   expect(run.value.recoveries[0]?.executionId).toBe(f.executionId);
   expect(run.value.reports[0]?.completionEligibleAt).not.toBeNull();
-});
-
-it("a reported worker closes the Run as finished once its worker thread is finished", async (c) => {
-  // Arrange
-  const f = await finishedWorker(c);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.outcome).toBe("finished");
-  expect(run.value.closure?.frontier.map((member) => member.threadId)).toStrictEqual(["thread-1"]);
-  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
-  const tasks = await f.f.listTasks(f.project.id);
-  assert(tasks.ok);
-  expect(tasks.value[0]?.activeRunId).toBeNull();
-});
-
-it("native thread settlement being unsupported does not delay Finished closure", async (c) => {
-  // Arrange
-  const f = await finishedWorker(c);
-  f.t3.settleSupported = false;
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.outcome).toBe("finished");
-  expect(f.t3.settlements).toStrictEqual([]);
-});
-
-it("a completed worker keeps its Task active while worker settlement is unknown", async (c) => {
-  // Arrange
-  const f = await finishedWorker(c);
-  f.t3.delegatedSettlements.delete(JSON.stringify(["thread-1", "execution-1"]));
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.outcome).toBeNull();
-  expect(run.value.closedAt).toBeNull();
-  const tasks = await f.f.listTasks(f.project.id);
-  assert(tasks.ok);
-  expect(tasks.value[0]?.activeRunId).toBe(f.runId);
 });
 
 it("Stop cancels undispatched handoffs and settles the Run as stopped once its worker thread is finished", async (c) => {

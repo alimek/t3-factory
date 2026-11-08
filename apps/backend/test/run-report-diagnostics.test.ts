@@ -151,5 +151,5 @@ it("successful linked recovery settles the original rejection while preserving i
     }),
   );
   expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
-  expect(run.value.outcome).toBe("finished");
+  expect(run.value.lifecycle).toBe("settled");
 });
