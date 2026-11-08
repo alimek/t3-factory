@@ -21,7 +21,7 @@ The hook first checks attribution in the commits being pushed, then runs
 | 3    | `pnpm build`        | Compile errors; produces the `dist/` output that workspace packages export and later steps read                                         |
 | 4    | `pnpm lint`         | Vite+ lint rule violations (`vite.config.ts` `lint`, type-aware, warnings fail)                                                         |
 | 5    | `pnpm typecheck`    | Type errors in every workspace package, backend test code and `tests/*.e2e.ts`                                                          |
-| 6    | `pnpm test`         | Failing backend and frontend rule tests through Vite+ (see [testing policy](testing.md))                                                                           |
+| 6    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+ (see [testing policy](testing.md))                                                                  |
 
 The hook checks the working tree, including uncommitted changes, not only the
 pushed commits; commit or discard local changes before pushing so the result

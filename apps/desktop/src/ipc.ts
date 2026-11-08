@@ -15,4 +15,8 @@ export const channels = {
   openLive: "factory:open-live",
   /** Main → preload: the live port; the preload forwards it to the page by window message. */
   livePort: "factory:live-port",
+  /** Renderer → main: registry labels, bindings and availability for the application menu. */
+  setMenuState: "factory:set-menu-state",
+  /** Main → renderer: a menu item chosen with the pointer; the renderer executes it. */
+  menuCommand: "factory:menu-command",
 } as const;

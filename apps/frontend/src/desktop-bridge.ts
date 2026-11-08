@@ -41,6 +41,18 @@ export interface ServerProbe {
   readonly systemTrusted: boolean;
 }
 
+/** One registry command as the native application menu shows it. */
+export interface DesktopMenuCommand {
+  readonly label: string;
+  readonly binding: {
+    readonly key: string;
+    readonly mod: boolean;
+    readonly alt: boolean;
+    readonly shift: boolean;
+  } | null;
+  readonly enabled: boolean;
+}
+
 export interface FactoryDesktop {
   getState(): Promise<DesktopState>;
   onState(listener: (state: DesktopState) => void): () => void;
@@ -65,6 +77,12 @@ export interface FactoryDesktop {
    * `{ type: "factory:live-port", nonce }`; use `desktopLiveSocket` rather than this directly.
    */
   openLive(query: string, nonce: string): Promise<DesktopResult>;
+  /** Publishes registry commands for the application menu; `null` when no commands are mounted. */
+  setMenuState(
+    commands: Readonly<Record<string, DesktopMenuCommand>> | null,
+  ): Promise<DesktopResult>;
+  /** A menu item chosen with the pointer; menu accelerators never arrive here. */
+  onMenuCommand(listener: (id: string) => void): () => void;
 }
 
 declare global {

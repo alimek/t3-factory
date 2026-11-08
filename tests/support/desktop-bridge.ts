@@ -2,6 +2,8 @@
 // a first launch and records the choice; native lifecycle is proven by the packaged probe.
 // Its live relay stands in for the main process: a page WebSocket to the fixture, relayed
 // over a MessageChannel with the same delivery messages the desktop main process posts.
+// The application menu is recorded in window.__desktopMenu; window.__chooseMenuItem(id)
+// stands in for a pointer click on a native menu item.
 export const desktopBridgeScript = (
   role: "client" | null = null,
   update: "available" | "downloaded" | "downloading" = "downloaded",
@@ -17,6 +19,8 @@ export const desktopBridgeScript = (
     };
     const listeners = new Set();
     const publish = () => listeners.forEach((listener) => listener(state));
+    const menuListeners = new Set();
+    window.__chooseMenuItem = (id) => menuListeners.forEach((listener) => listener(id));
     window.factoryDesktop = {
       getState: async () => state,
       onState: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
@@ -30,6 +34,8 @@ export const desktopBridgeScript = (
       downloadUpdate: async () => { state = { ...state, update: { ...state.update, state: "downloaded", progress: 100 } }; publish(); return { ok: true }; },
       setUpdateChannel: async (updateChannel) => { state = { ...state, updateChannel }; publish(); return { ok: true }; },
       installUpdate: async () => { window.__clientInstallRequested = true; state = { ...state, update: { ...state.update, state: "idle", version: null } }; publish(); return { ok: true }; },
+      setMenuState: async (commands) => { window.__desktopMenu = commands; return { ok: true }; },
+      onMenuCommand: (listener) => (menuListeners.add(listener), () => menuListeners.delete(listener)),
       openLive: async (query, nonce) => {
         const scheme = location.protocol === "https:" ? "wss" : "ws";
         const socket = new WebSocket(scheme + "://" + location.host + "/api/live" + query);

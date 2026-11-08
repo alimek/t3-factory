@@ -107,6 +107,29 @@ across releases when their protocol ranges overlap; see the
 The sidebar title area drags the desktop window while macOS keeps its native traffic-light controls and the content uses the full window height. Studio opens in an inset dialog below the native controls with the Settings-style header. Product controls, dialogs and canvases stay
 outside the draggable region, fullscreen and window controls stay native, and the background matches the application canvas while content loads. Browser clients keep their layout without desktop chrome.
 
+## Application menu
+
+The desktop app replaces Electron's default menu with its own: **T3 Factory** (About,
+Settings, Check for Updates…, Hide, Quit), **File** (New Run, Close Window), **Edit**
+(standard text-editing roles, which keep the clipboard working in text fields), **View**
+(Command palette, Studio, Keyboard shortcuts, page zoom, Full Screen), **Go** (Back,
+Forward, Previous/Next Run, Search Runs), **Run** (Snooze or restore, Settle, Archive…,
+Rename), **Window** and **Help** (Factory documentation). Command labels and
+accelerators come from the [shortcut registry](keyboard-shortcuts.md) and follow the
+user's customized bindings; an unbound command shows no accelerator. **Run** items are
+disabled when the action is unavailable for the Run open in detail, and while no window
+is open. **Check for Updates…** checks this app only, with the result in the sidebar
+footer control.
+
+The renderer remains the only executor of registry commands. A key press is handled by
+the page; a menu accelerator never runs the command a second time. Choosing an item with
+the pointer sends the command to the renderer, which runs it through the same path and
+overlay gating as the shortcut. Choosing one with no window open reopens the window
+without running the command. **Close Window** (Mod+W) closes the window and leaves the
+server running. Reload, Force Reload and DevTools exist only in unpackaged development
+builds; packaged builds also disable DevTools for the window. On Windows and Linux the
+menu bar is hidden until Alt is pressed.
+
 ## Updates
 
 Updates are checked automatically on launch and every six hours. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
@@ -262,7 +285,7 @@ separate from T3 capability checks.
 ## Desktop security
 
 The renderer always runs bundled UI on `factory://app` with context isolation,
-sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Remote servers only answer API requests
+sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. Remote servers only answer API requests
 relayed by the main process; they never load content into the window. The desktop
 client credential stays in the main process, encrypted using Keychain; it is never exposed to the renderer.
 Live delivery also runs through the main process: the renderer exchanges frames over a

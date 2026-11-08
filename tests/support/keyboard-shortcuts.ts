@@ -28,6 +28,17 @@ export async function openDesktopComposer(app: App, screen: Screen, browser: Bro
   await expectFactoryConnected(screen);
 }
 
+/** Rebinds New Run to Mod+Shift+N in Settings on a desktop composer; Settings stays open. */
+export async function rebindDesktopNewRun(app: App, screen: Screen, browser: Browser) {
+  await openDesktopComposer(app, screen, browser);
+  await openKeyboardSettings(screen, browser);
+  const newRunGroup = screen.getByRole("group", "New Run");
+  await newRunGroup.getByRole("button", "Change New Run").tap();
+  await browser.keyboard.press(`${shortcutMod}+Shift+n`);
+  await screen.getByRole("button", "Save shortcut").tap();
+  return newRunGroup;
+}
+
 export async function fillHumanReviewChanges(screen: Screen, message: string) {
   const answer = screen.getByRole("form", "Answer Your review", { exact: true });
   await answer.getByRole("combobox", "Exit").selectOption({ label: "Request changes" });

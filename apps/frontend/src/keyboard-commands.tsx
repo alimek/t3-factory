@@ -20,6 +20,7 @@ import {
 } from "./app-keyboard-commands.ts";
 import { getOpenRunCommandSurface } from "./open-run-keyboard.tsx";
 import { getSidebarNavigation } from "./sidebar-navigation.ts";
+import { useDesktopMenu } from "./desktop-menu.ts";
 
 const openRowIds = [
   "openRow1",
@@ -69,6 +70,7 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
   }, []);
 
   const { navigateSidebarRow, stepRun } = useSidebarCommands(pathname);
+  useDesktopMenu();
 
   useEffect(() => {
     const handlers: Parameters<typeof setAppCommandHandlers>[0] = {
