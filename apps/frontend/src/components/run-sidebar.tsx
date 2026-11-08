@@ -219,6 +219,7 @@ const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
 
 /** Snooze, Restore and Settle from the row menu, refreshing navigation afterwards. */
 function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void, searching: boolean) {
+  // A new request object also refocuses the same target after consecutive row actions.
   const [focusAfterRender, setFocusAfterRender] = useState<{ id: string }>();
   useLayoutEffect(() => {
     if (focusAfterRender) document.getElementById(focusAfterRender.id)?.focus();
@@ -275,7 +276,7 @@ function navigationGroups(
 }
 
 /** Snoozed and Settled matches are shown at reduced contrast in search results only. */
-function searchMuted(run: RunNavigationEntry) {
+function mutedInSearch(run: RunNavigationEntry) {
   return run.presentation.snoozed || !isActive(run);
 }
 
@@ -379,15 +380,14 @@ function RunGroup({
 }) {
   if (!loaded || searching || !count) return null;
   const key = name.toLowerCase();
-  const open = expanded;
-  const Chevron = open ? ChevronDown : ChevronRight;
+  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <div className="flex flex-col gap-0.5">
       <button
         type="button"
         id={`${key}-toggle`}
         className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-2xs leading-tight font-semibold tracking-section text-subtle-foreground outline-none hover:bg-accent hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        aria-expanded={open}
+        aria-expanded={expanded}
         aria-controls={`${key}-runs`}
         onClick={onExpand}
       >
@@ -397,7 +397,7 @@ function RunGroup({
           {count}
         </span>
       </button>
-      {open && (
+      {expanded && (
         <nav id={`${key}-runs`} aria-label={`${name} Runs`} className="flex flex-col gap-0.5">
           {children}
         </nav>
@@ -461,7 +461,7 @@ function RunGroups({
   );
   const entryRow = (entry: RunNavigationEntry | SavedRunDraft) =>
     "presentation" in entry ? (
-      row(entry, !!query && searchMuted(entry))
+      row(entry, !!query && mutedInSearch(entry))
     ) : (
       <DraftRow
         key={entry.id}

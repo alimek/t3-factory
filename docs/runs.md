@@ -98,6 +98,8 @@ unavailable open Run stays open.
   project are not Problems and opening a Run clears no chip.
 - **Settled** (collapsed, with a count) holds Settled Runs. **Snoozed** sits above it. Each group appears only after navigation loads and while it contains Runs; hiding it preserves its expanded state. Archived Runs are not listed.
   Case-insensitive title search shows one list of matching Runs and drafts in creation order, with a total match count and no group headers. Snoozed and Settled matches have muted titles and status icons unless selected. Drafts are titled from the first non-empty prompt line, or **Untitled draft**; Escape or × clears search.
+- When Runs exist but none are open, the open list shows **Nothing open** / **You're all caught up.**
+  Snooze and Settle focus the destination group toggle after it appears. Restore focuses the restored row; during search, all three actions keep focus on that row.
 - **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
   The row menu opens from ⋯ (shown on hover, focus or selection), right click, Shift+F10 or the context-menu key; F2 renames.
   Active and Snoozed rows offer Snooze or Restore and **Settle**; every Run row offers **Archive…**. Draft rows offer Rename and
