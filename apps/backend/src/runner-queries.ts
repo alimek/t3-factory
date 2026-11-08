@@ -76,7 +76,7 @@ function runBlock(
   };
 }
 
-/** The Run workspace with its prepared idle workers. A preparing worktree carries its creator
+/** The Run workspace with its prepared idle workers that are not yet a Block's visit. A preparing worktree carries its creator
  * launch's unresolved problem, if any. */
 function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly IntentRow[]) {
   return Effect.gen(function* () {
@@ -87,7 +87,7 @@ function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly
       thread_id: string;
       link: string | null;
       prepared_at: string;
-    }>`SELECT block_id,thread_id,link,prepared_at FROM run_prepared_workers WHERE run_id=${runId} ORDER BY rowid`;
+    }>`SELECT p.block_id,p.thread_id,p.link,p.prepared_at FROM run_prepared_workers p JOIN run_blocks b ON b.run_id=p.run_id AND b.block_id=p.block_id WHERE p.run_id=${runId} AND b.thread_id IS NULL ORDER BY p.rowid`;
     const creatorLaunch = intents.find(
       (intent) =>
         intent.kind === "launch" &&

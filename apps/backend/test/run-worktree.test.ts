@@ -279,6 +279,21 @@ it("after a Human step, the first arrival at a prepared Block queues its task on
   expect(run.value.blocks[2]).toMatchObject({ freshness: "fresh", problem: null });
 });
 
+it("a prepared worker whose Block was activated is no longer listed as prepared", async (c) => {
+  // Arrange
+  const { f, runId } = await answeredReview(c);
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(runId);
+  assert(run.ok && run.value.workspace.mode === "worktree");
+  expect(run.value.workspace.preparedWorkers.map(({ threadId }) => threadId)).not.toContain(
+    "thread-2",
+  );
+});
+
 it("a Flow that returns to an earlier Block revisits its thread in the same worktree and launches nothing", async (c) => {
   // Arrange
   const { f, t3, runId } = await finishedParallelWork(c);
