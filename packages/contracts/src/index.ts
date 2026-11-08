@@ -218,7 +218,8 @@ export interface FactoryOperations {
     runId: string,
     input: { attentionId: string; requestId: string; message: string },
   ): Promise<Result<RunDetail>>;
-  requestReport(attentionId: string): Promise<Result<RunDetail>>;
+  /** Asks an idle Agent Block without a finished result to assess its existing work and report. */
+  requestReport(runId: string, input: { blockId: string }): Promise<Result<RunDetail>>;
   stopRun(id: string): Promise<Result<RunDetail>>;
   getRunCreationPolicy(): Promise<Result<RunCreationPolicy>>;
   startRun(input: unknown): Promise<Result<RunDetail>>;
@@ -555,7 +556,9 @@ export interface RunBlock {
   readonly executionId: string | null;
   readonly link: string | null;
   readonly engineStatus: string | null;
-  readonly reportStatus: "waiting" | "finished" | null;
+  readonly reportStatus: "working" | "waiting" | "finished" | null;
+  /** The Agent's message while `working` is the current report of the Block's current visit. */
+  readonly workingMessage: string | null;
   readonly problem: string | null;
   readonly pendingRequestCount: number | null;
   readonly observedAt: string | null;
@@ -618,7 +621,7 @@ export interface RunNavigationEntry {
   readonly closedAt: string | null;
   readonly outcome: RunClosure["outcome"] | null;
   readonly stopRequestedAt: string | null;
-  readonly blocks: readonly Pick<RunBlock, "state" | "freshness">[];
+  readonly blocks: readonly Pick<RunBlock, "state" | "freshness" | "workingMessage">[];
   /** Pending attention only. Reading this summary does not settle any matter. */
   readonly attention: RunAttentionSummary;
   readonly presentation: RunPresentation;
@@ -682,7 +685,8 @@ export interface RunDetail extends RunSummary {
     readonly resultMessage?: string | null;
   }[];
   readonly recoveries: readonly {
-    readonly attentionId: string;
+    /** The missing-report Problem this Request report settles; null when none was pending. */
+    readonly attentionId: string | null;
     readonly blockId: string;
     readonly sourceExecutionId: string;
     readonly intentId: string;

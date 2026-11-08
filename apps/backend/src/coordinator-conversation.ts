@@ -3,7 +3,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import { acceptedTransition, type RuntimeReply, type RuntimeReport } from "./runtime-types.ts";
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
-import { settleCoordinatorReports } from "./coordinator-report.ts";
+import { replaceWorking, settleCoordinatorReports } from "./coordinator-report.ts";
 import { settlePending } from "./runner-attention.ts";
 import type { ReportTarget } from "./runner-reports.ts";
 
@@ -48,6 +48,7 @@ export function acceptCoordinatorWait(
     yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${block.execution_id},${binding?.id ?? null},'attention-appeared',${"attention:" + attentionId},${attentionId},${time})`;
     yield* sql`INSERT INTO coordinator_waits(id,activation_id,fingerprint,acknowledgement_json,target_binding_id,target_execution_id,attention_id) VALUES(${id},${activationId},${fingerprint},${JSON.stringify(reply)},${binding?.id ?? null},${block.execution_id},${attentionId})`;
     yield* settleCoordinatorReports(sql, runRow.id, block.block_id, time);
+    yield* replaceWorking(sql, activationId, time);
     yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
     return reply;
   });

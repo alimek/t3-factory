@@ -97,8 +97,8 @@ export const api = {
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/woke-seen`, { method: "POST" }),
   renameRun: (id: string, input: { title: string }) =>
     patch<RunDetail>(`/api/runs/${encodeURIComponent(id)}`, input),
-  requestReport: (id: string) =>
-    request<RunDetail>(`/api/attention/${id}/request-report`, { method: "POST" }),
+  requestReport: (runId: string, blockId: string) =>
+    post<RunDetail>(`/api/runs/${encodeURIComponent(runId)}/request-report`, { blockId }),
   answerHumanOccurrence: (id: string, input: { exitId?: string; message?: string }) =>
     post<RunDetail>(`/api/human-occurrences/${encodeURIComponent(id)}/answer`, input),
   startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),

@@ -99,7 +99,7 @@ export type ExecutionRow = {
   block_id: string;
   execution_id: string;
   engine_status: string | null;
-  report_status: RunBlock["reportStatus"];
+  report_status: RunDetail["executions"][number]["reportStatus"];
   observed_at: string | null;
   ordinal: number | null;
   problem: string | null;

@@ -5,6 +5,7 @@ import {
   type FlowBlock,
   type HumanOccurrence,
   type RunAttention,
+  type RunBlock,
   type RunDetail,
 } from "@t3-factory/contracts";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -252,7 +253,13 @@ function PendingMatter({
       )}
       {presentation === "problem" && <ProblemDetail run={run} item={item} />}
       {item.kind === "missing-report" && (
-        <RequestReport run={run} item={item} onUpdated={onUpdated} />
+        <RequestReport
+          run={run}
+          blockId={item.blockId}
+          executionId={item.executionId}
+          recovery={run.recoveries.find((r) => r.attentionId === item.id)}
+          onUpdated={onUpdated}
+        />
       )}
       {binding && (
         <dl className="flex flex-col gap-0.5 text-2xs leading-4 text-muted-foreground">
@@ -479,18 +486,35 @@ function ResponseField({
   );
 }
 
-function RequestReport({
+/** A Block's Request report still in flight: unsent, or its assessment turn not yet completed. */
+export function pendingRecovery(run: RunDetail, block: RunBlock) {
+  return run.recoveries.find(
+    (r) =>
+      r.blockId === block.blockId &&
+      (r.sourceExecutionId === block.executionId ||
+        (r.executionId === block.executionId && block.engineStatus !== "completed")),
+  );
+}
+
+/**
+ * Request report for an Agent Block idle after `executionId`. `recovery` is the request already
+ * made for that idle run; Factory rechecks that the worker thread is finished in T3.
+ */
+export function RequestReport({
   run,
-  item,
+  blockId,
+  executionId,
+  recovery,
   onUpdated,
 }: {
   run: RunDetail;
-  item: RunAttention;
+  blockId: string;
+  executionId: string | null;
+  recovery: RunDetail["recoveries"][number] | undefined;
   onUpdated: (run: RunDetail) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const recovery = run.recoveries.find((r) => r.attentionId === item.id);
   if (recovery)
     return (
       <p className="text-sm">
@@ -498,25 +522,24 @@ function RequestReport({
         execution: {recovery.sourceExecutionId}. Worker work is preserved; no automatic retry.
       </p>
     );
-  const block = run.blocks.find((b) => b.blockId === item.blockId);
-  if (!run.gateOpen || block?.executionId !== item.executionId) return null;
+  const block = run.blocks.find((b) => b.blockId === blockId);
+  if (!run.gateOpen || !executionId || block?.executionId !== executionId) return null;
   if (
     block.engineStatus !== "completed" ||
     block.freshness !== "fresh" ||
-    block.problem !== "missing-report" ||
     block.pendingRequestCount !== 0
   )
     return (
       <p className="text-sm">
-        Report recovery waits for fresh evidence that the worker, delegated work, queues and native
-        requests are quiet. No assessment turn has been started.
+        Request report waits for fresh evidence that the worker thread is idle with no pending
+        native request. No assessment turn has been started.
       </p>
     );
   async function submit() {
     setBusy(true);
     setError("");
     try {
-      onUpdated(await api.requestReport(item.id));
+      onUpdated(await api.requestReport(run.id, blockId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not request report.");
     } finally {

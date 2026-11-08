@@ -102,6 +102,9 @@ export const workerFinal = (blockId: string) => ({
     message: "Implemented the requested result.",
   },
 });
+export const workerWorking = (blockId: string) => ({
+  arguments: { blockId, to: "working", message: "Opened PR #42; waiting for its CI checks." },
+});
 /** The worker's runs end with `status` and T3 answers that the latest run's delegated and
  * background work have settled. */
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {

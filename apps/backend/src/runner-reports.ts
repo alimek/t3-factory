@@ -1,6 +1,6 @@
 import { recordReportVerdict } from "./runner-report-diagnostics.ts";
 import { acceptCoordinatorWait, settleCoordinatorWaits } from "./coordinator-conversation.ts";
-import { settleCoordinatorReports } from "./coordinator-report.ts";
+import { replaceWorking, settleCoordinatorReports } from "./coordinator-report.ts";
 import { newId } from "./ids.ts";
 import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
@@ -14,6 +14,7 @@ import { acceptedTransition, type RuntimeReply, type RuntimeReport } from "./run
 import { resolveBlock } from "./runtime-block-id.ts";
 import { now } from "./time.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
+import { acceptWorking } from "./working-report.ts";
 
 /** Exact exit names and identities resolve against the captured Flow, never a later edit. */
 function reportRoute(definitions: RunDefinitions, blockId: string, report: RuntimeReport) {
@@ -51,11 +52,11 @@ function conflictDetail(reply: RuntimeReply, block: BlockRow, runRow: ReportRunR
     allowedExits: flowBlock?.kind === "agent" ? flowBlock.exits.map((exit) => exit.name) : [],
   };
 }
-/** A waiting report is non-final: it never selects an exit and must say what the worker needs. */
-function waitingRejection(report: RuntimeReport) {
+/** Working and waiting reports are non-final: they never select an exit and must carry a message. */
+function nonFinalRejection(report: RuntimeReport) {
   if (report.status === "finished") return undefined;
-  if (report.exit !== undefined) return { code: "WAITING_EXIT_NOT_ALLOWED" };
-  if (!report.message?.trim()) return { code: "WAITING_MESSAGE_REQUIRED" };
+  if (report.exit !== undefined) return { code: "EXIT_NOT_ALLOWED" };
+  if (!report.message?.trim()) return { code: "MESSAGE_REQUIRED" };
   return undefined;
 }
 function reportFingerprint(report: RuntimeReport) {
@@ -144,6 +145,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         );
       yield* settleCoordinatorReports(sql, runRow.id, block.block_id, time);
       yield* settleCoordinatorWaits(sql, runRow.id, block.block_id, time, true);
+      yield* replaceWorking(sql, activationId, time);
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
       return reply;
     });
@@ -152,7 +154,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
   function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeReport) {
     return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
       const { runRow, block, activationId } = target;
-      const protocol = waitingRejection(report);
+      const protocol = nonFinalRejection(report);
       if (protocol) return protocol;
       const content = reportFingerprint(report);
       const [final] = yield* sql<{
@@ -168,6 +170,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       if (!route.ok) return route.reply;
       if (report.status === "waiting")
         return yield* acceptCoordinatorWait(sql, target, report, content);
+      if (report.status === "working") return yield* acceptWorking(sql, target, report, content);
       return yield* acceptReport(sql, target, report, content, route);
     });
   }

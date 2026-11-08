@@ -18,6 +18,7 @@ import {
   finishWorker,
   settleThread,
   startWorkerTurn,
+  workerWorking,
 } from "./support/run-worker.ts";
 import { prepared } from "./support/prepared-runner.ts";
 
@@ -238,6 +239,26 @@ it("a worker waiting on unsettled background work stays working without a missin
   expect(run.value.blocks[0]).toMatchObject({ state: "working", problem: null });
   expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
 });
+it("a worker idle after reporting working shows its message without a missing-report Problem", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "working",
+    engineStatus: "completed",
+    problem: null,
+    workingMessage: "Opened PR #42; waiting for its CI checks.",
+  });
+  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
 it("a reportless turn resumed by a notification shows a missing report once T3 settles the thread", async (c) => {
   // Arrange
   const f = await directWorker(c);
@@ -343,7 +364,7 @@ it("missing-report recovery targets the original worker and retains its activati
   const f = await missingWorkerReport(c);
 
   // Act
-  const result = await f.f.requestReport(f.missing.id);
+  const result = await f.f.requestReport(f.runId, { blockId: f.missing.blockId });
 
   // Assert
   assert(result.ok, JSON.stringify(result));
@@ -354,6 +375,30 @@ it("missing-report recovery targets the original worker and retains its activati
       (e) => e.executionId === [...f.t3.sends.values()][0]?.reference.runId,
     )?.activationId,
   ).toBe(result.value.activations[0]?.id);
+  expect(f.t3.launches.size).toBe(1);
+});
+it("Request report on a worker idle in working queues an assessment turn on its thread", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+  assert((await f.f.reconcileRuns()).ok);
+
+  // Act
+  const result = await f.f.requestReport(f.runId, { blockId: "worker" });
+
+  // Assert
+  assert(result.ok, JSON.stringify(result));
+  const sent = [...f.t3.sends.values()];
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.payload.threadId).toBe("thread-1");
+  expect(sent[0]?.payload.message).toContain(`Factory Block id: ${f.blockId}.`);
+  expect(sent[0]?.payload.message).toContain(
+    "Factory Request report: assess the existing work without repeating the task.",
+  );
+  expect(result.value.recoveries).toMatchObject([
+    { blockId: "worker", attentionId: null, sourceExecutionId: "execution-1" },
+  ]);
   expect(f.t3.launches.size).toBe(1);
 });
 it("a revisit reuses the direct worker with distinct activation ownership", async (c) => {

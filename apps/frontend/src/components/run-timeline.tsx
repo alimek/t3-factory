@@ -146,6 +146,7 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   ),
   "handoff-released": said("handoff released · source completion checks passed"),
   "report-accepted": reported,
+  "working-reported": said("still working · not a final result"),
   "source-completion-confirmed": said(
     "source execution completion confirmed · no native requests observed",
   ),

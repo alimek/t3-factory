@@ -108,12 +108,18 @@ function recordExecutions(
   });
 }
 
-type ActivationFacts = { id: string; reported: number; waiting: number };
+type ActivationFacts = { id: string; reported: number; waiting: number; working: number };
 
 /** Missing report: the thread is finished, its latest run completed, and the current activation
- * has neither a final result nor a pending question. */
+ * has no final result, pending question or current working report. */
 function missingReport({ finished, latest }: WorkerThread, activation: ActivationFacts) {
-  return finished && latest?.status === "completed" && !activation.reported && !activation.waiting;
+  return (
+    finished &&
+    latest?.status === "completed" &&
+    !activation.reported &&
+    !activation.waiting &&
+    !activation.working
+  );
 }
 
 function blockState(
@@ -136,7 +142,7 @@ function recordActivation(
   return Effect.gen(function* () {
     const { latest } = worker;
     const [activation] =
-      yield* sql<ActivationFacts>`SELECT a.id,EXISTS(SELECT 1 FROM runtime_reports r WHERE r.activation_id=a.id) AS reported,EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_attention q ON q.id=w.attention_id WHERE w.activation_id=a.id AND q.settled_at IS NULL) AS waiting FROM run_activations a WHERE a.run_id=${run.id} AND a.block_id=${block.block_id} ORDER BY a.rowid DESC LIMIT 1`;
+      yield* sql<ActivationFacts>`SELECT a.id,EXISTS(SELECT 1 FROM runtime_reports r WHERE r.activation_id=a.id) AS reported,EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_attention q ON q.id=w.attention_id WHERE w.activation_id=a.id AND q.settled_at IS NULL) AS waiting,EXISTS(SELECT 1 FROM working_reports w WHERE w.activation_id=a.id AND w.replaced_at IS NULL) AS working FROM run_activations a WHERE a.run_id=${run.id} AND a.block_id=${block.block_id} ORDER BY a.rowid DESC LIMIT 1`;
     if (!activation) throw Error("Activation is missing.");
     if (latest) {
       const missing = missingReport(worker, activation);

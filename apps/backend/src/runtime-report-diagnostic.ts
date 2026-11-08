@@ -21,13 +21,13 @@ const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
     "This visit already has a final result with different content.",
     "Read the accepted result with factory_get_run. Do not repeat the task or replace that final result.",
   ],
-  WAITING_EXIT_NOT_ALLOWED: [
-    "A waiting report cannot select an exit.",
-    "Remove the exit and report what you need from the user.",
+  EXIT_NOT_ALLOWED: [
+    "Only a finished report selects an exit; working and waiting reports cannot.",
+    "Remove the exit. Report finished with an exit only when the task is complete.",
   ],
-  WAITING_MESSAGE_REQUIRED: [
-    "A waiting report must explain what you need from the user.",
-    "Add the unanswered question or decision to the waiting message.",
+  MESSAGE_REQUIRED: [
+    "A working or waiting report needs a message.",
+    "For working, say what you are still doing or waiting on; for waiting, add the question or decision you need from the user.",
   ],
   FEEDBACK_REQUIRED: [
     "The selected exit requires a result message.",

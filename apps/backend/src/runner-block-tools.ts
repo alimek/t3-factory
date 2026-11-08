@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import type { RunDetail } from "@t3-factory/contracts";
 import type { RunnerDatabase } from "./runner-database.ts";
-import type { RuntimeReply } from "./runtime-types.ts";
+import { OPEN_TRANSITIONS, type RuntimeReply } from "./runtime-types.ts";
 import { reportDiagnostic } from "./runtime-report-diagnostic.ts";
 import { blockIdArgument, resolveBlock } from "./runtime-block-id.ts";
 
@@ -57,7 +57,7 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
         : null,
     },
-    allowedTransitions: current && !finished ? ["waiting", "finished"] : [],
+    allowedTransitions: current && !finished ? OPEN_TRANSITIONS : [],
   };
 }
 

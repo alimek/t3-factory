@@ -25,3 +25,8 @@ export function settleCoordinatorReports(
       );
   });
 }
+
+/** A later report of the same activation ends its current working report, keeping its history. */
+export function replaceWorking(sql: SqlClient.SqlClient, activationId: string, time: string) {
+  return sql`UPDATE working_reports SET replaced_at=${time} WHERE activation_id=${activationId} AND replaced_at IS NULL`;
+}

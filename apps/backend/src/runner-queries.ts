@@ -12,6 +12,7 @@ import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
+import { currentWorkingMessages } from "./working-report.ts";
 import type {
   BlockRow,
   ExecutionRow,
@@ -42,7 +43,11 @@ type RunEventRow = {
   engine_status: string | null;
 };
 
-function runBlock(block: BlockRow, intents: readonly IntentRow[]): RunDetail["blocks"][number] {
+function runBlock(
+  block: BlockRow,
+  intents: readonly IntentRow[],
+  workingMessage: string | null,
+): RunDetail["blocks"][number] {
   const recovering = intents.some(
     (intent) =>
       intent.block_id === block.block_id &&
@@ -58,6 +63,7 @@ function runBlock(block: BlockRow, intents: readonly IntentRow[]): RunDetail["bl
     link: threadHref(block.link),
     engineStatus: block.engine_status,
     reportStatus: block.report_status,
+    workingMessage,
     problem: block.problem,
     pendingRequestCount: block.pending_request_count,
     observedAt: block.observed_at,
@@ -244,6 +250,9 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const humans =
           yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE run_id=${id} ORDER BY rowid`;
         const attention = yield* attentionRows(sql, id);
+        const working = new Map(
+          (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
+        );
         const [closure] = yield* sql<ClosureRow>`SELECT * FROM run_closures WHERE run_id=${id}`;
         const { definitions } = runRow;
         return {
@@ -268,7 +277,9 @@ export function openRunnerQueries(database: RunnerDatabase) {
             stopRequestedAt: runRow.stop_requested_at,
             gateOpen: !!runRow.gate_open,
             generation: runRow.generation,
-            blocks: blocks.map((block) => runBlock(block, intents)),
+            blocks: blocks.map((block) =>
+              runBlock(block, intents, working.get(block.block_id) ?? null),
+            ),
             reports: reports.map(runReport),
             executions: executions.map(runExecution),
             humanOccurrences: humans.map(humanOccurrence),

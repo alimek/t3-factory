@@ -74,7 +74,8 @@ export function settleRecoveries(
     const detail = yield* lifecycle.getRun(id);
     if (!current?.gate_open || current.closed_at || !detail.ok) return;
     const settlements: {
-      attentionId: string;
+      intentId: string;
+      attentionId: string | null;
       blockId: string;
       executionId: string;
       sourceExecutionId: string;
@@ -95,6 +96,7 @@ export function settleRecoveries(
       );
       if (worker?.finished)
         settlements.push({
+          intentId: recovery.intentId,
           attentionId: recovery.attentionId,
           blockId: recovery.blockId,
           executionId: chain.executionId,
@@ -111,7 +113,8 @@ export function settleRecoveries(
         const time = yield* now;
         for (const recovery of settlements) {
           yield* settleReportRejections(sql, id, recovery.blockId, time);
-          yield* sql`UPDATE report_recoveries SET settled_at=${time} WHERE attention_id=${recovery.attentionId} AND settled_at IS NULL`;
+          yield* sql`UPDATE report_recoveries SET settled_at=${time} WHERE intent_id=${recovery.intentId} AND settled_at IS NULL`;
+          if (!recovery.attentionId) continue;
           yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason=${"recovered-by:" + recovery.executionId} WHERE id=${recovery.attentionId} AND settled_at IS NULL`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${id},${recovery.blockId},${recovery.executionId},'attention-settled',${"attention-settled:" + recovery.attentionId},${recovery.attentionId},${time}) ON CONFLICT DO NOTHING`;
         }

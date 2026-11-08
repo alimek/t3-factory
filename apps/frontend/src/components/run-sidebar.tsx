@@ -609,6 +609,9 @@ function RunRow({
   busy: boolean;
 }) {
   const state = execution(run);
+  const working = run.blocks.find(
+    (block) => block.state === "working" && block.workingMessage,
+  )?.workingMessage;
   const [menuOpen, setMenuOpen] = useState(false);
   const titleRef = useRef<HTMLSpanElement>(null);
   const [titleTip, setTitleTip] = useState(false);
@@ -659,6 +662,11 @@ function RunRow({
                   <RunStatusChip kind="project-unavailable" />
                 )}
               </span>
+              {working && (
+                <span className="block truncate text-2xs leading-tight text-muted-foreground">
+                  {working}
+                </span>
+              )}
               <span className="sr-only">, {state.label}</span>
             </span>
           </Link>

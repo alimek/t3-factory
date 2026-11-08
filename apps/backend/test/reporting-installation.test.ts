@@ -292,6 +292,9 @@ it("an installed Claude entry reaches the Factory tools on the listening backend
     ["blockId"],
     ["blockId"],
   ]);
+  expect(listed.tools[0]?.inputSchema.properties?.to).toMatchObject({
+    enum: ["working", "waiting", "finished"],
+  });
 });
 
 it("repairing a Codex entry for another backend address replaces only Factory's entry", async (context) => {

@@ -28,7 +28,11 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { RunAttentionDetails } from "../components/run-attention.tsx";
+import {
+  pendingRecovery,
+  RequestReport,
+  RunAttentionDetails,
+} from "../components/run-attention.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
 import { blockVisits, ExecutionCanvas } from "../components/execution-canvas.tsx";
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
@@ -614,6 +618,22 @@ function BlockDetails({
           observationUnavailable={observationUnavailable}
           onUpdated={onUpdated}
         />
+        {recorded.state === "working" && recorded.workingMessage && (
+          <DetailSection title="Working report">
+            <div className="flex flex-col gap-3 px-2">
+              <p className="text-sm break-words whitespace-pre-wrap text-foreground">
+                {recorded.workingMessage}
+              </p>
+              <RequestReport
+                run={run}
+                blockId={block.id}
+                executionId={recorded.executionId}
+                recovery={pendingRecovery(run, recorded)}
+                onUpdated={onUpdated}
+              />
+            </div>
+          </DetailSection>
+        )}
         <CoordinatorActivations run={run} blockId={block.id} />
         <DetailSection title="Execution">
           <dl className="flex flex-col gap-2">

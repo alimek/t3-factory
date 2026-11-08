@@ -152,6 +152,32 @@ async function conversationWaitingScenario(context: SeedContext, flowId: string)
   );
 }
 
+/** The worker reports working while CI runs and ends its turn; no missing report appears. */
+async function workingReportScenario(context: SeedContext, flowId: string) {
+  let run = await startScenario(
+    context,
+    flowId,
+    "working-report",
+    "Monitoring · Agent is watching CI for the search fix",
+    "Fix the search ranking regression, open a pull request and wait for its CI checks before reporting.",
+  );
+  run = await report(context, run, "worker", {
+    to: "working",
+    message:
+      "Opened pull request #42 with the ranking fix. CI checks are still running; I will report when they finish.",
+  });
+  await observeTerminal(context.t3, executionBlock(run), "completed");
+  await reconcileUntil(context, run.id, (detail) =>
+    detail.blocks.some(
+      (block) =>
+        block.blockId === "worker" &&
+        block.engineStatus === "completed" &&
+        block.state === "working" &&
+        block.problem === null,
+    ),
+  );
+}
+
 /** A rejected final is distinct from completed work with no accepted report. */
 async function rejectedReportScenario(context: SeedContext, flowId: string) {
   const run = await startScenario(
@@ -226,6 +252,7 @@ export async function seedScenarios(
   await waitingForReview(context, flows.review, true);
   await parallelScenario(context, flows.parallel);
   await parallelStartScenario(context, flows.parallelStart);
+  await workingReportScenario(context, flows.simple);
   const working = await startScenario(
     context,
     flows.simple,

@@ -8,6 +8,7 @@ import {
   revisitReportingWorker,
   workerFinal,
   workerStart,
+  workerWorking,
 } from "./support/run-worker.ts";
 
 it("factory_get_block reads the Block named by the id in its launch message", async (c) => {
@@ -29,7 +30,7 @@ it("factory_get_block reads the Block named by the id in its launch message", as
       results: [],
       feedback: null,
     },
-    allowedTransitions: ["waiting", "finished"],
+    allowedTransitions: ["working", "waiting", "finished"],
   });
 });
 
@@ -106,7 +107,7 @@ it("a worker resumed by the user's reply reads its Block and may report again", 
   expect(result).toMatchObject({
     code: "BLOCK",
     visit: 1,
-    allowedTransitions: ["waiting", "finished"],
+    allowedTransitions: ["working", "waiting", "finished"],
   });
 });
 
@@ -252,7 +253,7 @@ it("a waiting Block update tells the worker to wait for a user reply", async (c)
   expect(result).toMatchObject({
     code: "ACCEPTED",
     state: "waiting",
-    allowedTransitions: ["waiting", "finished"],
+    allowedTransitions: ["working", "waiting", "finished"],
     next: expect.stringContaining("waits for a user reply"),
   });
   const run = await fixture.f.getRun(fixture.runId);
@@ -304,6 +305,117 @@ it("a newer waiting report replaces the Block's question", async (c) => {
     { message: "Which tone?", settled: false },
     { message: "Which audience?", settled: true },
   ]);
+});
+
+it("a working Block update is accepted with its message and selects no result", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: {
+      blockId: fixture.blockId,
+      to: "working",
+      message: "Opened PR #42; waiting for its CI checks.",
+    },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "ACCEPTED",
+    state: "working",
+    allowedTransitions: ["working", "waiting", "finished"],
+    next: expect.stringContaining("no missing-report Problem"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "working",
+    reportStatus: "working",
+    workingMessage: "Opened PR #42; waiting for its CI checks.",
+  });
+  expect(run.value.reports).toStrictEqual([]);
+});
+
+it("a later finished report replaces the Block's working report", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ reportStatus: "finished", workingMessage: null });
+  expect(run.value.reports).toMatchObject([{ status: "finished", exitId: "done" }]);
+});
+
+it("a later waiting report replaces the Block's working report with a question", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { blockId: fixture.blockId, to: "waiting", message: "Merge with failing lint?" },
+  });
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ state: "waiting", workingMessage: null });
+  expect(
+    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
+  ).toMatchObject([{ message: "Merge with failing lint?" }]);
+});
+
+it("a working report without a message is refused with repair guidance", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { blockId: fixture.blockId, to: "working", message: "  " },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "MESSAGE_REQUIRED",
+    reason: expect.stringContaining("needs a message"),
+    next: expect.stringContaining("what you are still doing or waiting on"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ reportStatus: null, workingMessage: null });
+});
+
+it("a working report that selects an exit is refused with repair guidance", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: {
+      blockId: fixture.blockId,
+      to: "working",
+      exit: "Done",
+      message: "Waiting for CI.",
+    },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "EXIT_NOT_ALLOWED",
+    reason: expect.stringContaining("Only a finished report selects an exit"),
+    next: expect.stringContaining("Remove the exit"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ reportStatus: null, workingMessage: null });
 });
 
 it("an unknown exit names the exits captured for that Block", async (c) => {

@@ -140,8 +140,9 @@ function runResponseRoutes(factory: Factory): readonly ApiRoute[] {
     },
     {
       method: "POST",
-      path: /^\/api\/attention\/([^/]+)\/request-report$/,
-      handle: fromId((id) => factory.requestReport(id)),
+      path: /^\/api\/runs\/([^/]+)\/request-report$/,
+      body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
+      handle: fromCall((id, input: { blockId: string }) => factory.requestReport(id, input)),
     },
     {
       method: "POST",

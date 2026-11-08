@@ -186,6 +186,57 @@ test("reloading a waiting worker retains its exact question link", async ({
   await app.screenshot("worker-question-after-reload");
 });
 
+test("a worker idle in working shows its message on the canvas and in its Run row", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const found = await findRun(
+    app.baseUrl,
+    "Demo · Monitoring · Agent is watching CI for the search fix",
+  );
+
+  // Act
+  await app.open(`/runs/${found.id}`);
+
+  // Assert
+  await expect(screen.getByRole("article", "Block Implement change")).toContainText(
+    "CI checks are still running",
+  );
+  await expect(
+    screen
+      .getByRole("navigation", "Open Runs")
+      .getByRole("link", /^Demo · Monitoring · Agent is watching CI/),
+  ).toContainText("CI checks are still running");
+  await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
+  await app.screenshot("worker-working-message");
+});
+
+test("Request report asks a worker idle in working to assess its existing work", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const found = await findRun(
+    app.baseUrl,
+    "UI worker · Monitoring · Agent is watching CI for the search fix",
+  );
+  await app.open(`/runs/${found.id}`);
+  await screen.getByRole("button", "Agent Implement change", { exact: false }).tap();
+  const details = screen.getByRole("complementary", "Block details");
+  await expect(details).toContainText("Opened pull request #42");
+
+  // Act
+  await details.getByRole("button", "Request report", { exact: true }).tap();
+
+  // Assert
+  await expect(details.getByText("Report requested ·", { exact: false })).toBeVisible();
+  const saved = await readHistoryRun(app.baseUrl, found.id);
+  expect(saved.recoveries).toMatchObject([{ blockId: "worker", attentionId: null }]);
+  expect(saved.attention.filter((a) => a.kind === "missing-report")).toEqual([]);
+  await app.screenshot("worker-working-report-requested");
+});
+
 test("a native worker reply completes the same activation and preserves its waiting history", async ({
   app,
   screen,

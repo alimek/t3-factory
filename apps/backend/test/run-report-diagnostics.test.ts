@@ -101,7 +101,7 @@ it("Request report refuses a stale missing-report Problem while delegated work i
   settleThread(f.t3, "execution-1", "completed", "pending");
 
   // Act
-  const result = await f.f.requestReport(f.missing.id);
+  const result = await f.f.requestReport(f.runId, { blockId: f.missing.blockId });
 
   // Assert
   assert(!result.ok);

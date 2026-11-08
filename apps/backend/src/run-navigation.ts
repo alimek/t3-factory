@@ -9,6 +9,7 @@ import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { failure } from "./result.ts";
+import { currentWorkingMessages } from "./working-report.ts";
 export function openRunNavigation(
   database: RunnerDatabase,
   getRun: (id: string) => Effect.Effect<Result<RunDetail>, unknown>,
@@ -37,13 +38,24 @@ export function openRunNavigation(
           LEFT JOIN run_closures c ON c.run_id=r.id LEFT JOIN run_presentation rp ON rp.run_id=r.id ORDER BY r.created_at DESC,r.creation_key`;
           const blocks = yield* sql<{
             run_id: string;
+            block_id: string;
             state: RunNavigationEntry["blocks"][number]["state"];
             freshness: RunNavigationEntry["blocks"][number]["freshness"];
-          }>`SELECT run_id,state,freshness FROM run_blocks ORDER BY rowid`;
+          }>`SELECT run_id,block_id,state,freshness FROM run_blocks ORDER BY rowid`;
+          const working = new Map(
+            (yield* currentWorkingMessages(sql)).map((row) => [
+              `${row.run_id}/${row.block_id}`,
+              row.message,
+            ]),
+          );
           const byRun = new Map<string, RunNavigationEntry["blocks"][number][]>();
           for (const block of blocks) {
             const entries = byRun.get(block.run_id) ?? [];
-            entries.push({ state: block.state, freshness: block.freshness });
+            entries.push({
+              state: block.state,
+              freshness: block.freshness,
+              workingMessage: working.get(`${block.run_id}/${block.block_id}`) ?? null,
+            });
             byRun.set(block.run_id, entries);
           }
           const pending = yield* sql<{

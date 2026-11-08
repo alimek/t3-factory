@@ -1,6 +1,6 @@
 /** Report protocol shapes shared by the runtime boundary and the Runner that consumes it. */
 export interface RuntimeReport {
-  readonly status: "waiting" | "finished";
+  readonly status: "working" | "waiting" | "finished";
   readonly exit?: string;
   readonly message?: string;
 }
@@ -42,21 +42,28 @@ export type RuntimeReply = {
   }[];
 };
 
-const WAITING_NEXT =
-  "Factory waits for a user reply in this thread. Report again from any later turn: waiting replaces this question, finished completes the Block.";
-const FINISHED_NEXT =
-  "Factory keeps this final and releases downstream work after this thread and its delegated work settle.";
+const NEXT: Record<RuntimeReport["status"], string> = {
+  working:
+    "Factory shows this message on your Block and raises no missing-report Problem while it is your latest report. Report again when that changes: working replaces this message, waiting asks the user, finished completes the Block.",
+  waiting:
+    "Factory waits for a user reply in this thread. Report again from any later turn: working or waiting replaces this question, finished completes the Block.",
+  finished:
+    "Factory keeps this final and releases downstream work after this thread and its delegated work settle.",
+};
+
+/** The reports a visit still accepts before its finished result. */
+export const OPEN_TRANSITIONS = ["working", "waiting", "finished"] as const;
 
 /** The acknowledgement the model can act on: current Block state, remaining transitions, and Factory's next step. */
 export function acceptedTransition<T extends RuntimeReply>(
   reply: T,
-  status: "waiting" | "finished",
+  status: RuntimeReport["status"],
   state: string,
 ): T & Pick<RuntimeReply, "state" | "allowedTransitions" | "next"> {
   return {
     ...reply,
     state,
-    allowedTransitions: status === "waiting" ? ["waiting", "finished"] : [],
-    next: status === "finished" ? FINISHED_NEXT : WAITING_NEXT,
+    allowedTransitions: status === "finished" ? [] : OPEN_TRANSITIONS,
+    next: NEXT[status],
   };
 }

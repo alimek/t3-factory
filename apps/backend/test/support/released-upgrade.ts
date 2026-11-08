@@ -23,12 +23,13 @@ type ReleasedMember = Closure["frontier"][number] & {
 };
 /** v0.2.0 also returned report keys (retired per-turn report authority) and Factory's own
  * completion evidence: activation coverage, remote work, closure coordination and queue
- * coverage, and Run-conversation control recoveries. */
+ * coverage, and Run-conversation control recoveries. It had no working reports. */
 type ReleasedRun = Omit<
   CurrentRun,
-  "definitions" | "reports" | "activations" | "closure" | "coordinationActions"
+  "definitions" | "blocks" | "reports" | "activations" | "closure" | "coordinationActions"
 > & {
   snapshot: ReleasedSnapshot;
+  blocks: readonly Omit<CurrentRun["blocks"][number], "workingMessage">[];
   reports: readonly (CurrentRun["reports"][number] & { key: string })[];
   activations: readonly (CurrentRun["activations"][number] & {
     coverage: string;
@@ -89,13 +90,14 @@ function currentClosure(closure: NonNullable<ReleasedRun["closure"]>): Closure {
 }
 
 /** The released closed Run as current Run detail shows it: the same history without the
- * retired report keys and completion evidence. */
+ * retired report keys and completion evidence, and with no working message. */
 export function currentClosedRun(released: ReleasedRun): CurrentRun {
   const { snapshot, remoteWork: _remote, closure, coordinationActions, ...run } = released;
   const { controlRecoveries: _controls, ...actions } = coordinationActions;
   return {
     ...run,
     definitions: capturedDefinitions(snapshot),
+    blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),
     activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),
     coordinationActions: actions,

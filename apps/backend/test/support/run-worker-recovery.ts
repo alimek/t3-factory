@@ -1,11 +1,8 @@
 import { assert, type TestContext } from "@effect/vitest";
 import { missingWorkerReport, workerFinal, directWorker, finishWorker } from "./run-worker.ts";
 
-async function workerRecoveryTurn(
-  f: Awaited<ReturnType<typeof directWorker>>,
-  attentionId: string,
-) {
-  assert((await f.f.requestReport(attentionId)).ok);
+async function workerRecoveryTurn(f: Awaited<ReturnType<typeof directWorker>>, blockId: string) {
+  assert((await f.f.requestReport(f.runId, { blockId })).ok);
   const sent = [...f.t3.sends.values()][0]!;
   const executionId = sent.reference.runId;
   f.t3.sends.set(sent.payload.clientRequestId, {
@@ -24,7 +21,7 @@ async function workerRecoveryTurn(
 
 export async function completedWorkerRecovery(c: TestContext) {
   const f = await missingWorkerReport(c);
-  const { executionId, sent } = await workerRecoveryTurn(f, f.missing.id);
+  const { executionId, sent } = await workerRecoveryTurn(f, f.missing.blockId);
   assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   f.t3.sends.set(sent.payload.clientRequestId, {
     ...sent,
@@ -49,5 +46,5 @@ export async function rejectedWorkerReport(c: TestContext) {
 
 export async function recoveringRejectedWorker(c: TestContext) {
   const f = await missingWorkerReport(c, await rejectedWorkerReport(c));
-  return workerRecoveryTurn(f, f.missing.id);
+  return workerRecoveryTurn(f, f.missing.blockId);
 }
