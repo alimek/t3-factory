@@ -16,6 +16,7 @@ import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-va
 import type { T3Adapter, T3Project } from "./adapters/t3.ts";
 import { loadProjectFavicon, projectFaviconUrl } from "./project-favicon.ts";
 import { failure as operationFailure } from "./result.ts";
+import type { LiveChanges } from "./live-changes.ts";
 
 type Row = {
   id: string;
@@ -59,6 +60,7 @@ export const makeProjects = (
     recheckConnection(): Effect.Effect<Result<T3Connection>, unknown>;
   },
   intervalMs: number,
+  changes: LiveChanges,
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -123,6 +125,8 @@ export const makeProjects = (
           }
         }),
       );
+      // Navigation rows show project titles and availability.
+      changes.navigationChanged();
     });
     const reconcile = Effect.fn("Projects.reconcile")(function* () {
       const status = yield* connection.recheckConnection();

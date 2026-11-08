@@ -23,6 +23,7 @@ import { openRunnerArchive } from "./runner-archive.ts";
 import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
+import type { LiveChanges } from "./live-changes.ts";
 
 /** One scoped Runner owner. Accepted work drains before SQL and ownership are released. */
 export const makeRunner = Effect.fn("Runner.make")(function* (
@@ -31,10 +32,11 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   owner: { token: string },
   intervalMs: number,
   checkAgent: RunnerOptions["checkAgent"],
+  changes: LiveChanges,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const scope = yield* Effect.scope;
-  const database = openRunnerDatabase(sql, owner);
+  const database = openRunnerDatabase(sql, owner, changes);
   const { row } = database;
   const { getRun, listTasks, updateTask, listAttention } = openRunnerQueries(database);
   let closed = false;

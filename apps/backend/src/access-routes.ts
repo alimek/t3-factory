@@ -10,6 +10,7 @@ import type {
 import { credentialCookie, requestCredential, type RequestLimiter } from "./client-transport.ts";
 import { resultResponse, standardBody, type ApiRoute } from "./http-support.ts";
 import type { Factory } from "./open-factory.ts";
+import type { LiveTransport } from "./live-transport.ts";
 import { failure } from "./result.ts";
 
 /** Host-local control of the approved-client listener. */
@@ -56,6 +57,7 @@ export function accessRoutes(
   protocol: ProtocolDescriptor,
   remote: RemoteAccessControl,
   limiter: RequestLimiter,
+  live: Pick<LiveTransport, "closeClient">,
 ): readonly ApiRoute[] {
   const promised =
     (operation: () => Promise<Result<unknown>>) =>
@@ -74,7 +76,11 @@ export function accessRoutes(
               ? factory.denyClient(id)
               : factory.revokeClient(id),
         ),
-        (result) => resultResponse(result),
+        (result) => {
+          // Revocation ends the client's open live delivery; later requests fail authentication.
+          if (result.ok && action === "revoke") live.closeClient(id);
+          return resultResponse(result);
+        },
       ),
   });
   return [

@@ -1,0 +1,52 @@
+import * as Effect from "effect/Effect";
+import * as Latch from "effect/Latch";
+
+export type LiveScope =
+  | { readonly kind: "connection" }
+  | { readonly kind: "navigation" }
+  | { readonly kind: "run"; readonly runId: string };
+
+interface Watcher {
+  readonly scope: LiveScope;
+  /** Open means the scope may have changed since the subscriber last read it. */
+  readonly dirty: Latch.Latch;
+}
+
+/**
+ * In-memory post-commit change hints. Writers call these only after their transaction
+ * commits (or after an authoritative in-memory connection transition). A hint only marks
+ * watchers dirty; subscribers re-read committed state themselves, so publication is
+ * synchronous, bounded and can neither block nor fail the writer.
+ */
+export function makeLiveChanges() {
+  const watchers = new Set<Watcher>();
+  const mark = (affected: (scope: LiveScope) => boolean) => {
+    for (const watcher of watchers) if (affected(watcher.scope)) watcher.dirty.openUnsafe();
+  };
+  return {
+    /** Every Run change may also change its navigation row. */
+    runChanged(runId: string) {
+      mark(
+        (scope) => scope.kind === "navigation" || (scope.kind === "run" && scope.runId === runId),
+      );
+    },
+    navigationChanged() {
+      mark((scope) => scope.kind === "navigation");
+    },
+    connectionChanged() {
+      mark((scope) => scope.kind === "connection");
+    },
+    /** Registered for the caller's scope; register before reading a snapshot. */
+    watch(scope: LiveScope) {
+      return Effect.acquireRelease(
+        Effect.sync(() => {
+          const watcher: Watcher = { scope, dirty: Latch.makeUnsafe(false) };
+          watchers.add(watcher);
+          return watcher;
+        }),
+        (watcher) => Effect.sync(() => watchers.delete(watcher)),
+      ).pipe(Effect.map((watcher) => watcher.dirty));
+    },
+  };
+}
+export type LiveChanges = ReturnType<typeof makeLiveChanges>;

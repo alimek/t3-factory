@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -41,6 +42,13 @@ export async function listen(
       NodeHttpServer.layer(() => nodeServer, { host, port, gracefulShutdownTimeout: 0 }),
     ),
   );
+  // closeAllConnections skips upgraded sockets; ending them here does not wait for a peer's
+  // close handshake and discards data still queued for it.
+  const upgraded = new Set<Duplex>();
+  nodeServer.on("upgrade", (_request, socket: Duplex) => {
+    upgraded.add(socket);
+    socket.once("close", () => upgraded.delete(socket));
+  });
   const scope = await Effect.runPromise(Scope.make());
   try {
     await Effect.runPromise(
@@ -62,6 +70,7 @@ export async function listen(
           nodeServer.closeIdleConnections();
           // Revoked or stopped access must not survive on kept-alive sockets.
           nodeServer.closeAllConnections();
+          for (const socket of upgraded) socket.destroy();
           yield* Scope.close(scope, Exit.void);
         }),
       )),

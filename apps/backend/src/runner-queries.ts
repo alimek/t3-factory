@@ -314,11 +314,15 @@ export function openRunnerQueries(database: RunnerDatabase) {
           let [task] =
             yield* sql<TaskRow>`SELECT id,title,project_id,created_at FROM tasks WHERE id=${id}`;
           if (!task) return failure("not_found", "This Task does not exist.");
-          if (task.title !== title) {
+          const renamed = task.title !== title;
+          if (renamed) {
             yield* sql`UPDATE tasks SET title=${title} WHERE id=${id}`;
             task = { ...task, title };
           }
-          return { ok: true as const, value: yield* taskSummary(sql, task) };
+          const summary = yield* taskSummary(sql, task);
+          // Each of the Task's Runs shows its title.
+          if (renamed) for (const entry of summary.runs) database.changes.runChanged(entry.id);
+          return { ok: true as const, value: summary };
         }),
       );
     });

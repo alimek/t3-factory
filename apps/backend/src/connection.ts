@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { AuthorizationContext, Result, T3Connection } from "@t3-factory/contracts";
 import type { T3Adapter, T3ConnectionReason } from "./adapters/t3.ts";
+import type { LiveChanges } from "./live-changes.ts";
 
 type ContextRow = {
   id: string;
@@ -46,7 +47,8 @@ const missingEndpoint = (message: string) => ({
   error: { code: "validation" as const, message, issues: [] },
 });
 
-export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
+/** Every status transition is published to live subscribers; `status` is the authority. */
+export const makeConnection = (t3: T3Adapter, intervalMs: number, changes: LiveChanges) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const mutex = yield* Semaphore.make(1);
@@ -119,6 +121,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
           authorizationPending: observation.reason === "approval-pending",
           contract: observation.contract ?? null,
         };
+        changes.connectionChanged();
         if (status.state === "ready" && (!observation.authorizationIdentity || !environment)) {
           status = {
             ...status,
@@ -126,6 +129,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
             explanation:
               "T3 did not provide a verifiable authorization context and environment. Reauthorize and recheck.",
           };
+          changes.connectionChanged();
         }
         return value();
       }).pipe(
@@ -140,6 +144,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
               explanation:
                 "T3 is unavailable. Start T3 or check the endpoint and network. Factory will reconnect automatically.",
             };
+            changes.connectionChanged();
             return value();
           }),
         ),
@@ -160,6 +165,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
         contract: null,
         state: "authorization-required",
       };
+      changes.connectionChanged();
       return yield* Effect.tryPromise(() => t3.authorize({ endpoint: endpoint.endpoint })).pipe(
         Effect.matchEffect({
           onFailure: () =>
@@ -169,6 +175,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
                 explanation:
                   "Authorization could not start. Check T3, backend-host browser and loopback callback port 43827, then authorize again.",
               };
+              changes.connectionChanged();
               return value();
             }),
           onSuccess: () => check(),
@@ -199,6 +206,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
               saved = { endpoint, context_id: null };
               current = undefined;
               status = { ...status, endpoint, authorizationContext: null, contract: null };
+              changes.connectionChanged();
             }
             return yield* check();
           }),
@@ -234,6 +242,7 @@ export const makeConnection = (t3: T3Adapter, intervalMs: number) =>
                 explanation:
                   "Factory could not open the backend-host browser. The pending approval is unchanged; check the host's desktop/browser setup and try again.",
               };
+              changes.connectionChanged();
               return value();
             }
             if (resumed.value !== "none") return yield* check();

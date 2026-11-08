@@ -18,6 +18,8 @@ import type { acquireRunnerOwner } from "./runner-owner.ts";
 import { makeRunner } from "./runner.ts";
 import { makeClientAccess } from "./client-access.ts";
 import { failure } from "./result.ts";
+import { makeLiveChanges } from "./live-changes.ts";
+import { makeLiveStreams, type LiveStreams } from "./live-streams.ts";
 
 /** Public Effect service shared by HTTP, background workers and controlled-clock tests. */
 export class FactoryService extends Context.Service<
@@ -25,6 +27,7 @@ export class FactoryService extends Context.Service<
   EffectOperations<FactoryOperations> & {
     readonly runtime: RuntimeReports;
     readonly setRuntimeBackendUrl: (url: string) => void;
+    readonly live: LiveStreams;
   }
 >()("factory/FactoryService") {}
 
@@ -58,8 +61,9 @@ export const makeFactoryService = (
 ) =>
   Effect.gen(function* () {
     const intervalMs = options.connectionRetryMs ?? 5_000;
-    const connection = yield* makeConnection(t3, intervalMs);
-    const projects = yield* makeProjects(t3, connection, intervalMs);
+    const changes = makeLiveChanges();
+    const connection = yield* makeConnection(t3, intervalMs, changes);
+    const projects = yield* makeProjects(t3, connection, intervalMs, changes);
     yield* projects.recheckProjects();
     const definitions = yield* makeDefinitions(t3, connection);
     const clients = yield* makeClientAccess;
@@ -150,15 +154,22 @@ export const makeFactoryService = (
       revokeClient: (id) => clients.revokeClient(id),
       getHostLifecycle: () => clients.getHostLifecycle(),
     };
+    const guarded = guardOperations(operations);
     const factory: FactoryService["Service"] = {
-      ...guardOperations(operations),
+      ...guarded,
       runtime: runtimeReports,
       setRuntimeBackendUrl: (url) => {
         runtimeBackendUrl = url;
       },
+      live: makeLiveStreams(changes, guarded),
     };
-    runner = yield* makeRunner(factory, t3, owner, intervalMs, (projectId, agent) =>
-      setup.recheckAgent(projectId, agent),
+    runner = yield* makeRunner(
+      factory,
+      t3,
+      owner,
+      intervalMs,
+      (projectId, agent) => setup.recheckAgent(projectId, agent),
+      changes,
     );
     yield* runner.initialize();
     return factory;

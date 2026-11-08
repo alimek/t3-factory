@@ -14,6 +14,7 @@ import {
 } from "@t3-factory/backend/server";
 import { prepared } from "./prepared-runner.ts";
 import { installFirstReportingTarget, reportingFixture } from "./reporting.ts";
+import type { LiveEndpoint } from "./live.ts";
 
 interface Reply<A = unknown> {
   readonly status: number;
@@ -32,11 +33,26 @@ class RemoteClient {
   private readonly agent: Agent;
   constructor(
     private readonly base: () => string,
-    trustAnchor: string,
+    private readonly trustAnchor: string,
     readonly kind: ClientKind,
     readonly protocol = { protocol: FACTORY_PROTOCOL, minimum: FACTORY_MINIMUM_SERVER_PROTOCOL },
   ) {
     this.agent = new Agent({ keepAlive: true, ca: trustAnchor });
+  }
+
+  /** The live endpoint as this client's window or desktop main process opens it. */
+  live(): LiveEndpoint {
+    const { host } = new URL(this.base());
+    return {
+      base: `wss://${host}`,
+      ca: this.trustAnchor,
+      protocol: this.protocol,
+      headers: {
+        origin: `https://${host}`,
+        ...(this.credential ? { authorization: `Bearer ${this.credential}` } : {}),
+        ...(this.cookie ? { cookie: this.cookie } : {}),
+      },
+    };
   }
 
   private options(
@@ -231,6 +247,15 @@ export async function remoteServer(
     },
     hostBase,
     trustAnchor,
+    /** The live endpoint as a window on the host opens it. */
+    hostLive(protocol = { protocol: FACTORY_PROTOCOL, minimum: FACTORY_MINIMUM_SERVER_PROTOCOL }) {
+      const { host } = new URL(hostBase());
+      return {
+        base: `ws://${host}`,
+        protocol,
+        headers: { origin: `http://${host}` },
+      } satisfies LiveEndpoint;
+    },
     /** Ordinary browser navigation carries no application protocol or credential headers. */
     downloadCertificate(): Promise<{ status: number; text: string }> {
       return new Promise((resolve, reject) => {
