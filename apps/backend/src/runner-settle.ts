@@ -178,7 +178,7 @@ export function openRunnerSettle(
         const ready = yield* recoverOperation(
           Effect.tryPromise(async () => {
             const worker = await readWorkerThread(t3, run, candidate.thread_id);
-            return worker.finished;
+            return worker.finished && worker.latest?.runId === candidate.execution_id;
           }),
           () => Effect.succeed(false),
         );
