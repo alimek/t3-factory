@@ -14,8 +14,8 @@ require a cleanup of unrelated suites.
 
 ## What to test
 
-Write behavior tests (`apps/backend/test/*.test.ts` and `apps/frontend/test/*.test.ts`,
-run by `pnpm test`) for
+Write behavior tests (`apps/backend/test/*.test.ts`, `apps/frontend/test/*.test.ts` and
+`apps/desktop/test/*.test.ts`, run by `pnpm test`) for
 **business logic** only:
 
 - domain rules and validation of untrusted input;
@@ -86,7 +86,7 @@ it("a whitespace-only Flow name is rejected and no draft is created", async (con
 ## Runner and Effect integration
 
 Backend tests run through Vite+ (`vp test run`) and import `it`, `expect`, and
-assertion narrowing from `@effect/vitest`. `pnpm test` runs the backend and frontend rule suites;
+assertion narrowing from `@effect/vitest`. `pnpm test` runs the backend, desktop and frontend rule suites;
 `pnpm --filter @t3-factory/backend test test/flows.test.ts` selects a file.
 Build first on a fresh checkout: public-operation tests and spawned processes
 use the backend package's compiled exports.

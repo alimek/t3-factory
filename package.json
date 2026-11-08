@@ -1,13 +1,13 @@
 {
   "name": "t3-factory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
-    "test": "pnpm --filter @t3-factory/backend --filter @t3-factory/frontend test",
+    "test": "pnpm --filter @t3-factory/backend --filter @t3-factory/desktop --filter @t3-factory/frontend test",
     "start": "pnpm --filter @t3-factory/backend start",
     "dev": "node scripts/dev.mjs",
     "dev:prod": "node scripts/dev.mjs --production-data",

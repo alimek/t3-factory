@@ -10,6 +10,7 @@ import {
   installDesktopBridge,
   openDesktopComposer,
   openKeyboardSettings,
+  recordDesktopNewRunCandidate,
   shortcutMod,
 } from "./support/keyboard-shortcuts.ts";
 
@@ -93,11 +94,7 @@ test("Settings Reset restores the desktop default for New Run", async ({
   browser,
 }) => {
   // Arrange
-  await openDesktopComposer(app, screen, browser);
-  await openKeyboardSettings(screen, browser);
-  const newRunGroup = screen.getByRole("group", "New Run");
-  await newRunGroup.getByRole("button", "Change New Run").tap();
-  await browser.keyboard.press(`${shortcutMod}+Shift+n`);
+  const newRunGroup = await recordDesktopNewRunCandidate(app, screen, browser);
   await screen.getByRole("button", "Save shortcut").tap();
   await expect(newRunGroup).toContainText("Shift");
 
@@ -237,4 +234,55 @@ test("the shortcuts cheat sheet does not open over the command palette", async (
   // Assert
   await expect(screen.getByRole("dialog", "Command palette")).toBeVisible();
   await expect(screen.getByRole("dialog", "Keyboard shortcuts")).toBeHidden();
+});
+
+test("a customized binding reaches the desktop menu", async ({ app, screen, browser }) => {
+  // Arrange
+  await recordDesktopNewRunCandidate(app, screen, browser);
+
+  // Act
+  await screen.getByRole("button", "Save shortcut").tap();
+
+  // Assert
+  await expect
+    .poll(() => browser.evaluate("window.__desktopMenu.newRun.binding"))
+    .toEqual({ key: "n", mod: true, alt: false, shift: true });
+});
+
+test("the desktop menu enables Run actions once an active Run is open", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openDesktopComposer(app, screen, browser);
+  const active = await findRun(app.baseUrl, "Demo · Two reviewers working in parallel");
+  await expect.poll(() => browser.evaluate("window.__desktopMenu.settle.enabled")).toBe(false);
+
+  // Act
+  await app.open(`/runs/${active.id}`);
+
+  // Assert
+  await expect.poll(() => browser.evaluate("window.__desktopMenu.settle.enabled")).toBe(true);
+});
+
+test("choosing Settle in the desktop menu settles the open Run", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await installDesktopBridge(browser);
+  const found = await findRun(app.baseUrl, "Demo · Applying your requested changes");
+  await app.open(`/runs/${found.id}`);
+  await expectFactoryConnected(screen);
+  await expect.poll(() => browser.evaluate("window.__desktopMenu.settle.enabled")).toBe(true);
+
+  // Act
+  await browser.evaluate(`window.__chooseMenuItem("settle")`);
+
+  // Assert
+  await expect
+    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
+    .toBe("settled");
 });
