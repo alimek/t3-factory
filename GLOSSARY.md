@@ -51,7 +51,7 @@ An agent's explicit report of its block's state and, where applicable, a selecte
 
 **Final result**:
 The first accepted `finished` report for one Block activation, sent from any turn of
-the Block's worker thread with its Block id. It is immutable; acceptance and source execution completion are
+the Block's worker thread with its Block id. It is immutable; acceptance and the worker thread being finished are
 separate facts.
 
 **Run coordinator**:
@@ -61,7 +61,11 @@ Retired. Factory no longer saves a model selection for a primary Run conversatio
 Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block.
+The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
+
+**Worker thread finished**:
+Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, closure, Stop and Request report use it.
+_Avoid_: quiet frontier, owned tree, descendant coverage.
 
 **Block id**:
 The identifier Factory mints for an Agent Block when a Run starts and states in every launch, visit and Request report message to that Block's worker. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.
@@ -128,14 +132,14 @@ The user's request to close a Run's handoff gate and reconcile cancellation of q
 
 **Handoff**:
 An accepted delivery from a block's selected exit to one connected recipient.
-Under the explicit contract it is held until fresh source completion and clear
-queue/native evidence permit reservation; acceptance alone does not start work. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
+It is held until the source worker thread is finished and no execution failure is
+pending on that Block; acceptance alone does not start work. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
 
 **Human occurrence**:
-One arrival at a Human step within a Run, with its own pending context and settlement. Under the explicit reporting contract, the occurrence activates only after the source completion gate permits release; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
+One arrival at a Human step within a Run, with its own pending context and settlement. An occurrence from an Agent result activates only after that result is released; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
 
 **Work period**:
-One exact T3 execution in a Run or Block conversation, including repeated visits, queued turns, user replies and automatic continuations after delegated or background work. The Run conversation and worker conversations retain separate ownership scopes.
+One T3 run of a Block's worker thread, including repeated visits, queued turns, user replies and automatic continuations after delegated or background work. Closed Runs may also show work periods of a historical Run conversation.
 
 **Settled**:
 In Run navigation, the group of executions with confirmed whole-Run Finished or
@@ -160,7 +164,7 @@ pending. Resnoozing accounts for existing attention identities so they cannot
 repeatedly wake the same Run.
 
 **Run closure**:
-The permanent local confirmation of a Run's finished or stopped outcome, backed by a recorded observed frontier and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
+The permanent local confirmation of a Run's finished or stopped outcome, backed by each worker thread as observed finished and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required

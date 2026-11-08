@@ -85,8 +85,7 @@ export class PersistentT3 extends ControlledT3 {
   private delegatedWorkActive(threadId: string): boolean {
     return (this.subagents.get(threadId) ?? []).some(
       (child) =>
-        !!this.executionObservations.get(child)?.activeRunId ||
-        this.delegatedWorkActive(child),
+        !!this.executionObservations.get(child)?.activeRunId || this.delegatedWorkActive(child),
     );
   }
 

@@ -122,17 +122,15 @@ a live `.runner.lock`. The desktop declares macOS 13 or later, which is not a te
 ### Current execution contract
 
 Factory launches each Agent Block as its own top-level worker and installs the `$factory-block` skill ([Runner](runner.md)). This selects behavior; it is not a support badge. The persistent demo supplies simulated external evidence and
-never executes a model. Controlled public-operation and UI journeys cover local activations, independent branches, waiting, revisits, explicit report recovery, lost-launch search, restart and owned-tree Stop.
-They do not establish live provider or skill compatibility. A thread created before a definitive launch rejection, and live recovery while model options are unreadable, stay documented limits. Descendant Stop and restart still need separately authorized live verification.
+never executes a model. Controlled public-operation and UI journeys cover local activations, independent branches, waiting, revisits, explicit report recovery, lost-launch search, restart and worker thread Stop.
+They do not establish live provider or skill compatibility. A thread created before a definitive launch rejection, and live recovery while model options are unreadable, stay documented limits. Completion depends on T3's delegated wait answer; Stop of delegated work and restart still need separately authorized live verification.
 Upgrading through migration `050` deletes open Runs from the replaced contract, including each Task's active Run slot. Closed Runs, clients, Flows, Agents and Tasks remain. That deletion is one-way.
 
 If a worker finishes without a verified result read or report, Factory keeps the missing-report Problem; timestamps alone prove no delivery. If no
 report follows, the user can use **Request report** or ask in that worker's T3 thread. That delivery-dependent case is unqualified.
 
-Approved remote Factory clients control a Factory host; they do not make remote T3 workers equivalent to local ones. Peer-scoped unknown acceptance and positive input stay durable, and
-reachable peer-tree Stop uses bounded public observations, interruption and queue cancellation, retaining uncertainty for unreachable peers, unresolved nested work or missing exact
-executions. Successful remote release/recovery and later reply wake are unsupported without exact execution, selection and fresh completion guarantees. Repository validation targets loopback T3
-on the backend host.
+Approved remote Factory clients control a Factory host; they do not make remote T3 workers equivalent to local ones. Factory reads and stops only its own worker threads in the Run's
+environment; work a worker delegates to a peer environment counts only through T3's delegated wait answer for the worker. Repository validation targets loopback T3 on the backend host.
 
 ### T3 and Codex
 
@@ -148,7 +146,7 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
 - Threads share the project checkout: no isolated worktrees, conflict-free editing or exactly-once guarantee.
 - Uncertain launch/send retries need unchanged authorization and independent, operation-specific continuity and retention proof; the default live proof is absent, and server restart, changed grants and
   unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and a Block id does not isolate adversarial processes sharing the OS user.
-- Closure records an observed frontier, not atomic cross-thread completion, repository quality or agreement on one revision. Native settlement is best effort with no compare-and-set or replay key; a possibly
+- Closure records each worker thread as T3 reported it finished, not atomic cross-thread completion, repository quality or agreement on one revision. Native settlement is best effort with no compare-and-set or replay key; a possibly
   issued settlement is not repeated, so a crash can leave a thread active without changing Run semantics.
 - Stop closes Factory handoffs and needs observed cancellation or termination; it does not undo edits or prohibit later direct T3 chats. Backend exit is not Stop. Closed Runs stay closed.
 - No conversation archive, automatic failed-work retry, hosted multi-user service or team accounts. Remote Factory clients need approved, revocable credentials over TLS and the plain HTTP listener accepts only
@@ -178,13 +176,14 @@ Save each Agent's worker settings (every option and permission mode). Do not con
 | Install and attribution | Settings installs Factory MCP into the disposable home, preserving unrelated entries; a fresh session shows the tool without bypassing native trust; a denied call yields no accepted result or downstream work; a call without the worker's Block id or with an unknown one yields no accepted result |
 | Factory → worker | One top-level worker per Block with the captured provider, model and options; title `Factory #<number> · <position> <name>`; no Run conversation and no second launch after a lost acknowledgement |
 | Report before completion | `ACCEPTED` arrives while the execution runs; an identical retry returns the same acknowledgement; a changed final is rejected; no chat message substitutes for the call |
-| Held release | The handoff stays held until exact successful completion and clear native requests; backend restarts while held and after release yield one recipient, no duplicate work and a preserved acknowledgement |
+| Held release | The handoff stays held until the worker thread is finished (no active run or native request, settled delegated wait); backend restarts while held and after release yield one recipient, no duplicate work and a preserved acknowledgement |
 | Human step | One Human occurrence, answered in Factory without a T3 thread; a correction revisits the same worker with a new activation and execution; another thread's reply cannot impersonate the Human |
 | Waiting | A `waiting` report shows Needs input with the message; a reply in the worker thread resumes it and settles the attention; the reply turn reports again |
 | Missing report | Problem with no automatic repair; **Request report** once, a retried click and restart reuse the same request, the new linked execution reports and the original gap stays in history |
-| Parallel and independent release | Fan-out workers progress independently; a ready source releases despite unrelated busy work; its own queues, native requests and later unauthorized work hold it |
-| Full closure | Every owned worker, descendant, queue, native request and uncertain launch is covered by fresh evidence; a completed thread or accepted result alone does not close |
-| Gate-first Stop | No new dispatch after Stop; the whole owned tree, queues and uncertain operations reconcile; an acknowledgement alone does not confirm Stopped; unavailable evidence stays uncertain |
+| Parallel and independent release | Fan-out workers progress independently; a ready source releases despite unrelated busy work; its own active runs, native requests and unsettled delegated work hold it |
+| Notification turn | A worker resumed by a notification (for example a PR watch) and idle without a report shows a missing report once T3 settles its latest run, even when `resultRun` names an earlier run |
+| Full closure | Every worker thread is finished and no launch or delivery is uncertain; a completed run or accepted result alone does not close |
+| Gate-first Stop | No new dispatch after Stop; every unfinished worker thread is interrupted and uncertain operations reconcile; an acknowledgement alone does not confirm Stopped; unavailable evidence stays uncertain |
 | Restart and lost acknowledgement | Original keys, payloads and options stay immutable; positive evidence or independently verified replay continuity resolves identity, otherwise uncertainty stays without new work |
 | Later direct chat | Closed history stays closed; later T3 activity neither reopens it nor delivers old work, and no assessment or repair is scheduled |
 
@@ -194,9 +193,9 @@ Qualify remote workers separately and only where the adapter exposes enough nati
 
 Budget these independently: OAuth pending callback across restart, denial, credential reuse, refresh, outage, revocation and reauthorization (changed grants must retain history without replaying uncertain
 work); project create/reuse, distinct clones, unavailable and restored directories and capability changes; native questions and approvals and direct activity in a participating thread; launch and send
-loss of response; backend exit versus Stop, active interrupts, queued cancellation and unavailable coverage across restart; and finished and stopped history after restart.
+loss of response; backend exit versus Stop, active interrupts, a queued run starting after an interrupt and unavailable reads across restart; and finished and stopped history after restart.
 
 ### Cleanup
 
-Stop only the test Runs, inspect uncertain operations and queues, retain sanitized evidence, shut down the owned backend, remove only the dedicated registration and trust entries and revoke the test grant.
+Stop only the test Runs, inspect uncertain operations and queued runs in T3, retain sanitized evidence, shut down the owned backend, remove only the dedicated registration and trust entries and revoke the test grant.
 Never clean unrelated work.

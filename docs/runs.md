@@ -120,18 +120,20 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 
 - An identical retry returns the original acknowledgement, also after renewed work, Stop or closure; a changed final for the
   same visit conflicts.
-- Acceptance holds every outgoing handoff until fresh evidence shows source completion, empty queues and no native request. The
-  timeline shows **handoff held**, then **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is
-  separate.
+- Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
+  delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
+  **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
 - A first visit launches the block's own top-level worker. Later visits queue independent turns on that same worker, each as
   its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
   Partial fan-out survives restart; an unresolved launch holds later arrivals to that block only.
-- Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; completion
-  without a report is a **missing-report Problem**; failure is a Problem. Problems persist across restart and renewed work; there
-  is no automatic retry or dismiss-as-success.
+- Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; a finished
+  worker thread without a report is a **missing-report Problem**, also after a notification or reply turn; a worker waiting on
+  delegated or background work T3 has not settled stays working. A failed, cancelled or interrupted latest run is a Problem until
+  a later run of that thread completes or the Block reports. Missing-report Problems persist across restart and renewed work;
+  there is no automatic retry or dismiss-as-success.
 - **Request report** on a missing-report Problem starts one extra turn on the same thread asking the Agent to assess existing work
-  and report. Eligibility is rechecked at acceptance (newer or queued work, native attention, changed authorization, accepted
-  results, Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
+  and report. Eligibility is rechecked at acceptance (a newer run, an unfinished thread, changed authorization, accepted results,
+  Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
   attention with a recovery reason and may allow closure; a failed one stays unresolved.
 - **Rejected report**: a rejected report for a known Block appears as a separate Problem with the rejection
   code, reason and repair guidance. Missing report means no report was accepted; the worker may have attempted one.
@@ -162,13 +164,12 @@ acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
 
 ## Completion and permanent history
 
-A Run closes **Finished** only when every Block visit has its worker's accepted final result, every Human step is answered, no
-delivery, launch, handoff or send is outstanding, and fresh observations of every worker and
-their descendants show completed work, no queued work, no native attention and no Problem. Never-visited branches need not run.
-A report or T3 completion alone, or incomplete coverage, keeps the Run open.
+A Run closes **Finished** only when every Block's current visit has its worker's accepted final result, every Human step is
+answered, no delivery, launch, handoff or send is outstanding, no attention is pending, and a fresh read finds every worker thread
+finished in T3. Never-visited branches need not run. A report or T3 completion alone keeps the Run open.
 
-Run detail shows the **recorded observed frontier**: exact executions, statuses, queue and native counts with their separate read
-times. T3 reads are not an atomic cutoff, so direct T3 activity can arrive before local closure; completion does not certify result
+Run detail shows the **recorded worker threads**: each thread's runs, statuses and native request count with their read times.
+T3 reads are not an atomic cutoff, so direct T3 activity can arrive before local closure; completion does not certify result
 quality or one reviewed revision. Confirmed Stop keeps finished blocks, leaves unvisited blocks not started and marks other activated
 blocks stopped.
 
@@ -180,12 +181,12 @@ definitions, events and closure evidence remain; no transcript or response-body 
 
 **Stop Run** first blocks new handoffs, cancels unsent launches and handoffs and settles pending Human steps as
 **cancelled-on-Stop** without inventing answers. Nothing is dispatched after Stop; a delivery whose outcome is unknown stays
-unresolved and keeps Stop uncertain. Factory cancels queued turns and requests thread/tree Stop across the owned
-workers and their descendants; the recorded execution reference is not a T3 fence.
+unresolved and keeps Stop uncertain. Factory requests T3 Stop of every unfinished worker thread, which also stops its delegated
+work; there is no execution fence.
 
-**Stop requested / Uncertain Stop** means terminal state and empty queue and native coverage are not yet confirmed, or a pre-Stop
-operation is unresolved. An acknowledgement is insufficient; the Run stays open through restart and reconciles automatically.
-Confirmed **Stopped** shows the frontier and settles remaining Problems and native matters as cancelled-on-Stop. Stop does not roll back
+**Stop requested / Uncertain Stop** means not every worker thread is confirmed finished yet, or a pre-Stop operation is
+unresolved. An acknowledgement is insufficient; the Run stays open through restart and reconciles automatically. Confirmed
+**Stopped** shows the recorded worker threads and settles remaining Problems and native matters as cancelled-on-Stop. Stop does not roll back
 edits or prevent new direct T3 chats; closing Factory or a browser tab is not Stop.
 
 ## Restart and shutdown
@@ -198,7 +199,6 @@ fails startup. Shutdown does not Stop the Run or interrupt T3; reopening the sam
 
 ## Completed stages in T3
 
-When native settle is supported, Factory best-effort marks each worker in the closure frontier **Settled** in T3 before recording
-Finished. New Runs have no Run conversation to settle. A historical closed Run that still has a coordinator row can settle that
-thread after closure. Factory never unsettles. This is best-effort organization: failure never changes results or closure, and an
+When native settle is supported, Factory best-effort marks each worker thread **Settled** in T3 before recording Finished. New
+Runs have no Run conversation to settle, and historical Run conversations are not settled after closure. Factory never unsettles. This is best-effort organization: failure never changes results or closure, and an
 attempted request is never replayed.
