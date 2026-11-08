@@ -53,20 +53,28 @@ function statusHead(response: IncomingMessage) {
   return `${lines.join("\r\n")}\r\n\r\n`;
 }
 
-/** Relays the live WebSocket upgrade, including a refusal answered before the upgrade. */
+/**
+ * Relays the live WebSocket upgrade, including a refusal answered before the upgrade.
+ * `delayMs` holds back the server's frames after the socket opens.
+ */
 export function proxyFixtureUpgrade(
   incoming: IncomingMessage,
   socket: Duplex,
   port: number,
   tls?: FixtureTls,
+  delayMs = 0,
 ) {
   const forwarded = forwardRequest(incoming, port, tls);
   forwarded.on("upgrade", (response, upstream, head) => {
     socket.write(statusHead(response));
-    if (head.length > 0) socket.write(head);
     upstream.on("error", () => socket.destroy());
     socket.on("close", () => upstream.destroy());
-    upstream.pipe(socket).pipe(upstream);
+    socket.pipe(upstream);
+    setTimeout(() => {
+      if (socket.destroyed) return;
+      if (head.length > 0) socket.write(head);
+      upstream.pipe(socket);
+    }, delayMs);
   });
   forwarded.on("response", (response) => {
     socket.write(statusHead(response));
