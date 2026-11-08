@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
-import { test } from "@e2e-dev/web";
+import { afterEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { listAgentDefinitions, repairCodexReporting } from "./support/agents.ts";
+import { remoteFixture } from "./support/remote-access.ts";
+
+// Later journeys share the fixture's T3 connection.
+afterEach(async ({ app }) => {
+  await remoteFixture(app, "t3-available");
+});
 
 test("reporting problems are visible before Start and clear after repairing the provider", async ({
   app,
@@ -100,22 +106,7 @@ test("a disconnected T3 connection takes precedence over reporting warnings", as
   await browser.route("**/api/reporting", (route) =>
     route.fulfill({ json: { ok: true, value: [] } }),
   );
-  await browser.route("**/api/connection", (route) =>
-    route.fulfill({
-      json: {
-        ok: true,
-        value: {
-          endpoint: null,
-          state: "unavailable",
-          explanation: "T3 is disconnected.",
-          checkedAt: null,
-          authorizationContext: null,
-          authorizationPending: false,
-          contract: null,
-        },
-      },
-    }),
-  );
+  await remoteFixture(app, "t3-unavailable");
 
   // Act
   await app.open("/runs/new");

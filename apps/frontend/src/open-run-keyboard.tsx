@@ -1,3 +1,4 @@
+import { useMutationsAllowed } from "./client-gate.tsx";
 import { useEffect, useState } from "react";
 import type { RunDetail, RunNavigationEntry } from "@t3-factory/contracts";
 import { api } from "./api.ts";
@@ -65,13 +66,14 @@ export function OpenRunKeyboardHost({
   run: RunDetail | undefined;
   navigationRun: RunNavigationEntry | undefined;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   const [archiving, setArchiving] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const id = run?.id ?? null;
   const { canArchive, canRename, canSettle, canSnoozeRestore } = availability(navigationRun, run);
 
   useEffect(() => {
-    if (!id || !run || observationUnavailable || archiving || renaming) {
+    if (!id || !run || !mutationsAllowed || observationUnavailable || archiving || renaming) {
       setSurface(unavailable);
       return () => setSurface(unavailable);
     }
@@ -103,6 +105,7 @@ export function OpenRunKeyboardHost({
     });
     return () => setSurface(unavailable);
   }, [
+    mutationsAllowed,
     observationUnavailable,
     archiving,
     renaming,

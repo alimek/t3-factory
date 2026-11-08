@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { useState, type FormEvent } from "react";
 import type { FlowDraft } from "@t3-factory/contracts";
 import { validateCreateFlow } from "@t3-factory/domain-validation";
@@ -98,9 +99,11 @@ export function CreateFlow({
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Create Flow"}
-            </Button>
+            <MutationGate>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : "Create Flow"}
+              </Button>
+            </MutationGate>
           </DialogFooter>
         </form>
       </DialogContent>

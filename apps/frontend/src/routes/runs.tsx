@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { RootWork } from "../components/run-coordination-controls.tsx";
 import {
   BindingLink,
@@ -120,32 +121,33 @@ function useRunObservation(id: string) {
 type RunObservation = ReturnType<typeof useRunObservation>;
 
 /**
- * One effect per opened Run. Marks Woke seen for this id.
- * Canvas selection and viewport state stay out of this effect.
+ * Marks Woke seen once per opened Run, as soon as its live view is current: the command
+ * is refused while delivery synchronizes. Canvas selection and viewport stay out of this.
  */
-function useRunOpened(id: string) {
+function useRunOpened(id: string, current: boolean) {
   const location = useLocation();
   const [seenError, setSeenError] = useState("");
+  const unmarked = useRef(false);
   useEffect(() => {
-    let active = true;
     setSeenError("");
-    const markSeen = () => {
-      if (location.search.settings) return;
-      void api
-        .markRunWokeSeen(id)
-        .then(() => {
-          if (active) setSeenError("");
-        })
-        .catch(() => {
-          if (active) setSeenError("Could not mark Woke as seen. Reopen this Run to try again.");
-        });
-    };
-    markSeen();
-
+    unmarked.current = !location.search.settings;
+  }, [id, location]);
+  useEffect(() => {
+    if (!current || !unmarked.current) return;
+    unmarked.current = false;
+    let active = true;
+    void api
+      .markRunWokeSeen(id)
+      .then(() => {
+        if (active) setSeenError("");
+      })
+      .catch(() => {
+        if (active) setSeenError("Could not mark Woke as seen. Reopen this Run to try again.");
+      });
     return () => {
       active = false;
     };
-  }, [id, location]);
+  }, [id, location, current]);
   return seenError;
 }
 
@@ -174,7 +176,7 @@ export function RunScreen({ id }: { id: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [contextOpen, setContextOpen] = useState(wideViewport);
   const deselect = useCallback(() => setSelected(null), []);
-  const seenError = useRunOpened(id);
+  const seenError = useRunOpened(id, !observed.unavailable);
   useEscapeToDeselect(selected !== null, deselect);
   const { run, error } = observed;
   return (
@@ -361,17 +363,19 @@ function RunTopBar({
       </div>
       {run.lifecycle !== "archived" && (
         <>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
-                <Archive aria-hidden />
-                Archive Run
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Archive Run…{archiveHint !== "Unbound" ? ` · ${archiveHint}` : ""}
-            </TooltipContent>
-          </Tooltip>
+          <MutationGate>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
+                  <Archive aria-hidden />
+                  Archive Run
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Archive Run…{archiveHint !== "Unbound" ? ` · ${archiveHint}` : ""}
+              </TooltipContent>
+            </Tooltip>
+          </MutationGate>
           <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />
         </>
       )}

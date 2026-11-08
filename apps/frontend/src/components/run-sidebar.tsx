@@ -1,4 +1,5 @@
 import { RenameDialog } from "./rename-dialog.tsx";
+import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { publishSidebarNavigation, type SidebarRunAction } from "../sidebar-navigation.ts";
@@ -78,24 +79,26 @@ function NewRunButton({ current }: { current: boolean }) {
   const { hint } = useShortcutPreferences();
   const navigate = useNavigate();
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="New Run (+)"
-          aria-current={current ? "page" : undefined}
-          className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
-          onClick={() => {
-            runDraft.openFresh();
-            void navigate({ to: "/runs/new" });
-          }}
-        >
-          <Plus aria-hidden strokeWidth={1.5} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
-    </Tooltip>
+    <MutationGate>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="New Run (+)"
+            aria-current={current ? "page" : undefined}
+            className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
+            onClick={() => {
+              runDraft.openFresh();
+              void navigate({ to: "/runs/new" });
+            }}
+          >
+            <Plus aria-hidden strokeWidth={1.5} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
+      </Tooltip>
+    </MutationGate>
   );
 }
 
@@ -714,6 +717,7 @@ function RunRow({
   onAction: (action: RunAction) => void;
   busy: boolean;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   const state = execution(run);
   const muted = searchMuted && !selected;
   const titleColor = muted ? "text-muted-foreground" : "text-foreground";
@@ -764,12 +768,7 @@ function RunRow({
                 <span className="truncate" title={run.project.workspaceRoot}>
                   {run.project.title}
                 </span>
-                {run.presentation.woke && <RunStatusChip kind="woke" />}
-                {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
-                {run.attention.problem && <RunStatusChip kind="problem" />}
-                {run.project.availability !== "available" && (
-                  <RunStatusChip kind="project-unavailable" />
-                )}
+                <RunRowIndicators run={run} />
               </span>
               {working && (
                 <span className="block truncate text-2xs leading-tight text-muted-foreground">
@@ -787,7 +786,7 @@ function RunRow({
             open={menuOpen}
             onOpenChange={setMenuOpen}
           >
-            <RenameItem onSelect={onRename} />
+            <RenameItem onSelect={onRename} disabled={!mutationsAllowed} />
             <RunActionItems run={run} onAction={onAction} onArchive={onArchive} />
           </RowMenu>
         </div>
@@ -805,6 +804,17 @@ function RunRow({
   );
 }
 
+function RunRowIndicators({ run }: { run: RunNavigationEntry }) {
+  return (
+    <>
+      {run.presentation.woke && <RunStatusChip kind="woke" />}
+      {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
+      {run.attention.problem && <RunStatusChip kind="problem" />}
+      {run.project.availability !== "available" && <RunStatusChip kind="project-unavailable" />}
+    </>
+  );
+}
+
 function RunActionItems({
   run,
   onAction,
@@ -818,10 +828,12 @@ function RunActionItems({
   const snoozeHint = hint("snoozeRestore");
   const settleHint = hint("settle");
   const archiveHint = hint("archive");
+  const mutationsAllowed = useMutationsAllowed();
   return (
     <>
       {isActive(run) && (
         <DropdownMenuItem
+          disabled={!mutationsAllowed}
           onSelect={() => onAction(run.presentation.snoozed ? "restore" : "snooze")}
           aria-keyshortcuts={snoozeHint === "Unbound" ? undefined : snoozeHint}
         >
@@ -838,6 +850,7 @@ function RunActionItems({
       )}
       {isActive(run) && (
         <DropdownMenuItem
+          disabled={!mutationsAllowed}
           onSelect={() => onAction("settle")}
           aria-keyshortcuts={settleHint === "Unbound" ? undefined : settleHint}
         >
@@ -849,6 +862,7 @@ function RunActionItems({
         </DropdownMenuItem>
       )}
       <DropdownMenuItem
+        disabled={!mutationsAllowed}
         onSelect={() => onArchive(run)}
         aria-keyshortcuts={archiveHint === "Unbound" ? undefined : archiveHint}
       >

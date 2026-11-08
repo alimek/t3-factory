@@ -1,3 +1,4 @@
+import { MutationGate, useMutationsAllowed } from "../client-gate.tsx";
 import { useState, type FormEvent } from "react";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import { Button } from "./ui/button";
@@ -26,11 +27,13 @@ export function RenameDialog({
   save: (title: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   const [title, setTitle] = useState(initialTitle);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!mutationsAllowed) return;
     setBusy(true);
     try {
       await save(title);
@@ -74,7 +77,9 @@ export function RenameDialog({
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={busy || !title.trim()}>Save title</Button>
+            <MutationGate>
+              <Button disabled={busy || !title.trim()}>Save title</Button>
+            </MutationGate>
           </DialogFooter>
         </form>
       </DialogContent>

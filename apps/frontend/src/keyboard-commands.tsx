@@ -10,6 +10,7 @@ import {
   useSettings,
   useStudio,
 } from "./settings-navigation.ts";
+import { transport } from "./transport.ts";
 import { runDraft } from "./run-draft.ts";
 import { ShortcutsCheatSheet } from "./shortcuts-cheat-sheet.tsx";
 import {
@@ -43,6 +44,7 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
   const overlayOpen = paletteOpen || settingsOpen || studioOpen || cheatSheetOpen;
 
   const newRun = useCallback(() => {
+    if (!transport.acceptsMutations()) return;
     void router.navigate({ to: "/runs/new", search: {}, resetScroll: false }).then(() => {
       const location = router.state.location;
       const search = validateAppSearch(location.search);

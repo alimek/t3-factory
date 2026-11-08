@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { useEffect, useState } from "react";
 import type { FlowDraft } from "@t3-factory/contracts";
 import { Plus, ChevronRight, CircleCheck, TriangleAlert, Workflow } from "lucide-react";
@@ -97,10 +98,12 @@ function FlowItems({
             then save it for any project.
           </p>
           <div className="mt-5 flex items-center gap-3">
-            <Button type="button" onClick={onCreate}>
-              <Plus aria-hidden strokeWidth={1.5} />
-              New Flow
-            </Button>
+            <MutationGate>
+              <Button type="button" onClick={onCreate}>
+                <Plus aria-hidden strokeWidth={1.5} />
+                New Flow
+              </Button>
+            </MutationGate>
             <StudioLink selection={{ tab: "agents", agentId: "new" }} className="text-sm">
               Define an Agent first
             </StudioLink>
