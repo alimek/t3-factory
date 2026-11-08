@@ -1,4 +1,5 @@
 import { test } from "@e2e-dev/web";
+import assert from "node:assert/strict";
 import { expect } from "e2e";
 import { findRun } from "./support/run-history.ts";
 import {
@@ -25,7 +26,10 @@ test("the Run preview opens to the right of its row", async ({ app, screen, brow
   const rowBox = await row.boundingBox();
   const previewBox = await preview.boundingBox();
   expect(previewBox!.x).toBeGreaterThanOrEqual(rowBox!.x + rowBox!.width);
-  expect(Math.abs(previewBox!.y - rowBox!.y)).toBeLessThan(10);
+  const viewportHeight = await browser.evaluate("window.innerHeight");
+  assert(typeof viewportHeight === "number");
+  const expectedTop = Math.max(8, Math.min(rowBox!.y, viewportHeight - previewBox!.height - 8));
+  expect(Math.abs(previewBox!.y - expectedTop)).toBeLessThan(10);
   await expect(row).toContainText("feature/project-picker-empty-state-and-keyboard-navigation");
   await expect(row.getByLabel(/pull requests/)).toHaveCount(0);
   await expect(preview).toContainText("Demo · Focused change");
