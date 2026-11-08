@@ -1,7 +1,7 @@
 # Durable Runner
 
-The Runner turns accepted Starts, reports, Human answers and Stop requests into
-durable operations against T3, and decides when a Run settles or is permanently closed. It owns
+The Runner turns accepted Starts, reports, Human answers and Archive requests into
+durable operations against T3, and decides when a Run settles. It owns
 the SQL tables, transaction boundaries and recovery rules below. Persistence
 principles are in [Application foundation](foundation.md#persistence-model); user
 behavior is in [Runs](runs.md); live-support limits are in
@@ -11,7 +11,8 @@ behavior is in [Runs](runs.md); live-support limits are in
 
 Factory launches each Agent Block's first visit as its own top-level T3 worker. There is
 no Run conversation and no native-delegation turn that copies the Agent. Migrations `050`
-and `058` delete open Runs captured under replaced contracts. Closed Runs stay readable history.
+and `058` delete open Runs captured under replaced contracts. Runs closed under earlier contracts
+stay readable history: `062` made Finished Runs Settled and `063` Stopped Runs Archived.
 Captured definitions carry no execution contract, coordination instruction version or
 reporting protocol.
 
@@ -27,7 +28,7 @@ reporting protocol.
   report message repeats the same id. The worker passes it to `factory_get_block`, then
   `factory_update_block`. `factory_get_run` is read-only and grants no routing authority.
   Subagents do not call Factory tools.
-- Factory alone owns routing, handoff release, Human occurrences, settling, Stop and closure. A
+- Factory alone owns routing, handoff release, Human occurrences, settling and Archive. A
   completed model turn is not a business result. A definitive launch rejection is an
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
@@ -67,7 +68,8 @@ ownership without a takeover timer. Storage requires local-filesystem locking on
 or Linux; network filesystems and remote backend ownership are unsupported.
 
 Startup reconciles every Run it [drives](#settled-runs) before dispatching. Local changes serialize per Run,
-and no SQL transaction spans T3 I/O. Shutdown releases ownership without requesting Stop.
+and no SQL transaction spans T3 I/O. Shutdown releases ownership without archiving or
+interrupting anything.
 
 An uncertain worker launch is never replayed, including with the same key. While Factory
 is running, recovery searches the same T3 environment and project for the saved title,
@@ -113,10 +115,14 @@ worker reports.
     handoff and relaunches no recipient;
   - after release with a different exit, creates handoffs to that exit's recipients, held under
     the same release rule, while Blocks started from the earlier exit keep running.
-- Repeating the current result returns its acknowledgement, also after settling or Stop. While
+- Repeating the current result returns its acknowledgement, also after settling. While
   a question or execution failure is pending on the Block, a repeat is a new version that
   settles it. Reports cannot erase engine failure, prove semantic correctness
-  or settle a Run. A new report on a stopped Run is `RUN_CLOSED`.
+  or settle a Run.
+- Every report for an [Archived](#archive) Run, `working`, `waiting` or `finished`, is
+  answered with `RUN_ARCHIVED` before any validation. Factory MCP returns it as a successful
+  tool result whose text says the Run is archived and the worker should stop work on the
+  Block; nothing is recorded and no diagnostic attention is created.
 - Any accepted report on a [Settled](#settled-runs) Run, including a repeat of the current
   result, returns the Run to Active in the same transaction and records `run-activated`
   naming the Block.
@@ -151,7 +157,7 @@ Report metadata retains fingerprints and references, not a second message archiv
 ## Worker thread completion
 
 Factory trusts T3 to say when a Block's worker thread is finished. One shared rule decides it,
-and handoff release, missing report, automatic settlement, Stop and Request report all use it. A worker
+and handoff release, missing report, automatic settlement and Request report all use it. A worker
 thread is finished when all of these hold:
 
 - the `t3_thread_read` of the thread shows no active run and zero pending native requests;
@@ -231,12 +237,12 @@ that exit demands it (up to 100,000 characters).
 Answering atomically records the answer, settles only that occurrence and creates every
 outgoing handoff. Identical retries return current detail; changed or competing answers
 conflict. Pending context is cleared after settlement. A Human Block stays waiting while
-any occurrence is pending; it never closes the Run by itself. Stop cancels occurrences
+any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
 
 ## Settled Runs
 
-A Run is Active or Settled; Stop separately closes it. Each reconciliation pass tries to
+A Run is Active, Settled or [Archived](#archive). Each reconciliation pass tries to
 settle an Active Run with an open gate automatically. That requires all of the following:
 
 - Every visited Block's current activation has its worker's accepted final result with no
@@ -264,32 +270,25 @@ worker threads: later turns without a report record no work periods or attention
 the Run Settled. Reports, Human answers and Request report are accepted as for an Active Run;
 only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
 
-Stopped Runs are closed: they never dispatch, reopen or extend their history after later T3
-activity. New reports and Human answers are rejected; repeating a Block's current result can
-still return its original acknowledgement. Only durable confirmation records Stopped, together
-with each worker thread as observed; closure evidence is immutable.
+## Archive
 
-## Gate-first Stop
+Archive is final and completes in one transaction in the Run's lane: it closes the handoff
+gate, records the Run Archived, cancels pending launches, handoffs and Human occurrences,
+clears pending delivery text, settles pending attention as `archived`, marks activated Blocks
+that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
+replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
+uncertain operations keep their recorded state.
 
-Stop first closes the handoff gate and cancels unsent work, including launches, handoffs and
-pending Human occurrences. No new report, answer, dispatch or replay may cross that gate.
-In-flight or uncertain pre-Stop operations stay unresolved until their outcomes are known;
-Stop can close the gate while T3 I/O is still in flight.
+After the transaction, in the background and only under the Run's authorization context,
+Factory sends one `t3_thread_interrupt` with `stop: true` to every bound worker thread, with a
+request key derived from the Run and thread. T3 stops the thread and its delegated work.
+Factory neither records nor confirms the outcome, so a backend crash before the request leaves
+the threads running. Archive neither rolls back repository edits nor prevents later direct
+T3 chat. Closing Factory is not Archive.
 
-Each pass reads every Block's worker thread. For each thread that is not finished, Factory
-durably records one interrupt request per thread and latest run, then sends
-`t3_thread_interrupt` with `stop: true`. T3 stops the thread and its delegated work without an
-execution fence, so a run that starts later gets its own request. Acknowledgements do not
-prove termination.
-
-Stopped closure requires a later pass, after any interrupt request, in which every worker
-thread is finished, every operation is acknowledged or locally cancelled and local state is
-unchanged. Unavailable reads or unknown pre-Stop outcomes keep Stop uncertain and the Task
-occupied through restart. Reconciliation continues automatically.
-
-Confirmed Stop preserves finished and unvisited Blocks, marks unfinished activated Blocks
-stopped and settles remaining attention as cancelled-on-Stop. Stop neither rolls back
-repository edits nor prevents later direct T3 chat. Closing Factory is not Stop.
+Archived Runs are excluded from navigation; every stored row stays and Run detail still
+reads them. Runs stopped under an earlier contract keep their Stop events, interrupt
+requests and closure evidence as history.
 
 ## Owned workers
 
@@ -343,8 +342,8 @@ the request.
 
 ## Navigation and presentation
 
-[Run navigation](runs.md#run-list) reflects the Run's lifecycle, recorded Stopped closure and
-unsettled attention without settling any. Snooze, Restore and acknowledging Woke change
-presentation only and apply to Active Runs. New attention identities or an increased pending
-native count wake a snoozed Run; a replacement request with an unchanged count is
-undetectable. Settling and Stopped closure clear snooze and Woke.
+[Run navigation](runs.md#run-list) lists Active and Settled Runs with their unsettled
+attention, without settling any, and leaves out Archived Runs. Snooze, Restore and
+acknowledging Woke change presentation only and apply to Active Runs. New attention identities
+or an increased pending native count wake a snoozed Run; a replacement request with an
+unchanged count is undetectable. Settling and archiving clear snooze and Woke.

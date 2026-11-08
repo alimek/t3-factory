@@ -65,7 +65,7 @@ Retired as the way a Run starts. Factory launches each Agent Block as its own to
 The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
 
 **Worker thread finished**:
-Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement, Stop and Request report use it.
+Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement and Request report use it.
 _Avoid_: quiet frontier, owned tree, descendant coverage.
 
 **Block id**:
@@ -113,7 +113,7 @@ The Flow revision a Run started with and the Agent revision of every Agent that 
 _Avoid_: Run snapshot.
 
 **Run timeline**:
-The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, settling, returning to Active, and closure. Each Run has its own timeline, distinct from conversations in its T3 threads.
+The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
 
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
@@ -132,8 +132,9 @@ lineage and environment. Reconnection and refresh preserve it; changed grants,
 endpoints or environments create another context. A matching reference is a
 necessary recovery check, not proof of execution readiness or retry retention.
 
-**Stop**:
-The user's request to close a Run's handoff gate and reconcile cancellation of queued work and interruption of active executions. The Run closes as stopped only after fresh observations confirm termination; Stop does not undo repository changes.
+**Archived**:
+The final Run lifecycle state, set when the user archives a Run after confirming. Archiving closes the handoff gate, cancels unsent launches, handoffs and Human occurrences and asks T3 once to interrupt each worker thread, without waiting for confirmation. An Archived Run leaves navigation for good and keeps all its data; reports for it are acknowledged as a success that changes nothing. Archive does not undo repository changes.
+_Avoid_: Stop and Stopped (the retired confirmed-termination outcome).
 
 **Handoff**:
 An accepted delivery from a block's selected exit to one connected recipient.
@@ -166,7 +167,7 @@ Factory best-effort settles worker threads when their Run settles and never unse
 **Snoozed**:
 Durable presentation for an Active Run set aside from the main navigation list.
 Execution continues. New actionable attention can wake it; manual Restore returns
-it without Woke. Settling it or confirmed Stopped closure clears it.
+it without Woke. Settling or archiving it clears it.
 
 **Woke**:
 An unseen presentation marker showing that new attention returned a snoozed Run
@@ -175,7 +176,7 @@ pending. Resnoozing accounts for existing attention identities so they cannot
 repeatedly wake the same Run.
 
 **Run closure**:
-The permanent local confirmation of a Run's stopped outcome, backed by each worker thread as observed finished and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
+Retired. Earlier releases recorded a permanent Finished or Stopped outcome with each worker thread as observed; such Runs are now Settled or Archived and keep that evidence as history. See Settled and Archived.
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required

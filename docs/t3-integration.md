@@ -180,10 +180,11 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 - **Send.** Work targets an exact thread with `mode: queue`, a stable request key and fixed
   message. Returned thread/message/execution references must match. Send replay requires its
   own continuity proof; launch replay support is insufficient.
-- **Stop.** Thread interruption uses `t3_thread_interrupt` with `stop: true` and a persisted
-  key, but no run ID: T3 acts on the thread and its delegated work, without an
-  exact-execution fence. Factory reads no queues and cancels no queued run; a queued run that
-  starts after an interrupt gets its own interrupt request. Acknowledgements never prove
+- **Interrupt.** Archive interrupts each worker thread once with `t3_thread_interrupt`,
+  `stop: true` and a request key derived from the Run and thread, but no run ID: T3 acts on the
+  thread and its delegated work, without an exact-execution fence. Factory reads no queues,
+  cancels no queued run, records no outcome and sends no later request, so a queued run that
+  starts after the interrupt is not stopped by Factory. Acknowledgements never prove
   termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without
   launching a turn. It provides neither safe replay nor an execution fence.
