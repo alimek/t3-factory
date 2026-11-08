@@ -72,7 +72,7 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
   block differs from stale; a block that never ran says **Not visited**.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
-  lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, status polling and container resize preserve the Run viewport.
+  lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, live Run updates and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
