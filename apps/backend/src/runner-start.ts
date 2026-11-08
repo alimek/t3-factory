@@ -4,7 +4,7 @@ import {
   persistEntryLaunches,
   startLaunchTargets,
 } from "./runner-block-workers.ts";
-import { worktreeBranch, type RunWorkspace } from "./run-workspace.ts";
+import { blockingSetupScript, worktreeBranch, type RunWorkspace } from "./run-workspace.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { newId } from "./ids.ts";
 import type {
@@ -98,28 +98,21 @@ const workspaceIssue = (code: string, path: string, message: string): WorkspaceC
   ok: false,
   issues: [{ code, path, message }],
 });
-/**
- * Factory attaches later workers idle, and T3 exposes no completion signal for their setup, so a
- * blocking worktree setup script could still be running when the first activation arrives.
- */
+/** A worktree Run's later workers attach idle, which a blocking setup script would outrun. */
 function blockingSetupIssue(
   t3: T3Adapter,
   project: FactoryProject,
 ): Effect.Effect<WorkspaceCheck | undefined> {
-  return Effect.tryPromise({
-    try: () => t3.readWorktreeSetupScripts(project),
-    catch: (error) => error,
-  }).pipe(
-    Effect.map((scripts) => {
-      const blocking = scripts.find((script) => script.blocking);
-      return blocking
+  return blockingSetupScript(t3, project).pipe(
+    Effect.map((blocking) =>
+      blocking
         ? workspaceIssue(
             "workspace_blocking_setup",
             "workspace.mode",
             `${project.title} runs "${blocking.name}" as a blocking worktree setup script, which a new worktree does not support yet. Make the script asynchronous in T3 or choose the project checkout for this Flow.`,
           )
-        : undefined;
-    }),
+        : undefined,
+    ),
     Effect.orElseSucceed(() =>
       workspaceIssue(
         "workspace_setup_unreadable",
@@ -267,8 +260,6 @@ function runWorkspace(plan: StartPlan, number: number): RunWorkspace {
     plannedBranch: worktreeBranch(number, plan.runId),
     creatorBlockId: plan.definitions.flow.graph.flowInput.targetBlockIds[0]!,
     state: "preparing",
-    worktreePath: null,
-    branch: null,
   };
 }
 /** The first worker message is checked before the acceptance transaction commits. */
@@ -386,11 +377,7 @@ export function openRunnerStart(
         return failure("validation", "Fix Flow readiness before starting.", readiness.issues);
       const agents = yield* readyAgents(flow, target.project.id);
       const support = yield* Effect.tryPromise({
-        try: () =>
-          (flow.workspace.mode === "worktree"
-            ? t3.inspectWorktreeLaunchSupport(target.project)
-            : t3.inspectLaunchSupport(target.project)
-          ).catch(() => null),
+        try: () => t3.inspectLaunchSupport(target.project, flow.workspace.mode).catch(() => null),
         catch: (error) => error,
       });
       const workspace = yield* resolveStartWorkspace(t3, flow, target.project);

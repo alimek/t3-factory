@@ -1,6 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
-import { prepared } from "./prepared-runner.ts";
+import { prepared, preparedIdleWorkers } from "./prepared-runner.ts";
 
 const WORKER_THREAD = "thread-1";
 const WORKER_EXECUTION = "execution-1";
@@ -335,4 +335,44 @@ export async function revisitReportingWorker(c: TestContext) {
     recentRuns: [...prior.recentRuns, { runId, status: "running", ordinal: 3 }],
   });
   return { ...f, workerExecutionId: runId };
+}
+
+/** Entry worker finished and the Review answered: Parallel work's first arrival waits to be sent. */
+export async function answeredReview(c: TestContext) {
+  const setup = await preparedIdleWorkers(c);
+  const { f, t3, runId, entryBlockId } = setup;
+  assert((await f.runtime.submit(workerFinal(entryBlockId))).code === "ACCEPTED");
+  t3.engineStatus = "completed";
+  settleThread(t3, "execution-1", "completed", "settled", "thread-1");
+  assert((await f.reconcileRuns()).ok);
+  const review = await f.getRun(runId);
+  assert(review.ok);
+  const occurrence = review.value.humanOccurrences.find((o) => o.state === "pending")!;
+  assert((await f.answerHumanOccurrence(occurrence.id, { exitId: "done" })).ok);
+  return setup;
+}
+
+/** Parallel work's queued turn on its prepared thread finished with a "Done" result, which
+ * returns to Entry worker. */
+export async function finishedParallelWork(c: TestContext) {
+  const setup = await answeredReview(c);
+  const { f, t3, project } = setup;
+  assert((await f.reconcileRuns()).ok);
+  const sent = [...t3.sends.values()][0]!;
+  const parallelBlockId = /Factory Block id: ([^.\s]+)/.exec(sent.payload.message)![1]!;
+  assert((await f.runtime.submit(workerFinal(parallelBlockId))).code === "ACCEPTED");
+  const thread = await t3.readExecution(project, "thread-2");
+  const { runId } = sent.reference;
+  t3.executionObservations.set("thread-2", {
+    ...thread,
+    activeRunId: null,
+    latestRunId: runId,
+    recentRuns: [{ runId, status: "completed", ordinal: 1 }],
+  });
+  settleThread(t3, runId, "completed", "settled", "thread-2");
+  // T3 starts the next queued turn on Entry worker's thread as soon as it accepts it.
+  t3.beforeSend = async () => {
+    t3.engineStatus = "running";
+  };
+  return setup;
 }

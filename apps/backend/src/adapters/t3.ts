@@ -2,6 +2,7 @@ import type {
   AgentEnvironment,
   AgentProviderCapability,
   ConnectionState,
+  FlowWorkspace,
   FlowWorkspaceBase,
   ProjectIcon,
   T3Contract,
@@ -66,9 +67,11 @@ export interface T3Adapter {
   ): Promise<void>;
   inspectSendSupport(target: T3Endpoint): Promise<LaunchSupport>;
   sendMessage(target: T3Endpoint, payload: SendPayload): Promise<SendReference>;
-  inspectLaunchSupport(target: T3Endpoint): Promise<LaunchSupport>;
-  /** Launch support plus idle `worktree` and `existing_worktree` launches. */
-  inspectWorktreeLaunchSupport(target: T3Endpoint): Promise<LaunchSupport>;
+  /** A worktree Run's workers also need idle `worktree` and `existing_worktree` launches. */
+  inspectLaunchSupport(
+    target: T3Endpoint,
+    workspace: FlowWorkspace["mode"],
+  ): Promise<LaunchSupport>;
   launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference>;
   /** Creates a thread bound to its workspace with no turn and no run. */
   launchIdleThread(target: T3Endpoint, payload: IdleLaunchPayload): Promise<IdleLaunchReference>;
@@ -112,12 +115,7 @@ export interface T3Project {
 /** `root` is the project checkout. Worktree strategies name the branch every Run worker shares. */
 type WorkspaceStrategy =
   | { readonly type: "root" }
-  | {
-      readonly type: "worktree";
-      readonly baseRef: string;
-      readonly branch: string;
-      readonly startFromOrigin?: boolean;
-    }
+  | { readonly type: "worktree"; readonly baseRef: string; readonly branch: string }
   | { readonly type: "existing_worktree"; readonly worktreePath: string; readonly branch: string };
 interface LaunchSettings {
   readonly environmentId: string;

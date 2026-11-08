@@ -18,7 +18,13 @@ import { recoverOperation } from "./runner-effects.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
-import { launchedInWorkspace, launchStrategy, sameStrategy } from "./run-workspace.ts";
+import {
+  blockingSetupScript,
+  launchedInWorkspace,
+  launchStrategy,
+  sameStrategy,
+  WORKTREE_REJECTED,
+} from "./run-workspace.ts";
 import type { RunWorkspace } from "./run-workspace.ts";
 import { scopedThreadHref } from "./thread-link.ts";
 import { now } from "./time.ts";
@@ -29,9 +35,6 @@ const LAUNCH_RECOVERY =
 
 const PREPARATION_REJECTED =
   "T3 rejected the idle worker. This Block's first activation launches its worker instead.";
-
-const WORKTREE_REJECTED =
-  "T3 rejected the worker that creates the Run worktree. This worker was not launched.";
 
 /** The installed Block skill, the Block id its Factory tools take, and the turn to act on. */
 export function workerTurn(body: string, blockId: string) {
@@ -185,11 +188,7 @@ export function dispatchBlockLaunch(
       if (!runRow.gate_open) return;
       const target = runTarget(runRow);
       const support = yield* Effect.tryPromise({
-        try: () =>
-          (checked.value.workspaceStrategy.type === "root"
-            ? t3.inspectLaunchSupport(target)
-            : t3.inspectWorktreeLaunchSupport(target)
-          ).catch(() => null),
+        try: () => t3.inspectLaunchSupport(target, runRow.workspace.mode).catch(() => null),
         catch: () => null,
       });
       if (!support?.supported) {
@@ -225,7 +224,7 @@ export function dispatchBlockLaunch(
         }),
         (error) =>
           isLaunchRejected(error)
-            ? rejectLaunchedWorker(database, runRow, intent)
+            ? rejectLaunchedWorker(database, runRow, intent, payload.message === undefined)
             : noteLaunchUncertain(database, intent),
       );
       return;
@@ -393,14 +392,18 @@ function bindLaunchedWorker(
 
 /** A rejected launch is a Block error. A Block without its idle worker is not: its first
  * activation launches one instead. */
-function rejectLaunchedWorker(database: RunnerDatabase, runRow: RunRow, intent: IntentRow) {
+function rejectLaunchedWorker(
+  database: RunnerDatabase,
+  runRow: RunRow,
+  intent: IntentRow,
+  idle: boolean,
+) {
   return database.mutate(runRow.id, (sql) =>
     Effect.gen(function* () {
       if (!(yield* database.runHeldUnderContext(sql, runRow))) return;
       const time = yield* now;
-      const preparation = intent.kind === "prepare";
-      const problem = preparation ? PREPARATION_REJECTED : "T3 rejected the worker launch.";
-      if (!preparation)
+      const problem = idle ? PREPARATION_REJECTED : "T3 rejected the worker launch.";
+      if (!idle)
         yield* sql`UPDATE run_blocks SET state='error',problem=${problem} WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem},reconciled_at=${time} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
       // Without the Run worktree no other Flow-input worker launches, and none falls back to the project root.
@@ -408,7 +411,7 @@ function rejectLaunchedWorker(database: RunnerDatabase, runRow: RunRow, intent: 
         yield* sql`UPDATE run_workspaces SET state='failed' WHERE run_id=${runRow.id} AND creator_block_id=${intent.block_id} AND state='preparing' RETURNING run_id`;
       if (failed.length)
         for (const blockId of runRow.definitions.flow.graph.flowInput.targetBlockIds)
-          yield* sql`UPDATE run_blocks SET state='error',problem=${WORKTREE_REJECTED} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
+          yield* sql`UPDATE run_blocks SET state='error',problem=${`${WORKTREE_REJECTED} This worker was not launched.`} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
     }),
   );
@@ -436,18 +439,14 @@ function noteLaunchSearchMiss(database: RunnerDatabase, intent: IntentRow, curre
   );
 }
 
-/**
- * Start refused blocking setup, but the Project's scripts may have changed since. T3 shows no
- * setup completion for an idle thread, so a blocking script could still run at its first send.
- */
+/** Start refused blocking setup, but the Project's scripts may have changed since. */
 function blockingSetupProblem(t3: T3Adapter, target: T3Target) {
-  return Effect.tryPromise(() => t3.readWorktreeSetupScripts(target)).pipe(
-    Effect.map((scripts) => {
-      const blocking = scripts.find((script) => script.blocking);
-      return blocking
+  return blockingSetupScript(t3, target).pipe(
+    Effect.map((blocking) =>
+      blocking
         ? `The Project runs "${blocking.name}" as a blocking worktree setup script, which idle workers do not support. Make it asynchronous in T3; Factory will retry creating this idle worker.`
-        : undefined;
-    }),
+        : undefined,
+    ),
     Effect.orElseSucceed(
       () =>
         "T3 could not read the Project's setup scripts. Factory will retry creating this idle worker.",

@@ -55,7 +55,12 @@ import type {
 import { isReportingDriver } from "../reporting-drivers.ts";
 import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
 import { LaunchRejected } from "./t3.ts";
-import type { AgentEnvironment, FlowWorkspaceBase, T3Contract } from "@t3-factory/contracts";
+import type {
+  AgentEnvironment,
+  FlowWorkspace,
+  FlowWorkspaceBase,
+  T3Contract,
+} from "@t3-factory/contracts";
 import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-validation";
 import { readDelegatedSettlement } from "./delegated-settlement.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
@@ -246,7 +251,6 @@ const expressesWorktreeLaunches = (
   return (
     ["worktree", "existing_worktree"].every((type) => fields.type?.enum?.includes(type)) &&
     ["baseRef", "branch", "worktreePath"].every((field) => fields[field]?.type === "string") &&
-    fields.startFromOrigin?.type === "boolean" &&
     Array.isArray(strategyRequired) &&
     strategyRequired.every((field) => field === "type") &&
     Array.isArray(launchRequired) &&
@@ -942,19 +946,16 @@ export class LiveT3Adapter implements T3Adapter {
     if (supported && config.retryScope) retryScope = (await config.retryScope()) ?? null;
     return { supported, retryScope, explanation };
   }
-  async inspectLaunchSupport(target: T3Endpoint): Promise<LaunchSupport> {
-    return this.launchSupport(target, false);
-  }
-  async inspectWorktreeLaunchSupport(target: T3Endpoint): Promise<LaunchSupport> {
-    return this.launchSupport(target, true);
-  }
-  private async launchSupport(target: T3Endpoint, worktree: boolean): Promise<LaunchSupport> {
+  async inspectLaunchSupport(
+    target: T3Endpoint,
+    workspace: FlowWorkspace["mode"],
+  ): Promise<LaunchSupport> {
     return this.inspectContractSupport(target, {
       toolName: "t3_thread_launch",
       evaluate: ({ ready, schema, props }) => {
         const omissionPermitted = permitsOmittingRuntimeMode(schema);
         const launchable = omissionPermitted && ready && preservesLaunchSettings(schema, props);
-        if (launchable && worktree && !expressesWorktreeLaunches(schema, props))
+        if (launchable && workspace === "worktree" && !expressesWorktreeLaunches(schema, props))
           return {
             supported: false,
             explanation:

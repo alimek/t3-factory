@@ -42,50 +42,47 @@ The captured Flow revision's [workspace setting](studio.md#workspace-setting) de
 every worker of a Run works. A checkout Run works in the project root. A worktree Run's
 workers share one worktree; its project root stays the Run's project identity.
 
-- Start of a worktree Flow also requires T3's worktree launch support, otherwise it fails
-  with `launch_unsupported`. The accepted Start records the Run workspace: the resolved base
-  ref, the planned branch, the creator Block (the first Flow-input target) and the
-  preparation state, `preparing`, `bound` or `failed`, plus the path and branch once bound.
-- The creator launches with its normal first message on
-  `{type: "worktree", baseRef, branch}`. Factory always names the branch
+- **Creator and branch.** Start of a worktree Flow also requires T3's worktree launch
+  support (`launch_unsupported` otherwise) and records the Run workspace: the resolved base
+  ref, the planned branch, the creator Block (the first Flow-input target) and its state,
+  `preparing`, `bound` or `failed`. The creator launches with its first message on
+  `{type: "worktree", baseRef, branch}`. Factory names the branch
   `factory/run-<Run number>-<first 8 characters of the Run id>`, so T3 does not rename it
   after the first turn and Runs of different Factory homes on one repository do not share
-  it. T3 rejects the launch if that branch already exists.
-- Observation reads the creator's thread. Once it shows both a worktree path and a branch,
-  Factory binds them to the Run. The path is not readiness: T3 queues each worker's turn
-  behind that worker's own workspace preparation.
-- After binding, every other Flow-input target launches once with its normal first message
-  on `{type: "existing_worktree", worktreePath, branch}`; until then those launches wait. A
-  launch with a message keeps T3's preparation fence for that worker's own setup script.
-- In the same transaction Factory records one **prepared worker** per other Agent Block,
-  visited later or never: an idle launch on the same strategy, with the Block's launch title
-  and no message, so T3 runs no model task. Before sending each one Factory rereads the
-  Project's worktree setup scripts; a blocking or unreadable script, or missing worktree
-  launch support, leaves it pending with a Problem and Factory retries. An uncertain idle
-  launch is never repeated: recovery binds only the sole thread with the saved title, the
-  exact path and branch, no parent, the saved provider, model and options, and zero runs. A
-  definitive rejection cancels the preparation; that Block's first visit then launches with
-  its message as above.
-- A prepared worker is not a visit. It is stored apart from the Block's worker binding, so
-  it is not observed, owes no report, creates no attention and is not marked stale. The
-  first arrival at a prepared Block queues its first-visit message (Block id and Agent
-  prompt) on the prepared thread, with no launch; once that send is acknowledged the thread
-  becomes the Block's worker and the visit has begun. While the Block's preparation is
-  pending, reserved or uncertain, the arrival waits. Revisits reuse the same thread.
-- After a Human step the next activation is therefore always a queued send to an existing
-  thread on the bound path and branch, so T3's own recreation of a missing managed worktree
-  at turn start applies. Factory adds no restoration step; a failed send stays unresolved
-  under the usual delivery rules.
-- Worker reads, send-target checks, launch verification and recovery compare a worktree
-  Run's threads with the bound path; before binding only a thread that shows no path yet
-  is accepted. A thread that shows another path is a scope change. Checkout Runs keep the
-  project-root rule.
-- An uncertain creator launch is recovered by search and never repeated, so no second
-  worktree is created; the other workers keep waiting. A definitive creator rejection is an
-  error on the creator Block and on every other Flow-input Block, and none of them launches
-  into the project root. Automatic settlement waits while the worktree is unbound.
-- Factory never removes the worktree or an unused prepared thread; T3's own cleanup rules
-  apply to them, and empty idle threads stay in T3.
+  it; T3 rejects the launch if that branch already exists.
+- **Binding.** Factory binds the path and branch once the creator's thread shows both. The
+  path is not readiness: T3 queues each worker's turn behind that worker's own workspace
+  preparation. Before binding only the creator has a thread, and T3 may show its path before
+  its branch, so a thread with no branch or the planned branch is accepted; after binding a
+  thread must show the bound path. Any other workspace is a scope change. Checkout Runs keep
+  the project-root rule.
+- **Joining workers.** After binding, every other Flow-input target launches once with its
+  first message on `{type: "existing_worktree", worktreePath, branch}`, keeping T3's
+  preparation fence for that worker's own setup. Every other Agent Block, visited later or
+  never, gets one **prepared worker**: an idle launch on the same strategy with the Block's
+  launch title and no message, so T3 runs no model task. Each idle launch first rereads the
+  Project's worktree setup scripts and waits with a Problem while one is blocking or
+  unreadable ([support limit](installation.md#execution-and-safety-boundaries)).
+- **A prepared worker is not a visit.** It is stored apart from the Block's worker binding:
+  not observed, owes no report, creates no attention, is not marked stale and does not hold
+  automatic settlement. The first arrival at a prepared Block queues its first-visit message
+  on the prepared thread; once that send is acknowledged the thread is the Block's worker.
+  An arrival waits while its Block's preparation is unresolved. Automatic settlement cancels
+  unresolved preparations: an uncertain idle launch is abandoned rather than resent, and a
+  later arrival at that Block launches its worker with its message, as after a definitive
+  rejection.
+- **Recovery.** An uncertain launch is recovered by search and never repeated. For the
+  creator this means no second worktree, and the other workers keep waiting. An idle launch
+  matches only the sole thread with the saved title, the exact path and branch, no parent,
+  the saved provider, model and options, and zero runs. A definitive creator rejection fails
+  the workspace and errors every Flow-input Block; none launches into the project root.
+  Automatic settlement waits while the worktree is unbound.
+- **Later activations.** After a Human step or a return to an earlier Block, the activation
+  is a queued send to an existing thread on the bound path and branch, so T3's recreation of
+  a missing managed worktree at turn start applies. Factory adds no restoration step; a
+  failed send stays unresolved under the usual delivery rules.
+- Factory never removes the worktree or an unused prepared thread; T3's cleanup rules apply
+  to them, and empty idle threads stay in T3.
 
 ## Start and delivery guarantees
 

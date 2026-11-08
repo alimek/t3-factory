@@ -1,6 +1,12 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { LaunchCandidate, LaunchPayload } from "./adapters/t3.ts";
+import type {
+  ExecutionObservation,
+  LaunchCandidate,
+  LaunchPayload,
+  T3Adapter,
+  T3ProjectRef,
+} from "./adapters/t3.ts";
 
 /**
  * The workspace a Run's workers share. A checkout Run works in its project root. A worktree Run's
@@ -9,16 +15,17 @@ import type { LaunchCandidate, LaunchPayload } from "./adapters/t3.ts";
  */
 export type RunWorkspace =
   | { readonly mode: "checkout" }
-  | {
-      readonly mode: "worktree";
-      readonly baseRef: string;
-      readonly plannedBranch: string;
-      readonly creatorBlockId: string;
-      readonly state: "preparing" | "bound" | "failed";
-      /** Null until bound. */
-      readonly worktreePath: string | null;
-      readonly branch: string | null;
-    };
+  | (WorktreePlan &
+      (
+        | { readonly state: "preparing" | "failed" }
+        | { readonly state: "bound"; readonly worktreePath: string; readonly branch: string }
+      ));
+type WorktreePlan = {
+  readonly mode: "worktree";
+  readonly baseRef: string;
+  readonly plannedBranch: string;
+  readonly creatorBlockId: string;
+};
 /** Null is T3's project checkout. Any other path must be that checkout. */
 const checkoutWorkspace = (workspaceRoot: string | null, checkout: string) =>
   workspaceRoot === null || workspaceRoot === checkout;
@@ -37,19 +44,32 @@ export const readRunWorkspace = Effect.fnUntraced(function* (
     worktree_path: string | null;
     branch: string | null;
   }>`SELECT base_ref,planned_branch,creator_block_id,state,worktree_path,branch FROM run_workspaces WHERE run_id=${runId}`;
-  const workspace: RunWorkspace = row
-    ? {
-        mode: "worktree",
-        baseRef: row.base_ref,
-        plannedBranch: row.planned_branch,
-        creatorBlockId: row.creator_block_id,
-        state: row.state,
-        worktreePath: row.worktree_path,
-        branch: row.branch,
-      }
-    : { mode: "checkout" };
+  if (!row) return { mode: "checkout" } satisfies RunWorkspace;
+  const plan: WorktreePlan = {
+    mode: "worktree",
+    baseRef: row.base_ref,
+    plannedBranch: row.planned_branch,
+    creatorBlockId: row.creator_block_id,
+  };
+  const workspace: RunWorkspace =
+    row.state === "bound"
+      ? // The table CHECK gives every bound row its path and branch.
+        { ...plan, state: "bound", worktreePath: row.worktree_path!, branch: row.branch! }
+      : { ...plan, state: row.state };
   return workspace;
 });
+
+/**
+ * The Project's first blocking worktree setup script, read from T3 now; fails when T3 cannot read
+ * the scripts. Factory attaches later workers idle and T3 shows no setup completion for an idle
+ * thread, so a blocking script could still run when its first activation arrives.
+ */
+export const blockingSetupScript = (t3: T3Adapter, target: T3ProjectRef) =>
+  Effect.tryPromise(() => t3.readWorktreeSetupScripts(target)).pipe(
+    Effect.map((scripts) => scripts.find((script) => script.blocking) ?? null),
+  );
+
+export const WORKTREE_REJECTED = "T3 rejected the worker that creates the Run worktree.";
 
 /** Factory names the branch so T3 does not rename it later: unique per Run number and Run id. */
 export const worktreeBranch = (number: number, runId: string) =>
@@ -64,23 +84,40 @@ export function launchStrategy(
   if (workspace.state === "bound")
     return {
       type: "existing_worktree",
-      worktreePath: workspace.worktreePath!,
-      branch: workspace.branch!,
+      worktreePath: workspace.worktreePath,
+      branch: workspace.branch,
     };
   if (workspace.state === "preparing" && blockId === workspace.creatorBlockId)
     return { type: "worktree", baseRef: workspace.baseRef, branch: workspace.plannedBranch };
   return undefined;
 }
 
-export const sameStrategy = (actual: WorkspaceStrategy, expected: WorkspaceStrategy | undefined) =>
-  !!expected && JSON.stringify(actual) === JSON.stringify(expected);
+/** The same fields with equal values, in any order. */
+export function sameStrategy(actual: WorkspaceStrategy, expected: WorkspaceStrategy | undefined) {
+  if (!expected) return false;
+  const stored: Readonly<Record<string, unknown>> = actual;
+  const wanted: Readonly<Record<string, unknown>> = expected;
+  const fields = Object.keys(wanted);
+  return (
+    Object.keys(stored).length === fields.length &&
+    fields.every((field) => stored[field] === wanted[field])
+  );
+}
 
-/** A checkout Run's threads show T3's checkout (null) or the project root; a worktree Run's
- * threads show its bound worktree, and nothing but the not-yet-reported null before binding. */
-export function inRunWorkspace(run: WorkspaceRun, workspaceRoot: string | null) {
-  if (run.workspace.mode === "checkout")
-    return checkoutWorkspace(workspaceRoot, run.workspace_root);
-  return workspaceRoot === run.workspace.worktreePath;
+/**
+ * A checkout Run's threads show T3's checkout (null) or the project root; a bound worktree Run's
+ * threads show its worktree. Before binding only the creator has a thread, and T3 may show its
+ * path before its branch, so any path with no branch or the planned branch is still its own.
+ */
+export function inRunWorkspace(
+  run: WorkspaceRun,
+  thread: Pick<ExecutionObservation, "workspaceRoot" | "branch">,
+) {
+  const { workspace } = run;
+  if (workspace.mode === "checkout")
+    return checkoutWorkspace(thread.workspaceRoot, run.workspace_root);
+  if (workspace.state === "bound") return thread.workspaceRoot === workspace.worktreePath;
+  return thread.branch === null || thread.branch === workspace.plannedBranch;
 }
 
 /** A recovered launch shows its strategy's workspace. A null branch never matches a worktree. */

@@ -4,7 +4,13 @@ import {
   preparedWorktreeFlow,
   preparedWorktreeReviewFlow,
 } from "./support/prepared-runner.ts";
-import { settleThread, workerFinal } from "./support/run-worker.ts";
+import {
+  answeredReview,
+  finishedParallelWork,
+  launchedBlockId,
+  settleThread,
+  workerFinal,
+} from "./support/run-worker.ts";
 
 it("a worktree Start launches exactly one worktree-creating worker from the resolved base ref", async (c) => {
   // Arrange
@@ -45,6 +51,24 @@ it("once T3 shows the worktree path and branch, the other Flow-input worker laun
     worktreePath: "/t3-worktrees/thread-1",
     branch: (creator!.workspaceStrategy as { branch: string }).branch,
   });
+});
+
+it("a creator thread that shows its worktree path before its branch is observed without a scope change", async (c) => {
+  // Arrange
+  const { f, t3, input } = await preparedWorktreeFlow(c);
+  t3.worktreeBranchPending = true;
+  const started = await f.startRun(input);
+  assert(started.ok);
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ freshness: "fresh", problem: null });
+  expect(run.value.workspace).toMatchObject({ state: "preparing", path: null });
+  expect(t3.launches.size).toBe(1);
 });
 
 it("a lost creator reply is recovered by search without a second worktree, and the other worker waits for it", async (c) => {
@@ -126,7 +150,7 @@ it("restart with a joining launch unresolved recovers it by search without anoth
   expect(run.value.blocks[1]).toMatchObject({ threadId: "thread-2", recovery: null });
 });
 
-it("a worker thread that reports a different worktree is a scope change, while the bound worktree is observed", async (c) => {
+it("a worker thread that reports a worktree other than the Run's is a scope change", async (c) => {
   // Arrange
   const { f, t3, input, project } = await preparedWorktreeFlow(c);
   const started = await f.startRun(input);
@@ -141,10 +165,10 @@ it("a worker thread that reports a different worktree is a scope change, while t
   // Assert
   const run = await f.getRun(started.value.id);
   assert(run.ok);
-  expect(run.value.blocks.map(({ freshness, problem }) => ({ freshness, problem }))).toStrictEqual([
-    { freshness: "fresh", problem: null },
-    { freshness: "stale", problem: "Worker thread observation unavailable." },
-  ]);
+  expect(run.value.blocks[1]).toMatchObject({
+    freshness: "stale",
+    problem: "Worker thread observation unavailable.",
+  });
 });
 
 it("a rejected worktree-creating launch is a Block error and launches no other worker into the project root", async (c) => {
@@ -226,17 +250,9 @@ it("once the worktree is bound, every later Agent Block gets one idle worker on 
   });
 });
 
-it("after a Human step, the first arrival at a prepared Block queues its task on the prepared thread and launches nothing", async (c) => {
+it("after a Human step, the first arrival at a prepared Block queues its task on the prepared thread in the Run worktree and launches nothing", async (c) => {
   // Arrange
-  const { f, t3, runId, entryBlockId } = await preparedIdleWorkers(c);
-  assert((await f.runtime.submit(workerFinal(entryBlockId))).code === "ACCEPTED");
-  t3.engineStatus = "completed";
-  settleThread(t3, "execution-1", "completed", "settled", "thread-1");
-  assert((await f.reconcileRuns()).ok);
-  const review = await f.getRun(runId);
-  assert(review.ok);
-  const occurrence = review.value.humanOccurrences.find((o) => o.state === "pending")!;
-  assert((await f.answerHumanOccurrence(occurrence.id, { exitId: "done" })).ok);
+  const { f, t3, runId } = await answeredReview(c);
 
   // Act
   await f.reconcileRuns();
@@ -253,12 +269,56 @@ it("after a Human step, the first arrival at a prepared Block queues its task on
   ]);
   const run = await f.getRun(runId);
   assert(run.ok);
+  expect(run.value.workspace).toMatchObject({ path: "/t3-worktrees/thread-1" });
   expect(run.value.blocks.map(({ threadId }) => threadId)).toStrictEqual([
     "thread-1",
     null,
     "thread-2",
     null,
   ]);
+  expect(run.value.blocks[2]).toMatchObject({ freshness: "fresh", problem: null });
+});
+
+it("a Flow that returns to an earlier Block revisits its thread in the same worktree and launches nothing", async (c) => {
+  // Arrange
+  const { f, t3, runId } = await finishedParallelWork(c);
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const sends = [...t3.sends.values()].map(({ payload }) => payload.threadId);
+  expect(sends).toStrictEqual(["thread-2", "thread-1"]);
+  expect(t3.launchCalls).toBe(3);
+  const run = await f.getRun(runId);
+  assert(run.ok);
+  expect(run.value.workspace).toMatchObject({
+    state: "bound",
+    path: "/t3-worktrees/thread-1",
+    branch: expect.stringMatching(/^factory\/run-1-/),
+  });
+  expect(run.value.blocks[0]).toMatchObject({
+    threadId: "thread-1",
+    state: "working",
+    freshness: "fresh",
+  });
+});
+
+it("a send that fails while the worker's worktree is missing stays unresolved and is delivered once T3 accepts it", async (c) => {
+  // Arrange
+  const { f, t3, runId } = await answeredReview(c);
+  t3.beforeSend = () => Promise.reject(Error("Worktree directory does not exist"));
+  await f.reconcileRuns();
+  delete t3.beforeSend;
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(runId);
+  assert(run.ok);
+  expect([...t3.sends.values()].map(({ payload }) => payload.threadId)).toStrictEqual(["thread-2"]);
+  expect(run.value.blocks[2]).toMatchObject({ threadId: "thread-2", state: "working" });
 });
 
 it("a lost idle-worker reply is recovered by search without creating another thread", async (c) => {
@@ -374,4 +434,34 @@ it("a worktree setup script that became blocking after Start holds idle-worker c
       'The Project runs "Install" as a blocking worktree setup script, which idle workers do not support. Make it asynchronous in T3; Factory will retry creating this idle worker.',
     ],
   ]);
+});
+
+it("idle-worker preparations held by a blocking setup script do not keep a finished worktree Run from settling", async (c) => {
+  // Arrange
+  const { f, t3, input } = await preparedWorktreeReviewFlow(c);
+  t3.worktreeMetadataPending = true;
+  const started = await f.startRun(input);
+  assert(started.ok);
+  await f.reconcileRuns();
+  t3.worktreeMetadataPending = false;
+  t3.worktreeSetupScripts = [{ name: "Install", blocking: true }];
+  await f.reconcileRuns();
+  const entryBlockId = launchedBlockId(t3);
+  assert(
+    (await f.runtime.submit(workerFinal(entryBlockId, "Shipped.", "ship"))).code === "ACCEPTED",
+  );
+  t3.engineStatus = "completed";
+  settleThread(t3, "execution-1", "completed", "settled", "thread-1");
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(t3.idleLaunches.size).toBe(0);
+  expect(
+    run.value.intents.filter(({ kind }) => kind === "prepare").map(({ state }) => state),
+  ).toStrictEqual(["cancelled", "cancelled"]);
 });

@@ -1,4 +1,4 @@
-import type { AgentEnvironment, FlowWorkspaceBase } from "@t3-factory/contracts";
+import type { AgentEnvironment, FlowWorkspace, FlowWorkspaceBase } from "@t3-factory/contracts";
 import { LaunchRejected } from "../../src/adapters/t3.ts";
 import { isReportingDriver } from "../../src/reporting-drivers.ts";
 import type {
@@ -64,8 +64,15 @@ export class ControlledT3 implements T3Adapter {
   >();
   engineStatus = "running";
   pendingRequestCount = 0;
-  async inspectLaunchSupport(_target: T3Endpoint) {
+  worktreeLaunchSupported = true;
+  async inspectLaunchSupport(_target: T3Endpoint, workspace: FlowWorkspace["mode"]) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
+    if (this.launchSupported && workspace === "worktree" && !this.worktreeLaunchSupported)
+      return {
+        supported: false,
+        retryScope: this.retryScope,
+        explanation: "T3 launch schema cannot express idle worktree launches.",
+      };
     return {
       supported: this.launchSupported,
       retryScope: this.retryScope,
@@ -73,17 +80,6 @@ export class ControlledT3 implements T3Adapter {
         ? "Controlled durable replay lifetime"
         : "T3 launch contract is unsupported. Recheck the T3 connection.",
     };
-  }
-  worktreeLaunchSupported = true;
-  async inspectWorktreeLaunchSupport(target: T3Endpoint) {
-    const support = await this.inspectLaunchSupport(target);
-    return this.worktreeLaunchSupported
-      ? support
-      : {
-          ...support,
-          supported: false,
-          explanation: "T3 launch schema cannot express idle worktree launches.",
-        };
   }
   protected launchIds(n: number) {
     return { threadId: `thread-${n}`, runId: `execution-${n}` };
@@ -141,6 +137,8 @@ export class ControlledT3 implements T3Adapter {
   }
   /** While true, worktree-creating threads show no path or branch yet, as T3 before it creates the worktree. */
   worktreeMetadataPending = false;
+  /** While true, worktree-creating threads show their path before their branch. */
+  worktreeBranchPending = false;
   /** Root threads report `checkout`; worktree threads report T3's path and the requested branch. */
   private threadWorkspace(
     payload: LaunchPayload | IdleLaunchPayload,
@@ -152,7 +150,10 @@ export class ControlledT3 implements T3Adapter {
     if (strategy.type === "existing_worktree")
       return { workspaceRoot: strategy.worktreePath, branch: strategy.branch };
     if (this.worktreeMetadataPending) return { workspaceRoot: null, branch: null };
-    return { workspaceRoot: `/t3-worktrees/${threadId}`, branch: strategy.branch };
+    return {
+      workspaceRoot: `/t3-worktrees/${threadId}`,
+      branch: this.worktreeBranchPending ? null : strategy.branch,
+    };
   }
   rejectLaunch = false;
   discoverAvailable = true;

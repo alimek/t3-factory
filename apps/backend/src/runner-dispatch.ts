@@ -21,6 +21,7 @@ import type {
 import {
   catalogProject,
   intactPayload,
+  launchesWorker,
   replayUnproven,
   runTarget,
   unverified,
@@ -114,8 +115,7 @@ export function openRunnerDispatch(
   }
   function dispatchIntent(runRow: RunRow, saved: IntentRow, contextId: string | null) {
     return Effect.gen(function* () {
-      const launchRecovery =
-        (saved.kind === "launch" || saved.kind === "prepare") && saved.state !== "pending";
+      const launchRecovery = launchesWorker(saved) && saved.state !== "pending";
       if (
         (!runRow.gate_open && !launchRecovery) ||
         !["launch", "prepare", "handoff", "send"].includes(saved.kind)
@@ -128,7 +128,7 @@ export function openRunnerDispatch(
         );
         return;
       }
-      if (saved.kind === "launch" || saved.kind === "prepare") {
+      if (launchesWorker(saved)) {
         yield* dispatchBlockLaunch(database, t3, runRow, saved);
         const [block] = yield* run(
           Effect.gen(function* () {
@@ -264,7 +264,7 @@ export function openRunnerDispatch(
       return (
         observed.threadId !== target.threadId ||
         observed.projectId !== runRow.t3_project_id ||
-        !inRunWorkspace(runRow, observed.workspaceRoot)
+        !inRunWorkspace(runRow, observed)
       );
     });
   }

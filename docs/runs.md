@@ -13,8 +13,8 @@ resolves the base in the selected Project's repository on the Factory host: the 
 custom ref verified as a commit, read through bounded `git` calls without a shell. A missing ref, an unset default branch or
 a T3 endpoint that is not on this computer rejects Start with a `workspace.*` issue and the **Open Studio → Flows** repair
 action; no Run, Task or worker is created. Start then reads the Project's T3 scripts and rejects the same way when a worktree
-setup script (one T3 runs on worktree creation) is blocking (`async: false`) or the scripts cannot be read; making the script
-asynchronous in T3 or choosing the project checkout repairs it ([support limit](installation.md#execution-and-safety-boundaries)). Correct configuration, accepted Start and accepted Block result are separate
+setup script is blocking or the scripts cannot be read; making the script asynchronous in T3 or choosing the project checkout
+repairs it ([support limit](installation.md#execution-and-safety-boundaries)). Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
@@ -176,7 +176,7 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
 - A first visit launches the block's own top-level worker; in a worktree Run, Agent Blocks no Flow input starts get an idle
   worker once the worktree is bound, and the first visit queues on it ([Run workspace](runner.md#run-workspace)). An idle
-  worker is not a visit and never shows a missing report. Later visits queue independent turns on that same worker, each as
+  worker is not a visit, never shows a missing report and does not keep the Run from settling. Later visits queue independent turns on that same worker, each as
   its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
   Partial fan-out survives restart; an unresolved launch or idle worker preparation holds later arrivals to that block only.
 - Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; a finished

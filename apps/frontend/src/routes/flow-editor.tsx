@@ -58,6 +58,8 @@ import {
   type FlowWire,
 } from "../flow-graph.ts";
 
+type FlowContent = Pick<FlowDraft, "name" | "workspace" | "graph">;
+
 /** The saved Flow, its local edits, and the save, readiness and revision-conflict operations. */
 function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => void) {
   const [saved, setSaved] = useState<FlowDraft | null>(null);
@@ -117,13 +119,15 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setDirty(true);
     setReadiness(null);
   }
+  /** What a save writes and a revision conflict compares. */
+  const content: FlowContent = { name, workspace, graph };
   async function save() {
     if (!saved) return;
     setBusy(true);
     setError("");
     setIssues([]);
     try {
-      load(await api.updateFlow(id, { name, graph, workspace, expectedRevision: saved.revision }));
+      load(await api.updateFlow(id, { ...content, expectedRevision: saved.revision }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save Flow.");
       if (e instanceof ApiError) setIssues(e.detail.issues);
@@ -138,9 +142,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setError("");
     setIssues([]);
     try {
-      setReadiness(
-        await api.validateFlow({ name, graph, workspace, expectedRevision: saved.revision }),
-      );
+      setReadiness(await api.validateFlow({ ...content, expectedRevision: saved.revision }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not check Flow.");
       if (e instanceof ApiError) setIssues(e.detail.issues);
@@ -168,6 +170,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     graph,
     name,
     workspace,
+    content,
     dirty,
     busy,
     error,
@@ -729,9 +732,7 @@ function DraftProblems({
       )}
       {draft.conflict && (
         <ConflictPanel
-          name={draft.name}
-          graph={draft.graph}
-          workspace={draft.workspace}
+          local={draft.content}
           latest={draft.latest}
           onCompare={draft.compareLatest}
           onTakeLatest={draft.takeLatest}
@@ -817,17 +818,13 @@ function BlockPanel({
 }
 
 function ConflictPanel({
-  name,
-  graph,
-  workspace,
+  local,
   latest,
   onCompare,
   onTakeLatest,
   onKeepLocal,
 }: {
-  name: string;
-  graph: FlowGraph;
-  workspace: FlowWorkspace;
+  local: FlowContent;
   latest: FlowDraft | null;
   onCompare: () => Promise<void>;
   onTakeLatest: (latest: FlowDraft) => void;
@@ -853,7 +850,7 @@ function ConflictPanel({
             <div className="min-w-0">
               <h3 className="mb-1.5 text-base font-semibold">Your local draft</h3>
               <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify({ name, workspace, graph }, null, 2)}
+                {JSON.stringify(local, null, 2)}
               </pre>
             </div>
             <div className="min-w-0">

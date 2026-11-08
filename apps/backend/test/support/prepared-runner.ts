@@ -187,7 +187,8 @@ export async function preparedWorktreeFlow(c: TestContext) {
 
 /**
  * A worktree Flow with one Flow-input Agent: Entry worker's "Done" goes to a Human Review that
- * hands to Parallel work, "Revise" to Unused branch, and "Ship" ends the Run.
+ * hands to Parallel work, "Revise" to Unused branch, and "Ship" ends the Run. Parallel work
+ * returns to Entry worker.
  */
 export async function preparedWorktreeReviewFlow(c: TestContext) {
   const setup = await prepared(c);
@@ -219,6 +220,7 @@ export async function preparedWorktreeReviewFlow(c: TestContext) {
         { sourceBlockId: entry.id, exitId: "done", targetBlockId: "review" },
         { sourceBlockId: entry.id, exitId: "revise", targetBlockId: "unused" },
         { sourceBlockId: "review", exitId: "done", targetBlockId: "parallel-block" },
+        { sourceBlockId: "parallel-block", exitId: "done", targetBlockId: entry.id },
       ],
     },
   });

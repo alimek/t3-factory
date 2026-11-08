@@ -17,7 +17,8 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
-import { readRunWorkspace } from "./run-workspace.ts";
+import { readRunWorkspace, WORKTREE_REJECTED } from "./run-workspace.ts";
+import { launchesWorker } from "./runner-utils.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { currentWorkingMessages } from "./block-report.ts";
@@ -53,7 +54,7 @@ function runBlock(
   const recovering = intents.some(
     (intent) =>
       intent.block_id === block.block_id &&
-      (intent.kind === "launch" || intent.kind === "prepare") &&
+      launchesWorker(intent) &&
       unresolved.includes(intent.state),
   );
   return {
@@ -94,7 +95,7 @@ function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly
     );
     const problem =
       workspace.state === "failed"
-        ? "T3 rejected the worker that creates the Run worktree. No worker was launched into it."
+        ? `${WORKTREE_REJECTED} No worker was launched into it.`
         : workspace.state === "preparing"
           ? (creatorLaunch?.problem ?? null)
           : null;
@@ -102,8 +103,8 @@ function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly
       mode: "worktree",
       baseRef: workspace.baseRef,
       state: workspace.state,
-      path: workspace.worktreePath,
-      branch: workspace.branch,
+      path: workspace.state === "bound" ? workspace.worktreePath : null,
+      branch: workspace.state === "bound" ? workspace.branch : null,
       problem,
       preparedWorkers: prepared.map((row) => ({
         blockId: row.block_id,

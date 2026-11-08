@@ -111,7 +111,7 @@ it("launch support permits an absent runtime mode without inventing replay proof
   const { adapter, external } = await launchFixture(c);
 
   // Act
-  const support = await adapter.inspectLaunchSupport({ endpoint: external.endpoint });
+  const support = await adapter.inspectLaunchSupport({ endpoint: external.endpoint }, "checkout");
 
   // Assert
   expect(support.supported).toBe(true);
@@ -123,7 +123,7 @@ it("T3's workspace strategy schema supports idle worktree launches", async (c) =
   const { adapter, external } = await launchFixture(c);
 
   // Act
-  const support = await adapter.inspectWorktreeLaunchSupport({ endpoint: external.endpoint });
+  const support = await adapter.inspectLaunchSupport({ endpoint: external.endpoint }, "worktree");
 
   // Assert
   expect(support.supported).toBe(true);
@@ -144,7 +144,7 @@ it("worktree launch support is refused when the strategy cannot name an existing
   });
 
   // Act
-  const support = await adapter.inspectWorktreeLaunchSupport({ endpoint: external.endpoint });
+  const support = await adapter.inspectLaunchSupport({ endpoint: external.endpoint }, "worktree");
 
   // Assert
   expect(support).toMatchObject({
@@ -158,7 +158,8 @@ it("Start rejects a schema requiring runtime mode before accepting work", async 
   const { adapter, external, schema } = await launchFixture(c);
   schema.required = ["runtimeMode"];
   const { f, t3, input } = await prepared(c);
-  t3.inspectLaunchSupport = () => adapter.inspectLaunchSupport({ endpoint: external.endpoint });
+  t3.inspectLaunchSupport = (_target, workspace) =>
+    adapter.inspectLaunchSupport({ endpoint: external.endpoint }, workspace);
 
   // Act
   const blocked = await f.startRun(input);

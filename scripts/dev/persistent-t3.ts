@@ -12,6 +12,15 @@ import type {
   T3ProjectTarget,
 } from "../../apps/backend/src/adapters/t3.ts";
 
+type Snapshot = ReturnType<PersistentT3["snapshot"]>;
+type SavedExecution = Snapshot["executions"][number][1];
+/** Version 4, or version 3 without idle launches and thread branches. */
+type SavedState = Omit<Snapshot, "version" | "idleLaunches" | "executions"> & {
+  version: number;
+  idleLaunches?: Snapshot["idleLaunches"];
+  executions: [string, Omit<SavedExecution, "branch"> & { branch?: string | null }][];
+};
+
 /** A local simulated engine. Its accepted keys outlive the Factory process. */
 export class PersistentT3 extends ControlledT3 {
   private readonly statePath: string;
@@ -40,10 +49,9 @@ export class PersistentT3 extends ControlledT3 {
 
   private restore() {
     try {
-      const saved = JSON.parse(readFileSync(this.statePath, "utf8")) as ReturnType<
-        PersistentT3["snapshot"]
-      >;
-      if (saved.version !== 4) throw new Error("Unsupported demo engine state; run pnpm db:reset.");
+      const saved = JSON.parse(readFileSync(this.statePath, "utf8")) as SavedState;
+      if (saved.version !== 3 && saved.version !== 4)
+        throw new Error("Unsupported demo engine state; run pnpm db:reset.");
       this.identity = saved.identity;
       for (const [key, value] of saved.subagents) this.subagents.set(key, value);
       for (const [key, value] of saved.delegatedSettlements)
@@ -52,9 +60,11 @@ export class PersistentT3 extends ControlledT3 {
       this.projects = saved.projects;
       this.projectCreates = saved.projectCreates;
       for (const [key, value] of saved.launches) this.launches.set(key, value);
-      for (const [key, value] of saved.idleLaunches) this.idleLaunches.set(key, value);
+      // Version 3 predates idle workers and worktree branches: its threads are checkout threads.
+      for (const [key, value] of saved.idleLaunches ?? []) this.idleLaunches.set(key, value);
       for (const [key, value] of saved.sends) this.sends.set(key, value);
-      for (const [key, value] of saved.executions) this.executionObservations.set(key, value);
+      for (const [key, value] of saved.executions)
+        this.executionObservations.set(key, { ...value, branch: value.branch ?? null });
       for (const threadId of saved.settledThreads ?? []) this.settledThreads.add(threadId);
     } catch (cause) {
       throw new Error(

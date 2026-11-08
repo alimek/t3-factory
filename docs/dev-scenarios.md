@@ -79,9 +79,10 @@ Fresh or reset homes install a disposable Codex reporting target and the `$facto
 and separate terminal observations release Agent and Human handoffs. Questions stay in the worker, Human corrections revisit the same worker with a new activation, the Problem case is a failed worker
 execution, the Settled case settles automatically once its worker thread is finished and the Archived case asks the simulator to interrupt its worker thread. The simulator retains execution states; it generates no code changes and finishes no work on its own. Ordinary restarts retain current-contract demo state; contract-removal migrations delete open Runs, most recently when Block ids replaced native call correlation. Use a deliberate reset to restore the complete scenario baseline after upgrading an older demo home. An upgrade that changes the `$factory-block` skill also leaves a retained home's Codex reporting needing attention until **Repair installation** or a reset.
 
-The supported saved simulator format is version 4, which records idle worker threads and each
-thread's worktree branch; version 3 introduced simulated subagents instead of native delegation and
-descendant evidence. Earlier versions need an explicit reset;
+The saved simulator format is version 4, which records idle worker threads and each thread's
+worktree branch. Startup also restores version 3 (simulated subagents instead of native delegation
+and descendant evidence) as having no idle workers and checkout threads without a branch, and saves
+it as version 4. Earlier versions need an explicit reset;
 startup never invents missing state for retained Runs. A simulated delegated wait stays
 pending while a saved subagent is active; this is not proof of real T3 settlement or
 active-list behavior.

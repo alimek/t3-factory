@@ -41,7 +41,7 @@ export async function readWorkerThread(
   if (
     thread.threadId !== threadId ||
     thread.projectId !== run.t3_project_id ||
-    !inRunWorkspace(run, thread.workspaceRoot)
+    !inRunWorkspace(run, thread)
   )
     throw Error("Worker thread scope changed.");
   const latestId = thread.activeRunId ?? thread.latestRunId ?? null;
