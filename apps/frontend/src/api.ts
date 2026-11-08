@@ -95,20 +95,18 @@ export const api = {
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/restore`, { method: "POST" }),
   markRunWokeSeen: (id: string) =>
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/woke-seen`, { method: "POST" }),
+  settleRun: (id: string) =>
+    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/settle`, { method: "POST" }),
   renameRun: (id: string, input: { title: string }) =>
     patch<RunDetail>(`/api/runs/${encodeURIComponent(id)}`, input),
-  recoverRunCoordinator: (id: string, sourceExecutionId: string) =>
-    post<RunDetail>(`/api/runs/${encodeURIComponent(id)}/recover-coordinator`, {
-      sourceExecutionId,
-    }),
-  requestReport: (id: string) =>
-    request<RunDetail>(`/api/attention/${id}/request-report`, { method: "POST" }),
+  requestReport: (runId: string, blockId: string) =>
+    post<RunDetail>(`/api/runs/${encodeURIComponent(runId)}/request-report`, { blockId }),
   answerHumanOccurrence: (id: string, input: { exitId?: string; message?: string }) =>
     post<RunDetail>(`/api/human-occurrences/${encodeURIComponent(id)}/answer`, input),
   startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),
   getRunCreationPolicy: () => request<RunCreationPolicy>("/api/run-creation-policy"),
-  stopRun: (id: string) =>
-    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/stop`, { method: "POST" }),
+  archiveRun: (id: string) =>
+    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
   getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   listRuns: (projectId: string) =>
     request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),

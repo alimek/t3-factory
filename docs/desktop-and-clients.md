@@ -1,6 +1,6 @@
 # Desktop and approved clients
 
-An Electron application for **macOS on Apple Silicon (arm64) only**, plus approved-client access for desktop and browser clients. Execution, report, Human, uncertainty and Stop
+An Electron application for **macOS on Apple Silicon (arm64) only**, plus approved-client access for desktop and browser clients. Execution, report, Human, uncertainty, Settle and Archive
 semantics are unchanged; see [Runs](runs.md). Packaging and release qualification are in [Release](release.md).
 
 ## Installation roles
@@ -15,7 +15,7 @@ Each installation has exactly one role, chosen on first launch and changeable in
 
 An installation never hosts one Factory and operates another at the same time. Switching
 from server to client asks for confirmation (with the open-Run count) and stops the
-backend in order; it never Stops Runs. Local data stays where it is and is never copied
+backend in order; it never archives Runs. Local data stays where it is and is never copied
 to or merged with another server. Switching back reopens the same home and reconciles.
 
 A desktop server adopts an existing source installation's home: Flows, Agents, Runs,
@@ -33,7 +33,7 @@ same conflict in the other direction.
 - **Quit** on a server with open Runs asks for confirmation: Factory control stops,
   reports and transitions wait, and T3 work already started may continue. **Cancel**
   keeps everything running. Confirmed Quit shuts the backend down in order and
-  releases ownership. Quit is not Stop; on the next start normal reconciliation runs
+  releases ownership. Quit is not Archive; on the next start normal reconciliation runs
   before eligible work resumes. Quit with no open Runs needs no confirmation.
 - Closing or quitting a client never affects its server.
 - **Open Factory in the background at login** is off by default. When enabled, a login
@@ -96,8 +96,8 @@ a new request needing new approval.
 | Offline after connecting | The last observed view stays, marked **Offline** with its observation time; every control is disabled, mutations are never sent or queued, and Factory reconnects automatically and refreshes |
 
 A command whose response was lost is not repeated as new work: Start retries reuse
-the original request key and resolve to the same Run, and Stop is never reported
-successful without the server's established evidence. Clients and servers interoperate
+the original request key and resolve to the same Run, and Settle or Archive is never
+reported successful without the server's response. Clients and servers interoperate
 across releases when their protocol ranges overlap; see the
 [compatibility range](#protocol-compatibility).
 

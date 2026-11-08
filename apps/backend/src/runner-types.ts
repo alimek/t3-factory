@@ -8,7 +8,6 @@ import type {
   RuntimeReadiness,
 } from "@t3-factory/contracts";
 import type { T3Target } from "./adapters/t3.ts";
-import type { RuntimeBinding } from "./runtime-types.ts";
 
 /** A Run's row with the definitions it captured at Start. */
 export type RunRow = {
@@ -24,12 +23,11 @@ export type RunRow = {
   context_id: string;
   workspace_root: string;
   gate_open: number;
-  stop_requested_at: string | null;
   generation: number;
   number: number;
   started_at: string;
-  closed_at: string | null;
-  outcome: RunDetail["outcome"];
+  settled_at: string | null;
+  archived_at: string | null;
   endpoint: string;
   environment_id: string;
   t3_project_id: string;
@@ -38,6 +36,8 @@ export type RunRow = {
 export type BlockRow = {
   run_id: string;
   block_id: string;
+  /** The Block id Agents name in Factory MCP calls; null for Human steps. */
+  public_id: string | null;
   name: string;
   state: RunBlock["state"];
   thread_id: string | null;
@@ -80,8 +80,8 @@ export type ReportRow = {
   result_message: string | null;
   id: string;
   block_id: string;
-  execution_id: string;
-  report_key: string;
+  /** The Block's latest execution when the report was accepted, if its worker was bound. */
+  execution_id: string | null;
   fingerprint: string;
   status: "waiting" | "finished";
   exit_id: string | null;
@@ -89,7 +89,6 @@ export type ReportRow = {
   acknowledgement_json: string;
   accepted_at: string;
   completion_eligible_at: string | null;
-  final_contract: number;
   pending_message: string | null;
 };
 
@@ -99,7 +98,8 @@ export type ExecutionRow = {
   block_id: string;
   execution_id: string;
   engine_status: string | null;
-  report_status: RunBlock["reportStatus"];
+  report_status: "waiting" | "working" | "finished" | null;
+  working_reported: number;
   observed_at: string | null;
   ordinal: number | null;
   problem: string | null;
@@ -125,9 +125,8 @@ export type TaskRunRow = {
   id: string;
   input: string;
   started_at: string;
-  closed_at: string | null;
-  outcome: RunDetail["outcome"];
-  stop_requested_at: string | null;
+  settled_at: string | null;
+  archived_at: string | null;
   flow_id: string;
   flow_name: string;
 };
@@ -142,7 +141,7 @@ export type ReportRunRow = Pick<
   | "t3_project_id"
   | "workspace_root"
   | "gate_open"
-  | "closed_at"
+  | "archived_at"
   | "context_id"
   | "definitions"
 > & { token: string };
@@ -167,7 +166,6 @@ export interface RunnerLifecycle {
   getRun(id: string): Effect.Effect<Result<RunDetail>, unknown>;
 }
 export interface RunnerOptions {
-  bindings: { bind(binding: RuntimeBinding): void; unbind(threadId: string): void };
   checkAgent: (
     projectId: string,
     agent: RunDefinitions["agents"][number],

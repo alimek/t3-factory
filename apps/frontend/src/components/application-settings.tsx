@@ -39,7 +39,7 @@ export function ApplicationSettings({ local = false }: { local?: boolean }) {
         <SectionLabel>Role</SectionLabel>
         <p className="text-sm">
           {state.role === "server"
-            ? "This computer runs the Factory server. Closing its window keeps the server running; Quit stops Factory control but never Stops Runs."
+            ? "This computer runs the Factory server. Closing its window keeps the server running; Quit stops Factory control but never archives Runs."
             : `This computer operates the server at ${state.server?.url ?? "—"}. Closing it never stops that server.`}
         </p>
         <div className="flex flex-wrap gap-2">

@@ -12,13 +12,13 @@ use older/newer peers owned and cleaned up by the same fixture process.
 | Workflow | Surviving spec | What it protects |
 | --- | --- | --- |
 | Readiness | `tests/smoke.e2e.ts` | Built UI and seeded Flows load without model authentication |
-| Visual evidence | `tests/screenshots.e2e.ts`, `tests/run-evidence.e2e.ts` | Main surfaces and a saved Flow after reload; persisted, native-format simulated identities in Needs input and distinct links for multiple descendants in the selected Block |
+| Visual evidence | `tests/screenshots.e2e.ts`, `tests/run-evidence.e2e.ts` | Main surfaces and a saved Flow after reload; persisted, native-format simulated identities in Needs input and a worker held by running subagents staying working without a Problem |
 | Whole-Flow Start | `tests/flow-readiness.e2e.ts` | Every blocked Agent, including later branches; connection-only errors link to T3 settings instead of Agents; no Run on rejection, draft retained, reporting repair, accepted Start and accepted result as separate evidence |
 | Canvas viewport | `tests/canvas-viewport.e2e.ts` | Authoring refits on resize; an arranged Run preserves manual pan/zoom through resize and polling |
 | Flow authoring | `tests/flow-authoring.e2e.ts` | Connections, loop/fan-out, readiness and durable saving |
 | Settings and shortcuts | `tests/keyboard-shortcuts.e2e.ts` | Palette selection and Settings preserving the composer draft |
 | Agent reporting setup | `tests/agent-reporting.e2e.ts` | Settings warning and per-Agent diagnostics before Start, repair through the host setup screen and refreshed status; unused providers do not raise a warning |
-| Current Run lifecycle | `tests/run-worker.e2e.ts` | Worker settings, launch/observe, Run draft saved, listed after leaving, reopened after reload and started once in place with its title and creation order, lost-response Start recovered after reload, exact question link and reply, handoff, Human correction and Stop/closure |
+| Current Run lifecycle | `tests/run-worker.e2e.ts` | Worker settings, launch/observe, Run draft saved, listed after leaving, reopened after reload and started once in place with its title and creation order, lost-response Start recovered after reload, exact question link and reply, working message on the canvas and Run row with Request report, handoff of only the newest result after a replacement (both versions in the timeline), Human correction, Settle from the row menu (right click) and a report returning a Settled Run to Active, and Archive with confirmation from the Run page and the row menu (Shift+F10) |
 | Report diagnostics | `tests/report-diagnostics.e2e.ts` | Rejection reason alongside the missing accepted result; one explicit assessment request retained after reload |
 | Remote access | `tests/remote-access.e2e.ts` | Approval, revocation, offline state, compatibility and the client + server upgrade review |
 | Remote connection | `tests/remote-connection.e2e.ts` | Host authorization and automatic connection status |

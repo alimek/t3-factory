@@ -1,9 +1,8 @@
-import { bindRuntimeReportCaller } from "../../apps/backend/test/support/lifecycle-setup.ts";
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
-import { delegateNativeWork } from "./native-simulation.ts";
 import {
   executionBlock,
   failScenarioExecution,
+  launchedBlockId,
   nativeAttention,
   observeTerminal,
   reconcileUntil,
@@ -72,31 +71,30 @@ async function applyCorrection(context: SeedContext, run: RunDetail) {
   );
 }
 
-async function settledScenarios(context: SeedContext, flowId: string) {
-  let finished = await startScenario(
+async function settledAndArchivedScenarios(context: SeedContext, flowId: string) {
+  let settled = await startScenario(
     context,
     flowId,
-    "finished",
-    "Finished · Clearer onboarding copy",
+    "settled",
+    "Settled · Clearer onboarding copy",
     "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
   );
-  finished = await report(context, finished, "worker", {
+  settled = await report(context, settled, "worker", {
     to: "finished",
     exit: "Done",
     message: "Updated the welcome text and checked that every action has a descriptive label.",
   });
-  await observeTerminal(context.t3, executionBlock(finished), "completed");
-  await reconcileUntil(context, finished.id, (run) => run.outcome === "finished");
+  await observeTerminal(context.t3, executionBlock(settled), "completed");
+  await reconcileUntil(context, settled.id, (run) => run.lifecycle === "settled");
 
-  const stopped = await startScenario(
+  const archived = await startScenario(
     context,
     flowId,
-    "stopped",
-    "Stopped · Earlier navigation experiment",
-    "Explore a compact navigation layout for Atlas. This experiment was paused after a design direction changed.",
+    "archived",
+    "Archived · Earlier navigation experiment",
+    "Explore a compact navigation layout for Atlas. This experiment was dropped after a design direction changed.",
   );
-  requireSuccess(await context.factory.stopRun(stopped.id));
-  await reconcileUntil(context, stopped.id, (run) => run.outcome === "stopped");
+  requireSuccess(await context.factory.archiveRun(archived.id));
 }
 
 async function attentionScenarios(context: SeedContext, flowId: string) {
@@ -153,6 +151,32 @@ async function conversationWaitingScenario(context: SeedContext, flowId: string)
   );
 }
 
+/** The worker reports working while CI runs and ends its turn; no missing report appears. */
+async function workingReportScenario(context: SeedContext, flowId: string) {
+  let run = await startScenario(
+    context,
+    flowId,
+    "working-report",
+    "Monitoring · Agent is watching CI for the search fix",
+    "Fix the search ranking regression, open a pull request and wait for its CI checks before reporting.",
+  );
+  run = await report(context, run, "worker", {
+    to: "working",
+    message:
+      "Opened pull request #42 with the ranking fix. CI checks are still running; I will report when they finish.",
+  });
+  await observeTerminal(context.t3, executionBlock(run), "completed");
+  await reconcileUntil(context, run.id, (detail) =>
+    detail.blocks.some(
+      (block) =>
+        block.blockId === "worker" &&
+        block.engineStatus === "completed" &&
+        block.state === "working" &&
+        block.problem === null,
+    ),
+  );
+}
+
 /** A rejected final is distinct from completed work with no accepted report. */
 async function rejectedReportScenario(context: SeedContext, flowId: string) {
   const run = await startScenario(
@@ -163,20 +187,13 @@ async function rejectedReportScenario(context: SeedContext, flowId: string) {
     "Review the existing navigation wording and report through the Flow's captured exit.",
   );
   const worker = executionBlock(run);
-  bindRuntimeReportCaller(
-    context.t3,
-    context.t3ProjectId,
-    worker.executionId,
-    "demo-rejected-report",
-    worker.threadId,
-  );
   const reply = await context.factory.runtime.submit({
     arguments: {
+      blockId: launchedBlockId(context.t3, worker.threadId),
       to: "finished",
       exit: "Unknown exit",
       message: "The review is complete; the exit needs correction.",
     },
-    metadata: { callId: "demo-rejected-report" },
   });
   if (reply.code !== "INVALID_EXIT") throw Error(`Development rejection: ${reply.code}`);
   await observeTerminal(context.t3, worker, "completed");
@@ -200,6 +217,12 @@ async function parallelScenario(context: SeedContext, flowId: string) {
     "Two reviewers working in parallel",
     "Review the new project picker for code quality and keyboard accessibility. Each reviewer should report independently.",
   );
+  // The implementer replaces its first result before handoff; reviewers receive only the newer one.
+  run = await report(context, run, "worker", {
+    to: "finished",
+    exit: "Ready for review",
+    message: "The picker is ready for a code review.",
+  });
   run = await report(context, run, "worker", {
     to: "finished",
     exit: "Ready for review",
@@ -226,7 +249,7 @@ export async function seedScenarios(
   context: SeedContext,
   flows: { simple: string; review: string; parallel: string; parallelStart: string },
 ) {
-  await settledScenarios(context, flows.simple);
+  await settledAndArchivedScenarios(context, flows.simple);
   await attentionScenarios(context, flows.simple);
   await conversationWaitingScenario(context, flows.simple);
   await rejectedReportScenario(context, flows.simple);
@@ -234,6 +257,7 @@ export async function seedScenarios(
   await waitingForReview(context, flows.review, true);
   await parallelScenario(context, flows.parallel);
   await parallelStartScenario(context, flows.parallelStart);
+  await workingReportScenario(context, flows.simple);
   const working = await startScenario(
     context,
     flows.simple,
@@ -242,37 +266,16 @@ export async function seedScenarios(
     "Add a concise empty state to the Atlas project picker, including a hint to open an existing repository.",
   );
   const worker = executionBlock(working);
-  delegateNativeWork(context.t3, worker.threadId, worker.executionId, {
-    target: {
-      providerInstanceId: "codex-main",
-      model: "gpt-6.1-sol",
-      options: { reasoning: "high" },
-    },
-    mode: "async",
-    isolation: "shared",
-    clientRequestId: "demo-project-picker-child",
-    task: "Implement the empty state and return the result to the parent worker.",
-  });
-  delegateNativeWork(context.t3, worker.threadId, worker.executionId, {
-    target: {
-      providerInstanceId: "codex-main",
-      model: "gpt-6.1-sol",
-      options: { reasoning: "high" },
-    },
-    mode: "async",
-    isolation: "shared",
-    clientRequestId: "demo-project-picker-review",
-    task: "Review empty-state keyboard focus and accessible labels independently.",
-  });
-  await reconcileUntil(
-    context,
-    working.id,
-    (run) =>
-      run.blocks.some(
-        (block) =>
-          block.blockId === worker.blockId &&
-          block.engineStatus === "completed" &&
-          block.state === "working",
-      ) && run.threadBindings.filter((binding) => binding.role === "descendant").length === 2,
+  // Two subagents keep running after the worker's own turn ends.
+  context.t3.delegate(worker.threadId, worker.executionId);
+  context.t3.delegate(worker.threadId, worker.executionId);
+  await reconcileUntil(context, working.id, (run) =>
+    run.blocks.some(
+      (block) =>
+        block.blockId === worker.blockId &&
+        block.engineStatus === "completed" &&
+        block.state === "working" &&
+        block.problem === null,
+    ),
   );
 }

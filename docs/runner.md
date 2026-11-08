@@ -1,7 +1,7 @@
 # Durable Runner
 
-The Runner turns accepted Starts, reports, Human answers and Stop requests into
-durable operations against T3, and decides when a Run is permanently closed. It owns
+The Runner turns accepted Starts, reports, Human answers and Archive requests into
+durable operations against T3, and decides when a Run settles. It owns
 the SQL tables, transaction boundaries and recovery rules below. Persistence
 principles are in [Application foundation](foundation.md#persistence-model); user
 behavior is in [Runs](runs.md); live-support limits are in
@@ -10,8 +10,9 @@ behavior is in [Runs](runs.md); live-support limits are in
 ## Current execution contract
 
 Factory launches each Agent Block's first visit as its own top-level T3 worker. There is
-no Run conversation and no native-delegation turn that copies the Agent. Migration `050`
-deletes open Runs captured under the replaced contract. Closed Runs stay readable history.
+no Run conversation and no native-delegation turn that copies the Agent. Migrations `050`
+and `058` delete open Runs captured under replaced contracts. Runs closed under earlier contracts
+stay readable history: `062` made Finished Runs Settled and `063` Stopped Runs Archived.
 Captured definitions carry no execution contract, coordination instruction version or
 reporting protocol.
 
@@ -22,15 +23,16 @@ reporting protocol.
 - The saved launch title is `Factory #<number> · <block position> <Block name>`, sliced to
   200 characters. The number is a durable Run sequence. The position is the 1-based index
   in the captured block list. Later renames do not change the title recovery searches for.
-- The first message starts with `$factory-block`. The worker calls `factory_get_block`,
-  then `factory_update_block`. `factory_get_run` is read-only and grants no routing
-  authority. Subagents do not call Factory tools.
-- Factory alone owns routing, handoff release, Human occurrences, Stop and closure. A
+- Start mints a **Block id** for each Agent Block. The first message starts with
+  `$factory-block`, then a `Factory Block id: <id>.` line; every later visit and Request
+  report message repeats the same id. The worker passes it to `factory_get_block`, then
+  `factory_update_block`. `factory_get_run` is read-only and grants no routing authority.
+  Subagents do not call Factory tools.
+- Factory alone owns routing, handoff release, Human occurrences, settling and Archive. A
   completed model turn is not a business result. A definitive launch rejection is an
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
-  Waiting stays on that worker until a positively attributed user reply in the same thread
-  resumes it.
+  Waiting stays on that worker until a later turn in the same thread resumes it.
 
 ## Start and delivery guarantees
 
@@ -47,7 +49,7 @@ A worker is bound from the launch acknowledgement, or from exactly one search ca
 whose title matches and whose thread, workspace, provider, model, options and execution
 match the saved launch. Title alone is not ownership. An empty, delayed or ambiguous
 search never causes another launch or a guessed binding. An unresolved launch stays
-visible, blocks closure and release, and resumes after restart.
+visible, blocks automatic settlement and release, and resumes after restart.
 
 Delivery can be pending, reserved, acknowledged or uncertain. A crash or lost response
 after reservation leaves uncertainty, not a fresh attempt. An acknowledgement proves
@@ -65,8 +67,9 @@ a second owner fails startup. Never delete a live lock file. Process exit releas
 ownership without a takeover timer. Storage requires local-filesystem locking on macOS
 or Linux; network filesystems and remote backend ownership are unsupported.
 
-Startup reconciles every open Run before dispatching. Local changes serialize per Run,
-and no SQL transaction spans T3 I/O. Shutdown releases ownership without requesting Stop.
+Startup reconciles every Run it [drives](#settled-runs) before dispatching. Local changes serialize per Run,
+and no SQL transaction spans T3 I/O. Shutdown releases ownership without archiving or
+interrupting anything.
 
 An uncertain worker launch is never replayed, including with the same key. While Factory
 is running, recovery searches the same T3 environment and project for the saved title,
@@ -86,70 +89,120 @@ or fresh-attempt escape hatch.
 
 ## Report acceptance
 
-Report authority belongs to the exact worker execution of one activation. There is no Run
-conversation. Identity and recipients come from verified
-native evidence and the Run's captured Flow revision, never model arguments. New reports require an
-open gate and fresh active-execution evidence. Acceptance and creation of outgoing
-handoffs are durable before the acknowledgement is returned.
+A Block's worker reports by naming its Block id. Factory resolves the id to its Run and
+Block and applies the report to the Block's current activation, whichever turn of the
+worker thread sent it: the launch turn, a user reply, a notification after delegated or
+background work, a delegated completion or a Request report turn. Factory does not
+correlate native tool calls, search in-flight calls or bind authority to an exact
+execution. Before acceptance it observes the Run so the report belongs to the thread's
+current turn. Identity and recipients come from the Block id and the Run's captured Flow
+revision. Acceptance and creation of outgoing handoffs are durable before the
+acknowledgement is returned.
 
-- Deduplication is scoped to Run, Block, exact execution and report key. The canonical
-  status, exit and message distinguish changed content; omitted fields are null and
-  whitespace is preserved. An identical accepted retry returns its stored acknowledgement
-  after renewed work, Stop or closure. Reusing a key with changed content is `KEY_CONFLICT`.
-  A conflict reply includes the current Block state, `allowedTransitions` and `allowedExits`.
-- `finished` is immutable and unique per activation; a changed final is `FINAL_CONFLICT`.
-  Failed worker executions cannot report (`WORKER_FAILED`), and a final while the worker's
-  question is pending requires a reply (`HUMAN_REPLY_REQUIRED`). Reports cannot erase
-  engine failure, prove semantic correctness or close a Run.
+Anything that knows a Block id can report for that Block, including a subagent the worker
+passes it to. Factory MCP is host-local for one user, so the realistic failure is Agent
+confusion rather than attack; the skill and tool descriptions say only the Block's own
+worker reports.
+
+- An unknown id is `UNKNOWN_BLOCK` and a missing one is `BLOCK_ID_REQUIRED`, both with
+  repair guidance. Neither attaches attention to any Run.
+- The newest `finished` report of an activation is its result. Every version stays in the
+  Run's reports and timeline as an immutable record. A later `finished` from any turn of the
+  worker thread:
+  - before release, replaces the held result: the earlier version's handoffs are cancelled
+    and only the newest version is handed off;
+  - after release with the same exit, updates the recorded result and message; it creates no
+    handoff and relaunches no recipient;
+  - after release with a different exit, creates handoffs to that exit's recipients, held under
+    the same release rule, while Blocks started from the earlier exit keep running.
+- The Block's current report is its pending question, else its current `working` report, else
+  the activation's newest result; acceptance, observation and automatic settlement all read it
+  the same way. Repeating the current report returns its acknowledgement, also after settling,
+  unless an execution failure or missing report is pending on the Block; then the repeat is a
+  new report that settles it. Repeating an earlier result after a later `working` or `waiting`
+  makes it a new result version. Reports cannot erase engine failure, prove semantic correctness
+  or settle a Run.
+- Every report for an [Archived](#archive) Run, `working`, `waiting` or `finished`, is
+  answered with `RUN_ARCHIVED` before any validation. Factory MCP returns it as a successful
+  tool result whose text says the Run is archived and the worker should stop work on the
+  Block; nothing is recorded and no diagnostic attention is created.
+- Any accepted report on a [Settled](#settled-runs) Run, including a repeat of the current
+  result, returns the Run to Active in the same transaction and records `run-activated`
+  naming the Block.
 - Exits must match the captured ID or unambiguous exact name, with non-empty feedback
-  when required. Accepted results remain held until the source completion checks pass.
+  when required. Accepted results remain held until the
+  [handoff release](#routing-and-independent-queues) rule passes.
+- `working` requires a non-empty message and no exit. It is non-final: it selects no exit,
+  releases nothing and creates no attention. The Block shows working with the message while
+  it is the current activation's latest report, so a finished worker thread raises no missing
+  report, for example while the worker waits for CI or review. A newer `working` replaces the
+  message, an identical one is a repeat, and a later `waiting` or `finished` replaces it. Every
+  working report is kept as history. A `working` after a result is the Block's current state
+  until its next report; it withdraws neither the result nor its handoffs, but it keeps the Run
+  from settling automatically.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
-  The user replies in the same worker thread; a verified later worker execution resumes
-  the activation and reports for itself. Settling that question does not end the activation:
-  further verified user replies on the same worker retain report authority until its final
-  result, including after a reply turn omitted its report. A later accepted report settles
-  earlier missing-report attention within that activation. Within one execution waiting → finished is allowed
-  with a fresh key, while finished → waiting conflicts.
-- Earlier waiting history does not prevent closure once the activation has a final result
-  and all completion checks pass. A latest waiting report keeps it open. An incoming
-  handoff can take over a waiting conversation like a reply.
-- A native system notification can resume an unfinished worker on the same thread after
-  delegated or background work. Its exact execution inherits the activation only with
-  local notification provenance and an increasing public ordinal. Forwarded, inherited,
-  agent-authored or unproven notifications grant no authority. A notification cannot
-  answer an outstanding conversation question or replace an accepted final result.
+  The user replies in the same worker thread. Any later turn of that thread settles the
+  question; the worker reports again from that turn. A newer `waiting` or a `working` replaces
+  the pending question, an identical one is a repeat, and `finished` settles it. A `waiting`
+  after a result is the Block's current state until its next report; it withdraws neither the
+  result nor its handoffs. A later accepted report settles earlier missing-report and
+  execution-failed attention on the Block.
+- A `working` or `waiting` report with an exit is `EXIT_NOT_ALLOWED`, and one without a message
+  is `MESSAGE_REQUIRED`, both with repair guidance.
+- Earlier waiting history does not prevent automatic settlement once the activation has a final
+  result and its worker thread is finished. A pending question keeps the Run Active. An incoming handoff can
+  take over a waiting conversation like a reply.
 
-Report metadata retains keys, fingerprints and references, not a second message archive.
-[Caller correlation](t3-integration.md#factory-mcp-and-caller-correlation) defines the native
-attribution requirements.
+Report metadata retains fingerprints and references, not a second message archive.
+[Block ids](t3-integration.md#factory-mcp-and-block-ids) defines the tool contract.
+
+## Worker thread completion
+
+Factory trusts T3 to say when a Block's worker thread is finished. One shared rule decides it,
+and handoff release, missing report, automatic settlement and Request report all use it. A worker
+thread is finished when all of these hold:
+
+- the `t3_thread_read` of the thread shows no active run and zero pending native requests;
+- `t3_thread_wait` for its latest run, with `timeoutMs: 0` and
+  `untilDelegatedWorkSettled: true`, answers that thread and run with a terminal status
+  (`completed`, `failed`, `cancelled`, `interrupted` or `rolled_back`) and `timedOut: false`.
+
+T3's `resultRun` is informational only: it names the run T3 answered from, which can be an
+earlier run when a notification resumed the thread, so Factory never compares it with the
+waited run. A timed-out wait, an active run, a pending native request, a wait answered for
+another thread or run, or a read without a valid pending-request count keeps the thread
+unfinished. Factory keeps no model of descendants, subagents, queues, peers or individual
+executions and verifies no provider or model at final; delegated and background work count
+only through T3's wait answer. Reads across threads are not an atomic cutoff: direct chat
+can start a new run between Factory's read and its local decision.
 
 ## Observation and attention
 
 Engine status, report status, native requests and freshness are independent facts. Each
-recorded execution needs exact coverage; a missing one cannot be replaced by the latest
-execution. New executions require explicit active/latest identity and increasing public
-ordinals, not array order. Positive native references remain obligations through failed
-reads, lost responses and restart. An unavailable observation preserves prior facts,
-marks them stale and cannot authorize work or closure.
+observation reads the Block's worker thread and records its recent runs as work periods. An
+unavailable observation preserves prior facts, marks them stale and cannot release work or
+close the Run.
 
-- Completed latest work without a report shows a missing-report Problem only after fresh
-  evidence confirms the owned tree, queues and native requests are quiet and T3 confirms
-  aggregate completion. A yielded parent turn alone is insufficient: delegated work,
-  background work or a pending continuation keeps the Block working.
-- A rejected report from a uniquely correlated current worker records a report-problem
-  with a static rejection code, explanation and next step. It retains only existing
+- **Missing report.** When the worker thread is finished, its latest run completed and the
+  Block's current activation has no `finished` result, pending question or current `working`
+  report, the Block shows a missing-report Problem for that run. The Problem persists through later
+  runs until the Block reports or a linked Request report settles it.
+- **Execution failure.** When the latest run of the thread failed, was cancelled, interrupted or
+  rolled back, the Block shows an execution-failed Problem for that run, holding any prior result. It settles when a
+  later run of the same thread completes or when the Block reports, and is not raised again for
+  that run; a later failed run raises a new one. Factory never retries failed work automatically.
+- A rejected report for a known Block of an open Run records a report-problem with a
+  static rejection code, explanation and next step. It retains only existing
   execution/binding references, never rejected report content, call payloads or secrets.
-  Repeated rejections update the pending diagnostic; accepted correction or confirmed
-  linked recovery settles it while preserving its history. Uncorrelated or foreign calls
-  cannot attach Problems to a Run. Rejection changes neither execution state nor authority.
+  Repeated rejections update the pending diagnostic; any accepted report on that Block or
+  confirmed linked recovery settles it while preserving its history. Unknown Block ids
+  cannot attach Problems to a Run. Rejection changes no execution state.
   A later missing-report Problem means no report was accepted, not that none was attempted.
   Historical rejections made before this diagnostic existed are not backfilled.
-- Failed, cancelled or interrupted work shows an execution-failed Problem. Renewed work
-  does not dismiss earlier Problems, and Factory never retries failed work automatically.
-- Native attention includes questions and permissions. Only a fresh independently read
-  zero pending count withdraws it; unavailable reads keep it pending. Reappearance creates
-  a new matter. A pending-request listing that omits permissions cannot prove zero.
+- Native attention includes questions and permissions. Only a fresh read showing a zero
+  pending count withdraws it; unavailable reads keep it pending. Reappearance creates a new
+  matter.
 
 Events retain causal identities, execution transitions and observation times. Unchanged
 polls add no events; observation-only times are approximate. There is no transcript archive.
@@ -157,15 +210,17 @@ polls add no events; observation-only times are approximate. There is no transcr
 ## Routing and independent queues
 
 Each validated recipient of an accepted final result gets an independent handoff. Agent
-handoffs stay held until fresh evidence proves the source activation's accepted result,
-released work frontier, completed executions, empty queues and no native requests. The
-owner, authorization, gate and local generation must still match when release is recorded.
-A historical completion timestamp alone is insufficient. Saved presentation evidence grants
-neither release nor new work. A Human answer directly authorizes its outgoing handoffs.
+handoffs stay held until the source activation has its `finished` result, its worker thread
+is [finished](#worker-thread-completion) and no execution failure is pending on that Block.
+The owner, authorization, gate and local generation must still match when release is
+recorded. Release is recorded once per result version, only while that version is its
+activation's newest result, and is never re-derived from saved presentation data. A Human
+answer directly authorizes its outgoing handoffs.
 
 A first visit launches that Block's own top-level worker. The message is `$factory-block`
 followed by the captured Agent prompt. A revisit queues a turn on the same worker after
-the previous activation clears. Two Blocks using the same
+the previous activation's current result is released and, at send time, the worker thread is
+finished. Two Blocks using the same
 Agent still have separate workers. Parallel arrivals never join or batch their feedback.
 Threads share the project-root checkout; Factory guarantees neither edit-conflict handling
 nor agreement on one repository revision.
@@ -185,118 +240,113 @@ that exit demands it (up to 100,000 characters).
 Answering atomically records the answer, settles only that occurrence and creates every
 outgoing handoff. Identical retries return current detail; changed or competing answers
 conflict. Pending context is cleared after settlement. A Human Block stays waiting while
-any occurrence is pending; it never closes the Run by itself. Stop cancels occurrences
+any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
 
-## Closure
+## Settled Runs
 
-Successful closure requires all of the following:
+A Run is Active, Settled or [Archived](#archive). Each reconciliation pass tries to
+settle an Active Run with an open gate automatically. That requires all of the following:
 
-- Every visited activation has its worker's accepted final result, a released frontier
-  and no Problem; every Human occurrence is answered. Unvisited branches need not run.
-- Every recorded or observed worker and descendant execution completed, except failures
-  settled by their verified assessment; queues and native requests are empty.
-- Every delivery is acknowledged, with no outstanding launch, handoff or send.
-- Every retained worker and descendant has fresh, complete, quiet evidence.
+- Every visited Block's current activation has its worker's accepted final result with no
+  later `working` report, and no attention is pending; every Human occurrence is answered.
+  Unvisited branches need not run.
+- Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
+  cancelled because their result was replaced owe no delivery.
+- A fresh read finds every Block's worker thread [finished](#worker-thread-completion).
 
-Engine termination, a final report or an aggregate settlement alone is insufficient.
-Before closure, native thread settlement is best effort and a fresh frontier is checked
-again. The confirmation must still match the observed Run generation, gate, authorization
-and owner; concurrent local reports or answers invalidate it. Only durable confirmation
-records Finished or Stopped. Closure evidence is immutable.
+Engine termination or a final report alone is insufficient. The local decision must still
+match the Run generation observed before the reads, its gate, authorization and owner;
+concurrent local reports, answers or observations invalidate it. Unavailable or mismatched
+reads keep the Run Active. Settling certifies that T3 reported every worker thread finished,
+not result quality or a common repository revision. Automatic settlement records
+`run-settled` (`automatic`), marks every result version completion-eligible and settles the
+Blocks' report-rejection diagnostics.
 
-Bounded, unavailable or mismatched reads that miss any recorded execution, queue or native
-request keep the Run open. Reads across T3 threads are not an atomic cutoff: direct chat
-can arrive between observation and local confirmation. Closure certifies an observed
-frontier, not result quality or a common repository revision.
+The user can settle an Active or Snoozed Run at any time (`run-settled`, `manual`). Settling
+changes no execution: the gate stays open, owed operations continue and attention stays
+pending. Both ways clear Snooze and Woke.
 
-Closed Runs never dispatch, reopen or extend their history after later T3 activity.
-New reports and Human answers are rejected; an identical accepted report retry can still
-return its original acknowledgement.
+A Settled Run is reconciled only while it owes an operation in pending, reserved or uncertain
+state, so owed handoffs are still released and delivered. Otherwise Factory does not read its
+worker threads: later turns without a report record no work periods or attention and leave
+the Run Settled. Reports, Human answers and Request report are accepted as for an Active Run;
+only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
 
-## Gate-first Stop
+## Archive
 
-Stop first closes the handoff gate and cancels unsent work, including launches, handoffs and
-pending Human occurrences. No new report, answer, dispatch or replay may cross that gate.
-In-flight or uncertain pre-Stop operations stay unresolved until their outcomes are known;
-Stop can close the gate while T3 I/O is still in flight.
+Archive is final and completes in one transaction in the Run's lane: it closes the handoff
+gate, records the Run Archived, cancels pending launches, handoffs and Human occurrences,
+clears pending delivery text, settles pending attention as `archived`, marks activated Blocks
+that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
+replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
+uncertain operations keep their recorded state.
 
-Factory durably records tree-interrupt and queue-cancel requests before sending them.
-Tree Stop addresses the thread and delegated work, not an exact execution fence. Queue
-cancellation uses the exact queued execution identity. Peer members are stopped in their
-own environment. Acknowledgements do not prove termination.
+After the transaction, in the background and only under the Run's authorization context,
+Factory sends one `t3_thread_interrupt` with `stop: true` to every bound worker thread, with a
+request key derived from the Run and thread. T3 stops the thread and its delegated work.
+Factory neither records nor confirms the outcome, so a backend crash before the request leaves
+the threads running. Archive neither rolls back repository edits nor prevents later direct
+T3 chat. Closing Factory is not Archive.
 
-Stopped closure requires a later fresh sweep covering the full tree after the Stop
-requests, terminal executions, empty queues and native requests, all operations acknowledged
-or locally cancelled, and unchanged local state. Incomplete evidence, changed authorization
-or unknown pre-Stop outcomes keep Stop uncertain and the Task occupied through restart.
-Reconciliation continues automatically.
-
-Confirmed Stop preserves finished and unvisited Blocks, marks unfinished activated Blocks
-stopped and settles remaining attention as cancelled-on-Stop. Stop neither rolls back
-repository edits nor prevents later direct T3 chat. Closing Factory is not Stop.
+Archived Runs are excluded from navigation; every stored row stays and Run detail still
+reads them. Runs stopped under an earlier contract keep their Stop events, interrupt
+requests and closure evidence as history.
 
 ## Owned workers
 
-New Runs have no Run conversation. Each Factory-launched worker, and every descendant
-Factory has retained, carries its own safety and reporting obligations. A historical
-closed Run may still display a stored conversation.
+New Runs have no Run conversation. A historical closed Run may still display a stored
+conversation; Factory no longer observes, commands or changes it, also at restart.
 
-- Native references, child executions, queues and peer membership are retained before
-  dependent reads; failed reads or restart never discard them.
-- Closure needs every retained exact execution, complete bounded descendant coverage,
-  empty queues, no native requests and settled aggregate work. Each sweep may discover
-  at most 100 new members; unread members remain obligations.
-- A provider-native subagent may be projected as an idle thread with an explicit zero
-  run count, null active/latest pointers and no public executions. After verifying its
-  lineage and scope, Factory checks its queue and native requests independently and
-  requires the owning worker's exact aggregate completion before releasing the result.
-  Missing metadata or a running native thread stays unresolved. No child execution or
-  execution-scoped Settled receipt is invented for this projection.
-- Factory does not recover a Run conversation or issue root commands. A failed worker
-  execution stays a Problem; Factory does not launch a replacement worker for it.
-- Unknown peer membership or inaccessible remote work keeps Stop uncertain. Peer work
-  never becomes local execution membership merely because it was discovered.
-- A worker final needs fresh provider/model proof against captured Agent settings and
-  freezes its activation-scoped native frontier. Unverified proof is
-  `ASSESSMENT_UNVERIFIED`. Later work raises attention and holds release without changing
-  the accepted final result.
+- Subagents and background work a worker starts are not Factory obligations. They hold the
+  worker's result only through T3's delegated wait answer.
+- A failed worker execution stays a Problem until the thread recovers or the Block reports;
+  Factory does not launch a replacement worker for it.
+- Later turns of the worker thread, including ones after an accepted final, are ordinary
+  thread work: they hold release until the thread is finished, and a `finished` report from
+  one of them replaces the result under the [report rules](#report-acceptance).
 - `factory_get_block` and `factory_get_run` are read-only. `factory_get_run` grants no
-  routing authority. Before the worker is bound, a proven in-flight launch returns
-  `BINDING_PENDING` with `retryAfterMs`; that wait grants no authority. A title match,
-  subagent or unseen call id does not.
+  routing authority. Both answer from the Block id even while a launch is still being
+  confirmed.
 
-## Manual missing-report recovery
+## Manual Request report
 
-**Request report** accepts one explicit recovery per missing-report occurrence. It queues
-an ordinary turn on the same worker, linked to the original exact execution and activation.
-Eligibility needs fresh execution, queue and native coverage, latest identity, unchanged
-authorization and an open gate. The worker’s full activation frontier must also be quiet,
-including delegated/background work and T3 aggregate completion; this is checked again
-before dispatch. Accepted results or competing work make the request stale;
-unknown acceptance never authorizes another key.
+**Request report** asks an idle Agent Block without a `finished` result for its current
+activation to assess its existing work: one with a missing-report Problem, or one whose latest
+report is `working`. It accepts one explicit request per idle run of the Block and queues an
+ordinary turn on the same worker, linked to that run and the activation; its message states
+the Block id. The request also links the Block's pending missing-report Problem for that run,
+if there is one.
+Eligibility needs the worker thread [finished](#worker-thread-completion) with that run as its
+latest completed run, no `finished` result for the current activation, no unacknowledged
+delivery to the Block, unchanged authorization and an open gate; this is checked again before
+dispatch. Accepted results or competing work make the request stale; unknown acceptance never
+authorizes another key.
 
-Recovery settles the original missing-report attention only after the linked execution
-completes, reports final or waiting, and has no active, queued or native work. The original
-execution keeps its missing-report history; closure exempts only that linked obligation.
+A linked missing-report Problem settles only after the linked execution completes and reports
+final or waiting, and the worker thread is finished. The original execution keeps its
+missing-report history. A `working` reply simply becomes the Block's latest report.
 Recovery can chain through completed reportless turns, but no failure path schedules it
 automatically.
 
 ## Native thread organization
 
-T3 Settled is separate from Factory closure and attention. When native settle is supported,
-Factory best-effort settles each worker in the closure frontier before recording Finished.
-New Runs have no Run conversation to organize. A historical Run that still has an
-acknowledged coordinator row can settle that thread after closure. Factory never unsettles.
+T3 Settled is separate from Factory attention. When native settle is supported, Factory
+best-effort settles each worker thread after the Run settles: within the reconciliation pass
+for automatic settlement, in the background after the user's Settle. It claims one request
+per thread and latest recorded run while the Run is still Settled. New Runs have no Run
+conversation to organize, and historical Run conversations are not settled. Factory never
+unsettles, also when the Run returns to Active.
 
-A possibly issued settlement is never replayed, protecting manual reopen. Failure does not
-change results or closure, and existing closed Runs are not backfilled. With no native
-compare-and-set or replay key, direct activity can race the final read.
+A possibly issued settlement is never replayed for the same run, protecting manual reopen.
+Failure does not change results or the Run's Settled state, and Runs settled by the upgrade
+are not backfilled. With no native compare-and-set or replay key, direct activity can race
+the request.
 
 ## Navigation and presentation
 
-[Run navigation](runs.md#run-list) reflects recorded closure and
-unsettled attention without settling either. Snooze, Restore and acknowledging Woke change
-presentation only. New attention identities or an increased pending native count wake a
-snoozed open Run; a replacement request with an unchanged count is undetectable. Closure
-clears snooze and Woke.
+[Run navigation](runs.md#run-list) lists Active and Settled Runs with their unsettled
+attention, without settling any, and leaves out Archived Runs. Snooze, Restore and
+acknowledging Woke change presentation only and apply to Active Runs. New attention identities
+or an increased pending native count wake a snoozed Run; a replacement request with an
+unchanged count is undetectable. Settling and archiving clear snooze and Woke.

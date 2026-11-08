@@ -1,24 +1,29 @@
 import { assert, type TestContext } from "@effect/vitest";
+import type { Factory } from "@t3-factory/backend";
+import { loadConfiguration } from "@t3-factory/backend/config";
+import { startServer } from "@t3-factory/backend/server";
 import { writeReportingState } from "./reporting-home.ts";
 import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 
-/** A ready single-worker Flow with Factory reporting installed beside the bridge. */
-export async function prepared(c: TestContext) {
-  const h = await factoryHarness(c);
-  const root = join(dirname(h.databasePath), "neutral");
+/** Disposable T3 state and harness home for a controlled, approved T3. */
+async function preparedHomes(processHome: string) {
+  const root = join(processHome, "neutral");
   await mkdir(root);
   const t3 = new ControlledT3();
   t3.approve();
-  const reportingStateDirectory = join(h.processHome, "reporting-state");
-  const reportingHome = join(h.processHome, "codex-home");
+  const reportingStateDirectory = join(processHome, "reporting-state");
+  const reportingHome = join(processHome, "codex-home");
   await mkdir(reportingStateDirectory);
   await mkdir(reportingHome);
   await writeReportingState(reportingStateDirectory, t3.environmentId, reportingHome);
-  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
-  c.onTestFinished(() => f.close());
+  return { root, t3, reportingStateDirectory };
+}
+
+/** Connects T3, installs reporting and saves a ready single-worker Flow in its project. */
+async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
   await f.configureConnection({ endpoint: "http://127.0.0.1:3773/mcp" });
   const targets = await f.getReportingInstallations();
   assert(targets.ok);
@@ -65,17 +70,7 @@ export async function prepared(c: TestContext) {
     },
   });
   assert(flow.ok);
-  // No descendant work is recorded for the worker until Factory observes some.
-  t3.delegationActivities.set("thread-1", {
-    threadId: "thread-1",
-    projectId: p.value.projectId,
-    complete: true,
-    invocations: [],
-  });
   return {
-    h,
-    f,
-    t3,
     project: p.value,
     agent: a.value,
     flow: flow.value,
@@ -88,6 +83,28 @@ export async function prepared(c: TestContext) {
       createdAt: "2026-11-07T08:00:00.000Z",
     },
   };
+}
+
+/** A ready single-worker Flow with Factory reporting installed beside the bridge. */
+export async function prepared(c: TestContext) {
+  const h = await factoryHarness(c);
+  const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
+  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
+  c.onTestFinished(() => f.close());
+  return { h, f, t3, ...(await readyFlow(f, t3, root)) };
+}
+
+/** The ready Flow on a listening backend, whose Factory MCP endpoint harnesses call. */
+export async function preparedServer(c: TestContext) {
+  const h = await factoryHarness(c);
+  const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
+  const server = await startServer(
+    await loadConfiguration({ FACTORY_HOME: h.processHome, FACTORY_PORT: "0" }),
+    { t3, reportingStateDirectory, uiDirectory: null, connectionRetryMs: 60_000 },
+  );
+  c.onTestFinished(() => server.close());
+  const mcp = new URL(`http://127.0.0.1:${server.address.port}/mcp`);
+  return { f: server.factory, t3, mcp, ...(await readyFlow(server.factory, t3, root)) };
 }
 
 /** Entry remains ready while a later provider disappears from T3. */

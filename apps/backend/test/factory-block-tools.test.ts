@@ -2,57 +2,21 @@ import { assert, expect, it } from "@effect/vitest";
 import { uncertainLaunch } from "./support/lost-launch.ts";
 import {
   directWorker,
+  launchedBlockId,
+  repliedWorker,
   reportedWorker,
   revisitReportingWorker,
   workerFinal,
-  workerNativeReply,
+  workerStart,
+  workerWorking,
 } from "./support/run-worker.ts";
-import type { ControlledT3 } from "./support/controlled-t3.ts";
-import { bindThreadReportCaller } from "./support/lifecycle-setup.ts";
 
-const BLOCK_TOOL = "mcp__factory-runtime__factory_get_block";
-const RUN_TOOL = "mcp__factory-runtime__factory_get_run";
-
-function seedTool(
-  t3: ControlledT3,
-  projectId: string,
-  toolName: string,
-  callId: string,
-  item: Record<string, unknown> = {},
-  worker = { threadId: "thread-1", executionId: "execution-1" },
-) {
-  bindThreadReportCaller(t3, projectId, worker.threadId, worker.executionId, callId);
-  t3.runtimeActivity = {
-    thread: { threadId: worker.threadId, projectId, activeRunId: worker.executionId },
-    items: [
-      {
-        visibility: "local",
-        sourceThreadId: worker.threadId,
-        textTruncated: false,
-        nextTextOffset: null,
-        itemId: `t:native-item:${callId}`,
-        type: "dynamic_tool",
-        runId: worker.executionId,
-        text: JSON.stringify({ toolName }),
-        ...item,
-      },
-    ],
-    hasMore: false,
-    nextPosition: null,
-  };
-}
-
-it("factory_get_block returns the bound worker visit without a model-supplied id", async (c) => {
+it("factory_get_block reads the Block named by the id in its launch message", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
 
   // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-    inheritedThreadId: "thread-1",
-  });
+  const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
 
   // Assert
   expect(result).toMatchObject({
@@ -66,121 +30,95 @@ it("factory_get_block returns the bound worker visit without a model-supplied id
       results: [],
       feedback: null,
     },
-    allowedTransitions: ["waiting", "finished"],
+    allowedTransitions: ["working", "waiting", "finished"],
   });
-  expect(result).not.toHaveProperty("retryAfterMs");
 });
 
-it("a worker can retrieve its assigned inputs with a native call id and no inherited thread hint", async (c) => {
+it("the launch message states the Block id and issues no tool ref", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
+  const fixture = await workerStart(c, "");
+  assert((await fixture.f.startRun(fixture.input)).ok);
 
   // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
+  assert((await fixture.f.reconcileRuns()).ok);
+
+  // Assert
+  const message = [...fixture.t3.launches.values()][0]?.payload.message;
+  expect(message).toMatch(/^\$factory-block\n\nFactory Block id: [0-9a-f-]{36}\. /);
+  expect(message).not.toContain("Factory tool ref");
+});
+
+it("a call without a Block id is refused with repair guidance", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: {} });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "BLOCK_ID_REQUIRED",
+    next: expect.stringContaining("Factory Block id line"),
+  });
+});
+
+it("an unknown Block id is refused with repair guidance", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { ...workerFinal("not-a-block").arguments },
   });
 
   // Assert
   expect(result).toMatchObject({
+    code: "UNKNOWN_BLOCK",
+    reason: "No Factory Block has this Block id.",
+    next: expect.stringContaining("Factory Block id line"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.reports).toStrictEqual([]);
+  expect(run.value.attention).toStrictEqual([]);
+});
+
+it("a worker reads its Block while Factory is still confirming its launch", async (c) => {
+  // Arrange
+  const fixture = await uncertainLaunch(c, false);
+
+  // Act
+  const result = await fixture.f.runtime.block({
+    arguments: { blockId: launchedBlockId(fixture.t3) },
+  });
+
+  // Assert
+  expect(result).toMatchObject({ code: "BLOCK", visit: 1, reason: "first" });
+});
+
+it("a worker resumed by the user's reply reads its Block and may report again", async (c) => {
+  // Arrange
+  const fixture = await repliedWorker(c);
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
+
+  // Assert
+  expect(result).toMatchObject({
     code: "BLOCK",
-    inputs: { input: "Improve search\nKeep it accessible." },
+    visit: 1,
+    allowedTransitions: ["working", "waiting", "finished"],
   });
-});
-
-it("factory_get_block binds a Cursor call from the in-flight timeline item", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  seedTool(
-    fixture.t3,
-    fixture.project.projectId,
-    "mcp__factory-runtime__factory_get_block",
-    "call-cursor",
-    {
-      status: "running",
-      itemId: "turn-item:provider:cursor:native-item:call-cursor",
-      text: JSON.stringify({
-        toolName: "mcp__factory-runtime__factory_get_block",
-        input: { ref: "ref-cursor" },
-      }),
-    },
-  );
-
-  // Act
-  const result = await fixture.f.runtime.block({ arguments: { ref: "ref-cursor" } });
-
-  // Assert
-  expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
-});
-
-it("native call lookup without a thread hint still rejects a subagent caller", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call", {
-    subagentId: "subagent-1",
-  });
-
-  // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-  });
-
-  // Assert
-  expect(result).toStrictEqual({ code: "FOREIGN_CALLER" });
-});
-
-it("a user reply can read its Block before the next periodic worker observation", async (c) => {
-  // Arrange
-  const fixture = await workerNativeReply(c);
-  const reply = fixture.t3.runtimeActivity.items.at(-1)!;
-  seedTool(
-    fixture.t3,
-    fixture.project.projectId,
-    BLOCK_TOOL,
-    "block-call",
-    {},
-    {
-      threadId: "thread-1",
-      executionId: "answer-execution",
-    },
-  );
-  fixture.t3.runtimeActivity = {
-    ...fixture.t3.runtimeActivity,
-    items: [...fixture.t3.runtimeActivity.items, reply],
-  };
-
-  // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-  });
-
-  // Assert
-  expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
 });
 
 it("a downstream worker retrieves its incoming result and the Block that produced it", async (c) => {
   // Arrange
   const fixture = await reportedWorker(c);
   assert((await fixture.f.reconcileRuns()).ok);
-  seedTool(
-    fixture.t3,
-    fixture.project.projectId,
-    BLOCK_TOOL,
-    "block-call",
-    {},
-    {
-      threadId: "thread-2",
-      executionId: "execution-2",
-    },
-  );
 
   // Act
   const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
+    arguments: { blockId: launchedBlockId(fixture.t3, "Parallel work") },
   });
 
   // Assert
@@ -193,7 +131,7 @@ it("a downstream worker retrieves its incoming result and the Block that produce
           blockId: "worker",
           blockName: "Entry worker",
           exitName: "Done",
-          message: workerFinal().arguments.message,
+          message: workerFinal(fixture.blockId).arguments.message,
           threadLink: expect.any(String),
         },
       ],
@@ -201,29 +139,45 @@ it("a downstream worker retrieves its incoming result and the Block that produce
   });
 });
 
+it("a revisit message states the same Block id as the launch", async (c) => {
+  // Arrange
+  const fixture = await reportedWorker(c, "completed", "worker");
+
+  // Act
+  assert((await fixture.f.reconcileRuns()).ok);
+
+  // Assert
+  expect([...fixture.t3.sends.values()][0]?.payload.message).toContain(
+    `Factory Block id: ${fixture.blockId}.`,
+  );
+});
+
+it("a revisit's report applies to the Block's current activation", async (c) => {
+  // Arrange
+  const fixture = await revisitReportingWorker(c);
+
+  // Act
+  const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.activations).toHaveLength(2);
+  expect(run.value.reports.map((report) => report.activationId)).toStrictEqual(
+    run.value.activations.map((activation) => activation.id),
+  );
+});
+
 it("a revisit reads only the result that activated it rather than its own newer result", async (c) => {
   // Arrange
   const fixture = await revisitReportingWorker(c);
-  assert((await fixture.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  assert((await fixture.f.runtime.submit(workerFinal(fixture.blockId))).code === "ACCEPTED");
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);
-  seedTool(
-    fixture.t3,
-    fixture.project.projectId,
-    BLOCK_TOOL,
-    "block-call",
-    {},
-    {
-      threadId: "thread-1",
-      executionId: fixture.workerExecutionId,
-    },
-  );
 
   // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-  });
+  const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
 
   // Assert
   expect(result.code).toBe("BLOCK");
@@ -231,56 +185,12 @@ it("a revisit reads only the result that activated it rather than its own newer 
   expect(result.inputs?.results).toHaveLength(1);
 });
 
-it("factory_get_block binds a Grok call from tool_input on the in-flight item", async (c) => {
+it("factory_get_run returns the Run of the named Block and each Block's state", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
-  seedTool(
-    fixture.t3,
-    fixture.project.projectId,
-    "factory-runtime__factory_get_block",
-    "call-grok",
-    {
-      status: "pending",
-      itemId: "turn-item:provider:grok:native-item:call-grok",
-      text: JSON.stringify({
-        toolName: "factory-runtime__factory_get_block",
-        input: { tool_name: "factory-runtime__factory_get_block", tool_input: { ref: "ref-grok" } },
-      }),
-    },
-  );
 
   // Act
-  const result = await fixture.f.runtime.block({ arguments: { ref: "ref-grok" } });
-
-  // Assert
-  expect(result).toMatchObject({ code: "BLOCK", state: "working", visit: 1 });
-});
-
-it("factory_get_block accepts a call that omits arguments", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
-
-  // Act
-  const result = await fixture.f.runtime.block({
-    metadata: { callId: "block-call" },
-    inheritedThreadId: "thread-1",
-  });
-
-  // Assert
-  expect(result).toMatchObject({ code: "BLOCK", state: "working" });
-});
-
-it("factory_get_run returns the caller Run and each Block without routing authority", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  seedTool(fixture.t3, fixture.project.projectId, RUN_TOOL, "run-call");
-
-  // Act
-  const result = await fixture.f.runtime.run({
-    arguments: {},
-    metadata: { callId: "run-call" },
-  });
+  const result = await fixture.f.runtime.run({ arguments: { blockId: fixture.blockId } });
 
   // Assert
   expect(result).toMatchObject({
@@ -288,75 +198,46 @@ it("factory_get_run returns the caller Run and each Block without routing author
     number: 1,
     title: "Improve search",
     input: "Improve search\nKeep it accessible.",
-    state: "running",
+    state: "active",
     blocks: [{ blockId: "worker", name: "Entry worker", state: "working", result: null }],
   });
 });
 
-it("an unanswered worker launch stays BINDING_PENDING until Factory binds that thread", async (c) => {
-  // Arrange
-  const fixture = await uncertainLaunch(c, false);
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call");
-
-  // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-    inheritedThreadId: "thread-1",
-  });
-
-  // Assert
-  expect(result).toStrictEqual({ code: "BINDING_PENDING", retryAfterMs: 500 });
-});
-
-it("a worker title does not authorize factory_get_block before the native call is seen", async (c) => {
-  // Arrange
-  const fixture = await uncertainLaunch(c, false);
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "other-call");
-
-  // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-    inheritedThreadId: "thread-1",
-  });
-
-  // Assert
-  expect(result).toStrictEqual({ code: "UNBOUND_CALLER" });
-});
-
-it("a subagent calling factory_get_block stays a foreign caller during launch recovery", async (c) => {
-  // Arrange
-  const fixture = await uncertainLaunch(c, false);
-  seedTool(fixture.t3, fixture.project.projectId, BLOCK_TOOL, "block-call", {
-    subagentId: "sub-1",
-  });
-
-  // Act
-  const result = await fixture.f.runtime.block({
-    arguments: {},
-    metadata: { callId: "block-call" },
-    inheritedThreadId: "thread-1",
-  });
-
-  // Assert
-  expect(result).toStrictEqual({ code: "FOREIGN_CALLER" });
-});
-
-it("an accepted Block update names the resulting state and what Factory does next", async (c) => {
+it("a worker reports its result by naming its Block id", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
 
   // Act
-  const result = await fixture.f.runtime.submit(workerFinal());
+  const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
 
   // Assert
   expect(result).toMatchObject({
     code: "ACCEPTED",
     state: "working",
-    allowedTransitions: [],
-    next: "Factory keeps this final and releases downstream work after this execution settles.",
+    allowedTransitions: ["working", "waiting", "finished"],
+    next: expect.stringContaining("A later finished report replaces it"),
   });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.reports).toMatchObject([
+    { blockId: "worker", status: "finished", exitId: "done" },
+  ]);
+});
+
+it("an identical repeated final succeeds again without a second result", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  const first = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
+  assert(first.code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
+
+  // Assert
+  expect(result).toStrictEqual(first);
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.reports).toHaveLength(1);
 });
 
 it("a waiting Block update tells the worker to wait for a user reply", async (c) => {
@@ -365,20 +246,179 @@ it("a waiting Block update tells the worker to wait for a user reply", async (c)
 
   // Act
   const result = await fixture.f.runtime.submit({
-    arguments: { to: "waiting", message: "Which audience?" },
-    metadata: { callId: "worker-report" },
+    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which audience?" },
   });
 
   // Assert
   expect(result).toMatchObject({
     code: "ACCEPTED",
     state: "waiting",
-    allowedTransitions: [],
-    next: "Factory waits for a user reply in this thread, then resumes this Block.",
+    allowedTransitions: ["working", "waiting", "finished"],
+    next: expect.stringContaining("waits for a user reply"),
   });
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);
   expect(run.value.blocks.find((block) => block.blockId === "worker")?.state).toBe("waiting");
+});
+
+it("an identical repeated waiting report keeps one pending question", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  const waiting = {
+    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which audience?" },
+  };
+  const first = await fixture.f.runtime.submit(waiting);
+  assert(first.code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit(waiting);
+
+  // Assert
+  expect(result).toStrictEqual(first);
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.attention.filter((a) => a.kind === "conversation-waiting")).toHaveLength(1);
+});
+
+it("a newer waiting report replaces the Block's question", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  const first = await fixture.f.runtime.submit({
+    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which audience?" },
+  });
+  assert(first.code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { blockId: fixture.blockId, to: "waiting", message: "Which tone?" },
+  });
+
+  // Assert
+  expect(result).toMatchObject({ code: "ACCEPTED", state: "waiting" });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(
+    run.value.attention
+      .filter((a) => a.kind === "conversation-waiting")
+      .map(({ message, settledAt }) => ({ message, settled: settledAt !== null })),
+  ).toStrictEqual([
+    { message: "Which tone?", settled: false },
+    { message: "Which audience?", settled: true },
+  ]);
+});
+
+it("a working Block update is accepted with its message and selects no result", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: {
+      blockId: fixture.blockId,
+      to: "working",
+      message: "Opened PR #42; waiting for its CI checks.",
+    },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "ACCEPTED",
+    state: "working",
+    allowedTransitions: ["working", "waiting", "finished"],
+    next: expect.stringContaining("no missing-report Problem"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "working",
+    reportStatus: "working",
+    workingMessage: "Opened PR #42; waiting for its CI checks.",
+  });
+  expect(run.value.executions).toMatchObject([
+    { executionId: "execution-1", reportStatus: "working" },
+  ]);
+  expect(run.value.reports).toStrictEqual([]);
+});
+
+it("a later finished report replaces the Block's working report", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ reportStatus: "finished", workingMessage: null });
+  expect(run.value.reports).toMatchObject([{ status: "finished", exitId: "done" }]);
+});
+
+it("a later waiting report replaces the Block's working report with a question", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { blockId: fixture.blockId, to: "waiting", message: "Merge with failing lint?" },
+  });
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ state: "waiting", workingMessage: null });
+  expect(
+    run.value.attention.filter((a) => a.kind === "conversation-waiting" && !a.settledAt),
+  ).toMatchObject([{ message: "Merge with failing lint?" }]);
+});
+
+it("a working report without a message is refused with repair guidance", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: { blockId: fixture.blockId, to: "working", message: "  " },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "MESSAGE_REQUIRED",
+    reason: expect.stringContaining("needs a message"),
+    next: expect.stringContaining("what you are still doing or waiting on"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ reportStatus: null, workingMessage: null });
+});
+
+it("a working report that selects an exit is refused with repair guidance", async (c) => {
+  // Arrange
+  const fixture = await directWorker(c, true, "");
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: {
+      blockId: fixture.blockId,
+      to: "working",
+      exit: "Done",
+      message: "Waiting for CI.",
+    },
+  });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "EXIT_NOT_ALLOWED",
+    reason: expect.stringContaining("Only a finished report selects an exit"),
+    next: expect.stringContaining("Remove the exit"),
+  });
+  const run = await fixture.f.getRun(fixture.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ reportStatus: null, workingMessage: null });
 });
 
 it("an unknown exit names the exits captured for that Block", async (c) => {
@@ -387,39 +427,16 @@ it("an unknown exit names the exits captured for that Block", async (c) => {
 
   // Act
   const result = await fixture.f.runtime.submit({
-    arguments: { to: "finished", exit: "nope", message: "Tried another exit." },
-    metadata: { callId: "worker-report" },
+    arguments: {
+      blockId: fixture.blockId,
+      to: "finished",
+      exit: "nope",
+      message: "Tried another exit.",
+    },
   });
 
   // Assert
   expect(result).toMatchObject({ code: "INVALID_EXIT", allowedExits: ["Done"] });
-});
-
-it("a changed waiting report conflicts and returns the current Block state", async (c) => {
-  // Arrange
-  const fixture = await directWorker(c, true, "");
-  expect(
-    (
-      await fixture.f.runtime.submit({
-        arguments: { to: "waiting", message: "Which audience?" },
-        metadata: { callId: "worker-report" },
-      })
-    ).code,
-  ).toBe("ACCEPTED");
-
-  // Act
-  const result = await fixture.f.runtime.submit({
-    arguments: { to: "waiting", message: "Which tone?" },
-    metadata: { callId: "worker-report" },
-  });
-
-  // Assert
-  expect(result).toMatchObject({
-    code: "KEY_CONFLICT",
-    state: "waiting",
-    allowedTransitions: [],
-    allowedExits: ["Done"],
-  });
 });
 
 it("a finished report without a message is accepted when that exit does not require feedback", async (c) => {
@@ -428,8 +445,7 @@ it("a finished report without a message is accepted when that exit does not requ
 
   // Act
   const result = await fixture.f.runtime.submit({
-    arguments: { to: "finished", exit: "Done" },
-    metadata: { callId: "worker-report" },
+    arguments: { blockId: fixture.blockId, to: "finished", exit: "Done" },
   });
 
   // Assert
@@ -442,8 +458,7 @@ it("a finished report without a message is refused when that exit requires feedb
 
   // Act
   const result = await fixture.f.runtime.submit({
-    arguments: { to: "finished", exit: "Done" },
-    metadata: { callId: "worker-report" },
+    arguments: { blockId: fixture.blockId, to: "finished", exit: "Done" },
   });
 
   // Assert

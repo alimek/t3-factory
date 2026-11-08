@@ -4,7 +4,7 @@ import type { RunDetail } from "@t3-factory/contracts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { recoverOperation } from "./runner-effects.ts";
-import { recoveryFrontier } from "./runner-recovery.ts";
+import { readWorkerThread } from "./worker-thread.ts";
 import type { RunnerLifecycle } from "./runner-types.ts";
 import { now } from "./time.ts";
 
@@ -32,7 +32,8 @@ function endsObligation(
     )
   );
 }
-/** Follow only explicit missing-only links; a report on an intermediate execution ends or conflicts. */
+/** Follow only explicit missing-only links; a final or waiting report on an intermediate execution
+ * ends or conflicts, while a working report leaves the obligation open. */
 function recoveryChain(
   detail: RunDetail,
   blockId: string,
@@ -52,7 +53,8 @@ function recoveryChain(
     );
     if (executionId !== sourceId && endsObligation(detail, blockId, execution))
       return { executionId, executionIds: [...executionIds] };
-    if (execution.reportStatus !== null || report) return null;
+    if ((execution.reportStatus !== null && execution.reportStatus !== "working") || report)
+      return null;
     const links = detail.recoveries.filter(
       (r) => r.blockId === blockId && r.sourceExecutionId === executionId,
     );
@@ -72,9 +74,10 @@ export function settleRecoveries(
   return Effect.gen(function* () {
     const current = yield* database.row(id);
     const detail = yield* lifecycle.getRun(id);
-    if (!current?.gate_open || current.closed_at || !detail.ok) return;
+    if (!current?.gate_open || !detail.ok) return;
     const settlements: {
-      attentionId: string;
+      intentId: string;
+      attentionId: string | null;
       blockId: string;
       executionId: string;
       sourceExecutionId: string;
@@ -89,25 +92,13 @@ export function settleRecoveries(
       );
       const block = detail.value.blocks.find((b) => b.blockId === recovery.blockId);
       if (!chain || !block?.threadId) continue;
-      const proven = yield* recoverOperation(
-        Effect.all(
-          chain.executionIds.map((executionId) =>
-            recoveryFrontier(
-              database,
-              t3,
-              current,
-              recovery.blockId,
-              block.threadId!,
-              executionId,
-              false,
-            ),
-          ),
-          { concurrency: "unbounded" },
-        ),
+      const worker = yield* recoverOperation(
+        Effect.tryPromise(() => readWorkerThread(t3, current, block.threadId!)),
         () => Effect.succeed(null),
       );
-      if (proven?.every(Boolean))
+      if (worker?.finished)
         settlements.push({
+          intentId: recovery.intentId,
           attentionId: recovery.attentionId,
           blockId: recovery.blockId,
           executionId: chain.executionId,
@@ -123,14 +114,9 @@ export function settleRecoveries(
         if (!held.length) return;
         const time = yield* now;
         for (const recovery of settlements) {
-          yield* settleReportRejections(
-            sql,
-            id,
-            recovery.blockId,
-            recovery.sourceExecutionId,
-            time,
-          );
-          yield* sql`UPDATE report_recoveries SET settled_at=${time} WHERE attention_id=${recovery.attentionId} AND settled_at IS NULL`;
+          yield* settleReportRejections(sql, id, recovery.blockId, time);
+          yield* sql`UPDATE report_recoveries SET settled_at=${time} WHERE intent_id=${recovery.intentId} AND settled_at IS NULL`;
+          if (!recovery.attentionId) continue;
           yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason=${"recovered-by:" + recovery.executionId} WHERE id=${recovery.attentionId} AND settled_at IS NULL`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${id},${recovery.blockId},${recovery.executionId},'attention-settled',${"attention-settled:" + recovery.attentionId},${recovery.attentionId},${time}) ON CONFLICT DO NOTHING`;
         }

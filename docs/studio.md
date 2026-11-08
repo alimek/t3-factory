@@ -115,7 +115,7 @@ revision N** (another explicit save, which can conflict again). There is no auto
 
 **Remove** in Flow details removes the editable definition from Studio and the Run composer after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
 the Flow list, also when another view already removed it: removing an absent or removed Flow succeeds. Runs, their captured revisions, shared Agents and T3 threads are unaffected: active Runs continue, Run canvases show the revision each Run started with, and
-removal is not Stop. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
+removal is not Archive. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
 Flow.
 
 ## Validation contract

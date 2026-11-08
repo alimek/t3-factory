@@ -20,7 +20,7 @@ run by `pnpm test`) for
 
 - domain rules and validation of untrusted input;
 - state transitions (Flow drafts and revisions, Run lifecycle);
-- Runner, report, handoff, Human-answer and Stop semantics;
+- Runner, report, handoff, Human-answer, Settle and Archive semantics;
 - important decisions whose failure would break a user workflow or a component
   contract, including races, recovery and security boundaries.
 
@@ -141,7 +141,7 @@ fixture and its provenance are reviewed test inputs, not a source archive or a
 production backup.
 
 Do not capture a database for every intermediate implementation or migration in
-an unmerged change. Current behavior, restart, lost acknowledgements and Stop
+an unmerged change. Current behavior, restart, lost acknowledgements and Archive
 belong in ordinary public-operation tests using current setup. Preserve a distinct
 safety regression when removing a historical setup, but remove upgrade-only
 repetition that protects no supported release boundary. A smaller test suite is

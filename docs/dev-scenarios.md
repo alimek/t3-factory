@@ -40,35 +40,37 @@ monograms and repository images are covered by controlled fixtures rather than t
 
 | Run title after prefix | Initial state | Useful interaction |
 | --- | --- | --- |
-| Working · Improve the project picker | Open, one working Agent whose own turn completed while two delegated children still run | Inspect the working Block and two retained descendants and their distinct links without a missing-report Problem; Stop; launch another Run |
+| Working · Improve the project picker | Open, one working Agent whose own turn completed while two simulated subagents still run, so T3's delegated wait stays pending | Inspect the working Block without a missing-report Problem; Archive (with confirmation); launch another Run |
+| Monitoring · Agent is watching CI for the search fix | Open, one Agent that reported `working` with a message about running CI checks; its turn completed and its worker thread is finished | Read the message on the canvas, in the Run row and in Block details with no missing-report Problem, the working visit badge and the accepted working report in Work periods; **Request report** queues one assessment turn on the same worker |
 | Waiting for your review | Pending Human occurrence after implementation/review | Approve or request changes with feedback |
 | Applying your requested changes | Answered Human occurrence and renewed Agent work | Inspect correction handoff and work history |
-| Two reviewers working in parallel | Two active reviewer blocks | Inspect independent branches and Stop |
-| Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect two independent top-level workers and Stop |
-| Problem · Report exit needs correction | Completed worker with a rejected final and no accepted report | Inspect the rejection reason separately from the missing-report obligation; Request report assesses existing work only after fresh whole-worker completion evidence |
-| Problem · Search checks failed | Failed execution with unresolved Problem | Inspect attention and failure evidence |
-| Finished · Clearer onboarding copy | Finished in Settled | Inspect permanent history; start a New Run for further work |
-| Stopped · Earlier navigation experiment | Confirmed stopped in Settled | Inspect Stop evidence; no relaunch action |
+| Two reviewers working in parallel | Two active reviewer blocks; the implementer replaced its first result before handoff | Inspect independent branches and both result versions in the timeline: the first reads **Replaced by version 2** with cancelled handoffs, and only the second reached the reviewers; Archive |
+| Parallel review from one prompt | Flow input connected to two Agents; both working, no Handoff | Inspect two independent top-level workers and Archive |
+| Problem · Report exit needs correction | Completed worker with a rejected final and no accepted report | Inspect the rejection reason separately from the missing-report obligation; Request report assesses existing work only while the worker thread is finished |
+| Problem · Search checks failed | Failed execution with unresolved Problem | Inspect attention and failure evidence; backend tests also cover a rolled-back worker holding its prior result, and the Problem settling after a later completed run or a Block report |
+| Settled · Clearer onboarding copy | Settled automatically after its worker's result and finished thread | Inspect history and the **Settled** canvas badge; a report from its worker would return it to Active. Use any open row's ··· menu (or right click) and **Settle** to settle a Run by hand |
+| Archived · Earlier navigation experiment | Archived right after its worker launched; hidden from navigation | Check it is absent from the sidebar; open `/runs/<id>` (id from `/api/runs?projectId=<Atlas id>`) to read its history with the **Archived** badge and a stopped Block; no relaunch action |
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
-| Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form); controlled backend fixtures cover repeated native replies after a reportless reply, final or renewed waiting, and restart |
+| Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message, accepted waiting in Work periods and Open in T3 (no Factory answer form); controlled backend fixtures cover replies after a reportless reply, a final or a replacing question from a later turn, a Request report answered with a question, and restart |
 
-**Native child completion coverage.** The Working and Finished scenarios expose delegated
-work and permanent closure, but do not seed provider-native children without public runs.
-HTTP adapter lifecycle tests cover that projection: an accepted result releases its
-handoff, or closes the Run after restart, only after exact worker aggregate completion
-and empty child queues/native requests. A queued child turn, active child, unanswered
-request or missing run-count metadata keeps the result held. This controlled evidence
-does not qualify live provider execution.
+**Worker thread completion coverage.** The Working scenario shows a worker held by
+unsettled delegated work; Factory reads only the worker thread and T3's delegated wait, never
+the subagents. HTTP adapter tests cover the
+[completion rule](runner.md#worker-thread-completion) on captured thread metadata: a settled
+wait whose `resultRun` names an earlier run counts as finished, while a timed-out wait, a wait
+answered for another run or thread, or a read without a pending-request count keeps the
+result held. This controlled evidence does not qualify live provider execution.
 
-Fresh or reset homes install a disposable Codex reporting target and the `$factory-block` skill before creating Runs, so Settings shows Installed for it; real harness homes are never configured. The simulator also offers a **Cursor** provider (`demo-cursor`). Factory can install reporting for it, but this home does not, so Settings → Agent reporting lists that target as not installed and no seeded Agent uses it. Other drivers stay **Reporting not available yet**. Seed Runs launch top-level Block workers: the simulator publishes decoded native acceptance and execution evidence, workers report through `factory_update_block`,
+Fresh or reset homes install a disposable Codex reporting target and the `$factory-block` skill before creating Runs, so Settings shows Installed for it; real harness homes are never configured. The simulator also offers a **Cursor** provider (`demo-cursor`). Factory can install reporting for it, but this home does not, so Settings → Agent reporting lists that target as not installed and no seeded Agent uses it. Other drivers stay **Reporting not available yet**. Seed Runs launch top-level Block workers: the simulator publishes thread runs and delegated wait answers, workers report through `factory_update_block`,
 and separate terminal observations release Agent and Human handoffs. Questions stay in the worker, Human corrections revisit the same worker with a new activation, the Problem case is a failed worker
-execution and the Finished and Stopped cases confirm the owned tree. The simulator retains execution states; it generates no code changes and finishes no work on its own. Ordinary restarts retain current-contract demo state; the contract-removal migration deletes obsolete Runs. Use a deliberate reset to restore the complete scenario baseline after upgrading an older demo home.
+execution, the Settled case settles automatically once its worker thread is finished and the Archived case asks the simulator to interrupt its worker thread. The simulator retains execution states; it generates no code changes and finishes no work on its own. Ordinary restarts retain current-contract demo state; contract-removal migrations delete open Runs, most recently when Block ids replaced native call correlation. Use a deliberate reset to restore the complete scenario baseline after upgrading an older demo home. An upgrade that changes the `$factory-block` skill also leaves a retained home's Codex reporting needing attention until **Repair installation** or a reset.
 
-The supported saved simulator format is version 2. Version-1 data needs an explicit reset;
-startup never invents missing ancestry or execution evidence for retained Runs. Simulated
-settlement remains pending while saved subtree work is active; this is not proof of real
-T3 settlement or active-list behavior.
+The supported saved simulator format is version 3, which records simulated subagents instead
+of native delegation and descendant evidence. Earlier versions need an explicit reset;
+startup never invents missing state for retained Runs. A simulated delegated wait stays
+pending while a saved subagent is active; this is not proof of real T3 settlement or
+active-list behavior.
 
 ## Manual checks by area
 
@@ -98,12 +100,12 @@ T3 settlement or active-list behavior.
   Choose an available fixed remote port (`4313` in this example), and reuse the same command, data home and ports after each restart so the approved client's saved server address remains valid. Do not use port `0` for these restart checks.
   In the Vite host panel, open **Settings → Devices & access** and copy the **Desktop connection link**. Paste it into a desktop installation in **Connect to a server** mode, request access and approve that request in the Vite host panel ([client setup](desktop-and-clients.md#connecting-a-client)).
   The demo's HTTPS listener serves the API without the browser UI; the desktop client supplies its bundled UI. Opening the Vite URL instead still uses host-local access.
-- **Reporting.** The demo's Codex entry points at the demo backend's own Factory MCP URL; backend tests own the installed URL reaching the listening server and repair after an address change. The worker E2E journey covers accepted results, questions/replies, handoffs and Human corrections; backend tests own missing-report recovery (including pending delegation/continuation refusal), durable rejection diagnostics, report races and failures, context reads without inherited thread hints and exact incoming Agent results on repeated visits. The persistent demo does not model the T3 reply turn of conversation waiting or native harness metadata.
+- **Reporting.** The demo's Codex entry points at the demo backend's own Factory MCP URL; backend tests own the installed URL reaching the listening server and repair after an address change. The worker E2E journey covers accepted results, questions/replies, a working message with Request report, handoffs and Human corrections; backend tests own working-report validation and replacement, missing-report recovery (including refusal while delegated work is unsettled), durable rejection diagnostics, unknown or missing Block ids, report races and failures, result replacement after hand-off with the same or a different exit, and exact incoming Agent results on repeated visits. Seeded workers report like Agents do: the seed reads each worker's Block id from its launch message and passes it to `factory_update_block`. The persistent demo does not model the T3 reply turn of conversation waiting.
   To inspect initial installation, stop a disposable demo, move its `reporting-codex/config.toml` aside and restart. From the approved desktop client configured above, open **Settings → Agent reporting**, choose **Install Factory MCP** on the Codex target and reload: it stays **Installed**.
-  The Working scenario retains two active delegated children after the parent turn completes;
-  backend tests cover automatic notification continuations, report acceptance after restart
-  and rejection of notifications that would bypass a user question. Fresh demo and UI
-  fixture workers and descendants use UUID thread identities and `run:thread:<uuid>:ordinal:1`
+  The Working scenario keeps two simulated subagents running after the worker's turn completes;
+  backend tests cover reports from notification and reply turns, report acceptance after
+  restart and a final settling an open question. Fresh demo and UI
+  fixture workers use UUID thread identities and `run:thread:<uuid>:ordinal:1`
   execution identities, carried through adapter evidence and public Run reads. Retained
   homes preserve existing identities; reset only a disposable home to see the new baseline.
   To inspect reporting warnings, stop a disposable demo, move its `reporting-codex/skills/factory-block/SKILL.md` aside and restart.
@@ -119,6 +121,6 @@ T3 settlement or active-list behavior.
 
 ## Verification coverage
 
-[UI verification](testing.md) and its feature map list the current e2e suites. Controlled UI journeys cover authoring, navigation, shortcuts, reporting, Human decisions, Stop, closure, the worker lifecycle and client access (including both directions of protocol incompatibility); public-operation tests cover restored demo work, report transport and races. The required disposable-demo checks separately prove reset and production isolation.
+[UI verification](testing.md) and its feature map list the current e2e suites. Controlled UI journeys cover authoring, navigation, shortcuts, reporting, Human decisions, settling and returning to Active, Archive, the worker lifecycle and client access (including both directions of protocol incompatibility); public-operation tests cover restored demo work, report transport and races. The required disposable-demo checks separately prove reset and production isolation.
 For every scenario change keep a fresh disposable-demo check of public state, the user action, reload, restart identity preservation, running-owner reset refusal and reset after shutdown, and record
 the exact command and sanitized results in the PR. Controlled UI success neither replaces that check nor proves live T3 or model behavior.

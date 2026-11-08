@@ -171,8 +171,8 @@ export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVis
       id: activation.id,
       start: activation.createdAt,
       end:
-        run.reports.find((report) => report.activationId === activation.id)?.completionEligibleAt ??
-        null,
+        run.reports.findLast((report) => report.activationId === activation.id)
+          ?.completionEligibleAt ?? null,
       status: activation.phase,
     }));
 }
@@ -259,6 +259,8 @@ function activityLine(
       color: "text-status-working",
     };
   }
+  if (state === "working" && recorded?.workingMessage)
+    return { text: recorded.workingMessage, color: activityColor.working };
   return {
     text: activityText(run, block, recorded),
     color: activityColor[state] ?? "text-muted-foreground",
@@ -294,7 +296,10 @@ function ExecutionBlockTitle({
       <span className="truncate text-2xs leading-3 tracking-label text-subtle-foreground">
         {block.kind === "human" ? "Human step" : "Agent"} · {agentLabel(run, block)}
       </span>
-      <span className={cn("truncate text-2xs leading-3 font-medium", activity.color)}>
+      <span
+        className={cn("truncate text-2xs leading-3 font-medium", activity.color)}
+        title={activity.text}
+      >
         {activity.text}
       </span>
     </span>
@@ -395,6 +400,7 @@ function ExecutionBlock({
 }) {
   const recorded = run.blocks.find((item) => item.blockId === block.id);
   const state = recorded?.state ?? "not-started";
+  const workingMessage = state === "working" ? recorded?.workingMessage : null;
   const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
   const human = block.kind === "human";
   const name = block.name || "Unnamed block";
@@ -414,7 +420,7 @@ function ExecutionBlock({
       <button
         type="button"
         className="flex w-full flex-col rounded-lg text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        aria-label={`${human ? "Human step" : "Agent"} ${name}, ${executionStateLabel(state)}`}
+        aria-label={`${human ? "Human step" : "Agent"} ${name}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`}
         aria-pressed={selected}
         onClick={onSelect}
       >

@@ -182,14 +182,64 @@ test("reloading a waiting worker retains its exact question link", async ({
     "href",
     question.link!,
   );
-  // Periodic reconciliation may re-observe the waiting worker between the two reads.
-  expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(
-    run.activations.map((activation) => ({
-      ...activation,
-      evidence: { ...activation.evidence, observedAt: expect.any(String) },
-    })),
-  );
+  expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(run.activations);
   await app.screenshot("worker-question-after-reload");
+  await screen.getByRole("heading", "Work periods", { exact: true }).scrollIntoView();
+  await expect(screen.getByText(/Report: accepted waiting/)).toBeVisible();
+  await app.screenshot("worker-waiting-work-period");
+});
+
+test("a worker idle in working shows its message on the canvas and in its Run row", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const found = await findRun(
+    app.baseUrl,
+    "UI worker · Monitoring · Agent is watching CI for the search fix",
+  );
+
+  // Act
+  await app.open(`/runs/${found.id}`);
+
+  // Assert
+  await expect(screen.getByRole("article", "Block Implement change")).toContainText(
+    "CI checks are still running",
+  );
+  await expect(
+    screen
+      .getByRole("navigation", "Open Runs")
+      .getByRole("link", /^UI worker · Monitoring · Agent is watching CI/),
+  ).toContainText("CI checks are still running");
+  await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
+  await app.screenshot("worker-working-message");
+});
+
+test("Request report asks a worker idle in working to assess its existing work", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const found = await findRun(
+    app.baseUrl,
+    "UI worker · Monitoring · Agent is watching CI for the search fix",
+  );
+  await app.open(`/runs/${found.id}`);
+  await screen.getByRole("button", "Agent Implement change", { exact: false }).tap();
+  const details = screen.getByRole("complementary", "Block details");
+  await expect(details).toContainText("Opened pull request #42");
+  await expect(details.getByRole("listitem").getByText("working", { exact: true })).toBeVisible();
+  await app.screenshot("worker-working-visit");
+
+  // Act
+  await details.getByRole("button", "Request report", { exact: true }).tap();
+
+  // Assert
+  await expect(details.getByText("Report requested ·", { exact: false })).toBeVisible();
+  const saved = await readHistoryRun(app.baseUrl, found.id);
+  expect(saved.recoveries).toMatchObject([{ blockId: "worker", attentionId: null }]);
+  expect(saved.attention.filter((a) => a.kind === "missing-report")).toEqual([]);
+  await app.screenshot("worker-working-report-requested");
 });
 
 test("a native worker reply completes the same activation and preserves its waiting history", async ({
@@ -210,8 +260,8 @@ test("a native worker reply completes the same activation and preserves its wait
 
   // Assert
   await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).outcome)
-    .toBe("finished");
+    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
+    .toBe("settled");
   await browser.reload();
   const saved = await readHistoryRun(app.baseUrl, found.id);
   expect(saved.activations.map((a) => a.id)).toEqual(before.activations.map((a) => a.id));
@@ -225,7 +275,7 @@ test("a native worker reply completes the same activation and preserves its wait
   await app.screenshot("worker-answer-completed-same-visit");
 });
 
-test("a completed worker report releases review work as another direct worker", async ({
+test("a worker's replaced report releases only its newest result to review work", async ({
   app,
   screen,
   browser,
@@ -234,7 +284,7 @@ test("a completed worker report releases review work as another direct worker", 
   const found = await findRun(app.baseUrl, "UI worker · UI worker report release");
   await app.open(`/runs/${found.id}`);
 
-  // Act — the external worker reports through Factory's public runtime boundary.
+  // Act — the external worker reports a draft, then replaces it, through Factory's public runtime boundary.
   await workerEvent(app.baseUrl, "report");
 
   // Assert
@@ -244,11 +294,22 @@ test("a completed worker report releases review work as another direct worker", 
   await browser.reload();
   const saved = await readHistoryRun(app.baseUrl, found.id);
   expect(saved.threadBindings.map((b) => b.role)).toEqual(["worker", "worker"]);
-  expect(saved.reports[0]?.completionEligibleAt).not.toBe(null);
-  expect(saved.reports[0]?.exitId).toBe("review");
+  expect(saved.reports.map((r) => r.resultMessage)).toEqual([
+    "A first draft of the project picker change.",
+    "The project picker change is ready for review.",
+  ]);
+  expect(saved.reports[1]?.completionEligibleAt).not.toBe(null);
   expect(saved.activations.map((a) => a.blockId)).toEqual(["worker", "reviewer"]);
+  expect(saved.activations[1]?.cause).toContain(saved.reports[1]!.id);
   await expect(screen.getByRole("region", "Block activations")).toContainText(
     "Delivered → Review implementation",
+  );
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText(
+    "result version 2 replaces the earlier result",
+  );
+  await expect(screen.getByRole("region", "Timeline")).toContainText(
+    "Cancelled → Review implementation",
   );
   await expect(
     screen
@@ -306,28 +367,124 @@ test("a Human correction revisits the same worker conversation with a distinct a
   await app.screenshot("same-worker-second-visit");
 });
 
-test("Stop closes both direct worker branches durably", async ({ app, screen, browser }) => {
+test("the row menu opened by right click settles an open Run into the Settled group", async ({
+  app,
+  screen,
+  browser,
+}) => {
   // Arrange
-  const found = await findRun(app.baseUrl, "UI worker · Parallel review from one prompt");
-  const before = await readHistoryRun(app.baseUrl, found.id);
+  const title = "UI worker · Working · Improve the project picker";
+  const found = await findRun(app.baseUrl, title);
   await app.open(`/runs/${found.id}`);
+  await screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${title}`))
+    .secondaryTap();
 
   // Act
-  await screen.getByRole("button", "Stop Run", { exact: true }).tap();
+  await screen.getByRole("menuitem", "Settle", { exact: true }).tap();
 
   // Assert
   await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).outcome)
-    .toBe("stopped");
+    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
+    .toBe("settled");
   await browser.reload();
-  const saved = await readHistoryRun(app.baseUrl, found.id);
-  expect(saved.threadBindings).toEqual(before.threadBindings);
-  expect(saved.threadBindings.map((b) => b.role)).toEqual(["worker", "worker"]);
-  expect(saved.runCoordinator).toBeNull();
-  expect(saved.closure?.frontier.map((member) => member.threadId).sort()).toEqual(
-    before.threadBindings.map((binding) => binding.threadId).sort(),
+  await screen.getByRole("button", /^Settled/).tap();
+  await expect(
+    screen.getByRole("navigation", "Settled Runs").getByRole("link", new RegExp(`^${title}`)),
+  ).toBeVisible();
+  await expect(
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(`^${title}`)),
+  ).toHaveCount(0);
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await app.screenshot("run-settled-from-row-menu");
+});
+
+test("a report from the Agent of a Settled Run returns it to the open Runs", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const title = "UI worker · Working · Improve the project picker";
+  const found = await findRun(app.baseUrl, title);
+  await fetch(new URL(`/api/runs/${found.id}/settle`, app.baseUrl), {
+    method: "POST",
+    headers: { "X-Factory-Request": "1" },
+  });
+  await app.open(`/runs/${found.id}`);
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+
+  // Act
+  await workerEvent(app.baseUrl, "working");
+
+  // Assert
+  await expect(
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(`^${title}`)),
+  ).toContainText("Two subagents are still checking the empty state.");
+  expect((await readHistoryRun(app.baseUrl, found.id)).lifecycle).toBe("active");
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText(
+    "reported · the Run is Active again",
   );
-  await expect(screen.getByRole("region", "Closure evidence")).toContainText("Stopped");
-  await expect(screen.getByRole("button", "Stop Run", { exact: true })).toHaveCount(0);
-  await app.screenshot("root-two-workers-stopped-after-reload");
+  await app.screenshot("settled-run-active-after-report");
+});
+
+test("Archive on the Run page asks for confirmation and archives both worker branches at once", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const title = "UI worker · Parallel review from one prompt";
+  const found = await findRun(app.baseUrl, title);
+  const before = await readHistoryRun(app.baseUrl, found.id);
+  await app.open(`/runs/${found.id}`);
+  await screen.getByRole("button", "Archive Run", { exact: true }).tap();
+  const confirmation = screen.getByRole("dialog", `Archive “${title}”?`);
+  await expect(confirmation).toContainText("cannot be restored");
+  await app.screenshot("run-page-archive-confirmation");
+
+  // Act
+  await confirmation.getByRole("button", "Archive Run", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toBeVisible();
+  const saved = await readHistoryRun(app.baseUrl, found.id);
+  expect(saved.lifecycle).toBe("archived");
+  expect(saved.gateOpen).toBe(false);
+  expect(saved.threadBindings).toEqual(before.threadBindings);
+  expect(saved.blocks.map((block) => block.state)).toEqual(["stopped", "stopped"]);
+  expect(await runsTitled(app.baseUrl, title)).toHaveLength(0);
+  await app.open(`/runs/${found.id}`);
+  await browser.reload();
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Archived");
+  await expect(screen.getByRole("button", "Archive Run", { exact: true })).toHaveCount(0);
+  await app.screenshot("archived-run-history-by-link");
+});
+
+test("the row menu opened with Shift+F10 archives a Run after confirmation", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const title = "UI worker · Two reviewers working in parallel";
+  const found = await findRun(app.baseUrl, title);
+  await app.open("/runs/new");
+  const row = screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${title}`));
+  await row.press("Shift+F10");
+  await screen.getByRole("menuitem", "Archive…", { exact: true }).tap();
+  const confirmation = screen.getByRole("dialog", `Archive “${title}”?`);
+
+  // Act
+  await confirmation.getByRole("button", "Archive Run", { exact: true }).tap();
+
+  // Assert
+  await expect(row).toHaveCount(0);
+  expect((await readHistoryRun(app.baseUrl, found.id)).lifecycle).toBe("archived");
+  await browser.reload();
+  await expect(screen.getByRole("navigation", "Open Runs")).not.toContainText(title);
+  await app.screenshot("run-archived-from-row-menu");
 });

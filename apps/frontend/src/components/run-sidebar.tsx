@@ -3,12 +3,12 @@ import { useCallback, useRef, useState, type FormEvent } from "react";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import {
+  Archive,
   ChevronDown,
   ChevronRight,
   CircleCheck,
   CircleDashed,
   CirclePause,
-  CircleStop,
   FilePen,
   LoaderCircle,
   Moon,
@@ -32,6 +32,7 @@ import {
 import { AppLink as Link } from "./app-link.tsx";
 import { useNavigate } from "@tanstack/react-router";
 import { usePolling } from "../use-polling.ts";
+import { ArchiveRunDialog } from "./archive-run-dialog.tsx";
 import { RunStatusChip } from "./run-status-chip.tsx";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -55,12 +56,8 @@ import { cn } from "../lib/utils.ts";
 
 /** Run/ExecIndicator: whole-Run execution only; attention stays in the chips. */
 function execution(run: RunNavigationEntry) {
-  if (run.outcome === "finished")
-    return { Icon: CircleCheck, label: "Finished", className: "text-success" };
-  if (run.outcome)
-    return { Icon: CircleStop, label: "Stopped", className: "text-muted-foreground" };
-  if (run.stopRequestedAt)
-    return { Icon: CircleStop, label: "Stopping — unresolved", className: "text-attention" };
+  if (run.lifecycle === "settled")
+    return { Icon: CircleCheck, label: "Settled", className: "text-success" };
   if (run.blocks.some((block) => block.state !== "not-started" && block.freshness !== "fresh"))
     return {
       Icon: CircleDashed,
@@ -130,22 +127,9 @@ export function RunSidebar({ path }: { path: string }) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [snoozedExpanded, setSnoozedExpanded] = useState(false);
-  const [actionError, setActionError] = useState("");
-  const [busy, setBusy] = useState<string>();
-  const present = async (run: RunNavigationEntry) => {
-    setBusy(run.id);
-    setActionError("");
-    try {
-      await (run.presentation.snoozed ? api.restoreRun(run.id) : api.snoozeRun(run.id));
-      setRuns(await api.listRunNavigation());
-      if (!run.presentation.snoozed) document.getElementById("snoozed-toggle")?.focus();
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Could not update Run presentation.");
-    } finally {
-      setBusy(undefined);
-    }
-  };
+  const { act, busy, actionError } = useRunActions(setRuns);
   const [renaming, setRenaming] = useState<RunNavigationEntry | SavedRunDraft>();
+  const [archiving, setArchiving] = useState<RunNavigationEntry>();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
   return (
@@ -167,7 +151,7 @@ export function RunSidebar({ path }: { path: string }) {
         snoozed={snoozed}
         snoozedExpanded={snoozedExpanded}
         onExpandSnoozed={() => setSnoozedExpanded(!snoozedExpanded)}
-        onPresent={present}
+        onAction={act}
         busy={busy}
         expanded={expanded}
         query={query}
@@ -177,7 +161,19 @@ export function RunSidebar({ path }: { path: string }) {
         matches={matches}
         onExpand={() => setExpanded(!expanded)}
         onRename={setRenaming}
+        onArchive={setArchiving}
       />
+      {archiving && (
+        <ArchiveRunDialog
+          run={archiving}
+          open
+          returnFocusId={`run-actions-${archiving.id}`}
+          onOpenChange={(open) => !open && setArchiving(undefined)}
+          onArchived={() => {
+            void api.listRunNavigation().then(setRuns, () => undefined);
+          }}
+        />
+      )}
       {renaming && "presentation" in renaming && (
         <RenameDialog
           id={renaming.id}
@@ -212,6 +208,40 @@ export function RunSidebar({ path }: { path: string }) {
   );
 }
 
+type RunAction = "snooze" | "restore" | "settle";
+const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
+  snooze: api.snoozeRun,
+  restore: api.restoreRun,
+  settle: api.settleRun,
+};
+/** The group a Run moves to, whose toggle takes focus after the row leaves the open list. */
+const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
+
+/** Snooze, Restore and Settle from the row menu, refreshing navigation afterwards. */
+function useRunActions(setRuns: (runs: readonly RunNavigationEntry[]) => void) {
+  const [actionError, setActionError] = useState("");
+  const [busy, setBusy] = useState<string>();
+  const act = async (run: RunNavigationEntry, action: RunAction) => {
+    setBusy(run.id);
+    setActionError("");
+    try {
+      await runActions[action](run.id);
+      setRuns(await api.listRunNavigation());
+      if (action !== "restore") document.getElementById(`${actionGroup[action]}-toggle`)?.focus();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not update the Run.");
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  return { act, busy, actionError };
+}
+
+/** Snooze and Settle apply to Active Runs. */
+function isActive(run: RunNavigationEntry) {
+  return run.lifecycle === "active";
+}
+
 /** Revealed drafts join the open Runs in creation order; title search covers both. */
 function navigationGroups(
   runs: readonly RunNavigationEntry[],
@@ -221,11 +251,12 @@ function navigationGroups(
   const titled = (title: string) => title.toLocaleLowerCase().includes(query);
   const runMatches = runs.filter((run) => titled(run.title));
   const draftMatches = drafts.filter((draft) => titled(draftTitle(draft)));
-  const main = runMatches.filter((run) => !run.outcome && !run.presentation.snoozed);
+  const active = runMatches.filter(isActive);
+  const main = active.filter((run) => !run.presentation.snoozed);
   return {
     open: [...main, ...draftMatches].toSorted(byCreation),
-    snoozed: runMatches.filter((run) => !run.outcome && run.presentation.snoozed),
-    settled: runMatches.filter((run) => !!run.outcome),
+    snoozed: active.filter((run) => run.presentation.snoozed),
+    settled: runMatches.filter((run) => !isActive(run)),
     matches: runMatches.length + draftMatches.length,
     total: runs.length + drafts.length,
   };
@@ -298,6 +329,21 @@ function navigationEmptyState(
   return undefined;
 }
 
+function NavigationEmptyState({ state }: { state: ReturnType<typeof navigationEmptyState> }) {
+  if (!state) return null;
+  return (
+    <div
+      role="status"
+      className="grid gap-1 rounded-md border border-dashed border-border-strong px-2.5 py-3.5"
+    >
+      <p className="truncate text-sm leading-tight font-medium text-emphasis-foreground">
+        {state.title}
+      </p>
+      <p className="text-2xs leading-tight tracking-label text-muted-foreground">{state.body}</p>
+    </div>
+  );
+}
+
 function RunGroup({
   name,
   expanded,
@@ -366,7 +412,8 @@ function RunGroups({
   onExpand,
   onExpandSnoozed,
   onRename,
-  onPresent,
+  onArchive,
+  onAction,
   busy,
 }: {
   path: string;
@@ -384,7 +431,8 @@ function RunGroups({
   onExpand: () => void;
   onExpandSnoozed: () => void;
   onRename: (entry: RunNavigationEntry | SavedRunDraft) => void;
-  onPresent: (run: RunNavigationEntry) => Promise<void>;
+  onArchive: (run: RunNavigationEntry) => void;
+  onAction: (run: RunNavigationEntry, action: RunAction) => Promise<void>;
   busy: string | undefined;
 }) {
   const row = (run: RunNavigationEntry) => (
@@ -393,8 +441,9 @@ function RunGroups({
       run={run}
       selected={path === `/runs/${run.id}`}
       onRename={() => onRename(run)}
-      onPresent={() => {
-        void onPresent(run);
+      onArchive={onArchive}
+      onAction={(action) => {
+        void onAction(run, action);
       }}
       busy={busy === run.id}
     />
@@ -421,19 +470,7 @@ function RunGroups({
             />
           ),
         )}
-        {empty && (
-          <div
-            role="status"
-            className="grid gap-1 rounded-md border border-dashed border-border-strong px-2.5 py-3.5"
-          >
-            <p className="truncate text-sm leading-tight font-medium text-emphasis-foreground">
-              {empty.title}
-            </p>
-            <p className="text-2xs leading-tight tracking-label text-muted-foreground">
-              {empty.body}
-            </p>
-          </div>
-        )}
+        <NavigationEmptyState state={empty} />
       </nav>
       <div aria-hidden className="min-h-2 flex-1" />
       <div className="flex shrink-0 flex-col px-2 py-1.5">
@@ -599,16 +636,21 @@ function RunRow({
   run,
   selected,
   onRename,
-  onPresent,
+  onArchive,
+  onAction,
   busy,
 }: {
   run: RunNavigationEntry;
   selected: boolean;
   onRename: () => void;
-  onPresent: () => void;
+  onArchive: (run: RunNavigationEntry) => void;
+  onAction: (action: RunAction) => void;
   busy: boolean;
 }) {
   const state = execution(run);
+  const working = run.blocks.find(
+    (block) => block.state === "working" && block.workingMessage,
+  )?.workingMessage;
   const [menuOpen, setMenuOpen] = useState(false);
   const titleRef = useRef<HTMLSpanElement>(null);
   const [titleTip, setTitleTip] = useState(false);
@@ -659,6 +701,11 @@ function RunRow({
                   <RunStatusChip kind="project-unavailable" />
                 )}
               </span>
+              {working && (
+                <span className="block truncate text-2xs leading-tight text-muted-foreground">
+                  {working}
+                </span>
+              )}
               <span className="sr-only">, {state.label}</span>
             </span>
           </Link>
@@ -671,8 +718,10 @@ function RunRow({
             onOpenChange={setMenuOpen}
           >
             <RenameItem onSelect={onRename} />
-            {!run.outcome && (
-              <DropdownMenuItem onSelect={onPresent}>
+            {isActive(run) && (
+              <DropdownMenuItem
+                onSelect={() => onAction(run.presentation.snoozed ? "restore" : "snooze")}
+              >
                 {run.presentation.snoozed ? (
                   <Undo2 aria-hidden strokeWidth={1.5} />
                 ) : (
@@ -681,6 +730,16 @@ function RunRow({
                 {run.presentation.snoozed ? "Restore" : "Snooze"}
               </DropdownMenuItem>
             )}
+            {isActive(run) && (
+              <DropdownMenuItem onSelect={() => onAction("settle")}>
+                <CircleCheck aria-hidden strokeWidth={1.5} />
+                Settle
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={() => onArchive(run)}>
+              <Archive aria-hidden strokeWidth={1.5} />
+              Archive…
+            </DropdownMenuItem>
           </RowMenu>
         </div>
       </TooltipTrigger>

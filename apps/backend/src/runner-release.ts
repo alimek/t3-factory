@@ -1,5 +1,5 @@
-import { releaseCoordinatorSource } from "./coordinator-release.ts";
-import { coordinatorGate } from "./runner-coordinator-gate.ts";
+import { releaseResult } from "./result-release.ts";
+import { readWorkerThread } from "./worker-thread.ts";
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
@@ -8,7 +8,7 @@ import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint } from "./runner-utils.ts";
 import { now } from "./time.ts";
 
-/** Fresh worker-source release (or a durable Human answer) and a settled revisit target. */
+/** A released worker result (or a durable Human answer) and, for a revisit, a finished target thread. */
 function explicitSourceReleaseGeneration(
   database: RunnerDatabase,
   t3: T3Adapter,
@@ -18,24 +18,8 @@ function explicitSourceReleaseGeneration(
   return Effect.gen(function* () {
     const current = yield* database.row(run.id);
     if (!current) return null;
-    const [report] = yield* database.transaction(
-      (sql) =>
-        sql<{
-          activation_id: string;
-        }>`SELECT activation_id FROM runtime_reports WHERE id=${intent.report_id}`,
-    );
     if (intent.report_id) {
-      if (!report) return null;
-      if (
-        !(yield* releaseCoordinatorSource(
-          database,
-          t3,
-          current,
-          intent.source_block_id!,
-          report.activation_id,
-        ))
-      )
-        return null;
+      if (!(yield* releaseResult(database, t3, current, intent.report_id))) return null;
     } else {
       const answered = yield* database.transaction(
         (sql) =>
@@ -44,16 +28,8 @@ function explicitSourceReleaseGeneration(
       if (!answered.length) return null;
     }
     if (intent.kind === "send") {
-      const [previous] = yield* database.transaction(
-        (sql) =>
-          sql<{
-            id: string;
-          }>`SELECT a.id FROM run_activations a WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} AND a.rowid<(SELECT rowid FROM run_activations WHERE run_id=${run.id} AND cause=${intent.cause}) ORDER BY a.rowid DESC LIMIT 1`,
-      );
-      if (
-        !previous ||
-        !(yield* coordinatorGate(database, t3, current, intent.block_id, previous.id))
-      )
+      const { threadId } = JSON.parse(intent.target_json) as { threadId: string };
+      if (!(yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId))).finished)
         return null;
     }
     return current.generation;
@@ -75,7 +51,7 @@ export function activatePendingHumanHandoff(
     yield* database.mutate(runRow.id, (sql) =>
       Effect.gen(function* () {
         const [current] =
-          yield* sql`SELECT id FROM runs WHERE id=${runRow.id} AND gate_open=1 AND closed_at IS NULL AND (${generation ?? null} IS NULL OR generation=${generation ?? null}) AND EXISTS(SELECT 1 FROM t3_connection WHERE context_id=${intent.context_id}) AND EXISTS(SELECT 1 FROM runner_owner WHERE token=${database.owner.token})`;
+          yield* sql`SELECT id FROM runs WHERE id=${runRow.id} AND gate_open=1 AND (${generation ?? null} IS NULL OR generation=${generation ?? null}) AND EXISTS(SELECT 1 FROM t3_connection WHERE context_id=${intent.context_id}) AND EXISTS(SELECT 1 FROM runner_owner WHERE token=${database.owner.token})`;
         const [pendingIntent] =
           yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE id=${intent.id} AND state='pending'`;
         if (!current || !pendingIntent) return;

@@ -127,8 +127,5 @@ export async function seedDevelopment(
   const agents = await createDemoAgents(factory, t3);
   const flows = await createDemoFlows(factory, agents);
   await createDemoClients(factory);
-  await seedScenarios(
-    { factory, t3, projectId: project.id, t3ProjectId: project.projectId },
-    flows,
-  );
+  await seedScenarios({ factory, t3, projectId: project.id }, flows);
 }

@@ -1,10 +1,9 @@
-import { readRemoteReferences } from "./coordinator-remote.ts";
 import { threadHref } from "./thread-link.ts";
 import type { RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 
-export const COORDINATOR_HOLD = "Worker evidence unavailable; activation remains unverified.";
+export const COORDINATOR_HOLD = "Worker thread not observed yet.";
 
 /** Separate activation and native request identity; no external worker dispatch intent exists. */
 export function persistActivation(
@@ -29,33 +28,25 @@ export function coordinationRead(sql: SqlClient.SqlClient, id: string) {
       blockId: string;
       cause: string;
       phase: RunDetail["activations"][number]["phase"];
-      coverage: RunDetail["activations"][number]["coverage"];
       problem: string | null;
-      evidence_json: string | null;
       createdAt: string;
       requestKey: string;
       inputFingerprint: string;
       accepted_json: string | null;
-    }>`SELECT a.id,a.block_id AS blockId,a.cause,a.phase,a.coverage,a.created_at AS createdAt,a.problem,a.evidence_json,d.request_key AS requestKey,d.input_fingerprint AS inputFingerprint,d.accepted_json FROM run_activations a JOIN run_delegations d ON d.activation_id=a.id WHERE a.run_id=${id} ORDER BY a.rowid`;
+    }>`SELECT a.id,a.block_id AS blockId,a.cause,a.phase,a.created_at AS createdAt,a.problem,d.request_key AS requestKey,d.input_fingerprint AS inputFingerprint,d.accepted_json FROM run_activations a JOIN run_delegations d ON d.activation_id=a.id WHERE a.run_id=${id} ORDER BY a.rowid`;
     const threadBindings = yield* sql<
       RunDetail["threadBindings"][number]
     >`SELECT id,block_id AS blockId,environment_id AS environmentId,thread_id AS threadId,role,link,parent_binding_id AS parentBindingId FROM run_thread_bindings WHERE run_id=${id} ORDER BY rowid`;
     return {
-      remoteWork: yield* readRemoteReferences(sql, id),
-      activations: rows.map(
-        ({ requestKey, inputFingerprint, evidence_json, accepted_json, ...activation }) => ({
-          ...activation,
-          evidence: evidence_json
-            ? (JSON.parse(evidence_json) as import("@t3-factory/contracts").CoordinatorEvidence)
-            : null,
-          delegation: {
-            requestKey,
-            inputFingerprint,
-            state: accepted_json ? ("accepted" as const) : ("planned" as const),
-            ...(accepted_json ? { accepted: acceptedReference(accepted_json) } : {}),
-          },
-        }),
-      ),
+      activations: rows.map(({ requestKey, inputFingerprint, accepted_json, ...activation }) => ({
+        ...activation,
+        delegation: {
+          requestKey,
+          inputFingerprint,
+          state: accepted_json ? ("accepted" as const) : ("planned" as const),
+          ...(accepted_json ? { accepted: acceptedReference(accepted_json) } : {}),
+        },
+      })),
       threadBindings: threadBindings.map((binding) => ({
         ...binding,
         link: threadHref(binding.link),
@@ -64,10 +55,14 @@ export function coordinationRead(sql: SqlClient.SqlClient, id: string) {
   });
 }
 
+/** Native delegation acceptance stored by the retired Run conversation, kept as closed history. */
+type StoredAcceptance = {
+  itemId: string;
+  parentRunId: string;
+  result: { taskId: string; childThreadId: string; childRunId: string | null };
+};
 function acceptedReference(json: string) {
-  const source = JSON.parse(
-    json,
-  ) as import("./adapters/delegation-activity.ts").DelegationActivity["invocations"][number];
+  const source = JSON.parse(json) as StoredAcceptance;
   return {
     taskId: source.result.taskId,
     childThreadId: source.result.childThreadId,

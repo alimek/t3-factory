@@ -44,8 +44,8 @@ export function openRunnerHuman(database: RunnerDatabase, lifecycle: RunnerLifec
               const [occurrence] =
                 yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE id=${id}`;
               const [owned] = yield* sql`SELECT token FROM runner_owner WHERE token=${owner.token}`;
-              if (!owned || !current?.gate_open || current.closed_at)
-                return failure("conflict", "This Run no longer accepts answers.");
+              if (!owned || !current?.gate_open)
+                return failure("conflict", "This Run is archived and accepts no answers.");
               if (!occurrence) return failure("not_found", "This Human occurrence does not exist.");
               const block = runRow.definitions.flow.graph.blocks.find(
                 (block) => block.id === occurrence.block_id,

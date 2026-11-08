@@ -287,7 +287,14 @@ it("an installed Claude entry reaches the Factory tools on the listening backend
     "factory_get_block",
     "factory_get_run",
   ]);
-  expect(listed.tools[0]!.inputSchema.required).toStrictEqual(["to"]);
+  expect(listed.tools.map((tool) => tool.inputSchema.required)).toStrictEqual([
+    ["blockId", "to"],
+    ["blockId"],
+    ["blockId"],
+  ]);
+  expect(listed.tools[0]?.inputSchema.properties?.to).toMatchObject({
+    enum: ["working", "waiting", "finished"],
+  });
 });
 
 it("repairing a Codex entry for another backend address replaces only Factory's entry", async (context) => {
@@ -326,9 +333,10 @@ it("Repair installs the Factory Block skill under the Claude home", async (conte
   expect(installed).toContain("name: factory-block");
   expect(installed).toContain("factory_get_block");
   expect(installed).toContain("factory_get_run");
+  expect(installed).toContain('to: "working"');
   expect(installed).toContain('to: "waiting"');
   expect(installed).toContain('to: "finished"');
-  expect(installed).toContain("`ref`");
+  expect(installed).toContain("`blockId`");
   expect(installed).toContain("$factory-block");
 });
 
@@ -366,4 +374,43 @@ it("a missing Factory Block skill stays repairable and Repair rewrites it", asyn
   assert(result.ok);
   expect(result.value.status).toBe("installed");
   expect(await readFile(skill, "utf8")).toContain("name: factory-block");
+});
+
+/** The skill current releases install: it passes a Factory tool ref and has no working report. */
+const RELEASED_SKILL = `---
+name: factory-block
+description: Work one Factory Block with the factory-runtime tools. Use when the thread's first message starts with $factory-block.
+---
+
+# Factory Block
+
+This thread is one Block in a Factory Run. Factory takes the Block's result only from its tools, never from chat.
+
+1. Call \`factory_get_block\` before any other work. Done when it returns your Block with its inputs and exits.
+2. Work from this Agent's prompt and those inputs. Call \`factory_get_run\` when you need the rest of the Run as context.
+3. Report with \`factory_update_block\`. Done when it returns an acknowledgement.
+   - \`to: "waiting"\` when you need the user's reply, then end the turn.
+   - \`to: "finished"\` with one of the Block's exits when the work is done.
+
+When the message gives a Factory tool ref, pass it as \`ref\` on every Factory tool call. Factory tools belong to this thread's own agent; subagents work without them.
+
+Every later turn in this thread, including feedback and user replies, starts again at step 1.
+`;
+
+it("a Factory Block skill installed by an earlier release needs attention until Repair replaces it", async (context) => {
+  // Arrange
+  const fixture = await installedReportingFixture(context);
+  const skill = join(fixture.home, ".claude", "skills", "factory-block", "SKILL.md");
+  await writeFile(skill, RELEASED_SKILL);
+  const before = await fixture.factory.getReportingInstallations();
+  assert(before.ok);
+  expect(before.value[0]).toMatchObject({ status: "needs-attention", actions: { repair: true } });
+
+  // Act
+  const result = await fixture.factory.installReporting({ targetId: fixture.targetId });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.status).toBe("installed");
+  expect(await readFile(skill, "utf8")).toContain('to: "working"');
 });

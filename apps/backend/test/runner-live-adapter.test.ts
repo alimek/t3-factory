@@ -5,139 +5,8 @@ import { launchFixture } from "./support/launch-fixture.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
-import {
-  capturedWorker,
-  completedWireWorker,
-  reportedNativeWorker,
-} from "./support/worker-contract.ts";
-
-it("a completed worker with runless native subagents releases its accepted result to the next Block", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.blocks[0]?.state).toBe("finished");
-  expect(run.value.reports[0]?.completionEligibleAt).toEqual(expect.any(String));
-  expect(f.t3.launches.size).toBe(2);
-  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
-});
-
-it("restart finishes a reported Run with idle native subagents without inventing child executions", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c, {}, "");
-  await f.f.close();
-
-  // Act
-  const reopened = await f.h.open({ t3: f.t3 });
-
-  // Assert
-  const run = await reopened.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.outcome).toBe("finished");
-  expect(run.value.executions).toMatchObject([{ executionId: "execution-1" }]);
-  expect(run.value.executions).toHaveLength(1);
-  expect(f.t3.launches.size).toBe(1);
-});
-
-it("an idle native child cannot release a result while aggregate settlement is pending", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c);
-  f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", "execution-1"]), {
-    threadId: "thread-1",
-    runId: "execution-1",
-    state: "pending",
-    status: "completed",
-    resultRun: null,
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
-  });
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.blocks[0]?.state).toBe("working");
-  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-});
-
-it("a running native child without public runs keeps an accepted result held", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c, { status: "running" });
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-});
-
-it("a native child with an unanswered request keeps an accepted result held", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c, { pendingRequestCount: 1 });
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-});
-
-it("a T3-owned child cannot use native idle evidence in place of its executions", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c, { creationSource: "mcp" });
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-});
-
-it("a queued native-child turn holds an accepted result even after worker aggregate completion", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c, {}, "parallel-block", ["queued-native-turn"]);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.blocks[0]?.state).toBe("working");
-  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-});
-
-it("missing native run coverage does not become proof of an empty child", async (c) => {
-  // Arrange
-  const f = await reportedNativeWorker(c, { runCount: undefined });
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-});
+import { capturedWorker, settledAnswer, wireWorker } from "./support/worker-contract.ts";
+import { finishWorker, startWorkerTurn, workerFinal } from "./support/run-worker.ts";
 
 it("a captured checkout worker retains exact execution identity from its nested thread read", async (c) => {
   // Arrange
@@ -167,35 +36,74 @@ it("a captured checkout worker retains exact execution identity from its nested 
   });
 });
 
-it("a worker resumed after repeated replies and delegation releases one handoff after restart", async (c) => {
+it("a worker resumed by a notification shows a missing report when T3 settles it from an earlier result run", async (c) => {
   // Arrange
-  const f = await completedWireWorker(c);
+  const f = await wireWorker(c, (runId) => ({
+    ...settledAnswer(runId),
+    resultRun: { runId: "execution-1", status: "completed" },
+  }));
+  startWorkerTurn(f, "notification-execution", 2);
+  finishWorker(f);
 
   // Act
-  const reopened = await f.h.open({ t3: f.t3 });
+  await f.f.reconcileRuns();
 
   // Assert
-  const run = await reopened.getRun(f.runId);
+  const run = await f.f.getRun(f.runId);
   assert(run.ok);
-  expect(run.value.activations.map((a) => a.blockId)).toStrictEqual(["worker", "parallel-block"]);
-  expect(run.value.reports).toMatchObject([
-    {
-      status: "finished",
-      executionId: "continuation-execution",
-      activationId: run.value.activations[0]?.id,
-      completionEligibleAt: expect.any(String),
-      recipients: ["parallel-block"],
-    },
+  expect(run.value.blocks[0]).toMatchObject({ state: "error", problem: "missing-report" });
+  expect(run.value.attention.filter((a) => !a.settledAt)).toMatchObject([
+    { kind: "missing-report", executionId: "notification-execution" },
   ]);
-  expect(run.value.attention).toContainEqual(
-    expect.objectContaining({
-      kind: "conversation-waiting",
-      settledAt: expect.any(String),
-    }),
-  );
-  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
+
+it("a reported worker's result stays held while T3's delegated wait times out", async (c) => {
+  // Arrange
+  const f = await wireWorker(c, (runId) => ({ ...settledAnswer(runId), timedOut: true }));
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(run.value.blocks[0]?.state).toBe("working");
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("a delegated wait answered for another run keeps a reported result held", async (c) => {
+  // Arrange
+  const f = await wireWorker(c, () => settledAnswer("another-run"));
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+
+it("a reported worker's result is released when the live thread read and delegated wait show it finished", async (c) => {
+  // Arrange
+  const f = await wireWorker(c, settledAnswer);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toEqual(expect.any(String));
   expect(f.t3.launches.size).toBe(2);
-  expect(f.t3.sends.size).toBe(0);
 });
 
 it("launch support permits an absent runtime mode without inventing replay proof", async (c) => {
@@ -398,85 +306,22 @@ it("sendMessage rejects malformed live responses as uncertain", async (c) => {
   await expect(rejection).rejects.toThrow(/uncertain/);
 });
 
-it("readQueue rejects incomplete queue list coverage from the live SDK", async (c) => {
+it("a thread read without a pending native request count is rejected rather than read as none", async (c) => {
   // Arrange
   const h = await factoryHarness(c);
   const external = await oauthT3({
-    queue: () => ({ items: [] }),
-  });
-  c.onTestFinished(() => external.close());
-  let approval = "";
-  const adapter = new LiveT3Adapter({
-    credentialsDirectory: join(dirname(h.databasePath), "credentials"),
-    callbackPort: 0,
-    openBrowser: async (url) => {
-      approval = url;
-    },
-  });
-  const f = await h.open({ t3: adapter });
-  await f.configureConnection({ endpoint: external.endpoint });
-  await f.authorizeConnection();
-  expect((await fetch(external.approvalUrl(approval))).status).toBe(200);
-  await f.recheckConnection();
-
-  // Act
-  const rejection = adapter.readQueue({ endpoint: external.endpoint }, "thread");
-
-  // Assert
-  await expect(rejection).rejects.toThrow(/queue coverage/);
-});
-
-it("readNativeRequests rejects missing pending request coverage", async (c) => {
-  // Arrange
-  const h = await factoryHarness(c);
-  const external = await oauthT3({
-    runtimeActivity: (args) => {
-      expect(args.threadId).toBe("thread");
-      expect(args.runLimit).toBe(1);
-      return {
-        thread: { threadId: "thread", projectId: "neutral", pendingRequestCount: undefined },
-      };
-    },
-  });
-  c.onTestFinished(() => external.close());
-  let approval = "";
-  const adapter = new LiveT3Adapter({
-    credentialsDirectory: join(dirname(h.databasePath), "credentials"),
-    callbackPort: 0,
-    openBrowser: async (url) => {
-      approval = url;
-    },
-  });
-  const f = await h.open({ t3: adapter });
-  await f.configureConnection({ endpoint: external.endpoint });
-  await f.authorizeConnection();
-  expect((await fetch(external.approvalUrl(approval))).status).toBe(200);
-  await f.recheckConnection();
-
-  // Act
-  const rejection = adapter.readNativeRequests({ endpoint: external.endpoint }, "thread");
-
-  // Assert
-  await expect(rejection).rejects.toThrow(/native request coverage/);
-});
-
-it("cancelQueued forwards the exact queued run id to the live SDK", async (c) => {
-  // Arrange
-  const h = await factoryHarness(c);
-  const seen: unknown[] = [];
-  const external = await oauthT3({
-    queueSchema: {
-      type: "object",
-      properties: {
-        action: { type: "string", enum: ["list", "cancel"] },
-        threadId: { type: "string" },
-        queuedRunId: { type: "string" },
+    runtimeActivity: () => ({
+      thread: {
+        threadId: "thread",
+        projectId: "neutral",
+        activeRunId: null,
+        latestRunId: "exact",
+        link: null,
+        worktreePath: null,
+        pendingRequestCount: undefined,
       },
-    },
-    queue: (args) => {
-      seen.push(args);
-      return { anything: "not a confirmation" };
-    },
+      recentRuns: [{ runId: "exact", status: "completed", ordinal: 1 }],
+    }),
   });
   c.onTestFinished(() => external.close());
   let approval = "";
@@ -494,11 +339,8 @@ it("cancelQueued forwards the exact queued run id to the live SDK", async (c) =>
   await f.recheckConnection();
 
   // Act
-  await adapter.cancelQueued(
-    { endpoint: external.endpoint },
-    { threadId: "thread", queuedRunId: "queued" },
-  );
+  const rejection = adapter.readExecution({ endpoint: external.endpoint }, "thread");
 
   // Assert
-  expect(seen).toStrictEqual([{ action: "cancel", threadId: "thread", queuedRunId: "queued" }]);
+  await expect(rejection).rejects.toThrow(/Invalid thread observation/);
 });

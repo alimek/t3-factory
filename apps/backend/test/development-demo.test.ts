@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { restoredDevelopmentDemo } from "./support/development-demo.ts";
 
-it("restored demo treats verified running work as normal progress and preserves its hierarchy and user edits", async (c) => {
+it("restored demo keeps a worker waiting on its running subagents as normal progress and preserves user edits", async (c) => {
   // Arrange
   const { f, before, edited, projectId, count } = await restoredDevelopmentDemo(c);
 
@@ -22,16 +22,13 @@ it("restored demo treats verified running work as normal progress and preserves 
   expect(after.value.executions.map((e) => [e.executionId, e.engineStatus])).toStrictEqual(
     before.executions.map((e) => [e.executionId, e.engineStatus]),
   );
-  expect(after.value.outcome).toBeNull();
+  expect(after.value.lifecycle).toBe("active");
   expect(after.value.blocks.some((block) => block.threadId !== null)).toBe(true);
   expect(after.value.blocks[0]).toMatchObject({
     state: "working",
     engineStatus: "completed",
     problem: null,
   });
-  expect(after.value.threadBindings).toContainEqual(
-    expect.objectContaining({ role: "descendant" }),
-  );
   expect(
     after.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
   ).toStrictEqual([]);

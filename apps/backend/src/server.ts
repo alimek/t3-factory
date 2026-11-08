@@ -140,22 +140,9 @@ function runResponseRoutes(factory: Factory): readonly ApiRoute[] {
     },
     {
       method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/recover-coordinator$/,
-      body: standardBody,
-      handle: fromCall((id, input: unknown) => {
-        const source =
-          input && typeof input === "object" && "sourceExecutionId" in input
-            ? input.sourceExecutionId
-            : null;
-        return typeof source === "string" && source.trim()
-          ? factory.recoverRunCoordinator(id, source)
-          : Promise.resolve(failure("validation", "An exact sourceExecutionId is required."));
-      }),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/attention\/([^/]+)\/request-report$/,
-      handle: fromId((id) => factory.requestReport(id)),
+      path: /^\/api\/runs\/([^/]+)\/request-report$/,
+      body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
+      handle: fromCall((id, input: { blockId: string }) => factory.requestReport(id, input)),
     },
     {
       method: "POST",
@@ -184,6 +171,8 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
         ["snooze", factory.snoozeRun],
         ["restore", factory.restoreRun],
         ["woke-seen", factory.markRunWokeSeen],
+        ["settle", factory.settleRun],
+        ["archive", factory.archiveRun],
       ] as const
     ).map(([action, operation]): ApiRoute => ({
       method: "POST",
@@ -218,11 +207,6 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
           Effect.promise(() => factory.listRuns(queryParameter(url, "projectId"))),
           resultResponse,
         ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/stop$/,
-      handle: fromId((id) => factory.stopRun(id)),
     },
     {
       method: "GET",
@@ -262,17 +246,6 @@ function reportingRoutes(factory: Factory): readonly ApiRoute[] {
         Effect.map(
           Effect.promise(() => factory.installReporting(input)),
           resultResponse,
-        ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runtime\/context$/,
-      hostOnly: true,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.runtime.context(input)),
-          (body) => writeJsonResponse(200, body),
         ),
     },
     {
@@ -607,8 +580,8 @@ interface HttpBinding {
 }
 
 /**
- * Harness reporting over Streamable HTTP. Caller authority comes from native call
- * evidence, so the endpoint needs no credential, but browsers must not reach it.
+ * Harness reporting over Streamable HTTP. Calls name their Block by Block id and the
+ * endpoint needs no credential: it is host-local, and browsers must not reach it.
  */
 function serveMcp(
   request: HttpServerRequestType,

@@ -4,7 +4,13 @@ import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "./thread-link.ts";
 import { recoveryRows } from "./runner-recovery.ts";
-import type { Result, RunAttention, RunDetail, TaskSummary } from "@t3-factory/contracts";
+import type {
+  Result,
+  RunAttention,
+  RunDetail,
+  RunLifecycle,
+  TaskSummary,
+} from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -12,6 +18,7 @@ import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
+import { currentWorkingMessages } from "./block-report.ts";
 import type {
   BlockRow,
   ExecutionRow,
@@ -22,16 +29,6 @@ import type {
   TaskRow,
   TaskRunRow,
 } from "./runner-types.ts";
-import type { RuntimeBinding } from "./runtime-types.ts";
-
-type ClosureRow = {
-  outcome: NonNullable<RunDetail["outcome"]>;
-  generation: number;
-  confirmed_at: string;
-  frontier_json: string;
-  coordination_json: string | null;
-  root_frontier_json: string | null;
-};
 
 type RunEventRow = {
   sequence: number;
@@ -44,7 +41,11 @@ type RunEventRow = {
   engine_status: string | null;
 };
 
-function runBlock(block: BlockRow, intents: readonly IntentRow[]): RunDetail["blocks"][number] {
+function runBlock(
+  block: BlockRow,
+  intents: readonly IntentRow[],
+  workingMessage: string | null,
+): RunDetail["blocks"][number] {
   const recovering = intents.some(
     (intent) =>
       intent.block_id === block.block_id &&
@@ -60,6 +61,7 @@ function runBlock(block: BlockRow, intents: readonly IntentRow[]): RunDetail["bl
     link: threadHref(block.link),
     engineStatus: block.engine_status,
     reportStatus: block.report_status,
+    workingMessage,
     problem: block.problem,
     pendingRequestCount: block.pending_request_count,
     observedAt: block.observed_at,
@@ -76,13 +78,14 @@ function runReport(report: ReportRow): RunDetail["reports"][number] {
       : {}),
     blockId: report.block_id,
     executionId: report.execution_id,
-    key: report.report_key,
     fingerprint: report.fingerprint,
     status: report.status,
     exitId: report.exit_id,
     recipients: JSON.parse(report.recipients_json) as string[],
     acceptedAt: report.accepted_at,
-    ...(report.final_contract ? { completionEligibleAt: report.completion_eligible_at } : {}),
+    ...(report.status === "finished"
+      ? { completionEligibleAt: report.completion_eligible_at }
+      : {}),
   };
 }
 
@@ -93,7 +96,7 @@ function runExecution(execution: ExecutionRow): RunDetail["executions"][number] 
     blockId: execution.block_id,
     executionId: execution.execution_id,
     engineStatus: execution.engine_status,
-    reportStatus: execution.report_status,
+    reportStatus: execution.report_status ?? (execution.working_reported ? "working" : null),
     problem: execution.problem,
     observedAt: execution.observed_at,
     observedStartedAt: execution.first_work_at,
@@ -149,43 +152,19 @@ function runEvent(event: RunEventRow): RunDetail["events"][number] {
   };
 }
 
-function runClosure(closure: ClosureRow | undefined): RunDetail["closure"] {
-  return closure
-    ? {
-        outcome: closure.outcome,
-        ...(closure.root_frontier_json
-          ? {
-              rootFrontier: JSON.parse(closure.root_frontier_json) as NonNullable<
-                NonNullable<RunDetail["closure"]>["rootFrontier"]
-              >,
-            }
-          : {}),
-        ...(closure.coordination_json
-          ? {
-              coordination: JSON.parse(
-                closure.coordination_json,
-              ) as import("@t3-factory/contracts").CoordinatorEvidence[],
-            }
-          : {}),
-        generation: closure.generation,
-        confirmedAt: closure.confirmed_at,
-        frontier: JSON.parse(closure.frontier_json) as NonNullable<
-          RunDetail["closure"]
-        >["frontier"],
-      }
-    : null;
+function lifecycle(run: Pick<RunRow, "settled_at" | "archived_at">): RunLifecycle {
+  if (run.archived_at) return "archived";
+  return run.settled_at ? "settled" : "active";
 }
 
 function runEntry(row: TaskRunRow): TaskSummary["runs"][number] {
   return {
     id: row.id,
+    lifecycle: lifecycle(row),
     flowId: row.flow_id,
     flowName: row.flow_name,
     input: row.input,
     startedAt: row.started_at,
-    closedAt: row.closed_at,
-    outcome: row.outcome,
-    stopRequestedAt: row.stop_requested_at,
   };
 }
 function buildTaskSummary(
@@ -204,12 +183,10 @@ function buildTaskSummary(
     latestRun: latest
       ? {
           id: latest.id,
+          lifecycle: latest.lifecycle,
           flowId: latest.flowId,
           flowName: latest.flowName,
           startedAt: latest.startedAt,
-          closedAt: latest.closedAt,
-          outcome: latest.outcome,
-          stopRequestedAt: latest.stopRequestedAt,
         }
       : null,
     runs: entries,
@@ -218,10 +195,10 @@ function buildTaskSummary(
 function taskSummary(sql: SqlClient.SqlClient, task: TaskRow) {
   return Effect.gen(function* () {
     const runs =
-      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.closed_at,r.outcome,r.stop_requested_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
+      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.settled_at,r.archived_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
     const [activeRun] = yield* sql<{
       id: string;
-    }>`SELECT id FROM runs WHERE task_id=${task.id} AND closed_at IS NULL`;
+    }>`SELECT id FROM runs WHERE task_id=${task.id} AND archived_at IS NULL AND settled_at IS NULL`;
     return buildTaskSummary(task, runs, activeRun?.id ?? null);
   });
 }
@@ -246,13 +223,16 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const reports =
           yield* sql<ReportRow>`SELECT * FROM runtime_reports WHERE run_id=${id} ORDER BY rowid`;
         const executions = yield* sql<ExecutionRow>`SELECT x.*,
+          EXISTS(SELECT 1 FROM working_reports w WHERE w.run_id=x.run_id AND w.block_id=x.block_id AND w.execution_id=x.execution_id) AS working_reported,
           (SELECT MIN(e.observed_at) FROM run_events e WHERE e.run_id=x.run_id AND e.block_id=x.block_id AND e.execution_id=x.execution_id AND (e.binding_id=x.binding_id OR (e.binding_id IS NULL AND x.thread_id=(SELECT b.thread_id FROM run_blocks b WHERE b.run_id=x.run_id AND b.block_id=x.block_id))) AND e.engine_status IN ('preparing','starting','running','waiting')) AS first_work_at,
           (SELECT MIN(e.observed_at) FROM run_events e WHERE e.run_id=x.run_id AND e.block_id=x.block_id AND e.execution_id=x.execution_id AND (e.binding_id=x.binding_id OR (e.binding_id IS NULL AND x.thread_id=(SELECT b.thread_id FROM run_blocks b WHERE b.run_id=x.run_id AND b.block_id=x.block_id))) AND e.engine_status IN ('completed','failed','cancelled','interrupted','rolled_back')) AS end_work_at
           FROM run_executions x WHERE run_id=${id} ORDER BY rowid`;
         const humans =
           yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE run_id=${id} ORDER BY rowid`;
         const attention = yield* attentionRows(sql, id);
-        const [closure] = yield* sql<ClosureRow>`SELECT * FROM run_closures WHERE run_id=${id}`;
+        const working = new Map(
+          (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
+        );
         const { definitions } = runRow;
         return {
           ok: true as const,
@@ -270,13 +250,12 @@ export function openRunnerQueries(database: RunnerDatabase) {
             rootWork: yield* readRootWork(sql, id),
             ...(yield* coordinationRead(sql, id)),
             startedAt: runRow.started_at,
-            closedAt: runRow.closed_at,
-            outcome: runRow.outcome,
-            closure: runClosure(closure),
-            stopRequestedAt: runRow.stop_requested_at,
+            lifecycle: lifecycle(runRow),
             gateOpen: !!runRow.gate_open,
             generation: runRow.generation,
-            blocks: blocks.map((block) => runBlock(block, intents)),
+            blocks: blocks.map((block) =>
+              runBlock(block, intents, working.get(block.block_id) ?? null),
+            ),
             reports: reports.map(runReport),
             executions: executions.map(runExecution),
             humanOccurrences: humans.map(humanOccurrence),
@@ -356,33 +335,5 @@ export function openRunnerQueries(database: RunnerDatabase) {
     },
     listTasks,
     updateTask,
-    reportBindings(
-      key: string,
-      threadId?: string,
-    ): Effect.Effect<readonly RuntimeBinding[], unknown> {
-      return run(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return yield* sql<RuntimeBinding>`SELECT DISTINCT b.thread_id AS threadId,p.project_id AS projectId,
-          c.environment_id AS environmentId,r.workspace_root AS workspaceRoot,c.endpoint,c.id AS contextId,rp.execution_id AS runId,r.id AS factoryRunId,b.block_id AS blockId
-          FROM runtime_reports rp JOIN runs r ON r.id=rp.run_id
-          JOIN run_blocks b ON b.run_id=rp.run_id AND b.block_id=rp.block_id
-          JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
-          JOIN t3_authorization_contexts c ON c.id=r.context_id
-          WHERE (rp.report_key=${key} OR rp.final_contract=1) AND (${threadId ?? null} IS NULL OR b.thread_id=${threadId ?? null})`;
-        }),
-      );
-    },
-    isClosedThread(threadId: string) {
-      return run(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return (
-            (yield* sql`SELECT b.thread_id FROM run_blocks b JOIN runs r ON r.id=b.run_id WHERE b.thread_id=${threadId} AND r.closed_at IS NOT NULL`)
-              .length > 0
-          );
-        }),
-      );
-    },
   };
 }

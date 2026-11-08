@@ -26,7 +26,7 @@ workflow, routes work and records its history.
 - **Keep decisions with people.** Answer Human steps in Factory and open T3 for native
   agent questions or permissions. See which Runs need input or have a Problem.
 - **Follow durable execution.** Inspect the execution canvas, handoffs and timeline;
-  keep each Run's captured definitions and history across backend restarts. Stop a Run or start a new one.
+  keep each Run's captured definitions and history across backend restarts. Settle or archive a Run, or start a new one.
 - **Work locally or from an approved device.** Use the browser on the host, or connect
   an approved desktop/browser client through the separate HTTPS listener.
 
@@ -113,8 +113,8 @@ Start checks connection, project, settings and reporting readiness. It preserves
 unavailable choices and explains what needs attention. Setup does not launch a test workload.
 Real Runs use your configured model providers and may incur their normal charges.
 
-Ctrl+C stops the Factory backend. **Backend exit is not Stop:** agent work in T3
-may continue. Use **Stop Run** to request cancellation; Stop does not undo edits.
+Ctrl+C stops the Factory backend. **Backend exit is not Archive:** agent work in T3
+may continue. Use **Archive Run** to end a Run and interrupt its workers; Archive does not undo edits.
 
 For endpoint setup, configuration and client access, see
 [installation](docs/installation.md), [T3 integration](docs/t3-integration.md) and

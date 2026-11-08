@@ -166,8 +166,7 @@ const openReportingInstallation = Effect.fn(function* (
       return withReportingInstallationActions({
         ...target,
         status: "installed",
-        // Native call attribution proves the execution, not its effective configuration.
-        // Old evidence.json scopes were inferred from current settings and are not proof.
+        // A configured entry proves neither tool visibility nor that a worker reported.
         runtimeEvidence: "UNVERIFIED",
         message:
           "Configuration installed. Start a fresh session; native approvals, managed restrictions and project overrides still apply.",

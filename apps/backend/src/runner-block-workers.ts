@@ -31,12 +31,9 @@ import { newId } from "./ids.ts";
 const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
-/** The installed Block skill plus the turn the worker should act on. */
-export function workerTurn(body: string, ref?: string) {
-  const token = ref
-    ? `\n\nFactory tool ref: ${ref}. Pass ref on every factory_get_block, factory_get_run, and factory_update_block call.`
-    : "";
-  return `$factory-block\n\n${body}${token}`;
+/** The installed Block skill, the Block id its Factory tools take, and the turn to act on. */
+export function workerTurn(body: string, blockId: string) {
+  return `$factory-block\n\nFactory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block.\n\n${body}`;
 }
 
 /** Stable title saved with the launch. Later Block renames do not change recovery's target. */
@@ -50,6 +47,7 @@ export function workerLaunchPayload(
   target: Pick<T3Target, "environmentId" | "projectId">,
   key: string,
   number: number,
+  publicId: string,
 ): LaunchPayload {
   const blocks = definitions.flow.graph.blocks;
   const index = blocks.findIndex((entry) => entry.id === blockId);
@@ -61,7 +59,7 @@ export function workerLaunchPayload(
   return {
     ...payload,
     title: workerTitle(number, index, block.name),
-    message: workerTurn(agent.prompt, key),
+    message: workerTurn(agent.prompt, publicId),
   };
 }
 
@@ -84,12 +82,16 @@ export function persistEntryLaunches(
       if (!block || block.kind !== "agent") continue;
       const activationId = yield* newId;
       const requestKey = yield* newId;
+      const [saved] = yield* sql<{
+        public_id: string;
+      }>`SELECT public_id FROM run_blocks WHERE run_id=${plan.runId} AND block_id=${blockId}`;
       const payload = workerLaunchPayload(
         plan.definitions,
         blockId,
         plan.project,
         requestKey,
         plan.number,
+        saved!.public_id,
       );
       yield* persistActivation(
         sql,
@@ -305,7 +307,6 @@ function bindLaunchedWorker(
       if (!binding || !activation) return yield* Effect.fail(Error("Worker binding is incomplete"));
       yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,binding_id,activation_id,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.threadId},${reference.runId},${binding.id},${activation.id},${reference.status}) ON CONFLICT DO NOTHING`;
       yield* sql`UPDATE run_blocks SET thread_id=${reference.threadId},execution_id=COALESCE(execution_id,${reference.runId}),state='working',link=${link},engine_status=${reference.status},problem=NULL WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
-      yield* sql`INSERT INTO run_worker_activations(activation_id,binding_id,initial_execution_id,parent_thread_id) VALUES(${activation.id},${binding.id},${reference.runId},${reference.threadId}) ON CONFLICT DO NOTHING`;
       yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
       yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.runId},'launch-acknowledged',${"ack:" + intent.id},${intent.id},${time},${reference.status})`;

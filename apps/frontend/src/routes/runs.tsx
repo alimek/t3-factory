@@ -1,4 +1,4 @@
-import { RootWork, RunCoordinationControls } from "../components/run-coordination-controls.tsx";
+import { RootWork } from "../components/run-coordination-controls.tsx";
 import {
   BindingLink,
   bindingRole,
@@ -19,7 +19,6 @@ import {
   Bot,
   CircleCheck,
   CircleHelp,
-  CircleStop,
   Ellipsis,
   Lock,
   TriangleAlert,
@@ -28,7 +27,12 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { RunAttentionDetails } from "../components/run-attention.tsx";
+import {
+  pendingRecovery,
+  RequestReport,
+  RunAttentionDetails,
+} from "../components/run-attention.tsx";
+import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
 import { blockVisits, ExecutionCanvas } from "../components/execution-canvas.tsx";
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
@@ -51,10 +55,6 @@ import { cn } from "@/lib/utils";
 
 function elapsedSeconds(from: string, to: string) {
   return Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000).toFixed(1);
-}
-
-function blockName(run: RunDetail, blockId: string) {
-  return run.blocks.find((block) => block.blockId === blockId)?.name;
 }
 
 type CurrentFlowRevision = { readonly revision: number } | "missing";
@@ -146,28 +146,6 @@ function useEscapeToDeselect(active: boolean, deselect: () => void) {
   }, [active, deselect]);
 }
 
-/** Stop is requested from the top bar; its saved state and caveats show in the Run context. */
-function useStopRun(run: RunDetail, onStopped: (run: RunDetail) => void) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function stop() {
-    setBusy(true);
-    setError("");
-    try {
-      onStopped(await api.stopRun(run.id));
-    } catch {
-      setError(
-        "Stop response unavailable. Retry Stop to recover its saved state; confirmation has not been established.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  return { busy, error, stop };
-}
-
-type StopControl = ReturnType<typeof useStopRun>;
-
 /** The Run context rail starts open where it fits beside the canvas (Figma C02 hides it on compact). */
 function wideViewport() {
   return window.matchMedia("(min-width: 1280px)").matches;
@@ -226,14 +204,12 @@ function RunDetailView({
 }) {
   const graphBlock = run.definitions.flow.graph.blocks.find((block) => block.id === selected);
   const recorded = run.blocks.find((block) => block.blockId === selected);
-  const stop = useStopRun(run, observed.setRun);
   const unavailable = !!observed.error;
   return (
     <>
       <RunTopBar
         run={run}
         observed={observed}
-        stop={stop}
         contextOpen={contextOpen}
         onToggleContext={onToggleContext}
       />
@@ -269,26 +245,23 @@ function RunDetailView({
           <RunTimeline run={run} selectedBlockId={selected} />
         </div>
         {contextOpen && !selected && (
-          <RunContext
-            run={run}
-            observed={observed}
-            stop={stop}
-            observationUnavailable={unavailable}
-          />
+          <RunContext run={run} observed={observed} observationUnavailable={unavailable} />
         )}
       </div>
     </>
   );
 }
 
-/** One header state per distinct recorded block state; untouched blocks only while nothing ran. */
+/** One header state per distinct recorded block state; untouched blocks only while nothing ran.
+ * A Settled Run leads with Settled; its blocks keep their recorded states. */
 function headerStates(run: RunDetail) {
-  if (run.outcome === "finished") return ["finished"];
-  if (run.outcome === "stopped") return ["stopped"];
-  if (run.stopRequestedAt) return ["stopping"];
+  if (run.lifecycle === "archived") return ["archived"];
   const states = [...new Set(run.blocks.map((block) => block.state))];
   const started = states.filter((state) => state !== "not-started");
-  return started.length ? started : states;
+  return [
+    ...(run.lifecycle === "settled" ? ["settled"] : []),
+    ...(started.length ? started : states),
+  ];
 }
 
 function startedBlocks(run: RunDetail) {
@@ -330,19 +303,19 @@ const metaClass = "text-2xs leading-3 text-subtle-foreground";
 function RunTopBar({
   run,
   observed,
-  stop,
   contextOpen,
   onToggleContext,
 }: {
   run: RunDetail;
   observed: RunObservation;
-  stop: StopControl;
   contextOpen: boolean;
   onToggleContext: () => void;
 }) {
   const { project } = observed;
   const unavailable = projectIsUnavailable(project, observed.projectsLoaded);
-  const stale = !run.closedAt && observationText(run, !!observed.error).startsWith("Not live");
+  const [archiving, setArchiving] = useState(false);
+  const stale =
+    run.lifecycle === "active" && observationText(run, !!observed.error).startsWith("Not live");
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-4 pl-5">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
@@ -366,15 +339,19 @@ function RunTopBar({
           <span className="tracking-label">· Started {dayAndTime(run.startedAt)}</span>
         </p>
       </div>
-      {!run.closedAt && !run.stopRequestedAt && (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={stop.busy}
-          onClick={() => void stop.stop()}
-        >
-          {stop.busy ? "Requesting Stop…" : "Stop Run"}
-        </Button>
+      {run.lifecycle !== "archived" && (
+        <>
+          <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
+            <Archive aria-hidden />
+            Archive Run
+          </Button>
+          <ArchiveRunDialog
+            run={run}
+            open={archiving}
+            onOpenChange={setArchiving}
+            onArchived={() => void api.getRun(run.id).then(observed.setRun, () => undefined)}
+          />
+        </>
       )}
       {stale && <span className="text-2xs font-medium text-attention">Last known</span>}
       <div role="status" aria-label="Run status" className="flex items-center gap-1.5">
@@ -424,16 +401,27 @@ function RevisionBadge({ run, note }: { run: RunDetail; note: string | null }) {
   );
 }
 
-/** Figma Run/CanvasStatus: Live, Not live (last observation) or History for a closed Run. */
+/** When the Run last entered `kind`; Runs settled or archived by an upgrade have no such event. */
+function lifecycleAt(run: RunDetail, kind: "run-settled" | "run-archived") {
+  return run.events.findLast((event) => event.kind === kind)?.observedAt;
+}
+
+/** Figma Run/CanvasStatus: Live, Not live (last observation), Settled, or Archived history. */
 function ObservationBadge({ run, unavailable }: { run: RunDetail; unavailable: boolean }) {
   const text = observationText(run, unavailable);
-  const notLive = text.startsWith("Not live");
+  const settled = run.lifecycle === "settled";
+  const notLive = !settled && text.startsWith("Not live");
   const last = notLive ? lastObservedAt(run) : undefined;
   let icon = <CircleHelp aria-hidden strokeWidth={1.75} />;
   let label = text;
-  if (run.closedAt) {
+  if (run.lifecycle === "archived") {
+    const at = lifecycleAt(run, "run-archived");
     icon = <Archive aria-hidden strokeWidth={1.75} />;
-    label = `History · execution closed ${dayAndTime(run.closedAt)}`;
+    label = at ? `Archived ${dayAndTime(at)} · history` : "Archived · history";
+  } else if (settled) {
+    const at = lifecycleAt(run, "run-settled");
+    icon = <CircleCheck aria-hidden strokeWidth={1.75} className="text-success" />;
+    label = at ? `Settled ${dayAndTime(at)}` : "Settled";
   } else if (notLive) {
     icon = <Unplug aria-hidden strokeWidth={1.75} />;
     label = last ? `Not live · last observed ${clockTime(last)}` : text;
@@ -448,9 +436,7 @@ function ObservationBadge({ run, unavailable }: { run: RunDetail; unavailable: b
       className={cn(
         canvasBadgeClass,
         "font-medium",
-        notLive && !run.closedAt
-          ? "border-attention/50 bg-attention/10 text-attention"
-          : "text-muted-foreground",
+        notLive ? "border-attention/50 bg-attention/10 text-attention" : "text-muted-foreground",
       )}
     >
       {icon}
@@ -486,7 +472,7 @@ function CanvasOverlay({
       {seenError && (
         <Notice tone="attention" icon={TriangleAlert} title={seenError} className="w-140" />
       )}
-      {!run.closedAt && presentation === "unavailable" && (
+      {run.lifecycle !== "archived" && presentation === "unavailable" && (
         <Notice
           tone="critical"
           icon={Unplug}
@@ -509,7 +495,7 @@ function CanvasOverlay({
           title="Project unavailable in T3"
           className="w-140"
         >
-          {run.closedAt
+          {run.lifecycle === "archived"
             ? `${projectTitle} is no longer available in T3. This history and its captured Flow revision stay readable; T3 thread links may not open.`
             : `T3 no longer reports ${projectTitle}. Threads already running continue in T3; Factory can’t start new steps in this project until it’s available again.`}
         </Notice>
@@ -614,7 +600,22 @@ function BlockDetails({
           observationUnavailable={observationUnavailable}
           onUpdated={onUpdated}
         />
-        <RunCoordinationControls run={run} blockId={block.id} onUpdated={onUpdated} />
+        {recorded.state === "working" && recorded.workingMessage && (
+          <DetailSection title="Working report">
+            <div className="flex flex-col gap-3 px-2">
+              <p className="text-sm break-words whitespace-pre-wrap text-foreground">
+                {recorded.workingMessage}
+              </p>
+              <RequestReport
+                run={run}
+                blockId={block.id}
+                executionId={recorded.executionId}
+                recovery={pendingRecovery(run, recorded)}
+                onUpdated={onUpdated}
+              />
+            </div>
+          </DetailSection>
+        )}
         <CoordinatorActivations run={run} blockId={block.id} />
         <DetailSection title="Execution">
           <dl className="flex flex-col gap-2">
@@ -648,7 +649,13 @@ function BlockDetails({
                         {visitSpan(visit)} · {visit.id}
                       </p>
                     </div>
-                    <StatePill state={visit.status} />
+                    <StatePill
+                      state={
+                        block.kind === "agent" && number === visits.length
+                          ? recorded.state
+                          : visit.status
+                      }
+                    />
                   </li>
                 ))}
             </ul>
@@ -700,16 +707,14 @@ function BlockDetails({
   );
 }
 
-/** Run context rail (Figma A03 inspector): attention, Stop and closure, prompt, Flow revision, project. */
+/** Run context rail (Figma A03 inspector): attention, prompt, Flow revision, project. */
 function RunContext({
   run,
   observed,
-  stop,
   observationUnavailable,
 }: {
   run: RunDetail;
   observed: RunObservation;
-  stop: StopControl;
   observationUnavailable: boolean;
 }) {
   const unavailable = projectIsUnavailable(observed.project, observed.projectsLoaded);
@@ -724,14 +729,8 @@ function RunContext({
         onUpdated={observed.setRun}
       />
       <RootWork run={run} />
-      <RunCoordinationControls run={run} onUpdated={observed.setRun} />
       <CoordinatorActivations run={run} />
       <PendingIntents run={run} />
-      {run.closure ? (
-        <ClosureEvidence run={run} closure={run.closure} />
-      ) : (
-        <StopStatus run={run} stop={stop} />
-      )}
       <ContextSection title="Initial prompt" label="Run input">
         <pre className="font-mono text-xs leading-4.5 break-words whitespace-pre-wrap text-emphasis-foreground">
           {run.input}
@@ -771,111 +770,6 @@ function ContextSection({
 }
 
 const railTextClass = "text-2xs leading-4 tracking-label text-muted-foreground";
-
-function StopStatus({ run, stop }: { run: RunDetail; stop: StopControl }) {
-  return (
-    <section className="flex flex-col gap-2" aria-label="Stop status">
-      {run.stopRequestedAt ? (
-        <>
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-            <CircleStop aria-hidden className="size-3.5 text-status-stopped" />
-            Stop requested
-          </h2>
-          <p className={railTextClass}>
-            Requested {new Date(run.stopRequestedAt).toLocaleString()}. Factory handoffs are
-            blocked.
-          </p>
-          <p className={railTextClass}>
-            Stop includes all owned conversations, related descendants and queued work. Parent
-            termination alone cannot confirm Stop. Unavailable descendant evidence keeps this Run
-            open.
-          </p>
-          <p role="status" className="text-2xs leading-4 tracking-label text-attention">
-            Uncertain Stop: active, queued or unknown work still needs fresh confirmation. This Run
-            stays open. Reconciliation continues automatically after restart.
-          </p>
-        </>
-      ) : (
-        <h2 className={sectionLabelClass}>Stop</h2>
-      )}
-      <p className={railTextClass}>
-        Factory Run remains open. T3 execution completion alone is not successful Factory
-        completion. Stop does not roll back edits or prevent future direct T3 chats. Closing Factory
-        leaves T3 work running.
-      </p>
-      {stop.error && (
-        <Alert variant="destructive">
-          <AlertDescription>{stop.error}</AlertDescription>
-        </Alert>
-      )}
-    </section>
-  );
-}
-
-function ClosureEvidence({
-  run,
-  closure,
-}: {
-  run: RunDetail;
-  closure: NonNullable<RunDetail["closure"]>;
-}) {
-  const finished = run.outcome === "finished";
-  return (
-    <section className="flex flex-col gap-2" aria-label="Closure evidence">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-        {finished ? (
-          <CircleCheck aria-hidden className="size-3.5 text-success" />
-        ) : (
-          <CircleStop aria-hidden className="size-3.5 text-status-stopped" />
-        )}
-        {finished ? "Finished" : "Stopped"}
-      </h2>
-      <p className="text-sm text-emphasis-foreground">
-        Closed {new Date(closure.confirmedAt).toLocaleString()} · Run elapsed{" "}
-        {elapsedSeconds(run.startedAt, closure.confirmedAt)} s
-      </p>
-      <p className={railTextClass}>
-        Recorded observed frontier: activated work was checked before local closure. T3 reads are
-        separate; direct work can arrive between those reads and closure. This Run stays permanently
-        closed and its timeline ends here, even if its T3 conversations continue. Completion does
-        not certify result quality or a shared reviewed repository revision.
-      </p>
-      {closure.frontier.map((frontier) => (
-        <article
-          className="flex flex-col gap-1 rounded-md border bg-muted p-3 text-2xs leading-4 tracking-label text-muted-foreground"
-          key={JSON.stringify([frontier.environmentId, frontier.threadId])}
-        >
-          <h3 className="text-sm font-medium tracking-normal text-foreground">
-            {blockName(run, frontier.blockId) ?? frontier.blockId}
-          </h3>
-          <p>
-            Environment: {frontier.environmentId} · Thread: {frontier.threadId} · Active execution:{" "}
-            {frontier.activeRunId ?? "none"}
-          </p>
-          <p>Executions observed {new Date(frontier.executionObservedAt).toLocaleString()}</p>
-          <ul className="flex flex-col gap-1">
-            {frontier.executions.map((execution) => (
-              <li key={execution.executionId} className="flex flex-wrap items-center gap-1">
-                {execution.executionId} · <StatePill state={execution.status} />
-                {execution.sourceAt && (
-                  <> · T3 time {new Date(execution.sourceAt).toLocaleString()}</>
-                )}
-              </li>
-            ))}
-          </ul>
-          <p>
-            Queue: {frontier.queuedRunIds.length ? frontier.queuedRunIds.join(", ") : "empty"} ·
-            observed {new Date(frontier.queueObservedAt).toLocaleString()}
-          </p>
-          <p>
-            Native requests: {frontier.pendingRequestCount} · observed{" "}
-            {new Date(frontier.nativeObservedAt).toLocaleString()}
-          </p>
-        </article>
-      ))}
-    </section>
-  );
-}
 
 function PendingIntents({ run }: { run: RunDetail }) {
   const intents = run.intents.filter(

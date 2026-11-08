@@ -72,12 +72,12 @@ the current one and keep mismatches unresolved: reauthorization is never permiss
 Agents report Block results by calling `factory_update_block` on **Factory MCP**, a Streamable HTTP
 MCP server at `/mcp` on the backend's host-local listener (`http://127.0.0.1:4310/mcp` by default).
 Each harness configuration registers it once by URL as `factory-runtime`; the harness connects at
-session start and lists the tools the running backend serves. Factory correlates the native tool
-call with the exact execution, returns a durable acknowledgement and never parses assistant text.
-Installation also writes the `$factory-block` skill beside the harness configuration. The skill names
-which tool to use when; protocol rules live in the tool descriptions, so an application update changes
-them without touching harness files. The worker's first message starts with `$factory-block` and,
-when Factory minted one, includes a Factory tool ref.
+session start and lists the tools the running backend serves. Each call names the Block by its
+Block id; Factory returns a durable acknowledgement and never parses assistant text.
+Installation also writes the `$factory-block` skill beside the harness configuration. The skill carries
+the worker's [reporting obligations](#reporting-authority); argument rules and Factory's next step live
+in the tool descriptions and replies, so an application update changes those without touching harness
+files. The worker's first message starts with `$factory-block` followed by a `Factory Block id: <id>.` line.
 
 ### Installation actions
 
@@ -91,11 +91,11 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
 - **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
   Factory's own entry. **Repair installation** appears only when Factory can repair what it owns:
   a missing or outdated `$factory-block` skill, or Factory's entry pointing at another backend
-  address (a changed `port` or `FACTORY_PORT`). An application upgrade needs no Repair; a fresh
-  harness session sees the new tools. Any other `factory-runtime` entry, including a command
-  entry from an earlier stdio bridge, is a conflict to remove by hand. Conflicts, inaccessible
-  homes, unsupported providers and remote T3 hosts show diagnostics only; unknown homes and homes
-  on those hosts get manual-setup guidance.
+  address (a changed `port` or `FACTORY_PORT`). An application upgrade needs Repair only when it
+  changes the skill; a fresh harness session sees the new tools. Any other `factory-runtime`
+  entry, including a command entry from an earlier stdio bridge, is a conflict to remove by hand.
+  Conflicts, inaccessible homes, unsupported providers and remote T3 hosts show diagnostics only;
+  unknown homes and homes on those hosts get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
   Studio's Agent list and editor show the selected provider's reporting installation status, including the actual
   diagnostic and **Open Agent reporting** for repair. Changing the provider updates the editor's status before saving.
@@ -107,8 +107,8 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
   `homePath`. Factory's own environment, relative paths and T3's inherited host environment are
   not consulted.
   Details and limits are in [Compatibility](t3-integration.md#reporting-installation).
-- **Installed** describes configuration only; it does not prove current live tool visibility or
-  attribution, so runtime evidence stays **UNVERIFIED** even after a valid report. Fresh harness
+- **Installed** describes configuration only; it does not prove current live tool visibility,
+  so runtime evidence stays **UNVERIFIED** even after a valid report. Fresh harness
   sessions and native trust approvals remain the user's responsibility. No setup action starts a
   workload.
 - Desktop and source servers register the same URL, so switching between them needs no
@@ -125,9 +125,10 @@ environment/provider/model/options, the public T3 interface and the installed Fa
 covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. When the blocking problem is the reporting installation, the rejected-Start notice links to **Settings → Agent reporting**; other readiness problems link to **Studio → Agents**. Readiness never
 launches diagnostic work, answers approvals or substitutes settings.
 
-A final result is immutable; a worker's handoffs stay held until fresh source completion and
-clear native-request evidence permit release, while a Human answer releases its handoffs directly. A completed execution without a report shows a
-Problem, and **Request report** is an explicit user action, never automatic.
+A worker's newest `finished` report is its Block's result, and a later one from the same thread
+[replaces it](runner.md#report-acceptance). Its handoffs stay held until its worker thread is
+[finished](runner.md#worker-thread-completion), while a Human answer releases its handoffs directly. A finished
+thread without a report shows a Problem, and **Request report** is an explicit user action, never automatic.
 
 ## Integration boundary
 
@@ -165,48 +166,38 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
   schema requires it, Start fails with `launch_unsupported`. An uncertain launch is searched
   for and is not replayed. A definitive rejection is an error. Unknown send acceptance
   cannot be replayed without independent continuity and key-retention proof, absent by default.
-- **Observation.** Active/latest identities, public execution ordinals and source timestamps
-  distinguish renewed work from earlier executions. Native attention includes permissions
-  as well as questions; an incomplete listing cannot prove the absence of either.
-  Local system notification metadata also identifies automatic worker continuations;
-  Factory does not infer continuation authority from notification text.
+- **Observation.** One `t3_thread_read` per worker thread (`runLimit: 50`) supplies the
+  active and latest runs, recent runs with ordinals and source timestamps, and the pending
+  native request count, which includes permissions as well as questions. A read whose
+  thread identity, run references or pending count is missing or malformed is rejected,
+  never read as idle. Factory does not classify turns: a user reply, a notification and a
+  delegated completion are all later runs of the same worker thread.
+- **Delegated wait.** `t3_thread_wait` for the latest run with `timeoutMs: 0` and
+  `untilDelegatedWorkSettled: true` answers whether that run and its delegated and
+  background work have settled. Its answer must name the waited thread and run and carry a
+  boolean `timedOut`; `resultRun` is ignored. How the two reads combine is the
+  [worker thread completion](runner.md#worker-thread-completion) rule.
 - **Send.** Work targets an exact thread with `mode: queue`, a stable request key and fixed
   message. Returned thread/message/execution references must match. Send replay requires its
   own continuity proof; launch replay support is insufficient.
-- **Queues.** Coverage requires real `queuedRunId` identities and explicit complete cursor
-  coverage. Missing or malformed metadata is uncertainty, not an empty queue.
-- **Stop.** Queue cancellation targets the exact queued execution without a retry key.
-  Tree interruption uses `t3_thread_interrupt` with `stop: true` and a persisted key, but no
-  run ID: T3 acts on the thread and delegated work, without an exact-execution fence.
-  Acknowledgements never prove termination.
+- **Interrupt.** Archive interrupts each worker thread once with `t3_thread_interrupt`,
+  `stop: true` and a request key derived from the Run and thread, but no run ID: T3 acts on the
+  thread and its delegated work, without an exact-execution fence. Factory reads no queues,
+  cancels no queued run, records no outcome and sends no later request, so a queued run that
+  starts after the interrupt is not stopped by Factory. Acknowledgements never prove
+  termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without
   launching a turn. It provides neither safe replay nor an execution fence.
 
-### Recorded execution coverage
-
-Exact observation must cover recorded executions, not only the current thread. The public schema limits `t3_thread_read.recentRuns` to 50 and its `afterPosition`
-cursor pages timeline items, not runs. For recorded executions outside that window the adapter calls `t3_thread_wait` with the exact `threadId`/`runId` and
-`timeoutMs: 0`, validates identity and status and never substitutes `resultRun` or the latest run. Saved ordinals are kept and an exact status read supplies no new
-source timestamp. Unsupported, unavailable or mismatched exact reads report **Incomplete observation coverage** and prevent closure.
-
-### Native delegation evidence
+### Launch provenance
 
 Factory-launched workers are top-level threads. A title is not ownership: recovery binds
 only when parentage, project, interaction mode, provider, model, options and one
 execution are all present. A missing or non-string parent or workspace withholds the search.
 A null workspace is the project checkout and matches a root-strategy launch; any other path
-must equal the Run's project root. Descendants
-a worker starts later are not report authorities. Native activity can prove an invocation
-was issued without proving parentage or an empty descendant set.
-Task fingerprints compare normalized intent, not JSON property order. Provider and model
-are observable; model options are not independently exposed by child evidence.
-
-Bounded descendant discovery retains safety obligations without automatically granting
-worker-report authority. An exact-parent `t3_thread_wait` with
-`untilDelegatedWorkSettled: true` supplies aggregate settlement only; it cannot clear queue
-or native-request gates. Peer availability and positive work references are
-environment-scoped. A native steer proves work on an existing execution, not a new launch.
-Missing, unknown or unavailable evidence stays unresolved; observation makes no model calls.
+must equal the Run's project root. Threads a worker starts later, including subagents, are
+neither report authorities nor Factory obligations; T3's delegated wait answer covers them.
+Observation makes no model calls.
 
 ## Projects and model options
 
@@ -229,85 +220,60 @@ structures are refused; unrelated content is preserved. Installation refuses det
 Installation proves configuration, not effective native trust or visibility under higher-priority project policy. A missing Cursor directory is created on install.
 An open harness session keeps the tool list it read at start; new tools reach the next session.
 
-## Factory MCP and caller correlation
+## Factory MCP and Block ids
 
 Factory MCP is stateless Streamable HTTP on the host-local listener only: the approved-client
 listener answers `/mcp` with `host_only`, and a request whose `Origin` is not the listener's own
-origin is refused, so a browser page cannot drive it. It requires no credential: authority comes
-from native call evidence, not from the transport. It exposes `factory_get_block({ ref? })`,
-read-only `factory_get_run({ ref? })`, and `factory_update_block({ to, exit?, message, ref? })`.
-`to` is `waiting` or `finished`. `ref` is the Factory tool ref from that worker's message. It
-disambiguates simultaneous calls and is not Run or Block authority. The endpoint accepts neither
-approved-client credentials nor model-supplied Run or Block identity, and forwards the harness's
-call `_meta` unchanged. A globally visible tool, a title match or a subagent is not report
-authority. `factory_report` and `factory_context` are not exposed.
+origin is refused, so a browser page cannot drive it. It requires no credential. It exposes
+`factory_get_block({ blockId })`, read-only `factory_get_run({ blockId })` and
+`factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working`, `waiting` or `finished`.
+`factory_report` and `factory_context` are not exposed.
 
-- **Bindings.** Open-Run work is tied to saved thread, project, exact execution and
-  authorization references. Confirmed closure ends authority for new reports; retained
-  evidence still permits correlation of an identical accepted retry. Changed content
-  conflicts and a new report on a closed thread returns `RUN_CLOSED`.
-- **Correlation.** A public native item ID is a locator, not identity. Acceptance needs
-  exactly one matching `dynamic_tool` call, the `factory-runtime` namespace, project and
-  exact execution, active for a new report. Codex and Claude attribution uses the
-  native call ID (`callId` or `claudecode/toolUseId`) and item suffix `:native-item:<id>`.
-  Cursor and Grok do not send that id. Factory instead requires exactly one in-flight
-  (`pending` or `running`) factory tool on a bound thread whose recorded arguments equal the
-  call, including `ref` when the model sent one. Cursor stores those arguments as `input`.
-  Grok stores them as `input.tool_input`, and names the tool `factory-runtime__<tool>`.
-  Factory MCP sends no inherited thread hint, so every bound thread is a candidate.
-  A truncated dynamic tool is read onward
-  from its continuation offset until the text is complete. Missing, ambiguous, stale, or
-  foreign evidence rejects the call, as does a continuation that is inconsistent, exhausted,
-  or over 262144 characters. Unavailable candidates cannot simply be ignored.
-  Native delegation evidence remains Codex and Claude only. A Cursor or Grok worker can
-  report its own Block; Factory does not decode native child delegation from those harnesses.
-  Block and Run reads locate a Codex or Claude call by its native call ID.
-  Exactly one proven local call is still required.
-  A read from a renewed execution refreshes observation before comparing the saved binding;
-  it does not wait for the periodic sweep or grant report authority.
-  Fresh observations do not replace the durable gate check at acceptance.
-- **Installation freshness.** The `$factory-block` skill is part of installation readiness. A
-  missing or outdated skill is repairable and blocks Start.
+- **Block id.** Start mints one opaque id per Agent Block of the Run, and every launch, visit
+  and Request report message states it on a `Factory Block id:` line. The id is stable across
+  visits; reports apply to the Block's current activation. Factory does not read native call
+  metadata, the harness call id or the T3 timeline to identify a caller, so every reporting
+  harness uses the same contract. Calls without a Block id are `BLOCK_ID_REQUIRED`; ids Factory
+  never issued are `UNKNOWN_BLOCK`. Ref-based calls from the replaced contract have no
+  compatibility path.
+- **Accepted risk.** Anything that knows a Block id can read and report for that Block,
+  including a subagent the worker hands it to. Factory MCP is host-local for one user, so the
+  expected failure is Agent confusion, not attack; the skill and tool descriptions tell
+  workers not to share it.
+- **Installation freshness.** The `$factory-block` skill is part of installation readiness.
+  Readiness compares each installed copy with the backend's exact skill text, so any skill change
+  marks earlier copies outdated. A missing or outdated skill is repairable and blocks Start.
 - **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
   is `INVALID_EXIT`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.
 
 ## Reporting authority
 
-The [Runner report contract](runner.md#report-acceptance) defines immutable activation results, non-final conversation waiting, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
+The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final working and conversation waiting reports, held handoffs and manual Request report. The `$factory-block` skill carries these obligations to the worker on every turn: it reports `working` rather than `finished` while CI, review, delegated or background work is pending, puts evidence and artifact references in its result, treats Request report as an assessment of existing work and keeps Factory tools with the Block's own agent. Request report repeats the report rules on the same worker thread.
 
-Report rejections return `code`, a static `reason` and a safe `next` step. A proven
-current worker rejection also appears in Run attention. Caller-correlation failures
-return guidance only: they cannot create attention on an unproven Run. Neither path
-retries work or grants activation authority.
+Report rejections return `code`, a static `reason` and a safe `next` step. A rejection for a
+known Block of an open Run also appears in Run attention; an unknown or missing Block id
+returns guidance only. No rejection retries work.
 
 ### Worker reporting
 
-Factory-launched Block workers hold activation-scoped reporting authority. There is no Run conversation. Waiting and reply turns use the same worker. A final also needs the fresh activation-scoped provider/model proof
-described in [Runner](runner.md#owned-workers). A worker may cancel or interrupt its own independently
-verified local subtasks before reporting; completed receipts must name the exact known task or thread, and cancellation never proves
-that work ended. Unknown, foreign, remote or incomplete command evidence holds the report with an explicit worker problem.
-Unfinished native tool items hold only the current observation; their provisional output is never saved as command evidence.
-
-A native reply resumes a waiting activation only with positive public `createdBy: "user"` attribution, local visibility,
-the worker's own `sourceThreadId` and an exact `runId` matching a later worker execution. `senderThreadId` may be omitted or
-null; a sender thread, foreign or inherited messages, and missing actor provenance grant no authority. Message text never
-establishes identity.
+Factory-launched Block workers report for their Block from any turn of their thread. There is no Run conversation. Waiting and reply turns use the same worker, and a notification turn after delegated or background work may report too. Release waits only for the worker thread to be
+[finished](runner.md#worker-thread-completion); Factory does not inspect the commands, subtasks or model selection of the turns that produced the result.
 
 ### Block and Run reads
 
-`factory_get_block()` returns the caller's Block visit, reason, exits, inputs and allowed transitions once the worker is bound.
-Before binding, a proven native call during an in-flight launch returns `{ code: "BINDING_PENDING", retryAfterMs: 500 }` and no
-Block payload. An unseen call id is `UNBOUND_CALLER`. A subagent is `FOREIGN_CALLER`. Neither wait grants authority.
+`factory_get_block({ blockId })` returns the Block's current visit, reason, exits, inputs and allowed transitions, also while
+Factory is still confirming the worker's launch.
 
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source
-`blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. Other visits' reports and unrelated graph neighbors
-are not inputs to that visit. Flow-input visits have no incoming result.
+`blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. These `blockId` values name Flow blocks, not Block
+ids. Other visits' reports and unrelated graph neighbors are not inputs to that visit. Flow-input visits have no incoming result.
+A result the source Block replaces after hand-off does not change the inputs of a visit it already started.
 
 The result message is plain text: it can describe decisions, include artifact URLs or give repository paths. No output schema
 declaration is required, and Factory does not automatically fetch linked artifacts. An Agent's prompt can specify an expected
 format when the next step needs one; the reporting contract's message requirements still apply.
 
-`factory_get_run()` returns the Run number, title, input, state and each Block's state and latest result. It grants no routing
-authority. Arguments contain no Run or Block id; the caller comes from verified native execution metadata.
+`factory_get_run({ blockId })` returns the Run number, title, input, state and each Block's state and latest result. It grants no
+routing authority.

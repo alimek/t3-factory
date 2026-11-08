@@ -218,9 +218,15 @@ export interface FactoryOperations {
     runId: string,
     input: { attentionId: string; requestId: string; message: string },
   ): Promise<Result<RunDetail>>;
-  recoverRunCoordinator(runId: string, sourceExecutionId: string): Promise<Result<RunDetail>>;
-  requestReport(attentionId: string): Promise<Result<RunDetail>>;
-  stopRun(id: string): Promise<Result<RunDetail>>;
+  /** Asks an idle Agent Block without a finished result to assess its existing work and report. */
+  requestReport(runId: string, input: { blockId: string }): Promise<Result<RunDetail>>;
+  /**
+   * Archives a Run for good: closes its handoff gate, cancels unsent work and requests
+   * interruption of its worker threads without waiting. The Run leaves navigation; its data stays.
+   */
+  archiveRun(id: string): Promise<Result<RunDetail>>;
+  /** Moves an Active or Snoozed Run to Settled; an accepted Block report returns it to Active. */
+  settleRun(id: string): Promise<Result<RunDetail>>;
   getRunCreationPolicy(): Promise<Result<RunCreationPolicy>>;
   startRun(input: unknown): Promise<Result<RunDetail>>;
   listRunNavigation(): Promise<Result<readonly RunNavigationEntry[]>>;
@@ -324,7 +330,7 @@ export type ProtocolCompatibility =
 
 /** Host lifecycle facts used before Quit, role switch or update installation. */
 export interface HostLifecycle {
-  /** Runs that are not closed; Quit leaves them to T3 and later reconciliation, it never Stops them. */
+  /** Active Runs; Quit leaves them to T3 and later reconciliation, it never Stops them. */
   readonly openRunCount: number;
 }
 
@@ -481,14 +487,12 @@ export interface StartRunInput {
   readonly createdAt: string;
 }
 export interface TaskRunEntry {
-  readonly stopRequestedAt: string | null;
   readonly id: string;
+  readonly lifecycle: RunLifecycle;
   readonly flowId: string;
   readonly flowName: string;
   readonly input: string;
   readonly startedAt: string;
-  readonly closedAt: string | null;
-  readonly outcome: RunClosure["outcome"] | null;
 }
 export interface TaskSummary {
   readonly id: string;
@@ -497,13 +501,11 @@ export interface TaskSummary {
   readonly createdAt: string;
   readonly activeRunId: string | null;
   readonly latestRun: {
-    readonly stopRequestedAt: string | null;
     readonly id: string;
+    readonly lifecycle: RunLifecycle;
     readonly flowId: string;
     readonly flowName: string;
     readonly startedAt: string;
-    readonly closedAt: string | null;
-    readonly outcome: RunClosure["outcome"] | null;
   } | null;
   readonly runs: readonly TaskRunEntry[];
 }
@@ -511,45 +513,12 @@ export interface TaskSummary {
 export interface RunCreationPolicy {
   readonly ready: true;
 }
-export interface CoordinatorEvidence {
-  readonly version: 1;
-  readonly observedAt: string;
-  readonly designation: boolean;
-  readonly lineageCoverage: "incomplete" | "unknown";
-  readonly lineageScanComplete: boolean;
-  readonly aggregateState: "settled" | "pending" | "unknown";
-  readonly holdReason: string | null;
-  readonly release: boolean;
-  readonly limitations: readonly string[];
-  readonly members: readonly {
-    threadId: string;
-    role: "coordinator" | "worker" | "descendant";
-    executionIds: readonly string[];
-  }[];
-}
-/** Safety evidence only; remote work never becomes a local reporting binding. */
-export interface RemoteWork {
-  readonly activationId: string;
-  readonly sourceItemId: string;
-  readonly sourceExecutionId: string;
-  readonly parentThreadId: string;
-  readonly sourceEnvironmentId: string;
-  readonly taskId: string | null;
-  readonly environmentId: string;
-  readonly threadId: string | null;
-  readonly label: string;
-  readonly status: string;
-  readonly available: boolean;
-  readonly pendingRequestCount: number | null;
-}
 export interface RunActivation {
   readonly id: string;
   readonly blockId: string;
   readonly cause: string;
   readonly phase: "delegating" | "waiting-worker" | "assessing" | "reported" | "finished";
-  readonly coverage: "unverified" | "local-bounded";
   readonly problem: string | null;
-  readonly evidence: CoordinatorEvidence | null;
   readonly createdAt: string;
   readonly delegation: {
     readonly requestKey: string;
@@ -584,12 +553,15 @@ export interface RunDefinitions {
 export interface RunBlock {
   readonly blockId: string;
   readonly name: string;
+  /** `stopped`: the Run was archived before this activated Block finished. */
   readonly state: "not-started" | "working" | "waiting" | "finished" | "error" | "stopped";
   readonly threadId: string | null;
   readonly executionId: string | null;
   readonly link: string | null;
   readonly engineStatus: string | null;
-  readonly reportStatus: "waiting" | "finished" | null;
+  readonly reportStatus: "working" | "waiting" | "finished" | null;
+  /** The Agent's message while `working` is the current report of the Block's current visit. */
+  readonly workingMessage: string | null;
   readonly problem: string | null;
   readonly pendingRequestCount: number | null;
   readonly observedAt: string | null;
@@ -597,45 +569,19 @@ export interface RunBlock {
   /** An unresolved Factory launch for this Block. Title search has not bound a worker. */
   readonly recovery: "pending" | null;
 }
-/** The bounded observed frontier that justified permanent local closure. */
-export interface RunClosure {
-  readonly rootFrontier?: readonly Omit<RunClosure["frontier"][number], "blockId">[];
-  readonly coordination?: readonly CoordinatorEvidence[];
-  readonly outcome: "finished" | "stopped";
-  readonly generation: number;
-  readonly confirmedAt: string;
-  readonly frontier: readonly {
-    readonly environmentId: string;
-    readonly blockId: string;
-    readonly threadId: string;
-    readonly projectId: string;
-    readonly workspaceRoot: string;
-    readonly projectObservedAt: string;
-    readonly executionObservedAt: string;
-    readonly queueObservedAt: string;
-    readonly nativeObservedAt: string;
-    readonly activeRunId: string | null;
-    readonly latestRunId: string | null;
-    readonly executions: readonly {
-      readonly executionId: string;
-      readonly status: string;
-      readonly ordinal: number | null;
-      readonly sourceAt: string | null;
-    }[];
-    readonly queuedRunIds: readonly string[];
-    readonly queueNextCursor: number | null;
-    readonly pendingRequestCount: number;
-  }[];
-}
+/**
+ * Active Runs are in the main navigation. Settled Runs are done, automatically or because the
+ * user settled them; an accepted Block report returns them to Active. Archived Runs are final
+ * and hidden from navigation; their data stays.
+ */
+export type RunLifecycle = "active" | "settled" | "archived";
 export interface RunSummary {
-  readonly stopRequestedAt: string | null;
   readonly id: string;
+  readonly lifecycle: RunLifecycle;
   readonly task: { readonly id: string; readonly title: string; readonly projectId: string };
   readonly flowId: string;
   readonly flowName: string;
   readonly startedAt: string;
-  readonly closedAt: string | null;
-  readonly outcome: RunClosure["outcome"] | null;
 }
 export interface RunPresentation {
   readonly snoozed: boolean;
@@ -652,22 +598,11 @@ export interface RunNavigationEntry {
    */
   readonly creationKey: string;
   readonly project: Pick<FactoryProject, "id" | "title" | "workspaceRoot" | "availability">;
-  readonly closedAt: string | null;
-  readonly outcome: RunClosure["outcome"] | null;
-  readonly stopRequestedAt: string | null;
-  readonly blocks: readonly Pick<RunBlock, "state" | "freshness">[];
+  readonly lifecycle: Exclude<RunLifecycle, "archived">;
+  readonly blocks: readonly Pick<RunBlock, "state" | "freshness" | "workingMessage">[];
   /** Pending attention only. Reading this summary does not settle any matter. */
   readonly attention: RunAttentionSummary;
   readonly presentation: RunPresentation;
-}
-/** Read-only action candidates from durable ledgers. A click still requires fresh backend proof. */
-export interface CoordinationAction {
-  readonly sourceExecutionId: string;
-  readonly threadId: string;
-  readonly state: string;
-  readonly executionId: string | null;
-  readonly canRequest: boolean;
-  readonly reason: string;
 }
 export interface RunCoordinationActions {
   readonly questionReplies: readonly {
@@ -677,9 +612,6 @@ export interface RunCoordinationActions {
     readonly state: string;
     readonly executionId: string | null;
   }[];
-  readonly controlRecoveries: readonly (CoordinationAction & {
-    readonly sourceStatus: string | null;
-  })[];
 }
 export interface RunDetail extends RunSummary {
   /** Durable sequence used in worker titles. Assigned when the Run is accepted. */
@@ -709,11 +641,9 @@ export interface RunDetail extends RunSummary {
     readonly problem: string | null;
   } | null;
   readonly title: string;
-  readonly closure: RunClosure | null;
   readonly input: string;
   readonly definitions: RunDefinitions;
   readonly activations: readonly RunActivation[];
-  readonly remoteWork: readonly RemoteWork[];
   readonly threadBindings: readonly RunThreadBinding[];
   readonly gateOpen: boolean;
   readonly generation: number;
@@ -721,8 +651,7 @@ export interface RunDetail extends RunSummary {
   readonly reports: readonly {
     readonly id: string;
     readonly blockId: string;
-    readonly executionId: string;
-    readonly key: string;
+    readonly executionId: string | null;
     readonly fingerprint: string;
     readonly status: "waiting" | "finished";
     readonly exitId: string | null;
@@ -733,7 +662,8 @@ export interface RunDetail extends RunSummary {
     readonly resultMessage?: string | null;
   }[];
   readonly recoveries: readonly {
-    readonly attentionId: string;
+    /** The missing-report Problem this Request report settles; null when none was pending. */
+    readonly attentionId: string | null;
     readonly blockId: string;
     readonly sourceExecutionId: string;
     readonly intentId: string;
@@ -749,7 +679,7 @@ export interface RunDetail extends RunSummary {
     readonly blockId: string;
     readonly executionId: string;
     readonly engineStatus: string | null;
-    readonly reportStatus: "waiting" | "finished" | null;
+    readonly reportStatus: "working" | "waiting" | "finished" | null;
     readonly problem: string | null;
     readonly observedAt: string | null;
     readonly observedStartedAt: string | null;
@@ -857,7 +787,8 @@ export interface HumanOccurrence {
   readonly id: string;
   readonly blockId: string;
   readonly incomingIntentId: string;
-  readonly state: "pending" | "answered" | "withdrawn" | "cancelled-on-Stop";
+  /** `cancelled`: Archive cancelled the occurrence; no answer was invented. */
+  readonly state: "pending" | "answered" | "withdrawn" | "cancelled";
   readonly context: string | null;
   readonly appearedAt: string;
   readonly settledAt: string | null;

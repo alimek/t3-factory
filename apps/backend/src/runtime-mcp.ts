@@ -4,63 +4,69 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/server";
-import type { RuntimeReply } from "./runtime-types.ts";
+import { SUCCESS_CODES, type RuntimeReply } from "./runtime-types.ts";
 
-const refProperty = {
+const blockIdProperty = {
   type: "string",
   description:
-    "Factory tool ref from the thread message, when one is present. Not a Run or Block id.",
+    "Your Block id from the Factory Block id line of this thread's Factory message. Only the Block's own worker passes it; subagents do not call Factory tools.",
 } as const;
 
 const tools: Tool[] = [
   {
     name: "factory_update_block",
     description:
-      "Move the caller's Block to waiting or finished. waiting needs a nonempty message and no exit. finished uses one configured exit and is sent once per visit. The same transition and content returns the original acknowledgement. A different one from the same state conflicts; choose from the reply's allowedTransitions and allowedExits. Caller identity comes from harness metadata.",
+      "Report your Block's state. working needs a nonempty message saying what you are still doing or waiting on and no exit; report it before ending a turn while CI, review, delegated or background work continues. waiting needs a nonempty message for the user and no exit; report it from any turn while you still need a reply. finished needs one configured exit and a message for the next Block (required when the exit asks for feedback); the newest finished report is the visit's result, so a later one replaces it (after hand-off the same exit only updates the result, and a different exit also starts that exit's next Blocks); never report finished while CI, review, delegated or background work is still pending. Your latest report is the Block's current report. Repeating the same report returns the same acknowledgement.",
     inputSchema: {
       type: "object",
       properties: {
-        to: { type: "string", enum: ["waiting", "finished"] },
+        blockId: blockIdProperty,
+        to: { type: "string", enum: ["working", "waiting", "finished"] },
         exit: {
           type: "string",
-          description: "Exact configured exit name or ID from this Block's captured Flow.",
+          description:
+            "finished only: exact configured exit name or ID from this Block's captured Flow.",
         },
-        message: { type: "string" },
-        ref: refProperty,
+        message: {
+          type: "string",
+          description:
+            "working: what you are still doing or waiting on. waiting: what you need from the user. finished: the result for the next Block.",
+        },
       },
-      required: ["to"],
+      required: ["blockId", "to"],
       additionalProperties: false,
     },
   },
   {
     name: "factory_get_block",
     description:
-      "Read the caller's Block. BINDING_PENDING grants nothing; wait retryAfterMs and call again. Subagents are not callers.",
+      "Read your Block's current visit: state, why it was activated, its inputs, exits and allowed reports.",
     inputSchema: {
       type: "object",
-      properties: { ref: refProperty },
+      properties: { blockId: blockIdProperty },
+      required: ["blockId"],
       additionalProperties: false,
     },
   },
   {
     name: "factory_get_run",
-    description: "Read the caller's Run. This grants no routing authority.",
+    description: "Read the Run your Block belongs to, with each Block's state and latest result.",
     inputSchema: {
       type: "object",
-      properties: { ref: refProperty },
+      properties: { blockId: blockIdProperty },
+      required: ["blockId"],
       additionalProperties: false,
     },
   },
 ];
 
-const SUCCESS_CODES = ["ACCEPTED", "CONTEXT", "BLOCK", "RUN"];
 const operations = {
   factory_update_block: "submit",
   factory_get_block: "block",
   factory_get_run: "run",
 } as const;
 
-/** Runtime operations behind the tools; each receives the call as the harness sent it. */
+/** Runtime operations behind the tools; each receives the call's arguments. */
 export interface RuntimeTools {
   submit(input: unknown): Promise<RuntimeReply>;
   block(input: unknown): Promise<RuntimeReply>;
@@ -71,13 +77,9 @@ async function callTool(
   runtime: RuntimeTools,
   name: keyof typeof operations,
   args: unknown,
-  metadata: unknown,
 ): Promise<CallToolResult> {
   try {
-    const body = await runtime[operations[name]]({
-      arguments: args ?? (name === "factory_update_block" ? undefined : {}),
-      metadata: metadata ?? {},
-    });
+    const body = await runtime[operations[name]]({ arguments: args });
     return {
       isError: !SUCCESS_CODES.includes(body.code),
       content: [{ type: "text", text: JSON.stringify(body) }],
@@ -96,8 +98,8 @@ async function callTool(
 }
 
 /**
- * Stateless Streamable HTTP MCP server for harness reporting. It holds no identity:
- * the backend correlates each call through its native call metadata.
+ * Stateless Streamable HTTP MCP server for harness reporting. Calls name their Block
+ * by Block id; the server holds no identity of its own.
  */
 export function runtimeMcpHandler(runtime: RuntimeTools): (request: Request) => Promise<Response> {
   const handler = createMcpHandler(
@@ -108,10 +110,10 @@ export function runtimeMcpHandler(runtime: RuntimeTools): (request: Request) => 
       );
       server.setRequestHandler("tools/list", () => ({ tools }));
       server.setRequestHandler("tools/call", async (request) => {
-        const { name, arguments: args, _meta } = request.params;
+        const { name, arguments: args } = request.params;
         if (!Object.hasOwn(operations, name))
           return { isError: true, content: [{ type: "text", text: `Unknown tool ${name}.` }] };
-        return callTool(runtime, name as keyof typeof operations, args, _meta);
+        return callTool(runtime, name as keyof typeof operations, args);
       });
       return server;
     },

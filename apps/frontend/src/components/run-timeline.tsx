@@ -1,4 +1,4 @@
-import { RetainedResult } from "./run-coordination.tsx";
+import { RetainedResult, resultVersion } from "./run-coordination.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import {
@@ -76,6 +76,12 @@ function reported(run: RunDetail, event: RunEvent): EventPhrase {
   if (!report) return { actorId: event.blockId, text: "reported" };
   if (report.status === "waiting")
     return { actorId: event.blockId, text: "waiting for your reply in T3 · not a final result" };
+  const version = resultVersion(run, report);
+  if (version > 1)
+    return {
+      actorId: event.blockId,
+      text: `result version ${version} replaces the earlier result`,
+    };
   return { actorId: event.blockId, text: "final result accepted · engine completion is separate" };
 }
 
@@ -112,7 +118,7 @@ function attentionSettled(run: RunDetail, event: RunEvent): EventPhrase {
 
 function operationCancelled(run: RunDetail, event: RunEvent): EventPhrase {
   const kind = intentOf(run, event)?.kind ?? "operation";
-  return { actorId: event.blockId, text: `pending ${kind} cancelled by Stop` };
+  return { actorId: event.blockId, text: `pending ${kind} cancelled by Archive` };
 }
 
 function operationUnresolved(run: RunDetail, event: RunEvent): EventPhrase {
@@ -146,6 +152,7 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   ),
   "handoff-released": said("handoff released · source completion checks passed"),
   "report-accepted": reported,
+  "working-reported": said("still working · not a final result"),
   "source-completion-confirmed": said(
     "source execution completion confirmed · no native requests observed",
   ),
@@ -162,15 +169,18 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   }),
   "attention-appeared": attentionAppeared,
   "attention-settled": attentionSettled,
-  "stop-requested": said("Stop requested"),
-  "stop-operation-created": said("Stop prepared for its T3 execution"),
-  "stop-operation-requested": observed("Stop sent to T3"),
-  "stop-operation-confirmed": observed("T3 confirmed Stop"),
-  "stop-observation-unavailable": said("Stop could not observe T3 yet"),
   "operation-cancelled": operationCancelled,
-  "human-cancelled-on-Stop": said("question cancelled by Stop"),
+  "human-cancelled": said("question cancelled by Archive"),
   "operation-unresolved": operationUnresolved,
-  "run-closed": (run) => ({ actorId: null, text: `${run.outcome} · bounded closure recorded` }),
+  "run-settled": (_run, event) => ({
+    actorId: null,
+    text:
+      event.causeId === "manual"
+        ? "settled by you"
+        : "settled · every visited Block has its result and its worker thread is finished",
+  }),
+  "run-activated": said("reported · the Run is Active again"),
+  "run-archived": said("archived · Factory asked T3 to interrupt every worker thread"),
 };
 
 /** Words derived only from the event's own recorded facts; unknown kinds stay visible. */

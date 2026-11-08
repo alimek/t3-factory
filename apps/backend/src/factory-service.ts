@@ -92,20 +92,7 @@ export const makeFactoryService = (
     const setup = Context.get(setupContext, RuntimeSetup.RuntimeSetup);
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(
-      t3,
-      () =>
-        connection
-          .getConnection()
-          .pipe(
-            Effect.map((c) =>
-              c.ok && c.value.state === "ready" ? (c.value.authorizationContext?.id ?? null) : null,
-            ),
-          ),
-      (binding, report, retryOnly) => runner.consumeRuntimeReport(binding, report, retryOnly),
-      (binding) => runner.refreshRuntimeBinding(binding),
-      (threadId) => runner.isClosedThread(threadId),
-      (key, threadId, discover) => runner.reportBindings(key, threadId, discover),
-      (input) => runner.runtimeContext(input),
+      (publicId, report) => runner.consumeBlockUpdate(publicId, report),
       (kind, input) => runner.readFactoryTool(kind, input),
     );
     // A literal without spreads: guardOperations and the Promise facade expose exactly these keys.
@@ -128,9 +115,9 @@ export const makeFactoryService = (
       answerHumanOccurrence: (id, input) => runner.answerHumanOccurrence(id, input),
       listAttention: () => runner.listAttention(),
       replyCoordinatorQuestion: (id, input) => runner.replyCoordinatorQuestion(id, input),
-      recoverRunCoordinator: (id, executionId) => runner.recoverRunCoordinator(id, executionId),
-      requestReport: (id) => runner.requestReport(id),
-      stopRun: (id) => runner.stopRun(id),
+      requestReport: (id, input) => runner.requestReport(id, input),
+      archiveRun: (id) => runner.archiveRun(id),
+      settleRun: (id) => runner.settleRun(id),
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),
       startRun: (i) => runner.startRun(i),
       listRunNavigation: () => runner.listRunNavigation(),
@@ -171,7 +158,7 @@ export const makeFactoryService = (
         runtimeBackendUrl = url;
       },
     };
-    runner = yield* makeRunner(factory, t3, owner, runtimeReports, intervalMs, (projectId, agent) =>
+    runner = yield* makeRunner(factory, t3, owner, intervalMs, (projectId, agent) =>
       setup.recheckAgent(projectId, agent),
     );
     yield* runner.initialize();

@@ -107,21 +107,27 @@ it("a whitespace-only Run title is rejected", async (c) => {
   expect(result.error.code).toBe("validation");
 });
 
-it("global navigation keeps creation order and only confirmed whole-Run closure", async (c) => {
+it("global navigation leaves out an archived Run and keeps the others in creation order", async (c) => {
   // Arrange
-  const { f, first, second } = await siblingRuns(c);
+  const { f, input, first, second } = await siblingRuns(c);
   await f.renameRun(first.id, { title: "Latest activity on oldest Run" });
-  await f.stopRun(second.id);
+  const third = await f.startRun({
+    ...input,
+    requestId: "third",
+    title: "Third title",
+    input: "Third title",
+    createdAt: "2026-11-07T08:02:00.000Z",
+  });
+  assert(third.ok);
+  assert((await f.archiveRun(second.id)).ok);
 
   // Act
   const result = await f.listRunNavigation();
 
   // Assert
   assert(result.ok);
-  expect(result.value.map((run) => run.id)).toStrictEqual([second.id, first.id]);
-  expect(result.value[0]?.outcome).toBe(null);
-  assert(result.value[0]?.stopRequestedAt);
-  expect(result.value[1]?.outcome).toBe("stopped");
+  expect(result.value.map((run) => run.id)).toStrictEqual([third.value.id, first.id]);
+  expect(result.value.map((run) => run.lifecycle)).toStrictEqual(["active", "active"]);
 });
 
 it("snoozing an open Run leaves execution, attention and history unchanged", async (c) => {
@@ -141,16 +147,4 @@ it("snoozing an open Run leaves execution, attention and history unchanged", asy
   const navigation = await f.listRunNavigation();
   assert(navigation.ok);
   expect(navigation.value[0]?.presentation).toStrictEqual({ snoozed: true, woke: false });
-});
-
-it("closed Runs cannot be snoozed", async (c) => {
-  // Arrange
-  const { f, first } = await siblingRuns(c);
-
-  // Act
-  const result = await f.snoozeRun(first.id);
-
-  // Assert
-  assert(!result.ok);
-  expect(result.error.code).toBe("conflict");
 });

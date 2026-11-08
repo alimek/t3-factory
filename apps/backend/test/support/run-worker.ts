@@ -1,7 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { prepared } from "./prepared-runner.ts";
-import { bindThreadReportCaller } from "./lifecycle-setup.ts";
 
 const WORKER_THREAD = "thread-1";
 const WORKER_EXECUTION = "execution-1";
@@ -49,18 +48,11 @@ export async function workerStart(
   return { ...fixture, flow: flow.value };
 }
 
-/** Quiet top-level evidence for the Factory-launched worker, before that launch is observed. */
+/** The Factory-launched worker's running first turn, before that launch is observed. */
 function seedFactoryWorker(
   t3: ControlledT3,
   project: { projectId: string; workspaceRoot: string },
 ) {
-  t3.descendantEvidence.set(WORKER_THREAD, {
-    parentThreadId: WORKER_THREAD,
-    descendants: [],
-    scanComplete: true,
-    coverage: "incomplete",
-    problem: "Bounded fixture scan",
-  });
   t3.executionObservations.set(WORKER_THREAD, {
     threadId: WORKER_THREAD,
     projectId: project.projectId,
@@ -73,35 +65,111 @@ function seedFactoryWorker(
   });
 }
 
+/** A first or later visit message: the Block skill, the Block id line, then the turn's body. */
+export function workerMessage(body: string) {
+  return new RegExp(
+    `^\\$factory-block\\n\\nFactory Block id: [0-9a-f-]{36}\\. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block\\.\\n\\n${body.replaceAll(".", "\\.")}$`,
+  );
+}
+
+/** The Block id Factory stated in a worker's launch message, as an Agent reads it. */
+export function launchedBlockId(t3: ControlledT3, blockName = "Entry worker") {
+  const launch = [...t3.launches.values()].find((entry) =>
+    entry.payload.title.endsWith(` ${blockName}`),
+  );
+  return /Factory Block id: ([^.\s]+)/.exec(launch?.payload.message ?? "")?.[1] ?? "";
+}
+
+/** Starts the Run with the entry worker's first turn running. */
+async function startedWorker(fixture: Awaited<ReturnType<typeof prepared>>, observe: boolean) {
+  seedFactoryWorker(fixture.t3, fixture.project);
+  const started = await fixture.f.startRun(fixture.input);
+  assert(started.ok, JSON.stringify(started));
+  await fixture.f.reconcileRuns();
+  if (observe) assert((await fixture.f.reconcileRuns()).ok);
+  return { ...fixture, runId: started.value.id, blockId: launchedBlockId(fixture.t3) };
+}
+
 export async function directWorker(
   c: TestContext,
   observe = true,
   targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
   requiresFeedback = false,
 ) {
-  const fixture = await workerStart(c, targetBlockId, requiresFeedback);
-  seedFactoryWorker(fixture.t3, fixture.project);
-  const started = await fixture.f.startRun(fixture.input);
-  assert(started.ok, JSON.stringify(started));
-  await fixture.f.reconcileRuns();
-  if (observe) assert((await fixture.f.reconcileRuns()).ok);
-  bindThreadReportCaller(
-    fixture.t3,
-    fixture.project.projectId,
-    WORKER_THREAD,
-    WORKER_EXECUTION,
-    "worker-report",
-  );
-  return { ...fixture, runId: started.value.id };
+  return startedWorker(await workerStart(c, targetBlockId, requiresFeedback), observe);
 }
-export const workerFinal = () => ({
-  arguments: {
-    to: "finished",
-    exit: "done",
-    message: "Implemented the requested result.",
-  },
-  metadata: { callId: "worker-report" },
+
+/** The entry worker hands "Done" to Parallel work and "Revise" to Follow-up. */
+async function twoExitWorker(c: TestContext) {
+  const fixture = await prepared(c);
+  const source = fixture.flow.graph.blocks[0]!;
+  const revise = {
+    id: "revise",
+    name: "Revise",
+    description: "Needs another pass",
+    outcome: "custom" as const,
+    requiresFeedback: false,
+  };
+  const first = { ...source, exits: [...source.exits, revise] };
+  const flow = await fixture.f.updateFlow(fixture.flow.id, {
+    ...fixture.flow,
+    expectedRevision: fixture.flow.revision,
+    graph: {
+      ...fixture.flow.graph,
+      blocks: [
+        first,
+        { ...source, id: "parallel-block", name: "Parallel work" },
+        { ...source, id: "follow-up", name: "Follow-up" },
+      ],
+      connections: [
+        { sourceBlockId: first.id, exitId: "done", targetBlockId: "parallel-block" },
+        { sourceBlockId: first.id, exitId: "revise", targetBlockId: "follow-up" },
+      ],
+    },
+  });
+  assert(flow.ok);
+  return startedWorker({ ...fixture, flow: flow.value }, true);
+}
+
+/** The two-exit worker's "Done" result started Parallel work, and a later turn of the worker
+ * thread is running. */
+export async function releasedTwoExitWorker(c: TestContext) {
+  const f = await twoExitWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+  assert((await f.f.reconcileRuns()).ok);
+  startWorkerTurn(f, "followup-execution", 2);
+  return f;
+}
+
+/** The worker replaced its first result before release, and its thread is finished. */
+export async function replacedBeforeRelease(c: TestContext) {
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "First draft."))).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Final result."))).code === "ACCEPTED");
+  finishWorker(f);
+  return f;
+}
+
+/** A worker with no next Block reported its result, then asked the user a question. */
+export async function askedAfterResult(c: TestContext) {
+  const f = await directWorker(c, true, "");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  const question = { blockId: f.blockId, to: "waiting", message: "Should I update the docs too?" };
+  assert((await f.f.runtime.submit({ arguments: question })).code === "ACCEPTED");
+  return f;
+}
+
+export const workerFinal = (
+  blockId: string,
+  message = "Implemented the requested result.",
+  exit = "done",
+) => ({ arguments: { blockId, to: "finished", exit, message } });
+export const workerWorking = (blockId: string) => ({
+  arguments: { blockId, to: "working", message: "Opened PR #42; waiting for its CI checks." },
 });
+/** The worker's runs end with `status` and T3 answers that the latest run's delegated and
+ * background work have settled. */
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {
   const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
   f.t3.executionObservations.set(WORKER_THREAD, {
@@ -109,14 +177,22 @@ export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status
     activeRunId: null,
     recentRuns: prior.recentRuns.map((r) => ({ ...r, status })),
   });
-  f.t3.delegatedSettlements.set(JSON.stringify([WORKER_THREAD, WORKER_EXECUTION]), {
-    threadId: WORKER_THREAD,
-    runId: WORKER_EXECUTION,
-    state: "settled",
+  settleThread(f.t3, prior.latestRunId ?? WORKER_EXECUTION, status);
+}
+
+/** T3's `t3_thread_wait` answer for `runId` of the entry worker or another `threadId`. */
+export function settleThread(
+  t3: ControlledT3,
+  runId: string,
+  status = "completed",
+  state: "settled" | "pending" = "settled",
+  threadId = WORKER_THREAD,
+) {
+  t3.delegatedSettlements.set(JSON.stringify([threadId, runId]), {
+    threadId,
+    runId,
+    state,
     status,
-    resultRun: { runId: WORKER_EXECUTION, status },
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
   });
 }
 export async function reportedWorker(
@@ -125,16 +201,55 @@ export async function reportedWorker(
   targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
 ) {
   const f = await directWorker(c, true, targetBlockId);
-  assert((await f.f.runtime.submit(workerFinal())).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   finishWorker(f, status);
   return f;
 }
 
-/** A reported single worker whose own tree is freshly quiet. */
+/** A reported single worker whose thread is finished in T3. */
 export async function finishedWorker(c: TestContext) {
   const f = await reportedWorker(c, "completed", "");
   f.t3.engineStatus = "completed";
-  settledAggregate(f.t3, WORKER_THREAD, WORKER_EXECUTION, "completed");
+  return f;
+}
+
+/** Resolves once T3 receives the next thread settlement, which Factory sends in the background
+ * after a manual Settle. */
+export function nextSettlement(t3: ControlledT3) {
+  const settle = t3.settleThread.bind(t3);
+  return new Promise<void>((resolve) => {
+    t3.settleThread = async (target, payload) => {
+      await settle(target, payload);
+      resolve();
+    };
+  });
+}
+
+/** Resolves once T3 receives the next thread interrupt, which Factory sends in the background
+ * after Archive. */
+export function nextThreadInterrupt(t3: ControlledT3) {
+  const interrupt = t3.stopThread.bind(t3);
+  return new Promise<void>((resolve) => {
+    t3.stopThread = async (target, payload) => {
+      await interrupt(target, payload);
+      resolve();
+    };
+  });
+}
+
+/** A worker's result is held for its next Block when the user archives the Run. */
+export async function archivedWorker(c: TestContext) {
+  const f = await reportedWorker(c);
+  assert((await f.f.archiveRun(f.runId)).ok);
+  return f;
+}
+
+/** A reported single worker whose Run settled automatically once its thread finished. */
+export async function settledWorker(c: TestContext) {
+  const f = await finishedWorker(c);
+  assert((await f.f.reconcileRuns()).ok);
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok && run.value.lifecycle === "settled");
   return f;
 }
 
@@ -149,13 +264,21 @@ export async function pendingReview(c: TestContext) {
   return { ...f, occurrence };
 }
 
+/** The worker's run failed and its execution-failed Problem was settled by a working report. */
+export async function reportedAfterFailure(c: TestContext) {
+  const f = await directWorker(c);
+  finishWorker(f, "failed");
+  assert((await f.f.reconcileRuns()).ok);
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  return f;
+}
+
 export async function waitingWorker(c: TestContext) {
   const f = await directWorker(c);
   assert(
     (
       await f.f.runtime.submit({
-        arguments: { to: "waiting", message: "Which audience?" },
-        metadata: { callId: "worker-report" },
+        arguments: { blockId: f.blockId, to: "waiting", message: "Which audience?" },
       })
     ).code === "ACCEPTED",
   );
@@ -187,22 +310,28 @@ export async function revisitedWorker(c: TestContext) {
   return f;
 }
 
-/** Direct native replies omit senderThreadId; overrides exercise rejection at the public boundary. */
-export async function workerNativeReply(
-  c: TestContext,
-  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
-) {
+/** The user's reply in the worker thread starts a new execution of that thread. */
+export async function repliedWorker(c: TestContext) {
   const f = await waitingWorker(c);
-  supplyWorkerReply(f, reply);
+  startWorkerTurn(f, "answer-execution", 2);
   return f;
 }
 
-/** Publish native reply evidence independently of the backend's observation lifetime. */
-function supplyWorkerReply(
-  f: Awaited<ReturnType<typeof waitingWorker>>,
-  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
-  executionId = "answer-execution",
-  ordinal = 2,
+/** A completed reply turn that omitted its report, followed by another user reply. */
+export async function followupReplyWorker(c: TestContext) {
+  const f = await repliedWorker(c);
+  assert((await f.f.reconcileRuns()).ok);
+  finishWorker(f);
+  assert((await f.f.reconcileRuns()).ok);
+  startWorkerTurn(f, "followup-execution", 3);
+  return f;
+}
+
+/** A later run of the worker thread starts, as after a reply or a notification. */
+export function startWorkerTurn(
+  f: Awaited<ReturnType<typeof directWorker>>,
+  executionId: string,
+  ordinal: number,
 ) {
   const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
   f.t3.executionObservations.set(WORKER_THREAD, {
@@ -211,36 +340,6 @@ function supplyWorkerReply(
     latestRunId: executionId,
     recentRuns: [...prior.recentRuns, { runId: executionId, status: "running", ordinal }],
   });
-  bindThreadReportCaller(f.t3, f.project.projectId, WORKER_THREAD, executionId, "worker-report");
-  f.t3.runtimeActivity = {
-    ...f.t3.runtimeActivity,
-    items: [
-      ...f.t3.runtimeActivity.items,
-      {
-        itemId: "user-answer-" + executionId,
-        type: "message",
-        runId: executionId,
-        text: "Public audience.",
-        visibility: "local",
-        sourceThreadId: WORKER_THREAD,
-        createdBy: "user",
-        ...reply,
-      },
-    ],
-  };
-}
-
-/** A second native answer follows a completed reply turn that omitted its report. */
-export async function workerFollowupReply(
-  c: TestContext,
-  reply: Partial<ControlledT3["runtimeActivity"]["items"][number]> = {},
-) {
-  const f = await workerNativeReply(c);
-  assert((await f.f.reconcileRuns()).ok);
-  finishWorker(f);
-  assert((await f.f.reconcileRuns()).ok);
-  supplyWorkerReply(f, reply, "followup-execution", 3);
-  return f;
 }
 
 export async function revisitReportingWorker(c: TestContext) {
@@ -253,40 +352,5 @@ export async function revisitReportingWorker(c: TestContext) {
     latestRunId: runId,
     recentRuns: [...prior.recentRuns, { runId, status: "running", ordinal: 3 }],
   });
-  bindThreadReportCaller(f.t3, f.project.projectId, WORKER_THREAD, runId, "worker-report");
   return { ...f, workerExecutionId: runId };
-}
-
-function settledAggregate(t3: ControlledT3, threadId: string, runId: string, status: string) {
-  t3.delegatedSettlements.set(JSON.stringify([threadId, runId]), {
-    threadId,
-    runId,
-    state: "settled",
-    status,
-    resultRun: { runId, status },
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
-  });
-}
-
-/** The launched worker is interrupted and its fully scanned tree has no further members. */
-export function interruptRunConversation(t3: ControlledT3) {
-  t3.engineStatus = "interrupted";
-  const observation = t3.executionObservations.get(WORKER_THREAD);
-  if (observation)
-    t3.executionObservations.set(WORKER_THREAD, {
-      ...observation,
-      activeRunId: null,
-      latestRunId: observation.latestRunId ?? WORKER_EXECUTION,
-      recentRuns: observation.recentRuns.map((run) => ({ ...run, status: "interrupted" })),
-    });
-  if (!t3.descendantEvidence.has(WORKER_THREAD))
-    t3.descendantEvidence.set(WORKER_THREAD, {
-      parentThreadId: WORKER_THREAD,
-      descendants: [],
-      scanComplete: true,
-      coverage: "incomplete",
-      problem: "Bounded fixture scan",
-    });
-  settledAggregate(t3, WORKER_THREAD, WORKER_EXECUTION, "interrupted");
 }

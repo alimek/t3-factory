@@ -1,13 +1,5 @@
-import { openRootSettlement } from "./run-root-settlement.ts";
-import { rootUnavailable } from "./run-root-ledger.ts";
-import { rootFrontier } from "./run-root-frontier.ts";
-
 import { openCoordinatorQuestionReplies } from "./coordinator-question-reply.ts";
-import { openRunControlRecovery } from "./run-control-recovery.ts";
 import { openBlockTools } from "./runner-block-tools.ts";
-import { openRuntimeContext } from "./runtime-context.ts";
-import { openRootCommands } from "./run-coordinator-commands.ts";
-import { openRunCoordinator } from "./run-coordinator.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
 import { openRunPresentation } from "./run-presentation.ts";
@@ -21,7 +13,6 @@ import type { EffectOperations } from "./effect-operations.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { failure } from "./result.ts";
 import type { BlockRow, IntentRow, RunnerOptions, RunRow } from "./runner-types.ts";
-import type { RuntimeBinding } from "./runtime-types.ts";
 import { openRunnerDatabase } from "./runner-database.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
@@ -29,7 +20,8 @@ import { openRunnerObservation } from "./runner-observation.ts";
 import { openRunnerQueries } from "./runner-queries.ts";
 import { openRunnerReports } from "./runner-reports.ts";
 import { openRunnerStart } from "./runner-start.ts";
-import { openRunnerStop } from "./runner-stop.ts";
+import { openRunnerArchive } from "./runner-archive.ts";
+import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
 
@@ -38,7 +30,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   ops: EffectOperations<FactoryOperations>,
   t3: T3Adapter,
   owner: { token: string },
-  bindings: RunnerOptions["bindings"],
   intervalMs: number,
   checkAgent: RunnerOptions["checkAgent"],
 ) {
@@ -46,10 +37,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const scope = yield* Effect.scope;
   const database = openRunnerDatabase(sql, owner);
   const { row } = database;
-  const rootCommands = openRootCommands(database, t3);
-  const runCoordinator = openRunCoordinator(database, t3);
-  const { getRun, listTasks, updateTask, reportBindings, isClosedThread, listAttention } =
-    openRunnerQueries(database);
+  const { getRun, listTasks, updateTask, listAttention } = openRunnerQueries(database);
   let closed = false;
   const starts = Semaphore.makeUnsafe(1);
   const sweeps = Semaphore.makeUnsafe(1);
@@ -64,15 +52,13 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     fiber.addObserver(() => detached.delete(fiber));
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
-  const rootRecovery = openRunControlRecovery(database, t3);
-  const { consumeRuntimeReport } = openRunnerReports(database, lifecycle, t3);
-  const { observe } = openRunnerObservation(database, t3, bindings);
+  const { consumeBlockUpdate } = openRunnerReports(database, lifecycle);
+  const { observe } = openRunnerObservation(database, t3);
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
-  const { stopRun, reconcileStop, stopObservationsUnavailable, attemptSuccessfulClosure } =
-    openRunnerStop(database, t3, lifecycle, liveContextId);
-  const { settleRoot } = openRootSettlement(database, t3, lifecycle, liveContextId);
+  const { archiveRun } = openRunnerArchive(database, t3, lifecycle, liveContextId);
+  const { settleRun, settleWhenDone } = openRunnerSettle(database, t3, lifecycle, liveContextId);
 
   function drive(
     id: string,
@@ -91,29 +77,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   function driveWork(id: string, phase: "observe" | "dispatch" | "both") {
     return Effect.gen(function* () {
       const runRow = yield* row(id);
-      if (!runRow || runRow.closed_at) return;
+      if (!runRow || runRow.archived_at) return;
       const contextId = yield* liveContextId();
-      yield* driveRootWork(runRow, contextId, phase);
       yield* driveBlockWork(runRow, contextId, phase);
-    });
-  }
-  function driveRootWork(
-    rootRun: RunRow,
-    contextId: string | null,
-    phase: "observe" | "dispatch" | "both",
-  ) {
-    return Effect.gen(function* () {
-      if (phase !== "observe") yield* runCoordinator.dispatch(rootRun, contextId);
-      if (contextId === rootRun.context_id)
-        yield* recoverOperation(rootRecovery.reconcile(rootRun), () => Effect.void);
-      if (phase !== "dispatch" && contextId === rootRun.context_id) {
-        yield* recoverOperation(rootFrontier(database, t3, rootRun).pipe(Effect.asVoid), () =>
-          rootUnavailable(database, rootRun.id),
-        );
-        yield* rootCommands.observe(rootRun);
-      }
-      if (phase !== "observe" && contextId === rootRun.context_id)
-        yield* rootCommands.dispatch(rootRun);
     });
   }
   function driveBlockWork(
@@ -135,10 +101,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         if (closed) break;
         yield* dispatchIntent(runRow, intent, contextId);
       }
-      const stopping = yield* row(id);
-      if (!stopping?.stop_requested_at || stopping.closed_at) return;
-      if (contextId === stopping.context_id) yield* reconcileStop(stopping);
-      else yield* stopObservationsUnavailable(stopping.id);
     });
   }
   const reconcileRuns = Effect.fn("Runner.reconcile")(function* (): Effect.fn.Return<
@@ -150,9 +112,10 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       .withPermit(
         Effect.gen(function* () {
           if (closed) return failure("conflict", "Factory is shutting down.");
+          // A Settled Run is driven only while it still owes an operation, so its work continues.
           const ids = yield* sql<{
             id: string;
-          }>`SELECT id FROM runs WHERE closed_at IS NULL OR EXISTS(SELECT 1 FROM run_root_settlements s WHERE s.run_id=runs.id AND s.attempted_at IS NULL AND s.retired_at IS NULL) ORDER BY started_at,id`;
+          }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`;
           // Restart observes every Run before dispatching any pending intent.
           yield* Effect.forEach(ids, (run) => drive(run.id, "observe"), {
             concurrency: "unbounded",
@@ -160,10 +123,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* Effect.forEach(ids, (run) => drive(run.id, "dispatch"), {
             concurrency: "unbounded",
           });
-          yield* Effect.forEach(ids, (run) => attemptSuccessfulClosure(run.id), {
+          yield* Effect.forEach(ids, (run) => settleWhenDone(run.id), {
             concurrency: "unbounded",
           });
-          yield* Effect.forEach(ids, (run) => settleRoot(run.id), { concurrency: "unbounded" });
           return { ok: true as const, value: undefined };
         }),
       )
@@ -187,37 +149,11 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   yield* Effect.addFinalizer(close);
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
-    recoverRunCoordinator: rootRecovery.recoverRunCoordinator,
-    readFactoryTool: openBlockTools(database, t3, getRun, liveContextId, (id) =>
-      drive(id, "observe"),
-    ),
-    runtimeContext: openRuntimeContext(
-      database,
-      t3,
-      rootCommands,
-      observe,
-      drives.serial,
-      liveContextId,
-      getRun,
-    ),
-    reportBindings: (key: string, threadId?: string, discover = false) =>
-      Effect.gen(function* () {
-        if (!discover) return yield* reportBindings(key, threadId);
-        const known = threadId
-          ? yield* sql`SELECT run_id FROM run_blocks WHERE thread_id=${threadId}`
-          : [];
-        const pending = known.length
-          ? []
-          : yield* sql<{
-              id: string;
-            }>`SELECT r.id FROM runs r WHERE r.closed_at IS NULL AND r.gate_open=1 AND EXISTS(SELECT 1 FROM run_coordinator_commands c WHERE c.run_id=r.id AND c.state='issued')`;
-        for (const candidate of pending) yield* drive(candidate.id, "observe");
-        return yield* reportBindings(key, threadId);
-      }),
-    isClosedThread,
+    readFactoryTool: openBlockTools(database, getRun),
     answerHumanOccurrence,
     replyCoordinatorQuestion: openCoordinatorQuestionReplies(database, lifecycle),
-    stopRun,
+    archiveRun,
+    settleRun,
     ...openRunNavigation(database, getRun),
     ...openRunPresentation(database),
     getRun,
@@ -238,9 +174,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
               flowId: run.flowId,
               flowName: run.flowName,
               startedAt: run.startedAt,
-              closedAt: run.closedAt,
-              outcome: run.outcome,
-              stopRequestedAt: run.stopRequestedAt,
+              lifecycle: run.lifecycle,
             })),
           ),
         };
@@ -262,13 +196,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           scope,
         );
       }),
-    refreshRuntimeBinding: (binding: RuntimeBinding) =>
-      Effect.gen(function* () {
-        if (closed) return;
-        const run = yield* row(binding.factoryRunId);
-        if (run && !run.closed_at && run.gate_open) yield* drive(run.id, "observe");
-      }),
-    consumeRuntimeReport,
+    consumeBlockUpdate,
     close,
   };
 });

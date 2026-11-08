@@ -50,8 +50,9 @@ A named outcome of a flow block whose connections determine which blocks run nex
 An agent's explicit report of its block's state and, where applicable, a selected exit and a message for subsequent blocks. A request for corrections is distinct from an inability to perform the work.
 
 **Final result**:
-The first accepted `finished` report for one Block activation under the explicit
-MCP contract, attributed to its exact worker execution. It is immutable; acceptance and source execution completion are
+The newest accepted `finished` report for one Block activation, sent from any turn of
+the Block's worker thread with its Block id. A later `finished` report for the same activation replaces it as a new
+version; earlier versions stay in the Run's history unchanged. Acceptance and the worker thread being finished are
 separate facts.
 
 **Run coordinator**:
@@ -61,20 +62,32 @@ Retired. Factory no longer saves a model selection for a primary Run conversatio
 Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block`. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block.
+The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
+
+**Worker thread finished**:
+Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement and Request report use it.
+_Avoid_: quiet frontier, owned tree, descendant coverage.
+
+**Block id**:
+The identifier Factory mints for an Agent Block when a Run starts and states in every launch, visit and Request report message to that Block's worker. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.
+_Avoid_: tool ref, caller correlation.
 
 **Factory MCP**:
 The MCP server a Factory server serves at `/mcp` on its host-local listener. Harnesses register it once by URL and call `factory_get_block`, `factory_get_run` and `factory_update_block` on it; an application update changes its tools without changing harness configuration.
 _Avoid_: bridge (the retired stdio copy installed per harness).
 
 **Block activation**:
-One accepted task at a Flow block, spanning its exact worker Work periods until its result is completed.
+One accepted task at a Flow block, from its launch or visit message until its result is completed. Reports naming the Block id apply to the Block's current activation, whichever turn of the worker thread sends them.
 
 **Needs input**:
 Pending questions or decisions on a Run. This covers Human occurrences answered in Factory, native T3 questions or permissions, and conversation waiting reports; the last two stay Open in T3. It is not an execution state.
 
 **Conversation waiting**:
-An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; that reply turn takes over and reports for itself. It is neither a Final result nor a Human step.
+An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; any later turn of that thread settles it and reports again, and a later working or waiting report replaces it. It is neither a Final result nor a Human step.
+
+**Working report**:
+An explicit, non-final `working` report from an Agent that is still on its Block's task, for example while CI or review runs. It carries a message shown on the Block and in its Run row, selects no exit, releases no handoff and is not attention. While it is the Block activation's latest report, a finished worker thread raises no missing report. A later working, waiting or finished report replaces it.
+_Avoid_: progress report, heartbeat.
 
 **Problem**:
 A pending execution or report issue already recorded as attention: a missing report, an execution failure, or a report problem. It is distinct from block execution state and from stale or unavailable observations.
@@ -100,7 +113,7 @@ The Flow revision a Run started with and the Agent revision of every Agent that 
 _Avoid_: Run snapshot.
 
 **Run timeline**:
-The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, and closure. Each Run has its own timeline, distinct from conversations in its T3 threads.
+The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
 
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
@@ -119,37 +132,42 @@ lineage and environment. Reconnection and refresh preserve it; changed grants,
 endpoints or environments create another context. A matching reference is a
 necessary recovery check, not proof of execution readiness or retry retention.
 
-**Stop**:
-The user's request to close a Run's handoff gate and reconcile cancellation of queued work and interruption of active executions. The Run closes as stopped only after fresh observations confirm termination; Stop does not undo repository changes.
+**Archived**:
+The final Run lifecycle state, set when the user archives a Run after confirming. Archiving closes the handoff gate, cancels unsent launches, handoffs and Human occurrences and asks T3 once to interrupt each worker thread, without waiting for confirmation. An Archived Run leaves navigation for good and keeps all its data; reports for it are acknowledged as a success that changes nothing. Archive does not undo repository changes.
+_Avoid_: Stop and Stopped (the retired confirmed-termination outcome).
 
 **Handoff**:
 An accepted delivery from a block's selected exit to one connected recipient.
-Under the explicit contract it is held until fresh source completion and clear
-queue/native evidence permit reservation; acceptance alone does not start work. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
+It is held until the source worker thread is finished and no execution failure is
+pending on that Block; acceptance alone does not start work. A held handoff is cancelled when its Final result is
+replaced before release. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
 
 **Human occurrence**:
-One arrival at a Human step within a Run, with its own pending context and settlement. Under the explicit reporting contract, the occurrence activates only after the source completion gate permits release; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
+One arrival at a Human step within a Run, with its own pending context and settlement. An occurrence from an Agent result activates only after that result is released; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
 
 **Work period**:
-One exact T3 execution in a Run or Block conversation, including repeated visits and queued turns. The Run conversation and worker conversations retain separate ownership scopes.
-Automatic continuations after delegated or background work are separate Work periods
-within the same unfinished Block activation when native notification evidence verifies them.
+One T3 run of a Block's worker thread, including repeated visits, queued turns, user replies and automatic continuations after delegated or background work. Closed Runs may also show work periods of a historical Run conversation.
 
 **Settled**:
-In Run navigation, the group of executions with confirmed whole-Run Finished or
-Stopped closure. On a Run, matters that no longer await attention retain
-their appearance and settlement times and reasons; attention settlement does not
-by itself establish Run closure.
+A Run lifecycle state for work that is done. A Run settles automatically when every
+visited Block has its Final result with no later working report, every Human
+occurrence is answered, nothing is owed or pending and every worker thread is
+finished; the user can also settle an Active or Snoozed Run at any time. Settling
+changes no execution. Any accepted report from one of its Blocks returns it to
+Active; chat without a report does not. Navigation groups Settled Runs together.
+On a Run, settled attention matters no longer await attention and keep their
+appearance and settlement times and reasons; settling attention does not settle the Run.
+_Avoid_: Finished (the retired permanent outcome).
 
 **T3 thread settlement**:
 T3's presentation state for a conversation whose current work is complete; the
 same conversation can return to the active list when it receives new work.
-It is independent of Factory Run closure and attention settlement.
+Factory best-effort settles worker threads when their Run settles and never unsettles them; it is independent of attention settlement.
 
 **Snoozed**:
-Durable presentation for an open Run set aside from the main navigation list.
+Durable presentation for an Active Run set aside from the main navigation list.
 Execution continues. New actionable attention can wake it; manual Restore returns
-it without Woke. Confirmed closure always moves it to Settled.
+it without Woke. Settling or archiving it clears it.
 
 **Woke**:
 An unseen presentation marker showing that new attention returned a snoozed Run
@@ -158,7 +176,7 @@ pending. Resnoozing accounts for existing attention identities so they cannot
 repeatedly wake the same Run.
 
 **Run closure**:
-The permanent local confirmation of a Run's finished or stopped outcome, backed by a recorded observed frontier and an unchanged local generation. It is not an atomic cutoff of later T3 activity or a quality guarantee.
+Retired. Earlier releases recorded a permanent Finished or Stopped outcome with each worker thread as observed; such Runs are now Settled or Archived and keep that evidence as history. See Settled and Archived.
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required
@@ -174,7 +192,9 @@ it; the Run keeps its title and creation time. Not to be confused with an unsave
 
 **Request report**:
 An explicit user operation starting one additional Agent turn on the same thread
-to assess existing work and submit its report. A durable recovery link connects
-that new execution to an earlier missing-report obligation. Successful recovery
-settles the obligation without fabricating an earlier report or erasing an engine
-failure.
+to assess existing work and submit its report. It applies to an idle Agent Block
+without a Final result for its current activation, such as one with a missing
+report or one whose latest report is a Working report. A durable recovery link
+connects that new execution to the idle run it assesses and to the missing-report
+obligation pending for that run, if any. Successful recovery settles the obligation
+without fabricating an earlier report or erasing an engine failure.

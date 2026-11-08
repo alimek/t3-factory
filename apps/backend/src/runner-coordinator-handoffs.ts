@@ -1,6 +1,5 @@
-import { releaseCoordinatorSource } from "./coordinator-release.ts";
+import { releaseResult } from "./result-release.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
-import { coordinatorGate } from "./runner-coordinator-gate.ts";
 import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow, StoredTarget } from "./runner-types.ts";
@@ -30,18 +29,18 @@ export function prepareCoordinatorHandoff(
           original_id: string;
           accepted_json: string;
           thread_id: string;
-        }>`SELECT a.id,COALESCE(v.original_activation_id,a.id) AS original_id,d.accepted_json,b.thread_id FROM run_activations a JOIN run_delegations d ON d.activation_id=COALESCE((SELECT original_activation_id FROM coordinator_revisits WHERE activation_id=a.id),a.id) JOIN run_blocks b ON b.run_id=a.run_id AND b.block_id=a.block_id LEFT JOIN coordinator_revisits v ON v.activation_id=a.id WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} ORDER BY a.rowid DESC LIMIT 1`,
+          result_id: string | null;
+        }>`SELECT a.id,COALESCE(v.original_activation_id,a.id) AS original_id,d.accepted_json,b.thread_id,(SELECT r.id FROM runtime_reports r WHERE r.activation_id=a.id AND r.status='finished' ORDER BY r.rowid DESC LIMIT 1) AS result_id FROM run_activations a JOIN run_delegations d ON d.activation_id=COALESCE((SELECT original_activation_id FROM coordinator_revisits WHERE activation_id=a.id),a.id) JOIN run_blocks b ON b.run_id=a.run_id AND b.block_id=a.block_id LEFT JOIN coordinator_revisits v ON v.activation_id=a.id WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} ORDER BY a.rowid DESC LIMIT 1`,
     );
     const pending = yield* database.transaction(
       (sql) =>
         sql`SELECT id FROM operation_intents WHERE run_id=${run.id} AND block_id=${intent.block_id} AND kind='launch' AND state NOT IN ('acknowledged','cancelled')`,
     );
     if (pending.length) return undefined;
-    if (prior && !(yield* coordinatorGate(database, t3, current, intent.block_id)))
-      return undefined;
+    // A revisit waits until the target's previous activation has its current result released.
     if (
       prior &&
-      !(yield* releaseCoordinatorSource(database, t3, current, intent.block_id, prior.id))
+      !(prior.result_id && (yield* releaseResult(database, t3, current, prior.result_id)))
     )
       return undefined;
     return yield* database.mutate(run.id, (sql) =>
@@ -56,12 +55,16 @@ export function prepareCoordinatorHandoff(
         const target = JSON.parse(intent.target_json) as StoredTarget;
         const message = (JSON.parse(intent.payload_json) as { message: string }).message;
         const activationId = yield* newId;
+        const [block] = yield* sql<{
+          public_id: string;
+        }>`SELECT public_id FROM run_blocks WHERE run_id=${run.id} AND block_id=${intent.block_id}`;
         const launched = workerLaunchPayload(
           definitions,
           intent.block_id,
           target,
           intent.request_key,
           current.number,
+          block!.public_id,
         );
         const plan = {
           activationId,
@@ -78,7 +81,7 @@ export function prepareCoordinatorHandoff(
             threadId: prior.thread_id,
             mode: "queue",
             clientRequestId: intent.request_key,
-            message: workerTurn(message, intent.request_key),
+            message: workerTurn(message, block!.public_id),
           };
           yield* sql`UPDATE run_delegations SET accepted_json=${prior.accepted_json} WHERE activation_id=${plan.activationId}`;
           yield* sql`INSERT INTO coordinator_revisits(activation_id,original_activation_id) VALUES(${plan.activationId},${prior.original_id})`;
@@ -94,7 +97,7 @@ export function prepareCoordinatorHandoff(
   });
 }
 
-/** Human answers are durable authority; Agent reports still require source release 033. */
+/** Human answers are durable authority; Agent reports still require their result's release. */
 function sourceReleased(
   database: RunnerDatabase,
   t3: T3Adapter,
@@ -109,21 +112,6 @@ function sourceReleased(
       );
       return rows.length === 1;
     }
-    const [source] = yield* database.transaction(
-      (sql) =>
-        sql<{
-          activation_id: string;
-        }>`SELECT activation_id FROM runtime_reports WHERE id=${intent.report_id}`,
-    );
-    return (
-      !!source &&
-      (yield* releaseCoordinatorSource(
-        database,
-        t3,
-        current,
-        intent.source_block_id!,
-        source.activation_id,
-      ))
-    );
+    return !!intent.report_id && (yield* releaseResult(database, t3, current, intent.report_id));
   });
 }

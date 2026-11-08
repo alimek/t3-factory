@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { advanceNative, finishNativeTurn, recordRoot } from "./native-simulation.ts";
+import { advanceNative, answerWait, finishNativeTurn, recordThread } from "./native-simulation.ts";
 import { readFileSync } from "node:fs";
 import { writeState } from "./write-state.ts";
 import { join } from "node:path";
@@ -14,7 +14,8 @@ import type {
 /** A local simulated engine. Its accepted keys outlive the Factory process. */
 export class PersistentT3 extends ControlledT3 {
   private readonly statePath: string;
-  private readonly nativeRuntimeModes = new Map<string, string>();
+  /** Simulated subagent threads each worker delegated to; Factory never reads them. */
+  private readonly subagents = new Map<string, string[]>();
 
   constructor(home: string, restore: boolean) {
     super();
@@ -41,13 +42,9 @@ export class PersistentT3 extends ControlledT3 {
       const saved = JSON.parse(readFileSync(this.statePath, "utf8")) as ReturnType<
         PersistentT3["snapshot"]
       >;
-      if (saved.version !== 2) throw new Error("Unsupported demo engine state; run pnpm db:reset.");
+      if (saved.version !== 3) throw new Error("Unsupported demo engine state; run pnpm db:reset.");
       this.identity = saved.identity;
-      for (const [key, value] of saved.nativeRuntimeModes) this.nativeRuntimeModes.set(key, value);
-      for (const [key, value] of saved.delegationActivities)
-        this.delegationActivities.set(key, value);
-      for (const [key, value] of saved.childEvidence) this.childEvidence.set(key, value);
-      for (const [key, value] of saved.descendantEvidence) this.descendantEvidence.set(key, value);
+      for (const [key, value] of saved.subagents) this.subagents.set(key, value);
       for (const [key, value] of saved.delegatedSettlements)
         this.delegatedSettlements.set(key, value);
 
@@ -56,7 +53,6 @@ export class PersistentT3 extends ControlledT3 {
       for (const [key, value] of saved.launches) this.launches.set(key, value);
       for (const [key, value] of saved.sends) this.sends.set(key, value);
       for (const [key, value] of saved.executions) this.executionObservations.set(key, value);
-      for (const [key, value] of saved.reports) this.reportActivities.set(key, value);
       for (const threadId of saved.settledThreads ?? []) this.settledThreads.add(threadId);
     } catch (cause) {
       throw new Error(
@@ -68,12 +64,9 @@ export class PersistentT3 extends ControlledT3 {
 
   private snapshot() {
     return {
-      version: 2,
+      version: 3,
       identity: this.identity,
-      nativeRuntimeModes: [...this.nativeRuntimeModes],
-      delegationActivities: [...this.delegationActivities],
-      childEvidence: [...this.childEvidence],
-      descendantEvidence: [...this.descendantEvidence],
+      subagents: [...this.subagents],
       delegatedSettlements: [...this.delegatedSettlements],
 
       projects: this.projects,
@@ -81,7 +74,6 @@ export class PersistentT3 extends ControlledT3 {
       launches: [...this.launches],
       sends: [...this.sends],
       executions: [...this.executionObservations],
-      reports: [...this.reportActivities],
       settledThreads: [...this.settledThreads],
     };
   }
@@ -90,63 +82,52 @@ export class PersistentT3 extends ControlledT3 {
     writeState(this.statePath, this.snapshot());
   }
 
-  override async readRuntimeActivity(
-    target: T3Endpoint,
-    threadId: string,
-    cursor?: number,
-    itemId?: string,
-  ) {
-    if (this.runtimeActivity.thread.threadId === threadId)
-      return super.readRuntimeActivity(target, threadId, cursor, itemId);
-    const observation = this.executionObservations.get(threadId);
-    const child = this.childEvidence.get(threadId)?.thread;
-    const runtimeMode = this.nativeRuntimeModes.get(threadId) ?? child?.runtimeMode;
-    if (!observation || !runtimeMode) throw Error("Simulated native caller is not recorded.");
-    return {
-      thread: {
-        threadId,
-        projectId: observation.projectId,
-        activeRunId: observation.activeRunId,
-        runtimeMode,
-      },
-      items: [],
-      hasMore: false,
-      nextPosition: null,
-    };
+  private delegatedWorkActive(threadId: string): boolean {
+    return (this.subagents.get(threadId) ?? []).some(
+      (child) =>
+        !!this.executionObservations.get(child)?.activeRunId || this.delegatedWorkActive(child),
+    );
   }
 
-  private nativeTreeQuiet(threadId: string): boolean {
-    const observation = this.executionObservations.get(threadId);
-    const tree = this.descendantEvidence.get(threadId);
-    return (
-      !!observation &&
-      !!tree &&
-      observation.activeRunId === null &&
-      observation.recentRuns.every((run) =>
-        ["completed", "failed", "interrupted", "cancelled", "rolled_back"].includes(run.status),
-      ) &&
-      tree.descendants.every((child) => this.nativeTreeQuiet(child.threadId))
-    );
+  /** The worker's own turn ends while a subagent it delegated to keeps running; T3 answers the
+   * worker's delegated wait as pending until that subagent finishes. */
+  delegate(parentThreadId: string, parentRunId: string) {
+    const parent = this.executionObservations.get(parentThreadId)!;
+    const threadId = randomUUID();
+    const runId = `run:thread:${threadId}:ordinal:1`;
+    this.executionObservations.set(threadId, {
+      threadId,
+      projectId: parent.projectId,
+      workspaceRoot: parent.workspaceRoot,
+      link: `t3://threads/${threadId}`,
+      activeRunId: runId,
+      latestRunId: runId,
+      pendingRequestCount: 0,
+      recentRuns: [{ runId, status: "running", ordinal: 1 }],
+    });
+    answerWait(this, threadId, runId, "pending", "running");
+    this.subagents.set(parentThreadId, [...(this.subagents.get(parentThreadId) ?? []), threadId]);
+    finishNativeTurn(this, parentThreadId, parentRunId);
+    this.save();
   }
 
   override async readDelegatedSettlement(target: T3Endpoint, threadId: string, runId: string) {
     const result = await super.readDelegatedSettlement(target, threadId, runId);
-    // Finishing this turn does not finish its native delegated subtree.
-    return result.state === "settled" && !this.nativeTreeQuiet(threadId)
-      ? { ...result, state: "pending" as const, resultRun: null }
+    return result.state === "settled" && this.delegatedWorkActive(threadId)
+      ? { ...result, state: "pending" as const }
       : result;
   }
 
   async advance() {
-    await advanceNative(this);
+    advanceNative(this);
     this.save();
   }
 
-  override async stopOwnedTree(
+  override async stopThread(
     target: T3Endpoint,
     payload: { threadId: string; clientRequestId: string },
   ) {
-    await super.stopOwnedTree(target, payload);
+    await super.stopThread(target, payload);
     const stop = (threadId: string) => {
       const observation = this.executionObservations.get(threadId);
       for (const run of observation?.recentRuns ?? []) {
@@ -155,8 +136,7 @@ export class PersistentT3 extends ControlledT3 {
         )
           finishNativeTurn(this, threadId, run.runId, "interrupted");
       }
-      for (const child of this.descendantEvidence.get(threadId)?.descendants ?? [])
-        stop(child.threadId);
+      for (const child of this.subagents.get(threadId) ?? []) stop(child);
     };
     stop(payload.threadId);
     this.save();
@@ -164,9 +144,7 @@ export class PersistentT3 extends ControlledT3 {
 
   override async launchThread(target: T3Endpoint, payload: LaunchPayload) {
     const reference = await super.launchThread(target, payload);
-    // Explicit effective permission mode of this synthetic engine, retained across restart.
-    this.nativeRuntimeModes.set(reference.threadId, "full-access");
-    await recordRoot(this, reference.threadId, reference.projectId);
+    await recordThread(this, reference.threadId);
     this.save();
     return reference;
   }
@@ -195,25 +173,6 @@ export class PersistentT3 extends ControlledT3 {
     }
     this.save();
     return reference;
-  }
-
-  private async finishExecution(
-    target: T3Endpoint,
-    threadId: string,
-    runId: string,
-    status: string,
-  ) {
-    await this.readExecution(target, threadId);
-    finishNativeTurn(this, threadId, runId, status);
-    this.save();
-  }
-
-  override async cancelQueued(
-    target: T3Endpoint,
-    payload: { threadId: string; queuedRunId: string },
-  ) {
-    await super.cancelQueued(target, payload);
-    await this.finishExecution(target, payload.threadId, payload.queuedRunId, "cancelled");
   }
 
   override async settleThread(target: T3Endpoint, payload: { threadId: string }) {

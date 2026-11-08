@@ -9,6 +9,7 @@ import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { failure } from "./result.ts";
+import { currentWorkingMessages } from "./block-report.ts";
 export function openRunNavigation(
   database: RunnerDatabase,
   getRun: (id: string) => Effect.Effect<Result<RunDetail>, unknown>,
@@ -22,28 +23,37 @@ export function openRunNavigation(
             title: string;
             created_at: string;
             creation_key: string;
-            stop_requested_at: string | null;
-            confirmed_at: string | null;
-            outcome: RunNavigationEntry["outcome"];
+            settled_at: string | null;
             snoozed: number | null;
             woke: number | null;
             project_id: string;
             project_title: string;
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
-          }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.stop_requested_at,c.confirmed_at,c.outcome,rp.snoozed,rp.woke,
+          }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.settled_at,rp.snoozed,rp.woke,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
-          LEFT JOIN run_closures c ON c.run_id=r.id LEFT JOIN run_presentation rp ON rp.run_id=r.id ORDER BY r.created_at DESC,r.creation_key`;
+          LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
           const blocks = yield* sql<{
             run_id: string;
+            block_id: string;
             state: RunNavigationEntry["blocks"][number]["state"];
             freshness: RunNavigationEntry["blocks"][number]["freshness"];
-          }>`SELECT run_id,state,freshness FROM run_blocks ORDER BY rowid`;
+          }>`SELECT run_id,block_id,state,freshness FROM run_blocks WHERE run_id IN (SELECT id FROM runs WHERE archived_at IS NULL) ORDER BY rowid`;
+          const working = new Map(
+            (yield* currentWorkingMessages(sql)).map((row) => [
+              `${row.run_id}/${row.block_id}`,
+              row.message,
+            ]),
+          );
           const byRun = new Map<string, RunNavigationEntry["blocks"][number][]>();
           for (const block of blocks) {
             const entries = byRun.get(block.run_id) ?? [];
-            entries.push({ state: block.state, freshness: block.freshness });
+            entries.push({
+              state: block.state,
+              freshness: block.freshness,
+              workingMessage: working.get(`${block.run_id}/${block.block_id}`) ?? null,
+            });
             byRun.set(block.run_id, entries);
           }
           const pending = yield* sql<{
@@ -74,6 +84,7 @@ export function openRunNavigation(
             ok: true as const,
             value: rows.map((row) => {
               const matters = mattersByRun.get(row.id) ?? [];
+              const active = !row.settled_at;
               return {
                 id: row.id,
                 title: row.title,
@@ -85,13 +96,11 @@ export function openRunNavigation(
                   workspaceRoot: row.workspace_root,
                   availability: row.availability,
                 },
-                closedAt: row.confirmed_at,
-                outcome: row.outcome,
-                stopRequestedAt: row.stop_requested_at,
+                lifecycle: row.settled_at ? ("settled" as const) : ("active" as const),
                 blocks: byRun.get(row.id) ?? [],
                 presentation: {
-                  snoozed: !row.outcome && !!row.snoozed,
-                  woke: !row.outcome && !!row.woke,
+                  snoozed: active && !!row.snoozed,
+                  woke: active && !!row.woke,
                 },
                 attention: {
                   needsInput: matters.some((matter) => matter.presentation === "needs-input"),

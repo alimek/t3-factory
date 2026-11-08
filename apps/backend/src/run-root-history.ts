@@ -1,38 +1,14 @@
-import { newId } from "./ids.ts";
-import type { RunClosure } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { ExecutionObservation } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
-import type { RunRow } from "./runner-types.ts";
-import { now } from "./time.ts";
-import { ownedRootControlExecutions } from "./run-control-recovery-proof.ts";
+import { ownedRootControlExecutions } from "./run-coordinator.ts";
 
-/** Existing event storage retains observations; no inferred start/end or Block membership. */
-export function recordRootWork(
-  database: RunnerDatabase,
-  run: RunRow,
-  observation: ExecutionObservation,
-) {
-  return database.mutate(run.id, (sql) =>
-    Effect.gen(function* () {
-      const [root] =
-        yield* sql`SELECT run_id FROM run_coordinators WHERE run_id=${run.id} AND thread_id=${observation.threadId}`;
-      if (!root || !(yield* database.runHeldUnderContext(sql, run))) return;
-      const current = observation.recentRuns.find(
-        (e) => e.runId === (observation.activeRunId ?? observation.latestRunId),
-      );
-      yield* sql`UPDATE run_coordinators SET engine_status=${current?.status ?? null} WHERE run_id=${run.id}`;
-      for (const execution of observation.recentRuns) {
-        const [last] = yield* sql<{
-          engine_status: string;
-        }>`SELECT engine_status FROM run_events WHERE run_id=${run.id} AND block_id IS NULL AND execution_id=${execution.runId} AND kind='root-work-observed' ORDER BY sequence DESC LIMIT 1`;
-        if (last?.engine_status === execution.status) continue;
-        yield* sql`INSERT INTO run_events(run_id,execution_id,kind,source_key,observed_at,engine_status,source_at) VALUES(${run.id},${execution.runId},'root-work-observed',${"root-work:" + (yield* newId)},${yield* now},${execution.status},${execution.sourceAt ?? null}) ON CONFLICT DO NOTHING`;
-      }
-    }),
-  );
-}
+/** A Run conversation thread as a historical closure recorded it. */
+type RootFrontierMember = {
+  readonly threadId: string;
+  readonly executions: readonly { readonly executionId: string; readonly status: string }[];
+};
+
+/** Closed-Run history of a Run conversation, from stored events and closure evidence. */
 export function readRootWork(sql: SqlClient.SqlClient, runId: string) {
   return Effect.gen(function* () {
     const owned = yield* ownedRootControlExecutions(sql, runId);
@@ -53,7 +29,7 @@ export function readRootWork(sql: SqlClient.SqlClient, runId: string) {
       thread_id: string | null;
     }>`SELECT thread_id FROM run_coordinators WHERE run_id=${runId}`;
     const frontier = closure?.root_frontier_json
-      ? (JSON.parse(closure.root_frontier_json) as NonNullable<RunClosure["rootFrontier"]>).find(
+      ? (JSON.parse(closure.root_frontier_json) as readonly RootFrontierMember[]).find(
           (f) => f.threadId === root?.thread_id,
         )
       : undefined;
