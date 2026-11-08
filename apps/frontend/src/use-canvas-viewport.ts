@@ -17,6 +17,8 @@ type CanvasViewportOptions = {
   /** Null until the canvas and its graph are ready. A new scope fits again. */
   scope: string | null;
   getBounds: () => GraphBounds;
+  /** Optional entry framing; explicit Fit and accepted layouts still fit the whole graph. */
+  getEntryView?: (width: number, height: number) => CanvasView;
   padding: { x: number; top: number; bottom: number };
   contentInsetY?: number;
   reservedRight?: number;
@@ -38,7 +40,7 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     live.current = options;
     viewRef.current = view;
   });
-  const fit = useCallback((bounds?: GraphBounds) => {
+  const fit = useCallback((bounds?: GraphBounds, entry = false) => {
     const current = live.current;
     const element = current.surface.current;
     if (!element) return;
@@ -47,13 +49,15 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     if (width < 40 || height < 40) return;
     element.scrollTo(0, 0);
     setView(
-      fitGraphView(
-        bounds ?? current.getBounds(),
-        width,
-        height,
-        current.padding,
-        current.contentInsetY ?? 0,
-      ),
+      entry && current.getEntryView
+        ? current.getEntryView(width, height)
+        : fitGraphView(
+            bounds ?? current.getBounds(),
+            width,
+            height,
+            current.padding,
+            current.contentInsetY ?? 0,
+          ),
     );
     const rect = element.getBoundingClientRect();
     lastFit.current = { scope: current.scope, width: rect.width, height: rect.height };
@@ -61,7 +65,7 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
   useLayoutEffect(() => {
     const element = surface.current;
     if (scope === null || !element) return;
-    fit();
+    fit(undefined, true);
     const observer = new ResizeObserver(() => {
       const previous = lastFit.current;
       const rect = element.getBoundingClientRect();

@@ -1,3 +1,5 @@
+import { selectExecutionTargets } from "../src/execution-focus.ts";
+import { frameCanvasTargets } from "../src/canvas-fit.ts";
 import { expect, it } from "vite-plus/test";
 import {
   canvasWheelZoomFactor,
@@ -89,4 +91,117 @@ it("an invalid Safari ratio preserves the viewport scale", () => {
 
   // Assert
   expect(next).toBe(scale);
+});
+
+it("entry framing centers the target rather than its asymmetric context", () => {
+  // Arrange
+  const target = { minX: 500, minY: 100, width: 200, height: 100 };
+  const neighbors = [{ minX: 0, minY: 100, width: 200, height: 100 }];
+
+  // Act
+  const view = frameCanvasTargets(target, neighbors, 1200, 800, { x: 0, top: 0, bottom: 0 });
+
+  // Assert
+  expect(view).toStrictEqual({ x: 0, y: 250, scale: 1 });
+});
+
+it("a working Block takes precedence over an error Block", () => {
+  // Arrange
+  const blocks = [
+    { blockId: "active", state: "working" as const },
+    { blockId: "failed", state: "error" as const },
+  ];
+
+  // Act
+  const targets = selectExecutionTargets(blocks, true);
+
+  // Assert
+  expect(targets).toStrictEqual(["active"]);
+});
+
+it("entry framing never enlarges a small target above 100 percent", () => {
+  // Arrange
+  const target = { minX: 0, minY: 0, width: 200, height: 100 };
+
+  // Act
+  const view = frameCanvasTargets(target, [], 1200, 800, { x: 0, top: 0, bottom: 0 });
+
+  // Assert
+  expect(view).toStrictEqual({ x: 500, y: 350, scale: 1 });
+});
+
+it("a tall predecessor can be clipped without displacing the target", () => {
+  // Arrange
+  const target = { minX: 500, minY: 100, width: 200, height: 100 };
+  const predecessor = { minX: 0, minY: -5000, width: 200, height: 10000 };
+
+  // Act
+  const view = frameCanvasTargets(target, [predecessor], 1200, 800, { x: 0, top: 0, bottom: 0 });
+
+  // Assert
+  expect(view).toStrictEqual({ x: 480, y: 370, scale: 0.2 });
+});
+
+it("an edge target stays centered with its successor visible", () => {
+  // Arrange
+  const target = { minX: -1000, minY: 0, width: 200, height: 100 };
+  const successor = { minX: -600, minY: 0, width: 200, height: 100 };
+
+  // Act
+  const view = frameCanvasTargets(target, [successor], 1000, 600, { x: 0, top: 0, bottom: 0 });
+
+  // Assert
+  expect(view).toStrictEqual({ x: 1400, y: 250, scale: 1 });
+});
+
+it("parallel target bounds fit together inside the padded viewport", () => {
+  // Arrange
+  const targets = { minX: 200, minY: 100, width: 200, height: 1000 };
+
+  // Act
+  const view = frameCanvasTargets(targets, [], 1200, 800, { x: 48, top: 64, bottom: 80 });
+
+  // Assert
+  expect(view.scale).toBeCloseTo(0.656);
+  expect(view.x + 300 * view.scale).toBeCloseTo(600);
+  expect(view.y + 600 * view.scale).toBeCloseTo(392);
+});
+
+it("waiting and parallel working Blocks are all targets", () => {
+  // Arrange
+  const blocks = [
+    { blockId: "human", state: "waiting" as const },
+    { blockId: "worker", state: "working" as const },
+  ];
+
+  // Act
+  const targets = selectExecutionTargets(blocks, false);
+
+  // Assert
+  expect(targets).toStrictEqual(["human", "worker"]);
+});
+
+it("no active Block selects the whole-graph overview", () => {
+  // Arrange
+  const blocks = [{ blockId: "done", state: "finished" as const }];
+
+  // Act
+  const targets = selectExecutionTargets(blocks, false);
+
+  // Assert
+  expect(targets).toStrictEqual([]);
+});
+
+it("a failed Run targets its error-state Blocks", () => {
+  // Arrange
+  const blocks = [
+    { blockId: "done", state: "finished" as const },
+    { blockId: "failed", state: "error" as const },
+  ];
+
+  // Act
+  const targets = selectExecutionTargets(blocks, true);
+
+  // Assert
+  expect(targets).toStrictEqual(["failed"]);
 });

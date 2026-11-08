@@ -8,7 +8,8 @@ import {
 } from "@t3-factory/contracts";
 import { Bot, CircleHelp, Clock, User } from "lucide-react";
 import { CanvasZoomControls } from "./canvas-zoom-controls.tsx";
-import { mergeGraphBounds } from "../canvas-fit.ts";
+import { fitGraphView, frameCanvasTargets, mergeGraphBounds } from "../canvas-fit.ts";
+import { selectExecutionTargets } from "../execution-focus.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { cn } from "@/lib/utils";
 import { exitRecipients } from "../flow-graph.ts";
@@ -104,6 +105,59 @@ function graphBounds(graph: FlowGraph, blockHeight: (block: FlowBlock) => number
     };
   }
   return bounds;
+}
+
+/** Direct context only: distant ancestors and descendants must not determine entry zoom. */
+function executionEntryView(
+  run: RunDetail,
+  graph: FlowGraph,
+  blockHeight: (block: FlowBlock) => number,
+  width: number,
+  height: number,
+) {
+  const ids = new Set(
+    selectExecutionTargets(
+      run.blocks,
+      run.blocks.some((block) => block.state === "error"),
+    ),
+  );
+  if (!ids.size)
+    return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
+  const rect = (block: FlowBlock) => ({
+    ...block.position,
+    width: BLOCK_WIDTH,
+    height: blockHeight(block),
+  });
+  const targets = graph.blocks.filter((block) => ids.has(block.id)).map(rect);
+  const [first, ...rest] = targets;
+  if (!first) return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
+  const neighbors = new Set<string>();
+  for (const edge of graph.connections) {
+    if (ids.has(edge.sourceBlockId)) neighbors.add(edge.targetBlockId);
+    if (ids.has(edge.targetBlockId)) neighbors.add(edge.sourceBlockId);
+  }
+  const context = graph.blocks
+    .filter((block) => neighbors.has(block.id) && !ids.has(block.id))
+    .map(rect);
+  if (graph.flowInput.targetBlockIds.some((id) => ids.has(id))) {
+    context.push({
+      ...graph.flowInput.position,
+      width: FLOW_INPUT_WIDTH,
+      height: EXECUTION_FLOW_INPUT_HEIGHT,
+    });
+  }
+  return frameCanvasTargets(
+    mergeGraphBounds(first, rest),
+    context.map((block) => ({
+      minX: block.x,
+      minY: block.y,
+      width: block.width,
+      height: block.height,
+    })),
+    width,
+    height,
+    FIT_PADDING,
+  );
 }
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -525,6 +579,8 @@ export function ExecutionCanvas({
     surface,
     scope: run.id,
     getBounds: () => graphBounds(graph, wireLayout.blockHeight),
+    getEntryView: (width, height) =>
+      executionEntryView(run, graph, wireLayout.blockHeight, width, height),
     padding: FIT_PADDING,
     resize: "preserve",
     fitRevision: accepted,
@@ -597,7 +653,7 @@ export function ExecutionCanvas({
               <AutoArrangeButton pending={arrangePending} onClick={() => void autoArrange()} />
             </>
           }
-          hint="The view stays put while statuses update."
+          hint="Opens centered on active Blocks. Fit Flow shows the whole graph."
         />
         <AutoArrangeStatus error={arrangeError} onDismiss={dismissError} />
       </div>

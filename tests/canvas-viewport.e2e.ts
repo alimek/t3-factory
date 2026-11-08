@@ -50,3 +50,37 @@ test("a fitted Run preserves manual pan and zoom through resize and live updates
   await expectViewKept();
   await app.screenshot("run-view-preserved-after-resize-and-live-update");
 });
+
+test("opening a working Run centers the active Block without enlarging it", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  const run = await liveRun(app, "entry-focus");
+
+  // Act
+  await app.open(`/runs/${run}`);
+
+  // Assert
+  const canvas = screen.getByRole("region", "Execution canvas");
+  const active = screen.getByRole("article", "Block Implement change", { exact: true });
+  await expect(active).toBeVisible();
+  await expect
+    .poll(async () => {
+      const surface = (await canvas.boundingBox())!;
+      const block = (await active.boundingBox())!;
+      return Math.abs(block.x + block.width / 2 - (surface.x + surface.width / 2));
+    })
+    .toBeLessThan(2);
+  await expect
+    .poll(async () => {
+      const surface = (await canvas.boundingBox())!;
+      const block = (await active.boundingBox())!;
+      return Math.abs(block.y + block.height / 2 - (surface.y + (surface.height + 64 - 80) / 2));
+    })
+    .toBeLessThan(2);
+  expect(Number(await canvas.getAttribute("data-zoom"))).toBeLessThanOrEqual(1);
+  await app.screenshot("working-run-entry-focus");
+});

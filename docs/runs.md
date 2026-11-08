@@ -101,6 +101,7 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 - **Needs input** and **Problem** use the same labels as the Run sidebar, are independent of execution state and are not
   cleared by selecting a block. Stale observations say **Not live** and **Last known**; an unknown observation on a started
   block differs from stale; a block that never ran says **Not visited**.
+- On entry, the view centers the combined bounds of active Blocks (`working` or `waiting`), with direct predecessors and successors visible where possible. With no active Block, it centers error-state Blocks if execution failed; otherwise it fits the whole graph. Entry zoom never exceeds 100%. Context cannot pull the target off-center; at the minimum zoom, oversized context may be clipped.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, live Run updates and container resize preserve the Run viewport.

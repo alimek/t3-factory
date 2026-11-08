@@ -76,6 +76,10 @@ The top-level T3 thread Factory launches for one Agent Block. In a worktree Run,
 Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement and Request report use it.
 _Avoid_: quiet frontier, owned tree, descendant coverage.
 
+**Active block**:
+A Run Block in `working` or `waiting` state. Several Blocks can be active at once; the execution canvas centers their combined bounds on entry. When none is active, entry shows error-state Blocks for failed execution, or the whole graph.
+_Avoid_: current step.
+
 **Block id**:
 The identifier Factory mints for an Agent Block when a Run starts and states in every launch, visit and Request report message to that Block's worker. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.
 _Avoid_: tool ref, caller correlation.
