@@ -18,17 +18,17 @@ Delegation selections, omitted input options/request key, empty returned options
 statuses, timestamps, metadata omissions and explicit nulls were preserved.
 This is a reviewed test input, not a transcript or a complete lifecycle replay.
 
-`support/worker-contract.ts` composes a **synthetic** lifecycle from these wire shapes
-and controlled native progress: waiting, a reportless user reply, another reply,
-delegation, notification continuation, accepted final and handoff after restart.
-It changes execution identities/statuses; the worker reports by Block id. Those
-states were not captured live. Reads use the real HTTP/SDK adapter against local
-OAuth/MCP fixtures; launches and settlement use `ControlledT3`. Existing #43/#45/#49
-tests retain the separate rejection, race and closure regressions. This fixture adds
-the wire-to-lifecycle seam without replacing those tests or proving live harness support.
+Factory now reads only the thread and its recent runs from this response; the activity
+items stay as provenance and are no longer interpreted. `support/worker-contract.ts`
+serves the capture unchanged to check that read, and reuses its thread metadata for a
+controlled worker whose `t3_thread_read` and `t3_thread_wait` calls cross the real
+HTTP/SDK adapter against local OAuth/MCP fixtures. The test controls launches, sends,
+run statuses and the **synthetic** `t3_thread_wait` answers; the worker reports by Block
+id. Those lifecycle states were not captured live and do not prove live harness support.
 
-Other adapter helpers (`launch-fixture`, `boundaries-setup`, `native-delegation`)
-construct synthetic transport responses. They are not captured live sessions.
+`support/worker-thread-wire.ts` (wait answers) and `support/launch-fixture.ts` (launch
+schemas) construct synthetic transport responses, served by `support/oauth-t3.ts` through
+`support/boundaries-setup.ts`. They are not captured live sessions.
 
 ## Released upgrade fixture
 

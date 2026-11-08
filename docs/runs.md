@@ -128,8 +128,9 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - The newest finished report is the visit's result, so the user can continue the conversation and have the Agent report an
   updated outcome. Before hand-off a newer result replaces the held one and only it is passed on. Afterwards the same exit only
   updates the result and message without relaunching the next Blocks; a different exit also hands off to that exit's Blocks,
-  while Blocks started from the earlier exit keep running. Repeating the current result returns the original
-  acknowledgement, also after renewed work or settling.
+  while Blocks started from the earlier exit keep running. Repeating the block's latest report returns the original
+  acknowledgement, also after settling; while a missing report or execution failure is pending, the repeat is accepted again
+  and settles it. Repeating an earlier result after a working or waiting report makes it the result again.
 - Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
   delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
@@ -139,7 +140,8 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; a finished
   worker thread without a report is a **missing-report Problem**, also after a notification or reply turn; a worker waiting on
   delegated or background work T3 has not settled stays working. A failed, cancelled or interrupted latest run is a Problem until
-  a later run of that thread completes or the Block reports. Missing-report Problems persist across restart and renewed work;
+  a later run of that thread completes or the Block reports; it does not return for that run, and a later failed run is a new
+  Problem. Missing-report Problems persist across restart and renewed work;
   there is no automatic retry or dismiss-as-success.
 - **Working**: an Agent still on its task, for example watching CI or review, reports `to: "working"` with a message. The block
   stays working and shows the message on the canvas, in its details and in the Run row; it selects no exit, releases nothing
@@ -169,7 +171,8 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   "reported · the Run is Active again", "archived"). Every
   result version keeps its exit, message and deliveries; an earlier version reads **Replaced by version N** and its cancelled
   handoffs **Cancelled**, and a same-exit update after hand-off says it was not handed off again. Activations show the current
-  result. **Work periods** list each exact execution with its own state and T3 link; elapsed times are approximate observations.
+  result. **Work periods** list each exact execution with its own state, the finished or working report accepted during it, and
+  its T3 link; elapsed times are approximate observations.
 
 ## Human steps
 

@@ -115,9 +115,12 @@ worker reports.
     handoff and relaunches no recipient;
   - after release with a different exit, creates handoffs to that exit's recipients, held under
     the same release rule, while Blocks started from the earlier exit keep running.
-- Repeating the current result returns its acknowledgement, also after settling. While
-  a question or execution failure is pending on the Block, a repeat is a new version that
-  settles it. Reports cannot erase engine failure, prove semantic correctness
+- The Block's current report is its pending question, else its current `working` report, else
+  the activation's newest result; acceptance, observation and automatic settlement all read it
+  the same way. Repeating the current report returns its acknowledgement, also after settling,
+  unless an execution failure or missing report is pending on the Block; then the repeat is a
+  new report that settles it. Repeating an earlier result after a later `working` or `waiting`
+  makes it a new result version. Reports cannot erase engine failure, prove semantic correctness
   or settle a Run.
 - Every report for an [Archived](#archive) Run, `working`, `waiting` or `finished`, is
   answered with `RUN_ARCHIVED` before any validation. Factory MCP returns it as a successful
@@ -133,18 +136,18 @@ worker reports.
   releases nothing and creates no attention. The Block shows working with the message while
   it is the current activation's latest report, so a finished worker thread raises no missing
   report, for example while the worker waits for CI or review. A newer `working` replaces the
-  message, an identical one returns its acknowledgement, and a later `waiting` or `finished`
-  replaces it. Every working report is kept as history. A `working` after a result is the
-  Block's current state until its next report; it withdraws neither the result nor its handoffs,
-  but it keeps the Run from settling automatically.
+  message, an identical one is a repeat, and a later `waiting` or `finished` replaces it. Every
+  working report is kept as history. A `working` after a result is the Block's current state
+  until its next report; it withdraws neither the result nor its handoffs, but it keeps the Run
+  from settling automatically.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
   The user replies in the same worker thread. Any later turn of that thread settles the
   question; the worker reports again from that turn. A newer `waiting` or a `working` replaces
-  the pending question, an identical one returns its acknowledgement, and `finished` settles
-  it. A `waiting` after a result is the Block's current state until its next report; it
-  withdraws neither the result nor its handoffs. A later accepted report settles earlier
-  missing-report and execution-failed attention on the Block.
+  the pending question, an identical one is a repeat, and `finished` settles it. A `waiting`
+  after a result is the Block's current state until its next report; it withdraws neither the
+  result nor its handoffs. A later accepted report settles earlier missing-report and
+  execution-failed attention on the Block.
 - A `working` or `waiting` report with an exit is `EXIT_NOT_ALLOWED`, and one without a message
   is `MESSAGE_REQUIRED`, both with repair guidance.
 - Earlier waiting history does not prevent automatic settlement once the activation has a final
@@ -187,8 +190,8 @@ close the Run.
   runs until the Block reports or a linked Request report settles it.
 - **Execution failure.** When the latest run of the thread failed, was cancelled or was
   interrupted, the Block shows an execution-failed Problem for that run. It settles when a
-  later run of the same thread completes or when the Block reports. Factory never retries
-  failed work automatically.
+  later run of the same thread completes or when the Block reports, and is not raised again for
+  that run; a later failed run raises a new one. Factory never retries failed work automatically.
 - A rejected report for a known Block of an open Run records a report-problem with a
   static rejection code, explanation and next step. It retains only existing
   execution/binding references, never rejected report content, call payloads or secrets.
@@ -293,7 +296,7 @@ requests and closure evidence as history.
 ## Owned workers
 
 New Runs have no Run conversation. A historical closed Run may still display a stored
-conversation; Factory no longer observes or commands it.
+conversation; Factory no longer observes, commands or changes it, also at restart.
 
 - Subagents and background work a worker starts are not Factory obligations. They hold the
   worker's result only through T3's delegated wait answer.
