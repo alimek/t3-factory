@@ -1,99 +1,29 @@
-import { assert, expect, type TestContext } from "@effect/vitest";
+import type { TestContext } from "@effect/vitest";
 import { workerActivity } from "../fixtures/t3-worker-activity.ts";
 import { authorizedLiveOAuth } from "./boundaries-setup.ts";
-import { directWorker, finishWorker, waitingWorker, workerFinal } from "./run-worker.ts";
-import { childRead } from "./coordination-wire.ts";
-import { supplyChild } from "./native-root-evidence.ts";
-import { beginNativeTurn, finishNativeTurn } from "../../../../scripts/dev/native-simulation.ts";
+import { directWorker } from "./run-worker.ts";
 
-/** Serve the reduced capture unchanged, including exact-item selection. */
+/** Serve the reduced capture unchanged. */
 export function capturedWorker(c: TestContext) {
-  return authorizedLiveOAuth(c, {
-    runtimeActivity: (args) => ({
-      ...workerActivity,
-      items: args.itemId
-        ? workerActivity.items.filter((item) => item.itemId === args.itemId)
-        : workerActivity.items,
-    }),
-  });
+  return authorizedLiveOAuth(c, { runtimeActivity: () => workerActivity });
 }
 
-/** Native Codex children are projected as idle threads without public executions. */
-export async function reportedNativeWorker(
-  c: TestContext,
-  thread: Record<string, unknown> = {},
-  targetBlockId: Parameters<typeof directWorker>[2] = "parallel-block",
-  queuedNativeRuns: readonly string[] = [],
-) {
-  const f = await directWorker(c, true, targetBlockId);
-  const body = childRead(
-    {
-      projectId: f.project.projectId,
-      parentThreadId: "thread-1",
-      creationSource: "provider",
-      status: "idle",
-      runCount: 0,
-      link: "<t3-thread://v2/fixture/child>",
-      activeRunId: null,
-      latestRunId: null,
-      ...thread,
-    },
-    [],
-  );
-  const wire = await authorizedLiveOAuth(c, {
-    runtimeActivity: () => body,
-    queue: () => ({
-      items: queuedNativeRuns.map((queuedRunId) => ({ queuedRunId })),
-      nextCursor: null,
-    }),
-  });
-  const target = { endpoint: wire.endpoint };
-  f.t3.childEvidence.set(
-    "child",
-    await wire.adapter.readChildEvidence(target, {
-      parentThreadId: "thread-1",
-      projectId: f.project.projectId,
-      childThreadId: "child",
-      childRunId: null,
-    }),
-  );
-  const readExecution = f.t3.readExecution.bind(f.t3);
-  f.t3.readExecution = (t, id, recorded) =>
-    id === "child"
-      ? wire.adapter.readExecution(target, id, recorded)
-      : readExecution(t, id, recorded);
-  const readQueue = f.t3.readQueue.bind(f.t3);
-  f.t3.readQueue = (t, id) =>
-    id === "child" ? wire.adapter.readQueue(target, id) : readQueue(t, id);
-  f.t3.delegationActivities.set("child", {
-    threadId: "child",
-    projectId: f.project.projectId,
-    complete: true,
-    invocations: [],
-  });
-  f.t3.descendantEvidence.set("thread-1", {
-    parentThreadId: "thread-1",
-    descendants: [{ ...body.thread, relationship: "provider-native" }],
-    scanComplete: true,
-    coverage: "incomplete",
-    problem: "Bounded native child scan.",
-  });
-  const accepted = await f.f.runtime.submit(workerFinal(f.blockId));
-  assert(accepted.code === "ACCEPTED", JSON.stringify(accepted));
-  finishWorker(f);
-  return f;
-}
+/** T3's settled `t3_thread_wait` answer for the worker's waited run. */
+export const settledAnswer = (runId: string): Record<string, unknown> => ({
+  threadId: "thread-1",
+  runId,
+  status: "completed",
+  timedOut: false,
+  resultRun: { runId, status: "completed" },
+});
 
-/** Synthetic lifecycle using captured wire metadata. Only reads cross the HTTP adapter;
- * launches, native engine progress and settlement remain controlled. */
-export async function completedWireWorker(c: TestContext) {
-  const f = await waitingWorker(c);
+/** The worker's thread reads and delegated waits cross the live HTTP adapter using captured
+ * thread metadata; launches, sends and engine progress stay controlled. */
+export async function wireWorker(c: TestContext, wait: (runId: string) => Record<string, unknown>) {
+  const f = await directWorker(c);
   const threadId = "thread-1";
-  const reply = workerActivity.items[1];
-  const notification = workerActivity.items[3];
-  let items: readonly Record<string, unknown>[] = [];
   const wire = await authorizedLiveOAuth(c, {
-    runtimeActivity: (args) => {
+    runtimeActivity: () => {
       const observation = f.t3.executionObservations.get(threadId)!;
       return {
         ...workerActivity,
@@ -102,57 +32,22 @@ export async function completedWireWorker(c: TestContext) {
           projectId: f.project.projectId,
           activeRunId: observation.activeRunId,
           latestRunId: observation.latestRunId,
+          pendingRequestCount: observation.pendingRequestCount,
         },
         recentRuns: [...observation.recentRuns].reverse(),
-        items: args.runLimit
-          ? []
-          : args.itemId
-            ? items.filter((item) => item.itemId === args.itemId)
-            : items,
-        nextPosition: items.length,
+        items: [],
       };
     },
+    wait: (args) => wait(String(args.runId)),
   });
   const target = { endpoint: wire.endpoint };
   const readExecution = f.t3.readExecution.bind(f.t3);
-  f.t3.readExecution = (t, id, recorded) =>
+  f.t3.readExecution = (t, id) =>
+    id === threadId ? wire.adapter.readExecution(target, id) : readExecution(t, id);
+  const readDelegatedSettlement = f.t3.readDelegatedSettlement.bind(f.t3);
+  f.t3.readDelegatedSettlement = (t, id, runId) =>
     id === threadId
-      ? wire.adapter.readExecution(target, id, recorded)
-      : readExecution(t, id, recorded);
-
-  beginNativeTurn(f.t3, threadId, "answer-execution");
-  items = [{ ...reply, position: 0, runId: "answer-execution" }];
-  assert((await f.f.runtime.block({ arguments: { blockId: f.blockId } })).code === "BLOCK");
-  finishNativeTurn(f.t3, threadId, "answer-execution");
-  assert((await f.f.reconcileRuns()).ok);
-
-  beginNativeTurn(f.t3, threadId, "followup-execution");
-  items = [
-    ...items,
-    { ...reply, position: 1, itemId: "turn-item:message:followup", runId: "followup-execution" },
-  ];
-  assert((await f.f.runtime.block({ arguments: { blockId: f.blockId } })).code === "BLOCK");
-  items = [...items, { ...workerActivity.items[2], position: 2, runId: "followup-execution" }];
-  const delegation = await wire.adapter.readDelegationActivity(target, threadId);
-  assert(delegation.complete, delegation.problem);
-  assert(delegation.invocations[0]);
-  f.t3.delegationActivities.set(threadId, delegation);
-  supplyChild(f.t3, delegation.invocations[0], f.project);
-  finishNativeTurn(f.t3, threadId, "followup-execution");
-  assert((await f.f.reconcileRuns()).ok);
-  const yielded = await f.f.getRun(f.runId);
-  assert(yielded.ok);
-  expect(yielded.value.blocks[0]?.state).toBe("working");
-
-  finishNativeTurn(f.t3, "thread-3", "execution-3");
-  beginNativeTurn(f.t3, threadId, "continuation-execution");
-  items = [...items, { ...notification, position: 3, runId: "continuation-execution" }];
-  expect((await f.f.runtime.submit(workerFinal(f.blockId))).code).toBe("ACCEPTED");
-  const held = await f.f.getRun(f.runId);
-  assert(held.ok);
-  expect(held.value.reports[0]?.completionEligibleAt).toBeNull();
-  expect(f.t3.launches.size).toBe(1);
-  await f.f.close();
-  finishNativeTurn(f.t3, threadId, "continuation-execution");
+      ? wire.adapter.readDelegatedSettlement(target, id, runId)
+      : readDelegatedSettlement(t, id, runId);
   return f;
 }

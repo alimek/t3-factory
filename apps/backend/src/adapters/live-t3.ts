@@ -1,4 +1,3 @@
-import { readRemoteWork, type RemoteWorkTarget } from "./remote-work.ts";
 import {
   chmodSync,
   existsSync,
@@ -45,9 +44,6 @@ import type {
   LaunchSupport,
   T3Target,
   ThreadIdentityRead,
-  RecordedExecution,
-  ReportActivity,
-  ReportActivityItem,
   SendPayload,
   SendReference,
   T3ProviderCapability,
@@ -57,18 +53,7 @@ import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
 import { LaunchRejected } from "./t3.ts";
 import type { AgentEnvironment, T3Contract } from "@t3-factory/contracts";
 import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-validation";
-import {
-  delegationActivity,
-  nativeToolKind,
-  type DelegationActivity,
-} from "./delegation-activity.ts";
-import {
-  readDelegatedSettlement,
-  readDescendants,
-  readChildEvidence,
-  type ChildEvidenceTarget,
-  type EvidenceCall,
-} from "./coordination-evidence.ts";
+import { readDelegatedSettlement } from "./delegated-settlement.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { parseProviderCapabilities } from "./t3-capabilities.ts";
 import {
@@ -271,19 +256,6 @@ type RecentRun = {
   completedAt?: string | null;
 };
 
-const EXECUTION_STATUSES = [
-  "preparing",
-  "queued",
-  "starting",
-  "running",
-  "waiting",
-  "completed",
-  "interrupted",
-  "failed",
-  "cancelled",
-  "rolled_back",
-];
-
 const isNullableString = (value: unknown) => value === null || typeof value === "string";
 
 function isObservedThread(thread: ThreadExecutionRead["thread"] | undefined, threadId: string) {
@@ -401,234 +373,6 @@ function supportsReportReads(schema: ReportReadSchema) {
     (!required ||
       (Array.isArray(required) && required.every((field: unknown) => field === "threadId")))
   );
-}
-
-type RawReportItem = Omit<ReportActivityItem, "complete" | "problem"> & {
-  textTruncated: boolean;
-  nextTextOffset?: number | null;
-};
-type ReportPage = {
-  thread: { threadId: string; projectId: string };
-  items: RawReportItem[];
-  hasMore: boolean;
-  nextPosition: number | null;
-};
-type ReadReportPage = (args: Record<string, unknown>) => Promise<unknown>;
-const ITEM_STATUSES = [
-  "idle",
-  "pending",
-  "running",
-  "waiting",
-  "completed",
-  "failed",
-  "cancelled",
-  "interrupted",
-];
-const isNonNegativeInteger = (value: unknown): value is number =>
-  Number.isInteger(value) && (value as number) >= 0;
-const isNonEmptyString = (value: unknown): value is string => typeof value === "string" && !!value;
-
-function hasReportIdentity(item: RawReportItem) {
-  return (
-    isNonNegativeInteger(item.position) &&
-    isNonEmptyString(item.itemId) &&
-    isNonEmptyString(item.sourceThreadId) &&
-    (item.runId === null || isNonEmptyString(item.runId)) &&
-    (item.subagentId === undefined || typeof item.subagentId === "string") &&
-    ["local", "inherited", "synthetic"].includes(item.visibility)
-  );
-}
-
-function hasReportContent(item: RawReportItem) {
-  return (
-    typeof item.type === "string" &&
-    ITEM_STATUSES.includes(item.status) &&
-    typeof item.updatedAt === "string" &&
-    Number.isFinite(Date.parse(item.updatedAt)) &&
-    isNullableString(item.text) &&
-    typeof item.textTruncated === "boolean" &&
-    (item.nextTextOffset === null ||
-      isNonNegativeInteger(item.nextTextOffset) ||
-      (item.nextTextOffset === undefined && !item.textTruncated))
-  );
-}
-
-function validateReportPage(page: ReportPage, threadId: string, projectId: string) {
-  if (
-    !page ||
-    page.thread?.threadId !== threadId ||
-    !isNonEmptyString(page.thread.projectId) ||
-    (projectId && projectId !== page.thread.projectId) ||
-    !Array.isArray(page.items) ||
-    typeof page.hasMore !== "boolean" ||
-    !(page.nextPosition === null || isNonNegativeInteger(page.nextPosition))
-  )
-    throw Error("Invalid report activity coverage or thread identity.");
-  if (page.items.some((item) => !item || !hasReportIdentity(item) || !hasReportContent(item)))
-    throw Error("Report item provenance, status or continuation metadata is unavailable.");
-}
-
-const reportItemVersion = (item: RawReportItem) =>
-  JSON.stringify([
-    item.itemId,
-    item.position,
-    item.runId,
-    item.sourceThreadId,
-    item.subagentId,
-    item.visibility,
-    item.type,
-    item.status,
-    item.updatedAt,
-  ]);
-const isLocalAssistant = (item: RawReportItem, threadId: string) =>
-  item.type === "assistant_message" &&
-  item.visibility === "local" &&
-  item.sourceThreadId === threadId &&
-  !item.subagentId;
-
-function reportTextOffset(item: RawReportItem, offset: number): number | null {
-  if (!item.textTruncated) {
-    if (item.nextTextOffset !== null && item.nextTextOffset !== undefined)
-      throw Error("Inconsistent report text continuation metadata.");
-    return null;
-  }
-  if (
-    !item.text?.length ||
-    !isNonNegativeInteger(item.nextTextOffset) ||
-    item.nextTextOffset !== offset + item.text.length
-  )
-    throw Error("Report text is truncated without a usable exact continuation.");
-  return item.nextTextOffset;
-}
-
-/** One fresh scan, with exact item identity/version checked across every full-text read. */
-class ReportActivityReader {
-  private readonly items: ReportActivityItem[] = [];
-  private readonly identities = new Set<string>();
-  private projectId = "";
-  private problem: string | undefined;
-  private readonly threadId: string;
-  private readonly eligible: (item: RawReportItem, threadId: string) => boolean;
-  constructor(
-    threadId: string,
-    eligible: (item: RawReportItem, threadId: string) => boolean = isLocalAssistant,
-  ) {
-    this.threadId = threadId;
-    this.eligible = eligible;
-  }
-
-  result(problem = this.problem): ReportActivity {
-    return {
-      threadId: this.threadId,
-      projectId: this.projectId,
-      items: this.items,
-      complete: !problem,
-      ...(problem ? { problem } : {}),
-    };
-  }
-
-  private async page(read: ReadReportPage, args: Record<string, unknown>): Promise<ReportPage> {
-    const page = (await read({
-      threadId: this.threadId,
-      view: "activity",
-      limit: 100,
-      maxCharsPerItem: 50_000,
-      ...args,
-    })) as ReportPage;
-    validateReportPage(page, this.threadId, this.projectId);
-    this.projectId = page.thread.projectId;
-    return page;
-  }
-
-  private async exactItem(read: ReadReportPage, itemId: string, textOffset: number) {
-    const page = await this.page(read, { itemId, textOffset });
-    if (page.items.length !== 1)
-      throw Error("Exact report item continuation is unavailable or ambiguous.");
-    return page.items[0]!;
-  }
-
-  private async collect(read: ReadReportPage, initial: RawReportItem, first: RawReportItem) {
-    let part = first,
-      offset = 0,
-      text = "";
-    for (let chunks = 0; chunks < 100; chunks++) {
-      if (reportItemVersion(part) !== reportItemVersion(initial))
-        throw Error("Report item changed during collection; recheck.");
-      if (part.text === null) throw Error("Report item text is unavailable; recheck.");
-      text += part.text;
-      if (text.length > 262_144)
-        throw Error("Report item exceeds the 262144-character safety limit.");
-      const next = reportTextOffset(part, offset);
-      if (next === null) return text;
-      offset = next;
-      part = await this.exactItem(read, initial.itemId, offset);
-    }
-    throw Error("Report item continuation limit exceeded.");
-  }
-
-  private async stableText(read: ReadReportPage, item: RawReportItem) {
-    if (item.status !== "completed")
-      throw Error("Assistant report item is unfinished; recheck after completion.");
-    const text = await this.collect(read, item, item);
-    const exact = await this.exactItem(read, item.itemId, 0);
-    if ((await this.collect(read, item, exact)) !== text)
-      throw Error("Report item text changed during collection; recheck.");
-    return text;
-  }
-
-  private async observe(read: ReadReportPage, raw: RawReportItem): Promise<ReportActivityItem> {
-    const { textTruncated: _truncated, nextTextOffset: _offset, ...value } = raw;
-    if (!this.eligible(raw, this.threadId)) return { ...value, complete: true };
-    try {
-      return { ...value, text: await this.stableText(read, raw), complete: true };
-    } catch (error) {
-      const problem =
-        error instanceof Error ? error.message : "Report text could not be retrieved.";
-      this.problem ??= problem;
-      return { ...value, text: null, complete: false, problem };
-    }
-  }
-
-  private async appendPage(
-    read: ReadReportPage,
-    page: ReportPage,
-    afterPosition: number | undefined,
-  ) {
-    let previous = afterPosition ?? -1;
-    for (const item of page.items) {
-      const identity = JSON.stringify([item.sourceThreadId, item.itemId]);
-      if (this.identities.has(identity) || item.position <= previous) return false;
-      this.identities.add(identity);
-      previous = item.position;
-      this.items.push(await this.observe(read, item));
-    }
-    return true;
-  }
-
-  private nextPosition(page: ReportPage, afterPosition: number | undefined) {
-    const last = page.items.at(-1)?.position;
-    if (
-      last === undefined ||
-      page.nextPosition !== last ||
-      (afterPosition !== undefined && page.nextPosition <= afterPosition)
-    )
-      return null;
-    return page.nextPosition;
-  }
-
-  async scan(read: ReadReportPage): Promise<ReportActivity> {
-    let afterPosition: number | undefined;
-    for (let pages = 0; pages < 100; pages++) {
-      const page = await this.page(read, afterPosition === undefined ? {} : { afterPosition });
-      if (!(await this.appendPage(read, page, afterPosition)))
-        return this.result("Report activity pages shifted or repeated; recheck.");
-      if (!page.hasMore) return this.result();
-      const next = this.nextPosition(page, afterPosition);
-      if (next === null) return this.result("Report activity pagination is incomplete; recheck.");
-      afterPosition = next;
-    }
-    return this.result("Report activity page limit exceeded; coverage remains incomplete.");
-  }
 }
 
 /** OAuth files are endpoint-bound; only opaque grant lineage leaves this boundary. */
@@ -1296,129 +1040,39 @@ export class LiveT3Adapter implements T3Adapter {
       };
     });
   }
-  async inspectStopSupport(target: T3Endpoint, kind: "cancel" | "tree"): Promise<LaunchSupport> {
-    const toolName = kind === "cancel" ? "t3_queue" : "t3_thread_interrupt";
+  async inspectStopSupport(target: T3Endpoint): Promise<LaunchSupport> {
     return this.inspectContractSupport(target, {
-      toolName,
+      toolName: "t3_thread_interrupt",
       evaluate: ({ ready, props }) => {
         const supported =
           ready &&
-          (kind === "cancel"
-            ? ["threadId", "queuedRunId", "action"].every(
-                (field) => props[field]?.type === "string",
-              ) && props.action?.enum?.includes("cancel") === true
-            : ["threadId", "clientRequestId"].every((field) => props[field]?.type === "string") &&
-              props.stop?.type === "boolean");
+          ["threadId", "clientRequestId"].every((field) => props[field]?.type === "string") &&
+          props.stop?.type === "boolean";
         return {
           supported,
           explanation: supported
-            ? "Queue cancellation or thread/tree Stop supported; tree Stop is not run-fenced."
+            ? "Thread Stop supported; it is not run-fenced."
             : "T3 Stop schema unavailable.",
         };
       },
     });
   }
-  async cancelQueued(
-    target: T3Endpoint,
-    payload: { threadId: string; queuedRunId: string },
-  ): Promise<void> {
+  async stopThread(target: T3Endpoint, payload: { threadId: string; clientRequestId: string }) {
     await this.withAuthorizedClient(target, async (client) => {
       const result = await client.callTool(
-        { name: "t3_queue", arguments: { ...peerArguments(target), action: "cancel", ...payload } },
+        { name: "t3_thread_interrupt", arguments: { ...payload, stop: true } },
         { timeout: 30_000 },
       );
-      if (result.isError) throw Error("Queue cancellation outcome unresolved");
+      if (result.isError) throw Error("Thread Stop outcome unresolved");
     });
   }
-  async stopOwnedTree(
-    target: T3Endpoint,
-    payload: { threadId: string; clientRequestId: string },
-  ): Promise<void> {
-    await this.withAuthorizedClient(target, async (client) => {
-      const result = await client.callTool(
-        {
-          name: "t3_thread_interrupt",
-          arguments: { ...peerArguments(target), ...payload, stop: true },
-        },
-        { timeout: 30_000 },
-      );
-      if (result.isError) throw Error("Owned tree Stop outcome unresolved");
-    });
-  }
-  async readQueue(target: T3Endpoint, threadId: string) {
-    return this.withAuthorizedClient(target, async (client) => {
-      const body = this.structuredToolResult(
-        await client.callTool(
-          {
-            name: "t3_queue",
-            arguments: { ...peerArguments(target), action: "list", threadId, limit: 100 },
-          },
-          { timeout: 10_000 },
-        ),
-      ) as { items: { queuedRunId: string }[]; nextCursor: number | null };
-      if (
-        !body ||
-        !Array.isArray(body.items) ||
-        body.items.some((item) => typeof item.queuedRunId !== "string" || !item.queuedRunId) ||
-        !(body.nextCursor === null || (Number.isInteger(body.nextCursor) && body.nextCursor >= 0))
-      )
-        throw Error("Invalid queue coverage");
-      return {
-        threadId,
-        queuedRunIds: body.items.map((item) => item.queuedRunId),
-        nextCursor: body.nextCursor,
-      };
-    });
-  }
-  async readNativeRequests(target: T3Endpoint, threadId: string) {
+  async readExecution(target: T3Endpoint, threadId: string): Promise<ExecutionObservation> {
     return this.withAuthorizedClient(target, async (client) => {
       const body = this.structuredToolResult(
         await client.callTool(
           {
             name: "t3_thread_read",
-            arguments: {
-              ...peerArguments(target),
-              threadId,
-              limit: 1,
-              maxCharsPerItem: 1,
-              runLimit: 1,
-            },
-          },
-          { timeout: 10_000 },
-        ),
-      ) as { thread: { threadId: string; projectId: string; pendingRequestCount: number } };
-      if (
-        !body ||
-        body.thread?.threadId !== threadId ||
-        typeof body.thread.projectId !== "string" ||
-        !Number.isInteger(body.thread.pendingRequestCount) ||
-        body.thread.pendingRequestCount < 0
-      )
-        throw Error("Invalid native request coverage");
-      return {
-        threadId,
-        projectId: body.thread.projectId,
-        pendingRequestCount: body.thread.pendingRequestCount,
-      };
-    });
-  }
-  async readExecution(
-    target: T3Endpoint,
-    threadId: string,
-    recorded: readonly RecordedExecution[] = [],
-  ): Promise<ExecutionObservation> {
-    return this.withAuthorizedClient(target, async (client) => {
-      const body = this.structuredToolResult(
-        await client.callTool(
-          {
-            name: "t3_thread_read",
-            arguments: {
-              ...peerArguments(target),
-              threadId,
-              limit: 1,
-              maxCharsPerItem: 1,
-              runLimit: 50,
-            },
+            arguments: { threadId, limit: 1, maxCharsPerItem: 1, runLimit: 50 },
           },
           { timeout: 10_000 },
         ),
@@ -1430,47 +1084,9 @@ export class LiveT3Adapter implements T3Adapter {
         !body.recentRuns.every(isRecentRun) ||
         !isRunReference(body.thread.latestRunId)
       )
-        throw Error("Invalid exact execution observation");
-      for (const saved of recorded) {
-        if (body.recentRuns.some((recentRun) => recentRun.runId === saved.runId)) continue;
-        body.recentRuns.push(await this.readRecordedRun(client, threadId, saved, target));
-      }
+        throw Error("Invalid thread observation");
       return executionObservation(threadId, body);
     });
-  }
-  /** afterPosition pages timeline items, not recentRuns. Read each missing
-   * recorded run explicitly; never substitute the latest run for it. */
-  private async readRecordedRun(
-    client: Client,
-    threadId: string,
-    saved: RecordedExecution,
-    target: T3Endpoint,
-  ): Promise<RecentRun> {
-    try {
-      const exact = this.structuredToolResult(
-        await client.callTool(
-          {
-            name: "t3_thread_wait",
-            arguments: { ...peerArguments(target), threadId, runId: saved.runId, timeoutMs: 0 },
-          },
-          { timeout: 10_000 },
-        ),
-      ) as { threadId: string; runId: string; status: string };
-      if (
-        exact?.threadId !== threadId ||
-        exact.runId !== saved.runId ||
-        !EXECUTION_STATUSES.includes(exact.status)
-      ) {
-        throw Error("Exact execution identity/status missing");
-      }
-      return {
-        runId: saved.runId,
-        status: exact.status,
-        ...(saved.ordinal !== undefined ? { ordinal: saved.ordinal } : {}),
-      };
-    } catch {
-      throw Error("Incomplete observation coverage: recorded execution could not be read exactly.");
-    }
   }
   async readEnvironment(target: T3Endpoint): Promise<AgentEnvironment> {
     return this.withAuthorizedClient(target, async (client) => {
@@ -1648,71 +1264,20 @@ export class LiveT3Adapter implements T3Adapter {
     };
   }
   readDelegatedSettlement(target: T3Endpoint, threadId: string, runId: string) {
-    return readDelegatedSettlement(this.coordinationCall(target), threadId, runId);
-  }
-  readDescendants(target: T3Endpoint, parentThreadId: string) {
-    return readDescendants(this.coordinationCall(target), parentThreadId);
-  }
-  readChildEvidence(target: T3Endpoint, child: ChildEvidenceTarget) {
-    return readChildEvidence(this.coordinationCall(target), child);
-  }
-  readRemoteWork(target: T3Endpoint, remote: RemoteWorkTarget) {
-    return readRemoteWork(this.coordinationCall(target), remote);
-  }
-  private coordinationCall(target: T3Endpoint): EvidenceCall {
-    return (name, args) =>
-      this.withAuthorizedClient(target, async (client) =>
-        this.structuredToolResult(
-          await client.callTool(
-            { name, arguments: { ...args, ...peerArguments(target) } },
-            { timeout: 10_000 },
+    return readDelegatedSettlement(
+      (args) =>
+        this.withAuthorizedClient(target, async (client) =>
+          this.structuredToolResult(
+            await client.callTool({ name: "t3_thread_wait", arguments: args }, { timeout: 10_000 }),
           ),
         ),
-      );
-  }
-  async readDelegationActivity(target: T3Endpoint, threadId: string): Promise<DelegationActivity> {
-    const reader = new ReportActivityReader(
       threadId,
-      (item, parent) =>
-        item.type === "dynamic_tool" &&
-        item.visibility === "local" &&
-        item.sourceThreadId === parent &&
-        item.subagentId === undefined &&
-        (item.textTruncated || nativeToolKind(item.text) !== "unrelated"),
+      runId,
     );
-    return delegationActivity(await this.readActivity(target, reader));
-  }
-  async readReportActivity(target: T3Endpoint, threadId: string): Promise<ReportActivity> {
-    return this.readActivity(target, new ReportActivityReader(threadId));
-  }
-  private async readActivity(
-    target: T3Endpoint,
-    reader: ReportActivityReader,
-  ): Promise<ReportActivity> {
-    try {
-      return await this.withAuthorizedClient(target, async (client) => {
-        return reader.scan(async (args) =>
-          this.structuredToolResult(
-            await client.callTool(
-              { name: "t3_thread_read", arguments: { ...args, ...peerArguments(target) } },
-              { timeout: 10_000 },
-            ),
-          ),
-        );
-      });
-    } catch {
-      return reader.result(
-        "Report activity is unavailable or its public metadata is invalid; reconnect and recheck.",
-      );
-    }
   }
   async close() {
     await this.completion;
     this.stopCallback();
     await this.released;
   }
-}
-
-function peerArguments(target: T3Endpoint) {
-  return target.peerEnvironmentId ? { environmentId: target.peerEnvironmentId } : {};
 }

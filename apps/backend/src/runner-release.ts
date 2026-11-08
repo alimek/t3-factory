@@ -1,5 +1,5 @@
-import { releaseCoordinatorSource } from "./coordinator-release.ts";
-import { coordinatorGate } from "./runner-coordinator-gate.ts";
+import { releaseResult } from "./result-release.ts";
+import { readWorkerThread } from "./worker-thread.ts";
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
@@ -8,7 +8,7 @@ import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint } from "./runner-utils.ts";
 import { now } from "./time.ts";
 
-/** Fresh worker-source release (or a durable Human answer) and a settled revisit target. */
+/** A released worker result (or a durable Human answer) and, for a revisit, a finished target thread. */
 function explicitSourceReleaseGeneration(
   database: RunnerDatabase,
   t3: T3Adapter,
@@ -26,16 +26,7 @@ function explicitSourceReleaseGeneration(
     );
     if (intent.report_id) {
       if (!report) return null;
-      if (
-        !(yield* releaseCoordinatorSource(
-          database,
-          t3,
-          current,
-          intent.source_block_id!,
-          report.activation_id,
-        ))
-      )
-        return null;
+      if (!(yield* releaseResult(database, t3, current, report.activation_id))) return null;
     } else {
       const answered = yield* database.transaction(
         (sql) =>
@@ -44,16 +35,8 @@ function explicitSourceReleaseGeneration(
       if (!answered.length) return null;
     }
     if (intent.kind === "send") {
-      const [previous] = yield* database.transaction(
-        (sql) =>
-          sql<{
-            id: string;
-          }>`SELECT a.id FROM run_activations a WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} AND a.rowid<(SELECT rowid FROM run_activations WHERE run_id=${run.id} AND cause=${intent.cause}) ORDER BY a.rowid DESC LIMIT 1`,
-      );
-      if (
-        !previous ||
-        !(yield* coordinatorGate(database, t3, current, intent.block_id, previous.id))
-      )
+      const { threadId } = JSON.parse(intent.target_json) as { threadId: string };
+      if (!(yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId))).finished)
         return null;
     }
     return current.generation;

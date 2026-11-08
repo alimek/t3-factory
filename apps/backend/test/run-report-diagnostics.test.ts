@@ -1,10 +1,10 @@
 import { rejectedWorkerReport, recoveringRejectedWorker } from "./support/run-worker-recovery.ts";
-import { finishNativeTurn } from "../../../scripts/dev/native-simulation.ts";
 import { assert, expect, it } from "@effect/vitest";
 import {
   directWorker,
   finishWorker,
   missingWorkerReport,
+  settleThread,
   workerFinal,
 } from "./support/run-worker.ts";
 
@@ -95,18 +95,10 @@ it("a rejected report remains explained after completion and backend restart", a
   expect(f.t3.sends.size).toBe(0);
 });
 
-it("Request report refuses a stale missing-report Problem while delegated settlement is pending", async (c) => {
+it("Request report refuses a stale missing-report Problem while delegated work is unsettled", async (c) => {
   // Arrange
   const f = await missingWorkerReport(c);
-  f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", "execution-1"]), {
-    threadId: "thread-1",
-    runId: "execution-1",
-    state: "pending",
-    status: "completed",
-    resultRun: null,
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
-  });
+  settleThread(f.t3, "execution-1", "completed", "pending");
 
   // Act
   const result = await f.f.requestReport(f.missing.id);
@@ -143,7 +135,7 @@ it("successful linked recovery settles the original rejection while preserving i
   // Arrange
   const f = await recoveringRejectedWorker(c);
   assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  finishNativeTurn(f.t3, "thread-1", f.executionId);
+  finishWorker(f);
 
   // Act
   await f.f.reconcileRuns();

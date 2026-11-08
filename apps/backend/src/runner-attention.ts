@@ -77,3 +77,24 @@ export function attention(
       }
   });
 }
+
+/** Settles every pending matter of one kind on a Block, keeping its history. */
+export function settlePending(
+  sql: SqlClient.SqlClient,
+  runId: string,
+  blockId: string,
+  kind: RunAttention["kind"],
+  reason: string,
+  time: string,
+) {
+  return Effect.gen(function* () {
+    const rows = yield* sql<{
+      id: string;
+      execution_id: string;
+    }>`SELECT id,execution_id FROM run_attention WHERE run_id=${runId} AND block_id=${blockId} AND kind=${kind} AND settled_at IS NULL`;
+    for (const row of rows) {
+      yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason=${reason} WHERE id=${row.id}`;
+      yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${runId},${blockId},${row.execution_id},'attention-settled',${"attention-settled:" + row.id},${row.id},${time})`;
+    }
+  });
+}

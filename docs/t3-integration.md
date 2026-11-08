@@ -125,9 +125,9 @@ environment/provider/model/options, the public T3 interface and the installed Fa
 covers each Agent's worker settings and reporting harnesses, including the installed `$factory-block` skill. Missing or unavailable selections or installation block Start with the actual conflict explanation. When the blocking problem is the reporting installation, the rejected-Start notice links to **Settings → Agent reporting**; other readiness problems link to **Studio → Agents**. Readiness never
 launches diagnostic work, answers approvals or substitutes settings.
 
-A final result is immutable; a worker's handoffs stay held until fresh source completion and
-clear native-request evidence permit release, while a Human answer releases its handoffs directly. A completed execution without a report shows a
-Problem, and **Request report** is an explicit user action, never automatic.
+A final result is immutable; a worker's handoffs stay held until its worker thread is
+[finished](runner.md#worker-thread-completion), while a Human answer releases its handoffs directly. A finished
+thread without a report shows a Problem, and **Request report** is an explicit user action, never automatic.
 
 ## Integration boundary
 
@@ -165,48 +165,37 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
   schema requires it, Start fails with `launch_unsupported`. An uncertain launch is searched
   for and is not replayed. A definitive rejection is an error. Unknown send acceptance
   cannot be replayed without independent continuity and key-retention proof, absent by default.
-- **Observation.** Active/latest identities, public execution ordinals and source timestamps
-  distinguish renewed work from earlier executions. Native attention includes permissions
-  as well as questions; an incomplete listing cannot prove the absence of either.
-  Factory does not classify turns: a user reply, a notification and a delegated completion
-  are all later executions of the same worker thread.
+- **Observation.** One `t3_thread_read` per worker thread (`runLimit: 50`) supplies the
+  active and latest runs, recent runs with ordinals and source timestamps, and the pending
+  native request count, which includes permissions as well as questions. A read whose
+  thread identity, run references or pending count is missing or malformed is rejected,
+  never read as idle. Factory does not classify turns: a user reply, a notification and a
+  delegated completion are all later runs of the same worker thread.
+- **Delegated wait.** `t3_thread_wait` for the latest run with `timeoutMs: 0` and
+  `untilDelegatedWorkSettled: true` answers whether that run and its delegated and
+  background work have settled. Its answer must name the waited thread and run and carry a
+  boolean `timedOut`; `resultRun` is ignored. How the two reads combine is the
+  [worker thread completion](runner.md#worker-thread-completion) rule.
 - **Send.** Work targets an exact thread with `mode: queue`, a stable request key and fixed
   message. Returned thread/message/execution references must match. Send replay requires its
   own continuity proof; launch replay support is insufficient.
-- **Queues.** Coverage requires real `queuedRunId` identities and explicit complete cursor
-  coverage. Missing or malformed metadata is uncertainty, not an empty queue.
-- **Stop.** Queue cancellation targets the exact queued execution without a retry key.
-  Tree interruption uses `t3_thread_interrupt` with `stop: true` and a persisted key, but no
-  run ID: T3 acts on the thread and delegated work, without an exact-execution fence.
-  Acknowledgements never prove termination.
+- **Stop.** Thread interruption uses `t3_thread_interrupt` with `stop: true` and a persisted
+  key, but no run ID: T3 acts on the thread and its delegated work, without an
+  exact-execution fence. Factory reads no queues and cancels no queued run; a queued run that
+  starts after an interrupt gets its own interrupt request. Acknowledgements never prove
+  termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without
   launching a turn. It provides neither safe replay nor an execution fence.
 
-### Recorded execution coverage
-
-Exact observation must cover recorded executions, not only the current thread. The public schema limits `t3_thread_read.recentRuns` to 50 and its `afterPosition`
-cursor pages timeline items, not runs. For recorded executions outside that window the adapter calls `t3_thread_wait` with the exact `threadId`/`runId` and
-`timeoutMs: 0`, validates identity and status and never substitutes `resultRun` or the latest run. Saved ordinals are kept and an exact status read supplies no new
-source timestamp. Unsupported, unavailable or mismatched exact reads report **Incomplete observation coverage** and prevent closure.
-
-### Native delegation evidence
+### Launch provenance
 
 Factory-launched workers are top-level threads. A title is not ownership: recovery binds
 only when parentage, project, interaction mode, provider, model, options and one
 execution are all present. A missing or non-string parent or workspace withholds the search.
 A null workspace is the project checkout and matches a root-strategy launch; any other path
-must equal the Run's project root. Descendants
-a worker starts later are not report authorities. Native activity can prove an invocation
-was issued without proving parentage or an empty descendant set.
-Task fingerprints compare normalized intent, not JSON property order. Provider and model
-are observable; model options are not independently exposed by child evidence.
-
-Bounded descendant discovery retains safety obligations without automatically granting
-worker-report authority. An exact-parent `t3_thread_wait` with
-`untilDelegatedWorkSettled: true` supplies aggregate settlement only; it cannot clear queue
-or native-request gates. Peer availability and positive work references are
-environment-scoped. A native steer proves work on an existing execution, not a new launch.
-Missing, unknown or unavailable evidence stays unresolved; observation makes no model calls.
+must equal the Run's project root. Threads a worker starts later, including subagents, are
+neither report authorities nor Factory obligations; T3's delegated wait answer covers them.
+Observation makes no model calls.
 
 ## Projects and model options
 
@@ -266,11 +255,8 @@ returns guidance only. No rejection retries work.
 
 ### Worker reporting
 
-Factory-launched Block workers report for their Block from any turn of their thread. There is no Run conversation. Waiting and reply turns use the same worker, and a notification turn after delegated or background work may report too. Release still needs fresh activation-scoped provider/model proof as
-described in [Runner](runner.md#owned-workers). A worker may cancel or interrupt its own independently
-verified local subtasks before reporting; completed receipts must name the exact known task or thread, and cancellation never proves
-that work ended. Unknown, foreign, remote or incomplete command evidence holds release with an explicit worker problem.
-Unfinished native tool items hold only the current observation; their provisional output is never saved as command evidence.
+Factory-launched Block workers report for their Block from any turn of their thread. There is no Run conversation. Waiting and reply turns use the same worker, and a notification turn after delegated or background work may report too. Release waits only for the worker thread to be
+[finished](runner.md#worker-thread-completion); Factory does not inspect the commands, subtasks or model selection of the turns that produced the result.
 
 ### Block and Run reads
 

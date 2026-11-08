@@ -1,5 +1,4 @@
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
-import { delegateNativeWork } from "./native-simulation.ts";
 import {
   executionBlock,
   failScenarioExecution,
@@ -235,37 +234,16 @@ export async function seedScenarios(
     "Add a concise empty state to the Atlas project picker, including a hint to open an existing repository.",
   );
   const worker = executionBlock(working);
-  delegateNativeWork(context.t3, worker.threadId, worker.executionId, {
-    target: {
-      providerInstanceId: "codex-main",
-      model: "gpt-6.1-sol",
-      options: { reasoning: "high" },
-    },
-    mode: "async",
-    isolation: "shared",
-    clientRequestId: "demo-project-picker-child",
-    task: "Implement the empty state and return the result to the parent worker.",
-  });
-  delegateNativeWork(context.t3, worker.threadId, worker.executionId, {
-    target: {
-      providerInstanceId: "codex-main",
-      model: "gpt-6.1-sol",
-      options: { reasoning: "high" },
-    },
-    mode: "async",
-    isolation: "shared",
-    clientRequestId: "demo-project-picker-review",
-    task: "Review empty-state keyboard focus and accessible labels independently.",
-  });
-  await reconcileUntil(
-    context,
-    working.id,
-    (run) =>
-      run.blocks.some(
-        (block) =>
-          block.blockId === worker.blockId &&
-          block.engineStatus === "completed" &&
-          block.state === "working",
-      ) && run.threadBindings.filter((binding) => binding.role === "descendant").length === 2,
+  // Two subagents keep running after the worker's own turn ends.
+  context.t3.delegate(worker.threadId, worker.executionId);
+  context.t3.delegate(worker.threadId, worker.executionId);
+  await reconcileUntil(context, working.id, (run) =>
+    run.blocks.some(
+      (block) =>
+        block.blockId === worker.blockId &&
+        block.engineStatus === "completed" &&
+        block.state === "working" &&
+        block.problem === null,
+    ),
   );
 }

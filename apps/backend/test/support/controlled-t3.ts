@@ -16,12 +16,6 @@ import type {
 
 /** Independent external-engine lifetime; no SQL or Factory internals. */
 export class ControlledT3 implements T3Adapter {
-  readonly peers = new Map<string, ControlledT3>();
-  private peer(target: T3Endpoint): ControlledT3 {
-    const peer = this.peers.get(target.peerEnvironmentId!);
-    if (!peer || !peer.available || !peer.authorized) throw Error("Peer unavailable");
-    return peer;
-  }
   settleSupported = true;
   readonly settledThreads = new Set<string>();
   readonly settlements: { threadId: string }[] = [];
@@ -35,13 +29,7 @@ export class ControlledT3 implements T3Adapter {
     this.settledThreads.add(payload.threadId);
   }
   stopSupported = true;
-  readonly cancellations: { threadId: string; queuedRunId: string }[] = [];
-  async inspectStopSupport(
-    _target: T3Endpoint,
-    kind: "cancel" | "tree",
-  ): ReturnType<T3Adapter["inspectStopSupport"]> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).inspectStopSupport({ endpoint: _target.endpoint }, kind);
+  async inspectStopSupport(_target: T3Endpoint): ReturnType<T3Adapter["inspectStopSupport"]> {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     return {
       supported: this.stopSupported,
@@ -49,24 +37,12 @@ export class ControlledT3 implements T3Adapter {
       explanation: "Controlled Stop support",
     };
   }
-  async cancelQueued(
-    _target: T3Endpoint,
-    payload: { threadId: string; queuedRunId: string },
-  ): ReturnType<T3Adapter["cancelQueued"]> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).cancelQueued({ endpoint: _target.endpoint }, payload);
-    this.cancellations.push(payload);
-  }
-  readonly treeStops: { threadId: string; clientRequestId: string }[] = [];
-  beforeTreeStop?: () => Promise<void>;
-  async stopOwnedTree(
+  readonly threadStops: { threadId: string; clientRequestId: string }[] = [];
+  async stopThread(
     _target: T3Endpoint,
     payload: { threadId: string; clientRequestId: string },
-  ): ReturnType<T3Adapter["stopOwnedTree"]> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).stopOwnedTree({ endpoint: _target.endpoint }, payload);
-    await this.beforeTreeStop?.();
-    this.treeStops.push(payload);
+  ): ReturnType<T3Adapter["stopThread"]> {
+    this.threadStops.push(payload);
   }
   launchSupported = true;
   retryScope: string | null = "controlled-durable-server-1";
@@ -239,26 +215,13 @@ export class ControlledT3 implements T3Adapter {
   async readExecution(
     _target: T3Endpoint,
     threadId: string,
-    recorded: readonly import("../../src/adapters/t3.ts").RecordedExecution[] = [],
   ): ReturnType<T3Adapter["readExecution"]> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).readExecution({ endpoint: _target.endpoint }, threadId, recorded);
     if (!this.available || !this.authorized) throw Error("Unavailable");
-    const cover = (observation: import("../../src/adapters/t3.ts").ExecutionObservation) => {
-      const recentRuns = observation.recentRuns.slice(-50);
-      for (const saved of recorded) {
-        if (recentRuns.some((e) => e.runId === saved.runId)) continue;
-        const exact = observation.recentRuns.find((e) => e.runId === saved.runId);
-        if (!exact) throw Error("Incomplete observation coverage: recorded execution absent.");
-        recentRuns.push(exact);
-      }
-      return { ...observation, recentRuns };
-    };
     const observation = this.executionObservations.get(threadId) ?? this.executionObservation;
-    if (observation) return cover(observation);
+    if (observation) return observation;
     const accepted = [...this.launches.values()].find((x) => x.reference.threadId === threadId);
     if (!accepted) throw Error("Unknown thread");
-    return cover({
+    return {
       projectId: accepted.reference.projectId,
       threadId,
       latestRunId: accepted.reference.runId,
@@ -278,153 +241,30 @@ export class ControlledT3 implements T3Adapter {
             ordinal: n + 2,
           })),
       ],
-    });
-  }
-
-  queueNextCursor: number | null = null;
-  queuedRunIds: string[] = [];
-  async readQueue(_target: T3Endpoint, threadId: string): ReturnType<T3Adapter["readQueue"]> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).readQueue({ endpoint: _target.endpoint }, threadId);
-    if (!this.available || !this.authorized) throw Error("Unavailable");
-    return {
-      threadId,
-      queuedRunIds: this.queuedRunIds.length
-        ? [...this.queuedRunIds]
-        : [...this.sends.values()]
-            .filter((s) => s.payload.threadId === threadId && s.reference.status === "queued")
-            .map((s) => s.reference.runId),
-      nextCursor: this.queueNextCursor,
     };
   }
-  async readNativeRequests(
-    target: T3Endpoint,
-    threadId: string,
-  ): ReturnType<T3Adapter["readNativeRequests"]> {
-    if (target.peerEnvironmentId)
-      return this.peer(target).readNativeRequests({ endpoint: target.endpoint }, threadId);
-    const o = await this.readExecution(target, threadId);
-    return {
-      threadId: o.threadId,
-      projectId: o.projectId,
-      pendingRequestCount: o.pendingRequestCount,
-    };
-  }
-  readonly delegationActivities = new Map<
-    string,
-    import("../../src/adapters/delegation-activity.ts").DelegationActivity
-  >();
-  readonly childEvidence = new Map<
-    string,
-    import("../../src/adapters/coordination-evidence.ts").ChildEvidence
-  >();
-  readonly descendantEvidence = new Map<
-    string,
-    import("../../src/adapters/coordination-evidence.ts").DescendantEvidence
-  >();
+  /** T3's delegated-work answer per `[threadId, runId]`; unanswered runs are unknown. */
   readonly delegatedSettlements = new Map<
     string,
-    import("../../src/adapters/coordination-evidence.ts").DelegatedSettlement
+    import("../../src/adapters/delegated-settlement.ts").DelegatedSettlement
   >();
   async readDelegatedSettlement(
     _target: T3Endpoint,
     threadId: string,
     runId: string,
-  ): Promise<import("../../src/adapters/coordination-evidence.ts").DelegatedSettlement> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).readDelegatedSettlement(
-        { endpoint: _target.endpoint },
+  ): Promise<import("../../src/adapters/delegated-settlement.ts").DelegatedSettlement> {
+    if (!this.available || !this.authorized) throw Error("Unavailable");
+    return (
+      this.delegatedSettlements.get(JSON.stringify([threadId, runId])) ?? {
         threadId,
         runId,
-      );
-    if (!this.available || !this.authorized) throw Error("Unavailable");
-    const supplied = this.delegatedSettlements.get(JSON.stringify([threadId, runId]));
-    if (supplied) return supplied;
-    return {
-      threadId,
-      runId,
-      state: "unknown",
-      status: null,
-      resultRun: null,
-      queueCoverage: "unobserved",
-      nativeRequestCoverage: "unobserved",
-      problem: "Controlled delegated settlement has not been supplied.",
-    };
-  }
-  async readDescendants(
-    _target: T3Endpoint,
-    parentThreadId: string,
-  ): Promise<import("../../src/adapters/coordination-evidence.ts").DescendantEvidence> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).readDescendants({ endpoint: _target.endpoint }, parentThreadId);
-    if (!this.available || !this.authorized) throw Error("Unavailable");
-    const supplied = this.descendantEvidence.get(parentThreadId);
-    if (supplied) return supplied;
-    return {
-      parentThreadId,
-      descendants: [],
-      scanComplete: false,
-      coverage: "unknown",
-      problem: "Controlled descendant evidence has not been supplied.",
-    };
-  }
-  remoteObservations = new Map<
-    string,
-    import("../../src/adapters/remote-work.ts").RemoteWorkObservation
-  >();
-  async readRemoteWork(
-    _target: import("../../src/adapters/t3.ts").T3Endpoint,
-    remote: import("../../src/adapters/remote-work.ts").RemoteWorkTarget,
-  ) {
-    return (
-      this.remoteObservations.get(JSON.stringify([remote.environmentId, remote.threadId])) ?? {
-        ...remote,
-        available: false,
-        pendingRequestCount: null,
+        state: "unknown",
+        status: null,
+        problem: "Controlled delegated settlement has not been supplied.",
       }
     );
   }
-  async readChildEvidence(
-    _target: T3Endpoint,
-    target: import("../../src/adapters/coordination-evidence.ts").ChildEvidenceTarget,
-  ): Promise<import("../../src/adapters/coordination-evidence.ts").ChildEvidence> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).readChildEvidence({ endpoint: _target.endpoint }, target);
-    if (!this.available || !this.authorized) throw Error("Unavailable");
-    const supplied =
-      this.childEvidence.get(JSON.stringify([target.childThreadId, target.childRunId])) ??
-      this.childEvidence.get(target.childThreadId);
-    if (supplied) return supplied;
-    return {
-      target,
-      thread: null,
-      execution: null,
-      relationship: "unknown",
-      scopeMatches: false,
-      optionsCoverage: "unavailable",
-      problem: "Controlled child evidence has not been supplied.",
-    };
-  }
-  async readDelegationActivity(
-    _target: T3Endpoint,
-    threadId: string,
-  ): Promise<import("../../src/adapters/delegation-activity.ts").DelegationActivity> {
-    if (_target.peerEnvironmentId)
-      return this.peer(_target).readDelegationActivity({ endpoint: _target.endpoint }, threadId);
-    if (!this.available || !this.authorized) throw Error("Unavailable");
-    const supplied = this.delegationActivities.get(threadId);
-    if (supplied) return supplied;
-    return {
-      threadId,
-      projectId: "",
-      invocations: [],
-      complete: false,
-      problem: "Controlled native delegation activity has not been supplied.",
-    };
-  }
   reportSupported = true;
-  reportActivity?: import("../../src/adapters/t3.ts").ReportActivity;
-  readonly reportActivities = new Map<string, import("../../src/adapters/t3.ts").ReportActivity>();
   async inspectReportSupport(_target: T3Endpoint, driverKind?: string) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     return {
@@ -432,16 +272,6 @@ export class ControlledT3 implements T3Adapter {
         this.reportSupported && (driverKind === undefined || isReportingDriver(driverKind)),
       explanation: "Controlled public structured-report support",
     };
-  }
-  async readReportActivity(
-    target: T3Endpoint,
-    threadId: string,
-  ): Promise<import("../../src/adapters/t3.ts").ReportActivity> {
-    if (!this.available || !this.authorized) throw Error("Unavailable");
-    const observation = this.reportActivities.get(threadId) ?? this.reportActivity;
-    if (observation) return observation;
-    const execution = await this.readExecution(target, threadId);
-    return { threadId, projectId: execution.projectId, items: [], complete: true };
   }
   projects: T3Project[] = [];
   projectCreates = 0;

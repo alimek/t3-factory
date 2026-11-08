@@ -59,7 +59,6 @@ function activationStateLabel(run: RunDetail, activation: RunActivation) {
 }
 
 function Activation({ run, activation }: { run: RunDetail; activation: RunActivation }) {
-  const evidence = activation.evidence;
   const visit =
     run.activations
       .filter((a) => a.blockId === activation.blockId)
@@ -73,13 +72,8 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
         {activationStateLabel(run, activation)}
       </h3>
       {report && <RetainedResult run={run} report={report} />}
-      {!run.stopRequestedAt &&
-        activation.problem &&
-        activation.problem !== evidence?.holdReason && (
-          <p className="text-attention">{activation.problem}</p>
-        )}
-      {!run.stopRequestedAt && evidence?.holdReason && (
-        <p className="text-attention">Completion held: {evidence.holdReason}</p>
+      {!run.stopRequestedAt && activation.problem && (
+        <p className="text-attention">{activation.problem}</p>
       )}
       {run.threadBindings
         .filter((b) => b.blockId === activation.blockId)
@@ -93,57 +87,6 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
             )}
           </div>
         ))}
-      {run.remoteWork
-        .filter((w) => w.activationId === activation.id)
-        .map((work) => (
-          <section
-            aria-label="Remote work"
-            key={`${work.parentThreadId}:${work.sourceItemId}:${work.sourceExecutionId}:${work.environmentId}:${work.taskId}:${work.threadId}`}
-            className="flex flex-col gap-1 rounded border p-3"
-          >
-            <h4 className="font-semibold">Remote worker · {work.label}</h4>
-            <RemoteObservation work={work} closed={run.closedAt !== null} />
-            {work.threadId ? (
-              <a
-                className="text-link hover:underline"
-                href={`t3-thread://v2/${encodeURIComponent(work.environmentId)}/${encodeURIComponent(work.threadId)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open remote worker in T3
-              </a>
-            ) : (
-              <p>
-                Remote delegation acceptance is unknown. No conversation is confirmed; Factory will
-                not launch replacement work.
-              </p>
-            )}
-            <p>
-              Your T3 UI client must be connected to this peer. A server-side link alone is not
-              enough to open the conversation.
-            </p>
-          </section>
-        ))}
-      <details className="text-muted-foreground">
-        <summary className="cursor-pointer">Observation limits · {activation.coverage}</summary>
-        {evidence ? (
-          <div className="mt-2 flex flex-col gap-1">
-            <p>Observed {new Date(evidence.observedAt).toLocaleString()}</p>
-            <p>Worker designation: {evidence.designation ? "confirmed" : "unresolved"}</p>
-            <p>
-              Local lineage scan: {evidence.lineageScanComplete ? "complete" : "incomplete"} ·
-              lineage coverage: {evidence.lineageCoverage}
-            </p>
-            <p>Associated work aggregate: {evidence.aggregateState}</p>
-            {evidence.limitations.map((limit) => (
-              <p key={limit}>{limit}</p>
-            ))}
-            <p>Saved bounded observations do not prove live support or remote completeness.</p>
-          </div>
-        ) : (
-          <p>Associated work observations unavailable.</p>
-        )}
-      </details>
     </article>
   );
 }
@@ -195,32 +138,4 @@ function ResultDelivery({ run, reportId }: { run: RunDetail; reportId: string })
         </p>
       );
     });
-}
-
-function RemoteObservation({
-  work,
-  closed,
-}: {
-  work: RunDetail["remoteWork"][number];
-  closed: boolean;
-}) {
-  if (closed)
-    return <p>Historical remote reference. Stop was confirmed by the recorded closure evidence.</p>;
-  return (
-    <>
-      <p>
-        {work.threadId === null
-          ? "Remote delegation acceptance unknown"
-          : work.available
-            ? "Remote work observation unresolved"
-            : "Remote peer unavailable"}
-      </p>
-      {(work.pendingRequestCount ?? 0) > 0 && (
-        <p className="text-attention">
-          Needs input in T3 · last observed request remains unresolved
-        </p>
-      )}
-      <p>Fresh remote evidence is still required. The Run stays open.</p>
-    </>
-  );
 }

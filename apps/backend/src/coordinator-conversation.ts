@@ -4,6 +4,7 @@ import { acceptedTransition, type RuntimeReply, type RuntimeReport } from "./run
 import { newId } from "./ids.ts";
 import { now } from "./time.ts";
 import { settleCoordinatorReports } from "./coordinator-report.ts";
+import { settlePending } from "./runner-attention.ts";
 import type { ReportTarget } from "./runner-reports.ts";
 
 /** The latest waiting report is the Block's question; an identical one returns its acknowledgement. */
@@ -32,7 +33,16 @@ export function acceptCoordinatorWait(
       "waiting",
       "waiting",
     );
-    yield* sql`UPDATE run_blocks SET state='waiting',report_status='waiting' WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
+    yield* sql`UPDATE run_blocks SET state='waiting',report_status='waiting',problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
+    // Any accepted report from the Block recovers an earlier execution failure.
+    yield* settlePending(
+      sql,
+      runRow.id,
+      block.block_id,
+      "execution-failed",
+      "report-accepted",
+      time,
+    );
     yield* settleCoordinatorWaits(sql, runRow.id, block.block_id, time, true);
     yield* sql`INSERT INTO run_attention(id,run_id,block_id,execution_id,kind,source_key,appeared_at,message,binding_id) VALUES(${attentionId},${runRow.id},${block.block_id},${executionId},'conversation-waiting',${"attention:" + attentionId},${time},${report.message!},${binding?.id ?? null})`;
     yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${block.execution_id},${binding?.id ?? null},'attention-appeared',${"attention:" + attentionId},${attentionId},${time})`;

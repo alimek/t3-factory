@@ -218,7 +218,6 @@ export interface FactoryOperations {
     runId: string,
     input: { attentionId: string; requestId: string; message: string },
   ): Promise<Result<RunDetail>>;
-  recoverRunCoordinator(runId: string, sourceExecutionId: string): Promise<Result<RunDetail>>;
   requestReport(attentionId: string): Promise<Result<RunDetail>>;
   stopRun(id: string): Promise<Result<RunDetail>>;
   getRunCreationPolicy(): Promise<Result<RunCreationPolicy>>;
@@ -511,45 +510,12 @@ export interface TaskSummary {
 export interface RunCreationPolicy {
   readonly ready: true;
 }
-export interface CoordinatorEvidence {
-  readonly version: 1;
-  readonly observedAt: string;
-  readonly designation: boolean;
-  readonly lineageCoverage: "incomplete" | "unknown";
-  readonly lineageScanComplete: boolean;
-  readonly aggregateState: "settled" | "pending" | "unknown";
-  readonly holdReason: string | null;
-  readonly release: boolean;
-  readonly limitations: readonly string[];
-  readonly members: readonly {
-    threadId: string;
-    role: "coordinator" | "worker" | "descendant";
-    executionIds: readonly string[];
-  }[];
-}
-/** Safety evidence only; remote work never becomes a local reporting binding. */
-export interface RemoteWork {
-  readonly activationId: string;
-  readonly sourceItemId: string;
-  readonly sourceExecutionId: string;
-  readonly parentThreadId: string;
-  readonly sourceEnvironmentId: string;
-  readonly taskId: string | null;
-  readonly environmentId: string;
-  readonly threadId: string | null;
-  readonly label: string;
-  readonly status: string;
-  readonly available: boolean;
-  readonly pendingRequestCount: number | null;
-}
 export interface RunActivation {
   readonly id: string;
   readonly blockId: string;
   readonly cause: string;
   readonly phase: "delegating" | "waiting-worker" | "assessing" | "reported" | "finished";
-  readonly coverage: "unverified" | "local-bounded";
   readonly problem: string | null;
-  readonly evidence: CoordinatorEvidence | null;
   readonly createdAt: string;
   readonly delegation: {
     readonly requestKey: string;
@@ -597,10 +563,10 @@ export interface RunBlock {
   /** An unresolved Factory launch for this Block. Title search has not bound a worker. */
   readonly recovery: "pending" | null;
 }
-/** The bounded observed frontier that justified permanent local closure. */
+/** Each worker thread as observed when Factory recorded permanent local closure. */
 export interface RunClosure {
+  /** Closed Runs from before Block workers may also record their Run conversation. */
   readonly rootFrontier?: readonly Omit<RunClosure["frontier"][number], "blockId">[];
-  readonly coordination?: readonly CoordinatorEvidence[];
   readonly outcome: "finished" | "stopped";
   readonly generation: number;
   readonly confirmedAt: string;
@@ -612,7 +578,6 @@ export interface RunClosure {
     readonly workspaceRoot: string;
     readonly projectObservedAt: string;
     readonly executionObservedAt: string;
-    readonly queueObservedAt: string;
     readonly nativeObservedAt: string;
     readonly activeRunId: string | null;
     readonly latestRunId: string | null;
@@ -622,8 +587,6 @@ export interface RunClosure {
       readonly ordinal: number | null;
       readonly sourceAt: string | null;
     }[];
-    readonly queuedRunIds: readonly string[];
-    readonly queueNextCursor: number | null;
     readonly pendingRequestCount: number;
   }[];
 }
@@ -660,15 +623,6 @@ export interface RunNavigationEntry {
   readonly attention: RunAttentionSummary;
   readonly presentation: RunPresentation;
 }
-/** Read-only action candidates from durable ledgers. A click still requires fresh backend proof. */
-export interface CoordinationAction {
-  readonly sourceExecutionId: string;
-  readonly threadId: string;
-  readonly state: string;
-  readonly executionId: string | null;
-  readonly canRequest: boolean;
-  readonly reason: string;
-}
 export interface RunCoordinationActions {
   readonly questionReplies: readonly {
     readonly attentionId: string;
@@ -677,9 +631,6 @@ export interface RunCoordinationActions {
     readonly state: string;
     readonly executionId: string | null;
   }[];
-  readonly controlRecoveries: readonly (CoordinationAction & {
-    readonly sourceStatus: string | null;
-  })[];
 }
 export interface RunDetail extends RunSummary {
   /** Durable sequence used in worker titles. Assigned when the Run is accepted. */
@@ -713,7 +664,6 @@ export interface RunDetail extends RunSummary {
   readonly input: string;
   readonly definitions: RunDefinitions;
   readonly activations: readonly RunActivation[];
-  readonly remoteWork: readonly RemoteWork[];
   readonly threadBindings: readonly RunThreadBinding[];
   readonly gateOpen: boolean;
   readonly generation: number;

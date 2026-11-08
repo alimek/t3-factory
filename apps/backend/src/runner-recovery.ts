@@ -1,5 +1,3 @@
-import { collectCoordination } from "./coordinator-evidence.ts";
-import type { BlockRow } from "./runner-types.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
@@ -10,8 +8,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter, SendPayload } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
-import { gatherClosureAttempt } from "./runner-closure.ts";
 import { fingerprint, runTarget } from "./runner-utils.ts";
+import { readWorkerThread } from "./worker-thread.ts";
 import { failure } from "./result.ts";
 import { now } from "./time.ts";
 export function recoveryRows(sql: SqlClient.SqlClient, id: string) {
@@ -42,48 +40,14 @@ export function recoveryRows(sql: SqlClient.SqlClient, id: string) {
     }));
   });
 }
-/** Fresh external evidence is separate from the local transaction/generation check. */
-export function recoveryFrontier(
-  database: RunnerDatabase,
-  t3: T3Adapter,
-  runRow: RunRow,
-  blockId: string,
-  threadId: string,
-  executionId: string,
-  requireIdleFrontier = true,
-) {
-  return Effect.gen(function* () {
-    if (requireIdleFrontier) {
-      const [block] = yield* database.run(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${blockId}`;
-        }),
-      );
-      if (!block || block.thread_id !== threadId) return false;
-      const coordination = yield* collectCoordination(database, t3, runRow, block);
-      if (!coordination.result.evidence.release) return false;
-    }
-    const attempt = yield* gatherClosureAttempt(
-      {
-        runId: runRow.id,
-        generation: runRow.generation,
-        gateOpen: true,
-        contextId: runRow.context_id,
-      },
-      t3,
-      { ...runTarget(runRow), blocks: [{ blockId, threadId, recorded: [{ runId: executionId }] }] },
-    );
-    const f = attempt.frontier[0]!;
+/** Request report assesses a finished worker thread whose latest run is the reportless one. */
+function recoveryReady(t3: T3Adapter, run: RunRow, threadId: string, executionId: string) {
+  return Effect.tryPromise(async () => {
+    const worker = await readWorkerThread(t3, run, threadId);
     return (
-      f.pendingRequestCount === 0 &&
-      f.executions.some((e) => e.executionId === executionId && e.status === "completed") &&
-      (!requireIdleFrontier ||
-        (f.latestRunId === executionId &&
-          f.activeRunId === null &&
-          f.queueNextCursor === null &&
-          f.queuedRunIds.length === 0 &&
-          f.executions.every((e) => e.status === "completed")))
+      worker.finished &&
+      worker.latest?.runId === executionId &&
+      worker.latest.status === "completed"
     );
   });
 }
@@ -128,11 +92,11 @@ export function openRunnerRecovery(
         Effect.gen(function* () {
           if (
             (yield* liveContextId()) !== current.context_id ||
-            !(yield* recoveryFrontier(database, t3, current, a.blockId, threadId, a.executionId))
+            !(yield* recoveryReady(t3, current, threadId, a.executionId))
           )
             return failure(
               "conflict",
-              "Recovery requires the original completed execution, no newer or queued work, no pending native requests, and verified completion of delegated/background work and continuations.",
+              "Request report needs the worker thread finished in T3 with the reportless run as its latest run.",
             );
           return { ok: true as const, value: undefined };
         }),
@@ -140,7 +104,7 @@ export function openRunnerRecovery(
           Effect.succeed(
             failure(
               "conflict",
-              "Fresh execution, queue and native-request evidence is unavailable. Refresh before requesting a report.",
+              "The worker thread cannot be read from T3. Refresh before requesting a report.",
             ),
           ),
       );
@@ -221,14 +185,7 @@ export function recoveryDispatchGeneration(
     );
     if (
       !recovery ||
-      !(yield* recoveryFrontier(
-        database,
-        t3,
-        current,
-        intent.block_id,
-        target.threadId,
-        recovery.source_execution_id,
-      ))
+      !(yield* recoveryReady(t3, current, target.threadId, recovery.source_execution_id))
     ) {
       yield* database.problem(
         intent,

@@ -5,7 +5,7 @@ import { newId } from "./ids.ts";
 import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import { attention } from "./runner-attention.ts";
+import { attention, settlePending } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { BlockRow, ReportRunRow, RunnerLifecycle } from "./runner-types.ts";
@@ -105,12 +105,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
     return Effect.gen(function* () {
       const id = yield* newId,
         time = yield* now;
-      const state =
-        block.problem === "execution-failed"
-          ? block.state
-          : block.engine_status !== "completed"
-            ? "working"
-            : report.status;
+      const state = block.engine_status !== "completed" ? "working" : report.status;
       const reply = acceptedTransition(
         { code: "ACCEPTED", reportId: id, acceptedAt: time },
         report.status,
@@ -128,8 +123,15 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         accepted_at: time,
       });
       yield* sql`UPDATE run_executions SET report_status=${report.status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
-      // An explicit report cannot erase an engine failure.
-      yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
+      yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
+      yield* settlePending(
+        sql,
+        runRow.id,
+        block.block_id,
+        "execution-failed",
+        "report-accepted",
+        time,
+      );
       if (block.execution_id)
         yield* attention(
           sql,

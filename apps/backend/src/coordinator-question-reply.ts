@@ -51,7 +51,7 @@ export function openCoordinatorQuestionReplies(
             block_id: string;
             binding_id: string;
             thread_id: string;
-          }>`SELECT w.activation_id,a.block_id,b.id AS binding_id,b.thread_id FROM coordinator_waits w JOIN run_attention a ON a.id=w.attention_id JOIN run_thread_bindings b ON b.id=w.target_binding_id WHERE a.id=${input.attentionId} AND a.run_id=${runId} AND a.settled_at IS NULL AND (b.role='coordinator' OR (b.role='worker' AND EXISTS(SELECT 1 FROM run_worker_activations x WHERE x.activation_id=w.activation_id AND x.binding_id=b.id)))`;
+          }>`SELECT w.activation_id,a.block_id,b.id AS binding_id,b.thread_id FROM coordinator_waits w JOIN run_attention a ON a.id=w.attention_id JOIN run_thread_bindings b ON b.id=w.target_binding_id WHERE a.id=${input.attentionId} AND a.run_id=${runId} AND a.settled_at IS NULL AND b.role='worker' AND b.block_id=a.block_id`;
           if (!question)
             return failure(
               "conflict",

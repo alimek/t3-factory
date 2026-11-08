@@ -1,6 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
 import { completedWorkerRecovery } from "./support/run-worker-recovery.ts";
-import { workerWithDroppedDescendant } from "./support/run-worker-evidence.ts";
 import {
   workerStart,
   directWorker,
@@ -15,7 +14,10 @@ import {
   launchedBlockId,
   pendingReview,
   workerMessage,
-  interruptRunConversation,
+  interruptWorker,
+  finishWorker,
+  settleThread,
+  startWorkerTurn,
 } from "./support/run-worker.ts";
 import { prepared } from "./support/prepared-runner.ts";
 
@@ -176,6 +178,127 @@ it("a worker that fails after reporting cannot release downstream work", async (
   expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
   expect(f.t3.sends.size).toBe(0);
 });
+it("an accepted result stays held while T3 has not settled the worker's delegated work", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  settleThread(f.t3, "execution-1", "running", "pending");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(run.value.blocks[0]?.state).toBe("working");
+  expect(f.t3.launches.size).toBe(1);
+});
+it("an accepted result stays held while the worker thread has a pending native request", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  const thread = f.t3.executionObservations.get("thread-1")!;
+  f.t3.executionObservations.set("thread-1", { ...thread, pendingRequestCount: 1 });
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+it("an accepted result stays held while the worker thread still has an active run", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  settleThread(f.t3, "execution-1");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.reports[0]?.completionEligibleAt).toBeNull();
+  expect(f.t3.launches.size).toBe(1);
+});
+it("a worker waiting on unsettled background work stays working without a missing-report Problem", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  finishWorker(f);
+  settleThread(f.t3, "execution-1", "completed", "pending");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ state: "working", problem: null });
+  expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
+it("a reportless turn resumed by a notification shows a missing report once T3 settles the thread", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  finishWorker(f);
+  settleThread(f.t3, "execution-1", "completed", "pending");
+  assert((await f.f.reconcileRuns()).ok);
+  startWorkerTurn(f, "notification-execution", 2);
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.blocks[0]).toMatchObject({ state: "error", problem: "missing-report" });
+  expect(
+    run.value.attention.filter((a) => a.kind === "missing-report" && !a.settledAt),
+  ).toMatchObject([{ executionId: "notification-execution" }]);
+});
+it("a failed worker run shows an execution-failed Problem that settles when a later run of the thread completes", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  finishWorker(f, "failed");
+  assert((await f.f.reconcileRuns()).ok);
+  startWorkerTurn(f, "retry-execution", 2);
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention.find((a) => a.kind === "execution-failed")).toMatchObject({
+    executionId: "execution-1",
+    settledAt: expect.any(String),
+    settlementReason: "completed",
+  });
+});
+it("a failed worker run's Problem settles when the Block reports", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  finishWorker(f, "interrupted");
+  assert((await f.f.reconcileRuns()).ok);
+
+  // Act
+  const result = await f.f.runtime.submit({
+    arguments: { blockId: f.blockId, to: "waiting", message: "Retry after the outage?" },
+  });
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention.find((a) => a.kind === "execution-failed")).toMatchObject({
+    settledAt: expect.any(String),
+    settlementReason: "report-accepted",
+  });
+  expect(run.value.blocks[0]).toMatchObject({ state: "waiting", problem: null });
+});
 it("a worker's waiting report is a question in its own worker thread", async (c) => {
   // Arrange
   const f = await directWorker(c);
@@ -268,21 +391,6 @@ it("restart preserves the worker binding without replaying accepted work", async
   expect(f.t3.launches.size).toBe(1);
   expect(f.t3.sends.size).toBe(0);
 });
-it("Stop keeps a saved running descendant after it leaves the worker native activity", async (c) => {
-  // Arrange
-  const f = await workerWithDroppedDescendant(c);
-  assert((await f.f.stopRun(f.runId)).ok);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.closedAt).toBeNull();
-  expect(f.t3.treeStops.map((stop) => stop.threadId)).toContain("thread-3");
-});
-
 it("Stop interrupts a root-strategy worker whose thread has no worktree", async (c) => {
   // Arrange
   const f = await directWorker(c);
@@ -296,10 +404,10 @@ it("Stop interrupts a root-strategy worker whose thread has no worktree", async 
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
   expect(run.value.closedAt).toBeNull();
-  expect(f.t3.treeStops.map((stop) => stop.threadId)).toContain("thread-1");
+  expect(f.t3.threadStops.map((stop) => stop.threadId)).toContain("thread-1");
 });
 
-it("Stop retains the primary and worker tree until native completion is confirmed", async (c) => {
+it("Stop interrupts the worker and stays open until its thread is finished", async (c) => {
   // Arrange
   const f = await directWorker(c);
 
@@ -314,7 +422,7 @@ it("Stop retains the primary and worker tree until native completion is confirme
   assert(result.ok);
   expect(result.value.gateOpen).toBe(false);
   expect(result.value.closedAt).toBeNull();
-  expect(f.t3.treeStops.map((s) => s.threadId)).toContain("thread-1");
+  expect(f.t3.threadStops.map((s) => s.threadId)).toContain("thread-1");
   expect(f.t3.launches.size).toBe(1);
 });
 it("a worker resumed by the user's reply reports its finished result and settles its question", async (c) => {
@@ -451,7 +559,7 @@ it("completed direct worker recovery settles the original missing report only af
   expect(run.value.reports[0]?.completionEligibleAt).not.toBeNull();
 });
 
-it("a reported worker closes the Run as finished once its worker tree is freshly quiet", async (c) => {
+it("a reported worker closes the Run as finished once its worker thread is finished", async (c) => {
   // Arrange
   const f = await finishedWorker(c);
 
@@ -462,11 +570,26 @@ it("a reported worker closes the Run as finished once its worker tree is freshly
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
   expect(run.value.outcome).toBe("finished");
-  expect(run.value.closure?.rootFrontier ?? []).toStrictEqual([]);
-  expect(run.value.closure?.frontier.map((member) => member.threadId)).toContain("thread-1");
+  expect(run.value.closure?.frontier.map((member) => member.threadId)).toStrictEqual(["thread-1"]);
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
   const tasks = await f.f.listTasks(f.project.id);
   assert(tasks.ok);
   expect(tasks.value[0]?.activeRunId).toBeNull();
+});
+
+it("native thread settlement being unsupported does not delay Finished closure", async (c) => {
+  // Arrange
+  const f = await finishedWorker(c);
+  f.t3.settleSupported = false;
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.outcome).toBe("finished");
+  expect(f.t3.settlements).toStrictEqual([]);
 });
 
 it("a completed worker keeps its Task active while worker settlement is unknown", async (c) => {
@@ -487,11 +610,11 @@ it("a completed worker keeps its Task active while worker settlement is unknown"
   expect(tasks.value[0]?.activeRunId).toBe(f.runId);
 });
 
-it("Stop cancels undispatched handoffs and settles the Run as stopped once its tree is terminal", async (c) => {
+it("Stop cancels undispatched handoffs and settles the Run as stopped once its worker thread is finished", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
   assert((await f.f.stopRun(f.runId)).ok);
-  interruptRunConversation(f.t3);
+  interruptWorker(f.t3);
   assert((await f.f.reconcileRuns()).ok);
 
   // Act

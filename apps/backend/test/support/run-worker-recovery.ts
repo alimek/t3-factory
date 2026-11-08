@@ -1,7 +1,7 @@
 import { assert, type TestContext } from "@effect/vitest";
-import { missingWorkerReport, workerFinal, directWorker } from "./run-worker.ts";
+import { missingWorkerReport, workerFinal, directWorker, finishWorker } from "./run-worker.ts";
 
-export async function workerRecoveryTurn(
+async function workerRecoveryTurn(
   f: Awaited<ReturnType<typeof directWorker>>,
   attentionId: string,
 ) {
@@ -30,21 +30,7 @@ export async function completedWorkerRecovery(c: TestContext) {
     ...sent,
     reference: { ...sent.reference, status: "completed" },
   });
-  const active = f.t3.executionObservations.get("thread-1")!;
-  f.t3.executionObservations.set("thread-1", {
-    ...active,
-    activeRunId: null,
-    recentRuns: active.recentRuns.map((r) => ({ ...r, status: "completed" })),
-  });
-  f.t3.delegatedSettlements.set(JSON.stringify(["thread-1", executionId]), {
-    threadId: "thread-1",
-    runId: executionId,
-    state: "settled",
-    status: "completed",
-    resultRun: { runId: executionId, status: "completed" },
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
-  });
+  finishWorker(f);
   await f.f.reconcileRuns();
   return { ...f, executionId };
 }

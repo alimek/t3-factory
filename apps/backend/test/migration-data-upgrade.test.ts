@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import { capturedDefinitions, releasedUpgradeData } from "./support/released-upgrade.ts";
+import { currentClosedRun, releasedUpgradeData } from "./support/released-upgrade.ts";
 
 it("upgrading v0.2.0 keeps clients, definitions and closed Run history and removes the open Run", async (c) => {
   // Arrange
@@ -29,12 +29,9 @@ it("upgrading v0.2.0 keeps clients, definitions and closed Run history and remov
   const retiredAgent = await factory.getAgent(fixture.retired.agent.id);
   assert(!retiredAgent.ok);
   expect(retiredAgent.error.code).toBe("not_found");
-  const { snapshot: closedSnapshot, ...closed } = fixture.closed;
-  // Report keys belonged to per-turn report authority and are no longer part of Run detail.
-  const reports = closed.reports.map(({ key: _key, ...report }) => report);
   expect(await factory.getRun(fixture.closed.id)).toStrictEqual({
     ok: true,
-    value: { ...closed, reports, definitions: capturedDefinitions(closedSnapshot) },
+    value: currentClosedRun(fixture.closed),
   });
   const active = await factory.getRun(fixture.active.id);
   assert(!active.ok);

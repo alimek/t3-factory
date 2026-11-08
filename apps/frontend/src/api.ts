@@ -97,10 +97,6 @@ export const api = {
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/woke-seen`, { method: "POST" }),
   renameRun: (id: string, input: { title: string }) =>
     patch<RunDetail>(`/api/runs/${encodeURIComponent(id)}`, input),
-  recoverRunCoordinator: (id: string, sourceExecutionId: string) =>
-    post<RunDetail>(`/api/runs/${encodeURIComponent(id)}/recover-coordinator`, {
-      sourceExecutionId,
-    }),
   requestReport: (id: string) =>
     request<RunDetail>(`/api/attention/${id}/request-report`, { method: "POST" }),
   answerHumanOccurrence: (id: string, input: { exitId?: string; message?: string }) =>

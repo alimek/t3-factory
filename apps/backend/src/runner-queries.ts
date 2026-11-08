@@ -28,7 +28,6 @@ type ClosureRow = {
   generation: number;
   confirmed_at: string;
   frontier_json: string;
-  coordination_json: string | null;
   root_frontier_json: string | null;
 };
 
@@ -158,13 +157,6 @@ function runClosure(closure: ClosureRow | undefined): RunDetail["closure"] {
               rootFrontier: JSON.parse(closure.root_frontier_json) as NonNullable<
                 NonNullable<RunDetail["closure"]>["rootFrontier"]
               >,
-            }
-          : {}),
-        ...(closure.coordination_json
-          ? {
-              coordination: JSON.parse(
-                closure.coordination_json,
-              ) as import("@t3-factory/contracts").CoordinatorEvidence[],
             }
           : {}),
         generation: closure.generation,

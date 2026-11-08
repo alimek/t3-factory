@@ -1,6 +1,5 @@
-import { releaseCoordinatorSource } from "./coordinator-release.ts";
+import { releaseResult } from "./result-release.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
-import { coordinatorGate } from "./runner-coordinator-gate.ts";
 import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { IntentRow, RunRow, StoredTarget } from "./runner-types.ts";
@@ -37,13 +36,8 @@ export function prepareCoordinatorHandoff(
         sql`SELECT id FROM operation_intents WHERE run_id=${run.id} AND block_id=${intent.block_id} AND kind='launch' AND state NOT IN ('acknowledged','cancelled')`,
     );
     if (pending.length) return undefined;
-    if (prior && !(yield* coordinatorGate(database, t3, current, intent.block_id)))
-      return undefined;
-    if (
-      prior &&
-      !(yield* releaseCoordinatorSource(database, t3, current, intent.block_id, prior.id))
-    )
-      return undefined;
+    // A revisit waits until the target's previous activation has a released result.
+    if (prior && !(yield* releaseResult(database, t3, current, prior.id))) return undefined;
     return yield* database.mutate(run.id, (sql) =>
       Effect.gen(function* () {
         if (!(yield* database.runHeldUnderContext(sql, current, true))) return undefined;
@@ -98,7 +92,7 @@ export function prepareCoordinatorHandoff(
   });
 }
 
-/** Human answers are durable authority; Agent reports still require source release 033. */
+/** Human answers are durable authority; Agent reports still require their result's release. */
 function sourceReleased(
   database: RunnerDatabase,
   t3: T3Adapter,
@@ -119,15 +113,6 @@ function sourceReleased(
           activation_id: string;
         }>`SELECT activation_id FROM runtime_reports WHERE id=${intent.report_id}`,
     );
-    return (
-      !!source &&
-      (yield* releaseCoordinatorSource(
-        database,
-        t3,
-        current,
-        intent.source_block_id!,
-        source.activation_id,
-      ))
-    );
+    return !!source && (yield* releaseResult(database, t3, current, source.activation_id));
   });
 }

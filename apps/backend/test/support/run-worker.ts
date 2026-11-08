@@ -48,18 +48,11 @@ export async function workerStart(
   return { ...fixture, flow: flow.value };
 }
 
-/** Quiet top-level evidence for the Factory-launched worker, before that launch is observed. */
+/** The Factory-launched worker's running first turn, before that launch is observed. */
 function seedFactoryWorker(
   t3: ControlledT3,
   project: { projectId: string; workspaceRoot: string },
 ) {
-  t3.descendantEvidence.set(WORKER_THREAD, {
-    parentThreadId: WORKER_THREAD,
-    descendants: [],
-    scanComplete: true,
-    coverage: "incomplete",
-    problem: "Bounded fixture scan",
-  });
   t3.executionObservations.set(WORKER_THREAD, {
     threadId: WORKER_THREAD,
     projectId: project.projectId,
@@ -109,6 +102,8 @@ export const workerFinal = (blockId: string) => ({
     message: "Implemented the requested result.",
   },
 });
+/** The worker's runs end with `status` and T3 answers that the latest run's delegated and
+ * background work have settled. */
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {
   const prior = f.t3.executionObservations.get(WORKER_THREAD)!;
   f.t3.executionObservations.set(WORKER_THREAD, {
@@ -116,14 +111,21 @@ export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status
     activeRunId: null,
     recentRuns: prior.recentRuns.map((r) => ({ ...r, status })),
   });
-  f.t3.delegatedSettlements.set(JSON.stringify([WORKER_THREAD, WORKER_EXECUTION]), {
+  settleThread(f.t3, prior.latestRunId ?? WORKER_EXECUTION, status);
+}
+
+/** T3's `t3_thread_wait` answer for the worker's `runId`. */
+export function settleThread(
+  t3: ControlledT3,
+  runId: string,
+  status = "completed",
+  state: "settled" | "pending" = "settled",
+) {
+  t3.delegatedSettlements.set(JSON.stringify([WORKER_THREAD, runId]), {
     threadId: WORKER_THREAD,
-    runId: WORKER_EXECUTION,
-    state: "settled",
+    runId,
+    state,
     status,
-    resultRun: { runId: WORKER_EXECUTION, status },
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
   });
 }
 export async function reportedWorker(
@@ -137,11 +139,10 @@ export async function reportedWorker(
   return f;
 }
 
-/** A reported single worker whose own tree is freshly quiet. */
+/** A reported single worker whose thread is finished in T3. */
 export async function finishedWorker(c: TestContext) {
   const f = await reportedWorker(c, "completed", "");
   f.t3.engineStatus = "completed";
-  settledAggregate(f.t3, WORKER_THREAD, WORKER_EXECUTION, "completed");
   return f;
 }
 
@@ -210,7 +211,8 @@ export async function followupReplyWorker(c: TestContext) {
   return f;
 }
 
-function startWorkerTurn(
+/** A later run of the worker thread starts, as after a reply or a notification. */
+export function startWorkerTurn(
   f: Awaited<ReturnType<typeof directWorker>>,
   executionId: string,
   ordinal: number,
@@ -237,20 +239,8 @@ export async function revisitReportingWorker(c: TestContext) {
   return { ...f, workerExecutionId: runId };
 }
 
-function settledAggregate(t3: ControlledT3, threadId: string, runId: string, status: string) {
-  t3.delegatedSettlements.set(JSON.stringify([threadId, runId]), {
-    threadId,
-    runId,
-    state: "settled",
-    status,
-    resultRun: { runId, status },
-    queueCoverage: "unobserved",
-    nativeRequestCoverage: "unobserved",
-  });
-}
-
-/** The launched worker is interrupted and its fully scanned tree has no further members. */
-export function interruptRunConversation(t3: ControlledT3) {
+/** The launched worker is interrupted and T3 settles it. */
+export function interruptWorker(t3: ControlledT3) {
   t3.engineStatus = "interrupted";
   const observation = t3.executionObservations.get(WORKER_THREAD);
   if (observation)
@@ -260,13 +250,5 @@ export function interruptRunConversation(t3: ControlledT3) {
       latestRunId: observation.latestRunId ?? WORKER_EXECUTION,
       recentRuns: observation.recentRuns.map((run) => ({ ...run, status: "interrupted" })),
     });
-  if (!t3.descendantEvidence.has(WORKER_THREAD))
-    t3.descendantEvidence.set(WORKER_THREAD, {
-      parentThreadId: WORKER_THREAD,
-      descendants: [],
-      scanComplete: true,
-      coverage: "incomplete",
-      problem: "Bounded fixture scan",
-    });
-  settledAggregate(t3, WORKER_THREAD, WORKER_EXECUTION, "interrupted");
+  settleThread(t3, observation?.latestRunId ?? WORKER_EXECUTION, "interrupted");
 }

@@ -115,7 +115,6 @@ export const makeFactoryService = (
       answerHumanOccurrence: (id, input) => runner.answerHumanOccurrence(id, input),
       listAttention: () => runner.listAttention(),
       replyCoordinatorQuestion: (id, input) => runner.replyCoordinatorQuestion(id, input),
-      recoverRunCoordinator: (id, executionId) => runner.recoverRunCoordinator(id, executionId),
       requestReport: (id) => runner.requestReport(id),
       stopRun: (id) => runner.stopRun(id),
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),

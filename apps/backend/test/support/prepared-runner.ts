@@ -65,13 +65,6 @@ export async function prepared(c: TestContext) {
     },
   });
   assert(flow.ok);
-  // No descendant work is recorded for the worker until Factory observes some.
-  t3.delegationActivities.set("thread-1", {
-    threadId: "thread-1",
-    projectId: p.value.projectId,
-    complete: true,
-    invocations: [],
-  });
   return {
     h,
     f,

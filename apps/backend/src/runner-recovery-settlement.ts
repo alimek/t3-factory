@@ -4,7 +4,7 @@ import type { RunDetail } from "@t3-factory/contracts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { recoverOperation } from "./runner-effects.ts";
-import { recoveryFrontier } from "./runner-recovery.ts";
+import { readWorkerThread } from "./worker-thread.ts";
 import type { RunnerLifecycle } from "./runner-types.ts";
 import { now } from "./time.ts";
 
@@ -89,24 +89,11 @@ export function settleRecoveries(
       );
       const block = detail.value.blocks.find((b) => b.blockId === recovery.blockId);
       if (!chain || !block?.threadId) continue;
-      const proven = yield* recoverOperation(
-        Effect.all(
-          chain.executionIds.map((executionId) =>
-            recoveryFrontier(
-              database,
-              t3,
-              current,
-              recovery.blockId,
-              block.threadId!,
-              executionId,
-              false,
-            ),
-          ),
-          { concurrency: "unbounded" },
-        ),
+      const worker = yield* recoverOperation(
+        Effect.tryPromise(() => readWorkerThread(t3, current, block.threadId!)),
         () => Effect.succeed(null),
       );
-      if (proven?.every(Boolean))
+      if (worker?.finished)
         settlements.push({
           attentionId: recovery.attentionId,
           blockId: recovery.blockId,

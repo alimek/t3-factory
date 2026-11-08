@@ -1,12 +1,5 @@
-import { openRootSettlement } from "./run-root-settlement.ts";
-import { rootUnavailable } from "./run-root-ledger.ts";
-import { rootFrontier } from "./run-root-frontier.ts";
-
 import { openCoordinatorQuestionReplies } from "./coordinator-question-reply.ts";
-import { openRunControlRecovery } from "./run-control-recovery.ts";
 import { openBlockTools } from "./runner-block-tools.ts";
-import { openRootCommands } from "./run-coordinator-commands.ts";
-import { openRunCoordinator } from "./run-coordinator.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
 import { openRunPresentation } from "./run-presentation.ts";
@@ -43,8 +36,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const scope = yield* Effect.scope;
   const database = openRunnerDatabase(sql, owner);
   const { row } = database;
-  const rootCommands = openRootCommands(database, t3);
-  const runCoordinator = openRunCoordinator(database, t3);
   const { getRun, listTasks, updateTask, listAttention } = openRunnerQueries(database);
   let closed = false;
   const starts = Semaphore.makeUnsafe(1);
@@ -60,7 +51,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     fiber.addObserver(() => detached.delete(fiber));
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
-  const rootRecovery = openRunControlRecovery(database, t3);
   const { consumeBlockUpdate } = openRunnerReports(database, lifecycle);
   const { observe } = openRunnerObservation(database, t3);
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
@@ -68,7 +58,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
   const { stopRun, reconcileStop, stopObservationsUnavailable, attemptSuccessfulClosure } =
     openRunnerStop(database, t3, lifecycle, liveContextId);
-  const { settleRoot } = openRootSettlement(database, t3, lifecycle, liveContextId);
 
   function drive(
     id: string,
@@ -89,27 +78,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       const runRow = yield* row(id);
       if (!runRow || runRow.closed_at) return;
       const contextId = yield* liveContextId();
-      yield* driveRootWork(runRow, contextId, phase);
       yield* driveBlockWork(runRow, contextId, phase);
-    });
-  }
-  function driveRootWork(
-    rootRun: RunRow,
-    contextId: string | null,
-    phase: "observe" | "dispatch" | "both",
-  ) {
-    return Effect.gen(function* () {
-      if (phase !== "observe") yield* runCoordinator.dispatch(rootRun, contextId);
-      if (contextId === rootRun.context_id)
-        yield* recoverOperation(rootRecovery.reconcile(rootRun), () => Effect.void);
-      if (phase !== "dispatch" && contextId === rootRun.context_id) {
-        yield* recoverOperation(rootFrontier(database, t3, rootRun).pipe(Effect.asVoid), () =>
-          rootUnavailable(database, rootRun.id),
-        );
-        yield* rootCommands.observe(rootRun);
-      }
-      if (phase !== "observe" && contextId === rootRun.context_id)
-        yield* rootCommands.dispatch(rootRun);
     });
   }
   function driveBlockWork(
@@ -148,7 +117,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           if (closed) return failure("conflict", "Factory is shutting down.");
           const ids = yield* sql<{
             id: string;
-          }>`SELECT id FROM runs WHERE closed_at IS NULL OR EXISTS(SELECT 1 FROM run_root_settlements s WHERE s.run_id=runs.id AND s.attempted_at IS NULL AND s.retired_at IS NULL) ORDER BY started_at,id`;
+          }>`SELECT id FROM runs WHERE closed_at IS NULL ORDER BY started_at,id`;
           // Restart observes every Run before dispatching any pending intent.
           yield* Effect.forEach(ids, (run) => drive(run.id, "observe"), {
             concurrency: "unbounded",
@@ -159,7 +128,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* Effect.forEach(ids, (run) => attemptSuccessfulClosure(run.id), {
             concurrency: "unbounded",
           });
-          yield* Effect.forEach(ids, (run) => settleRoot(run.id), { concurrency: "unbounded" });
           return { ok: true as const, value: undefined };
         }),
       )
@@ -183,7 +151,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   yield* Effect.addFinalizer(close);
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
-    recoverRunCoordinator: rootRecovery.recoverRunCoordinator,
     readFactoryTool: openBlockTools(database, getRun),
     answerHumanOccurrence,
     replyCoordinatorQuestion: openCoordinatorQuestionReplies(database, lifecycle),

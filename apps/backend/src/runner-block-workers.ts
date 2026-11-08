@@ -307,7 +307,6 @@ function bindLaunchedWorker(
       if (!binding || !activation) return yield* Effect.fail(Error("Worker binding is incomplete"));
       yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,binding_id,activation_id,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.threadId},${reference.runId},${binding.id},${activation.id},${reference.status}) ON CONFLICT DO NOTHING`;
       yield* sql`UPDATE run_blocks SET thread_id=${reference.threadId},execution_id=COALESCE(execution_id,${reference.runId}),state='working',link=${link},engine_status=${reference.status},problem=NULL WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
-      yield* sql`INSERT INTO run_worker_activations(activation_id,binding_id,initial_execution_id,parent_thread_id) VALUES(${activation.id},${binding.id},${reference.runId},${reference.threadId}) ON CONFLICT DO NOTHING`;
       yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
       yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.runId},'launch-acknowledged',${"ack:" + intent.id},${intent.id},${time},${reference.status})`;

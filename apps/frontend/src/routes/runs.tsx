@@ -1,4 +1,4 @@
-import { RootWork, RunCoordinationControls } from "../components/run-coordination-controls.tsx";
+import { RootWork } from "../components/run-coordination-controls.tsx";
 import {
   BindingLink,
   bindingRole,
@@ -614,7 +614,6 @@ function BlockDetails({
           observationUnavailable={observationUnavailable}
           onUpdated={onUpdated}
         />
-        <RunCoordinationControls run={run} blockId={block.id} onUpdated={onUpdated} />
         <CoordinatorActivations run={run} blockId={block.id} />
         <DetailSection title="Execution">
           <dl className="flex flex-col gap-2">
@@ -724,7 +723,6 @@ function RunContext({
         onUpdated={observed.setRun}
       />
       <RootWork run={run} />
-      <RunCoordinationControls run={run} onUpdated={observed.setRun} />
       <CoordinatorActivations run={run} />
       <PendingIntents run={run} />
       {run.closure ? (
@@ -835,7 +833,7 @@ function ClosureEvidence({
         {elapsedSeconds(run.startedAt, closure.confirmedAt)} s
       </p>
       <p className={railTextClass}>
-        Recorded observed frontier: activated work was checked before local closure. T3 reads are
+        Recorded worker threads: each was finished in T3 when Factory recorded closure. T3 reads are
         separate; direct work can arrive between those reads and closure. This Run stays permanently
         closed and its timeline ends here, even if its T3 conversations continue. Completion does
         not certify result quality or a shared reviewed repository revision.
@@ -863,10 +861,6 @@ function ClosureEvidence({
               </li>
             ))}
           </ul>
-          <p>
-            Queue: {frontier.queuedRunIds.length ? frontier.queuedRunIds.join(", ") : "empty"} ·
-            observed {new Date(frontier.queueObservedAt).toLocaleString()}
-          </p>
           <p>
             Native requests: {frontier.pendingRequestCount} · observed{" "}
             {new Date(frontier.nativeObservedAt).toLocaleString()}

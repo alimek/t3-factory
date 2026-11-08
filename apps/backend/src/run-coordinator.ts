@@ -1,9 +1,6 @@
 import type { AgentExecutionSettings } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
-import type { RunRow } from "./runner-types.ts";
 import { threadHref } from "./thread-link.ts";
 
 type RootRow = {
@@ -53,15 +50,12 @@ export function readRunCoordinator(sql: SqlClient.SqlClient, runId: string) {
   });
 }
 
-/** A stored coordinator row is not launched or resumed. Block workers launch directly. */
-export function openRunCoordinator(database: RunnerDatabase, t3: T3Adapter) {
-  void database;
-  void t3;
-  return {
-    dispatch(run: RunRow, contextId: string | null) {
-      void run;
-      void contextId;
-      return Effect.void;
-    },
-  };
+/** Historical Run-conversation executions Factory owned, for closed-Run history. */
+export function ownedRootControlExecutions(sql: SqlClient.SqlClient, runId: string) {
+  return sql<{
+    runId: string;
+  }>`SELECT execution_id AS runId FROM run_coordinators WHERE run_id=${runId} AND state='acknowledged' AND execution_id IS NOT NULL
+    UNION SELECT parent_execution_id FROM run_coordinator_commands WHERE run_id=${runId} AND state IN ('issued','accepted') AND parent_execution_id IS NOT NULL
+    UNION SELECT source_execution_id FROM run_control_recoveries WHERE run_id=${runId}
+    UNION SELECT json_extract(acknowledgement_json,'$.runId') FROM run_control_recoveries recovery JOIN run_coordinators root USING(run_id) WHERE recovery.run_id=${runId} AND recovery.state='acknowledged' AND recovery.thread_id=root.thread_id AND json_extract(acknowledgement_json,'$.threadId')=root.thread_id AND json_extract(acknowledgement_json,'$.runId') IS NOT NULL`;
 }

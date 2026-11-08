@@ -13,11 +13,36 @@ type Value<K extends keyof Factory> = Factory[K] extends (...args: never[]) => i
   : never;
 /** v0.2.0 returned a Run's definitions as the snapshot it stored at Start. */
 type ReleasedSnapshot = { flow: Value<"getFlow">; agents: Value<"getAgent">[] };
-type RunReport = Value<"getRun">["reports"][number];
-/** v0.2.0 also returned each report's key, retired with per-turn report authority. */
-type ReleasedRun = Omit<Value<"getRun">, "definitions" | "reports"> & {
+type CurrentRun = Value<"getRun">;
+type Closure = NonNullable<CurrentRun["closure"]>;
+/** A closure frontier member as v0.2.0 recorded it, with queue coverage Factory no longer reads. */
+type ReleasedMember = Closure["frontier"][number] & {
+  queuedRunIds: readonly string[];
+  queueNextCursor: number | null;
+  queueObservedAt: string;
+};
+/** v0.2.0 also returned report keys (retired per-turn report authority) and Factory's own
+ * completion evidence: activation coverage, remote work, closure coordination and queue
+ * coverage, and Run-conversation control recoveries. */
+type ReleasedRun = Omit<
+  CurrentRun,
+  "definitions" | "reports" | "activations" | "closure" | "coordinationActions"
+> & {
   snapshot: ReleasedSnapshot;
-  reports: readonly (RunReport & { key: string })[];
+  reports: readonly (CurrentRun["reports"][number] & { key: string })[];
+  activations: readonly (CurrentRun["activations"][number] & {
+    coverage: string;
+    evidence: unknown;
+  })[];
+  remoteWork: readonly unknown[];
+  closure:
+    | (Omit<Closure, "frontier" | "rootFrontier"> & {
+        coordination?: unknown;
+        frontier: readonly ReleasedMember[];
+        rootFrontier?: readonly Omit<ReleasedMember, "blockId">[];
+      })
+    | null;
+  coordinationActions: CurrentRun["coordinationActions"] & { controlRecoveries: unknown };
 };
 interface ReleasedCapture {
   t3: Record<string, unknown>;
@@ -38,13 +63,61 @@ interface ReleasedCapture {
  * The definitions a Run read from revisions must show for a released snapshot: the same saved
  * content, without the readiness and settings availability that were live checks at Start.
  */
-export function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
+function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
   const { readiness: _readiness, ...savedFlow } = flow;
   return {
     flow: savedFlow,
     agents: agents.map(({ settingsStatus: _settingsStatus, ...saved }) => saved),
   };
 }
+
+type QueueFields = "queuedRunIds" | "queueNextCursor" | "queueObservedAt";
+function currentMember<M extends Pick<ReleasedMember, QueueFields>>(
+  member: M,
+): Omit<M, QueueFields> {
+  const { queuedRunIds: _ids, queueNextCursor: _cursor, queueObservedAt: _at, ...current } = member;
+  return current;
+}
+
+function currentClosure(closure: NonNullable<ReleasedRun["closure"]>): Closure {
+  const { coordination: _coordination, frontier, rootFrontier, ...recorded } = closure;
+  return {
+    ...recorded,
+    ...(rootFrontier ? { rootFrontier: rootFrontier.map(currentMember) } : {}),
+    frontier: frontier.map(currentMember),
+  };
+}
+
+/** The released closed Run as current Run detail shows it: the same history without the
+ * retired report keys and completion evidence. */
+export function currentClosedRun(released: ReleasedRun): CurrentRun {
+  const { snapshot, remoteWork: _remote, closure, coordinationActions, ...run } = released;
+  const { controlRecoveries: _controls, ...actions } = coordinationActions;
+  return {
+    ...run,
+    definitions: capturedDefinitions(snapshot),
+    reports: run.reports.map(({ key: _key, ...report }) => report),
+    activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),
+    coordinationActions: actions,
+    closure: closure && currentClosure(closure),
+  };
+}
+
+/** Captured simulator fields for retired per-turn report correlation and Factory's own
+ * descendant, queue, peer and remote completion model. */
+const RETIRED_ADAPTER_FIELDS = new Set([
+  "runtimeActivity",
+  "peers",
+  "cancellations",
+  "treeStops",
+  "queueNextCursor",
+  "queuedRunIds",
+  "delegationActivities",
+  "childEvidence",
+  "descendantEvidence",
+  "remoteObservations",
+  "reportActivities",
+]);
 
 /** The one released-version capture, restored without rewriting its durable state. */
 export async function releasedUpgradeData(c: TestContext) {
@@ -55,8 +128,7 @@ export async function releasedUpgradeData(c: TestContext) {
   );
   const t3 = new ControlledT3();
   for (const [key, value] of Object.entries(observations)) {
-    // The capture's native call activity served retired per-turn report correlation.
-    if (key === "runtimeActivity") continue;
+    if (RETIRED_ADAPTER_FIELDS.has(key)) continue;
     assert(Object.hasOwn(t3, key), `Unknown captured adapter field: ${key}`);
     const restored =
       value && typeof value === "object" && "map" in value && Array.isArray(value.map)

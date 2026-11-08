@@ -140,20 +140,6 @@ function runResponseRoutes(factory: Factory): readonly ApiRoute[] {
     },
     {
       method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/recover-coordinator$/,
-      body: standardBody,
-      handle: fromCall((id, input: unknown) => {
-        const source =
-          input && typeof input === "object" && "sourceExecutionId" in input
-            ? input.sourceExecutionId
-            : null;
-        return typeof source === "string" && source.trim()
-          ? factory.recoverRunCoordinator(id, source)
-          : Promise.resolve(failure("validation", "An exact sourceExecutionId is required."));
-      }),
-    },
-    {
-      method: "POST",
       path: /^\/api\/attention\/([^/]+)\/request-report$/,
       handle: fromId((id) => factory.requestReport(id)),
     },

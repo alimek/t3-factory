@@ -6,12 +6,6 @@ export const fingerprint = (content: string) => createHash("sha256").update(cont
 export const verified = <A>(value: A): Checked<A> => ({ ok: true, value });
 export const unverified = (problem: string): Checked<never> => ({ ok: false, problem });
 export const rejected = (code: string) => ({ ok: false as const, reply: { code } });
-export const isTerminal = (status: string) =>
-  ["completed", "failed", "cancelled", "interrupted", "rolled_back"].includes(status);
-export const coverageProblem = (error: unknown) =>
-  error instanceof Error && error.message.startsWith("Incomplete observation coverage")
-    ? error.message
-    : null;
 export const intactPayload = <
   I extends {
     payload_json: string | null;
