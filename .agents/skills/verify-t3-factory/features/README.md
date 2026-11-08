@@ -14,7 +14,7 @@ use older/newer peers owned and cleaned up by the same fixture process.
 | Readiness | `tests/smoke.e2e.ts` | Built UI and seeded Flows load without model authentication |
 | Visual evidence | `tests/screenshots.e2e.ts`, `tests/run-evidence.e2e.ts` | Main surfaces and a saved Flow after reload; persisted, native-format simulated identities in Needs input and a worker held by running subagents staying working without a Problem |
 | Whole-Flow Start | `tests/flow-readiness.e2e.ts` | Every blocked Agent, including later branches; connection-only errors link to T3 settings instead of Agents; no Run on rejection, draft retained, reporting repair, accepted Start and accepted result as separate evidence |
-| Canvas viewport | `tests/canvas-viewport.e2e.ts` | Authoring refits on resize; an arranged Run preserves manual pan/zoom through resize and polling |
+| Canvas viewport | `tests/canvas-viewport.e2e.ts` | Authoring refits on resize; an arranged Run preserves manual pan/zoom through resize and live updates |
 | Flow authoring | `tests/flow-authoring.e2e.ts` | Connections, loop/fan-out, readiness and durable saving |
 | Settings and shortcuts | `tests/keyboard-shortcuts.e2e.ts` | Palette selection and Settings preserving the composer draft |
 | Agent reporting setup | `tests/agent-reporting.e2e.ts` | Settings warning and per-Agent diagnostics before Start, repair through the host setup screen and refreshed status; unused providers do not raise a warning |

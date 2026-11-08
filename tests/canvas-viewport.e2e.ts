@@ -1,5 +1,6 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
+import { workerEvent } from "./support/worker.ts";
 import { findRun } from "./support/run-history.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
@@ -24,14 +25,15 @@ test("resizing the Flow editor refits a manually zoomed view", async ({ app, scr
   await app.screenshot("flow-refitted-on-resize");
 });
 
-test("a fitted Run preserves manual pan and zoom through resize and status polling", async ({
+test("a fitted Run preserves manual pan and zoom through resize and live updates", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
   await browser.setViewport({ width: 1600, height: 1000 });
-  const run = await findRun(app.baseUrl, "Demo · Working · Improve the project picker");
+  await workerEvent(app.baseUrl, "prepare");
+  const run = await findRun(app.baseUrl, "UI worker · Working · Improve the project picker");
   await app.open(`/runs/${run.id}`);
   const canvas = screen.getByRole("region", "Execution canvas");
   await screen.getByRole("button", "Auto-arrange", { exact: true }).tap();
@@ -42,15 +44,16 @@ test("a fitted Run preserves manual pan and zoom through resize and status polli
   const layer = browser.locator('[aria-label="Execution canvas"] > div[style]');
   const transform = await layer.getAttribute("style");
   await app.screenshot("run-manual-view");
-  const poll = browser.waitForResponse(`**/api/runs/${run.id}`);
 
   // Act
   await browser.setViewport({ width: 1800, height: 1000 });
-  await poll;
-  await browser.waitForResponse(`**/api/runs/${run.id}`);
+  await workerEvent(app.baseUrl, "working");
 
   // Assert
+  await expect(
+    screen.getByText("Two subagents are still checking the empty state.", { exact: true }).first(),
+  ).toBeVisible();
   await expect(canvas).toHaveAttribute("data-zoom", zoom!);
   await expect(layer).toHaveAttribute("style", transform!);
-  await app.screenshot("run-view-preserved-after-resize-and-poll");
+  await app.screenshot("run-view-preserved-after-resize-and-live-update");
 });

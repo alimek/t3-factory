@@ -108,7 +108,6 @@ export const api = {
   getRunCreationPolicy: () => request<RunCreationPolicy>("/api/run-creation-policy"),
   archiveRun: (id: string) =>
     request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
-  getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   listRuns: (projectId: string) =>
     request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),
   updateTask: (id: string, input: { title: string }) =>

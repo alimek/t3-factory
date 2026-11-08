@@ -41,7 +41,8 @@ import { sectionLabelClass } from "../components/page.tsx";
 import { useConnectionState } from "../connection-state.tsx";
 import { exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
-import { usePolling } from "../use-polling.ts";
+import { useLiveRun } from "../live/run.ts";
+import { useLiveDelivery } from "../transport.ts";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -59,46 +60,57 @@ function elapsedSeconds(from: string, to: string) {
 
 type CurrentFlowRevision = { readonly revision: number } | "missing";
 
-/** Polls the Run with its project and whether its captured Flow revision is still current. */
+/** Run detail is live; descriptive catalogs are read once for this screen entry. */
 function useRunObservation(id: string) {
-  const [run, setRun] = useState<RunDetail>();
-  const [error, setError] = useState("");
-  const [project, setProject] = useState<FactoryProject>();
-  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const { value: run, error: scopeError, synchronized } = useLiveRun(id);
+  const delivery = useLiveDelivery();
+  const [catalog, setCatalog] = useState<readonly FactoryProject[]>();
   const [definition, setDefinition] = useState<CurrentFlowRevision>();
-  usePolling({
-    intervalMs: 1500,
-    onPoll: useCallback(
-      (isActive) =>
-        api
-          .getRun(id)
-          .then(async (runDetail) => {
-            if (!isActive()) return;
-            setRun(runDetail);
-            setError("");
-            const [catalog, flowDefinition] = await Promise.all([
-              api.listProjects(),
-              api.getFlow(runDetail.flowId).then(
-                (flow) => ({ revision: flow.revision }) satisfies CurrentFlowRevision,
-                (error: unknown) =>
-                  error instanceof ApiError && error.detail.code === "not_found"
-                    ? ("missing" as const)
-                    : undefined,
-              ),
-            ]);
-            if (!isActive()) return;
-            setProject(catalog.projects.find((item) => item.id === runDetail.task.projectId));
-            setProjectsLoaded(true);
-            // A transient Flow read failure keeps the last known state instead of claiming removal.
-            if (flowDefinition) setDefinition(flowDefinition);
-          })
-          .catch(() => {
-            if (isActive()) setError("Observations unavailable. Saved history is retained.");
-          }),
-      [id],
-    ),
-  });
-  return { run, setRun, error, project, projectsLoaded, definition };
+  const flowId = run?.flowId;
+  useEffect(() => {
+    let active = true;
+    setCatalog(undefined);
+    void api.listProjects().then(
+      (catalog) => {
+        if (active) setCatalog(catalog.projects);
+      },
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [id]);
+  useEffect(() => {
+    let active = true;
+    setDefinition(undefined);
+    if (flowId)
+      void api.getFlow(flowId).then(
+        (flow) => {
+          if (active) setDefinition({ revision: flow.revision });
+        },
+        (error: unknown) => {
+          if (active && error instanceof ApiError && error.detail.code === "not_found")
+            setDefinition("missing");
+        },
+      );
+    return () => {
+      active = false;
+    };
+  }, [id, flowId]);
+  const unavailable = !!scopeError || !synchronized || delivery !== "current";
+  const error =
+    scopeError?.message ??
+    ((run && unavailable) || delivery === "offline"
+      ? "Observations unavailable. Saved history is retained."
+      : "");
+  return {
+    run,
+    error,
+    unavailable,
+    project: catalog?.find((item) => item.id === run?.task.projectId),
+    projectsLoaded: catalog !== undefined,
+    definition,
+  };
 }
 
 type RunObservation = ReturnType<typeof useRunObservation>;
@@ -178,7 +190,7 @@ export function RunScreen({ id }: { id: string }) {
               <AlertDescription>{error || seenError}</AlertDescription>
             </Alert>
           )}
-          <p className="p-6 text-sm text-muted-foreground">Loading Run…</p>
+          {!error && <p className="p-6 text-sm text-muted-foreground">Loading Run…</p>}
         </>
       )}
     </CanvasLayout>
@@ -204,7 +216,7 @@ function RunDetailView({
 }) {
   const graphBlock = run.definitions.flow.graph.blocks.find((block) => block.id === selected);
   const recorded = run.blocks.find((block) => block.blockId === selected);
-  const unavailable = !!observed.error;
+  const unavailable = observed.unavailable;
   return (
     <>
       <RunTopBar
@@ -229,17 +241,12 @@ function RunDetailView({
                 block={graphBlock}
                 observationUnavailable={unavailable}
                 onClose={() => onSelect(null)}
-                onUpdated={observed.setRun}
               />
             )}
           </div>
           {!contextOpen && !selected && run.attention.some((item) => !item.settledAt) && (
             <div className="max-h-60 shrink-0 overflow-auto border-t px-4 py-3">
-              <RunAttentionDetails
-                run={run}
-                observationUnavailable={unavailable}
-                onUpdated={observed.setRun}
-              />
+              <RunAttentionDetails run={run} observationUnavailable={unavailable} />
             </div>
           )}
           <RunTimeline run={run} selectedBlockId={selected} />
@@ -315,7 +322,7 @@ function RunTopBar({
   const unavailable = projectIsUnavailable(project, observed.projectsLoaded);
   const [archiving, setArchiving] = useState(false);
   const stale =
-    run.lifecycle === "active" && observationText(run, !!observed.error).startsWith("Not live");
+    run.lifecycle === "active" && observationText(run, observed.unavailable).startsWith("Not live");
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-4 pl-5">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
@@ -345,12 +352,7 @@ function RunTopBar({
             <Archive aria-hidden />
             Archive Run
           </Button>
-          <ArchiveRunDialog
-            run={run}
-            open={archiving}
-            onOpenChange={setArchiving}
-            onArchived={() => void api.getRun(run.id).then(observed.setRun, () => undefined)}
-          />
+          <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />
         </>
       )}
       {stale && <span className="text-2xs font-medium text-attention">Last known</span>}
@@ -462,7 +464,7 @@ function CanvasOverlay({
     <>
       <div className="flex flex-wrap items-center gap-2">
         <RevisionBadge run={run} note={revisionNote(run, observed.definition)} />
-        <ObservationBadge run={run} unavailable={!!observed.error} />
+        <ObservationBadge run={run} unavailable={observed.unavailable} />
       </div>
       <RunConversationNotice coordinator={run.runCoordinator} />
       {observed.error && (
@@ -549,13 +551,11 @@ function BlockDetails({
   block,
   observationUnavailable,
   onClose,
-  onUpdated,
 }: {
   run: RunDetail;
   block: FlowBlock;
   observationUnavailable: boolean;
   onClose: () => void;
-  onUpdated: (run: RunDetail) => void;
 }) {
   const recorded = run.blocks.find((item) => item.blockId === block.id);
   const panel = useRef<HTMLElement>(null);
@@ -597,7 +597,6 @@ function BlockDetails({
           run={run}
           blockId={block.id}
           observationUnavailable={observationUnavailable}
-          onUpdated={onUpdated}
         />
         {recorded.state === "working" && recorded.workingMessage && (
           <DetailSection title="Working report">
@@ -610,7 +609,6 @@ function BlockDetails({
                 blockId={block.id}
                 executionId={recorded.executionId}
                 recovery={pendingRecovery(run, recorded)}
-                onUpdated={onUpdated}
               />
             </div>
           </DetailSection>
@@ -722,11 +720,7 @@ function RunContext({
       aria-label="Run context"
       className="flex w-80 shrink-0 flex-col gap-6 overflow-auto border-l bg-background px-5 py-5"
     >
-      <RunAttentionDetails
-        run={run}
-        observationUnavailable={observationUnavailable}
-        onUpdated={observed.setRun}
-      />
+      <RunAttentionDetails run={run} observationUnavailable={observationUnavailable} />
       <RootWork run={run} />
       <CoordinatorActivations run={run} />
       <PendingIntents run={run} />

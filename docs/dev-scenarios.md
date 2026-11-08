@@ -78,6 +78,7 @@ active-list behavior.
   Agent to try removal (an Agent referenced by a saved Flow cannot be removed), and search and select Flows in the Run composer. Unsaved drafts survive cancelled navigation. For Auto-arrange, overlap
   blocks in the build/review/decision or parallel-review Flow, arrange, save and reload; working, Human-wait and correction Runs exercise local arrangement without editing the captured Flow revision. On both canvases
   ordinary scroll pans while pinch or **Mod**+wheel zooms at the pointer (20%–200%) and **+**/**−** zoom around the center; synthetic-event tests cover both, and real trackpad calibration is a manual check.
+- **Live Run detail.** Open a Working Run and keep its canvas panned and zoomed while a report or observation arrives: the opened Run updates through its live scope and preserves the viewport and selection. Project descriptions and the current Flow revision load on entry; reopen the Run to refresh that comparison. Controlled fixture coverage is in the canvas viewport journey; it requires the backend Run subscription.
 - **Captured Flow revision.** Open **Demo · Working · Improve the project picker**: the canvas badge reads **Flow revision**
   with no note. Edit and save its Flow in Studio, then return: the badge adds **Flow edited since** and the canvas and block
   exits still show the captured revision. Remove that Flow and return: the badge reads **Flow removed since** and the Run

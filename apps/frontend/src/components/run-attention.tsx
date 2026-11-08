@@ -106,19 +106,13 @@ type AttentionDetailsProps = {
   run: RunDetail;
   blockId?: string;
   observationUnavailable?: boolean;
-  onUpdated: (run: RunDetail) => void;
 };
 
 export function RunAttentionDetails(props: AttentionDetailsProps) {
   return <AttentionDetails key={JSON.stringify([props.run.id, props.blockId])} {...props} />;
 }
 
-function AttentionDetails({
-  run,
-  blockId,
-  observationUnavailable = false,
-  onUpdated,
-}: AttentionDetailsProps) {
+function AttentionDetails({ run, blockId, observationUnavailable = false }: AttentionDetailsProps) {
   const items = run.attention.filter((item) => blockId === undefined || item.blockId === blockId);
   const [tab, setTab] = useState<"pending" | "settled">("pending");
   if (!items.length) return null;
@@ -157,7 +151,6 @@ function AttentionDetails({
         run={run}
         pending={tab === "pending"}
         observationUnavailable={observationUnavailable}
-        onUpdated={onUpdated}
       />
       <AttentionGroup
         presentation="problem"
@@ -165,7 +158,6 @@ function AttentionDetails({
         run={run}
         pending={tab === "pending"}
         observationUnavailable={observationUnavailable}
-        onUpdated={onUpdated}
       />
     </section>
   );
@@ -177,14 +169,12 @@ function AttentionGroup({
   run,
   pending,
   observationUnavailable,
-  onUpdated,
 }: {
   presentation: "needs-input" | "problem";
   items: readonly RunAttention[];
   run: RunDetail;
   pending: boolean;
   observationUnavailable: boolean;
-  onUpdated: (run: RunDetail) => void;
 }) {
   if (!items.length) return null;
   return (
@@ -199,7 +189,6 @@ function AttentionGroup({
             run={run}
             item={item}
             observationUnavailable={observationUnavailable}
-            onUpdated={onUpdated}
           />
         ) : (
           <SettledMatter key={item.id} run={run} item={item} />
@@ -213,12 +202,10 @@ function PendingMatter({
   run,
   item,
   observationUnavailable,
-  onUpdated,
 }: {
   run: RunDetail;
   item: RunAttention;
   observationUnavailable: boolean;
-  onUpdated: (run: RunDetail) => void;
 }) {
   const presentation = attentionPresentation(item.kind);
   const binding = run.threadBindings.find((b) => b.id === item.bindingId);
@@ -258,7 +245,6 @@ function PendingMatter({
           blockId={item.blockId}
           executionId={item.executionId}
           recovery={run.recoveries.find((r) => r.attentionId === item.id)}
-          onUpdated={onUpdated}
         />
       )}
       {binding && (
@@ -276,7 +262,7 @@ function PendingMatter({
         </dl>
       )}
       <ObservationLine freshness={item.freshness} unavailable={observationUnavailable} />
-      {item.kind === "human" && <PendingHuman run={run} item={item} onUpdated={onUpdated} />}
+      {item.kind === "human" && <PendingHuman run={run} item={item} />}
       {item.kind !== "human" && item.link && <OpenInT3 href={item.link} />}
     </article>
   );
@@ -328,15 +314,7 @@ function SettledMatter({ run, item }: { run: RunDetail; item: RunAttention }) {
   );
 }
 
-function PendingHuman({
-  run,
-  item,
-  onUpdated,
-}: {
-  run: RunDetail;
-  item: RunAttention;
-  onUpdated: (run: RunDetail) => void;
-}) {
+function PendingHuman({ run, item }: { run: RunDetail; item: RunAttention }) {
   const occurrence = run.humanOccurrences.find((entry) => entry.id === item.occurrenceId);
   const block = run.definitions.flow.graph.blocks.find((entry) => entry.id === item.blockId);
   if (!block || !occurrence || occurrence.state !== "pending")
@@ -347,7 +325,6 @@ function PendingHuman({
       block={block}
       occurrence={occurrence}
       link={item.link}
-      onAnswered={onUpdated}
     />
   );
 }
@@ -367,13 +344,11 @@ function HumanResponseForm({
   block,
   occurrence,
   link,
-  onAnswered,
 }: {
   blockName: string;
   block: FlowBlock;
   occurrence: HumanOccurrence;
   link: string | null;
-  onAnswered: (detail: RunDetail) => void;
 }) {
   const [exitId, setExitId] = useState("");
   const [message, setMessage] = useState("");
@@ -388,9 +363,7 @@ function HumanResponseForm({
     setBusy(true);
     setError("");
     try {
-      onAnswered(
-        await api.answerHumanOccurrence(occurrence.id, answerInput(selected?.id, message)),
-      );
+      await api.answerHumanOccurrence(occurrence.id, answerInput(selected?.id, message));
       setMessage("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not submit this answer.");
@@ -505,13 +478,11 @@ export function RequestReport({
   blockId,
   executionId,
   recovery,
-  onUpdated,
 }: {
   run: RunDetail;
   blockId: string;
   executionId: string | null;
   recovery: RunDetail["recoveries"][number] | undefined;
-  onUpdated: (run: RunDetail) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -539,7 +510,7 @@ export function RequestReport({
     setBusy(true);
     setError("");
     try {
-      onUpdated(await api.requestReport(run.id, blockId));
+      await api.requestReport(run.id, blockId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not request report.");
     } finally {
