@@ -1,4 +1,4 @@
-import { beforeEach, test } from "@e2e-dev/web";
+import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
 import { matchingSidebarTitles } from "./support/sidebar.ts";
@@ -11,14 +11,9 @@ import {
   openKeyboardSettings,
   shortcutMod,
 } from "./support/keyboard-shortcuts.ts";
-import { workerEvent } from "./support/worker.ts";
 
 const modShiftE = `${shortcutMod}+Shift+E`;
 const modSlash = `${shortcutMod}+/`;
-
-beforeEach(async ({ app }) => {
-  await workerEvent(app.baseUrl, "prepare");
-});
 
 test("palette Enter opens the selected Flow", async ({ app, screen, browser }) => {
   // Arrange
@@ -80,7 +75,7 @@ test("Mod+, opens connection Settings without losing the composer draft", async 
 test("the fake desktop bridge enables Mod+N for New Run", async ({ app, screen, browser }) => {
   // Arrange
   await installDesktopBridge(browser);
-  const openRun = await findRun(app.baseUrl, "UI worker · Working · Improve the project picker");
+  const openRun = await findRun(app.baseUrl, "Demo · Working · Improve the project picker");
   await app.open(`/runs/${openRun.id}`);
   await expectFactoryConnected(screen);
 
@@ -121,7 +116,7 @@ test("desktop Mod+1 opens the first search-filtered visible sidebar row", async 
   // Arrange
   await installDesktopBridge(browser);
   await browser.setViewport({ width: 1440, height: 1100 });
-  const target = await findRun(app.baseUrl, "UI worker · Parallel review from one prompt");
+  const target = await findRun(app.baseUrl, "Demo · Parallel review from one prompt");
   const query = target.title;
   const matches = await matchingSidebarTitles(app.baseUrl, query);
   expect(matches[0]).toBe(target.title);
@@ -144,7 +139,7 @@ test("Settle from an editable field on open Run detail while Mod+ shortcuts stay
   // Arrange
   // Spec #77 names the Run composer; open Run detail has no composer, so focus stays in the Human answer field.
   await installDesktopBridge(browser);
-  const found = await findRun(app.baseUrl, "UI worker · Waiting for your review");
+  const found = await findRun(app.baseUrl, "Demo · Waiting for your review");
   await app.open(`/runs/${found.id}`);
   await expectFactoryConnected(screen);
   await fillHumanReviewChanges(screen, "Keyboard shortcut settle probe");
@@ -162,7 +157,7 @@ test("Settle from an editable field on open Run detail while Mod+ shortcuts stay
 test("Settle is ignored while Settings is open", async ({ app, screen, browser }) => {
   // Arrange
   await installDesktopBridge(browser);
-  const title = "UI worker · Two reviewers working in parallel";
+  const title = "Demo · Two reviewers working in parallel";
   const active = await findRun(app.baseUrl, title);
   await app.open(`/runs/${active.id}`);
   await expectFactoryConnected(screen);
@@ -185,7 +180,7 @@ test("Mod+Backspace opens the existing Archive confirmation for the open Run", a
 }) => {
   // Arrange
   await installDesktopBridge(browser);
-  const title = "UI worker · Parallel review from one prompt";
+  const title = "Demo · Parallel review from one prompt";
   const found = await findRun(app.baseUrl, title);
   await app.open(`/runs/${found.id}`);
   await expectFactoryConnected(screen);

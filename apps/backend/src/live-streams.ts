@@ -1,6 +1,7 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
 import {
   runEntityKeys,
@@ -25,6 +26,8 @@ export interface LiveStreams {
 }
 
 type Read<A> = Effect.Effect<Result<A>, unknown>;
+
+const rereadRetry = "1 second";
 
 /**
  * Registers before the snapshot read, so a commit racing the snapshot marks the scope dirty.
@@ -60,7 +63,15 @@ function watch<A, M>(
           yield* dirty.await;
           // Closed before the read: a hint arriving during the read schedules another pass.
           dirty.closeUnsafe();
-          const value = yield* current;
+          const read = yield* Effect.exit(current);
+          if (Exit.isFailure(read)) {
+            // Only the snapshot read ends the scope. A failed re-read keeps the last value sent
+            // and retries, so one transient read error cannot freeze a healthy subscription.
+            dirty.openUnsafe();
+            yield* Effect.sleep(rereadRetry);
+            continue;
+          }
+          const value = read.value;
           const messages = diff(sent, value);
           sent = value;
           if (Arr.isReadonlyArrayNonEmpty(messages)) return messages;
