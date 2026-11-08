@@ -111,12 +111,21 @@ worker reports.
 - Exits must match the captured ID or unambiguous exact name, with non-empty feedback
   when required. Accepted results remain held until the
   [handoff release](#routing-and-independent-queues) rule passes.
+- `working` requires a non-empty message and no exit. It is non-final: it selects no exit,
+  releases nothing and creates no attention. The Block shows working with the message while
+  it is the current activation's latest report, so a finished worker thread raises no missing
+  report, for example while the worker waits for CI or review. A newer `working` replaces the
+  message, an identical one returns its acknowledgement, and a later `waiting` or `finished`
+  replaces it. Every working report is kept as history.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
   The user replies in the same worker thread. Any later turn of that thread settles the
-  question; the worker reports again from that turn. A newer `waiting` replaces the pending
-  question, an identical one returns its acknowledgement, and `finished` settles it. A later
-  accepted report settles earlier missing-report and execution-failed attention on the Block.
+  question; the worker reports again from that turn. A newer `waiting` or a `working` replaces
+  the pending question, an identical one returns its acknowledgement, and `finished` settles
+  it. A later accepted report settles earlier missing-report and execution-failed attention on
+  the Block.
+- A `working` or `waiting` report with an exit is `EXIT_NOT_ALLOWED`, and one without a message
+  is `MESSAGE_REQUIRED`, both with repair guidance.
 - Earlier waiting history does not prevent closure once the activation has a final result
   and its worker thread is finished. A pending question keeps it open. An incoming handoff can
   take over a waiting conversation like a reply.
@@ -152,8 +161,8 @@ unavailable observation preserves prior facts, marks them stale and cannot relea
 close the Run.
 
 - **Missing report.** When the worker thread is finished, its latest run completed and the
-  Block's current activation has neither a `finished` result nor a pending question, the
-  Block shows a missing-report Problem for that run. The Problem persists through later
+  Block's current activation has no `finished` result, pending question or current `working`
+  report, the Block shows a missing-report Problem for that run. The Problem persists through later
   runs until the Block reports or a linked Request report settles it.
 - **Execution failure.** When the latest run of the thread failed, was cancelled or was
   interrupted, the Block shows an execution-failed Problem for that run. It settles when a
@@ -270,19 +279,23 @@ conversation; Factory no longer observes or commands it.
   routing authority. Both answer from the Block id even while a launch is still being
   confirmed.
 
-## Manual missing-report recovery
+## Manual Request report
 
-**Request report** accepts one explicit recovery per missing-report occurrence. It queues
-an ordinary turn on the same worker, linked to the original execution and activation; its
-message states the Block id.
-Eligibility needs the worker thread [finished](#worker-thread-completion) with the reportless
-run as its latest completed run, unchanged authorization and an open gate; this is checked
-again before dispatch. Accepted results or competing work make the request stale; unknown
-acceptance never authorizes another key.
+**Request report** asks an idle Agent Block without a `finished` result for its current
+activation to assess its existing work: one with a missing-report Problem, or one whose latest
+report is `working`. It accepts one explicit request per idle run of the Block and queues an
+ordinary turn on the same worker, linked to that run and the activation; its message states
+the Block id. The request also links the Block's pending missing-report Problem for that run,
+if there is one.
+Eligibility needs the worker thread [finished](#worker-thread-completion) with that run as its
+latest completed run, no `finished` result for the current activation, no unacknowledged
+delivery to the Block, unchanged authorization and an open gate; this is checked again before
+dispatch. Accepted results or competing work make the request stale; unknown acceptance never
+authorizes another key.
 
-Recovery settles the original missing-report attention only after the linked execution
-completes and reports final or waiting, and the worker thread is finished. The original
-execution keeps its missing-report history.
+A linked missing-report Problem settles only after the linked execution completes and reports
+final or waiting, and the worker thread is finished. The original execution keeps its
+missing-report history. A `working` reply simply becomes the Block's latest report.
 Recovery can chain through completed reportless turns, but no failure path schedules it
 automatically.
 

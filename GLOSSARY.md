@@ -82,7 +82,11 @@ One accepted task at a Flow block, from its launch or visit message until its re
 Pending questions or decisions on a Run. This covers Human occurrences answered in Factory, native T3 questions or permissions, and conversation waiting reports; the last two stay Open in T3. It is not an execution state.
 
 **Conversation waiting**:
-An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; any later turn of that thread settles it and reports again, and a newer waiting report replaces it. It is neither a Final result nor a Human step.
+An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; any later turn of that thread settles it and reports again, and a later working or waiting report replaces it. It is neither a Final result nor a Human step.
+
+**Working report**:
+An explicit, non-final `working` report from an Agent that is still on its Block's task, for example while CI or review runs. It carries a message shown on the Block and in its Run row, selects no exit, releases no handoff and is not attention. While it is the Block activation's latest report, a finished worker thread raises no missing report. A later working, waiting or finished report replaces it.
+_Avoid_: progress report, heartbeat.
 
 **Problem**:
 A pending execution or report issue already recorded as attention: a missing report, an execution failure, or a report problem. It is distinct from block execution state and from stale or unavailable observations.
@@ -180,7 +184,9 @@ it; the Run keeps its title and creation time. Not to be confused with an unsave
 
 **Request report**:
 An explicit user operation starting one additional Agent turn on the same thread
-to assess existing work and submit its report. A durable recovery link connects
-that new execution to an earlier missing-report obligation. Successful recovery
-settles the obligation without fabricating an earlier report or erasing an engine
-failure.
+to assess existing work and submit its report. It applies to an idle Agent Block
+without a Final result for its current activation, such as one with a missing
+report or one whose latest report is a Working report. A durable recovery link
+connects that new execution to the idle run it assesses and to the missing-report
+obligation pending for that run, if any. Successful recovery settles the obligation
+without fabricating an earlier report or erasing an engine failure.

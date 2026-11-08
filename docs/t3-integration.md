@@ -224,7 +224,7 @@ Factory MCP is stateless Streamable HTTP on the host-local listener only: the ap
 listener answers `/mcp` with `host_only`, and a request whose `Origin` is not the listener's own
 origin is refused, so a browser page cannot drive it. It requires no credential. It exposes
 `factory_get_block({ blockId })`, read-only `factory_get_run({ blockId })` and
-`factory_update_block({ blockId, to, exit?, message? })`, where `to` is `waiting` or `finished`.
+`factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working`, `waiting` or `finished`.
 `factory_report` and `factory_context` are not exposed.
 
 - **Block id.** Start mints one opaque id per Agent Block of the Run, and every launch, visit
@@ -247,7 +247,7 @@ origin is refused, so a browser page cannot drive it. It requires no credential.
 
 ## Reporting authority
 
-The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final conversation waiting, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
+The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final working and conversation waiting reports, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
 
 Report rejections return `code`, a static `reason` and a safe `next` step. A rejection for a
 known Block of an open Run also appears in Run attention; an unknown or missing Block id

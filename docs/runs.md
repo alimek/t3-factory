@@ -64,6 +64,8 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
   timeline and executions keep the sequence. Connections use one neutral style, including never-run branches.
+- A working block whose Agent reported `working` shows that message in place of its visit time; its details show the full
+  message and offer **Request report** once the worker is idle.
 - **Needs input** and **Problem** use the same labels as the Run sidebar, are independent of execution state and are not
   cleared by selecting a block. Stale observations say **Not live** and **Last known**; an unknown observation on a started
   block differs from stale; a block that never ran says **Not visited**.
@@ -87,7 +89,8 @@ A draft's creation key is its id, and its Start sends that id as the request key
 the draft's title and creation time, the Run therefore replaces the draft row in place, also among entries created at the same
 time. Runs created before drafts carried a creation time use their start time and Run id. Creation times come from the
 client's clock. Rows show project, execution indicator (Working, Waiting, Finished, Stopped, Stopping, Observation unknown or
-stale) and chips. Missing projects keep readable history; an unavailable open Run stays open.
+stale) and chips, and a working Block's `working` message on a third line. Missing projects keep readable history; an
+unavailable open Run stays open.
 
 - **Needs input**: a pending Human occurrence, native T3 question/permission or an Agent's conversation-waiting report.
   **Problem**: a pending missing report, execution failure or report problem. Both can show. Stale observations or an unavailable
@@ -114,7 +117,8 @@ both. T3 reports only a count, so a replacement question with an unchanged count
 ## Reports and attention
 
 For new Runs a worker calls `factory_update_block` with its Block id (stated in every Factory message to that worker) and
-`to: "finished"` (a configured exit and a message when feedback is required) or `to: "waiting"` with a message and no exit.
+`to: "finished"` (a configured exit and a message when feedback is required), or `to: "working"` or `to: "waiting"` with a
+message and no exit.
 A report from any turn of the worker's thread, including a user reply or a notification after delegated work, applies to the
 Block's current visit. Factory returns acceptance only after saving it. The model supplies no report key or Run id.
 
@@ -131,8 +135,12 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   delegated or background work T3 has not settled stays working. A failed, cancelled or interrupted latest run is a Problem until
   a later run of that thread completes or the Block reports. Missing-report Problems persist across restart and renewed work;
   there is no automatic retry or dismiss-as-success.
-- **Request report** on a missing-report Problem starts one extra turn on the same thread asking the Agent to assess existing work
-  and report. Eligibility is rechecked at acceptance (a newer run, an unfinished thread, changed authorization, accepted results,
+- **Working**: an Agent still on its task, for example watching CI or review, reports `to: "working"` with a message. The block
+  stays working and shows the message on the canvas, in its details and in the Run row; it selects no exit, releases nothing
+  and is not attention. While it is the visit's latest report, a finished worker thread is not a missing-report Problem. A
+  later working, waiting or finished report replaces it.
+- **Request report** on a missing-report Problem, or in the details of a block idle in working, starts one extra turn on the
+  same thread asking the Agent to assess existing work and report. Eligibility is rechecked at acceptance (a newer run, an unfinished thread, changed authorization, accepted results,
   Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
   attention with a recovery reason and may allow closure; a failed one stays unresolved.
 - **Rejected report**: a rejected report for a known Block appears as a separate Problem with the rejection
@@ -142,7 +150,7 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - **Conversation waiting**: an Agent that asked questions in chat reports `to: "waiting"` with a message. The block
   shows waiting, the Run shows **Needs input** with that message and **Open in T3**; reply in the worker's T3 thread. When Factory
   observes any later turn of that thread the attention settles, the waiting report stays in history and that turn reports
-  again. A newer waiting report replaces the question and a final settles it. Factory never parses chat; a model may still
+  again. A later working or waiting report replaces the question and a final settles it. Factory never parses chat; a model may still
   omit or misuse the report. See
   [waiting reports](runner.md#report-acceptance).
 - **Attention panel** (per Run, optionally per block): Pending by default, Settled keeping times, reasons and selected Human exit.
