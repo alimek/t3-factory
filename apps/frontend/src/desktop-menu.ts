@@ -47,7 +47,7 @@ export function useDesktopMenu() {
       const serialized = JSON.stringify(commands);
       if (serialized === published) return;
       published = serialized;
-      void bridge.setMenuState(commands);
+      bridge.setMenuState(commands).catch(reportError);
     };
     publish();
     const unsubscribe = [
@@ -59,7 +59,7 @@ export function useDesktopMenu() {
     ];
     return () => {
       for (const stop of unsubscribe) stop();
-      void bridge.setMenuState(null);
+      bridge.setMenuState(null).catch(reportError);
     };
   }, []);
 }
