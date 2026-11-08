@@ -113,12 +113,13 @@ both. T3 reports only a count, so a replacement question with an unchanged count
 
 ## Reports and attention
 
-For new Runs a worker calls `factory_update_block` with `to: "finished"` (a configured exit and a message when feedback is
-required) or `to: "waiting"` with a message and no exit. Factory verifies the call against the exact saved execution and returns
-acceptance only after saving it. The model does not supply a report key or a Run id.
+For new Runs a worker calls `factory_update_block` with its Block id (stated in every Factory message to that worker) and
+`to: "finished"` (a configured exit and a message when feedback is required) or `to: "waiting"` with a message and no exit.
+A report from any turn of the worker's thread, including a user reply or a notification after delegated work, applies to the
+Block's current visit. Factory returns acceptance only after saving it. The model supplies no report key or Run id.
 
-- An identical retry returns the original acknowledgement, also after renewed work, Stop or closure; changed content conflicts,
-  even under a new key. A previous execution's report cannot finish renewed work.
+- An identical retry returns the original acknowledgement, also after renewed work, Stop or closure; a changed final for the
+  same visit conflicts.
 - Acceptance holds every outgoing handoff until fresh evidence shows source completion, empty queues and no native request. The
   timeline shows **handoff held**, then **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is
   separate.
@@ -132,14 +133,15 @@ acceptance only after saving it. The model does not supply a report key or a Run
   and report. Eligibility is rechecked at acceptance (newer or queued work, native attention, changed authorization, accepted
   results, Stop and closure make it stale); repeated clicks reuse the request. A successful linked recovery settles the original
   attention with a recovery reason and may allow closure; a failed one stays unresolved.
-- **Rejected report**: a proven current worker's rejected report appears as a separate Problem with the rejection
+- **Rejected report**: a rejected report for a known Block appears as a separate Problem with the rejection
   code, reason and repair guidance. Missing report means no report was accepted; the worker may have attempted one.
-  Correct the reported issue without repeating work. A corrected accepted report or confirmed linked recovery settles
-  the rejection while preserving its history; progress alone does not. Unverified caller errors stay in MCP/T3.
+  Correct the reported issue without repeating work. Any accepted report on that Block or confirmed linked recovery settles
+  the rejection while preserving its history; progress alone does not. Unknown or missing Block ids stay in MCP/T3.
 - **Conversation waiting**: an Agent that asked questions in chat reports `to: "waiting"` with a message. The block
   shows waiting, the Run shows **Needs input** with that message and **Open in T3**; reply in the worker's T3 thread. When Factory
-  observes the reply turn the attention settles (`resumed-by`), the waiting report stays in history and the reply turn reports
-  again. Factory never parses chat; a model may still omit or misuse the report. See
+  observes any later turn of that thread the attention settles, the waiting report stays in history and that turn reports
+  again. A newer waiting report replaces the question and a final settles it. Factory never parses chat; a model may still
+  omit or misuse the report. See
   [waiting reports](runner.md#report-acceptance).
 - **Attention panel** (per Run, optionally per block): Pending by default, Settled keeping times, reasons and selected Human exit.
   Native questions and permissions link to **Open in T3** and are answered there; Factory has no native answer controls. A fresh

@@ -10,8 +10,8 @@ behavior is in [Runs](runs.md); live-support limits are in
 ## Current execution contract
 
 Factory launches each Agent Block's first visit as its own top-level T3 worker. There is
-no Run conversation and no native-delegation turn that copies the Agent. Migration `050`
-deletes open Runs captured under the replaced contract. Closed Runs stay readable history.
+no Run conversation and no native-delegation turn that copies the Agent. Migrations `050`
+and `058` delete open Runs captured under replaced contracts. Closed Runs stay readable history.
 Captured definitions carry no execution contract, coordination instruction version or
 reporting protocol.
 
@@ -22,15 +22,16 @@ reporting protocol.
 - The saved launch title is `Factory #<number> · <block position> <Block name>`, sliced to
   200 characters. The number is a durable Run sequence. The position is the 1-based index
   in the captured block list. Later renames do not change the title recovery searches for.
-- The first message starts with `$factory-block`. The worker calls `factory_get_block`,
-  then `factory_update_block`. `factory_get_run` is read-only and grants no routing
-  authority. Subagents do not call Factory tools.
+- Start mints a **Block id** for each Agent Block. The first message starts with
+  `$factory-block`, then a `Factory Block id: <id>.` line; every later visit and Request
+  report message repeats the same id. The worker passes it to `factory_get_block`, then
+  `factory_update_block`. `factory_get_run` is read-only and grants no routing authority.
+  Subagents do not call Factory tools.
 - Factory alone owns routing, handoff release, Human occurrences, Stop and closure. A
   completed model turn is not a business result. A definitive launch rejection is an
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
-  Waiting stays on that worker until a positively attributed user reply in the same thread
-  resumes it.
+  Waiting stays on that worker until a later turn in the same thread resumes it.
 
 ## Start and delivery guarantees
 
@@ -86,43 +87,41 @@ or fresh-attempt escape hatch.
 
 ## Report acceptance
 
-Report authority belongs to the exact worker execution of one activation. There is no Run
-conversation. Identity and recipients come from verified
-native evidence and the Run's captured Flow revision, never model arguments. New reports require an
-open gate and fresh active-execution evidence. Acceptance and creation of outgoing
-handoffs are durable before the acknowledgement is returned.
+A Block's worker reports by naming its Block id. Factory resolves the id to its Run and
+Block and applies the report to the Block's current activation, whichever turn of the
+worker thread sent it: the launch turn, a user reply, a notification after delegated or
+background work, a delegated completion or a Request report turn. Factory does not
+correlate native tool calls, search in-flight calls or bind authority to an exact
+execution. Before acceptance it observes the Run so the report belongs to the thread's
+current turn. Identity and recipients come from the Block id and the Run's captured Flow
+revision. Acceptance and creation of outgoing handoffs are durable before the
+acknowledgement is returned.
 
-- Deduplication is scoped to Run, Block, exact execution and report key. The canonical
-  status, exit and message distinguish changed content; omitted fields are null and
-  whitespace is preserved. An identical accepted retry returns its stored acknowledgement
-  after renewed work, Stop or closure. Reusing a key with changed content is `KEY_CONFLICT`.
-  A conflict reply includes the current Block state, `allowedTransitions` and `allowedExits`.
-- `finished` is immutable and unique per activation; a changed final is `FINAL_CONFLICT`.
-  Failed worker executions cannot report (`WORKER_FAILED`), and a final while the worker's
-  question is pending requires a reply (`HUMAN_REPLY_REQUIRED`). Reports cannot erase
-  engine failure, prove semantic correctness or close a Run.
+Anything that knows a Block id can report for that Block, including a subagent the worker
+passes it to. Factory MCP is host-local for one user, so the realistic failure is Agent
+confusion rather than attack; the skill and tool descriptions say only the Block's own
+worker reports.
+
+- An unknown id is `UNKNOWN_BLOCK` and a missing one is `BLOCK_ID_REQUIRED`, both with
+  repair guidance. Neither attaches attention to any Run.
+- `finished` is unique per activation. An identical repeat returns the stored
+  acknowledgement, also after Stop or closure; a changed final is `FINAL_CONFLICT` with the
+  current Block state and `allowedExits`. Reports cannot erase engine failure, prove
+  semantic correctness or close a Run. A new report on a closed Run is `RUN_CLOSED`.
 - Exits must match the captured ID or unambiguous exact name, with non-empty feedback
   when required. Accepted results remain held until the source completion checks pass.
 - `waiting` requires a non-empty message and no exit. It is non-final, creates Needs input
   on that worker and releases nothing. Factory never infers a question by parsing chat.
-  The user replies in the same worker thread; a verified later worker execution resumes
-  the activation and reports for itself. Settling that question does not end the activation:
-  further verified user replies on the same worker retain report authority until its final
-  result, including after a reply turn omitted its report. A later accepted report settles
-  earlier missing-report attention within that activation. Within one execution waiting → finished is allowed
-  with a fresh key, while finished → waiting conflicts.
+  The user replies in the same worker thread. Any later turn of that thread settles the
+  question; the worker reports again from that turn. A newer `waiting` replaces the pending
+  question, an identical one returns its acknowledgement, and `finished` settles it. A later
+  accepted report settles earlier missing-report attention on the Block.
 - Earlier waiting history does not prevent closure once the activation has a final result
-  and all completion checks pass. A latest waiting report keeps it open. An incoming
-  handoff can take over a waiting conversation like a reply.
-- A native system notification can resume an unfinished worker on the same thread after
-  delegated or background work. Its exact execution inherits the activation only with
-  local notification provenance and an increasing public ordinal. Forwarded, inherited,
-  agent-authored or unproven notifications grant no authority. A notification cannot
-  answer an outstanding conversation question or replace an accepted final result.
+  and all completion checks pass. A pending question keeps it open. An incoming handoff can
+  take over a waiting conversation like a reply.
 
-Report metadata retains keys, fingerprints and references, not a second message archive.
-[Caller correlation](t3-integration.md#factory-mcp-and-caller-correlation) defines the native
-attribution requirements.
+Report metadata retains fingerprints and references, not a second message archive.
+[Block ids](t3-integration.md#factory-mcp-and-block-ids) defines the tool contract.
 
 ## Observation and attention
 
@@ -137,12 +136,12 @@ marks them stale and cannot authorize work or closure.
   evidence confirms the owned tree, queues and native requests are quiet and T3 confirms
   aggregate completion. A yielded parent turn alone is insufficient: delegated work,
   background work or a pending continuation keeps the Block working.
-- A rejected report from a uniquely correlated current worker records a report-problem
-  with a static rejection code, explanation and next step. It retains only existing
+- A rejected report for a known Block of an open Run records a report-problem with a
+  static rejection code, explanation and next step. It retains only existing
   execution/binding references, never rejected report content, call payloads or secrets.
-  Repeated rejections update the pending diagnostic; accepted correction or confirmed
-  linked recovery settles it while preserving its history. Uncorrelated or foreign calls
-  cannot attach Problems to a Run. Rejection changes neither execution state nor authority.
+  Repeated rejections update the pending diagnostic; any accepted report on that Block or
+  confirmed linked recovery settles it while preserving its history. Unknown Block ids
+  cannot attach Problems to a Run. Rejection changes no execution state.
   A later missing-report Problem means no report was accepted, not that none was attempted.
   Historical rejections made before this diagnostic existed are not backfilled.
 - Failed, cancelled or interrupted work shows an execution-failed Problem. Renewed work
@@ -194,8 +193,8 @@ Successful closure requires all of the following:
 
 - Every visited activation has its worker's accepted final result, a released frontier
   and no Problem; every Human occurrence is answered. Unvisited branches need not run.
-- Every recorded or observed worker and descendant execution completed, except failures
-  settled by their verified assessment; queues and native requests are empty.
+- Every recorded or observed worker and descendant execution completed; queues and native
+  requests are empty.
 - Every delivery is acknowledged, with no outstanding launch, handoff or send.
 - Every retained worker and descendant has fresh, complete, quiet evidence.
 
@@ -257,19 +256,19 @@ closed Run may still display a stored conversation.
   execution stays a Problem; Factory does not launch a replacement worker for it.
 - Unknown peer membership or inaccessible remote work keeps Stop uncertain. Peer work
   never becomes local execution membership merely because it was discovered.
-- A worker final needs fresh provider/model proof against captured Agent settings and
-  freezes its activation-scoped native frontier. Unverified proof is
-  `ASSESSMENT_UNVERIFIED`. Later work raises attention and holds release without changing
-  the accepted final result.
+- Release needs fresh provider/model proof against captured Agent settings for the
+  activation's launched or sent executions. Later turns of the worker thread, including
+  ones after an accepted final, are ordinary thread work: they hold release until the
+  thread is quiet and never replace the accepted result.
 - `factory_get_block` and `factory_get_run` are read-only. `factory_get_run` grants no
-  routing authority. Before the worker is bound, a proven in-flight launch returns
-  `BINDING_PENDING` with `retryAfterMs`; that wait grants no authority. A title match,
-  subagent or unseen call id does not.
+  routing authority. Both answer from the Block id even while a launch is still being
+  confirmed.
 
 ## Manual missing-report recovery
 
 **Request report** accepts one explicit recovery per missing-report occurrence. It queues
-an ordinary turn on the same worker, linked to the original exact execution and activation.
+an ordinary turn on the same worker, linked to the original execution and activation; its
+message states the Block id.
 Eligibility needs fresh execution, queue and native coverage, latest identity, unchanged
 authorization and an open gate. The worker’s full activation frontier must also be quiet,
 including delegated/background work and T3 aggregate completion; this is checked again

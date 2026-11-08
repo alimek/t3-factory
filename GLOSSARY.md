@@ -50,8 +50,8 @@ A named outcome of a flow block whose connections determine which blocks run nex
 An agent's explicit report of its block's state and, where applicable, a selected exit and a message for subsequent blocks. A request for corrections is distinct from an inability to perform the work.
 
 **Final result**:
-The first accepted `finished` report for one Block activation under the explicit
-MCP contract, attributed to its exact worker execution. It is immutable; acceptance and source execution completion are
+The first accepted `finished` report for one Block activation, sent from any turn of
+the Block's worker thread with its Block id. It is immutable; acceptance and source execution completion are
 separate facts.
 
 **Run coordinator**:
@@ -61,20 +61,24 @@ Retired. Factory no longer saves a model selection for a primary Run conversatio
 Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block`. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block.
+The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block.
+
+**Block id**:
+The identifier Factory mints for an Agent Block when a Run starts and states in every launch, visit and Request report message to that Block's worker. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.
+_Avoid_: tool ref, caller correlation.
 
 **Factory MCP**:
 The MCP server a Factory server serves at `/mcp` on its host-local listener. Harnesses register it once by URL and call `factory_get_block`, `factory_get_run` and `factory_update_block` on it; an application update changes its tools without changing harness configuration.
 _Avoid_: bridge (the retired stdio copy installed per harness).
 
 **Block activation**:
-One accepted task at a Flow block, spanning its exact worker Work periods until its result is completed.
+One accepted task at a Flow block, from its launch or visit message until its result is completed. Reports naming the Block id apply to the Block's current activation, whichever turn of the worker thread sends them.
 
 **Needs input**:
 Pending questions or decisions on a Run. This covers Human occurrences answered in Factory, native T3 questions or permissions, and conversation waiting reports; the last two stay Open in T3. It is not an execution state.
 
 **Conversation waiting**:
-An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; that reply turn takes over and reports for itself. It is neither a Final result nor a Human step.
+An explicit, non-final `waiting` report from an Agent that asked the user in chat and needs the reply. It carries a message for the user, selects no exit and releases no handoff. The user replies in the same T3 thread; any later turn of that thread settles it and reports again, and a newer waiting report replaces it. It is neither a Final result nor a Human step.
 
 **Problem**:
 A pending execution or report issue already recorded as attention: a missing report, an execution failure, or a report problem. It is distinct from block execution state and from stale or unavailable observations.
@@ -131,9 +135,7 @@ queue/native evidence permit reservation; acceptance alone does not start work. 
 One arrival at a Human step within a Run, with its own pending context and settlement. Under the explicit reporting contract, the occurrence activates only after the source completion gate permits release; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
 
 **Work period**:
-One exact T3 execution in a Run or Block conversation, including repeated visits and queued turns. The Run conversation and worker conversations retain separate ownership scopes.
-Automatic continuations after delegated or background work are separate Work periods
-within the same unfinished Block activation when native notification evidence verifies them.
+One exact T3 execution in a Run or Block conversation, including repeated visits, queued turns, user replies and automatic continuations after delegated or background work. The Run conversation and worker conversations retain separate ownership scopes.
 
 **Settled**:
 In Run navigation, the group of executions with confirmed whole-Run Finished or

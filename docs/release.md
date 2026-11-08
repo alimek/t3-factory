@@ -132,8 +132,8 @@ its login items, and keep raw captures in ignored `.e2e/` with a summary in the 
 
 - **Packaged authoring:** create and edit a Flow in the packaged Studio, quit, reopen in a fresh process and verify the same definition, graph and revision in the renderer and through public operations (source-API data
   does not prove renderer writes).
-- **Packaged reporting:** with `ControlledT3` and the packaged backend's Factory MCP, start a Run, submit a native-attributed explicit report and verify acceptance, then successful source completion before
-  the handoff; record whether the backend was source or packaged (`UNBOUND_CALLER` proves transport only) and re-test registration after an actual app-version replacement.
+- **Packaged reporting:** with `ControlledT3` and the packaged backend's Factory MCP, start a Run, submit an explicit report with the worker's Block id and verify acceptance, then successful source completion before
+  the handoff; record whether the backend was source or packaged (`UNKNOWN_BLOCK` proves transport only) and re-test registration after an actual app-version replacement.
 - **Native lifecycle:** with an open Run close the last window and verify API access, reopen, cancel native Quit and verify state, then confirm Quit and verify orderly shutdown and ownership release; after restart
   compare Run, report and execution state and separately verify reconciliation after T3 reconnect.
 - **Role changes:** cancel and confirm server-to-client switching with an open Run, verify ownership release, return to server mode and compare definitions and history; exercise a configured remote endpoint and

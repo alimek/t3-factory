@@ -140,14 +140,14 @@ One bounded local Codex flow (a recent T3 nightly, Codex 0.166 with a GPT-6.1 mo
 recorded finished closure, plus native per-stage settlement and waking the same thread. These observations cover those cases and versions only. Native approval/denial modes, report retries, manual
 recovery, uncertain Stop, loss-of-response recovery, direct-work races, remote environments, remote-device OAuth and other harnesses remain unverified live.
 
-Readiness checks capabilities, reporting installation and the public activity metadata needed for exact attribution. A version number alone is neither failure nor proof, and available models are never
+Readiness checks capabilities, reporting installation and the public activity metadata needed for delegation evidence. A version number alone is neither failure nor proof, and available models are never
 substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth grant (one Codex case observed full access, which proves nothing about other grants or native approvals).
 
 ### Execution and safety boundaries
 
 - Threads share the project checkout: no isolated worktrees, conflict-free editing or exactly-once guarantee.
 - Uncertain launch/send retries need unchanged authorization and independent, operation-specific continuity and retention proof; the default live proof is absent, and server restart, changed grants and
-  unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and local call correlation does not isolate adversarial processes sharing the OS user.
+  unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and a Block id does not isolate adversarial processes sharing the OS user.
 - Closure records an observed frontier, not atomic cross-thread completion, repository quality or agreement on one revision. Native settlement is best effort with no compare-and-set or replay key; a possibly
   issued settlement is not repeated, so a crash can leave a thread active without changing Run semantics.
 - Stop closes Factory handoffs and needs observed cancellation or termination; it does not undo edits or prohibit later direct T3 chats. Backend exit is not Stop. Closed Runs stay closed.
@@ -175,7 +175,7 @@ Save each Agent's worker settings (every option and permission mode). Do not con
 
 | Case | Required observed result |
 | --- | --- |
-| Install and attribution | Settings installs Factory MCP into the disposable home, preserving unrelated entries; a fresh session shows the tool without bypassing native trust; a denied call yields no accepted result or downstream work; inherited or ambiguous metadata yields no accepted result |
+| Install and attribution | Settings installs Factory MCP into the disposable home, preserving unrelated entries; a fresh session shows the tool without bypassing native trust; a denied call yields no accepted result or downstream work; a call without the worker's Block id or with an unknown one yields no accepted result |
 | Factory → worker | One top-level worker per Block with the captured provider, model and options; title `Factory #<number> · <position> <name>`; no Run conversation and no second launch after a lost acknowledgement |
 | Report before completion | `ACCEPTED` arrives while the execution runs; an identical retry returns the same acknowledgement; a changed final is rejected; no chat message substitutes for the call |
 | Held release | The handoff stays held until exact successful completion and clear native requests; backend restarts while held and after release yield one recipient, no duplicate work and a preserved acknowledgement |

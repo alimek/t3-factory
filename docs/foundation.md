@@ -29,7 +29,8 @@ and restricted OAuth credentials live outside project repositories.
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
   context needed to resolve uncertain outcomes. An acknowledgement is not completion.
-- Reports derive identity from verified native evidence, never model-supplied references.
+- Reports name their Block by the Block id Factory issued; Run and Block identity never come
+  from other model-supplied references.
   Attention settlement and Run closure remain separate, with cancelled Human work never
   represented as an answer.
 

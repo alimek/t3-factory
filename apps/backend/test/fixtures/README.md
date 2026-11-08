@@ -21,7 +21,7 @@ This is a reviewed test input, not a transcript or a complete lifecycle replay.
 `support/worker-contract.ts` composes a **synthetic** lifecycle from these wire shapes
 and controlled native progress: waiting, a reportless user reply, another reply,
 delegation, notification continuation, accepted final and handoff after restart.
-It changes execution identities/statuses and adds an in-flight Factory call. Those
+It changes execution identities/statuses; the worker reports by Block id. Those
 states were not captured live. Reads use the real HTTP/SDK adapter against local
 OAuth/MCP fixtures; launches and settlement use `ControlledT3`. Existing #43/#45/#49
 tests retain the separate rejection, race and closure regressions. This fixture adds
@@ -35,7 +35,7 @@ construct synthetic transport responses. They are not captured live sessions.
 Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). Do not retain
 intermediate implementation snapshots, source archives or historical application builds, and do not replace them with compressed blobs or generated historical data.
 
-[`migration-data-upgrade.test.ts`](../migration-data-upgrade.test.ts) opens the capture through the current Factory and checks client access, current definitions, absence of removed definitions, and retention of a closed and an active Run with their captured definitions in one upgrade, and that the active Run's running worker recovers against its captured Agent settings rather than the edited Agent.
+[`migration-data-upgrade.test.ts`](../migration-data-upgrade.test.ts) opens the capture through the current Factory and checks client access, current definitions, absence of removed definitions, retention of the closed Run with its captured definitions and Task, and removal of the active Run and its Task by migration `058` (Block id reporting). The capture's native call activity is not restored into the controlled adapter: it served only the retired call correlation.
 Restoration uses disposable SQLite; business assertions use public operations. Tests need no old source, compiler subprocess, Git history or network.
 
 Retain genuine schema, migration ledger, snapshots, keys, payloads, fingerprints and provenance. Never relabel a capture as another revision, rewrite its migration metadata or edit current state to
