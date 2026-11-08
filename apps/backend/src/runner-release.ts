@@ -51,7 +51,7 @@ export function activatePendingHumanHandoff(
     yield* database.mutate(runRow.id, (sql) =>
       Effect.gen(function* () {
         const [current] =
-          yield* sql`SELECT id FROM runs WHERE id=${runRow.id} AND gate_open=1 AND closed_at IS NULL AND (${generation ?? null} IS NULL OR generation=${generation ?? null}) AND EXISTS(SELECT 1 FROM t3_connection WHERE context_id=${intent.context_id}) AND EXISTS(SELECT 1 FROM runner_owner WHERE token=${database.owner.token})`;
+          yield* sql`SELECT id FROM runs WHERE id=${runRow.id} AND gate_open=1 AND (${generation ?? null} IS NULL OR generation=${generation ?? null}) AND EXISTS(SELECT 1 FROM t3_connection WHERE context_id=${intent.context_id}) AND EXISTS(SELECT 1 FROM runner_owner WHERE token=${database.owner.token})`;
         const [pendingIntent] =
           yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE id=${intent.id} AND state='pending'`;
         if (!current || !pendingIntent) return;

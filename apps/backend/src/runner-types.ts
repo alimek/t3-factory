@@ -23,13 +23,11 @@ export type RunRow = {
   context_id: string;
   workspace_root: string;
   gate_open: number;
-  stop_requested_at: string | null;
   generation: number;
   number: number;
   started_at: string;
-  closed_at: string | null;
-  outcome: RunDetail["outcome"];
   settled_at: string | null;
+  archived_at: string | null;
   endpoint: string;
   environment_id: string;
   t3_project_id: string;
@@ -126,10 +124,8 @@ export type TaskRunRow = {
   id: string;
   input: string;
   started_at: string;
-  closed_at: string | null;
-  outcome: RunDetail["outcome"];
-  stop_requested_at: string | null;
   settled_at: string | null;
+  archived_at: string | null;
   flow_id: string;
   flow_name: string;
 };
@@ -144,7 +140,7 @@ export type ReportRunRow = Pick<
   | "t3_project_id"
   | "workspace_root"
   | "gate_open"
-  | "closed_at"
+  | "archived_at"
   | "context_id"
   | "definitions"
 > & { token: string };

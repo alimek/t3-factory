@@ -424,28 +424,62 @@ test("a report from the Agent of a Settled Run returns it to the open Runs", asy
   await app.screenshot("settled-run-active-after-report");
 });
 
-test("Stop closes both direct worker branches durably", async ({ app, screen, browser }) => {
+test("Archive on the Run page asks for confirmation and archives both worker branches at once", async ({
+  app,
+  screen,
+  browser,
+}) => {
   // Arrange
-  const found = await findRun(app.baseUrl, "UI worker · Parallel review from one prompt");
+  const title = "UI worker · Parallel review from one prompt";
+  const found = await findRun(app.baseUrl, title);
   const before = await readHistoryRun(app.baseUrl, found.id);
   await app.open(`/runs/${found.id}`);
+  await screen.getByRole("button", "Archive Run", { exact: true }).tap();
+  const confirmation = screen.getByRole("dialog", `Archive “${title}”?`);
+  await expect(confirmation).toContainText("cannot be restored");
+  await app.screenshot("run-page-archive-confirmation");
 
   // Act
-  await screen.getByRole("button", "Stop Run", { exact: true }).tap();
+  await confirmation.getByRole("button", "Archive Run", { exact: true }).tap();
 
   // Assert
-  await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).outcome)
-    .toBe("stopped");
-  await browser.reload();
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toBeVisible();
   const saved = await readHistoryRun(app.baseUrl, found.id);
+  expect(saved.lifecycle).toBe("archived");
+  expect(saved.gateOpen).toBe(false);
   expect(saved.threadBindings).toEqual(before.threadBindings);
-  expect(saved.threadBindings.map((b) => b.role)).toEqual(["worker", "worker"]);
-  expect(saved.runCoordinator).toBeNull();
-  expect(saved.closure?.frontier.map((member) => member.threadId).sort()).toEqual(
-    before.threadBindings.map((binding) => binding.threadId).sort(),
-  );
-  await expect(screen.getByRole("region", "Closure evidence")).toContainText("Stopped");
-  await expect(screen.getByRole("button", "Stop Run", { exact: true })).toHaveCount(0);
-  await app.screenshot("root-two-workers-stopped-after-reload");
+  expect(saved.blocks.map((block) => block.state)).toEqual(["stopped", "stopped"]);
+  expect(await runsTitled(app.baseUrl, title)).toHaveLength(0);
+  await app.open(`/runs/${found.id}`);
+  await browser.reload();
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Archived");
+  await expect(screen.getByRole("button", "Archive Run", { exact: true })).toHaveCount(0);
+  await app.screenshot("archived-run-history-by-link");
+});
+
+test("the row menu opened with Shift+F10 archives a Run after confirmation", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const title = "UI worker · Two reviewers working in parallel";
+  const found = await findRun(app.baseUrl, title);
+  await app.open("/runs/new");
+  const row = screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${title}`));
+  await row.press("Shift+F10");
+  await screen.getByRole("menuitem", "Archive…", { exact: true }).tap();
+  const confirmation = screen.getByRole("dialog", `Archive “${title}”?`);
+
+  // Act
+  await confirmation.getByRole("button", "Archive Run", { exact: true }).tap();
+
+  // Assert
+  await expect(row).toHaveCount(0);
+  expect((await readHistoryRun(app.baseUrl, found.id)).lifecycle).toBe("archived");
+  await browser.reload();
+  await expect(screen.getByRole("navigation", "Open Runs")).not.toContainText(title);
+  await app.screenshot("run-archived-from-row-menu");
 });

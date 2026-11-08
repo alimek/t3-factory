@@ -4,7 +4,13 @@ import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "./thread-link.ts";
 import { recoveryRows } from "./runner-recovery.ts";
-import type { Result, RunAttention, RunDetail, TaskSummary } from "@t3-factory/contracts";
+import type {
+  Result,
+  RunAttention,
+  RunDetail,
+  RunLifecycle,
+  TaskSummary,
+} from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -23,14 +29,6 @@ import type {
   TaskRow,
   TaskRunRow,
 } from "./runner-types.ts";
-
-type ClosureRow = {
-  outcome: NonNullable<RunDetail["outcome"]>;
-  generation: number;
-  confirmed_at: string;
-  frontier_json: string;
-  root_frontier_json: string | null;
-};
 
 type RunEventRow = {
   sequence: number;
@@ -154,37 +152,19 @@ function runEvent(event: RunEventRow): RunDetail["events"][number] {
   };
 }
 
-function runClosure(closure: ClosureRow | undefined): RunDetail["closure"] {
-  return closure
-    ? {
-        outcome: closure.outcome,
-        ...(closure.root_frontier_json
-          ? {
-              rootFrontier: JSON.parse(closure.root_frontier_json) as NonNullable<
-                NonNullable<RunDetail["closure"]>["rootFrontier"]
-              >,
-            }
-          : {}),
-        generation: closure.generation,
-        confirmedAt: closure.confirmed_at,
-        frontier: JSON.parse(closure.frontier_json) as NonNullable<
-          RunDetail["closure"]
-        >["frontier"],
-      }
-    : null;
+function lifecycle(run: Pick<RunRow, "settled_at" | "archived_at">): RunLifecycle {
+  if (run.archived_at) return "archived";
+  return run.settled_at ? "settled" : "active";
 }
 
 function runEntry(row: TaskRunRow): TaskSummary["runs"][number] {
   return {
     id: row.id,
-    lifecycle: row.settled_at ? "settled" : "active",
+    lifecycle: lifecycle(row),
     flowId: row.flow_id,
     flowName: row.flow_name,
     input: row.input,
     startedAt: row.started_at,
-    closedAt: row.closed_at,
-    outcome: row.outcome,
-    stopRequestedAt: row.stop_requested_at,
   };
 }
 function buildTaskSummary(
@@ -207,9 +187,6 @@ function buildTaskSummary(
           flowId: latest.flowId,
           flowName: latest.flowName,
           startedAt: latest.startedAt,
-          closedAt: latest.closedAt,
-          outcome: latest.outcome,
-          stopRequestedAt: latest.stopRequestedAt,
         }
       : null,
     runs: entries,
@@ -218,10 +195,10 @@ function buildTaskSummary(
 function taskSummary(sql: SqlClient.SqlClient, task: TaskRow) {
   return Effect.gen(function* () {
     const runs =
-      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.closed_at,r.outcome,r.stop_requested_at,r.settled_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
+      yield* sql<TaskRunRow>`SELECT r.id,r.input,r.started_at,r.settled_at,r.archived_at,f.flow_id,f.name AS flow_name FROM runs r JOIN flow_revisions f ON f.id=r.flow_revision_id WHERE r.task_id=${task.id} ORDER BY r.started_at DESC,r.id`;
     const [activeRun] = yield* sql<{
       id: string;
-    }>`SELECT id FROM runs WHERE task_id=${task.id} AND closed_at IS NULL AND settled_at IS NULL`;
+    }>`SELECT id FROM runs WHERE task_id=${task.id} AND archived_at IS NULL AND settled_at IS NULL`;
     return buildTaskSummary(task, runs, activeRun?.id ?? null);
   });
 }
@@ -255,8 +232,6 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const working = new Map(
           (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
         );
-        const [closure] =
-          yield* sql<ClosureRow>`SELECT * FROM run_closures WHERE run_id=${id} AND outcome='stopped'`;
         const { definitions } = runRow;
         return {
           ok: true as const,
@@ -274,11 +249,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
             rootWork: yield* readRootWork(sql, id),
             ...(yield* coordinationRead(sql, id)),
             startedAt: runRow.started_at,
-            lifecycle: runRow.settled_at ? "settled" : "active",
-            closedAt: runRow.closed_at,
-            outcome: runRow.outcome,
-            closure: runClosure(closure),
-            stopRequestedAt: runRow.stop_requested_at,
+            lifecycle: lifecycle(runRow),
             gateOpen: !!runRow.gate_open,
             generation: runRow.generation,
             blocks: blocks.map((block) =>

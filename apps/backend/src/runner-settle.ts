@@ -6,6 +6,7 @@ import type { T3Adapter } from "./adapters/t3.ts";
 import { newId } from "./ids.ts";
 import { failure } from "./result.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
+import { changeLifecycle } from "./run-lifecycle.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { runTarget } from "./runner-utils.ts";
@@ -72,7 +73,7 @@ export function openRunnerSettle(
     return recoverOperation(
       Effect.gen(function* () {
         const run = yield* database.row(id);
-        if (!run || run.closed_at || run.settled_at || !run.gate_open) return;
+        if (!run || run.archived_at || run.settled_at || !run.gate_open) return;
         const threads = yield* reportedBlocks(run);
         if (!threads) return;
         for (const thread of threads)
@@ -148,28 +149,21 @@ export function openRunnerSettle(
   /** The user settles an Active or Snoozed Run at any time. Work already in progress continues;
    * Factory settles the worker threads in T3 in the background. */
   function settleRun(id: string): Effect.Effect<Result<RunDetail>, unknown> {
-    return Effect.gen(function* () {
-      if (lifecycle.isClosed()) return failure("conflict", "Factory is shutting down.");
-      const accepted = yield* database.mutate(id, (sql) =>
+    return changeLifecycle(
+      database,
+      lifecycle,
+      id,
+      (sql, run) =>
         Effect.gen(function* () {
-          const [run] = yield* sql<{
-            closed_at: string | null;
-            stop_requested_at: string | null;
-            settled_at: string | null;
-          }>`SELECT closed_at,stop_requested_at,settled_at FROM runs WHERE id=${id}`;
-          if (!run) return failure("not_found", "This Run does not exist.");
-          if (run.closed_at || run.stop_requested_at)
-            return failure("conflict", "A stopped Run cannot be settled.");
+          if (run.archived_at) return failure("conflict", "An archived Run cannot be settled.");
           if (!run.settled_at) yield* markSettled(sql, id, "manual", yield* now);
           return { ok: true as const, value: !run.settled_at };
         }),
-      );
-      if (!accepted.ok) return accepted;
-      const run = yield* database.row(id);
-      if (accepted.value && run)
-        yield* lifecycle.fork(recoverOperation(settleWorkerThreads(run), () => Effect.void));
-      return yield* lifecycle.getRun(id);
-    });
+      recoverOperation(
+        Effect.flatMap(database.row(id), (run) => (run ? settleWorkerThreads(run) : Effect.void)),
+        () => Effect.void,
+      ),
+    );
   }
 
   return { settleRun, settleWhenDone };

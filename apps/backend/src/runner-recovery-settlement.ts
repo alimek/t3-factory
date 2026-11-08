@@ -72,7 +72,7 @@ export function settleRecoveries(
   return Effect.gen(function* () {
     const current = yield* database.row(id);
     const detail = yield* lifecycle.getRun(id);
-    if (!current?.gate_open || current.closed_at || !detail.ok) return;
+    if (!current?.gate_open || !detail.ok) return;
     const settlements: {
       intentId: string;
       attentionId: string | null;

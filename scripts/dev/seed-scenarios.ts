@@ -71,7 +71,7 @@ async function applyCorrection(context: SeedContext, run: RunDetail) {
   );
 }
 
-async function settledScenarios(context: SeedContext, flowId: string) {
+async function settledAndArchivedScenarios(context: SeedContext, flowId: string) {
   let settled = await startScenario(
     context,
     flowId,
@@ -87,15 +87,14 @@ async function settledScenarios(context: SeedContext, flowId: string) {
   await observeTerminal(context.t3, executionBlock(settled), "completed");
   await reconcileUntil(context, settled.id, (run) => run.lifecycle === "settled");
 
-  const stopped = await startScenario(
+  const archived = await startScenario(
     context,
     flowId,
-    "stopped",
-    "Stopped · Earlier navigation experiment",
-    "Explore a compact navigation layout for Atlas. This experiment was paused after a design direction changed.",
+    "archived",
+    "Archived · Earlier navigation experiment",
+    "Explore a compact navigation layout for Atlas. This experiment was dropped after a design direction changed.",
   );
-  requireSuccess(await context.factory.stopRun(stopped.id));
-  await reconcileUntil(context, stopped.id, (run) => run.outcome === "stopped");
+  requireSuccess(await context.factory.archiveRun(archived.id));
 }
 
 async function attentionScenarios(context: SeedContext, flowId: string) {
@@ -250,7 +249,7 @@ export async function seedScenarios(
   context: SeedContext,
   flows: { simple: string; review: string; parallel: string; parallelStart: string },
 ) {
-  await settledScenarios(context, flows.simple);
+  await settledAndArchivedScenarios(context, flows.simple);
   await attentionScenarios(context, flows.simple);
   await conversationWaitingScenario(context, flows.simple);
   await rejectedReportScenario(context, flows.simple);

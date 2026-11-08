@@ -1,4 +1,4 @@
-import type { RuntimeReply } from "./runtime-types.ts";
+import { SUCCESS_CODES, type RuntimeReply } from "./runtime-types.ts";
 
 const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
   UNKNOWN_BLOCK: [
@@ -29,15 +29,11 @@ const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
     "The selected exit requires a result message.",
     "Add the required feedback without repeating the task.",
   ],
-  RUN_CLOSED: [
-    "The Run no longer accepts new reports.",
-    "Read the Run's recorded outcome; do not retry work for this Run.",
-  ],
 };
 
 /** Static explanations only: never echo model arguments, native payloads or credentials. */
 export function reportDiagnostic(reply: RuntimeReply): RuntimeReply {
-  if (reply.code === "ACCEPTED") return reply;
+  if (SUCCESS_CODES.includes(reply.code)) return reply;
   const [reason, next] = REJECTIONS[reply.code] ?? [
     "Factory could not record this report.",
     "Read your Block with factory_get_block before reporting again. Do not repeat the task.",

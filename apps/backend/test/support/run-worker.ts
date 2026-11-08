@@ -225,6 +225,25 @@ export function nextSettlement(t3: ControlledT3) {
   });
 }
 
+/** Resolves once T3 receives the next thread interrupt, which Factory sends in the background
+ * after Archive. */
+export function nextThreadInterrupt(t3: ControlledT3) {
+  const interrupt = t3.stopThread.bind(t3);
+  return new Promise<void>((resolve) => {
+    t3.stopThread = async (target, payload) => {
+      await interrupt(target, payload);
+      resolve();
+    };
+  });
+}
+
+/** A worker's result is held for its next Block when the user archives the Run. */
+export async function archivedWorker(c: TestContext) {
+  const f = await reportedWorker(c);
+  assert((await f.f.archiveRun(f.runId)).ok);
+  return f;
+}
+
 /** A reported single worker whose Run settled automatically once its thread finished. */
 export async function settledWorker(c: TestContext) {
   const f = await finishedWorker(c);
@@ -325,18 +344,4 @@ export async function revisitReportingWorker(c: TestContext) {
     recentRuns: [...prior.recentRuns, { runId, status: "running", ordinal: 3 }],
   });
   return { ...f, workerExecutionId: runId };
-}
-
-/** The launched worker is interrupted and T3 settles it. */
-export function interruptWorker(t3: ControlledT3) {
-  t3.engineStatus = "interrupted";
-  const observation = t3.executionObservations.get(WORKER_THREAD);
-  if (observation)
-    t3.executionObservations.set(WORKER_THREAD, {
-      ...observation,
-      activeRunId: null,
-      latestRunId: observation.latestRunId ?? WORKER_EXECUTION,
-      recentRuns: observation.recentRuns.map((run) => ({ ...run, status: "interrupted" })),
-    });
-  settleThread(t3, observation?.latestRunId ?? WORKER_EXECUTION, "interrupted");
 }

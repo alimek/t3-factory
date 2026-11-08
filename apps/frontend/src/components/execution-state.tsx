@@ -6,6 +6,7 @@ const colors: Record<string, string> = {
   waiting: "border-status-waiting [&>span]:bg-status-waiting",
   finished: "border-success [&>span]:bg-success",
   settled: "border-success [&>span]:bg-success",
+  archived: "border-status-stopped [&>span]:bg-status-stopped",
   error: "border-destructive [&>span]:bg-destructive",
   stopped: "border-status-stopped [&>span]:bg-status-stopped",
   "not-started":

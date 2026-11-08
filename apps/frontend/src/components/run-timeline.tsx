@@ -118,7 +118,7 @@ function attentionSettled(run: RunDetail, event: RunEvent): EventPhrase {
 
 function operationCancelled(run: RunDetail, event: RunEvent): EventPhrase {
   const kind = intentOf(run, event)?.kind ?? "operation";
-  return { actorId: event.blockId, text: `pending ${kind} cancelled by Stop` };
+  return { actorId: event.blockId, text: `pending ${kind} cancelled by Archive` };
 }
 
 function operationUnresolved(run: RunDetail, event: RunEvent): EventPhrase {
@@ -169,13 +169,8 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   }),
   "attention-appeared": attentionAppeared,
   "attention-settled": attentionSettled,
-  "stop-requested": said("Stop requested"),
-  "stop-operation-created": said("Stop prepared for its T3 execution"),
-  "stop-operation-requested": observed("Stop sent to T3"),
-  "stop-operation-confirmed": observed("T3 confirmed Stop"),
-  "stop-observation-unavailable": said("Stop could not observe T3 yet"),
   "operation-cancelled": operationCancelled,
-  "human-cancelled-on-Stop": said("question cancelled by Stop"),
+  "human-cancelled": said("question cancelled by Archive"),
   "operation-unresolved": operationUnresolved,
   "run-settled": (_run, event) => ({
     actorId: null,
@@ -185,7 +180,7 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
         : "settled · every visited Block has its result and its worker thread is finished",
   }),
   "run-activated": said("reported · the Run is Active again"),
-  "run-closed": (run) => ({ actorId: null, text: `${run.outcome} · bounded closure recorded` }),
+  "run-archived": said("archived · Factory asked T3 to interrupt every worker thread"),
 };
 
 /** Words derived only from the event's own recorded facts; unknown kinds stay visible. */

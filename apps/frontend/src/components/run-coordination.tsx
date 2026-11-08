@@ -40,7 +40,7 @@ export function CoordinatorActivations({ run, blockId }: { run: RunDetail; block
 }
 
 function activationStateLabel(run: RunDetail, activation: RunActivation) {
-  if (run.stopRequestedAt) return run.closedAt ? "Stopped" : "Stopping";
+  if (run.lifecycle === "archived") return "Archived";
   const question = run.attention.find(
     (item) =>
       item.kind === "conversation-waiting" &&
@@ -72,7 +72,7 @@ function Activation({ run, activation }: { run: RunDetail; activation: RunActiva
         {activationStateLabel(run, activation)}
       </h3>
       {report && <RetainedResult run={run} report={report} />}
-      {!run.stopRequestedAt && activation.problem && (
+      {run.lifecycle !== "archived" && activation.problem && (
         <p className="text-attention">{activation.problem}</p>
       )}
       {run.threadBindings

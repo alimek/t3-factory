@@ -1,7 +1,12 @@
-import type { RunClosure } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { ownedRootControlExecutions } from "./run-coordinator.ts";
+
+/** A Run conversation thread as a historical closure recorded it. */
+type RootFrontierMember = {
+  readonly threadId: string;
+  readonly executions: readonly { readonly executionId: string; readonly status: string }[];
+};
 
 /** Closed-Run history of a Run conversation, from stored events and closure evidence. */
 export function readRootWork(sql: SqlClient.SqlClient, runId: string) {
@@ -24,7 +29,7 @@ export function readRootWork(sql: SqlClient.SqlClient, runId: string) {
       thread_id: string | null;
     }>`SELECT thread_id FROM run_coordinators WHERE run_id=${runId}`;
     const frontier = closure?.root_frontier_json
-      ? (JSON.parse(closure.root_frontier_json) as NonNullable<RunClosure["rootFrontier"]>).find(
+      ? (JSON.parse(closure.root_frontier_json) as readonly RootFrontierMember[]).find(
           (f) => f.threadId === root?.thread_id,
         )
       : undefined;

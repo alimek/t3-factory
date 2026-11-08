@@ -20,7 +20,7 @@ import { openRunnerObservation } from "./runner-observation.ts";
 import { openRunnerQueries } from "./runner-queries.ts";
 import { openRunnerReports } from "./runner-reports.ts";
 import { openRunnerStart } from "./runner-start.ts";
-import { openRunnerStop } from "./runner-stop.ts";
+import { openRunnerArchive } from "./runner-archive.ts";
 import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
@@ -57,11 +57,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
-  const { stopRun, reconcileStop, stopObservationsUnavailable } = openRunnerStop(
-    database,
-    t3,
-    lifecycle,
-  );
+  const { archiveRun } = openRunnerArchive(database, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone } = openRunnerSettle(database, t3, lifecycle, liveContextId);
 
   function drive(
@@ -81,7 +77,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   function driveWork(id: string, phase: "observe" | "dispatch" | "both") {
     return Effect.gen(function* () {
       const runRow = yield* row(id);
-      if (!runRow || runRow.closed_at) return;
+      if (!runRow || runRow.archived_at) return;
       const contextId = yield* liveContextId();
       yield* driveBlockWork(runRow, contextId, phase);
     });
@@ -105,10 +101,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         if (closed) break;
         yield* dispatchIntent(runRow, intent, contextId);
       }
-      const stopping = yield* row(id);
-      if (!stopping?.stop_requested_at || stopping.closed_at) return;
-      if (contextId === stopping.context_id) yield* reconcileStop(stopping);
-      else yield* stopObservationsUnavailable(stopping.id);
     });
   }
   const reconcileRuns = Effect.fn("Runner.reconcile")(function* (): Effect.fn.Return<
@@ -123,7 +115,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           // A Settled Run is driven only while it still owes an operation, so its work continues.
           const ids = yield* sql<{
             id: string;
-          }>`SELECT id FROM runs WHERE closed_at IS NULL AND (settled_at IS NULL OR stop_requested_at IS NOT NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`;
+          }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`;
           // Restart observes every Run before dispatching any pending intent.
           yield* Effect.forEach(ids, (run) => drive(run.id, "observe"), {
             concurrency: "unbounded",
@@ -160,7 +152,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     readFactoryTool: openBlockTools(database, getRun),
     answerHumanOccurrence,
     replyCoordinatorQuestion: openCoordinatorQuestionReplies(database, lifecycle),
-    stopRun,
+    archiveRun,
     settleRun,
     ...openRunNavigation(database, getRun),
     ...openRunPresentation(database),
@@ -183,9 +175,6 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
               flowName: run.flowName,
               startedAt: run.startedAt,
               lifecycle: run.lifecycle,
-              closedAt: run.closedAt,
-              outcome: run.outcome,
-              stopRequestedAt: run.stopRequestedAt,
             })),
           ),
         };

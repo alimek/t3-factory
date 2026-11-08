@@ -4,7 +4,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/server";
-import type { RuntimeReply } from "./runtime-types.ts";
+import { SUCCESS_CODES, type RuntimeReply } from "./runtime-types.ts";
 
 const blockIdProperty = {
   type: "string",
@@ -60,7 +60,6 @@ const tools: Tool[] = [
   },
 ];
 
-const SUCCESS_CODES = ["ACCEPTED", "BLOCK", "RUN"];
 const operations = {
   factory_update_block: "submit",
   factory_get_block: "block",

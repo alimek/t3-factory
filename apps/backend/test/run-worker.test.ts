@@ -13,7 +13,6 @@ import {
   launchedBlockId,
   pendingReview,
   workerMessage,
-  interruptWorker,
   finishWorker,
   settleThread,
   startWorkerTurn,
@@ -435,40 +434,6 @@ it("restart preserves the worker binding without replaying accepted work", async
   expect(f.t3.launches.size).toBe(1);
   expect(f.t3.sends.size).toBe(0);
 });
-it("Stop interrupts a root-strategy worker whose thread has no worktree", async (c) => {
-  // Arrange
-  const f = await directWorker(c);
-  f.t3.reportCheckoutWorkspace = true;
-  assert((await f.f.stopRun(f.runId)).ok);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.closedAt).toBeNull();
-  expect(f.t3.threadStops.map((stop) => stop.threadId)).toContain("thread-1");
-});
-
-it("Stop interrupts the worker and stays open until its thread is finished", async (c) => {
-  // Arrange
-  const f = await directWorker(c);
-
-  const stopped = await f.f.stopRun(f.runId);
-  assert(stopped.ok);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const result = await f.f.getRun(f.runId);
-  assert(result.ok);
-  expect(result.value.gateOpen).toBe(false);
-  expect(result.value.closedAt).toBeNull();
-  expect(f.t3.threadStops.map((s) => s.threadId)).toContain("thread-1");
-  expect(f.t3.launches.size).toBe(1);
-});
 it("a worker resumed by the user's reply reports its finished result and settles its question", async (c) => {
   // Arrange
   const f = await repliedWorker(c);
@@ -582,27 +547,6 @@ it("completed direct worker recovery settles the original missing report only af
   expect(run.value.recoveries[0]?.settledAt).not.toBeNull();
   expect(run.value.recoveries[0]?.executionId).toBe(f.executionId);
   expect(run.value.reports[0]?.completionEligibleAt).not.toBeNull();
-});
-
-it("Stop cancels undispatched handoffs and settles the Run as stopped once its worker thread is finished", async (c) => {
-  // Arrange
-  const f = await reportedWorker(c);
-  assert((await f.f.stopRun(f.runId)).ok);
-  interruptWorker(f.t3);
-  assert((await f.f.reconcileRuns()).ok);
-
-  // Act
-  await f.f.reconcileRuns();
-
-  // Assert
-  const run = await f.f.getRun(f.runId);
-  assert(run.ok);
-  expect(run.value.outcome).toBe("stopped");
-  expect(run.value.intents).toContainEqual(
-    expect.objectContaining({ blockId: "parallel-block", state: "cancelled" }),
-  );
-  expect(run.value.activations.map((a) => a.blockId)).toStrictEqual(["worker"]);
-  expect(f.t3.sends.size).toBe(0);
 });
 
 it("a Human answer releases its outgoing handoff without waiting for worker evidence", async (c) => {

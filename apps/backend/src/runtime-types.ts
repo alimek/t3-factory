@@ -51,6 +51,17 @@ const NEXT: Record<RuntimeReport["status"], string> = {
     "This is the Block's result. Factory hands it off after this thread and its delegated work settle. A later finished report replaces it: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks.",
 };
 
+/** Replies that report success to the harness; every other code is a tool error. */
+export const SUCCESS_CODES: readonly string[] = ["ACCEPTED", "RUN_ARCHIVED", "BLOCK", "RUN"];
+
+/** Every report for an archived Run succeeds and changes nothing. */
+export const RUN_ARCHIVED: RuntimeReply = {
+  code: "RUN_ARCHIVED",
+  state: "archived",
+  allowedTransitions: [],
+  next: "This Run is archived, so Factory recorded nothing. Stop work on this Block and end the turn.",
+};
+
 /** The reports a current visit accepts; the latest one is the Block's current report. */
 export const OPEN_TRANSITIONS = ["working", "waiting", "finished"] as const;
 

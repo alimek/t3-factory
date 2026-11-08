@@ -211,7 +211,7 @@ export const makeClientAccess = Effect.gen(function* () {
       > {
         const [open] = yield* sql<{
           count: number;
-        }>`SELECT COUNT(*) AS count FROM runs WHERE closed_at IS NULL AND settled_at IS NULL`;
+        }>`SELECT COUNT(*) AS count FROM runs WHERE archived_at IS NULL AND settled_at IS NULL`;
         return { ok: true, value: { openRunCount: open?.count ?? 0 } };
       }),
   };

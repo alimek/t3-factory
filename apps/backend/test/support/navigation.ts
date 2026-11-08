@@ -1,20 +1,14 @@
 import { assert, type TestContext } from "@effect/vitest";
 import { prepared } from "./prepared-runner.ts";
-import { interruptWorker } from "./run-worker.ts";
 
+/** Two Runs started from the same Flow, the second one created a minute later. */
 export async function siblingRuns(c: TestContext) {
   const p = await prepared(c);
   const first = await p.f.startRun(p.input);
   assert(first.ok);
   await p.f.reconcileRuns();
-  await p.f.stopRun(first.value.id);
-  interruptWorker(p.t3);
-  // Stop confirms only from a sweep taken after its thread Stop request was committed.
-  await p.f.reconcileRuns();
-  await p.f.reconcileRuns();
-  const stopped = await p.f.getRun(first.value.id);
-  assert(stopped.ok && stopped.value.closure);
-  p.t3.engineStatus = "running";
+  const started = await p.f.getRun(first.value.id);
+  assert(started.ok);
   const second = await p.f.startRun({
     ...p.input,
     requestId: "second",
@@ -23,5 +17,5 @@ export async function siblingRuns(c: TestContext) {
     createdAt: "2026-11-07T08:01:00.000Z",
   });
   assert(second.ok);
-  return { ...p, first: stopped.value, second: second.value };
+  return { ...p, first: started.value, second: second.value };
 }

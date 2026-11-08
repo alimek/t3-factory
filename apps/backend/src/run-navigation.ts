@@ -23,26 +23,23 @@ export function openRunNavigation(
             title: string;
             created_at: string;
             creation_key: string;
-            stop_requested_at: string | null;
             settled_at: string | null;
-            confirmed_at: string | null;
-            outcome: RunNavigationEntry["outcome"];
             snoozed: number | null;
             woke: number | null;
             project_id: string;
             project_title: string;
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
-          }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.stop_requested_at,r.settled_at,c.confirmed_at,c.outcome,rp.snoozed,rp.woke,
+          }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.settled_at,rp.snoozed,rp.woke,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
-          LEFT JOIN run_closures c ON c.run_id=r.id AND c.outcome='stopped' LEFT JOIN run_presentation rp ON rp.run_id=r.id ORDER BY r.created_at DESC,r.creation_key`;
+          LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
           const blocks = yield* sql<{
             run_id: string;
             block_id: string;
             state: RunNavigationEntry["blocks"][number]["state"];
             freshness: RunNavigationEntry["blocks"][number]["freshness"];
-          }>`SELECT run_id,block_id,state,freshness FROM run_blocks ORDER BY rowid`;
+          }>`SELECT run_id,block_id,state,freshness FROM run_blocks WHERE run_id IN (SELECT id FROM runs WHERE archived_at IS NULL) ORDER BY rowid`;
           const working = new Map(
             (yield* currentWorkingMessages(sql)).map((row) => [
               `${row.run_id}/${row.block_id}`,
@@ -87,7 +84,7 @@ export function openRunNavigation(
             ok: true as const,
             value: rows.map((row) => {
               const matters = mattersByRun.get(row.id) ?? [];
-              const active = !row.outcome && !row.settled_at;
+              const active = !row.settled_at;
               return {
                 id: row.id,
                 title: row.title,
@@ -100,9 +97,6 @@ export function openRunNavigation(
                   availability: row.availability,
                 },
                 lifecycle: row.settled_at ? ("settled" as const) : ("active" as const),
-                closedAt: row.confirmed_at,
-                outcome: row.outcome,
-                stopRequestedAt: row.stop_requested_at,
                 blocks: byRun.get(row.id) ?? [],
                 presentation: {
                   snoozed: active && !!row.snoozed,

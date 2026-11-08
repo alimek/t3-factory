@@ -54,7 +54,7 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
         : null,
     },
-    allowedTransitions: current ? OPEN_TRANSITIONS : [],
+    allowedTransitions: current && detail.lifecycle !== "archived" ? OPEN_TRANSITIONS : [],
   };
 }
 
@@ -82,7 +82,7 @@ function runView(detail: RunDetail): RuntimeReply {
     number: detail.number,
     title: detail.title,
     input: detail.input,
-    state: detail.outcome ?? (detail.stopRequestedAt ? "stopping" : detail.lifecycle),
+    state: detail.lifecycle,
     blocks: detail.blocks.map((block) => ({
       blockId: block.blockId,
       name: block.name,

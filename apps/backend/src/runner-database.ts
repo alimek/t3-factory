@@ -40,16 +40,16 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
   function runHeldUnderContext(sql: SqlClient.SqlClient, runRow: RunRow, requireOpenGate = false) {
     return Effect.gen(function* () {
       const [held] = yield* sql<{
-        closed_at: string | null;
+        archived_at: string | null;
         token: string;
         live_context: string;
         gate_open: number;
       }>`
-          SELECT r.closed_at,r.gate_open,o.token,c.context_id AS live_context FROM runs r
+          SELECT r.archived_at,r.gate_open,o.token,c.context_id AS live_context FROM runs r
           JOIN runner_owner o ON o.singleton=1 JOIN t3_connection c ON c.singleton=1 WHERE r.id=${runRow.id}`;
       return (
         !!held &&
-        !held.closed_at &&
+        !held.archived_at &&
         held.token === owner.token &&
         held.live_context === runRow.context_id &&
         (!requireOpenGate || Boolean(held.gate_open))
@@ -83,7 +83,7 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
           yield* sql`UPDATE operation_intents SET state='reserved',reserved_by=${owner.token},reserved_at=${yield* now},retry_scope=${intent.state === "pending" ? retryScope : intent.retry_scope},problem=NULL
         WHERE id=${intent.id} AND state=${intent.state}
         AND (${releaseGeneration ?? null} IS NULL OR EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND generation=${releaseGeneration ?? null}))
-        AND EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND closed_at IS NULL AND (gate_open=1 OR (stop_requested_at IS NOT NULL AND ${intent.state !== "pending" ? 1 : 0}=1)))
+        AND EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND gate_open=1)
         AND EXISTS(SELECT 1 FROM projects WHERE id=${runRow.project_id} AND workspace_root=${runRow.workspace_root} AND availability='available')
         AND EXISTS(SELECT 1 FROM t3_connection WHERE context_id=${intent.context_id})
         AND EXISTS(SELECT 1 FROM runner_owner WHERE token=${owner.token})
@@ -120,10 +120,9 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
             yield* sql`UPDATE operation_intents SET state='uncertain',problem='Previous owner exited with an in-flight reservation.' WHERE state='reserved'`;
             yield* sql`UPDATE run_coordinators SET state='uncertain',problem='Previous owner exited with an in-flight Run conversation launch.' WHERE state='reserved'`;
             yield* sql`UPDATE run_control_recoveries SET state='uncertain' WHERE state='reserved'`;
-            yield* sql`UPDATE run_root_stop_intents SET state='uncertain' WHERE state='reserved'`;
             yield* sql`UPDATE run_coordinator_commands SET state='uncertain' WHERE state='reserved'`;
-            yield* sql`UPDATE run_coordinators SET freshness='stale' WHERE run_id IN(SELECT id FROM runs WHERE closed_at IS NULL AND settled_at IS NULL)`;
-            yield* sql`UPDATE run_blocks SET freshness='stale' WHERE thread_id IS NOT NULL AND run_id IN(SELECT id FROM runs WHERE closed_at IS NULL AND settled_at IS NULL)`;
+            yield* sql`UPDATE run_coordinators SET freshness='stale' WHERE run_id IN(SELECT id FROM runs WHERE archived_at IS NULL AND settled_at IS NULL)`;
+            yield* sql`UPDATE run_blocks SET freshness='stale' WHERE thread_id IS NOT NULL AND run_id IN(SELECT id FROM runs WHERE archived_at IS NULL AND settled_at IS NULL)`;
           }),
         );
       });

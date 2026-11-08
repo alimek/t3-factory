@@ -105,8 +105,8 @@ export const api = {
     post<RunDetail>(`/api/human-occurrences/${encodeURIComponent(id)}/answer`, input),
   startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),
   getRunCreationPolicy: () => request<RunCreationPolicy>("/api/run-creation-policy"),
-  stopRun: (id: string) =>
-    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/stop`, { method: "POST" }),
+  archiveRun: (id: string) =>
+    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
   getRun: (id: string) => request<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   listRuns: (projectId: string) =>
     request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),

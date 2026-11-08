@@ -27,7 +27,6 @@ type ReleasedRun = Omit<
   | "closure"
   | "coordinationActions"
   | "lifecycle"
-  | "outcome"
 > & {
   snapshot: ReleasedSnapshot;
   blocks: readonly Omit<CurrentRun["blocks"][number], "workingMessage">[];
@@ -37,7 +36,9 @@ type ReleasedRun = Omit<
     evidence: unknown;
   })[];
   remoteWork: readonly unknown[];
-  outcome: "finished" | null;
+  closedAt: string | null;
+  outcome: "finished" | "stopped" | null;
+  stopRequestedAt: string | null;
   closure: unknown;
   coordinationActions: CurrentRun["coordinationActions"] & { controlRecoveries: unknown };
 };
@@ -51,8 +52,11 @@ interface ReleasedCapture {
   agent: Value<"getAgent">;
   /** Edited after the closed Run started, then removed from the catalog. */
   retired: { flow: Value<"getFlow">; agent: Value<"getAgent"> };
+  /** Closed Finished. */
   closed: ReleasedRun;
   active: ReleasedRun;
+  /** Closed Stopped, created and stopped by v0.2.0 after the other Runs were captured. */
+  stopped: ReleasedRun;
   tasks: Value<"listTasks">;
 }
 
@@ -68,13 +72,16 @@ function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
   };
 }
 
-/** The released Finished Run as current Run detail shows it: Settled with its handoff gate open,
- * keeping the same history without the retired report keys, completion evidence and closure,
- * and with no working message. */
-export function currentSettledRun(released: ReleasedRun): CurrentRun {
+/** A released closed Run as current Run detail shows it in its new lifecycle state (Settled with
+ * its handoff gate open for Finished, Archived for Stopped), keeping the same history without
+ * the retired report keys, completion evidence and closure, and with no working message. */
+export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archived"): CurrentRun {
   const {
     snapshot,
     remoteWork: _remote,
+    closedAt: _closedAt,
+    outcome: _outcome,
+    stopRequestedAt: _stopRequestedAt,
     closure: _closure,
     coordinationActions,
     ...run
@@ -82,11 +89,8 @@ export function currentSettledRun(released: ReleasedRun): CurrentRun {
   const { controlRecoveries: _controls, ...actions } = coordinationActions;
   return {
     ...run,
-    lifecycle: "settled",
-    closedAt: null,
-    outcome: null,
-    gateOpen: true,
-    closure: null,
+    lifecycle,
+    gateOpen: lifecycle === "settled",
     definitions: capturedDefinitions(snapshot),
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),

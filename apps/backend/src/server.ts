@@ -172,6 +172,7 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
         ["restore", factory.restoreRun],
         ["woke-seen", factory.markRunWokeSeen],
         ["settle", factory.settleRun],
+        ["archive", factory.archiveRun],
       ] as const
     ).map(([action, operation]): ApiRoute => ({
       method: "POST",
@@ -206,11 +207,6 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
           Effect.promise(() => factory.listRuns(queryParameter(url, "projectId"))),
           resultResponse,
         ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/stop$/,
-      handle: fromId((id) => factory.stopRun(id)),
     },
     {
       method: "GET",

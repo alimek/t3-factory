@@ -10,7 +10,12 @@ import type { RunnerDatabase } from "./runner-database.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { BlockRow, ReportRunRow, RunnerLifecycle } from "./runner-types.ts";
 import { fingerprint, rejected } from "./runner-utils.ts";
-import { acceptedTransition, type RuntimeReply, type RuntimeReport } from "./runtime-types.ts";
+import {
+  acceptedTransition,
+  RUN_ARCHIVED,
+  type RuntimeReply,
+  type RuntimeReport,
+} from "./runtime-types.ts";
 import { resolveBlock } from "./runtime-block-id.ts";
 import { now } from "./time.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
@@ -99,7 +104,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       if (!block) return rejected("UNKNOWN_BLOCK");
       const [saved] = yield* sql<
         Omit<ReportRunRow, "definitions"> & { flow_revision_id: string }
-      >`SELECT r.id,r.gate_open,r.closed_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${block.run_id}`;
+      >`SELECT r.id,r.gate_open,r.archived_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${block.run_id}`;
       if (!saved || saved.token !== owner.token) return rejected("RUNNER_UNAVAILABLE");
       const [activation] = yield* sql<{
         id: string;
@@ -174,6 +179,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
   function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeReport) {
     return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
       const { runRow, block } = target;
+      if (runRow.archived_at) return RUN_ARCHIVED;
       const protocol = nonFinalRejection(report);
       if (protocol) return protocol;
       const content = reportFingerprint(report);
@@ -182,7 +188,6 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         if (current?.fingerprint === content)
           return JSON.parse(current.acknowledgement_json) as RuntimeReply;
       }
-      if (!runRow.gate_open || runRow.closed_at) return { code: "RUN_CLOSED" };
       const route = reportRoute(runRow.definitions, block.block_id, report);
       if (!route.ok) return route.reply;
       if (report.status === "waiting")
@@ -198,7 +203,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       if (!located) return { code: "UNKNOWN_BLOCK" };
       // The report belongs to the thread's current turn, which T3 may not have shown Factory yet.
       const run = yield* database.row(located.run_id);
-      if (run?.gate_open && !run.closed_at) yield* lifecycle.drive(run.id, "observe");
+      if (run?.gate_open) yield* lifecycle.drive(run.id, "observe");
       return yield* serial(located.run_id, () =>
         Effect.gen(function* () {
           const verdict = yield* transaction((sql) =>
