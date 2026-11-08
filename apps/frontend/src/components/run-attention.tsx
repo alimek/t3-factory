@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { bindingRole } from "./run-coordination.tsx";
 import { useId, useState, type FormEvent } from "react";
 import {
@@ -387,9 +388,11 @@ function HumanResponseForm({
         </Alert>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" disabled={busy || !ready}>
-          {answerButtonLabel(busy, singleExit, feedbackRequired)}
-        </Button>
+        <MutationGate>
+          <Button type="submit" disabled={busy || !ready}>
+            {answerButtonLabel(busy, singleExit, feedbackRequired)}
+          </Button>
+        </MutationGate>
         {link && <OpenInT3 href={link} />}
       </div>
     </form>
@@ -523,9 +526,11 @@ export function RequestReport({
         Starts an additional Agent turn to assess existing work and report without repeating the
         task.
       </p>
-      <Button disabled={busy} onClick={() => void submit()}>
-        {busy ? "Requesting…" : "Request report"}
-      </Button>
+      <MutationGate>
+        <Button disabled={busy} onClick={() => void submit()}>
+          {busy ? "Requesting…" : "Request report"}
+        </Button>
+      </MutationGate>
       {error && <p role="alert">{error}</p>}
     </div>
   );

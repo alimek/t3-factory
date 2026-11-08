@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { RootWork } from "../components/run-coordination-controls.tsx";
 import {
   BindingLink,
@@ -348,10 +349,12 @@ function RunTopBar({
       </div>
       {run.lifecycle !== "archived" && (
         <>
-          <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
-            <Archive aria-hidden />
-            Archive Run
-          </Button>
+          <MutationGate>
+            <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
+              <Archive aria-hidden />
+              Archive Run
+            </Button>
+          </MutationGate>
           <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />
         </>
       )}

@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { T3Connection } from "@t3-factory/contracts";
 import { Hourglass, Info, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
@@ -146,16 +147,20 @@ function StatusNotice({ host, operation }: { host: boolean; operation: Operation
       help={loadError || (host ? undefined : remoteHelp[key])}
       action={
         opens ? (
-          <NoticeButton
-            disabled={operation.busy || !connection?.endpoint}
-            onClick={operation.openAuthorization}
-          >
-            Open authorization on server
-          </NoticeButton>
+          <MutationGate>
+            <NoticeButton
+              disabled={operation.busy || !connection?.endpoint}
+              onClick={operation.openAuthorization}
+            >
+              Open authorization on server
+            </NoticeButton>
+          </MutationGate>
         ) : (
-          <NoticeButton disabled={operation.busy} onClick={operation.recheck}>
-            Check again
-          </NoticeButton>
+          <MutationGate>
+            <NoticeButton disabled={operation.busy} onClick={operation.recheck}>
+              Check again
+            </NoticeButton>
+          </MutationGate>
         )
       }
     />
@@ -250,28 +255,32 @@ function HostConnectionActions({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant={presentation === "ready" ? "outline" : "default"}
-          disabled={busy}
-          onClick={onRecheck}
-        >
-          Recheck
-        </Button>
+        <MutationGate>
+          <Button
+            type="button"
+            variant={presentation === "ready" ? "outline" : "default"}
+            disabled={busy}
+            onClick={onRecheck}
+          >
+            Recheck
+          </Button>
+        </MutationGate>
         {onEditAddress && (
           <Button type="button" variant="outline" disabled={busy} onClick={onEditAddress}>
             Edit address
           </Button>
         )}
         {authorizable && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy || !connection?.endpoint}
-            onClick={onAuthorize}
-          >
-            {authorizeLabel(connection)}
-          </Button>
+          <MutationGate>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !connection?.endpoint}
+              onClick={onAuthorize}
+            >
+              {authorizeLabel(connection)}
+            </Button>
+          </MutationGate>
         )}
       </div>
       <p className="text-2xs tracking-label text-subtle-foreground">
@@ -303,14 +312,16 @@ function RemoteConnectionActions({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant={presentation === "ready" ? "outline" : "default"}
-          disabled={busy}
-          onClick={onRecheck}
-        >
-          Recheck
-        </Button>
+        <MutationGate>
+          <Button
+            type="button"
+            variant={presentation === "ready" ? "outline" : "default"}
+            disabled={busy}
+            onClick={onRecheck}
+          >
+            Recheck
+          </Button>
+        </MutationGate>
       </div>
       <p className="text-2xs tracking-label text-subtle-foreground">
         Opening authorization shows T3’s consent page in a browser on the Factory host; approve
@@ -383,9 +394,11 @@ function EndpointForm({
           className="bg-background font-mono text-xs"
           onChange={(event) => setEndpoint(event.target.value)}
         />
-        <Button type="submit" disabled={busy}>
-          Save endpoint
-        </Button>
+        <MutationGate>
+          <Button type="submit" disabled={busy}>
+            Save endpoint
+          </Button>
+        </MutationGate>
       </div>
       <p className="text-2xs tracking-label text-subtle-foreground">
         Use HTTPS, or HTTP on loopback. Do not include tokens or credentials in the URL.

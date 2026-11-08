@@ -1,3 +1,4 @@
+import { MutationGate } from "@/client-gate";
 import { useCallback, useState } from "react";
 import type { FactoryClient, RemoteAccessStatus } from "@t3-factory/contracts";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -90,12 +91,14 @@ function RemoteAccessSection({
       className="grid gap-3 rounded-md border bg-background p-4"
     >
       <div className="flex items-center gap-2">
-        <Checkbox
-          id="remote-access"
-          checked={remote?.enabled ?? false}
-          disabled={busy || remote === null}
-          onCheckedChange={(checked) => onToggle(checked === true)}
-        />
+        <MutationGate>
+          <Checkbox
+            id="remote-access"
+            checked={remote?.enabled ?? false}
+            disabled={busy || remote === null}
+            onCheckedChange={(checked) => onToggle(checked === true)}
+          />
+        </MutationGate>
         <Label htmlFor="remote-access">Allow approved devices on my LAN or tailnet</Label>
       </div>
       {remote?.problem && <p className="text-sm text-destructive">{remote.problem}</p>}
@@ -184,28 +187,34 @@ function ClientList({
             </div>
             {client.status === "pending" && (
               <>
-                <Button size="sm" disabled={busy} onClick={() => onDecide(client.id, "approve")}>
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => onDecide(client.id, "deny")}
-                >
-                  Deny
-                </Button>
+                <MutationGate>
+                  <Button size="sm" disabled={busy} onClick={() => onDecide(client.id, "approve")}>
+                    Approve
+                  </Button>
+                </MutationGate>
+                <MutationGate>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => onDecide(client.id, "deny")}
+                  >
+                    Deny
+                  </Button>
+                </MutationGate>
               </>
             )}
             {client.status === "approved" && (
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={busy}
-                onClick={() => onDecide(client.id, "revoke")}
-              >
-                Revoke
-              </Button>
+              <MutationGate>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={busy}
+                  onClick={() => onDecide(client.id, "revoke")}
+                >
+                  Revoke
+                </Button>
+              </MutationGate>
             )}
           </li>
         ))}

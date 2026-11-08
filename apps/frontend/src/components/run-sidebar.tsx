@@ -1,3 +1,4 @@
+import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
@@ -86,24 +87,26 @@ function NewRunButton({ current }: { current: boolean }) {
   const { hint } = useShortcutPreferences();
   const navigate = useNavigate();
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="New Run (+)"
-          aria-current={current ? "page" : undefined}
-          className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
-          onClick={() => {
-            runDraft.openFresh();
-            void navigate({ to: "/runs/new" });
-          }}
-        >
-          <Plus aria-hidden strokeWidth={1.5} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
-    </Tooltip>
+    <MutationGate>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="New Run (+)"
+            aria-current={current ? "page" : undefined}
+            className="aria-[current=page]:border-brand-soft-border aria-[current=page]:bg-brand-soft aria-[current=page]:text-link"
+            onClick={() => {
+              runDraft.openFresh();
+              void navigate({ to: "/runs/new" });
+            }}
+          >
+            <Plus aria-hidden strokeWidth={1.5} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>New Run · {hint("newRun")}</TooltipContent>
+      </Tooltip>
+    </MutationGate>
   );
 }
 
@@ -497,13 +500,13 @@ const rowClassName = (selected: boolean) =>
   );
 
 /** Row link handlers: Shift+F10, the context-menu key and right click open the menu; F2 renames. */
-function rowMenuKeys(openMenu: () => void, onRename: () => void) {
+function rowMenuKeys(openMenu: () => void, onRename: () => void, renameDisabled = false) {
   return {
     onKeyDown(event: React.KeyboardEvent) {
       if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
         event.preventDefault();
         openMenu();
-      } else if (event.key === "F2") {
+      } else if (event.key === "F2" && !renameDisabled) {
         event.preventDefault();
         onRename();
       }
@@ -642,6 +645,7 @@ function RunRow({
   onAction: (action: RunAction) => void;
   busy: boolean;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   const state = execution(run);
   const muted = searchMuted && !selected;
   const titleColor = muted ? "text-muted-foreground" : "text-foreground";
@@ -662,7 +666,7 @@ function RunRow({
       <TooltipTrigger asChild>
         <div className={rowClassName(selected)}>
           <Link
-            {...rowMenuKeys(() => setMenuOpen(true), onRename)}
+            {...rowMenuKeys(() => setMenuOpen(true), onRename, !mutationsAllowed)}
             to="/runs/$runId"
             params={{ runId: run.id }}
             aria-current={selected ? "page" : undefined}
@@ -692,12 +696,7 @@ function RunRow({
                 <span className="truncate" title={run.project.workspaceRoot}>
                   {run.project.title}
                 </span>
-                {run.presentation.woke && <RunStatusChip kind="woke" />}
-                {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
-                {run.attention.problem && <RunStatusChip kind="problem" />}
-                {run.project.availability !== "available" && (
-                  <RunStatusChip kind="project-unavailable" />
-                )}
+                <RunRowIndicators run={run} />
               </span>
               {working && (
                 <span className="block truncate text-2xs leading-tight text-muted-foreground">
@@ -715,7 +714,7 @@ function RunRow({
             open={menuOpen}
             onOpenChange={setMenuOpen}
           >
-            <RenameItem onSelect={onRename} />
+            <RenameItem onSelect={onRename} disabled={!mutationsAllowed} />
             <RunActionItems run={run} onAction={onAction} onArchive={onArchive} />
           </RowMenu>
         </div>
@@ -733,6 +732,17 @@ function RunRow({
   );
 }
 
+function RunRowIndicators({ run }: { run: RunNavigationEntry }) {
+  return (
+    <>
+      {run.presentation.woke && <RunStatusChip kind="woke" />}
+      {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
+      {run.attention.problem && <RunStatusChip kind="problem" />}
+      {run.project.availability !== "available" && <RunStatusChip kind="project-unavailable" />}
+    </>
+  );
+}
+
 function RunActionItems({
   run,
   onAction,
@@ -742,10 +752,12 @@ function RunActionItems({
   onAction: (action: RunAction) => void;
   onArchive: (run: RunNavigationEntry) => void;
 }) {
+  const mutationsAllowed = useMutationsAllowed();
   return (
     <>
       {isActive(run) && (
         <DropdownMenuItem
+          disabled={!mutationsAllowed}
           onSelect={() => onAction(run.presentation.snoozed ? "restore" : "snooze")}
         >
           {run.presentation.snoozed ? (
@@ -757,12 +769,12 @@ function RunActionItems({
         </DropdownMenuItem>
       )}
       {isActive(run) && (
-        <DropdownMenuItem onSelect={() => onAction("settle")}>
+        <DropdownMenuItem disabled={!mutationsAllowed} onSelect={() => onAction("settle")}>
           <CircleCheck aria-hidden strokeWidth={1.5} />
           Settle
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem onSelect={() => onArchive(run)}>
+      <DropdownMenuItem disabled={!mutationsAllowed} onSelect={() => onArchive(run)}>
         <Archive aria-hidden strokeWidth={1.5} />
         Archive…
       </DropdownMenuItem>
@@ -833,7 +845,9 @@ function RenameDialog({
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={busy || !title.trim()}>Save title</Button>
+            <MutationGate>
+              <Button disabled={busy || !title.trim()}>Save title</Button>
+            </MutationGate>
           </DialogFooter>
         </form>
       </DialogContent>
