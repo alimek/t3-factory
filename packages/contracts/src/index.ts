@@ -583,17 +583,40 @@ export interface RunPresentation {
   readonly snoozed: boolean;
   readonly woke: boolean;
 }
+export interface RunPullRequest {
+  readonly host: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly url: string;
+  readonly state: "open" | "closed" | "merged" | null;
+}
+/** Last repository metadata T3 reported for a bound worker, independent of its Block result. */
+export interface RunWorkerRepository {
+  readonly blockId: string;
+  readonly blockName: string;
+  readonly threadId: string;
+  readonly branch: string | null;
+  readonly pullRequests: readonly RunPullRequest[];
+  readonly updatedAt: string;
+  readonly freshness: RunBlock["freshness"];
+}
 /** Global navigation reads durable Run identity without loading definitions or Task hierarchies. */
 export interface RunNavigationEntry {
   readonly id: string;
   readonly title: string;
   readonly createdAt: string;
+  readonly lastActivityAt: string;
+  readonly flowName: string;
+  readonly repositories: readonly RunWorkerRepository[];
   /**
    * Orders entries with equal `createdAt` (ascending): the Start request key, which the
    * composer takes from the draft's id so its Run keeps the draft's place.
    */
   readonly creationKey: string;
-  readonly project: Pick<FactoryProject, "id" | "title" | "workspaceRoot" | "availability">;
+  readonly project: Pick<
+    FactoryProject,
+    "id" | "title" | "workspaceRoot" | "availability" | "projectIcon" | "faviconUrl"
+  >;
   readonly lifecycle: Exclude<RunLifecycle, "archived">;
   readonly blocks: readonly Pick<RunBlock, "state" | "freshness" | "workingMessage">[];
   /** Pending attention only. Reading this summary does not settle any matter. */
@@ -611,6 +634,7 @@ export interface RunCoordinationActions {
   }[];
 }
 export interface RunDetail extends RunSummary {
+  readonly repositories: readonly RunWorkerRepository[];
   /** Durable sequence used in worker titles. Assigned when the Run is accepted. */
   readonly number: number;
   readonly coordinationActions: RunCoordinationActions;

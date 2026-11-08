@@ -1,6 +1,8 @@
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
 import {
   executionBlock,
+  scenarioRepository,
+  demoPullRequest,
   failScenarioExecution,
   launchedBlockId,
   nativeAttention,
@@ -79,6 +81,10 @@ async function settledAndArchivedScenarios(context: SeedContext, flowId: string)
     "Settled · Clearer onboarding copy",
     "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
   );
+  settled = await scenarioRepository(context, settled, "worker", {
+    branch: "copy/welcome",
+    pullRequests: [demoPullRequest(41, "merged")],
+  });
   settled = await report(context, settled, "worker", {
     to: "finished",
     exit: "Done",
@@ -137,6 +143,11 @@ async function idleWorkingScenario(
   scenario: { key: string; title: string; input: string; message: string },
 ) {
   let run = await startScenario(context, flowId, scenario.key, scenario.title, scenario.input);
+  if (scenario.key === "working-report")
+    run = await scenarioRepository(context, run, "worker", {
+      branch: null,
+      pullRequests: [demoPullRequest(42)],
+    });
   run = await report(context, run, "worker", { to: "working", message: scenario.message });
   await observeTerminal(context.t3, executionBlock(run), "completed");
   await reconcileUntil(context, run.id, (detail) =>
@@ -215,7 +226,15 @@ async function parallelStartScenario(context: SeedContext, flowId: string) {
     "Parallel review from one prompt",
     "Review the Atlas settings page for code quality and for keyboard accessibility. Each reviewer starts from this prompt and reports independently.",
   );
-  await bothReviewersWorking(context, run.id);
+  const working = await bothReviewersWorking(context, run.id);
+  await scenarioRepository(context, working, "reviewer", {
+    branch: "review/project-picker",
+    pullRequests: [demoPullRequest(42)],
+  });
+  await scenarioRepository(context, working, "accessibility", {
+    branch: "review/keyboard-accessibility",
+    pullRequests: [demoPullRequest(42), demoPullRequest(43)],
+  });
 }
 
 export async function seedScenarios(
@@ -252,6 +271,10 @@ export async function seedScenarios(
     "Add a concise empty state to the Atlas project picker, including a hint to open an existing repository.",
   );
   const worker = executionBlock(working);
+  await scenarioRepository(context, working, "worker", {
+    branch: "feature/project-picker-empty-state-and-keyboard-navigation",
+    pullRequests: [],
+  });
   // Two subagents keep running after the worker's own turn ends.
   context.t3.delegate(worker.threadId, worker.executionId);
   context.t3.delegate(worker.threadId, worker.executionId);

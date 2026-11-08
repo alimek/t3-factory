@@ -10,6 +10,9 @@ import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { failure } from "./result.ts";
 import { currentWorkingMessages } from "./block-report.ts";
+import { readWorkerRepositories } from "./worker-repositories.ts";
+import { storedProjectIcon } from "./projects.ts";
+import { projectFaviconUrl } from "./project-favicon.ts";
 export function openRunNavigation(
   database: RunnerDatabase,
   getRun: (id: string) => Effect.Effect<Result<RunDetail>, unknown>,
@@ -22,6 +25,10 @@ export function openRunNavigation(
             id: string;
             title: string;
             created_at: string;
+            last_activity_at: string;
+            flow_name: string;
+            project_icon_json: string | null;
+            favicon_path: string | null;
             creation_key: string;
             settled_at: string | null;
             snoozed: number | null;
@@ -31,8 +38,11 @@ export function openRunNavigation(
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
           }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.settled_at,rp.snoozed,rp.woke,
+          COALESCE((SELECT MAX(e.observed_at) FROM run_events e WHERE e.run_id=r.id AND e.kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','run-settled','run-activated')),r.started_at) AS last_activity_at,
+          f.name AS flow_name,p.project_icon_json,p.favicon_path,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
+          JOIN flow_revisions f ON f.id=r.flow_revision_id
           LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
           const blocks = yield* sql<{
             run_id: string;
@@ -47,6 +57,12 @@ export function openRunNavigation(
             ]),
           );
           const byRun = new Map<string, RunNavigationEntry["blocks"][number][]>();
+          const repositories = new Map<string, RunNavigationEntry["repositories"][number][]>();
+          for (const { runId, ...worker } of yield* readWorkerRepositories(sql)) {
+            const entries = repositories.get(runId) ?? [];
+            entries.push(worker);
+            repositories.set(runId, entries);
+          }
           for (const block of blocks) {
             const entries = byRun.get(block.run_id) ?? [];
             entries.push({
@@ -89,12 +105,17 @@ export function openRunNavigation(
                 id: row.id,
                 title: row.title,
                 createdAt: row.created_at,
+                lastActivityAt: row.last_activity_at,
+                flowName: row.flow_name,
+                repositories: repositories.get(row.id) ?? [],
                 creationKey: row.creation_key,
                 project: {
                   id: row.project_id,
                   title: row.project_title,
                   workspaceRoot: row.workspace_root,
                   availability: row.availability,
+                  projectIcon: storedProjectIcon(row.project_icon_json),
+                  faviconUrl: projectFaviconUrl(row.project_id, row.favicon_path),
                 },
                 lifecycle: row.settled_at ? ("settled" as const) : ("active" as const),
                 blocks: byRun.get(row.id) ?? [],

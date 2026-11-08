@@ -30,7 +30,7 @@ type Row = {
   project_icon_json: string | null;
   favicon_path: string | null;
 };
-const storedProjectIcon = (json: string | null): ProjectIcon | null => {
+export const storedProjectIcon = (json: string | null): ProjectIcon | null => {
   if (json === null) return null;
   return parseProjectIcon(JSON.parse(json) as unknown);
 };

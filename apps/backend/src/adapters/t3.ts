@@ -3,6 +3,7 @@ import type {
   AgentProviderCapability,
   ConnectionState,
   ProjectIcon,
+  RunPullRequest,
   T3Contract,
 } from "@t3-factory/contracts";
 
@@ -157,6 +158,11 @@ export interface ThreadIdentityRead {
   readonly executions: readonly LaunchCandidateExecution[];
 }
 export interface ExecutionObservation {
+  /** Absent when the upstream thread read supplies no repository metadata. */
+  readonly repository?: {
+    readonly branch: string | null;
+    readonly pullRequests: readonly RunPullRequest[];
+  };
   readonly projectId: string;
   readonly threadId: string;
   readonly activeRunId: string | null;

@@ -50,6 +50,7 @@ export function runDetail(): RunDetail {
     task: { id: "task", title: "Task", projectId: "project" },
     flowId: "flow",
     flowName: "Flow",
+    repositories: [],
     startedAt: "2026-11-08T00:00:00Z",
     input: "Task",
     gateOpen: true,

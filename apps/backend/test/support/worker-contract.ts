@@ -8,6 +8,24 @@ export function capturedWorker(c: TestContext) {
   return authorizedLiveOAuth(c, { runtimeActivity: () => workerActivity });
 }
 
+export function repositoryWorker(
+  c: TestContext,
+  url = "https://github.com/example/search/pull/42",
+) {
+  return authorizedLiveOAuth(c, {
+    runtimeActivity: () => ({
+      ...workerActivity,
+      thread: {
+        ...workerActivity.thread,
+        branch: "feature/search",
+        pullRequests: [
+          { host: "github.com", repository: "example/search", number: 42, url, state: "open" },
+        ],
+      },
+    }),
+  });
+}
+
 /** T3's settled `t3_thread_wait` answer for the worker's waited run. */
 export const settledAnswer = (runId: string): Record<string, unknown> => ({
   threadId: "thread-1",

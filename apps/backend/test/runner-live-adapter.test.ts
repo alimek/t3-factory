@@ -5,7 +5,45 @@ import { launchFixture } from "./support/launch-fixture.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
-import { capturedWorker, settledAnswer, wireWorker } from "./support/worker-contract.ts";
+import {
+  capturedWorker,
+  repositoryWorker,
+  settledAnswer,
+  wireWorker,
+} from "./support/worker-contract.ts";
+
+it("a worker observation reads its branch independently of its explicitly linked PR", async (c) => {
+  // Arrange
+  const { adapter, endpoint } = await repositoryWorker(c);
+
+  // Act
+  const observation = await adapter.readExecution({ endpoint }, "thread-1");
+
+  // Assert
+  expect(observation.repository).toStrictEqual({
+    branch: "feature/search",
+    pullRequests: [
+      {
+        host: "github.com",
+        repository: "example/search",
+        number: 42,
+        url: "https://github.com/example/search/pull/42",
+        state: "open",
+      },
+    ],
+  });
+});
+
+it("a worker PR cannot supply an executable link to Factory clients", async (c) => {
+  // Arrange
+  const { adapter, endpoint } = await repositoryWorker(c, "javascript:alert(1)");
+
+  // Act
+  const observation = adapter.readExecution({ endpoint }, "thread-1");
+
+  // Assert
+  await expect(observation).rejects.toThrow("Invalid worker pull request URL.");
+});
 import { finishWorker, startWorkerTurn, workerFinal } from "./support/run-worker.ts";
 
 it("a captured checkout worker retains exact execution identity from its nested thread read", async (c) => {

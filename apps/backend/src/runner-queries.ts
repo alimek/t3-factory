@@ -3,6 +3,7 @@ import { readRootWork } from "./run-root-history.ts";
 import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "./thread-link.ts";
+import { readWorkerRepositories } from "./worker-repositories.ts";
 import { recoveryRows } from "./runner-recovery.ts";
 import type {
   Result,
@@ -245,6 +246,9 @@ export function openRunnerQueries(database: RunnerDatabase) {
             flowId: definitions.flow.id,
             flowName: definitions.flow.name,
             definitions,
+            repositories: (yield* readWorkerRepositories(sql, id)).map(
+              ({ runId: _runId, ...worker }) => worker,
+            ),
             runCoordinator: yield* readRunCoordinator(sql, id),
             coordinationActions: yield* readCoordinationActions(sql, runRow),
             rootWork: yield* readRootWork(sql, id),

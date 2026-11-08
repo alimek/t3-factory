@@ -13,8 +13,10 @@ import {
   CirclePause,
   FilePen,
   LoaderCircle,
+  GitBranch,
+  GitPullRequest,
+  Workflow,
   Moon,
-  MoreHorizontal,
   Pencil,
   Plus,
   Search,
@@ -31,20 +33,17 @@ import {
   useRunDrafts,
   type SavedRunDraft,
 } from "../run-draft.ts";
-import { AppLink as Link } from "./app-link.tsx";
 import { useNavigate } from "@tanstack/react-router";
 import { useLiveNavigation } from "../live/navigation.ts";
 import { ArchiveRunDialog } from "./archive-run-dialog.tsx";
 import { RunStatusChip } from "./run-status-chip.tsx";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+import { ContextMenuItem as RowMenuItem } from "./ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { ActivityAge, SidebarRow, SidebarRowsProvider } from "./sidebar-row.tsx";
+import { ProjectIcon } from "./project-icon.tsx";
+import { repositorySummary, RunRepositories } from "./run-repositories.tsx";
 import { cn } from "../lib/utils.ts";
 
 /** Run/ExecIndicator: whole-Run execution only; attention stays in the chips. */
@@ -148,26 +147,28 @@ export function RunSidebar({ path }: { path: string }) {
           {loadError || actionError}
         </p>
       )}
-      <RunGroups
-        path={path}
-        open={open}
-        composingDraftId={composition.draftId}
-        settled={settled}
-        snoozed={snoozed}
-        snoozedExpanded={snoozedExpanded}
-        onExpandSnoozed={() => setSnoozedExpanded(!snoozedExpanded)}
-        onAction={act}
-        busy={busy}
-        expanded={expanded}
-        query={query}
-        search={search.trim()}
-        loaded={loaded}
-        total={total}
-        matches={matches}
-        onExpand={() => setExpanded(!expanded)}
-        onRename={onRename}
-        onArchive={onArchive}
-      />
+      <SidebarRowsProvider>
+        <RunGroups
+          path={path}
+          open={open}
+          composingDraftId={composition.draftId}
+          settled={settled}
+          snoozed={snoozed}
+          snoozedExpanded={snoozedExpanded}
+          onExpandSnoozed={() => setSnoozedExpanded(!snoozedExpanded)}
+          onAction={act}
+          busy={busy}
+          expanded={expanded}
+          query={query}
+          search={search.trim()}
+          loaded={loaded}
+          total={total}
+          matches={matches}
+          onExpand={() => setExpanded(!expanded)}
+          onRename={onRename}
+          onArchive={onArchive}
+        />
+      </SidebarRowsProvider>
       {dialogs}
     </section>
   );
@@ -185,7 +186,7 @@ function useSidebarDialogs() {
           <ArchiveRunDialog
             run={archiving}
             open
-            returnFocusId={`run-actions-${archiving.id}`}
+            returnFocusId={`run-row-${archiving.id}`}
             onOpenChange={(open) => !open && setArchiving(undefined)}
           />
         )}
@@ -288,9 +289,7 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     try {
       await runActions[action](run.id);
       const id =
-        searching || action === "restore"
-          ? `run-actions-${run.id}`
-          : `${actionGroup[action]}-toggle`;
+        searching || action === "restore" ? `run-row-${run.id}` : `${actionGroup[action]}-toggle`;
       setFocusAfterRender({ id, runId: run.id, action });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the Run.");
@@ -580,74 +579,11 @@ function RunGroups({
   );
 }
 
-const rowClassName = (selected: boolean) =>
-  cn(
-    "group/row flex min-w-0 items-start rounded-md hover:bg-accent has-[a:focus-visible]:bg-accent has-[button[data-state=open]]:bg-accent",
-    selected && "bg-accent ring-1 ring-border-strong ring-inset",
-  );
-
-/** Row link handlers: Shift+F10, the context-menu key and right click open the menu. */
-function rowMenuKeys(openMenu: () => void) {
-  return {
-    onKeyDown(event: React.KeyboardEvent) {
-      if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
-        event.preventDefault();
-        openMenu();
-      }
-    },
-    onContextMenu(event: React.MouseEvent) {
-      event.preventDefault();
-      openMenu();
-    },
-  };
-}
-
-function RowMenu({
-  id,
-  title,
-  selected,
-  disabled,
-  open,
-  onOpenChange,
-  children,
-}: {
-  id: string;
-  title: string;
-  selected: boolean;
-  disabled?: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          disabled={disabled}
-          id={`run-actions-${id}`}
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`Actions for ${title}`}
-          className={cn(
-            "mt-1.5 mr-1 size-5 text-muted-foreground opacity-0 group-hover/row:opacity-100 group-has-[a:focus-visible]/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
-            selected && "opacity-100",
-          )}
-        >
-          <MoreHorizontal aria-hidden strokeWidth={1.5} />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-50 border-border-strong">
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function RenameItem({ onSelect, disabled }: { onSelect: () => void; disabled?: boolean }) {
   const { hint } = useShortcutPreferences();
   const binding = hint("rename");
   return (
-    <DropdownMenuItem
+    <RowMenuItem
       onSelect={onSelect}
       disabled={disabled}
       aria-keyshortcuts={binding === "Unbound" ? undefined : binding}
@@ -657,7 +593,7 @@ function RenameItem({ onSelect, disabled }: { onSelect: () => void; disabled?: b
       <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
         {binding}
       </span>
-    </DropdownMenuItem>
+    </RowMenuItem>
   );
 }
 
@@ -672,49 +608,41 @@ function DraftRow({
   onRename: () => void;
 }) {
   const title = draftTitle(draft);
-  const [menuOpen, setMenuOpen] = useState(false);
   const pending = !!draft.submission;
-  const rename = () => {
-    if (!pending) onRename();
-  };
   return (
-    <div className={rowClassName(selected)}>
-      <Link
-        {...rowMenuKeys(() => setMenuOpen(true))}
-        to="/runs/new"
-        onClick={() => runDraft.openDraft(draft.id)}
-        aria-current={selected ? "page" : undefined}
-        className="flex min-w-0 flex-1 gap-2 rounded-md py-2 pl-2 text-foreground no-underline hover:no-underline"
-      >
-        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
-          <FilePen strokeWidth={2} className="size-3.5 text-muted-foreground" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="block truncate text-sm leading-tight font-medium text-foreground">
-            {title}
-          </span>
-          <span className="text-2xs leading-tight font-medium text-subtle-foreground">Draft</span>
-        </span>
-      </Link>
-      <RowMenu
-        id={draft.id}
-        title={title}
-        selected={selected}
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-      >
-        <RenameItem onSelect={rename} disabled={pending} />
-        <DropdownMenuItem disabled={pending} onSelect={() => runDraft.discard(draft.id)}>
-          <Trash2 aria-hidden strokeWidth={1.5} />
-          Discard
-        </DropdownMenuItem>
-        {pending && (
-          <p className="px-2 py-1.5 text-2xs text-muted-foreground">
-            Waiting for its Start outcome. Open it to check the same request.
-          </p>
-        )}
-      </RowMenu>
-    </div>
+    <SidebarRow
+      id={draft.id}
+      title={title}
+      kind="draft"
+      selected={selected}
+      onClick={() => runDraft.openDraft(draft.id)}
+      preview={
+        <>
+          <p className="text-sm font-medium break-words">{title}</p>
+          <p className="text-muted-foreground">Draft</p>
+        </>
+      }
+      actions={
+        <>
+          <RenameItem onSelect={onRename} disabled={pending} />
+          <RowMenuItem disabled={pending} onSelect={() => runDraft.discard(draft.id)}>
+            <Trash2 aria-hidden strokeWidth={1.5} />
+            Discard
+          </RowMenuItem>
+          {pending && (
+            <p className="px-2 py-1.5 text-2xs text-muted-foreground">
+              Waiting for its Start outcome. Open it to check the same request.
+            </p>
+          )}
+        </>
+      }
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <FilePen aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate text-sm font-medium">{title}</span>
+      </span>
+      <span className="text-2xs text-muted-foreground">Draft</span>
+    </SidebarRow>
   );
 }
 
@@ -737,88 +665,113 @@ function RunRow({
 }) {
   const mutationsAllowed = useMutationsAllowed();
   const state = execution(run);
-  const muted = searchMuted && !selected;
-  const titleColor = muted ? "text-muted-foreground" : "text-foreground";
-  const iconColor = muted ? "text-muted-foreground" : state.className;
-  const working = run.blocks.find(
-    (block) => block.state === "working" && block.workingMessage,
-  )?.workingMessage;
-  const [menuOpen, setMenuOpen] = useState(false);
-  const titleRef = useRef<HTMLSpanElement>(null);
-  const [titleTip, setTitleTip] = useState(false);
-  // The full title is offered only when the row truncates it (A06).
-  const showTitleTip = (open: boolean) => {
-    const title = titleRef.current;
-    setTitleTip(open && !!title && title.scrollWidth > title.clientWidth);
-  };
+  const { branches, pullRequests } = repositorySummary(run.repositories);
+  const compact = run.lifecycle === "settled";
+  const muted = !selected && (searchMuted || compact);
+  const hasMetadata =
+    branches.length > 0 ||
+    pullRequests.length > 0 ||
+    run.presentation.woke ||
+    run.attention.needsInput ||
+    run.attention.problem ||
+    run.project.availability !== "available";
   return (
-    <Tooltip open={titleTip} onOpenChange={showTitleTip}>
-      <TooltipTrigger asChild>
-        <div className={rowClassName(selected)}>
-          <Link
-            {...rowMenuKeys(() => setMenuOpen(true))}
-            to="/runs/$runId"
-            params={{ runId: run.id }}
-            aria-current={selected ? "page" : undefined}
-            className="flex min-w-0 flex-1 gap-2 rounded-md py-2 pl-2 text-foreground no-underline hover:no-underline"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* Keeps the row's title tooltip from competing with the state label. */}
-                <span
-                  aria-hidden
-                  className="flex size-4 shrink-0 items-center justify-center"
-                  onPointerMove={(event) => event.stopPropagation()}
-                >
-                  <state.Icon strokeWidth={2} className={cn("size-3.5", iconColor)} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right">{state.label}</TooltipContent>
-            </Tooltip>
-            <span className="flex min-w-0 flex-1 flex-col gap-1">
-              <span
-                ref={titleRef}
-                className={cn("block truncate text-sm leading-tight font-medium", titleColor)}
-              >
-                {run.title}
-              </span>
-              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-2xs leading-tight font-medium text-subtle-foreground">
-                <span className="truncate" title={run.project.workspaceRoot}>
-                  {run.project.title}
-                </span>
-                <RunRowIndicators run={run} />
-              </span>
-              {working && (
-                <span className="block truncate text-2xs leading-tight text-muted-foreground">
-                  {working}
-                </span>
-              )}
-              <span className="sr-only">, {state.label}</span>
-            </span>
-          </Link>
-          <RowMenu
-            id={run.id}
-            title={run.title}
-            selected={selected}
-            disabled={busy}
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-          >
-            <RenameItem onSelect={onRename} disabled={!mutationsAllowed} />
-            <RunActionItems run={run} onAction={onAction} onArchive={onArchive} />
-          </RowMenu>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent
-        side="bottom"
-        align="start"
-        alignOffset={32}
-        sideOffset={-4}
-        className="max-w-md text-2xs font-medium"
+    <SidebarRow
+      id={run.id}
+      title={run.title}
+      kind="run"
+      selected={selected}
+      compact={compact}
+      disabled={busy}
+      preview={<RunPreview run={run} />}
+      actions={
+        <>
+          <RenameItem onSelect={onRename} disabled={!mutationsAllowed} />
+          <RunActionItems run={run} onAction={onAction} onArchive={onArchive} />
+        </>
+      }
+    >
+      {compact ? (
+        <span className="shrink-0 opacity-50">
+          <ProjectIcon icon={run.project.projectIcon} faviconUrl={run.project.faviconUrl} inline />
+        </span>
+      ) : (
+        <span className="flex min-w-0 items-center gap-2 text-2xs text-muted-foreground">
+          <ProjectIcon icon={run.project.projectIcon} faviconUrl={run.project.faviconUrl} inline />
+          <span className="min-w-0 flex-1 truncate">{run.project.title}</span>
+          <state.Icon
+            aria-hidden
+            strokeWidth={1.5}
+            className={cn("size-3.5 shrink-0", state.className)}
+          />
+          <ActivityAge at={run.lastActivityAt} />
+        </span>
+      )}
+      <span
+        className={cn(
+          "block min-w-0 truncate text-sm leading-tight font-medium",
+          muted ? "text-muted-foreground" : "text-foreground",
+        )}
       >
         {run.title}
-      </TooltipContent>
-    </Tooltip>
+      </span>
+      {!compact && hasMetadata && (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-muted-foreground">
+          {branches.length > 0 && (
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <GitBranch aria-hidden className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {branches.length === 1 ? branches[0]![0] : `${branches.length} branches`}
+              </span>
+            </span>
+          )}
+          {pullRequests.length > 0 && (
+            <span
+              aria-label={`${pullRequests.length} pull requests`}
+              className="inline-flex shrink-0 items-center gap-1"
+            >
+              <GitPullRequest aria-hidden className="size-3.5" />
+              {pullRequests.length}
+            </span>
+          )}
+          <RunRowIndicators run={run} />
+        </span>
+      )}
+      <span className="sr-only">, {state.label}</span>
+    </SidebarRow>
+  );
+}
+
+function RunPreview({ run }: { run: RunNavigationEntry }) {
+  const state = execution(run);
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <p className="text-sm leading-5 font-medium break-words">{run.title}</p>
+      <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+        <ProjectIcon icon={run.project.projectIcon} faviconUrl={run.project.faviconUrl} inline />
+        <span className="break-words">{run.project.title}</span>
+      </div>
+      <div className="flex items-start gap-2 text-muted-foreground">
+        <Workflow aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+        <span className="break-words">{run.flowName}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <state.Icon aria-hidden className={cn("size-3.5", state.className)} />
+        <span>{state.label}</span>
+        <RunRowIndicators run={run} />
+      </div>
+      {run.blocks
+        .filter((block) => block.workingMessage)
+        .map((block, index) => (
+          <p key={index} className="break-words text-muted-foreground">
+            {block.workingMessage}
+          </p>
+        ))}
+      <RunRepositories workers={run.repositories} />
+      <p className="text-2xs text-muted-foreground">
+        Last activity {new Date(run.lastActivityAt).toLocaleString()}
+      </p>
+    </div>
   );
 }
 
@@ -850,7 +803,7 @@ function RunActionItems({
   return (
     <>
       {isActive(run) && (
-        <DropdownMenuItem
+        <RowMenuItem
           disabled={!mutationsAllowed}
           onSelect={() => onAction(run.presentation.snoozed ? "restore" : "snooze")}
           aria-keyshortcuts={snoozeHint === "Unbound" ? undefined : snoozeHint}
@@ -864,10 +817,10 @@ function RunActionItems({
           <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
             {snoozeHint}
           </span>
-        </DropdownMenuItem>
+        </RowMenuItem>
       )}
       {isActive(run) && (
-        <DropdownMenuItem
+        <RowMenuItem
           disabled={!mutationsAllowed}
           onSelect={() => onAction("settle")}
           aria-keyshortcuts={settleHint === "Unbound" ? undefined : settleHint}
@@ -877,9 +830,9 @@ function RunActionItems({
           <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
             {settleHint}
           </span>
-        </DropdownMenuItem>
+        </RowMenuItem>
       )}
-      <DropdownMenuItem
+      <RowMenuItem
         disabled={!mutationsAllowed}
         onSelect={() => onArchive(run)}
         aria-keyshortcuts={archiveHint === "Unbound" ? undefined : archiveHint}
@@ -889,7 +842,7 @@ function RunActionItems({
         <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
           {archiveHint}
         </span>
-      </DropdownMenuItem>
+      </RowMenuItem>
     </>
   );
 }

@@ -36,7 +36,7 @@ test("an Agent's MCP report updates the open Run and the sidebar without polling
   await app.open(`/runs/${run}`);
   const row = screen
     .getByRole("navigation", "Open Runs")
-    .getByRole("link", /^Demo · Live report · Tidy the project picker/);
+    .getByRole("link", /Demo · Live report · Tidy the project picker/);
   await expect(row).toContainText("Working");
   await expect(screen.getByRole("status", "Run observation")).not.toContainText("Settled");
   await app.screenshot("live-run-before-report");

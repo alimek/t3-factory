@@ -1,6 +1,50 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { siblingRuns } from "./support/navigation.ts";
+import { repositoryRun, siblingRuns } from "./support/navigation.ts";
+
+it("unchanged worker observations change neither navigation metadata nor the last activity time", async (c) => {
+  // Arrange
+  const { f, navigation } = await repositoryRun(c);
+
+  // Act
+  assert((await f.reconcileRuns()).ok);
+
+  // Assert
+  expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: navigation });
+});
+
+it("worker branches and linked pull requests remain available after restarting Factory", async (c) => {
+  // Arrange
+  const { h, f, t3, runId, threadId, repository, navigation } = await repositoryRun(c);
+  await f.close();
+
+  // Act
+  const restarted = await h.open({ t3, connectionRetryMs: 60_000 });
+  c.onTestFinished(() => restarted.close());
+
+  // Assert
+  const run = await restarted.getRun(runId);
+  assert(run.ok);
+  expect(run.value.repositories).toMatchObject([{ threadId, ...repository }]);
+  const listed = await restarted.listRunNavigation();
+  assert(listed.ok);
+  expect(listed.value[0]?.repositories).toStrictEqual(run.value.repositories);
+  expect(listed.value[0]?.lastActivityAt).toBe(navigation[0]?.lastActivityAt);
+});
+
+it("an unavailable observation preserves last known worker repositories and marks them stale", async (c) => {
+  // Arrange
+  const { f, t3, runId, repository } = await repositoryRun(c);
+  t3.available = false;
+
+  // Act
+  assert((await f.reconcileRuns()).ok);
+
+  // Assert
+  const run = await f.getRun(runId);
+  assert(run.ok);
+  expect(run.value.repositories).toMatchObject([{ ...repository, freshness: "stale" }]);
+});
 
 it("a Start with an over-long title creates no Run", async (c) => {
   // Arrange
