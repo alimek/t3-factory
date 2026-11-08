@@ -59,7 +59,12 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
   const { archiveRun } = openRunnerArchive(database, t3, lifecycle, liveContextId);
-  const { settleRun, settleWhenDone } = openRunnerSettle(database, t3, lifecycle, liveContextId);
+  const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
+    database,
+    t3,
+    lifecycle,
+    liveContextId,
+  );
 
   function drive(
     id: string,
@@ -131,6 +136,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`;
           // Restart observes every Run before dispatching any pending intent.
           yield* Effect.forEach(ids, (run) => drive(run.id, "observe"), {
+            concurrency: "unbounded",
+          });
+          yield* Effect.forEach(ids, (run) => settleFinishedBlockThreads(run.id), {
             concurrency: "unbounded",
           });
           yield* Effect.forEach(ids, (run) => drive(run.id, "dispatch"), {
