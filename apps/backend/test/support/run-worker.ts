@@ -142,6 +142,17 @@ export async function releasedTwoExitWorker(c: TestContext) {
   return f;
 }
 
+/** Parallel work, a terminal Block, reported its result and its thread finished while a later
+ * turn of the entry worker's thread is still running. */
+export async function finishedTerminalWorker(c: TestContext) {
+  const f = await releasedTwoExitWorker(c);
+  const parallel = workerFinal(launchedBlockId(f.t3, "Parallel work"));
+  assert((await f.f.runtime.submit(parallel)).code === "ACCEPTED");
+  f.t3.engineStatus = "completed";
+  settleThread(f.t3, "execution-2", "completed", "settled", "thread-2");
+  return f;
+}
+
 /** The worker replaced its first result before release, and its thread is finished. */
 export async function replacedBeforeRelease(c: TestContext) {
   const f = await directWorker(c);

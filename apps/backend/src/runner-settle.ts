@@ -131,15 +131,87 @@ export function openRunnerSettle(
     });
   }
 
-  /** Best-effort native organization of a Settled Run's worker threads. A possibly issued
-   * settlement is never replayed for the same run of a thread, so a manual reopen in T3 is
+  /** Blocks whose current report is a result accepted under per-Block settlement, with no open
+   * execution-failed or missing-report Problem, whose observation found the worker thread finished
+   * with the result's T3 run as its latest, and whose thread is not claimed for that run yet. */
+  function settleableResults(sql: SqlClient.SqlClient, runId: string) {
+    return Effect.gen(function* () {
+      const results = new Set(
+        (yield* currentReports(sql, runId)).flatMap((entry) =>
+          entry.report?.status === "finished" ? [entry.activationId] : [],
+        ),
+      );
+      const rows = yield* sql<{
+        activation_id: string;
+        thread_id: string;
+        execution_id: string;
+      }>`SELECT r.activation_id,b.thread_id,r.execution_id FROM run_blocks b JOIN runtime_reports r ON r.rowid=(SELECT MAX(rowid) FROM runtime_reports WHERE run_id=b.run_id AND block_id=b.block_id AND status='finished') WHERE b.run_id=${runId} AND b.state='finished' AND b.execution_id=r.execution_id AND r.settles_thread=1 AND NOT EXISTS(SELECT 1 FROM run_attention WHERE run_id=b.run_id AND block_id=b.block_id AND settled_at IS NULL AND kind IN ('execution-failed','missing-report')) AND NOT EXISTS(SELECT 1 FROM coordinator_settlements WHERE run_id=b.run_id AND thread_id=b.thread_id AND execution_id=r.execution_id) ORDER BY b.rowid`;
+      return rows.filter((row) => results.has(row.activation_id));
+    });
+  }
+
+  /** Per-Block native organization during reconciliation: a worker thread is settled in T3 once
+   * its Block's result is confirmed and a fresh read finds the thread finished on the T3 run that
+   * produced it. The claim shares Run settlement's key, so neither settles that run twice. */
+  function settleFinishedWorkers(id: string) {
+    return Effect.gen(function* () {
+      const run = yield* database.row(id);
+      if (!run || run.archived_at) return;
+      const candidates = yield* database.transaction((sql) => settleableResults(sql, run.id));
+      if (!candidates.length) return;
+      if (!(yield* settleSupported(run))) return;
+      for (const candidate of candidates) {
+        const worker = yield* recoverOperation(
+          Effect.tryPromise(() => readWorkerThread(t3, run, candidate.thread_id)),
+          () => Effect.succeed(null),
+        );
+        if (!worker?.finished || worker.latest?.runId !== candidate.execution_id) continue;
+        if ((yield* liveContextId()) !== run.context_id) return;
+        yield* settleClaimed(run, candidate.thread_id, (sql) =>
+          Effect.gen(function* () {
+            const current = yield* settleableResults(sql, run.id);
+            if (!current.some((row) => row.activation_id === candidate.activation_id)) return [];
+            return yield* sql`INSERT INTO coordinator_settlements(run_id,thread_id,execution_id,attempted_at) SELECT run_id,thread_id,execution_id,${yield* now} FROM run_executions WHERE run_id=${run.id} AND thread_id=${candidate.thread_id} AND execution_id=${candidate.execution_id} ON CONFLICT DO NOTHING RETURNING thread_id`;
+          }),
+        );
+      }
+    });
+  }
+
+  function settleSupported(run: RunRow) {
+    return Effect.map(
+      Effect.tryPromise(() => t3.inspectSettleSupport(runTarget(run)).catch(() => null)),
+      (support) => !!support?.supported,
+    );
+  }
+
+  /** Requests one thread settlement after `claim` records it for the thread's T3 run. A possibly
+   * issued settlement is never replayed for the same run of a thread, so a manual reopen in T3 is
    * preserved; Factory never unsettles. */
+  function settleClaimed(
+    run: RunRow,
+    threadId: string,
+    claim: (sql: SqlClient.SqlClient) => Effect.Effect<readonly unknown[], unknown>,
+  ) {
+    return Effect.gen(function* () {
+      const claimed = yield* database.mutate(run.id, (sql) =>
+        Effect.gen(function* () {
+          if (!(yield* database.runHeldUnderContext(sql, run))) return false;
+          return (yield* claim(sql)).length > 0;
+        }),
+      );
+      if (claimed)
+        yield* recoverOperation(
+          Effect.tryPromise(() => t3.settleThread(runTarget(run), { threadId })),
+          () => Effect.void,
+        );
+    });
+  }
+
+  /** Best-effort native organization of a Settled Run's worker threads. */
   function settleWorkerThreads(run: RunRow) {
     return Effect.gen(function* () {
-      const support = yield* Effect.tryPromise(() =>
-        t3.inspectSettleSupport(runTarget(run)).catch(() => null),
-      );
-      if (!support?.supported) return;
+      if (!(yield* settleSupported(run))) return;
       const threads = yield* database.transaction(
         (sql) =>
           sql<{
@@ -149,21 +221,13 @@ export function openRunnerSettle(
       );
       for (const thread of threads) {
         if ((yield* liveContextId()) !== run.context_id) return;
-        const claimed = yield* database.mutate(run.id, (sql) =>
-          Effect.gen(function* () {
-            if (!(yield* database.runHeldUnderContext(sql, run))) return false;
-            const rows =
-              yield* sql`INSERT INTO coordinator_settlements(run_id,thread_id,execution_id,attempted_at) SELECT ${run.id},${thread.thread_id},${thread.execution_id},${yield* now} FROM runs WHERE id=${run.id} AND settled_at IS NOT NULL ON CONFLICT DO NOTHING RETURNING thread_id`;
-            return rows.length > 0;
-          }),
+        yield* settleClaimed(run, thread.thread_id, (sql) =>
+          Effect.flatMap(
+            now,
+            (time) =>
+              sql`INSERT INTO coordinator_settlements(run_id,thread_id,execution_id,attempted_at) SELECT ${run.id},${thread.thread_id},${thread.execution_id},${time} FROM runs WHERE id=${run.id} AND settled_at IS NOT NULL ON CONFLICT DO NOTHING RETURNING thread_id`,
+          ),
         );
-        if (claimed)
-          yield* recoverOperation(
-            Effect.tryPromise(() =>
-              t3.settleThread(runTarget(run), { threadId: thread.thread_id }),
-            ),
-            () => Effect.void,
-          );
       }
     });
   }
@@ -188,5 +252,5 @@ export function openRunnerSettle(
     );
   }
 
-  return { settleRun, settleWhenDone };
+  return { settleFinishedWorkers, settleRun, settleWhenDone };
 }

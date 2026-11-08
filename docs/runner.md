@@ -395,16 +395,28 @@ automatically.
 ## Native thread organization
 
 T3 Settled is separate from Factory attention. When native settle is supported, Factory
-best-effort settles each worker thread after the Run settles: within the reconciliation pass
-for automatic settlement, in the background after the user's Settle. It claims one request
-per thread and latest recorded run while the Run is still Settled. New Runs have no Run
-conversation to organize, and historical Run conversations are not settled. Factory never
-unsettles, also when the Run returns to Active.
+best-effort settles a worker thread after its Block has an accepted `finished` result and
+[the worker thread is finished](#worker-thread-completion), for handoff and terminal Blocks
+alike, while the Run can still be in progress. This applies to Active, Snoozed and Settled
+Runs that still owe operations, never Archived Runs. A latest `working` report or an open
+execution-failed or missing-report Problem prevents per-Block settlement.
 
-A possibly issued settlement is never replayed for the same run, protecting manual reopen.
-Failure does not change results or the Run's Settled state, and Runs settled by the upgrade
-are not backfilled. With no native compare-and-set or replay key, direct activity can race
-the request.
+Factory claims at most one request per thread and T3 run, targeting the run that produced
+the result, never a newer run. Replacing a result or changing its exit in the same
+T3 run does not settle again; revisiting the Block with a new T3 run on the same thread
+allows settlement again after it finishes. This keeps completed workers organized without
+waiting for the whole Flow.
+
+Run settlement remains the fallback for threads without `finished`, skipping threads
+already settled per Block: within the reconciliation pass for automatic settlement, in the
+background after the user's Settle. New Runs have no Run conversation to organize, and
+historical Run conversations are not settled. Factory never unsettles, also when the Run
+returns to Active. Without native settle support, settlement is a no-op.
+
+A possibly issued settlement is never replayed for the same T3 run, protecting manual
+reopen. Failure changes no result or Run state. Results accepted before per-Block settlement
+existed are not settled per Block, and Runs settled by an upgrade are not backfilled.
+With no native compare-and-set or replay key, direct activity can race the request.
 
 ## Navigation and presentation
 

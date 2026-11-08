@@ -2,8 +2,11 @@ import { assert, expect, it } from "@effect/vitest";
 import {
   directWorker,
   finishWorker,
+  finishedTerminalWorker,
   finishedWorker,
   nextSettlement,
+  reportedWorker,
+  revisitReportingWorker,
   settledWorker,
   startWorkerTurn,
   workerFinal,
@@ -171,4 +174,117 @@ it("a reply turn in a worker thread without a report leaves the Settled Run Sett
   expect(run.value.lifecycle).toBe("settled");
   expect(run.value.executions.map((e) => e.executionId)).not.toContain("chat-execution");
   expect(run.value.attention.filter((a) => !a.settledAt)).toStrictEqual([]);
+});
+
+it("a worker thread is settled in T3 once its Block's handoff result is confirmed finished, while the Run stays Active", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("a terminal Block's worker thread is settled in T3 once finished without waiting for Run settlement", async (c) => {
+  // Arrange
+  const f = await finishedTerminalWorker(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }, { threadId: "thread-2" }]);
+});
+
+it("a result replaced in the same T3 run does not settle the worker thread again", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  assert((await f.f.reconcileRuns()).ok);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Updated result."))).code === "ACCEPTED");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("a revisited Block's worker thread is settled again once its new T3 run finishes", async (c) => {
+  // Arrange
+  const f = await revisitReportingWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }, { threadId: "thread-1" }]);
+});
+
+it("a worker thread whose latest T3 run did not produce the Block's result is not settled per Block", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  startWorkerTurn(f, "chat-execution", 2);
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("a working report after the result keeps the finished worker thread unsettled in T3", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("an execution failure on a reported Block keeps its worker thread unsettled in T3", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c, "failed");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention.find((a) => !a.settledAt)?.kind).toBe("execution-failed");
+  expect(f.t3.settlements).toStrictEqual([]);
+});
+
+it("without native settle support a finished worker thread is not settled per Block", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  f.t3.settleSupported = false;
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(f.t3.settlements).toStrictEqual([]);
 });

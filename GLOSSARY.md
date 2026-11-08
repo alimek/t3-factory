@@ -173,7 +173,9 @@ _Avoid_: Finished (the retired permanent outcome).
 **T3 thread settlement**:
 T3's presentation state for a conversation whose current work is complete; the
 same conversation can return to the active list when it receives new work.
-Factory best-effort settles worker threads when their Run settles and never unsettles them; it is independent of attention settlement.
+Factory best-effort settles finished workers after an accepted `finished` Block result,
+with Run settlement as fallback, and never unsettles them. See
+[native thread organization](docs/runner.md#native-thread-organization); this is independent of attention settlement.
 
 **Snoozed**:
 Durable presentation for an Active Run set aside from the main navigation list.
