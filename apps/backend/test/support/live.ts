@@ -37,6 +37,7 @@ export function subscribe<A, E>(context: TestContext, stream: Stream.Stream<A, E
   return {
     messages,
     ended,
+    stop: () => Effect.runPromise(Fiber.interrupt(fiber)),
     /** Resolves with the messages once `condition` holds for them; rejects if the stream ends. */
     until(condition: (received: readonly A[]) => boolean): Promise<readonly A[]> {
       return new Promise((resolve, reject) => {

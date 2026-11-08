@@ -40,7 +40,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 
 | Run title after prefix | Initial state | Useful interaction |
 | --- | --- | --- |
-| Working · Improve the project picker | Open, one working Agent whose own turn completed while two simulated subagents still run, so T3's delegated wait stays pending | Inspect the working Block without a missing-report Problem; Archive (with confirmation); launch another Run |
+| Working · Improve the project picker | Open, one working Agent whose own turn completed while two simulated subagents still run, so T3's delegated wait stays pending | Inspect the working Block without a missing-report Problem; Archive (with confirmation) in a second visible window and observe the first Run and sidebar update live; launch another Run |
 | Monitoring · Agent is watching CI for the search fix | Open, one Agent that reported `working` with a message about running CI checks; its turn completed and its worker thread is finished | Read the message on the canvas, in the Run row and in Block details with no missing-report Problem, the working visit badge and the accepted working report in Work periods; **Request report** queues one assessment turn on the same worker |
 | Waiting for your review | Pending Human occurrence after implementation/review | Approve or request changes with feedback |
 | Applying your requested changes | Answered Human occurrence and renewed Agent work | Inspect correction handoff and work history |
@@ -53,6 +53,14 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
 | Discussing · Agent asked about empty-state wording | Open, one Agent that reported `working` and ended its turn with questions in T3; its worker thread is finished | Read the working message with no Needs input or missing-report Problem and the accepted working report in Work periods; controlled backend fixtures cover several reply turns without reports, a final after restart, and a Request report that finds the discussion unfinished |
+
+**Live viewing coverage.** Existing Run scenarios also expose live Run, navigation and
+connection delivery. A hidden tab or minimized desktop window detaches; returning shows
+**Synchronizing** while fresh snapshots load, with mutations disabled and retained
+information available for browsing. The persistent demo does not simulate connection
+loss, TLS or revocation: controlled transport and UI fixtures cover those boundaries.
+Project descriptions and current Flow comparisons reload on Run entry, so another window's
+catalog edit need not appear immediately. See [live viewing](runs.md#live-viewing).
 
 **Worker thread completion coverage.** The Working scenario shows a worker held by
 unsettled delegated work; Factory reads only the worker thread and T3's delegated wait, never

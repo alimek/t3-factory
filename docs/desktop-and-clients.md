@@ -92,8 +92,9 @@ a new request needing new approval.
 | Pending approval | Verification code; waits for the host |
 | Denied / revoked | Explanation and **Request access again** |
 | Incompatible | Which side to update; product operations are blocked, the protocol is rechecked automatically, and local Application settings remain available |
-| Connected | The normal application |
-| Offline after connecting | The last observed view stays, marked **Offline** with its observation time; every control is disabled, mutations are never sent or queued, and Factory reconnects automatically and refreshes |
+| Synchronizing | The connection is open while active live scopes obtain fresh snapshots; retained data stays visible, mutations are disabled, browsing and navigation remain available |
+| Connected | The normal application with active live scopes synchronized |
+| Offline after connecting | The last observed view stays, marked **Offline** with its observation time; mutations are disabled and never sent or queued, browsing and navigation remain available, and Factory reconnects automatically and synchronizes |
 
 A command whose response was lost is not repeated as new work: Start retries reuse
 the original request key and resolve to the same Run, and Settle or Archive is never
@@ -160,8 +161,8 @@ Factory exposes two listeners with distinct trust boundaries:
 
 | Surface | Binding | Trust | Routes |
 | --- | --- | --- | --- |
-| `host` | `host`/`port` from `config.json` (loopback by default), plain HTTP | Host-local: the socket peer must be a loopback address, plus the existing Host and mutation checks | All product routes, host-setup routes, Factory MCP (`/mcp`), `/api/host/*` owner routes |
-| `remote` | `remoteAccess.host`/`port` (default `0.0.0.0:4312`), TLS 1.2+ only | Approved client credential on every request | Product routes; host-setup routes answer `host_only`; owner routes do not exist |
+| `host` | `host`/`port` from `config.json` (loopback by default), plain HTTP | Host-local: the socket peer must be a loopback address, plus the existing Host and mutation checks | All product routes, host-setup routes, live delivery (`/api/live`), Factory MCP (`/mcp`), `/api/host/*` owner routes |
+| `remote` | `remoteAccess.host`/`port` (default `0.0.0.0:4312`), TLS 1.2+ only | Approved client credential on every request | Product routes including live delivery (`/api/live`); host-setup routes answer `host_only`; owner routes do not exist |
 
 The host surface keeps the [existing Host/Origin defenses](installation.md#configuration-and-storage).
 A request whose socket peer is not loopback is refused with `host_only`, even when the
@@ -169,6 +170,16 @@ listener is bound to `0.0.0.0`, so plain-HTTP network access never reaches produ
 database, credentials and Factory MCP. Anything forwarding network traffic
 into loopback (an SSH tunnel, Tailscale Serve, a reverse proxy, the `pnpm dev`
 Vite proxy) extends that host-local trust and is not an approved-client path.
+
+Live delivery upgrades `GET /api/live` to a WebSocket on either listener. It requires
+an `Origin` exactly matching that listener's scheme and request Host, and a compatible
+protocol range in the `protocol` and `minimum` query parameters because browsers cannot
+set WebSocket headers. The remote listener also requires the approved desktop bearer
+credential or browser cookie. Missing or incompatible protocol returns HTTP 426 and an
+invalid credential returns HTTP 401 before upgrade; a missing or mismatched Origin is
+refused with HTTP 403. Host peer and Host checks still apply. Revoking a client destroys
+its live sockets and discards queued delivery; disabling remote access closes all remote
+live sockets. Data already delivered cannot be retracted.
 
 Remote product requests require an allowed Host (IP literals or `allowedHosts`), a valid
 mutation guard with `Origin` equal to `https://<Host>`, a compatible declared protocol
@@ -223,10 +234,13 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **2**: the server accepts protocol **1** clients and keeps their approved credentials, while the current client requires server
-protocol **2** because its composer depends on `GET /api/run-creation-policy` (it never infers a creation mode if the policy cannot be read). This asymmetric range keeps existing client operations available
-while rejecting an older server before the composer mounts.
-Product API requests declare `X-Factory-Protocol` and `X-Factory-Protocol-Minimum`.
+The current protocol is **3**. The server accepts released protocol **1** and **2**
+clients and keeps their approved credentials and HTTP operations working. The current UI
+requires server protocol **3** for live delivery; older servers show the existing update
+gate before product screens mount. Compatibility follows the declared protocol range,
+not the application release.
+Product HTTP API requests declare `X-Factory-Protocol` and `X-Factory-Protocol-Minimum`;
+WebSocket upgrades declare the same range in the query as described above.
 A pair is compatible when the client protocol is at least the server minimum and the
 server protocol is at least the client minimum. Otherwise the server answers HTTP 426
 `incompatible` naming the side to update, before authentication or any operation; the
@@ -249,7 +263,11 @@ The renderer always runs bundled UI on `factory://app` with context isolation,
 sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Remote servers only answer API requests
 relayed by the main process; they never load content into the window. The desktop
 client credential stays in the main process, encrypted using Keychain; it is never exposed to the renderer.
-Switching servers, forgetting a server or changing roles invalidates in-flight access to
+Live delivery also runs through the main process: the renderer exchanges frames over a
+private message port and never opens a network socket. The selected remote server uses
+the same pinned TLS trust and hostname validation as HTTP; its credential is attached
+only in the main process. The server role relays to its supervised loopback backend.
+Switching servers, forgetting a server or changing roles closes existing live channels and invalidates in-flight access to
 the previous selection. Late responses must neither attach credentials to another server
 nor restore forgotten settings. Without Keychain, credentials remain session-only.
 Remembered trust and encrypted credentials survive role changes; unreadable or unsupported

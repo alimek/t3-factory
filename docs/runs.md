@@ -54,6 +54,24 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
   survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
+## Live viewing
+
+The Run screen and sidebar update live, including reports, attention, timeline and
+navigation membership. Shared T3 connection status also updates live. The selected Run
+has its own subscription; switching Runs releases its detail while navigation stays
+subscribed. Live updates preserve the canvas viewport and selected Block.
+
+Project descriptions and the comparison with the current saved Flow load on screen entry.
+Edits in another window need not update those values until the Run is reopened or the page
+is reloaded; the Run's Captured definitions stay unchanged.
+
+During reconnect or **Synchronizing**, retained information stays visible and mutations
+are disabled until active scopes have fresh snapshots. Browsing and navigation remain
+available; no command is queued for later. Hidden browser tabs and minimized or closed
+desktop windows detach live delivery; returning obtains current snapshots. A visible
+unfocused window keeps updating. These visibility changes never stop the Runner.
+The [foundation contract](foundation.md#live-delivery) describes consistency and delivery limits.
+
 ## Execution canvas
 
 Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow revision**). Positions, exits,

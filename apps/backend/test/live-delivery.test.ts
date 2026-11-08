@@ -2,6 +2,8 @@ import { isDeepStrictEqual } from "node:util";
 import { assert, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
+import * as Effect from "effect/Effect";
+import * as TestClock from "effect/testing/TestClock";
 import type {
   ConnectionLiveMessage,
   NavigationLiveMessage,
@@ -10,7 +12,7 @@ import type {
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { appliedRun, subscribe, withoutGeneration } from "./support/live.ts";
-import { directWorker, workerWorking } from "./support/run-worker.ts";
+import { directWorker, finishWorker, workerFinal, workerWorking } from "./support/run-worker.ts";
 
 const WORKING = "Opened PR #42; waiting for its CI checks.";
 
@@ -135,3 +137,49 @@ it("a T3 connection change reaches connection subscribers without another read",
     connection: rechecked.value,
   } satisfies ConnectionLiveMessage);
 });
+
+it.effect("live subscribers neither multiply Runner observations nor own handoff progress", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* Effect.promise(() => directWorker(c));
+    yield* Effect.promise(() => f.f.close());
+    const factory = yield* f.h.service({ t3: f.t3, connectionRetryMs: 1000 });
+    const beforeZero = f.t3.executionReads;
+    yield* TestClock.adjust(1000);
+    const zeroSubscriberReads = f.t3.executionReads - beforeZero;
+    const first = subscribe(c, factory.live.watchRun(f.runId));
+    const second = subscribe(c, factory.live.watchRun(f.runId));
+    yield* Effect.promise(() => first.until((messages) => messages.length > 0));
+    yield* Effect.promise(() => second.until((messages) => messages.length > 0));
+    const beforeTwo = f.t3.executionReads;
+    yield* TestClock.adjust(1000);
+    const twoSubscriberReads = f.t3.executionReads - beforeTwo;
+    yield* Effect.promise(() => first.stop());
+    yield* Effect.promise(() => second.stop());
+    const report = yield* factory.runtime.submit(workerFinal(f.blockId));
+    assert(report.code === "ACCEPTED");
+    finishWorker(f);
+    const beforeHandoff = yield* factory.getRun(f.runId);
+    assert(beforeHandoff.ok);
+    expect(beforeHandoff.value.reports[0]?.completionEligibleAt).toBeNull();
+    expect(f.t3.launches.size).toBe(1);
+
+    // Act
+    yield* TestClock.adjust(1000);
+
+    // Assert
+    expect(zeroSubscriberReads).toBe(1);
+    expect(twoSubscriberReads).toBe(zeroSubscriberReads);
+    const run = yield* factory.getRun(f.runId);
+    assert(run.ok);
+    expect(run.value.reports[0]?.completionEligibleAt).not.toBeNull();
+    expect(run.value.activations.map((activation) => activation.blockId)).toStrictEqual([
+      "worker",
+      "parallel-block",
+    ]);
+    expect(f.t3.launches.size).toBe(2);
+    expect(run.value.blocks.find((block) => block.blockId === "parallel-block")).toMatchObject({
+      threadId: "thread-2",
+    });
+  }),
+);
