@@ -13,6 +13,8 @@
     "apps/desktop/src/backend-host.ts",
     "apps/desktop/src/preload.ts",
     "apps/desktop/electron-builder.config.mjs",
+    // Landing: the static index.html links its Tailwind stylesheet by path.
+    "apps/landing/src/styles.css",
   ],
   "rules": {
     // Treat every enabled advisory rule as an error, including direct `fallow` runs.
