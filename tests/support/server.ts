@@ -12,6 +12,7 @@ import type {
   ServerUpdateAction,
   StartRunInput,
 } from "../../packages/contracts/src/index.ts";
+import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-access.ts";
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
@@ -290,7 +291,11 @@ async function remoteFactory(protocol?: { protocol: number; minimumPeerProtocol:
 
 const current = { home, server, t3, anchor: server.remoteAccess.trustAnchor()! };
 const older = await remoteFactory({ protocol: 1, minimumPeerProtocol: 1 });
-const newer = await remoteFactory({ protocol: 3, minimumPeerProtocol: 3 });
+// A server a release ahead that no longer accepts this client's protocol.
+const newer = await remoteFactory({
+  protocol: FACTORY_PROTOCOL + 1,
+  minimumPeerProtocol: FACTORY_PROTOCOL + 1,
+});
 if (!(await current.server.factory.createFlow({ name: "Shared remote plan" })).ok)
   throw new Error("Could not seed the shared Flow");
 
@@ -333,7 +338,30 @@ async function approvedBrowserCookie() {
   return `factory_client=${requested.value.credential}; Path=/; HttpOnly; Secure; SameSite=Strict`;
 }
 
-const fixtureRoutes: Record<string, () => unknown> = {
+/** Runs a live journey started on demand, under whichever T3 context is current. */
+const liveRuns = new Map<string, string>();
+async function liveRun(key: string) {
+  const known = liveRuns.get(key);
+  if (known) return requireSuccess(await factory.getRun(known));
+  const started = await startScenario(
+    context,
+    flows.find((flow) => flow.name === "Demo · Focused change")!.id,
+    `ui-live-${key}`,
+    `Live ${key} · Tidy the project picker`,
+    "Tidy the spacing of the Atlas project picker.",
+  );
+  liveRuns.set(key, started.id);
+  return started;
+}
+
+/** HTTP requests the browser sent through the fixture since the last reset, as `METHOD /path`. */
+let browserRequests: string[] = [];
+/** Live sockets currently relayed for host-surface browsers. */
+const hostLiveSockets = new Set<Duplex>();
+/** Holds back the server's first live frames, so a reconnect stays visibly synchronizing. */
+let liveSnapshotDelayMs = 0;
+
+const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   "/__fixture/readiness/incomplete-runtime"() {
     t3.runtimeContractComplete = false;
   },
@@ -416,6 +444,35 @@ const fixtureRoutes: Record<string, () => unknown> = {
     return { ok: true };
   },
 
+  async "/__fixture/live/run"(query) {
+    return { id: (await liveRun(query.get("key")!)).id };
+  },
+  // An Agent's Factory MCP report on the live journey's Run.
+  async "/__fixture/live/report"(query) {
+    const run = await liveRun(query.get("key")!);
+    const message = query.get("message");
+    if (message) {
+      await report(context, run, "worker", { to: "working", message });
+      return { ok: true };
+    }
+    const accepted = await report(context, run, "worker", {
+      to: "finished",
+      exit: "done",
+      message: "Picker spacing tidied.",
+    });
+    await observeTerminal(t3, executionBlock(accepted), "completed");
+    await reconcileUntil(context, run.id, (detail) => detail.lifecycle === "settled");
+    return { ok: true };
+  },
+  "/__fixture/live/requests/reset": () => {
+    browserRequests = [];
+  },
+  "/__fixture/live/requests": () => browserRequests,
+  "/__fixture/live/sockets": () => ({ host: hostLiveSockets.size, remote: remoteLiveSockets.size }),
+  "/__fixture/live/snapshot-delay": (query) => {
+    liveSnapshotDelayMs = Number(query.get("ms"));
+  },
+
   "/__fixture/approve": () => decideAll("pending", "approve"),
   "/__fixture/revoke": () => decideAll("approved", "revoke"),
   "/__fixture/offline": () => {
@@ -445,6 +502,15 @@ const fixtureRoutes: Record<string, () => unknown> = {
     t3.authorized = false;
     await factory.configureConnection({ endpoint: "http://127.0.0.1:0/demo-only/mcp" });
   },
+  // T3 stops answering on the host and comes back; live connection status follows the recheck.
+  "/__fixture/t3-unavailable": async () => {
+    t3.available = false;
+    requireSuccess(await factory.recheckConnection());
+  },
+  "/__fixture/t3-available": async () => {
+    t3.available = true;
+    requireSuccess(await factory.recheckConnection());
+  },
   "/__fixture/t3-approve": () => {
     current.t3.approve();
   },
@@ -460,9 +526,10 @@ const fixtureRoutes: Record<string, () => unknown> = {
 };
 
 const proxy = createServer((incoming, outgoing) => {
-  const fixture = incoming.method === "POST" ? fixtureRoutes[incoming.url ?? ""] : undefined;
+  const url = new URL(incoming.url ?? "/", "http://fixture");
+  const fixture = incoming.method === "POST" ? fixtureRoutes[url.pathname] : undefined;
   if (fixture) {
-    void Promise.resolve(fixture())
+    void Promise.resolve(fixture(url.searchParams))
       .then((observed) => {
         outgoing.writeHead(observed === undefined ? 204 : 200, {
           "content-type": "application/json",
@@ -484,6 +551,8 @@ const proxy = createServer((incoming, outgoing) => {
     outgoing.end();
     return;
   }
+  if (url.pathname.startsWith("/api/") && incoming.headers["user-agent"]?.includes("Mozilla"))
+    browserRequests.push(`${incoming.method} ${url.pathname}`);
   const remote = incoming.headers.cookie?.includes("fixture_remote=1");
   if (!remote) {
     proxyFixture(incoming, outgoing, server.address.port);
@@ -515,7 +584,9 @@ const proxy = createServer((incoming, outgoing) => {
 });
 proxy.on("upgrade", (incoming: IncomingMessage, socket: Duplex) => {
   if (!incoming.headers.cookie?.includes("fixture_remote=1")) {
-    proxyFixtureUpgrade(incoming, socket, server.address.port);
+    hostLiveSockets.add(socket);
+    socket.on("close", () => hostLiveSockets.delete(socket));
+    proxyFixtureUpgrade(incoming, socket, server.address.port, undefined, liveSnapshotDelayMs);
     return;
   }
   if (offline) {
@@ -524,7 +595,13 @@ proxy.on("upgrade", (incoming: IncomingMessage, socket: Duplex) => {
   }
   remoteLiveSockets.add(socket);
   socket.on("close", () => remoteLiveSockets.delete(socket));
-  proxyFixtureUpgrade(incoming, socket, target.server.remoteAddress()!.port, { ca: target.anchor });
+  proxyFixtureUpgrade(
+    incoming,
+    socket,
+    target.server.remoteAddress()!.port,
+    { ca: target.anchor },
+    liveSnapshotDelayMs,
+  );
 });
 await new Promise<void>((resolve) => proxy.listen(config.port, "127.0.0.1", resolve));
 let advancing: Promise<void> | undefined;

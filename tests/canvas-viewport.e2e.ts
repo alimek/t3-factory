@@ -1,7 +1,6 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { workerEvent } from "./support/worker.ts";
-import { findRun } from "./support/run-history.ts";
+import { liveReport, liveRun } from "./support/live.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
   // Arrange
@@ -32,9 +31,8 @@ test("a fitted Run preserves manual pan and zoom through resize and live updates
 }) => {
   // Arrange
   await browser.setViewport({ width: 1600, height: 1000 });
-  await workerEvent(app.baseUrl, "prepare");
-  const run = await findRun(app.baseUrl, "UI worker · Working · Improve the project picker");
-  await app.open(`/runs/${run.id}`);
+  const run = await liveRun(app, "canvas");
+  await app.open(`/runs/${run}`);
   const canvas = screen.getByRole("region", "Execution canvas");
   await screen.getByRole("button", "Auto-arrange", { exact: true }).tap();
   await expect(screen.getByRole("button", "Auto-arrange", { exact: true })).toBeEnabled();
@@ -47,11 +45,11 @@ test("a fitted Run preserves manual pan and zoom through resize and live updates
 
   // Act
   await browser.setViewport({ width: 1800, height: 1000 });
-  await workerEvent(app.baseUrl, "working");
+  await liveReport(app, "canvas", "Still aligning the picker spacing.");
 
   // Assert
   await expect(
-    screen.getByText("Two subagents are still checking the empty state.", { exact: true }).first(),
+    screen.getByText("Still aligning the picker spacing.", { exact: true }).first(),
   ).toBeVisible();
   await expect(canvas).toHaveAttribute("data-zoom", zoom!);
   await expect(layer).toHaveAttribute("style", transform!);
