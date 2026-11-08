@@ -375,3 +375,18 @@ export async function finishedParallelWork(c: TestContext) {
   };
   return setup;
 }
+
+/** A new working report arrives during the per-Block sweep's external completion read. */
+export function reopenDuringSettlement(f: Awaited<ReturnType<typeof directWorker>>) {
+  const inspect = f.t3.inspectSettleSupport.bind(f.t3);
+  const read = f.t3.readDelegatedSettlement.bind(f.t3);
+  f.t3.inspectSettleSupport = async (target) => {
+    f.t3.inspectSettleSupport = inspect;
+    f.t3.readDelegatedSettlement = async (...args) => {
+      f.t3.readDelegatedSettlement = read;
+      assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+      return read(...args);
+    };
+    return inspect(target);
+  };
+}
