@@ -103,6 +103,7 @@ export function openRunnerHuman(database: RunnerDatabase, lifecycle: RunnerLifec
             }),
           );
           if (!accepted.ok) return accepted;
+          database.changes.runChanged(runRow.id);
           if (!isClosed()) yield* lifecycle.fork(drive(runRow.id, "dispatch"));
           return yield* getRun(runRow.id);
         });

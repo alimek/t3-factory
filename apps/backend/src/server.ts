@@ -7,7 +7,7 @@ import { toIncomingMessage } from "@effect/platform-node/NodeHttpServerRequest";
 import * as Effect from "effect/Effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
-import type { ProtocolDescriptor, Result } from "@t3-factory/contracts";
+import { LIVE_PATH, type ProtocolDescriptor, type Result } from "@t3-factory/contracts";
 import { FACTORY_MINIMUM_PEER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
 import type { FactoryOptions } from "./factory-options.ts";
 import { openFactory, type Factory } from "./open-factory.ts";
@@ -33,6 +33,7 @@ import { listen, type Surface } from "./listener.ts";
 import { runtimeMcpHandler } from "./runtime-mcp.ts";
 import { remoteAccessController } from "./remote-listener.ts";
 import { serverUpdateRoutes, type ApplicationUpdates } from "./server-update-routes.ts";
+import { startLiveTransport, type LiveTransport } from "./live-transport.ts";
 
 export type { ApplicationUpdates } from "./server-update-routes.ts";
 
@@ -569,6 +570,59 @@ interface HttpBinding {
   readonly protocol: ProtocolDescriptor;
   readonly factory: Factory;
   readonly mcp: (request: Request) => Promise<Response>;
+  readonly live: LiveTransport;
+}
+
+/**
+ * Admits a live WebSocket before upgrading it, with the product routes' rules. Browsers cannot
+ * set headers on a WebSocket, so the protocol is declared in the query, and the Origin is
+ * mandatory: an upgrade is a GET that the mutation guard does not cover.
+ */
+function serveLive(
+  request: HttpServerRequestType,
+  url: URL,
+  binding: HttpBinding,
+): Effect.Effect<HttpServerResponse.HttpServerResponse> {
+  const scheme = binding.surface === "remote" ? "https" : "http";
+  if (request.headers.origin !== `${scheme}://${request.headers.host}`)
+    return Effect.succeed(
+      writeJsonResponse(
+        403,
+        failure("validation", "Live delivery requires the Origin of this Factory address."),
+      ),
+    );
+  if (request.method !== "GET" || request.headers.upgrade?.toLowerCase() !== "websocket")
+    return Effect.succeed(
+      resultResponse(failure("validation", "Open live delivery as a WebSocket.")),
+    );
+  const protocol = url.searchParams.get("protocol");
+  const minimum = url.searchParams.get("minimum");
+  const compatibility = declaredProtocolCompatibility(
+    {
+      "x-factory-protocol": protocol ?? undefined,
+      "x-factory-protocol-minimum": minimum ?? undefined,
+    },
+    binding.protocol,
+  );
+  if (compatibility === undefined || compatibility.kind !== "compatible")
+    return Effect.succeed(
+      resultResponse(
+        failure(
+          "incompatible",
+          compatibility?.message ?? "This client does not declare a Factory protocol. Update it.",
+        ),
+      ),
+    );
+  const authenticate: Effect.Effect<Result<string | null>> =
+    binding.surface === "host"
+      ? Effect.succeed({ ok: true, value: null })
+      : Effect.map(
+          Effect.promise(() =>
+            binding.factory.authenticateClient(requestCredential(request.headers) ?? ""),
+          ),
+          (client) => (client.ok ? { ok: true, value: client.value.id } : client),
+        );
+  return binding.live.serve(request, authenticate);
 }
 
 /**
@@ -630,6 +684,7 @@ function handleHttpRequestInner(
     }
     const target = requestTarget(request);
     if (target?.pathname === "/mcp") return yield* serveMcp(request, binding);
+    if (target?.pathname === LIVE_PATH) return yield* serveLive(request, target.url, binding);
     if (!passesMutationGuard(request, binding.surface === "remote" ? "https" : "http")) {
       return writeJsonResponse(
         403,
@@ -706,6 +761,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
   const protocol = serverProtocol(options);
   const limiter = new RequestLimiter(accessRequestsPerMinute, 60_000);
   const mcp = runtimeMcpHandler(factory.runtime);
+  const live = await startLiveTransport(factory.live);
   let routes: readonly ApiRoute[] = [];
   const handlerFor =
     (surface: Surface, allowedHosts: readonly string[]) => (nodeServer: Server) => {
@@ -720,12 +776,13 @@ export async function startServer(config: Configuration, options: ServerOptions 
         protocol,
         factory,
         mcp,
+        live,
       };
       return (request: HttpServerRequestType) => handleHttpRequest(request, binding);
     };
   const remote = remoteAccessController(config, handlerFor("remote", config.allowedHosts ?? []));
   routes = [
-    ...accessRoutes(factory, protocol, remote, limiter),
+    ...accessRoutes(factory, protocol, remote, limiter, live),
     ...apiRoutes(factory),
     ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
   ];
@@ -739,6 +796,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
       handlerFor("host", config.allowedHosts ?? [])(nodeServer),
     );
   } catch (error) {
+    await live.close();
     await factory.close();
     throw error;
   }
@@ -753,9 +811,9 @@ export async function startServer(config: Configuration, options: ServerOptions 
     remoteAddress: () => remote.address(),
     remoteAccess: remote,
     close() {
-      return (closing ??= Promise.allSettled([remote.close(), host.close()]).then(() =>
-        factory.close(),
-      ));
+      return (closing ??= Promise.allSettled([remote.close(), host.close()])
+        .then(() => live.close())
+        .then(() => factory.close()));
     },
   };
 }

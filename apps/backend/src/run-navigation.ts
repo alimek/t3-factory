@@ -137,7 +137,9 @@ export function openRunNavigation(
             return rows.length > 0;
           }),
         );
-        return found ? yield* getRun(id) : failure("not_found", "This Run does not exist.");
+        if (!found) return failure("not_found", "This Run does not exist.");
+        database.changes.runChanged(id);
+        return yield* getRun(id);
       });
     },
   };

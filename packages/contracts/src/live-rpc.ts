@@ -8,7 +8,8 @@ import type { ConnectionLiveMessage, NavigationLiveMessage, RunLiveMessage } fro
  * authority for them. Only the client-supplied scope payloads below are validated, at the
  * server boundary.
  */
-const trusted = <A>() => Schema.declare<A>((_: unknown): _ is A => true);
+const acceptAll = (): boolean => true;
+const trusted = <A>() => Schema.declare<A>(acceptAll as unknown as (input: unknown) => input is A);
 
 const LiveError = trusted<OperationError>();
 

@@ -1,5 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { remoteFavicon, tinyPng } from "./support/project-favicons.ts";
+import { FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
 
 it("ordinary product API requests still require a protocol declaration", async (context) => {
   // Arrange
@@ -59,8 +60,8 @@ it("a favicon request declaring an incompatible protocol is still rejected", asy
 
   // Act
   const image = await client.asset(path, "GET", {
-    "x-factory-protocol": "3",
-    "x-factory-protocol-minimum": "3",
+    "x-factory-protocol": String(FACTORY_PROTOCOL + 1),
+    "x-factory-protocol-minimum": String(FACTORY_PROTOCOL + 1),
   });
 
   // Assert
