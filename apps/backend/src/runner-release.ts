@@ -1,12 +1,20 @@
 import { releaseResult } from "./result-release.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import * as Effect from "effect/Effect";
-import type { T3Adapter } from "./adapters/t3.ts";
+import type { ExecutionObservation, T3Adapter } from "./adapters/t3.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { newId } from "./ids.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint } from "./runner-utils.ts";
 import { now } from "./time.ts";
+
+/** A thread T3 shows with no run and no native request has no earlier turn to wait for, as an idle
+ * worker prepared before Factory stopped preparing them, whose first visit is a queued send. */
+const neverRan = (thread: ExecutionObservation) =>
+  !thread.activeRunId &&
+  !thread.latestRunId &&
+  thread.recentRuns.length === 0 &&
+  thread.pendingRequestCount === 0;
 
 /** A released worker result (or a durable Human answer) and, for a revisit, a finished target thread. */
 function explicitSourceReleaseGeneration(
@@ -29,8 +37,8 @@ function explicitSourceReleaseGeneration(
     }
     if (intent.kind === "send") {
       const { threadId } = JSON.parse(intent.target_json) as { threadId: string };
-      if (!(yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId))).finished)
-        return null;
+      const target = yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId));
+      if (!target.finished && !neverRan(target.thread)) return null;
     }
     return current.generation;
   });

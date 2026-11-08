@@ -71,7 +71,10 @@ workers share one worktree; its project root stays the Run's project identity.
 - Factory never removes the worktree; T3's cleanup rules apply to it.
 - **Earlier prepared workers.** Runs started before this contract prepared idle threads for
   later Agent Blocks. Migration `069` cancels unresolved preparations; their acknowledged idle
-  threads stay recorded as history and in T3. A Block of such a Run that has not been reached
+  threads stay recorded as history and in T3. A first visit already queued as a send to a
+  prepared thread keeps its target and request key, and that thread becomes the Block's worker;
+  the send is released without waiting, since the thread has never run, and is delivered or
+  recovered like any other send. A Block of such a Run that has not been reached
   launches a new worker on its first arrival, and an idle thread with the same title can make
   that launch's recovery search ambiguous if its acknowledgement is lost.
 
