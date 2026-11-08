@@ -51,7 +51,7 @@ encryption and embedded asar integrity are on, and the app loads only from asar.
 
 ## Release and update flow
 
-The **Release** workflow (`.github/workflows/release.yml`) chains `release-please` → `source` → `build-macos` → `publish` through job dependencies (`needs`). On every push to `main`, release-please opens or updates the Release PR, titled like `chore(main): release X.Y.Z`. It passes normal checks and main branch protection like any other PR. Merging that PR is the human decision to cut a Release.
+The **Release** workflow (`.github/workflows/release.yml`) chains `release-please` → `source` → `build-macos` → `publish` → `pages` through job dependencies (`needs`). On every push to `main`, release-please opens or updates the Release PR, titled like `chore(main): release X.Y.Z`. It passes normal checks and main branch protection like any other PR. Merging that PR is the human decision to cut a Release.
 
 After the merge, release-please creates tag `vX.Y.Z` on that exact merge commit and an empty draft GitHub release with generated notes. It uses `draft: true`, `force-tag-creation` and no component in the tag. Job dependencies start the build in the same workflow run: GitHub does not deliver draft-creation events to Actions, and events caused by `GITHUB_TOKEN` do not start workflows.
 
@@ -60,6 +60,12 @@ After the merge, release-please creates tag `vX.Y.Z` on that exact merge commit 
 `build-macos` calls the reusable **Desktop build** workflow (`.github/workflows/desktop-build.yml`), which beta builds share. It runs only on a macOS arm64 runner and checks out that exact commit. It verifies that root and desktop package versions equal the tag version, then runs `pnpm check`, controlled e2e browser journeys, Developer ID signing and notarization, `codesign`, `stapler` and `spctl` validation, the isolated packaged probe, DMG/ZIP checks and SHA-256 checksums. Missing Apple credentials fail the build; there is no silent unsigned release. This job writes only Actions artifacts: `release-<tag>` holds downloads and `release-evidence-<tag>` holds evidence retained even on failure. It never writes release assets.
 
 A maintainer qualifies the downloaded Actions artifact as described below, then approves `publish` through the GitHub environment **release**, which requires a reviewer. `publish` alone writes release assets: it re-checks the draft and tag commit, verifies the complete artifact file set (DMG, ZIP, their blockmaps, `latest-mac.yml` and `SHA256SUMS.txt`) and checksums, removes any assets left on the still-draft release by an earlier failed attempt, and uploads the complete set. It verifies asset names and SHA-256 digests on GitHub before setting `draft=false` and marking the Release latest.
+
+### Landing page
+
+The product landing page in `apps/landing` is one static HTML page styled with Tailwind and built by Vite; `pnpm --filter @t3-factory/landing dev` serves it locally. The build reads the version from root `package.json`, so the download buttons, structured data and version labels of a build from the release commit name that Release's DMG. `FACTORY_SITE_URL` sets the absolute URL used by the canonical link, Open Graph and Twitter cards, `robots.txt` and `sitemap.xml`; it defaults to the project's GitHub Pages address.
+
+After `publish` succeeds, `pages` builds the page from the release commit with the Pages base URL and deploys it to GitHub Pages, so the page never links a DMG before its assets are public. Beta builds do not change the page. When only `pages` failed, **Re-run failed jobs** deploys again without touching the Release. Product screenshots and the social card come from the Figma file's Marketing screens; replace the files in `apps/landing/public` when those screens change.
 
 ### Retry and rejected qualification
 
@@ -91,6 +97,7 @@ Also configure:
 - Squash as the only merge method (repository settings and the main ruleset), with the PR title as commit title and a blank commit message. The default **commit or PR title** would use a single commit's message instead, and a PR body in the commit could add unintended changelog entries: release-please also reads Conventional Commit lines and footers in the commit body.
 - **Allow GitHub Actions to create and approve pull requests** in Actions settings, so release-please can open the Release PR with `GITHUB_TOKEN`. `pull_request` runs for PRs opened or updated by `GITHUB_TOKEN` require a maintainer's manual **Approve and run** before the required **Quality gate** runs. A GitHub App token would avoid that approval but is not configured.
 - **PR title** as a required check in the main ruleset, alongside the normal required checks.
+- **Pages** with **GitHub Actions** as the build and deployment source, for the landing page. The `pages` job uses the default **github-pages** environment; if that environment restricts deployment branches, allow `main`, because the job runs in the Release workflow on `main`.
 - **Immutable releases**, required for the guarantee that published files are never overwritten; see the [publication boundary](#publication-boundary).
 
 A tag ruleset protecting `v*` from update and deletion is recommended so tags stay fixed while a Release is still a draft.

@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en" class="bg-zinc-950">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>T3 Factory: compose AI development workflows</title>
+    <meta
+      name="description"
+      content="T3 Factory turns reusable AI Agents into visual software development Flows. Connect implementation, review and Human steps, run them on T3, and follow every Run from one place."
+    />
+    <link rel="canonical" href="%SITE_URL%" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/factory-mark.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="T3 Factory" />
+    <meta property="og:url" content="%SITE_URL%" />
+    <meta property="og:title" content="T3 Factory: compose AI development workflows" />
+    <meta
+      property="og:description"
+      content="Turn reusable AI Agents into visual development Flows. Run them on T3. Keep humans in the loop."
+    />
+    <meta property="og:image" content="%SITE_URL%og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="T3 Factory: Compose AI development workflows. A Run with parallel API and Web branches."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="T3 Factory: compose AI development workflows" />
+    <meta
+      name="twitter:description"
+      content="Turn reusable AI Agents into visual development Flows. Run them on T3. Keep humans in the loop."
+    />
+    <meta name="twitter:image" content="%SITE_URL%og-image.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "T3 Factory",
+        "url": "%SITE_URL%",
+        "image": "%SITE_URL%og-image.png",
+        "description": "Compose AI development workflows from reusable Agents and Human steps, run them on T3 and follow every Run from one place.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS (Apple Silicon)",
+        "softwareVersion": "%FACTORY_VERSION%",
+        "downloadUrl": "https://github.com/alimek/t3-factory/releases/download/v%FACTORY_VERSION%/T3.Factory-%FACTORY_VERSION%-arm64.dmg",
+        "license": "https://opensource.org/licenses/MIT",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body class="bg-zinc-950 font-sans text-zinc-50 antialiased">
+    <header class="border-b border-zinc-800">
+      <nav class="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-5 md:px-16">
+        <a href="#top" class="flex items-center gap-2.5 text-lg font-semibold">
+          <img src="/factory-mark.svg" alt="" width="32" height="32" class="size-8" />
+          T3 Factory
+        </a>
+        <div class="hidden items-center gap-8 text-sm font-medium text-zinc-400 md:flex">
+          <a href="#features" class="hover:text-zinc-50">Features</a>
+          <a href="https://github.com/alimek/t3-factory/tree/main/docs" class="hover:text-zinc-50"
+            >Docs</a
+          >
+          <a href="https://github.com/alimek/t3-factory" class="hover:text-zinc-50">GitHub</a>
+          <a href="https://github.com/alimek/t3-factory/releases" class="hover:text-zinc-50"
+            >Changelog</a
+          >
+        </div>
+        <a
+          href="#download"
+          class="rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-400"
+          >Download</a
+        >
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="px-6 pt-24 text-center md:px-16">
+        <p
+          class="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[13px] font-medium text-zinc-400"
+        >
+          <span class="size-1.5 rounded-full bg-cyan-400"></span>
+          Early development · macOS Apple Silicon
+        </p>
+        <h1
+          class="mx-auto mt-6 max-w-5xl text-4xl font-bold leading-[1.08] tracking-tight md:text-6xl"
+        >
+          Compose AI development workflows.<br />Keep humans in the loop.
+        </h1>
+        <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400 md:text-xl">
+          T3 Factory turns reusable AI Agents into visual software development Flows. Connect
+          implementation, review and Human steps, run them on T3, and follow every Run from one
+          place.
+        </p>
+        <div class="mt-8 flex flex-wrap justify-center gap-3">
+          <a
+            href="https://github.com/alimek/t3-factory/releases/download/v%FACTORY_VERSION%/T3.Factory-%FACTORY_VERSION%-arm64.dmg"
+            class="rounded-lg bg-indigo-500 px-5 py-3 font-semibold text-white hover:bg-indigo-400"
+            >Download for macOS</a
+          >
+          <a
+            href="https://github.com/alimek/t3-factory"
+            class="rounded-lg border border-zinc-800 bg-zinc-900 px-5 py-3 font-semibold hover:bg-zinc-800"
+            >View on GitHub</a
+          >
+        </div>
+        <p class="mt-6 text-[13px] text-zinc-500">
+          v%FACTORY_VERSION% · Apple Silicon · signed &amp; notarized .dmg · MIT licensed
+        </p>
+        <img
+          src="/screens/run-detail.png"
+          width="2160"
+          height="1350"
+          alt="A T3 Factory Run in progress: the execution canvas with parallel API and Web branches above the Run timeline."
+          class="mx-auto mt-14 w-full max-w-6xl rounded-xl border border-zinc-800 shadow-[0_24px_96px_rgb(99_102_241/0.18)]"
+        />
+      </section>
+
+      <section id="features" class="mx-auto max-w-7xl px-6 py-32 md:px-16">
+        <div class="text-center">
+          <p class="text-[13px] font-semibold tracking-[0.08em] text-indigo-500">FEATURES</p>
+          <h2 class="mt-4 text-3xl font-bold tracking-tight md:text-5xl">
+            Your process, as a Flow you can run.
+          </h2>
+          <p class="mt-4 text-lg text-zinc-400">
+            Factory does not impose a development process. You decide the blocks and exits.
+          </p>
+        </div>
+
+        <div class="mt-24 space-y-28">
+          <article class="grid items-center gap-12 md:grid-cols-[2fr_3fr]">
+            <div>
+              <p class="text-xs font-semibold tracking-[0.08em] text-indigo-500">DESIGN</p>
+              <h3 class="mt-4 text-3xl font-bold tracking-tight">Design Flows visually</h3>
+              <p class="mt-4 leading-relaxed text-zinc-400">
+                Connect Agent and Human blocks with named exits, correction loops and parallel
+                branches. Save unfinished drafts and check readiness before you run.
+              </p>
+              <ul class="mt-6 list-disc space-y-2.5 pl-5 font-medium marker:text-indigo-500">
+                <li>Named exits and correction loops</li>
+                <li>Independent parallel branches</li>
+                <li>Readiness checks before launch</li>
+              </ul>
+            </div>
+            <img
+              src="/screens/flow-editor.png"
+              width="2160"
+              height="1350"
+              loading="lazy"
+              alt="Studio Flow editor with Agent and Human blocks connected by named exits."
+              class="rounded-xl border border-zinc-800 shadow-2xl"
+            />
+          </article>
+
+          <article class="grid items-center gap-12 md:grid-cols-[3fr_2fr]">
+            <img
+              src="/screens/agents.png"
+              width="2160"
+              height="1350"
+              loading="lazy"
+              alt="Studio Agents list with an Agent's prompt and execution settings."
+              class="rounded-xl border border-zinc-800 shadow-2xl max-md:order-last"
+            />
+            <div>
+              <p class="text-xs font-semibold tracking-[0.08em] text-cyan-400">AGENTS</p>
+              <h3 class="mt-4 text-3xl font-bold tracking-tight">Reuse Agents across projects</h3>
+              <p class="mt-4 leading-relaxed text-zinc-400">
+                Save a prompt and worker settings once. Factory launches each Block with that
+                Agent's provider and model, in any project.
+              </p>
+              <ul class="mt-6 list-disc space-y-2.5 pl-5 font-medium marker:text-cyan-400">
+                <li>Prompt and execution settings</li>
+                <li>Per-Agent provider and model</li>
+                <li>Immutable revisions</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="grid items-center gap-12 md:grid-cols-[2fr_3fr]">
+            <div>
+              <p class="text-xs font-semibold tracking-[0.08em] text-amber-500">HUMANS</p>
+              <h3 class="mt-4 text-3xl font-bold tracking-tight">Keep decisions with people</h3>
+              <p class="mt-4 leading-relaxed text-zinc-400">
+                Answer Human steps in Factory and open T3 for native agent questions or permissions.
+                See at a glance which Runs need input.
+              </p>
+              <ul class="mt-6 list-disc space-y-2.5 pl-5 font-medium marker:text-amber-500">
+                <li>Approve or request corrections</li>
+                <li>Needs-input and Problem states</li>
+                <li>Jump to the T3 conversation</li>
+              </ul>
+            </div>
+            <img
+              src="/screens/human-step.png"
+              width="2160"
+              height="1350"
+              loading="lazy"
+              alt="A Run waiting on a QA sign-off Human step."
+              class="rounded-xl border border-zinc-800 shadow-2xl"
+            />
+          </article>
+
+          <article class="grid items-center gap-12 md:grid-cols-[3fr_2fr]">
+            <img
+              src="/screens/run-settled.png"
+              width="2160"
+              height="1350"
+              loading="lazy"
+              alt="A settled Run with its execution canvas and full timeline."
+              class="rounded-xl border border-zinc-800 shadow-2xl max-md:order-last"
+            />
+            <div>
+              <p class="text-xs font-semibold tracking-[0.08em] text-green-500">RUNS</p>
+              <h3 class="mt-4 text-3xl font-bold tracking-tight">Follow durable execution</h3>
+              <p class="mt-4 leading-relaxed text-zinc-400">
+                Inspect the execution canvas, handoffs and timeline. Each Run keeps its captured
+                definitions and history across restarts.
+              </p>
+              <ul class="mt-6 list-disc space-y-2.5 pl-5 font-medium marker:text-green-500">
+                <li>Live execution canvas</li>
+                <li>Handoffs and timeline</li>
+                <li>Settle, archive or start again</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="mx-auto max-w-7xl px-6 pb-32 md:px-16">
+        <h2 class="text-center text-3xl font-bold tracking-tight md:text-4xl">
+          Built to run where your code lives.
+        </h2>
+        <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+            <svg
+              class="size-9 rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M18 19a5 5 0 0 1-5-5v8" />
+              <path
+                d="M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5"
+              />
+              <circle cx="13" cy="12" r="2" />
+              <circle cx="20" cy="19" r="2" />
+            </svg>
+            <h3 class="mt-4 text-[17px] font-semibold">Local-first</h3>
+            <p class="mt-2 text-sm leading-normal text-zinc-400">
+              Factory stores Flows, Agents and Run history on your machine. No cloud account.
+            </p>
+          </div>
+          <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+            <svg
+              class="size-9 rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 8V4H8" />
+              <rect width="16" height="12" x="4" y="8" rx="2" />
+              <path d="M2 14h2" />
+              <path d="M20 14h2" />
+              <path d="M15 13v2" />
+              <path d="M9 13v2" />
+            </svg>
+            <h3 class="mt-4 text-[17px] font-semibold">Powered by T3 Code</h3>
+            <p class="mt-2 text-sm leading-normal text-zinc-400">
+              <a href="https://t3.codes/" class="text-zinc-300 underline-offset-2 hover:underline"
+                >T3</a
+              >
+              provides the agent conversations and execution; Factory routes the work.
+            </p>
+          </div>
+          <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+            <svg
+              class="size-9 rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <h3 class="mt-4 text-[17px] font-semibold">Approved devices</h3>
+            <p class="mt-2 text-sm leading-normal text-zinc-400">
+              Use the browser on the host, or connect an approved desktop or browser client over
+              HTTPS.
+            </p>
+          </div>
+          <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+            <svg
+              class="size-9 rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-indigo-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path
+                d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"
+              />
+              <path d="M20 2v4" />
+              <path d="M22 4h-4" />
+              <circle cx="4" cy="20" r="2" />
+            </svg>
+            <h3 class="mt-4 text-[17px] font-semibold">Open source</h3>
+            <p class="mt-2 text-sm leading-normal text-zinc-400">
+              MIT licensed. Try the simulated demo without T3, credentials or paid model work.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="download"
+        class="border-y border-zinc-800 bg-[#0c0c0e] px-6 py-28 text-center md:px-16"
+      >
+        <img src="/apple-touch-icon.png" alt="" width="96" height="96" class="mx-auto size-24" />
+        <h2 class="mt-6 text-4xl font-bold tracking-tight md:text-5xl">Get T3 Factory</h2>
+        <p class="mt-4 text-lg text-zinc-400">
+          Free and open source. Signed and notarized for macOS on Apple Silicon.
+        </p>
+        <a
+          href="https://github.com/alimek/t3-factory/releases/download/v%FACTORY_VERSION%/T3.Factory-%FACTORY_VERSION%-arm64.dmg"
+          class="mt-8 inline-flex items-center gap-3 rounded-[10px] bg-indigo-500 px-7 py-4 text-left text-white hover:bg-indigo-400"
+        >
+          <svg
+            class="size-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 15V3" />
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="m7 10 5 5 5-5" />
+          </svg>
+          <span>
+            <span class="block font-semibold">Download for macOS</span>
+            <span class="block text-xs text-white/75"
+              >v%FACTORY_VERSION% · Apple Silicon · .dmg</span
+            >
+          </span>
+        </a>
+        <p class="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium">
+          <a
+            href="https://github.com/alimek/t3-factory/releases"
+            class="text-indigo-400 hover:underline"
+            >All releases</a
+          >
+          <a
+            href="https://github.com/alimek/t3-factory/blob/main/docs/release.md#beta-builds"
+            class="text-indigo-400 hover:underline"
+            >Beta channel</a
+          >
+          <a
+            href="https://github.com/alimek/t3-factory#try-the-demo"
+            class="text-indigo-400 hover:underline"
+            >Build from source</a
+          >
+          <a
+            href="https://github.com/alimek/t3-factory/releases/download/v%FACTORY_VERSION%/SHA256SUMS.txt"
+            class="text-indigo-400 hover:underline"
+            >SHA256 checksums</a
+          >
+        </p>
+        <p class="mt-6 text-[13px] text-zinc-500">
+          Requires macOS on Apple Silicon. Real agent work needs T3 Code; the demo uses a simulator.
+        </p>
+      </section>
+    </main>
+
+    <footer
+      class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-6 px-6 py-10 text-[13px] md:px-16"
+    >
+      <p class="text-zinc-400">
+        Powered by <a href="https://t3.codes/" class="font-medium text-zinc-50">T3 Code</a>
+      </p>
+      <div class="flex flex-wrap gap-7 font-medium text-zinc-400">
+        <a href="https://github.com/alimek/t3-factory/tree/main/docs" class="hover:text-zinc-50"
+          >Documentation</a
+        >
+        <a href="https://github.com/alimek/t3-factory" class="hover:text-zinc-50">GitHub</a>
+        <a
+          href="https://github.com/alimek/t3-factory/blob/main/CONTRIBUTING.md"
+          class="hover:text-zinc-50"
+          >Contributing</a
+        >
+        <a href="https://github.com/alimek/t3-factory/blob/main/LICENSE" class="hover:text-zinc-50"
+          >MIT License</a
+        >
+      </div>
+      <p class="text-zinc-500">© 2026 T3 Factory contributors</p>
+    </footer>
+  </body>
+</html>
