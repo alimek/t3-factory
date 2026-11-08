@@ -33,6 +33,7 @@ async function saveFlow(factory: Factory, name: string, graph: FlowGraph) {
     await factory.updateFlow(flow.id, {
       name,
       expectedRevision: flow.revision,
+      workspace: { mode: "checkout" },
       graph,
     }),
   );

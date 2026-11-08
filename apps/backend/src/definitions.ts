@@ -155,6 +155,7 @@ export const makeDefinitions = (
                   connections: [],
                   flowInput: { position: NEW_FLOW_INPUT_POSITION, targetBlockIds: [] },
                 },
+                workspace: { mode: "worktree", base: { kind: "default" } },
                 createdAt: now,
                 updatedAt: now,
               };
@@ -203,6 +204,7 @@ export const makeDefinitions = (
                 name: validated.value.name,
                 revision: saved.revision + 1,
                 graph: validated.value.graph,
+                workspace: validated.value.workspace ?? saved.workspace,
                 updatedAt: now,
               };
               yield* appendFlowRevision(sql, { ...flow, savedAt: now });

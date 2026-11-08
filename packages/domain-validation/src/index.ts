@@ -6,6 +6,7 @@ import type {
   CreateFlowInput,
   DuplicateAgentInput,
   FlowGraph,
+  FlowWorkspace,
   UpdateFlowInput,
   FlowReadiness,
   ProjectIcon,
@@ -562,6 +563,38 @@ function checkGraph(graph: unknown, issue: IssueReporter) {
   checkConnections(graph.connections, blockIds, exits, issue);
 }
 
+const WORKSPACE_REF_LIMIT = 255;
+
+/** A Git ref Factory passes as one argument: never an option, whitespace or control text. */
+function workspaceRef(value: unknown): string | undefined {
+  const ref = boundedText(value, 1, WORKSPACE_REF_LIMIT);
+  if (!ref || ref.startsWith("-") || /[\s\p{Cc}]/u.test(ref)) return undefined;
+  return ref;
+}
+
+function checkWorkspace(raw: unknown, issue: IssueReporter): FlowWorkspace | undefined {
+  if (!isRecord(raw) || (raw.mode !== "checkout" && raw.mode !== "worktree")) {
+    issue("invalid_workspace", "workspace.mode", "Choose the project checkout or a new worktree.");
+    return undefined;
+  }
+  if (raw.mode === "checkout") return { mode: "checkout" };
+  const base = raw.base;
+  if (isRecord(base) && base.kind === "default")
+    return { mode: "worktree", base: { kind: "default" } };
+  if (!isRecord(base) || base.kind !== "ref") {
+    issue("invalid_workspace_base", "workspace.base", "Choose the default branch or a custom ref.");
+    return undefined;
+  }
+  const ref = workspaceRef(base.ref);
+  if (ref) return { mode: "worktree", base: { kind: "ref", ref } };
+  issue(
+    "invalid_workspace_ref",
+    "workspace.base.ref",
+    `Enter a Git ref up to ${WORKSPACE_REF_LIMIT} characters without spaces or a leading "-".`,
+  );
+  return undefined;
+}
+
 /** Reject malformed/ambiguous graphs, while preserving unfinished authoring. */
 export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
   const name = validateCreateFlow(input);
@@ -573,6 +606,7 @@ export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
   if (!Number.isSafeInteger(raw.expectedRevision) || (raw.expectedRevision as number) < 1)
     issue("invalid_revision", "expectedRevision", "Include the revision you opened.");
   checkGraph(raw.graph, issue);
+  const workspace = raw.workspace === undefined ? undefined : checkWorkspace(raw.workspace, issue);
   return issues.length
     ? { ok: false, error: { code: "validation", message: issues[0]!.message, issues } }
     : {
@@ -581,6 +615,7 @@ export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
           ...name.value,
           expectedRevision: raw.expectedRevision as number,
           graph: raw.graph as FlowGraph,
+          ...(workspace ? { workspace } : {}),
         },
       };
 }

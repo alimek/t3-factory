@@ -73,7 +73,7 @@ const projectValue = <A>(result: { ok: true; value: A } | { ok: false; error: un
 };
 
 export async function liveProjectRepositories(context: TestContext) {
-  const { harness, factory } = await authorizedLiveOAuth(context, { projects: true });
+  const { harness, factory, adapter } = await authorizedLiveOAuth(context, { projects: true });
   const root = await realpath(dirname(harness.databasePath));
   const first = join(root, "first");
   const second = join(root, "second");
@@ -82,7 +82,7 @@ export async function liveProjectRepositories(context: TestContext) {
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: harness.processHome },
     });
   await mkdir(first);
-  await git("git", ["init", first]);
+  await git("git", ["init", "--initial-branch=main", first]);
   await git("git", [
     "-C",
     first,
@@ -102,7 +102,7 @@ export async function liveProjectRepositories(context: TestContext) {
   const worktree = join(root, "execution");
   await git("git", ["-C", first, "worktree", "add", "-b", "execution", worktree]);
 
-  return { factory, root, first, second, p, alias, worktree };
+  return { factory, adapter, root, first, second, p, alias, worktree };
 }
 
 export const reportReadSchema = {

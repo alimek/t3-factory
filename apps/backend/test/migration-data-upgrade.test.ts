@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
-import { currentRun, releasedUpgradeData } from "./support/released-upgrade.ts";
+import { checkoutFlow, currentRun, releasedUpgradeData } from "./support/released-upgrade.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions, settles Finished, archives Stopped and pending Stop with their history and removes the open Run", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and removes the open Run", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   expect(fixture.pendingStop.closedAt).toBeNull();
@@ -19,7 +19,10 @@ it("upgrading v0.2.0 keeps clients and definitions, settles Finished, archives S
   assert(revoked.ok);
   expect(revoked.value.status).toBe("revoked");
   expect(await factory.listFlows()).toMatchObject({ ok: true, value: [{ id: fixture.flow.id }] });
-  expect(await factory.getFlow(fixture.flow.id)).toStrictEqual({ ok: true, value: fixture.flow });
+  expect(await factory.getFlow(fixture.flow.id)).toStrictEqual({
+    ok: true,
+    value: checkoutFlow(fixture.flow),
+  });
   expect(await factory.listAgents()).toMatchObject({ ok: true, value: [{ id: fixture.agent.id }] });
   expect(await factory.getAgent(fixture.agent.id)).toStrictEqual({
     ok: true,

@@ -1,5 +1,6 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { Factory } from "@t3-factory/backend";
+import type { FlowWorkspace } from "@t3-factory/contracts";
 import { loadConfiguration } from "@t3-factory/backend/config";
 import { startServer } from "@t3-factory/backend/server";
 import { writeReportingState } from "./reporting-home.ts";
@@ -46,6 +47,7 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
   const flow = await f.updateFlow(draft.value.id, {
     name: draft.value.name,
     expectedRevision: 1,
+    workspace: { mode: "checkout" },
     graph: {
       flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["worker"] },
       blocks: [
@@ -136,6 +138,7 @@ export async function preparedBlockedFlow(c: TestContext) {
       await f.updateFlow(flow.id, {
         name: flow.name,
         expectedRevision: flow.revision,
+        workspace: flow.workspace,
         graph: {
           ...flow.graph,
           blocks: [...flow.graph.blocks, ...blocks],
@@ -150,4 +153,16 @@ export async function preparedBlockedFlow(c: TestContext) {
   );
   t3.controlledProviders.pop();
   return setup;
+}
+
+/** The ready single-worker Flow saved with the given workspace setting. */
+export async function preparedWorkspaceFlow(c: TestContext, workspace: FlowWorkspace) {
+  const setup = await prepared(c);
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    workspace,
+  });
+  assert(flow.ok);
+  return { ...setup, flow: flow.value };
 }

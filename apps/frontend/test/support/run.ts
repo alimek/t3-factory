@@ -66,6 +66,7 @@ export function runDetail(): RunDetail {
           connections: [],
           flowInput: { position: { x: 0, y: 0 }, targetBlockIds: [] },
         },
+        workspace: { mode: "checkout" },
       },
       agents: [],
     },

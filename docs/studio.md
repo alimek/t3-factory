@@ -109,6 +109,14 @@ The canvas shares its view controls with the Run canvas: scale 20%–200%; **+**
 empty canvas pan. Drag, drop and wire gestures follow the zoom level. The view fits on load and container resize but is preserved across edits and selection; explicit Fit reserves space for an open
 inspector. Zoom and pan never change saved positions.
 
+### Workspace setting
+
+The toolbar's **Workspace** control holds the Flow's [workspace setting](../GLOSSARY.md): **Project checkout** or **New worktree**, and for a
+worktree its **Base**, either **Default branch** (the Project repository's `origin/HEAD`, such as `origin/main`; no branch name is assumed across projects) or **Custom ref** (a
+branch, tag or commit such as `develop`). New Flows use a new worktree from the default branch; Flows saved before the setting existed keep the project checkout. A changed
+setting is part of the unsaved draft: it clears readiness and is saved, compared on conflict and retained like the graph. Studio does not check the ref, because Flows
+are global; Start resolves it against the selected Project ([Runs](runs.md#starting)).
+
 ### Saving and readiness
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
@@ -129,7 +137,11 @@ Flow.
 ## Validation contract
 
 `PUT /api/flows/:id` and `POST /api/flows/validate` take
-`{name, expectedRevision, graph}`. Factory does not save a Run coordinator on the Flow.
+`{name, expectedRevision, graph, workspace}`. `workspace` is `{mode: "checkout"}` or
+`{mode: "worktree", base: {kind: "default"} | {kind: "ref", ref}}`; a custom ref is trimmed and
+must be 1–255 characters without whitespace, control characters or a leading `-`, and its
+issues use `workspace.*` paths. Clients before [protocol 4](desktop-and-clients.md#protocol-compatibility)
+omit `workspace`; their saves keep the saved setting. Factory does not save a Run coordinator on the Flow.
 
 ### Graph shape
 
@@ -153,8 +165,8 @@ capability or live execution readiness.
 
 ### Revisions
 
-Each successful create or save appends one immutable Flow revision whose name and graph are
-stored as rows owned by that revision; Studio reads the latest revision of each Flow that is
+Each successful create or save appends one immutable Flow revision whose name, graph and
+workspace setting are stored as rows owned by that revision; Studio reads the latest revision of each Flow that is
 not removed, and `revision` is that revision's number. An update compares the expected revision
 atomically: a stale or invalid request returns an error and appends nothing, and an accepted save
 advances the revision exactly once. Within a revision, connections reference exits of their own

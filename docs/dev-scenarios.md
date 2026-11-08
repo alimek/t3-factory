@@ -33,6 +33,9 @@ data ([testing policy](testing.md)). Native T3 links in simulated Runs are fixtu
 
 The Atlas demo repository has three saved Agents (product engineer, code reviewer, accessibility reviewer), four ready Flows (focused change, build/review/decision, parallel review, parallel review from
 one prompt) and an incomplete release-checklist Flow. Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
+The ready Flows that seeded Runs use are saved with the **Project checkout** workspace; the unsaved release-checklist Flow
+shows a new Flow's default, **New worktree · default branch**. Choose a missing **Custom ref** on a ready Flow and Start it to
+see the `workspace.*` blocker with **Open Studio → Flows**; no Run is created.
 
 The Atlas project has no explicit icon. Open the Run composer and its project picker
 to check the frontend's local folder fallback when T3 supplies no icon. Supplied emoji,

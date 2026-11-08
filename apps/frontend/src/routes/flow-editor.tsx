@@ -8,6 +8,7 @@ import type {
   FlowDraft,
   FlowGraph,
   FlowReadiness,
+  FlowWorkspace,
   ValidationIssue,
 } from "@t3-factory/contracts";
 import { ArrowLeft, Check, CircleDot, ListChecks, Save, Trash2, X } from "lucide-react";
@@ -45,6 +46,7 @@ import {
 import { blockHeightForIncomingFanIn, incomingFanIn } from "../flow-incoming-ports.ts";
 import { useFlowLayoutSession } from "../use-flow-layout.ts";
 import { IssueLink, ReadinessPanel } from "../components/flow-readiness.tsx";
+import { FlowWorkspaceControl } from "../components/flow-workspace-control.tsx";
 import { Page } from "../components/page.tsx";
 import {
   hasWire,
@@ -65,6 +67,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     flowInput: { position: { x: 40, y: 50 }, targetBlockIds: [] },
   });
   const [name, setName] = useState("");
+  const [workspace, setWorkspace] = useState<FlowWorkspace>({ mode: "checkout" });
   const [dirty, setDirty] = useState(false);
   useEffect(() => reportDraft(id, dirty), [id, dirty, reportDraft]);
   const [busy, setBusy] = useState(false);
@@ -77,6 +80,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setSaved(flow);
     setGraph(flow.graph);
     setName(flow.name);
+    setWorkspace(flow.workspace);
     setReadiness(flow.readiness);
     setDirty(false);
     setLatest(null);
@@ -108,13 +112,18 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setDirty(true);
     setReadiness(null);
   }
+  function changeWorkspace(next: FlowWorkspace) {
+    setWorkspace(next);
+    setDirty(true);
+    setReadiness(null);
+  }
   async function save() {
     if (!saved) return;
     setBusy(true);
     setError("");
     setIssues([]);
     try {
-      load(await api.updateFlow(id, { name, graph, expectedRevision: saved.revision }));
+      load(await api.updateFlow(id, { name, graph, workspace, expectedRevision: saved.revision }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save Flow.");
       if (e instanceof ApiError) setIssues(e.detail.issues);
@@ -129,7 +138,9 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     setError("");
     setIssues([]);
     try {
-      setReadiness(await api.validateFlow({ name, graph, expectedRevision: saved.revision }));
+      setReadiness(
+        await api.validateFlow({ name, graph, workspace, expectedRevision: saved.revision }),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not check Flow.");
       if (e instanceof ApiError) setIssues(e.detail.issues);
@@ -156,6 +167,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     saved,
     graph,
     name,
+    workspace,
     dirty,
     busy,
     error,
@@ -166,6 +178,7 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
     change,
     editBlock: (next: FlowBlock) => change(replaceBlock(graph, next)),
     rename,
+    changeWorkspace,
     save,
     check,
     compareLatest,
@@ -543,6 +556,11 @@ function EditorToolbar({
         disabled={draft.busy}
         onChange={(e) => draft.rename(e.target.value)}
       />
+      <FlowWorkspaceControl
+        workspace={draft.workspace}
+        disabled={draft.busy}
+        onChange={draft.changeWorkspace}
+      />
       <span className="flex-1" />
       <span
         role="status"
@@ -713,6 +731,7 @@ function DraftProblems({
         <ConflictPanel
           name={draft.name}
           graph={draft.graph}
+          workspace={draft.workspace}
           latest={draft.latest}
           onCompare={draft.compareLatest}
           onTakeLatest={draft.takeLatest}
@@ -800,6 +819,7 @@ function BlockPanel({
 function ConflictPanel({
   name,
   graph,
+  workspace,
   latest,
   onCompare,
   onTakeLatest,
@@ -807,6 +827,7 @@ function ConflictPanel({
 }: {
   name: string;
   graph: FlowGraph;
+  workspace: FlowWorkspace;
   latest: FlowDraft | null;
   onCompare: () => Promise<void>;
   onTakeLatest: (latest: FlowDraft) => void;
@@ -832,13 +853,17 @@ function ConflictPanel({
             <div className="min-w-0">
               <h3 className="mb-1.5 text-base font-semibold">Your local draft</h3>
               <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify({ name, graph }, null, 2)}
+                {JSON.stringify({ name, workspace, graph }, null, 2)}
               </pre>
             </div>
             <div className="min-w-0">
               <h3 className="mb-1.5 text-base font-semibold">Saved revision {latest.revision}</h3>
               <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify({ name: latest.name, graph: latest.graph }, null, 2)}
+                {JSON.stringify(
+                  { name: latest.name, workspace: latest.workspace, graph: latest.graph },
+                  null,
+                  2,
+                )}
               </pre>
             </div>
           </div>

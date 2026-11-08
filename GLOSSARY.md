@@ -17,7 +17,11 @@ A local repository represented by a T3 project, providing the context for Tasks 
 A user-defined graph of work steps and control rules. Its design determines which parts run autonomously and which require human participation.
 
 **Flow revision**:
-One immutable saved version of a Flow's name and graph. Every successful create or save appends the next revision; Studio shows the latest, and removing a Flow keeps its revisions.
+One immutable saved version of a Flow's name, graph and workspace setting. Every successful create or save appends the next revision; Studio shows the latest, and removing a Flow keeps its revisions.
+
+**Workspace setting**:
+The Flow's choice of where its Runs work: the selected Project's checkout or a new worktree, with the worktree's base (the Project repository's default branch or a custom Git ref). It belongs to the Flow revision, not the Run draft; Start resolves a worktree base against the selected Project and rejects a missing one.
+_Avoid_: Copying workspace choices into a Run draft.
 
 **Flow block**:
 A constituent element of a flow: the Flow input block, an agent block or a human step.

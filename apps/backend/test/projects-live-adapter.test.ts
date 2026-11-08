@@ -52,6 +52,39 @@ it("a deleted repository clone loses project readiness", async (context) => {
   expect(result.value.ready).toBe(false);
 });
 
+it("a worktree default base resolves to the clone's origin default branch", async (context) => {
+  // Arrange
+  const { adapter, second } = await liveProjectRepositories(context);
+
+  // Act
+  const ref = await adapter.resolveBaseRef(second, { kind: "default" });
+
+  // Assert
+  expect(ref).toBe("origin/main");
+});
+
+it("a repository without an origin default branch has no worktree default base", async (context) => {
+  // Arrange
+  const { adapter, first } = await liveProjectRepositories(context);
+
+  // Act
+  const ref = await adapter.resolveBaseRef(first, { kind: "default" });
+
+  // Assert
+  expect(ref).toBeNull();
+});
+
+it("a custom worktree ref that names no commit does not resolve", async (context) => {
+  // Arrange
+  const { adapter, second } = await liveProjectRepositories(context);
+
+  // Act
+  const ref = await adapter.resolveBaseRef(second, { kind: "ref", ref: "release/missing" });
+
+  // Assert
+  expect(ref).toBeNull();
+});
+
 it("project recheck preserves distinct projects across live SDK pages", async (context) => {
   // Arrange
   const { factory, second } = await liveProjectRepositories(context);

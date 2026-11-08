@@ -62,10 +62,20 @@ export interface FlowGraph {
   readonly connections: readonly FlowConnection[];
   readonly flowInput: FlowInputBlock;
 }
+/** Where a new worktree starts: the Project repository's default branch or a named Git ref. */
+export type FlowWorkspaceBase =
+  | { readonly kind: "default" }
+  | { readonly kind: "ref"; readonly ref: string };
+/** The workspace every worker of a Run shares; saved on the Flow, outside its graph. */
+export type FlowWorkspace =
+  | { readonly mode: "checkout" }
+  | { readonly mode: "worktree"; readonly base: FlowWorkspaceBase };
 export interface UpdateFlowInput {
   readonly name: string;
   readonly expectedRevision: number;
   readonly graph: FlowGraph;
+  /** Protocol 1–3 clients cannot see it and omit it; such a save keeps the saved setting. */
+  readonly workspace?: FlowWorkspace;
 }
 
 export interface FlowReadiness {
@@ -78,6 +88,7 @@ export interface FlowDraft {
   readonly name: string;
   readonly revision: number;
   readonly graph: FlowGraph;
+  readonly workspace: FlowWorkspace;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly readiness: FlowReadiness;

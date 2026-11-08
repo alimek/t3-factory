@@ -8,7 +8,11 @@ every referenced Agent's settings, reporting installation and explicit-call API 
 Failures explain recovery and keep the draft. Start collects setup problems for every referenced Agent,
 including later branches, labels each cause with its Agent and offers reporting, Studio or connection
 repair actions. Agent checks and launch capability inspection use the same Start preflight; no worker
-is launched on rejection. Correct configuration, accepted Start and accepted Block result are separate
+is launched on rejection. For a Flow whose [workspace setting](studio.md#workspace-setting) is a new worktree, Start
+resolves the base in the selected Project's repository on the Factory host: the default branch from `origin/HEAD`, or the
+custom ref verified as a commit, read through bounded `git` calls without a shell. A missing ref, an unset default branch or
+a T3 endpoint that is not on this computer rejects Start with a `workspace.*` issue and the **Open Studio → Flows** repair
+action; no Run, Task or worker is created. Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
@@ -28,8 +32,8 @@ levels of evidence. A configuration check alone proves neither execution nor rep
 - **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Runs
   work concurrently in the shared project checkout. A Run stays Active, including unresolved work, until it
   [settles](#settled-runs) or is [archived](#archive).
-- **Captured definitions.** The Run keeps its immutable input and references the Flow revision it started with and the
-  revision of every Agent that Flow references, frozen at Start. Every read and every later activation, also after restart,
+- **Captured definitions.** The Run keeps its immutable input and references the Flow revision it started with, including
+  its workspace setting, and the revision of every Agent that Flow references, frozen at Start. Every read and every later activation, also after restart,
   uses those revisions: the full graph and each Agent's prompt, settings and labels. Agent edits need no Flow save: the next
   Start uses the current saved Agents. Later edits and removals affect only future Runs.
 - **Launch.** Factory launches one top-level worker per Agent block visit, using that Agent's saved provider, model and

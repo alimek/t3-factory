@@ -51,7 +51,7 @@ import type {
 import { isReportingDriver } from "../reporting-drivers.ts";
 import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
 import { LaunchRejected } from "./t3.ts";
-import type { AgentEnvironment, T3Contract } from "@t3-factory/contracts";
+import type { AgentEnvironment, FlowWorkspaceBase, T3Contract } from "@t3-factory/contracts";
 import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-validation";
 import { readDelegatedSettlement } from "./delegated-settlement.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
@@ -1233,6 +1233,32 @@ export class LiveT3Adapter implements T3Adapter {
     if (!root?.startsWith("worktree ")) throw new Error("Existing worktree required.");
     // An execution worktree belongs to its source project, rather than becoming another project.
     return realpath(root.slice(9));
+  }
+  async resolveBaseRef(workspaceRoot: string, base: FlowWorkspaceBase): Promise<string | null> {
+    if (!this.endpoint || !isLocalEndpoint(this.endpoint) || !isAbsolute(workspaceRoot))
+      throw new Error("Existing local repository required.");
+    // Exit status 1 is Git's answer for an absent ref; any other failure is not an answer.
+    const git = (args: string[]) =>
+      promisify(execFile)("git", ["-C", workspaceRoot, ...args], { timeout: 10_000 }).then(
+        (result) => result.stdout.trim(),
+        (error: { code?: unknown }) => {
+          if (error.code === 1) return null;
+          throw error;
+        },
+      );
+    const ref =
+      base.kind === "ref"
+        ? base.ref
+        : await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+    if (!ref) return null;
+    const commit = await git([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "--end-of-options",
+      `${ref}^{commit}`,
+    ]);
+    return commit ? ref : null;
   }
   async createProject(target: T3ProjectTarget): Promise<T3Project> {
     return this.projectSession(target.endpoint, async (client) => {

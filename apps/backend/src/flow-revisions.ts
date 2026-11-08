@@ -1,6 +1,12 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { BlockExit, FlowBlock, FlowGraph, RunDefinitions } from "@t3-factory/contracts";
+import type {
+  BlockExit,
+  FlowBlock,
+  FlowGraph,
+  FlowWorkspace,
+  RunDefinitions,
+} from "@t3-factory/contracts";
 import { newId } from "./ids.ts";
 
 /** A saved Flow revision as Studio and Start read it; readiness is derived separately. */
@@ -13,6 +19,8 @@ type RevisionRow = {
   name: string;
   input_x: number;
   input_y: number;
+  workspace_mode: FlowWorkspace["mode"];
+  workspace_base_ref: string | null;
   saved_at: string;
   created_at: string;
 };
@@ -58,13 +66,24 @@ const byBlock = (row: { flow_revision_id: string; block_id: string }) =>
 /** Appends one immutable revision with its owned graph rows; callers own the transaction. */
 export const appendFlowRevision = Effect.fnUntraced(function* (
   sql: SqlClient.SqlClient,
-  flow: { id: string; revision: number; name: string; graph: FlowGraph; savedAt: string },
+  flow: {
+    id: string;
+    revision: number;
+    name: string;
+    graph: FlowGraph;
+    workspace: FlowWorkspace;
+    savedAt: string;
+  },
 ) {
   const revisionId = yield* newId;
-  const { graph } = flow;
-  yield* sql`INSERT INTO flow_revisions (id, flow_id, revision, name, input_x, input_y, saved_at)
+  const { graph, workspace } = flow;
+  const baseRef =
+    workspace.mode === "worktree" && workspace.base.kind === "ref" ? workspace.base.ref : null;
+  yield* sql`INSERT INTO flow_revisions (id, flow_id, revision, name, input_x, input_y,
+      workspace_mode, workspace_base_ref, saved_at)
     VALUES (${revisionId}, ${flow.id}, ${flow.revision}, ${flow.name},
-      ${graph.flowInput.position.x}, ${graph.flowInput.position.y}, ${flow.savedAt})`;
+      ${graph.flowInput.position.x}, ${graph.flowInput.position.y},
+      ${workspace.mode}, ${baseRef}, ${flow.savedAt})`;
   yield* Effect.forEach(
     graph.blocks,
     (block, ordinal) =>
@@ -98,6 +117,17 @@ export const appendFlowRevision = Effect.fnUntraced(function* (
     { discard: true },
   );
 });
+
+const toWorkspace = (row: RevisionRow): FlowWorkspace => {
+  if (row.workspace_mode === "checkout") return { mode: "checkout" };
+  return {
+    mode: "worktree",
+    base:
+      row.workspace_base_ref === null
+        ? { kind: "default" }
+        : { kind: "ref", ref: row.workspace_base_ref },
+  };
+};
 
 const toBlock = (row: BlockRow, exits: readonly ExitRow[]): FlowBlock => {
   const base = {
@@ -176,6 +206,7 @@ const withGraphs = Effect.fnUntraced(function* (
         targetBlockIds: (targetsByRevision.get(revision.id) ?? []).map((target) => target.block_id),
       },
     },
+    workspace: toWorkspace(revision),
     createdAt: revision.created_at,
     updatedAt: revision.saved_at,
   }));

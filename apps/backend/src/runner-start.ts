@@ -28,6 +28,7 @@ import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { currentFlowRevisionNumber } from "./flow-revisions.ts";
 import { currentAgentRevisionNumber } from "./agent-revisions.ts";
+import { isLocalEndpoint } from "./endpoint-local.ts";
 import { now } from "./time.ts";
 function validStartInput(input: StartRunInput | undefined): input is StartRunInput {
   return (
@@ -83,11 +84,61 @@ function startTarget(
     return undefined;
   return { project, context: connection.value.authorizationContext };
 }
+/** The workspace a Start accepts: worktree Runs carry the base ref resolved before acceptance. */
+type StartWorkspace = { mode: "checkout" } | { mode: "worktree"; baseRef: string };
+type WorkspaceCheck =
+  | { ok: true; workspace: StartWorkspace }
+  | { ok: false; issues: ValidationIssue[] };
+const workspaceIssue = (code: string, path: string, message: string): WorkspaceCheck => ({
+  ok: false,
+  issues: [{ code, path, message }],
+});
+/** Resolves a worktree Flow's base against the selected Project's repository on this host. */
+function resolveStartWorkspace(
+  t3: T3Adapter,
+  flow: FlowDraft,
+  project: FactoryProject,
+): Effect.Effect<WorkspaceCheck> {
+  return Effect.gen(function* () {
+    const { workspace } = flow;
+    if (workspace.mode === "checkout") return { ok: true, workspace: { mode: "checkout" } };
+    if (!isLocalEndpoint(project.endpoint))
+      return workspaceIssue(
+        "workspace_remote_host",
+        "workspace.mode",
+        "A new worktree needs T3 on this computer. Choose the project checkout for this Flow.",
+      );
+    const resolved = yield* Effect.tryPromise({
+      try: () => t3.resolveBaseRef(project.workspaceRoot, workspace.base),
+      catch: (error) => error,
+    }).pipe(Effect.orElseSucceed(() => undefined));
+    if (resolved === undefined)
+      return workspaceIssue(
+        "workspace_ref_unreadable",
+        "workspace.base",
+        `Git refs in ${project.title} could not be read. Check the repository and retry.`,
+      );
+    if (resolved === null)
+      return workspace.base.kind === "default"
+        ? workspaceIssue(
+            "workspace_default_branch_missing",
+            "workspace.base",
+            `${project.title} has no default branch (origin/HEAD). Set it in the repository or choose a custom ref.`,
+          )
+        : workspaceIssue(
+            "workspace_ref_missing",
+            "workspace.base.ref",
+            `${workspace.base.ref} is not a commit in ${project.title}. Choose an existing ref.`,
+          );
+    return { ok: true, workspace: { mode: "worktree", baseRef: resolved } };
+  });
+}
 type StartPlan = {
   input: StartRunInput;
   requestFingerprint: string;
   project: FactoryProject;
   definitions: RunDefinitions;
+  workspace: StartWorkspace;
   runId: string;
   taskId: string;
   time: string;
@@ -221,7 +272,7 @@ export function openRunnerStart(
           : failure("conflict", "This Start key was already accepted with different content.");
       const checked = yield* startPreconditions(input);
       if (!checked.ok) return checked;
-      const { project, context, flow, agents, retryScope } = checked.value;
+      const { project, context, flow, agents, retryScope, workspace } = checked.value;
       const definitions: RunDefinitions = { flow, agents };
       const ready = prepareStartWork(definitions);
       if (!ready.ok) return ready;
@@ -232,6 +283,7 @@ export function openRunnerStart(
         requestFingerprint: content,
         project,
         definitions,
+        workspace,
         runId,
         taskId,
         time: yield* now,
@@ -278,7 +330,9 @@ export function openRunnerStart(
         try: () => t3.inspectLaunchSupport(target.project).catch(() => null),
         catch: (error) => error,
       });
+      const workspace = yield* resolveStartWorkspace(t3, flow, target.project);
       const issues: ValidationIssue[] = [
+        ...(!workspace.ok ? workspace.issues : []),
         ...(!agents.ok ? agents.error.issues : []),
         ...(!support || !support.supported
           ? [
@@ -292,7 +346,7 @@ export function openRunnerStart(
             ]
           : []),
       ];
-      if (!agents.ok || !support || !support.supported)
+      if (!workspace.ok || !agents.ok || !support || !support.supported)
         return failure(
           "validation",
           "Flow execution setup is incomplete. No Run was created.",
@@ -300,7 +354,13 @@ export function openRunnerStart(
         );
       return {
         ok: true as const,
-        value: { ...target, flow, agents: agents.value, retryScope: support.retryScope },
+        value: {
+          ...target,
+          flow,
+          agents: agents.value,
+          retryScope: support.retryScope,
+          workspace: workspace.workspace,
+        },
       };
     });
   }

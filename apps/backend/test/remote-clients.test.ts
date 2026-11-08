@@ -37,6 +37,35 @@ it("concurrent edits from two approved clients keep revision conflicts", async (
   expect(saved.value.name).toBe("Laptop edit");
 });
 
+it("a protocol 3 client saving a Flow without a workspace keeps the saved workspace", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const older = await server.approved("Laptop", "desktop", { protocol: 3, minimum: 3 });
+  const created = await server.factory.createFlow({ name: "Shared plan" });
+  assert(created.ok);
+  const checkout = await server.factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    workspace: { mode: "checkout" },
+    graph: created.value.graph,
+  });
+  assert(checkout.ok);
+
+  // Act
+  const reply = await older.send("PUT", `/api/flows/${created.value.id}`, {
+    name: "Laptop edit",
+    expectedRevision: 2,
+    graph: created.value.graph,
+  });
+
+  // Assert
+  expect(reply.status).toBe(200);
+  expect(await server.factory.getFlow(created.value.id)).toMatchObject({
+    ok: true,
+    value: { revision: 3, name: "Laptop edit", workspace: { mode: "checkout" } },
+  });
+});
+
 it("a client older than the server's supported protocol is told to update itself", async (c) => {
   // Arrange
   const server = await remoteServer(c, { protocol: { protocol: 3, minimumPeerProtocol: 2 } });

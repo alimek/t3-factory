@@ -16,6 +16,7 @@ it("an incomplete graph draft saves with the Flow input connection outstanding",
   const draft = await factory.updateFlow(created.value.id, {
     name: created.value.name,
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph: unconnectedGraph,
   });
 
@@ -35,6 +36,7 @@ it("connecting the Flow input to an Agent makes a saved graph draft ready", asyn
       await factory.updateFlow(created.value.id, {
         name: created.value.name,
         expectedRevision: 1,
+        workspace: created.value.workspace,
         graph: unconnectedGraph,
       })
     ).ok,
@@ -44,6 +46,7 @@ it("connecting the Flow input to an Agent makes a saved graph draft ready", asyn
   const ready = await factory.updateFlow(created.value.id, {
     name: created.value.name,
     expectedRevision: 2,
+    workspace: created.value.workspace,
     graph: { ...unconnectedGraph, flowInput: flowInput("coder") },
   });
 
@@ -52,7 +55,7 @@ it("connecting the Flow input to an Agent makes a saved graph draft ready", asyn
   expect(ready.value.readiness.ready).toBe(true);
 });
 
-it("a saved graph draft keeps its blocks, exits, connections and Flow input order after restart", async (context) => {
+it("a saved graph draft keeps its blocks, exits, connections, Flow input order and custom worktree ref after restart", async (context) => {
   // Arrange
   const { harness, factory, created, unconnectedGraph } = await flowWithAgent(context);
   const [coder, human] = unconnectedGraph.blocks;
@@ -82,6 +85,7 @@ it("a saved graph draft keeps its blocks, exits, connections and Flow input orde
   const saved = await factory.updateFlow(created.value.id, {
     name: "Ordered draft",
     expectedRevision: 1,
+    workspace: { mode: "worktree", base: { kind: "ref", ref: "origin/develop" } },
     graph: {
       flowInput: { position: { x: -40.5, y: 12 }, targetBlockIds: ["writer", "coder"] },
       blocks: [writer, human, coder],
@@ -110,6 +114,7 @@ it("updateFlow rejects a stale editor with conflict and leaves the saved revisio
       await factory.updateFlow(created.value.id, {
         name: created.value.name,
         expectedRevision: 1,
+        workspace: created.value.workspace,
         graph: unconnectedGraph,
       })
     ).ok,
@@ -117,6 +122,7 @@ it("updateFlow rejects a stale editor with conflict and leaves the saved revisio
   const ready = await factory.updateFlow(created.value.id, {
     name: created.value.name,
     expectedRevision: 2,
+    workspace: created.value.workspace,
     graph: { ...unconnectedGraph, flowInput: flowInput("coder") },
   });
   assert(ready.ok);
@@ -125,6 +131,7 @@ it("updateFlow rejects a stale editor with conflict and leaves the saved revisio
   const stale = await factory.updateFlow(created.value.id, {
     name: "Stale",
     expectedRevision: 2,
+    workspace: { mode: "checkout" },
     graph: unconnectedGraph,
   });
 
@@ -134,15 +141,54 @@ it("updateFlow rejects a stale editor with conflict and leaves the saved revisio
   expect(await factory.getFlow(created.value.id)).toStrictEqual(ready);
 });
 
+it("choosing the project checkout appends a revision that reads checkout", async (context) => {
+  // Arrange
+  const { factory, created } = await flowWithAgent(context);
+
+  // Act
+  const saved = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    workspace: { mode: "checkout" },
+    graph: created.value.graph,
+  });
+
+  // Assert
+  assert(saved.ok);
+  expect(saved.value.revision).toBe(2);
+  expect(saved.value.workspace).toStrictEqual({ mode: "checkout" });
+  expect(await factory.getFlow(created.value.id)).toStrictEqual(saved);
+});
+
+it("a custom worktree ref read as an option is rejected and appends no revision", async (context) => {
+  // Arrange
+  const { factory, created } = await flowWithAgent(context);
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    workspace: { mode: "worktree", base: { kind: "ref", ref: " --upload-pack=x " } },
+    graph: created.value.graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("validation");
+  expect(result.error.issues[0]?.path).toBe("workspace.base.ref");
+  expect(await factory.getFlow(created.value.id)).toStrictEqual(created);
+});
+
 it("validateFlow reports a missing agent reference before save", async (context) => {
   // Arrange
-  const { factory, block } = await validationFlow(context);
+  const { factory, created, block } = await validationFlow(context);
   const graph = { flowInput: flowInput("a"), blocks: [block], connections: [] };
 
   // Act
   const missing = await factory.validateFlow({
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -160,6 +206,7 @@ it("updateFlow rejects duplicate block ids", async (context) => {
   const result = await factory.updateFlow(created.value.id, {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -181,6 +228,7 @@ it("updateFlow rejects block prompt overrides", async (context) => {
   const result = await factory.updateFlow(created.value.id, {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -202,6 +250,7 @@ it("updateFlow rejects dangling connections", async (context) => {
   const result = await factory.updateFlow(created.value.id, {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -228,6 +277,7 @@ it("updateFlow rejects assessment-fail exits that omit required correction feedb
   const result = await factory.updateFlow(created.value.id, {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -245,6 +295,7 @@ it("updateFlow rejects a Flow input target that is not in the graph", async (con
   const result = await factory.updateFlow(created.value.id, {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -265,6 +316,7 @@ it("updateFlow rejects a Human step as a Flow input target", async (context) => 
   const result = await factory.updateFlow(created.value.id, {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph,
   });
 
@@ -279,6 +331,7 @@ it("concurrent Flow edits allow exactly one successful revision advance", async 
   const input = {
     name: "Validation",
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph: { flowInput: flowInput("a"), blocks: [block], connections: [] },
   };
   assert((await factory.updateFlow(created.value.id, input)).ok);
@@ -304,6 +357,7 @@ it("readiness identifies unfinished and unreachable blocks without rejecting dra
   const result = await factory.updateFlow(created.value.id, {
     name: created.value.name,
     expectedRevision: 1,
+    workspace: created.value.workspace,
     graph: {
       flowInput: flowInput("entry"),
       connections: [],

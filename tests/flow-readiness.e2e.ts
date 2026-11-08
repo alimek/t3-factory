@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { openComposerWithFlow } from "./support/composer.ts";
+import { saveFlowCopy } from "./support/flows.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 
 beforeEach(async ({ browser }) => {
@@ -98,4 +99,29 @@ test("Agent-scoped runtime contract blockers point to the connection without bla
   await app.screenshot("connection-only-blocker");
   await expect(screen.getByRole("link", "Open Studio → Agents", { exact: true })).toHaveCount(0);
   expect(await runsTitled(app.baseUrl, "UI incomplete runtime contract")).toHaveLength(0);
+});
+
+test("a worktree Flow whose custom base ref is missing blocks Start with a Studio Flow repair link", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await saveFlowCopy(app.baseUrl, "Demo · Focused change", "Missing base worktree", {
+    mode: "worktree",
+    base: { kind: "ref", ref: "release/missing" },
+  });
+  await openComposerWithFlow(app, screen, "Missing base worktree");
+  await screen.getByLabel("Initial prompt", { exact: false }).fill("UI missing worktree base");
+
+  // Act
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("list", "Start blockers")).toContainText(
+    "release/missing is not a commit",
+  );
+  await expect(screen.getByRole("link", "Open Studio → Flows", { exact: true })).toBeVisible();
+  await app.screenshot("workspace-base-blocker");
+  await expect(screen.getByRole("link", "Open Studio → Agents", { exact: true })).toHaveCount(0);
+  expect(await runsTitled(app.baseUrl, "UI missing worktree base")).toHaveLength(0);
 });
