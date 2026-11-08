@@ -334,6 +334,9 @@ it("a working Block update is accepted with its message and selects no result", 
     reportStatus: "working",
     workingMessage: "Opened PR #42; waiting for its CI checks.",
   });
+  expect(run.value.executions).toMatchObject([
+    { executionId: "execution-1", reportStatus: "working" },
+  ]);
   expect(run.value.reports).toStrictEqual([]);
 });
 

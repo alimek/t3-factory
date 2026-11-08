@@ -61,11 +61,7 @@ export function attention(
     const pending = yield* sql<{
       id: string;
     }>`SELECT id FROM run_attention WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND kind=${kind} AND binding_id IS ${block.bindingId ?? null} AND settled_at IS NULL AND (${kind === "native-request" ? 1 : 0}=1 OR execution_id=${executionId})`;
-    const recovered =
-      kind === "missing-report" &&
-      (yield* sql`SELECT attention_id FROM report_recoveries WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND source_execution_id=${executionId} AND settled_at IS NOT NULL`)
-        .length > 0;
-    if (present && !pending.length && !recovered) {
+    if (present && !pending.length && !(yield* settledFor(sql, runRow, block, executionId, kind))) {
       const id = yield* newId;
       yield* sql`INSERT INTO run_attention(id,run_id,block_id,execution_id,kind,source_key,appeared_at,binding_id) VALUES(${id},${runRow.id},${block.block_id},${executionId},${kind},${"attention:" + id},${time},${block.bindingId ?? null})`;
       yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${executionId},'attention-appeared',${"attention:" + id},${id},${time})`;
@@ -76,6 +72,28 @@ export function attention(
         yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${executionId},'attention-settled',${"attention-settled:" + entry.id},${entry.id},${time})`;
       }
   });
+}
+
+/** A settled execution failure, or a missing report its recovery settled, is not raised again for
+ * the same execution; a new failed run is a new matter. */
+function settledFor(
+  sql: SqlClient.SqlClient,
+  runRow: Pick<RunRow, "id">,
+  block: Pick<BlockRow, "block_id">,
+  executionId: string,
+  kind: RunAttention["kind"],
+) {
+  if (kind === "execution-failed")
+    return Effect.map(
+      sql`SELECT id FROM run_attention WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND kind='execution-failed' AND execution_id=${executionId} AND settled_at IS NOT NULL`,
+      (rows) => rows.length > 0,
+    );
+  if (kind === "missing-report")
+    return Effect.map(
+      sql`SELECT attention_id FROM report_recoveries WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND source_execution_id=${executionId} AND settled_at IS NOT NULL`,
+      (rows) => rows.length > 0,
+    );
+  return Effect.succeed(false);
 }
 
 /** Settles every pending matter of one kind on a Block, keeping its history. */

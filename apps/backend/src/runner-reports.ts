@@ -1,11 +1,10 @@
 import { recordReportVerdict } from "./runner-report-diagnostics.ts";
-import { acceptCoordinatorWait, settleCoordinatorWaits } from "./coordinator-conversation.ts";
-import { replaceWorking, settleCoordinatorReports } from "./coordinator-report.ts";
+import { acceptWaiting } from "./block-waiting.ts";
+import { repeatedReport, settleForReport } from "./block-report.ts";
 import { newId } from "./ids.ts";
 import type { RunDefinitions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import { attention, settlePending } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { BlockRow, ReportRunRow, RunnerLifecycle } from "./runner-types.ts";
@@ -44,17 +43,6 @@ function reportRoute(definitions: RunDefinitions, blockId: string, report: Runti
   if (recipients.some((id) => !definitions.flow.graph.blocks.some((block) => block.id === id)))
     return rejected("INVALID_RECIPIENT");
   return { ok: true as const, exitId: exit?.id ?? null, recipients };
-}
-/** The activation's newest result, unless the Block has a pending question or execution failure
- * that only a new report settles. */
-function currentResult(sql: SqlClient.SqlClient, { runRow, block, activationId }: ReportTarget) {
-  return Effect.map(
-    sql<{
-      fingerprint: string;
-      acknowledgement_json: string;
-    }>`SELECT fingerprint,acknowledgement_json FROM runtime_reports WHERE activation_id=${activationId} AND status='finished' AND NOT EXISTS(SELECT 1 FROM run_attention WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND settled_at IS NULL AND kind IN ('conversation-waiting','execution-failed')) ORDER BY rowid DESC LIMIT 1`,
-    ([row]) => row,
-  );
 }
 /** Held handoffs of the activation's earlier results are cancelled, so only the newest result is
  * handed off. After a release, only a different exit hands off again; Blocks started from the
@@ -117,7 +105,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
   // All outgoing intents/events commit with acceptance, before dispatch or acknowledgement.
   function acceptReport(
     sql: SqlClient.SqlClient,
-    { runRow, block, activationId }: ReportTarget,
+    target: ReportTarget,
     report: RuntimeReport,
     content: string,
     route: {
@@ -125,6 +113,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       recipients: readonly string[];
     },
   ) {
+    const { runRow, block, activationId } = target;
     return Effect.gen(function* () {
       const id = yield* newId,
         time = yield* now;
@@ -135,6 +124,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         state,
       );
       const recipients = JSON.stringify(route.recipients);
+      yield* settleForReport(sql, target, time);
       const handsOff = yield* replaceHeldResults(sql, runRow.id, activationId, route.exitId, time);
       yield* sql`INSERT INTO runtime_reports(id,run_id,block_id,execution_id,fingerprint,status,exit_id,recipients_json,pending_message,acknowledgement_json,accepted_at,activation_id,result_message) VALUES(${id},${runRow.id},${block.block_id},${block.execution_id},${content},${report.status},${route.exitId},${recipients},${handsOff && route.recipients.length ? (report.message ?? "") : null},${JSON.stringify(reply)},${time},${activationId},${report.message ?? null})`;
       yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${block.execution_id},'report-accepted',${"report:" + id},${id},${time})`;
@@ -149,27 +139,6 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         });
       yield* sql`UPDATE run_executions SET report_status=${report.status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
       yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
-      yield* settlePending(
-        sql,
-        runRow.id,
-        block.block_id,
-        "execution-failed",
-        "report-accepted",
-        time,
-      );
-      if (block.execution_id)
-        yield* attention(
-          sql,
-          { id: runRow.id },
-          block,
-          block.execution_id,
-          "missing-report",
-          false,
-          time,
-        );
-      yield* settleCoordinatorReports(sql, runRow.id, block.block_id, time);
-      yield* settleCoordinatorWaits(sql, runRow.id, block.block_id, time, true);
-      yield* replaceWorking(sql, activationId, time);
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
       return reply;
     });
@@ -183,15 +152,11 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
       const protocol = nonFinalRejection(report);
       if (protocol) return protocol;
       const content = reportFingerprint(report);
-      if (report.status === "finished") {
-        const current = yield* currentResult(sql, target);
-        if (current?.fingerprint === content)
-          return JSON.parse(current.acknowledgement_json) as RuntimeReply;
-      }
+      const repeated = yield* repeatedReport(sql, target, content);
+      if (repeated) return repeated;
       const route = reportRoute(runRow.definitions, block.block_id, report);
       if (!route.ok) return route.reply;
-      if (report.status === "waiting")
-        return yield* acceptCoordinatorWait(sql, target, report, content);
+      if (report.status === "waiting") return yield* acceptWaiting(sql, target, report, content);
       if (report.status === "working") return yield* acceptWorking(sql, target, report, content);
       return yield* acceptReport(sql, target, report, content, route);
     });

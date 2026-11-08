@@ -1,5 +1,8 @@
 import { assert, expect, it } from "@effect/vitest";
-import { completedWorkerRecovery } from "./support/run-worker-recovery.ts";
+import {
+  completedWorkerRecovery,
+  completedWorkingRecovery,
+} from "./support/run-worker-recovery.ts";
 import {
   workerStart,
   directWorker,
@@ -12,6 +15,7 @@ import {
   followupReplyWorker,
   launchedBlockId,
   pendingReview,
+  reportedAfterFailure,
   workerMessage,
   finishWorker,
   settleThread,
@@ -318,6 +322,62 @@ it("a failed worker run's Problem settles when the Block reports", async (c) => 
   });
   expect(run.value.blocks[0]).toMatchObject({ state: "waiting", problem: null });
 });
+it("an execution failure settled by a report is not raised again while that run is still the thread's latest", async (c) => {
+  // Arrange
+  const f = await reportedAfterFailure(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention.filter((a) => a.kind === "execution-failed")).toMatchObject([
+    { executionId: "execution-1", settlementReason: "report-accepted" },
+  ]);
+  expect(run.value.blocks[0]).toMatchObject({ state: "working", problem: null });
+});
+it("a new failed run after a settled execution failure shows a new Problem", async (c) => {
+  // Arrange
+  const f = await reportedAfterFailure(c);
+  startWorkerTurn(f, "retry-execution", 2);
+  finishWorker(f, "failed");
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(
+    run.value.attention.filter((a) => a.kind === "execution-failed" && !a.settledAt),
+  ).toMatchObject([{ executionId: "retry-execution" }]);
+  expect(run.value.blocks[0]).toMatchObject({ state: "error", problem: "execution-failed" });
+});
+it("repeating the current working report after a failed run settles the execution failure", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  finishWorker(f, "failed");
+  assert((await f.f.reconcileRuns()).ok);
+
+  // Act
+  const result = await f.f.runtime.submit(workerWorking(f.blockId));
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.attention.find((a) => a.kind === "execution-failed")).toMatchObject({
+    settledAt: expect.any(String),
+    settlementReason: "report-accepted",
+  });
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "working",
+    problem: null,
+    workingMessage: "Opened PR #42; waiting for its CI checks.",
+  });
+});
 it("a worker's waiting report is a question in its own worker thread", async (c) => {
   // Arrange
   const f = await directWorker(c);
@@ -547,6 +607,21 @@ it("completed direct worker recovery settles the original missing report only af
   expect(run.value.recoveries[0]?.settledAt).not.toBeNull();
   expect(run.value.recoveries[0]?.executionId).toBe(f.executionId);
   expect(run.value.reports[0]?.completionEligibleAt).not.toBeNull();
+});
+
+it("Request report on a worker idle in working settles once the assessment turn's result is released", async (c) => {
+  // Arrange
+  const f = await completedWorkingRecovery(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.recoveries).toMatchObject([
+    { attentionId: null, executionId: f.executionId, settledAt: expect.any(String) },
+  ]);
 });
 
 it("a Human answer releases its outgoing handoff without waiting for worker evidence", async (c) => {

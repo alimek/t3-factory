@@ -679,7 +679,7 @@ export interface RunDetail extends RunSummary {
     readonly blockId: string;
     readonly executionId: string;
     readonly engineStatus: string | null;
-    readonly reportStatus: "waiting" | "finished" | null;
+    readonly reportStatus: "working" | "waiting" | "finished" | null;
     readonly problem: string | null;
     readonly observedAt: string | null;
     readonly observedStartedAt: string | null;

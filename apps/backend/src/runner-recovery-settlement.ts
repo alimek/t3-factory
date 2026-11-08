@@ -32,7 +32,8 @@ function endsObligation(
     )
   );
 }
-/** Follow only explicit missing-only links; a report on an intermediate execution ends or conflicts. */
+/** Follow only explicit missing-only links; a final or waiting report on an intermediate execution
+ * ends or conflicts, while a working report leaves the obligation open. */
 function recoveryChain(
   detail: RunDetail,
   blockId: string,
@@ -52,7 +53,8 @@ function recoveryChain(
     );
     if (executionId !== sourceId && endsObligation(detail, blockId, execution))
       return { executionId, executionIds: [...executionIds] };
-    if (execution.reportStatus !== null || report) return null;
+    if ((execution.reportStatus !== null && execution.reportStatus !== "working") || report)
+      return null;
     const links = detail.recoveries.filter(
       (r) => r.blockId === blockId && r.sourceExecutionId === executionId,
     );

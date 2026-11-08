@@ -138,6 +138,24 @@ it("repeating the current result on a Settled Run returns the Run to Active", as
   expect(run.value.reports).toHaveLength(1);
 });
 
+it("repeating the earlier result after a working report makes it current, so the Run settles once its worker thread is finished", async (c) => {
+  // Arrange
+  const f = await directWorker(c, true, "");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(run.value.blocks[0]).toMatchObject({ state: "finished", workingMessage: null });
+});
+
 it("a reply turn in a worker thread without a report leaves the Settled Run Settled", async (c) => {
   // Arrange
   const f = await settledWorker(c);

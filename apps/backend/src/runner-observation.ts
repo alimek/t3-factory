@@ -1,4 +1,4 @@
-import { settleCoordinatorWaits } from "./coordinator-conversation.ts";
+import { currentReports, settleQuestions, type CurrentReport } from "./block-report.ts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { RunAttention } from "@t3-factory/contracts";
@@ -81,7 +81,7 @@ function recordWorkerThread(
     // A later run of the thread that completes recovers earlier execution failures.
     if (latest?.status === "completed")
       yield* settlePending(sql, run.id, block.block_id, "execution-failed", "completed", time);
-    yield* settleCoordinatorWaits(sql, run.id, block.block_id, time);
+    yield* settleQuestions(sql, run.id, block.block_id, time);
     yield* recordActivation(sql, run, block, worker, time);
     yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
   });
@@ -108,29 +108,18 @@ function recordExecutions(
   });
 }
 
-type ActivationFacts = { id: string; reported: number; waiting: number; working: number };
+type ReportStatus = CurrentReport["status"] | undefined;
 
 /** Missing report: the thread is finished, its latest run completed, and the current activation
- * has no final result, pending question or current working report. */
-function missingReport({ finished, latest }: WorkerThread, activation: ActivationFacts) {
-  return (
-    finished &&
-    latest?.status === "completed" &&
-    !activation.reported &&
-    !activation.waiting &&
-    !activation.working
-  );
+ * has no current report. */
+function missingReport({ finished, latest }: WorkerThread, current: ReportStatus) {
+  return finished && latest?.status === "completed" && !current;
 }
 
-function blockState(
-  problem: string | null,
-  { finished }: WorkerThread,
-  activation: ActivationFacts,
-) {
+function blockState(problem: string | null, { finished }: WorkerThread, current: ReportStatus) {
   if (problem) return "error";
-  // A question or working report after a result is the Block's newer report.
-  if (activation.waiting) return "waiting";
-  return activation.reported && finished && !activation.working ? "finished" : "working";
+  if (current === "waiting") return "waiting";
+  return current === "finished" && finished ? "finished" : "working";
 }
 
 function recordActivation(
@@ -142,11 +131,13 @@ function recordActivation(
 ) {
   return Effect.gen(function* () {
     const { latest } = worker;
-    const [activation] =
-      yield* sql<ActivationFacts>`SELECT a.id,EXISTS(SELECT 1 FROM runtime_reports r WHERE r.activation_id=a.id) AS reported,EXISTS(SELECT 1 FROM coordinator_waits w JOIN run_attention q ON q.id=w.attention_id WHERE w.activation_id=a.id AND q.settled_at IS NULL) AS waiting,EXISTS(SELECT 1 FROM working_reports w WHERE w.activation_id=a.id AND w.replaced_at IS NULL) AS working FROM run_activations a WHERE a.run_id=${run.id} AND a.block_id=${block.block_id} ORDER BY a.rowid DESC LIMIT 1`;
+    const activation = (yield* currentReports(sql, run.id)).find(
+      (entry) => entry.blockId === block.block_id,
+    );
     if (!activation) throw Error("Activation is missing.");
+    const current = activation.report?.status;
     if (latest) {
-      const missing = missingReport(worker, activation);
+      const missing = missingReport(worker, current);
       yield* attention(sql, run, block, latest.runId, "missing-report", missing, time);
       if (missing)
         yield* sql`UPDATE run_executions SET problem='missing-report' WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${latest.runId}`;
@@ -155,12 +146,9 @@ function recordActivation(
       kind: RunAttention["kind"];
     }>`SELECT kind FROM run_attention WHERE run_id=${run.id} AND block_id=${block.block_id} AND kind IN ('execution-failed','missing-report') AND settled_at IS NULL ORDER BY kind LIMIT 1`;
     const problem = pending?.kind ?? null;
-    const phase = activation.waiting
-      ? "waiting-worker"
-      : activation.reported
-        ? "reported"
-        : "assessing";
-    yield* sql`UPDATE run_activations SET phase=CASE WHEN phase='finished' THEN phase ELSE ${phase} END,problem=${problem} WHERE id=${activation.id}`;
-    yield* sql`UPDATE run_blocks SET execution_id=${latest?.runId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${worker.thread.pendingRequestCount},problem=${problem},state=${blockState(problem, worker, activation)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
+    const phase =
+      current === "waiting" ? "waiting-worker" : current === "finished" ? "reported" : "assessing";
+    yield* sql`UPDATE run_activations SET phase=CASE WHEN phase='finished' THEN phase ELSE ${phase} END,problem=${problem} WHERE id=${activation.activationId}`;
+    yield* sql`UPDATE run_blocks SET execution_id=${latest?.runId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${worker.thread.pendingRequestCount},problem=${problem},state=${blockState(problem, worker, current)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
   });
 }

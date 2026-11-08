@@ -1,4 +1,5 @@
 import { settleReportRejections } from "./runner-report-diagnostics.ts";
+import { currentReports } from "./block-report.ts";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -48,65 +49,79 @@ export function openRunnerSettle(
   lifecycle: RunnerLifecycle,
   liveContextId: () => Effect.Effect<string | null, unknown>,
 ) {
-  /** Every visited Block's current activation has a finished result that no later working report
-   * replaced, and no attention is pending. */
+  /** Every visited Block's current report is its finished result, and no attention is pending. */
   function reportedBlocks(run: RunRow) {
     return database.transaction((sql) =>
       Effect.gen(function* () {
         const blocks = yield* sql<{
+          block_id: string;
           thread_id: string;
-          reported: number;
-          working: number;
-        }>`SELECT b.thread_id,EXISTS(SELECT 1 FROM runtime_reports r WHERE r.activation_id=a.id AND r.status='finished') AS reported,EXISTS(SELECT 1 FROM working_reports w WHERE w.activation_id=a.id AND w.replaced_at IS NULL) AS working FROM run_blocks b LEFT JOIN run_activations a ON a.id=(SELECT id FROM run_activations WHERE run_id=b.run_id AND block_id=b.block_id ORDER BY rowid DESC LIMIT 1) WHERE b.run_id=${run.id} AND b.thread_id IS NOT NULL ORDER BY b.rowid`;
+        }>`SELECT block_id,thread_id FROM run_blocks WHERE run_id=${run.id} AND thread_id IS NOT NULL ORDER BY rowid`;
+        const current = new Map(
+          (yield* currentReports(sql, run.id)).map((entry) => [
+            entry.blockId,
+            entry.report?.status,
+          ]),
+        );
         const pending =
           yield* sql`SELECT id FROM run_attention WHERE run_id=${run.id} AND settled_at IS NULL`;
         const done =
-          blocks.length > 0 && !pending.length && blocks.every((b) => b.reported && !b.working);
+          blocks.length > 0 &&
+          !pending.length &&
+          blocks.every((b) => current.get(b.block_id) === "finished");
         return done ? blocks.map((b) => b.thread_id) : null;
       }),
+    );
+  }
+
+  /** A worker thread T3 cannot read now keeps the Run Active until a later sweep. */
+  function threadsFinished(run: RunRow, threads: readonly string[]) {
+    return recoverOperation(
+      Effect.gen(function* () {
+        for (const thread of threads)
+          if (!(yield* Effect.tryPromise(() => readWorkerThread(t3, run, thread))).finished)
+            return false;
+        return true;
+      }),
+      () => Effect.succeed(false),
     );
   }
 
   /** Automatic settlement: every visited Block has its result, nothing is pending locally, no Human
    * occurrence is open and a fresh read finds every worker thread finished. */
   function settleWhenDone(id: string) {
-    return recoverOperation(
-      Effect.gen(function* () {
-        const run = yield* database.row(id);
-        if (!run || run.archived_at || run.settled_at || !run.gate_open) return;
-        const threads = yield* reportedBlocks(run);
-        if (!threads) return;
-        for (const thread of threads)
-          if (!(yield* Effect.tryPromise(() => readWorkerThread(t3, run, thread))).finished) return;
-        if ((yield* liveContextId()) !== run.context_id) return;
-        const settled = yield* database.mutate(id, (sql) =>
-          Effect.gen(function* () {
-            if (!(yield* database.runHeldUnderContext(sql, run, true))) return false;
-            const [current] = yield* sql<{
-              generation: number;
-              settled_at: string | null;
-            }>`SELECT generation,settled_at FROM runs WHERE id=${id}`;
-            if (current?.generation !== run.generation || current.settled_at) return false;
-            // A replaced result's held handoffs are cancelled and owe no delivery.
-            const pending =
-              yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (kind='handoff' AND state='cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered'`;
-            if (pending.length) return false;
-            const time = yield* now;
-            yield* markSettled(sql, id, "automatic", time);
-            yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${time}) WHERE run_id=${id}`;
-            // Terminal activations have no handoff release to settle their recovery diagnostics.
-            const reports = yield* sql<{
-              block_id: string;
-            }>`SELECT DISTINCT block_id FROM runtime_reports WHERE run_id=${id}`;
-            for (const report of reports)
-              yield* settleReportRejections(sql, id, report.block_id, time);
-            return true;
-          }),
-        );
-        if (settled) yield* settleWorkerThreads(run);
-      }),
-      () => Effect.void,
-    );
+    return Effect.gen(function* () {
+      const run = yield* database.row(id);
+      if (!run || run.archived_at || run.settled_at || !run.gate_open) return;
+      const threads = yield* reportedBlocks(run);
+      if (!threads || !(yield* threadsFinished(run, threads))) return;
+      if ((yield* liveContextId()) !== run.context_id) return;
+      const settled = yield* database.mutate(id, (sql) =>
+        Effect.gen(function* () {
+          if (!(yield* database.runHeldUnderContext(sql, run, true))) return false;
+          const [current] = yield* sql<{
+            generation: number;
+            settled_at: string | null;
+          }>`SELECT generation,settled_at FROM runs WHERE id=${id}`;
+          if (current?.generation !== run.generation || current.settled_at) return false;
+          // A replaced result's held handoffs are cancelled and owe no delivery.
+          const pending =
+            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (kind='handoff' AND state='cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered'`;
+          if (pending.length) return false;
+          const time = yield* now;
+          yield* markSettled(sql, id, "automatic", time);
+          yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${time}) WHERE run_id=${id}`;
+          // Terminal activations have no handoff release to settle their recovery diagnostics.
+          const reports = yield* sql<{
+            block_id: string;
+          }>`SELECT DISTINCT block_id FROM runtime_reports WHERE run_id=${id}`;
+          for (const report of reports)
+            yield* settleReportRejections(sql, id, report.block_id, time);
+          return true;
+        }),
+      );
+      if (settled) yield* settleWorkerThreads(run);
+    });
   }
 
   /** Best-effort native organization of a Settled Run's worker threads. A possibly issued

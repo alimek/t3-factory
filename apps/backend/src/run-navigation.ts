@@ -9,7 +9,7 @@ import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { failure } from "./result.ts";
-import { currentWorkingMessages } from "./working-report.ts";
+import { currentWorkingMessages } from "./block-report.ts";
 export function openRunNavigation(
   database: RunnerDatabase,
   getRun: (id: string) => Effect.Effect<Result<RunDetail>, unknown>,

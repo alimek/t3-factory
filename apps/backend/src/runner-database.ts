@@ -118,10 +118,6 @@ export function openRunnerDatabase(sqlClient: SqlClient.SqlClient, owner: { toke
           Effect.gen(function* () {
             yield* sql`INSERT INTO runner_owner(singleton,token,pid,acquired_at) VALUES(1,${owner.token},${process.pid},${yield* now}) ON CONFLICT(singleton) DO UPDATE SET token=excluded.token,pid=excluded.pid,acquired_at=excluded.acquired_at`;
             yield* sql`UPDATE operation_intents SET state='uncertain',problem='Previous owner exited with an in-flight reservation.' WHERE state='reserved'`;
-            yield* sql`UPDATE run_coordinators SET state='uncertain',problem='Previous owner exited with an in-flight Run conversation launch.' WHERE state='reserved'`;
-            yield* sql`UPDATE run_control_recoveries SET state='uncertain' WHERE state='reserved'`;
-            yield* sql`UPDATE run_coordinator_commands SET state='uncertain' WHERE state='reserved'`;
-            yield* sql`UPDATE run_coordinators SET freshness='stale' WHERE run_id IN(SELECT id FROM runs WHERE archived_at IS NULL AND settled_at IS NULL)`;
             yield* sql`UPDATE run_blocks SET freshness='stale' WHERE thread_id IS NOT NULL AND run_id IN(SELECT id FROM runs WHERE archived_at IS NULL AND settled_at IS NULL)`;
           }),
         );

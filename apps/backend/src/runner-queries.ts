@@ -18,7 +18,7 @@ import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
-import { currentWorkingMessages } from "./working-report.ts";
+import { currentWorkingMessages } from "./block-report.ts";
 import type {
   BlockRow,
   ExecutionRow,
@@ -96,7 +96,7 @@ function runExecution(execution: ExecutionRow): RunDetail["executions"][number] 
     blockId: execution.block_id,
     executionId: execution.execution_id,
     engineStatus: execution.engine_status,
-    reportStatus: execution.report_status,
+    reportStatus: execution.report_status ?? (execution.working_reported ? "working" : null),
     problem: execution.problem,
     observedAt: execution.observed_at,
     observedStartedAt: execution.first_work_at,
@@ -223,6 +223,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const reports =
           yield* sql<ReportRow>`SELECT * FROM runtime_reports WHERE run_id=${id} ORDER BY rowid`;
         const executions = yield* sql<ExecutionRow>`SELECT x.*,
+          EXISTS(SELECT 1 FROM working_reports w WHERE w.run_id=x.run_id AND w.block_id=x.block_id AND w.execution_id=x.execution_id) AS working_reported,
           (SELECT MIN(e.observed_at) FROM run_events e WHERE e.run_id=x.run_id AND e.block_id=x.block_id AND e.execution_id=x.execution_id AND (e.binding_id=x.binding_id OR (e.binding_id IS NULL AND x.thread_id=(SELECT b.thread_id FROM run_blocks b WHERE b.run_id=x.run_id AND b.block_id=x.block_id))) AND e.engine_status IN ('preparing','starting','running','waiting')) AS first_work_at,
           (SELECT MIN(e.observed_at) FROM run_events e WHERE e.run_id=x.run_id AND e.block_id=x.block_id AND e.execution_id=x.execution_id AND (e.binding_id=x.binding_id OR (e.binding_id IS NULL AND x.thread_id=(SELECT b.thread_id FROM run_blocks b WHERE b.run_id=x.run_id AND b.block_id=x.block_id))) AND e.engine_status IN ('completed','failed','cancelled','interrupted','rolled_back')) AS end_work_at
           FROM run_executions x WHERE run_id=${id} ORDER BY rowid`;

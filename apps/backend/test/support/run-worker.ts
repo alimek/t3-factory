@@ -264,6 +264,15 @@ export async function pendingReview(c: TestContext) {
   return { ...f, occurrence };
 }
 
+/** The worker's run failed and its execution-failed Problem was settled by a working report. */
+export async function reportedAfterFailure(c: TestContext) {
+  const f = await directWorker(c);
+  finishWorker(f, "failed");
+  assert((await f.f.reconcileRuns()).ok);
+  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
+  return f;
+}
+
 export async function waitingWorker(c: TestContext) {
   const f = await directWorker(c);
   assert(
