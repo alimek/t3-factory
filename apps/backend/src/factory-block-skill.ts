@@ -1,29 +1,67 @@
 import { basename, dirname, join } from "node:path";
 
 /**
- * The Factory Block skill installed beside each harness configuration. It names which tool
- * to use when; protocol rules live in the MCP tool descriptions so an update needs no reinstall.
+ * The Factory Block skill installed beside each harness configuration. It carries the worker's
+ * reporting obligations; argument rules and Factory's next step live in the MCP tool descriptions
+ * and replies, which change without a reinstall. Readiness compares installed copies with this
+ * exact text, so any edit makes every installed copy outdated until Repair.
  */
 export const FACTORY_BLOCK_SKILL = `---
 name: factory-block
-description: Work one Factory Block with the factory-runtime tools. Use when the thread's first message starts with $factory-block.
+description: Work one Factory Block and report it through the factory-runtime tools. Use in any thread whose first message starts with $factory-block.
 ---
 
 # Factory Block
 
-This thread is one Block in a Factory Run. Factory takes the Block's result only from its tools, never from chat.
+This thread is the worker for one Block of a Factory Run. Factory knows the Block's state only from your \`factory_update_block\` reports, never from chat, and Factory alone routes the result to the next Blocks.
 
-Factory's messages in this thread give the Block id on a \`Factory Block id:\` line. Pass it as \`blockId\` on every Factory tool call.
+Factory's messages in this thread give your **Block id** on a \`Factory Block id:\` line. Pass it as \`blockId\` on every Factory tool call. It stays the same on every visit and is not the T3 thread id; the \`blockId\` fields inside tool replies name Flow blocks, not your Block id. Only this thread's own agent calls Factory tools: subagents return their work to you and never receive the Block id.
 
-1. Call \`factory_get_block\` before any other work. Done when it returns your Block with its inputs and exits.
-2. Work from this Agent's prompt and those inputs. Call \`factory_get_run\` when you need the rest of the Run as context.
-3. Report with \`factory_update_block\`. Done when it returns an acknowledgement.
-   - \`to: "waiting"\` when you need the user's reply, then end the turn.
-   - \`to: "finished"\` with one of the Block's exits when the work is done.
+## Every turn
 
-Factory tools belong to this thread's own agent; subagents work without them and never receive the Block id.
+Follow these steps on every turn of this thread: the first visit, a later visit, a user reply (also after a result), a notification after CI, review, delegated or background work, and a Request report.
 
-Every later turn in this thread, including feedback, notifications and user replies, starts again at step 1 with the same Block id.
+1. Read the Block with \`factory_get_block\`. Done when it returns the current visit with its state, reason, inputs, exits and allowed reports.
+2. Work from this Agent's prompt and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Each visit needs its own report, even when an earlier visit finished. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
+3. Report with \`factory_update_block\` unless your latest report already says exactly that. A user reply answers a \`waiting\` report, so report again from that turn. Done when the call succeeds; follow the reply's \`next\` guidance, then end the turn.
+
+## Reports
+
+Your latest report is the Block's **current report**.
+
+- \`to: "working"\` with a \`message\` and no exit: you are still on the task but ending this turn, for example while CI, review, delegated or background work runs. Say what you are doing or waiting on. Something must resume this thread when that changes, such as a watch or delegated work notifying it; that turn reads the Block and reports again.
+- \`to: "waiting"\` with a \`message\` and no exit: you need the user. Put the unanswered question or decision in the message and leave it open until the user answers in this thread; your recommendation is not their decision.
+- \`to: "finished"\` with one \`exit\` from the Block's exits and a result message: the task is complete. While CI, review, delegated or background work is still pending, report \`working\`, never \`finished\`.
+
+The newest \`finished\` is this visit's result. To correct it, report \`finished\` again from a later turn. Before Factory hands it off, only the newest result goes on. After hand-off, the same exit only updates the result; a different exit also starts that exit's next Blocks while Blocks started from the earlier result keep running, so change the exit only when the outcome changed.
+
+### Result message
+
+The next Block receives your \`finished\` message and a link to this thread; Factory fetches nothing else. Write the message so that Block can continue without asking:
+
+- the outcome, and why it fits the chosen exit;
+- evidence: the checks, tests and reviews you ran and their results;
+- artifact references: repository paths, branch names, commit SHAs and PR URLs.
+
+When the exit requires feedback, the message is that feedback.
+
+## Request report
+
+A Factory message saying \`Factory Request report\` asks you to assess the work already done in this thread. Read the Block, check the current state of that work (for example its CI or PR status) and report what you find. Assessing is the whole turn; leave the task as it stands.
+
+## Settled and Archived Runs
+
+A Settled Run accepts reports as usual, and an accepted report returns it to Active. An Archived Run answers every report with a success that changes nothing: when a reply says the Run is archived, stop work on this Block and end the turn.
+
+## Tool errors
+
+A rejected report carries a \`reason\` and a \`next\` step; follow \`next\`. A rejection leaves your work intact: correct the call, not the work.
+
+- A validation code such as \`MESSAGE_REQUIRED\`, \`EXIT_NOT_ALLOWED\`, \`INVALID_EXIT\` or \`FEEDBACK_REQUIRED\`: fix the arguments and call again.
+- \`UNKNOWN_BLOCK\` or \`BLOCK_ID_REQUIRED\`: copy the Block id exactly from the latest \`Factory Block id:\` line and call again.
+- \`RUNTIME_UNAVAILABLE\` or no reply at all: Factory may not have recorded the report. Repeat the same call; an identical report returns the same acknowledgement.
+
+If reporting still fails, say in chat which report you could not make and the error, then end the turn.
 `;
 
 /** Codex keeps the skill next to config.toml. Claude's user config keeps it under `.claude/skills`. */

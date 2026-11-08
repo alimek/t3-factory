@@ -333,6 +333,7 @@ it("Repair installs the Factory Block skill under the Claude home", async (conte
   expect(installed).toContain("name: factory-block");
   expect(installed).toContain("factory_get_block");
   expect(installed).toContain("factory_get_run");
+  expect(installed).toContain('to: "working"');
   expect(installed).toContain('to: "waiting"');
   expect(installed).toContain('to: "finished"');
   expect(installed).toContain("`blockId`");
@@ -375,8 +376,8 @@ it("a missing Factory Block skill stays repairable and Repair rewrites it", asyn
   expect(await readFile(skill, "utf8")).toContain("name: factory-block");
 });
 
-/** The skill installed before Block ids: it tells the worker to pass a Factory tool ref. */
-const REF_SKILL = `---
+/** The skill current releases install: it passes a Factory tool ref and has no working report. */
+const RELEASED_SKILL = `---
 name: factory-block
 description: Work one Factory Block with the factory-runtime tools. Use when the thread's first message starts with $factory-block.
 ---
@@ -396,11 +397,11 @@ When the message gives a Factory tool ref, pass it as \`ref\` on every Factory t
 Every later turn in this thread, including feedback and user replies, starts again at step 1.
 `;
 
-it("a Factory Block skill from before Block ids needs attention until Repair replaces it", async (context) => {
+it("a Factory Block skill installed by an earlier release needs attention until Repair replaces it", async (context) => {
   // Arrange
   const fixture = await installedReportingFixture(context);
   const skill = join(fixture.home, ".claude", "skills", "factory-block", "SKILL.md");
-  await writeFile(skill, REF_SKILL);
+  await writeFile(skill, RELEASED_SKILL);
   const before = await fixture.factory.getReportingInstallations();
   assert(before.ok);
   expect(before.value[0]).toMatchObject({ status: "needs-attention", actions: { repair: true } });
@@ -411,5 +412,5 @@ it("a Factory Block skill from before Block ids needs attention until Repair rep
   // Assert
   assert(result.ok);
   expect(result.value.status).toBe("installed");
-  expect(await readFile(skill, "utf8")).toContain("`blockId`");
+  expect(await readFile(skill, "utf8")).toContain('to: "working"');
 });
