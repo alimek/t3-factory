@@ -11,9 +11,8 @@ import * as Socket from "effect/socket/Socket";
 import { WebSocket } from "@effect/platform-node/NodeWS";
 import {
   LIVE_PATH,
-  runEntityKeys,
+  applyRunChange,
   type RunDetail,
-  type RunEntityCollection,
   type RunLiveMessage,
 } from "@t3-factory/contracts";
 import { FactoryLive } from "@t3-factory/contracts/live-rpc";
@@ -57,53 +56,11 @@ export function subscribe<A, E>(context: TestContext, stream: Stream.Stream<A, E
   };
 }
 
-const keyOf = (collection: RunEntityCollection) =>
-  runEntityKeys[collection] as (entity: unknown) => string;
-
 /** The Run a client holds after applying `messages` in order, as the Run screen does. */
 export function appliedRun(messages: readonly RunLiveMessage[]): RunDetail | undefined {
   let run: RunDetail | undefined;
-  for (const message of messages) {
-    if (message._tag === "snapshot") run = message.run;
-    else if (run && message._tag === "changed") {
-      const next: Record<string, unknown> = { ...run, ...message.header };
-      for (const [collection, change] of Object.entries(message.entities)) {
-        const key = keyOf(collection as RunEntityCollection);
-        const removed = new Set(change.removals);
-        const replaced = new Map(change.upserts.map((entity) => [key(entity), entity]));
-        const kept = (run[collection as RunEntityCollection] as readonly unknown[])
-          .filter((entity) => !removed.has(key(entity)))
-          .map((entity) => replaced.get(key(entity)) ?? entity);
-        const present = new Set(kept.map(key));
-        next[collection] = [
-          ...kept,
-          ...change.upserts.filter((entity) => !present.has(key(entity))),
-        ];
-      }
-      next.events = [...run.events, ...message.events];
-      run = next as unknown as RunDetail;
-    } else if (run && message._tag === "observed") {
-      const blocks = new Map(message.blocks.map((block) => [block.blockId, block.observedAt]));
-      const executions = new Map(
-        message.executions.map((execution) => [execution.bindingId, execution.observedAt]),
-      );
-      run = {
-        ...run,
-        blocks: run.blocks.map((block) =>
-          blocks.has(block.blockId) ? { ...block, observedAt: blocks.get(block.blockId)! } : block,
-        ),
-        executions: run.executions.map((execution) =>
-          executions.has(execution.bindingId)
-            ? { ...execution, observedAt: executions.get(execution.bindingId)! }
-            : execution,
-        ),
-        runCoordinator:
-          run.runCoordinator && message.runCoordinatorObservedAt !== undefined
-            ? { ...run.runCoordinator, observedAt: message.runCoordinatorObservedAt }
-            : run.runCoordinator,
-      };
-    }
-  }
+  for (const message of messages)
+    run = message._tag === "snapshot" ? message.run : run && applyRunChange(run, message);
   return run;
 }
 
