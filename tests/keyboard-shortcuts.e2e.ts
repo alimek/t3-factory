@@ -2,6 +2,7 @@ import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
 import { matchingSidebarTitles } from "./support/sidebar.ts";
+import { elapse } from "./support/remote-access.ts";
 import {
   desktopNewRunHint,
   expectFactoryConnected,
@@ -168,9 +169,9 @@ test("Settle is ignored while Settings is open", async ({ app, screen, browser }
 
   // Assert
   await expect(screen.getByRole("heading", { name: "Keyboard shortcuts", level: 2 })).toBeVisible();
-  await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, active.id)).lifecycle)
-    .toBe("active");
+  // Observe beyond the key event so an accidental asynchronous Settle cannot pass on the initial state.
+  await elapse(1_000);
+  expect((await readHistoryRun(app.baseUrl, active.id)).lifecycle).toBe("active");
 });
 
 test("Mod+Backspace opens the existing Archive confirmation for the open Run", async ({
