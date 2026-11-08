@@ -1,4 +1,4 @@
-import type { RunDetail, RunNavigationEntry, T3Connection } from "./index.ts";
+import type { OperationError, RunDetail, RunNavigationEntry, T3Connection } from "./index.ts";
 
 /**
  * Live delivery over the shared window connection. Every scope starts with an authoritative
@@ -7,6 +7,19 @@ import type { RunDetail, RunNavigationEntry, T3Connection } from "./index.ts";
  * no message is ever replayed.
  */
 export const LIVE_PATH = "/api/live";
+
+/** Every live delivery is an envelope; the first one of a subscription holds its snapshot. */
+export interface LiveEnvelope<M> {
+  /**
+   * The value was read with no relevant change arriving during the read, and no later read
+   * failed. A scope is synchronized, and mutations are enabled, only while its latest applied
+   * envelope is current: a snapshot raced by commits stays unsynchronized through its catch-up,
+   * and a failed re-read marks the scope unsynchronized until a later read succeeds.
+   */
+  readonly current: boolean;
+  /** Empty when only `current` changed. */
+  readonly messages: readonly M[];
+}
 
 export type ConnectionLiveMessage =
   | { readonly _tag: "snapshot"; readonly connection: T3Connection }
@@ -150,3 +163,16 @@ export function applyRunChange(
         : run.runCoordinator,
   };
 }
+
+/** At most this many Runs share one window's view subscription. */
+export const RUN_VIEW_LIMIT = 20;
+
+/**
+ * Navigation and the window's open Runs travel in one subscription: each envelope comes from one
+ * read transaction, so one commit's Run and navigation changes are delivered and applied together.
+ */
+export type RunViewLiveMessage =
+  | { readonly _tag: "navigation"; readonly message: NavigationLiveMessage }
+  | { readonly _tag: "run"; readonly runId: string; readonly message: RunLiveMessage }
+  /** The Run does not exist. Final for that Run only; the rest of the view stays live. */
+  | { readonly _tag: "missing"; readonly runId: string; readonly error: OperationError };

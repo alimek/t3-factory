@@ -121,7 +121,7 @@ export function RunSidebar({ path }: { path: string }) {
   const [archiving, setArchiving] = useState<RunNavigationEntry>();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
-  const { act, busy, actionError } = useRunActions(!!query);
+  const { act, busy, actionError } = useRunActions(!!query, runs);
   return (
     <section aria-label="Run navigation" className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
@@ -202,12 +202,24 @@ const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
 const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
 
 /** Snooze, Restore and Settle from the row menu. */
-function useRunActions(searching: boolean) {
-  // A new request object also refocuses the same target after consecutive row actions.
-  const [focusAfterRender, setFocusAfterRender] = useState<{ id: string }>();
+function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) {
+  // A new request object also refocuses the same target after consecutive row actions. The
+  // command's response can arrive before live navigation moves the row, so the request waits
+  // until navigation shows the Run where the action puts it, then focuses that target.
+  const [focusAfterRender, setFocusAfterRender] = useState<{
+    readonly id: string;
+    readonly runId: string;
+    readonly action: RunAction;
+  }>();
   useLayoutEffect(() => {
-    if (focusAfterRender) document.getElementById(focusAfterRender.id)?.focus();
-  }, [focusAfterRender]);
+    if (!focusAfterRender) return;
+    const run = runs.find((candidate) => candidate.id === focusAfterRender.runId);
+    if (run && !moved(run, focusAfterRender.action)) return;
+    const target = document.getElementById(focusAfterRender.id);
+    if (!target) return;
+    target.focus();
+    setFocusAfterRender(undefined);
+  }, [focusAfterRender, runs]);
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState<string>();
   const act = async (run: RunNavigationEntry, action: RunAction) => {
@@ -219,7 +231,7 @@ function useRunActions(searching: boolean) {
         searching || action === "restore"
           ? `run-actions-${run.id}`
           : `${actionGroup[action]}-toggle`;
-      setFocusAfterRender({ id });
+      setFocusAfterRender({ id, runId: run.id, action });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the Run.");
     } finally {
@@ -227,6 +239,12 @@ function useRunActions(searching: boolean) {
     }
   };
   return { act, busy, actionError };
+}
+
+/** Navigation already shows the Run where `action` puts it. */
+function moved(run: RunNavigationEntry, action: RunAction) {
+  if (action === "settle") return run.lifecycle === "settled";
+  return run.presentation.snoozed === (action === "snooze");
 }
 
 /** Snooze and Settle apply to Active Runs. */

@@ -3,7 +3,7 @@ import type { LiveScope } from "./owner.ts";
 
 export const connectionScope: LiveScope<ConnectionLiveMessage, T3Connection> = {
   key: "connection",
-  watch: { rpc: "WatchConnection" },
+  part: { kind: "connection" },
   snapshot: (message) => message.connection,
   apply: (connection, message) =>
     message._tag === "changed"

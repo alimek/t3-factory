@@ -320,7 +320,8 @@ try {
     );
     await evaluate(9441, "window.hostLive.socket.close()");
     const chunk = JSON.parse(frame);
-    const message = chunk?.values?.[0];
+    // Each value is a live envelope; the first one of a subscription carries its snapshot.
+    const message = chunk?.values?.[0]?.messages?.[0];
     if (chunk?.requestId !== "1" || message?._tag !== "snapshot")
       throw new Error(`No live snapshot frame: ${frame}`);
     return {

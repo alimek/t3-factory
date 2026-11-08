@@ -4,7 +4,7 @@ import type { LiveScope } from "./owner.ts";
 
 export const navigationScope: LiveScope<NavigationLiveMessage, readonly RunNavigationEntry[]> = {
   key: "navigation",
-  watch: { rpc: "WatchNavigation" },
+  part: { kind: "navigation" },
   snapshot: (message) => message.rows,
   apply: (rows, message) => {
     const byId = new Map(rows.map((row) => [row.id, row]));

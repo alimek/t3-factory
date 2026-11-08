@@ -3,8 +3,8 @@ import * as Latch from "effect/Latch";
 
 export type LiveScope =
   | { readonly kind: "connection" }
-  | { readonly kind: "navigation" }
-  | { readonly kind: "run"; readonly runId: string };
+  /** Navigation (when held) and a set of Runs, read and delivered together. */
+  | { readonly kind: "view"; readonly navigation: boolean; readonly runIds: ReadonlySet<string> };
 
 interface Watcher {
   readonly scope: LiveScope;
@@ -26,12 +26,10 @@ export function makeLiveChanges() {
   return {
     /** Every Run change may also change its navigation row. */
     runChanged(runId: string) {
-      mark(
-        (scope) => scope.kind === "navigation" || (scope.kind === "run" && scope.runId === runId),
-      );
+      mark((scope) => scope.kind === "view" && (scope.navigation || scope.runIds.has(runId)));
     },
     navigationChanged() {
-      mark((scope) => scope.kind === "navigation");
+      mark((scope) => scope.kind === "view" && scope.navigation);
     },
     connectionChanged() {
       mark((scope) => scope.kind === "connection");
