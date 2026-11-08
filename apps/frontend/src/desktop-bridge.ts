@@ -20,6 +20,11 @@ export interface DesktopState {
   /** The release track this installation updates from. */
   readonly updateChannel: UpdateChannel;
   readonly update: ApplicationUpdate;
+  /**
+   * The window is minimized. Electron keeps a minimized window's document "visible" on
+   * macOS, so live delivery treats this like a hidden document.
+   */
+  readonly minimized: boolean;
 }
 
 export type DesktopResult =
@@ -54,6 +59,12 @@ export interface FactoryDesktop {
   installUpdate(): Promise<DesktopResult>;
   /** A changed channel discards an update found on the previous one and checks again. */
   setUpdateChannel(channel: UpdateChannel): Promise<DesktopResult>;
+  /**
+   * Opens the window's live delivery socket in the main process (`query` carries only
+   * `protocol` and `minimum`). The relay port arrives as a same-origin window message
+   * `{ type: "factory:live-port", nonce }`; use `desktopLiveSocket` rather than this directly.
+   */
+  openLive(query: string, nonce: string): Promise<DesktopResult>;
 }
 
 declare global {

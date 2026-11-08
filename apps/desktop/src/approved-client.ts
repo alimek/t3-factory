@@ -4,6 +4,7 @@ import {
   type RemoteReply,
   type ServerProbe,
 } from "./remote-transport.ts";
+import type { WebSocket } from "ws";
 import { SettingsStore, type DesktopSettings, type RememberedServer } from "./settings-store.ts";
 
 /** Electron safeStorage in production; controlled encryption completion in race tests. */
@@ -22,6 +23,8 @@ export interface ApprovedConnection {
     body: Buffer | undefined,
   ): Promise<RemoteReply>;
   rememberCredential(issued: string): Promise<void>;
+  /** Live delivery socket; the selection's invalidation terminates it. */
+  openSocket(path: string): WebSocket;
 }
 
 type Selection = {
@@ -29,6 +32,9 @@ type Selection = {
   readonly transport: RemoteTransport;
   credential: string | null;
 };
+
+const withCredential = (selection: Selection, headers: Record<string, string>) =>
+  selection.credential ? { ...headers, authorization: `Bearer ${selection.credential}` } : headers;
 
 /** Main-process owner of desktop server selection, trust, credentials and connections. */
 export class ApprovedClient {
@@ -136,15 +142,17 @@ export class ApprovedClient {
         const reply = await selection.transport.request(
           method,
           path,
-          selection.credential
-            ? { ...headers, authorization: `Bearer ${selection.credential}` }
-            : headers,
+          withCredential(selection, headers),
           body,
         );
         this.requireCurrent(selection);
         return reply;
       },
       rememberCredential: (issued) => this.rememberCredential(selection, issued),
+      openSocket: (path) => {
+        this.requireCurrent(selection);
+        return selection.transport.openSocket(path, withCredential(selection, {}));
+      },
     };
   }
 

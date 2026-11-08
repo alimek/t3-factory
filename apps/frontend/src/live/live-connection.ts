@@ -31,7 +31,9 @@ function sessions() {
   );
 }
 
-const documentVisible = () => document.visibilityState !== "hidden";
+/** Electron keeps a minimized window's document visible, so desktop reports minimizing itself. */
+let minimized = false;
+const windowVisible = () => document.visibilityState !== "hidden" && !minimized;
 const gateOwnsWindow = () => {
   const kind = transport.get().kind;
   return kind === "access-lost" || kind === "incompatible";
@@ -52,10 +54,19 @@ function liveOwner(): LiveOwner {
     classify: () => void recheckAccess(),
     publish: (delivery) => transport.setLiveDelivery(delivery),
   });
-  created.setVisible(documentVisible());
+  created.setVisible(windowVisible());
   created.setBlocked(gateOwnsWindow());
   // Window blur is deliberately ignored: a visible unfocused window keeps updating.
-  document.addEventListener("visibilitychange", () => created.setVisible(documentVisible()));
+  document.addEventListener("visibilitychange", () => created.setVisible(windowVisible()));
+  const desktop = desktopBridge();
+  if (desktop) {
+    const follow = (state: { readonly minimized: boolean }) => {
+      minimized = state.minimized;
+      created.setVisible(windowVisible());
+    };
+    void desktop.getState().then(follow);
+    desktop.onState(follow);
+  }
   transport.subscribe(() => created.setBlocked(gateOwnsWindow()));
   owner = created;
   return created;

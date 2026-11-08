@@ -1,16 +1,21 @@
 // Packaged-application probe: copies the built .app to a disposable location and runs it
 // with a temporary HOME, `PATH=/usr/bin:/bin` and no developer tools. It proves existing
 // source data adoption, server startup, the Factory MCP endpoint, window close, Quit
-// releasing ownership, restart and client-only startup. It never touches the real
-// ~/.t3-factory, Keychain (mock keychain) or login items, and starts no T3 workload.
+// releasing ownership, restart, client-only startup and the live delivery relay (the
+// renderer's live socket shim through the main process to a pinned TLS WebSocket stand-in).
+// It never touches the real ~/.t3-factory, Keychain (mock keychain) or login items, and
+// starts no T3 workload.
 //
 //   node apps/desktop/scripts/probe-package.mjs <report.json>
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { existsSync, openSync } from "node:fs";
+import { createServer } from "node:https";
 import { arch, release, tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { WebSocketServer } from "ws";
 
 const report = process.argv[2];
 if (!report) throw new Error("Usage: probe-package.mjs <report.json>");
@@ -50,7 +55,8 @@ async function until(check, timeoutMs = 30_000) {
 }
 
 const api = (path, init) => fetch(`http://127.0.0.1:${port}${path}`, init);
-const settings = (role) => JSON.stringify({ version: 1, role, server: null, launchAtLogin: false });
+const settings = (role, server = null) =>
+  JSON.stringify({ version: 1, role, server, launchAtLogin: false });
 
 const children = new Set();
 function launch(userData, debugPort, env = {}) {
@@ -72,29 +78,43 @@ function launch(userData, debugPort, env = {}) {
 const withTimeout = (promise, ms = 5000) =>
   Promise.race([promise, sleep(ms).then(() => Promise.reject(new Error("CDP timeout")))]);
 
-function pageText(debugPort) {
-  return withTimeout(readPageText(debugPort));
+async function page(debugPort) {
+  const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+  return pages.find((entry) => entry.type === "page");
 }
 
-async function readPageText(debugPort) {
-  const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
-  const page = pages.find((entry) => entry.type === "page");
-  if (!page) return undefined;
-  const socket = new WebSocket(page.webSocketDebuggerUrl);
+/** One DevTools command on a page or browser target; events are ignored. */
+async function cdp(target, method, params = {}) {
+  const socket = new WebSocket(target);
   await new Promise((resolve) => socket.addEventListener("open", resolve, { once: true }));
   const reply = new Promise((resolve) =>
-    socket.addEventListener("message", (event) => resolve(JSON.parse(event.data)), { once: true }),
-  );
-  socket.send(
-    JSON.stringify({
-      id: 1,
-      method: "Runtime.evaluate",
-      params: { expression: "document.body.innerText", returnByValue: true },
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id === 1) resolve(message);
     }),
   );
+  socket.send(JSON.stringify({ id: 1, method, params }));
   const message = await reply;
   socket.close();
-  return message.result?.result?.value;
+  if (message.error) throw new Error(`${method}: ${message.error.message}`);
+  return message.result;
+}
+
+async function evaluate(debugPort, expression) {
+  const target = await page(debugPort);
+  if (!target) return undefined;
+  const result = await cdp(target.webSocketDebuggerUrl, "Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  if (result.exceptionDetails)
+    throw new Error(result.exceptionDetails.exception?.description ?? "Evaluation failed");
+  return result.result?.value;
+}
+
+function pageText(debugPort) {
+  return withTimeout(evaluate(debugPort, "document.body.innerText"));
 }
 
 async function closeWindow(debugPort) {
@@ -133,6 +153,79 @@ async function mcpReport() {
     server: initialized.result.serverInfo.name,
     tools: listed.result.tools.map((tool) => tool.name),
     reply: reported.result.content[0].text,
+  };
+}
+
+// The renderer's live socket shim, injected as the frontend's live owner would construct it.
+const liveShim = (
+  await build({
+    entryPoints: [join(repository, "apps/frontend/src/live/desktop-socket.ts")],
+    bundle: true,
+    write: false,
+    format: "iife",
+    globalName: "factoryLive",
+  })
+).outputFiles[0].text;
+const liveQuery = "protocol=3&minimum=3";
+
+/** Page script: opens a live socket as `window[name]`, recording frames and its close. */
+const openLiveSocket = (name, query = liveQuery) => `(async () => {
+  const socket = factoryLive.desktopLiveSocket("factory://app/api/live?${query}");
+  const record = { socket, frames: [] };
+  window[${JSON.stringify(name)}] = record;
+  record.closed = new Promise((resolve) =>
+    socket.addEventListener("close", (event) => resolve({ code: event.code, reason: event.reason }), { once: true }),
+  );
+  socket.addEventListener("message", (event) => record.frames.push(event.data));
+  const outcome = await Promise.race([
+    new Promise((resolve) => socket.addEventListener("open", () => resolve({ open: true }), { once: true })),
+    record.closed,
+  ]);
+  return { ...outcome, readyState: socket.readyState };
+})()`;
+
+const untilFrame = (name, frame) => `(async () => {
+  const record = window[${JSON.stringify(name)}];
+  for (let i = 0; i < 100 && !record.frames.includes(${JSON.stringify(frame)}); i++)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  return record.frames;
+})()`;
+
+/** A pinned-TLS WebSocket server standing in for a remote `/api/live`; it echoes frames. */
+async function liveStandIn() {
+  const { ensureRemoteCertificate } = await import(
+    pathToFileURL(join(repository, "apps/backend/dist/remote-certificates.js")).href
+  );
+  const certificate = await ensureRemoteCertificate(join(work, "live-standin"), {
+    dns: [],
+    ips: ["127.0.0.1"],
+  });
+  const upgrades = [];
+  const sockets = [];
+  const server = createServer(certificate);
+  const live = new WebSocketServer({ server });
+  live.on("connection", (socket, request) => {
+    const { origin, authorization } = request.headers;
+    upgrades.push({ url: request.url, origin, authorization: authorization !== undefined });
+    socket.closed = new Promise((resolve) => socket.once("close", (code) => resolve(code)));
+    socket.on("message", (data, binary) => socket.send(data, { binary }));
+    sockets.push(socket);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `https://127.0.0.1:${server.address().port}`,
+    trust: {
+      mode: "pinned",
+      anchor: certificate.trustAnchor,
+      fingerprint: certificate.fingerprint,
+    },
+    upgrades,
+    sockets,
+    close: () => {
+      for (const socket of live.clients) socket.terminate();
+      server.closeAllConnections();
+      server.close();
+    },
   };
 }
 
@@ -193,6 +286,16 @@ try {
   });
 
   await stage("the packaged backend serves Factory MCP to harnesses", mcpReport);
+
+  await stage("the host relay opens the live socket or signals the refused upgrade", async () => {
+    await evaluate(9441, liveShim);
+    const outcome = await withTimeout(evaluate(9441, openLiveSocket("hostLive")), 15_000);
+    // Before the backend serves /api/live, the refusal must arrive as 4000 + HTTP status.
+    if (!outcome.open && !(outcome.code >= 4400 && outcome.code <= 4599))
+      throw new Error(`Unsignalled live outcome ${JSON.stringify(outcome)}`);
+    await evaluate(9441, "window.hostLive.socket.close()");
+    return outcome;
+  });
 
   await stage("closing the last window keeps the server running", async () => {
     await closeWindow(9441);
@@ -255,6 +358,83 @@ try {
       factoryHomeCreated: backendStarted,
       backendAnswered: answered,
     };
+  });
+
+  const standIn = await liveStandIn();
+  const liveData = join(work, "live-client-profile");
+  await mkdir(liveData);
+  await writeFile(
+    join(liveData, "desktop-settings.json"),
+    settings("client", { url: standIn.url, trust: standIn.trust, credential: null }),
+  );
+  const liveClient = launch(liveData, 9444, { HOME: join(work, "client-home") });
+  const ready = () =>
+    until(() => evaluate(9444, "typeof window.factoryDesktop?.openLive === 'function'"), 60_000);
+
+  await stage("the client relay round-trips live frames over pinned TLS", async () => {
+    await ready();
+    await evaluate(9444, liveShim);
+    const outcome = await withTimeout(
+      evaluate(9444, openLiveSocket("live", `${liveQuery}&token=renderer-chosen`)),
+      15_000,
+    );
+    if (!outcome.open) throw new Error(`Live socket did not open: ${JSON.stringify(outcome)}`);
+    await evaluate(9444, "window.live.socket.send('ping')");
+    standIn.sockets[0].send("pushed by server");
+    const frames = await withTimeout(
+      evaluate(9444, untilFrame("live", "pushed by server")),
+      10_000,
+    );
+    if (!frames.includes("ping") || !frames.includes("pushed by server"))
+      throw new Error(`Frames missing: ${JSON.stringify(frames)}`);
+    const upgrade = standIn.upgrades[0];
+    if (upgrade.url !== `/api/live?${liveQuery}` || upgrade.origin !== standIn.url)
+      throw new Error(`Unexpected upgrade ${JSON.stringify(upgrade)}`);
+    return { frames, upgrade };
+  });
+
+  await stage("reloading the renderer closes its live socket in the main process", async () => {
+    const target = await page(9444);
+    await cdp(target.webSocketDebuggerUrl, "Page.reload");
+    const code = await withTimeout(standIn.sockets[0].closed, 10_000);
+    return { serverSawClose: code };
+  });
+
+  await stage("forgetting the server closes the live channel in both directions", async () => {
+    await evaluate(9444, liveShim);
+    const outcome = await withTimeout(evaluate(9444, openLiveSocket("live")), 15_000);
+    if (!outcome.open) throw new Error(`Live socket did not open: ${JSON.stringify(outcome)}`);
+    const server = standIn.sockets[1];
+    const closed = await withTimeout(
+      evaluate(9444, "window.factoryDesktop.forgetServer().then(() => window.live.closed)"),
+      10_000,
+    );
+    const serverCode = await withTimeout(server.closed, 10_000);
+    return { renderer: closed, serverSawClose: serverCode, upgrades: standIn.upgrades.length };
+  });
+
+  await stage("closing the window closes its live socket", async () => {
+    await writeFile(
+      join(liveData, "desktop-settings.json"),
+      settings("client", { url: standIn.url, trust: standIn.trust, credential: null }),
+    );
+    liveClient.child.kill("SIGTERM");
+    await liveClient.exited;
+    const reopened = launch(liveData, 9445, { HOME: join(work, "client-home") });
+    await until(
+      () => evaluate(9445, "typeof window.factoryDesktop?.openLive === 'function'"),
+      60_000,
+    );
+    await evaluate(9445, liveShim);
+    const outcome = await withTimeout(evaluate(9445, openLiveSocket("live")), 15_000);
+    if (!outcome.open) throw new Error(`Live socket did not open: ${JSON.stringify(outcome)}`);
+    const server = standIn.sockets[2];
+    await closeWindow(9445);
+    const code = await withTimeout(server.closed, 10_000);
+    reopened.child.kill("SIGTERM");
+    await reopened.exited;
+    standIn.close();
+    return { serverSawClose: code };
   });
 } finally {
   for (const child of children) child.kill("SIGKILL");
