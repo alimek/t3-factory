@@ -14,6 +14,7 @@ type LiveStream = Stream.Stream<
 
 function watchStream(client: Client, watch: LiveWatch): LiveStream {
   if (watch.rpc === "WatchConnection") return client.WatchConnection();
+  if (watch.rpc === "WatchLaunchChoices") return client.WatchLaunchChoices();
   return client.WatchRunView({ navigation: watch.navigation, runIds: watch.runIds });
 }
 

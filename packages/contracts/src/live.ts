@@ -1,4 +1,11 @@
-import type { OperationError, RunDetail, RunNavigationEntry, T3Connection } from "./index.ts";
+import type {
+  FlowDraft,
+  OperationError,
+  ProjectCatalog,
+  RunDetail,
+  RunNavigationEntry,
+  T3Connection,
+} from "./index.ts";
 
 /**
  * Live delivery over the shared window connection. Every scope starts with an authoritative
@@ -176,3 +183,28 @@ export type RunViewLiveMessage =
   | { readonly _tag: "run"; readonly runId: string; readonly message: RunLiveMessage }
   /** The Run does not exist. Final for that Run only; the rest of the view stays live. */
   | { readonly _tag: "missing"; readonly runId: string; readonly error: OperationError };
+
+/** What the Run composer offers: the Project catalog and every Flow with its readiness. */
+export interface LaunchChoices {
+  readonly catalog: ProjectCatalog;
+  /** Ordered by `createdAt` descending, then `id`. */
+  readonly flows: readonly FlowDraft[];
+}
+
+export type LaunchChoicesLiveMessage =
+  | { readonly _tag: "snapshot"; readonly choices: LaunchChoices }
+  | {
+      readonly _tag: "changed";
+      /** The complete catalog, when more than project observation times changed. */
+      readonly catalog?: ProjectCatalog;
+      /** Complete replacement Flows by id; clients order them as `LaunchChoices.flows`. */
+      readonly flows?: {
+        readonly upserts: readonly FlowDraft[];
+        readonly removals: readonly string[];
+      };
+    }
+  /** Only these projects' observation times moved; every other catalog field is unchanged. */
+  | {
+      readonly _tag: "observed";
+      readonly projects: readonly { readonly id: string; readonly observedAt: string }[];
+    };

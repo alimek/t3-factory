@@ -49,15 +49,18 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   them, and the last save wins, except that another tab's unresolved Start is never overwritten or removed: the stale tab
   reopens that draft instead. If storage is blocked the composer says the draft lasts only while the window is open.
   **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
-  Flow editor's **Start Run** does the same with its Flow. A selected Project or Flow is cleared only when a fresh catalog read
-  confirms it is gone; a failed read changes nothing. Confirmed Start removes the draft and opens its Run; a confirmed
+  Flow editor's **Start Run** does the same with its Flow. Project and Flow choices update live; while they are
+  synchronizing or offline the last choices stay visible, the draft is kept and Start is disabled. A selected Project or Flow
+  is cleared only when a current live delivery no longer lists it; a non-current or failed delivery changes nothing, and
+  choosing a just-created Project or Flow waits for the delivery that lists it. Confirmed Start removes the draft and opens its Run; a confirmed
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
   survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
 ## Live viewing
 
 The Run screen and sidebar update live, including reports, attention, timeline and
-navigation membership. Shared T3 connection status also updates live. The selected Run
+navigation membership. Shared T3 connection status and the composer's Project and Flow
+choices also update live. The selected Run
 and the sidebar share one view subscription; switching Runs refreshes that view with the
 new Run and releases the previous one. Live updates preserve the canvas viewport and
 selected Block.

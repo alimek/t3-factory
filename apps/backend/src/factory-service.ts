@@ -74,7 +74,7 @@ export const makeFactoryService = (
     const connection = yield* makeConnection(t3, intervalMs, changes);
     const projects = yield* makeProjects(t3, connection, intervalMs, changes);
     yield* projects.recheckProjects();
-    const definitions = yield* makeDefinitions(t3, connection);
+    const definitions = yield* makeDefinitions(t3, connection, changes);
     const clients = yield* makeClientAccess;
     let runtimeBackendUrl = options.runtimeBackendUrl ?? "http://127.0.0.1:4310";
     const reportingContext = yield* Layer.build(
@@ -170,10 +170,13 @@ export const makeFactoryService = (
       setRuntimeBackendUrl: (url) => {
         runtimeBackendUrl = url;
       },
-      live: makeLiveStreams(changes, guarded, (read) =>
-        sql
-          .withTransaction(read)
-          .pipe(Effect.catchTag("SqlError", () => Effect.fail(liveReadError))),
+      live: makeLiveStreams(
+        changes,
+        { ...guarded, readProjectCatalog: () => guard(projects.readCatalog()) },
+        (read) =>
+          sql
+            .withTransaction(read)
+            .pipe(Effect.catchTag("SqlError", () => Effect.fail(liveReadError))),
       ),
     };
     runner = yield* makeRunner(

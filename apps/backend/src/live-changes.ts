@@ -4,7 +4,9 @@ import * as Latch from "effect/Latch";
 export type LiveScope =
   | { readonly kind: "connection" }
   /** Navigation (when held) and a set of Runs, read and delivered together. */
-  | { readonly kind: "view"; readonly navigation: boolean; readonly runIds: ReadonlySet<string> };
+  | { readonly kind: "view"; readonly navigation: boolean; readonly runIds: ReadonlySet<string> }
+  /** The Run composer's Project catalog and Flows. */
+  | { readonly kind: "launchChoices" };
 
 interface Watcher {
   readonly scope: LiveScope;
@@ -28,11 +30,19 @@ export function makeLiveChanges() {
     runChanged(runId: string) {
       mark((scope) => scope.kind === "view" && (scope.navigation || scope.runIds.has(runId)));
     },
-    navigationChanged() {
-      mark((scope) => scope.kind === "view" && scope.navigation);
+    /** Navigation rows and the composer's catalog show project titles and availability. */
+    projectsChanged() {
+      mark(
+        (scope) => (scope.kind === "view" && scope.navigation) || scope.kind === "launchChoices",
+      );
     },
+    /** Flow and Agent definitions decide which Flows the composer offers and their readiness. */
+    definitionsChanged() {
+      mark((scope) => scope.kind === "launchChoices");
+    },
+    /** The catalog derives project availability from the current connection. */
     connectionChanged() {
-      mark((scope) => scope.kind === "connection");
+      mark((scope) => scope.kind === "connection" || scope.kind === "launchChoices");
     },
     /** Registered for the caller's scope; register before reading a snapshot. */
     watch(scope: LiveScope) {

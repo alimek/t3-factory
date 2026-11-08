@@ -18,6 +18,7 @@ import {
 import { agentSettingsStatus, emptyCapabilities, readyCapabilities } from "./agents.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { EffectOperations } from "./effect-operations.ts";
+import type { LiveChanges } from "./live-changes.ts";
 import { failure } from "./result.ts";
 import { now as currentTime } from "./time.ts";
 import { newId } from "./ids.ts";
@@ -47,9 +48,19 @@ const flowNotFound = () => failure("not_found", "This Flow does not exist.");
 export const makeDefinitions = (
   t3: T3Adapter,
   connection: Pick<EffectOperations<FactoryOperations>, "getConnection">,
+  changes: LiveChanges,
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    /** Publishes after a write's transaction committed; a refused write changed nothing. */
+    const publishOnSuccess = <A, E>(write: Effect.Effect<Result<A>, E>) =>
+      write.pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (result.ok) changes.definitionsChanged();
+          }),
+        ),
+      );
     const provideSql = <A>(operation: Effect.Effect<Result<A>, unknown, SqlClient.SqlClient>) =>
       operation.pipe(Effect.provideService(SqlClient.SqlClient, sql));
     const savedAgentIds = sql<{ id: string }>`SELECT id FROM agents WHERE removed_at IS NULL`.pipe(
@@ -337,6 +348,7 @@ export const makeDefinitions = (
     return {
       createFlow: (...args: Parameters<typeof operations.createFlow>) =>
         Effect.suspend(() => operations.createFlow(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.createFlow"),
         ),
       validateFlow: (...args: Parameters<typeof operations.validateFlow>) =>
@@ -345,10 +357,12 @@ export const makeDefinitions = (
         ),
       updateFlow: (...args: Parameters<typeof operations.updateFlow>) =>
         Effect.suspend(() => operations.updateFlow(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.updateFlow"),
         ),
       removeFlow: (...args: Parameters<typeof operations.removeFlow>) =>
         Effect.suspend(() => operations.removeFlow(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.removeFlow"),
         ),
       listFlows: (...args: Parameters<typeof operations.listFlows>) =>
@@ -373,18 +387,22 @@ export const makeDefinitions = (
         ),
       createAgent: (...args: Parameters<typeof operations.createAgent>) =>
         Effect.suspend(() => operations.createAgent(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.createAgent"),
         ),
       updateAgent: (...args: Parameters<typeof operations.updateAgent>) =>
         Effect.suspend(() => operations.updateAgent(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.updateAgent"),
         ),
       duplicateAgent: (...args: Parameters<typeof operations.duplicateAgent>) =>
         Effect.suspend(() => operations.duplicateAgent(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.duplicateAgent"),
         ),
       removeAgent: (...args: Parameters<typeof operations.removeAgent>) =>
         Effect.suspend(() => operations.removeAgent(...args)).pipe(
+          publishOnSuccess,
           Effect.withSpan("Definitions.removeAgent"),
         ),
     };

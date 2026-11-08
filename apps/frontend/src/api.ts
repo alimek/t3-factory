@@ -10,7 +10,6 @@ import type {
   ServerUpdate,
   ServerUpdateAction,
   RunDetail,
-  RunCreationPolicy,
   StartRunInput,
   RunPresentation,
   RunNavigationEntry,
@@ -105,7 +104,6 @@ export const api = {
   answerHumanOccurrence: (id: string, input: { exitId?: string; message?: string }) =>
     post<RunDetail>(`/api/human-occurrences/${encodeURIComponent(id)}/answer`, input),
   startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),
-  getRunCreationPolicy: () => request<RunCreationPolicy>("/api/run-creation-policy"),
   archiveRun: (id: string) =>
     request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
   listRuns: (projectId: string) =>

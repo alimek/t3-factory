@@ -61,17 +61,22 @@ by host and approved clients, with explicit [host-only boundaries](desktop-and-c
 
 ## Live delivery
 
-Run detail, sidebar navigation and shared T3 connection status use typed Effect RPC
-streams over WebSocket at `/api/live`; commands and other reads remain HTTP operations.
-A window holds one connection-status subscription and one view subscription carrying
-navigation and its open Runs. Each read of a view covers navigation and those Runs in one
+Run detail, sidebar navigation, shared T3 connection status and the Run composer's launch
+choices use typed Effect RPC streams over WebSocket at `/api/live`; commands and other reads
+remain HTTP operations. A window holds one connection-status subscription, one view
+subscription carrying navigation and its open Runs, and, while the composer is shown, one
+launch-choices subscription carrying the Project catalog and Flows with their readiness. Each read of a view covers navigation and those Runs in one
 read transaction, and its changes travel in one delivery that the window applies at once,
 so one commit's lifecycle, attention and report changes appear together in Run detail and
 the sidebar. Opening or leaving a Run resubscribes the view with a fresh joint snapshot.
 Each subscription starts with an authoritative snapshot, followed by committed changes. The
 owning modules publish only after a successful durable commit, or an authoritative
-in-memory connection transition. This covers reports, including committed rejection
-diagnostics, as well as background observation, recovery and lifecycle changes.
+in-memory connection or project-discovery transition. This covers reports, including
+committed rejection diagnostics, as well as background observation, recovery and lifecycle
+changes. Flow and Agent writes, project observation and selection, discovery problems and
+connection transitions mark launch choices; Run changes do not. Each read of launch choices
+covers the catalog and Flows in one read transaction and does not wait for a running
+project reconcile, whose own publications would otherwise leave that read not current.
 Subscription registration precedes the snapshot read. A relevant hint during that read
 triggers a fresh read, up to three reads. A delivery is current only when no relevant
 change arrived while it was read and no later read failed; a scope counts as synchronized,
@@ -84,8 +89,8 @@ any other refused subscription is retried with backoff and keeps mutations disab
 Delivery replaces changed entities or logical sections by stable identity, sends navigation
 upserts/removals and appends timeline entries by sequence. Worker executions use the pair
 of binding id and execution id, including observation metadata, so later turns preserve
-earlier executions. Observation-only timestamps
-travel as compact metadata rather than repeated Run data. Changes may coalesce into the
+earlier executions. Observation-only timestamps of Runs and projects
+travel as compact metadata rather than repeated Run or catalog data. Changes may coalesce into the
 latest committed state; delivery is not a record of every intermediate state, but preserves
 recorded timeline history.
 

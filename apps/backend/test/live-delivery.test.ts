@@ -11,6 +11,7 @@ import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
 import {
   appliedRun,
+  liveReads,
   raceFirstRead,
   subscribe,
   watchNavigation,
@@ -136,8 +137,7 @@ it("the first Run snapshot includes a report committed during its read", async (
   const live = makeLiveStreams(
     changes,
     {
-      getConnection: () => Effect.promise(() => f.f.getConnection()),
-      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      ...liveReads(f.f),
       getRun: () => racedRead,
     },
     (read) => read,
@@ -166,8 +166,7 @@ it("a snapshot raced on every read is not current until its catch-up is delivere
   const live = makeLiveStreams(
     changes,
     {
-      getConnection: () => Effect.promise(() => f.f.getConnection()),
-      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      ...liveReads(f.f),
       getRun: () =>
         Effect.promise(() => f.f.getRun(f.runId)).pipe(
           Effect.tap(() =>
@@ -244,8 +243,7 @@ it("a re-read raced by another commit is not current until its catch-up arrives"
   const live = makeLiveStreams(
     changes,
     {
-      getConnection: () => Effect.promise(() => f.f.getConnection()),
-      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      ...liveReads(f.f),
       getRun: () =>
         Effect.promise(() => f.f.getRun(f.runId)).pipe(
           Effect.tap(() =>
@@ -280,8 +278,7 @@ it("a failed re-read marks the view not current until a later read succeeds", as
   const live = makeLiveStreams(
     changes,
     {
-      getConnection: () => Effect.promise(() => f.f.getConnection()),
-      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      ...liveReads(f.f),
       getRun: () =>
         reads++ === 1
           ? Effect.succeed({

@@ -1,10 +1,11 @@
 import { MutationGate } from "@/client-gate";
 import { ScreenLayout } from "../components/screen-layout.tsx";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import type { FlowDraft, RunCreationPolicy } from "@t3-factory/contracts";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import type { FlowDraft, LaunchChoices } from "@t3-factory/contracts";
 import { api } from "../api.ts";
-import { usePolling } from "../use-polling.ts";
 import { useConnectionState } from "../connection-state.tsx";
+import { useLiveLaunchChoices } from "../live/launch-choices.ts";
+import type { LiveScopeView } from "../live/owner.ts";
 import { runDraft, useRunDraft } from "../run-draft.ts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -83,61 +84,32 @@ function flowLaunchIssues(flow: FlowDraft) {
   return flow.readiness.issues.map((issue) => issue.message).join(" ");
 }
 
-function useComposerChoices() {
-  const [flows, setFlows] = useState<readonly FlowDraft[] | null>(null);
-  const [creationPolicy, setCreationPolicy] = useState<RunCreationPolicy | null>(null);
-  const [error, setError] = useState("");
-  usePolling({
-    intervalMs: 3000,
-    onPoll: useCallback(async (isActive) => {
-      try {
-        const [rows, policy] = await Promise.all([api.listFlows(), api.getRunCreationPolicy()]);
-        if (!isActive()) return;
-        setFlows(rows);
-        setCreationPolicy(policy);
-        setError("");
-      } catch {
-        if (isActive()) setError("Could not refresh launch choices. Your draft is kept.");
-      }
-    }, []),
-  });
-  return { flows, creationPolicy, error };
-}
-
 /**
- * A polled list can predate a just-created Project or Flow, so a selection it lacks is
- * cleared only when a fresh read also lacks it. A failed read is never a deletion.
+ * Clears a selected Project or Flow that the latest current delivery no longer lists. It runs
+ * only when a delivery arrives, not when the selection changes: a just-created choice can be
+ * selected before the delivery that lists it, and a non-current delivery is never a deletion.
  */
-function useForgetUnavailable(
-  choice: "projectId" | "flowId",
-  selected: string,
-  known: readonly { id: string }[] | null | undefined,
-  read: () => Promise<readonly string[]>,
-) {
-  const missing = !!known && !!selected && !known.some((item) => item.id === selected);
+function useForgetUnavailable({ value, synchronized }: LiveScopeView<LaunchChoices>) {
   useEffect(() => {
-    if (!missing) return;
-    let active = true;
-    read().then(
-      (available) => {
-        if (active) runDraft.forgetUnavailable(choice, available);
-      },
-      () => undefined,
+    if (!value || !synchronized) return;
+    runDraft.forgetUnavailable(
+      "flowId",
+      value.flows.map((flow) => flow.id),
     );
-    return () => {
-      active = false;
-    };
-  }, [choice, missing, read, selected]);
+    runDraft.forgetUnavailable(
+      "projectId",
+      value.catalog.projects.map((project) => project.id),
+    );
+  }, [value, synchronized]);
 }
-
-const readFlowIds = async () => (await api.listFlows()).map((flow) => flow.id);
-const readProjectIds = async () => (await api.listProjects()).projects.map((project) => project.id);
 
 function useComposer() {
   const navigate = useNavigate();
   const draft = useRunDraft();
+  const choices = useLiveLaunchChoices();
   const projects = useProjectCatalog();
-  const { flows, creationPolicy, error } = useComposerChoices();
+  const flows = choices.value?.flows ?? null;
+  const error = choices.error ? "Could not load launch choices. Your draft is kept." : "";
   // Start and live observation depend on readiness: keep it current while shown.
   const { presentation } = useConnectionState();
   const initialized = useRef(false);
@@ -147,8 +119,7 @@ function useComposer() {
     if (!draft.projectId && projects.catalog.selectedProjectId)
       runDraft.edit({ projectId: projects.catalog.selectedProjectId });
   }, [projects.catalog, draft.projectId]);
-  useForgetUnavailable("flowId", draft.flowId, flows, readFlowIds);
-  useForgetUnavailable("projectId", draft.projectId, projects.catalog?.projects, readProjectIds);
+  useForgetUnavailable(choices);
   const prompt = useRef<HTMLTextAreaElement>(null);
   const [promptMissing, setPromptMissing] = useState(false);
   const project = projects.catalog?.projects.find((p) => p.id === draft.projectId);
@@ -156,13 +127,11 @@ function useComposer() {
   const locked = draft.pending;
   const projectReady = project?.availability === "available";
   const ready =
-    !!creationPolicy &&
+    choices.synchronized &&
     presentation === "ready" &&
     projectReady &&
     !!flow &&
     flowCanLaunch(flow) &&
-    !error &&
-    !projects.loadError &&
     !projects.busy;
   const start = async () => {
     if (!draft.pending) {

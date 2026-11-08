@@ -19,7 +19,8 @@ import {
   type RunLiveMessage,
 } from "@t3-factory/contracts";
 import { FactoryLive } from "@t3-factory/contracts/live-rpc";
-import type { LiveStreams } from "../../src/live-streams.ts";
+import type { Factory } from "@t3-factory/backend";
+import type { LiveStreams, makeLiveStreams } from "../../src/live-streams.ts";
 
 /**
  * A running subscription to a live stream, as one window consumes it: every envelope and the
@@ -156,6 +157,15 @@ export async function liveClient(context: TestContext, endpoint: LiveEndpoint) {
     }).pipe(Effect.provideService(Scope.Scope, scope)),
   );
 }
+
+/** The factory's public reads, for live streams built over a replaced read. */
+export const liveReads = (factory: Factory): Parameters<typeof makeLiveStreams>[1] => ({
+  getConnection: () => Effect.promise(() => factory.getConnection()),
+  listRunNavigation: () => Effect.promise(() => factory.listRunNavigation()),
+  getRun: (id) => Effect.promise(() => factory.getRun(id)),
+  readProjectCatalog: () => Effect.promise(() => factory.listProjects()),
+  listFlows: () => Effect.promise(() => factory.listFlows()),
+});
 
 /** Commit after capturing the first read, before the subscriber receives its value. */
 export function raceFirstRead<A, E>(read: Effect.Effect<A, E>, commit: () => Promise<void>) {

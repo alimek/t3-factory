@@ -20,10 +20,12 @@ export type LiveDelivery = "current" | "synchronizing" | "offline";
 export type LivePart =
   | { readonly kind: "connection" }
   | { readonly kind: "navigation" }
-  | { readonly kind: "run"; readonly runId: string };
+  | { readonly kind: "run"; readonly runId: string }
+  | { readonly kind: "launchChoices" };
 
 export type LiveWatch =
   | { readonly rpc: "WatchConnection" }
+  | { readonly rpc: "WatchLaunchChoices" }
   | {
       readonly rpc: "WatchRunView";
       readonly navigation: boolean;
@@ -120,8 +122,12 @@ type Entry = {
   established: boolean;
 };
 
-/** The connection status subscription, and the one view subscription for navigation and Runs. */
-type Channel = "connection" | "view";
+/**
+ * The connection status subscription, the one view subscription for navigation and Runs, and
+ * the composer's launch choices.
+ */
+type Channel = "connection" | "view" | "launchChoices";
+const channels: readonly Channel[] = ["connection", "view", "launchChoices"];
 
 type Subscription = {
   /** Fences events: only the subscription holding the current token may write. */
@@ -135,15 +141,27 @@ type Subscription = {
 
 type Session = { connected: boolean; handle: LiveSession | undefined };
 
-const channelOf = (part: LivePart): Channel => (part.kind === "connection" ? "connection" : "view");
+function channelOf(part: LivePart): Channel {
+  if (part.kind === "connection") return "connection";
+  return part.kind === "launchChoices" ? "launchChoices" : "view";
+}
+
+const idleSubscription = (): Subscription => ({
+  token: 0,
+  signature: undefined,
+  stop: undefined,
+  retry: undefined,
+  failures: 0,
+});
 
 /** The window's single live connection and its ref-counted scopes. */
 export class LiveOwner {
   private readonly entries = new Map<string, Entry>();
   private readonly listeners = new Set<() => void>();
   private readonly subscriptions: Record<Channel, Subscription> = {
-    connection: { token: 0, signature: undefined, stop: undefined, retry: undefined, failures: 0 },
-    view: { token: 0, signature: undefined, stop: undefined, retry: undefined, failures: 0 },
+    connection: idleSubscription(),
+    view: idleSubscription(),
+    launchChoices: idleSubscription(),
   };
   private session: Session | null = null;
   private retry: (() => void) | undefined;
@@ -262,6 +280,7 @@ export class LiveOwner {
     const entries = this.entriesOf(channel);
     if (entries.length === 0) return undefined;
     if (channel === "connection") return { rpc: "WatchConnection" };
+    if (channel === "launchChoices") return { rpc: "WatchLaunchChoices" };
     const runIds = this.viewRuns()
       .served.flatMap(({ scope: { part } }) => (part.kind === "run" ? [part.runId] : []))
       .sort();
@@ -275,7 +294,7 @@ export class LiveOwner {
   /** Opens, replaces or closes each channel's subscription to match the held scopes. */
   private resubscribe() {
     if (!this.session?.handle) return;
-    for (const channel of ["connection", "view"] as const) {
+    for (const channel of channels) {
       const watch = this.wantedWatch(channel);
       const signature = watch && JSON.stringify(watch);
       const subscription = this.subscriptions[channel];
@@ -342,7 +361,8 @@ export class LiveOwner {
   /** Applies one envelope to every scope it addresses, in one notification. */
   private receive(channel: Channel, envelope: LiveEnvelope<LiveMessage>) {
     const entries = this.entriesOf(channel);
-    if (channel === "connection") {
+    if (envelope.current) this.subscriptions[channel].failures = 0;
+    if (channel !== "view") {
       for (const entry of entries) this.applyMessages(entry, envelope.messages, envelope.current);
       return;
     }
@@ -356,7 +376,6 @@ export class LiveOwner {
       entry.view = { ...entry.view, synchronized: false, error };
       entry.established = true;
     }
-    if (envelope.current) this.subscriptions.view.failures = 0;
   }
 
   private applyMessages(entry: Entry, messages: readonly LiveMessage[], current: boolean) {
@@ -408,7 +427,7 @@ export class LiveOwner {
   private closeSession() {
     const session = this.session;
     this.session = null;
-    for (const channel of ["connection", "view"] as const) {
+    for (const channel of channels) {
       this.stop(channel);
       this.subscriptions[channel].failures = 0;
     }

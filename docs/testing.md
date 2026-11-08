@@ -184,9 +184,9 @@ For a browser UI change, verify the checkout and server being exercised and use 
 unverified. Keep private addresses and execution evidence outside Git.
 
 For client approval, revocation, TLS, offline recovery or protocol changes, exercise the approved-client HTTPS listener; Vite's host-local proxy does not prove those boundaries. For live delivery, distinguish snapshot/update and reconnect evidence from ordinary HTTP
-reads. Run detail, sidebar navigation and shared T3 connection status no longer poll;
-composer, Studio, approvals, updater and client-gate checks retain their existing reads
-or polling. A stationary Run trace should separate those consumers and compact observation
+reads. Run detail, sidebar navigation, shared T3 connection status and composer launch
+choices no longer poll; Studio, approvals, updater and client-gate checks retain their
+existing reads or polling. A stationary Run trace should separate those consumers and compact observation
 metadata from repeated Run data. Controlled public-stream tests establish delivery and
 Runner independence; they do not establish actual Electron or cross-device transport.
 For desktop behavior, use a current desktop build. Report the tested UI/build and transport so browser acceptance is not mistaken for desktop or cross-device evidence.

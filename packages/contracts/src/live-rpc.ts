@@ -4,6 +4,7 @@ import type { OperationError } from "./index.ts";
 import {
   RUN_VIEW_LIMIT,
   type ConnectionLiveMessage,
+  type LaunchChoicesLiveMessage,
   type LiveEnvelope,
   type RunViewLiveMessage,
 } from "./live.ts";
@@ -32,6 +33,11 @@ export class FactoryLive extends RpcGroup.make(
       runIds: Schema.Array(RunId).check(Schema.isMaxLength(RUN_VIEW_LIMIT)),
     },
     success: trusted<LiveEnvelope<RunViewLiveMessage>>(),
+    error: LiveError,
+    stream: true,
+  }),
+  Rpc.make("WatchLaunchChoices", {
+    success: trusted<LiveEnvelope<LaunchChoicesLiveMessage>>(),
     error: LiveError,
     stream: true,
   }),

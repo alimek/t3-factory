@@ -67,6 +67,12 @@ export const makeProjects = (
     const mutex = yield* Semaphore.make(1);
     let problem: string | null = null;
     let closed = false;
+    /** The problem lives only in memory, so its transitions publish like committed changes. */
+    const setProblem = (next: string | null) => {
+      if (next === problem) return;
+      problem = next;
+      changes.projectsChanged();
+    };
     const serial = <A, E>(action: Effect.Effect<A, E>) =>
       mutex.withPermits(1)(Effect.uninterruptible(action));
     const catalog = Effect.fn("Projects.catalog")(function* (): Effect.fn.Return<
@@ -125,13 +131,12 @@ export const makeProjects = (
           }
         }),
       );
-      // Navigation rows show project titles and availability.
-      changes.navigationChanged();
+      changes.projectsChanged();
     });
     const reconcile = Effect.fn("Projects.reconcile")(function* () {
       const status = yield* connection.recheckConnection();
       if (!status.ok || status.value.state !== "ready" || !status.value.authorizationContext) {
-        problem = "Connect and authorize T3 before using projects.";
+        setProblem("Connect and authorize T3 before using projects.");
         return yield* catalog();
       }
       const c = status.value.authorizationContext;
@@ -140,16 +145,14 @@ export const makeProjects = (
       ).pipe(
         Effect.flatMap((observations) => observe(status.value, observations)),
         Effect.matchEffect({
-          onSuccess: () =>
-            Effect.sync(() => {
-              problem = null;
-            }),
+          onSuccess: () => Effect.sync(() => setProblem(null)),
           onFailure: () =>
             Effect.gen(function* () {
-              problem =
-                "Project discovery failed. Recheck T3 and its project contract. Saved references are retained.";
               yield* sql`UPDATE projects SET availability = 'connection-unavailable' WHERE endpoint = ${c.endpoint} AND environment_id = ${c.environmentId}`;
-              changes.navigationChanged();
+              changes.projectsChanged();
+              setProblem(
+                "Project discovery failed. Recheck T3 and its project contract. Saved references are retained.",
+              );
             }),
         }),
       );
@@ -225,6 +228,11 @@ export const makeProjects = (
     yield* Effect.addFinalizer(() => close);
     return {
       listProjects: () => serial(catalog()),
+      /**
+       * Live delivery reads without waiting for a running reconcile: that reconcile publishes
+       * again before it releases, which would leave every waiting read not current.
+       */
+      readCatalog: () => catalog(),
       recheckProjects: () => serial(reconcile()),
       addRepository: (input: unknown) => serial(addRepository(input)),
       selectProject: (input: unknown) =>
@@ -242,6 +250,7 @@ export const makeProjects = (
             if (id !== null && (!listing.ok || !listing.value.projects.some((p) => p.id === id)))
               return failure("Choose a saved project.");
             yield* sql`INSERT INTO project_selection (singleton, project_id) VALUES (1, ${id}) ON CONFLICT(singleton) DO UPDATE SET project_id = excluded.project_id`;
+            changes.projectsChanged();
             return yield* catalog();
           }),
         ),

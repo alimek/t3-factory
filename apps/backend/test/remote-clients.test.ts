@@ -51,13 +51,13 @@ it("a client older than the server's supported protocol is told to update itself
   expect(reply.body.error.message).toMatch(/Update this client/);
 });
 
-it("the current composer refuses a server without the Run creation policy before product access", async (c) => {
+it("the current client refuses a protocol-one server before product access", async (c) => {
   // Arrange
   const server = await remoteServer(c, { protocol: { protocol: 1, minimumPeerProtocol: 1 } });
   const current = server.client();
 
   // Act
-  const reply = await current.send("GET", "/api/run-creation-policy");
+  const reply = await current.send("GET", "/api/projects");
 
   // Assert
   expect(reply.status).toBe(426);
