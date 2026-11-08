@@ -9,7 +9,9 @@ behavior is in [Runs](runs.md); live-support limits are in
 
 ## Current execution contract
 
-Factory launches each Agent Block's first visit as its own top-level T3 worker. There is
+Each Agent Block gets its own top-level T3 worker. Factory launches it with the Block's first
+visit, or in a worktree Run prepares it idle and starts its first visit with a queued send
+([Run workspace](#run-workspace)). There is
 no Run conversation and no native-delegation turn that copies the Agent. Migrations `050`
 and `058` delete open Runs captured under replaced contracts. Runs closed under earlier contracts
 stay readable history: `062` made Finished Runs Settled and `063` Stopped Runs Archived.
@@ -53,10 +55,27 @@ workers share one worktree; its project root stays the Run's project identity.
   Factory binds them to the Run. The path is not readiness: T3 queues each worker's turn
   behind that worker's own workspace preparation.
 - After binding, every other Flow-input target launches once with its normal first message
-  on `{type: "existing_worktree", worktreePath, branch}`, and a later Block's first visit
-  launches the same way. Until then those launches wait. A launch with a message, rather
-  than an idle thread that a send activates later, keeps T3's preparation fence for each
-  worker's own setup script.
+  on `{type: "existing_worktree", worktreePath, branch}`; until then those launches wait. A
+  launch with a message keeps T3's preparation fence for that worker's own setup script.
+- In the same transaction Factory records one **prepared worker** per other Agent Block,
+  visited later or never: an idle launch on the same strategy, with the Block's launch title
+  and no message, so T3 runs no model task. Before sending each one Factory rereads the
+  Project's worktree setup scripts; a blocking or unreadable script, or missing worktree
+  launch support, leaves it pending with a Problem and Factory retries. An uncertain idle
+  launch is never repeated: recovery binds only the sole thread with the saved title, the
+  exact path and branch, no parent, the saved provider, model and options, and zero runs. A
+  definitive rejection cancels the preparation; that Block's first visit then launches with
+  its message as above.
+- A prepared worker is not a visit. It is stored apart from the Block's worker binding, so
+  it is not observed, owes no report, creates no attention and is not marked stale. The
+  first arrival at a prepared Block queues its first-visit message (Block id and Agent
+  prompt) on the prepared thread, with no launch; once that send is acknowledged the thread
+  becomes the Block's worker and the visit has begun. While the Block's preparation is
+  pending, reserved or uncertain, the arrival waits. Revisits reuse the same thread.
+- After a Human step the next activation is therefore always a queued send to an existing
+  thread on the bound path and branch, so T3's own recreation of a missing managed worktree
+  at turn start applies. Factory adds no restoration step; a failed send stays unresolved
+  under the usual delivery rules.
 - Worker reads, send-target checks, launch verification and recovery compare a worktree
   Run's threads with the bound path; before binding only a thread that shows no path yet
   is accepted. A thread that shows another path is a scope change. Checkout Runs keep the
@@ -65,7 +84,8 @@ workers share one worktree; its project root stays the Run's project identity.
   worktree is created; the other workers keep waiting. A definitive creator rejection is an
   error on the creator Block and on every other Flow-input Block, and none of them launches
   into the project root. Automatic settlement waits while the worktree is unbound.
-- Factory never removes the worktree; T3's own cleanup rules apply to it.
+- Factory never removes the worktree or an unused prepared thread; T3's own cleanup rules
+  apply to them, and empty idle threads stay in T3.
 
 ## Start and delivery guarantees
 
@@ -258,7 +278,8 @@ recorded. Release is recorded once per result version, only while that version i
 activation's newest result, and is never re-derived from saved presentation data. A Human
 answer directly authorizes its outgoing handoffs.
 
-A first visit launches that Block's own top-level worker. The message is `$factory-block`
+A first visit launches that Block's own top-level worker, or in a worktree Run queues on its
+prepared worker. The message is `$factory-block`
 followed by the captured Agent prompt. A revisit queues a turn on the same worker after
 the previous activation's current result is released and, at send time, the worker thread is
 finished. Two Blocks using the same
@@ -292,8 +313,10 @@ settle an Active Run with an open gate automatically. That requires all of the f
 - Every visited Block's current activation has its worker's accepted final result with no
   later `working` report, and no attention is pending; every Human occurrence is answered.
   Unvisited branches need not run.
-- Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
-  cancelled because their result was replaced owe no delivery.
+- Every delivery is acknowledged, with no outstanding launch, idle worker preparation,
+  handoff or send. Handoffs cancelled because their result was replaced and rejected
+  preparations owe no delivery. Prepared workers that were never activated are not visited
+  Blocks and do not hold settlement.
 - A fresh read finds every Block's worker thread [finished](#worker-thread-completion).
 
 Engine termination or a final report alone is insufficient. The local decision must still
@@ -325,7 +348,9 @@ uncertain operations keep their recorded state.
 
 After the transaction, in the background and only under the Run's authorization context,
 Factory sends one `t3_thread_interrupt` with `stop: true` to every bound worker thread, with a
-request key derived from the Run and thread. T3 stops the thread and its delegated work.
+request key derived from the Run and thread. Prepared workers that were never activated have
+no run and are not interrupted; Archive cancels pending preparations like pending launches,
+and the empty threads stay in T3. T3 stops the thread and its delegated work.
 Factory neither records nor confirms the outcome, so a backend crash before the request leaves
 the threads running. Archive neither rolls back repository edits nor prevents later direct
 T3 chat. Closing Factory is not Archive.

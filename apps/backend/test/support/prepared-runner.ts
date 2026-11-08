@@ -184,3 +184,57 @@ export async function preparedWorktreeFlow(c: TestContext) {
   assert(flow.ok);
   return { ...setup, flow: flow.value };
 }
+
+/**
+ * A worktree Flow with one Flow-input Agent: Entry worker's "Done" goes to a Human Review that
+ * hands to Parallel work, "Revise" to Unused branch, and "Ship" ends the Run.
+ */
+export async function preparedWorktreeReviewFlow(c: TestContext) {
+  const setup = await prepared(c);
+  const source = setup.flow.graph.blocks[0]!;
+  const exit = source.exits[0]!;
+  const entry = {
+    ...source,
+    exits: [exit, { ...exit, id: "revise", name: "Revise" }, { ...exit, id: "ship", name: "Ship" }],
+  };
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    workspace: { mode: "worktree", base: { kind: "default" } },
+    graph: {
+      ...setup.flow.graph,
+      blocks: [
+        entry,
+        {
+          id: "review",
+          kind: "human",
+          name: "Review",
+          position: { x: 400, y: 0 },
+          exits: [exit],
+        },
+        { ...source, id: "parallel-block", name: "Parallel work" },
+        { ...source, id: "unused", name: "Unused branch" },
+      ],
+      connections: [
+        { sourceBlockId: entry.id, exitId: "done", targetBlockId: "review" },
+        { sourceBlockId: entry.id, exitId: "revise", targetBlockId: "unused" },
+        { sourceBlockId: "review", exitId: "done", targetBlockId: "parallel-block" },
+      ],
+    },
+  });
+  assert(flow.ok, JSON.stringify(flow));
+  return { ...setup, flow: flow.value };
+}
+
+/** The review Flow's Run with its worktree bound and idle workers prepared for Parallel work and
+ * Unused branch, while Entry worker's first turn runs. */
+export async function preparedIdleWorkers(c: TestContext) {
+  const setup = await preparedWorktreeReviewFlow(c);
+  const started = await setup.f.startRun(setup.input);
+  assert(started.ok);
+  assert((await setup.f.reconcileRuns()).ok);
+  assert(setup.t3.idleLaunches.size === 2);
+  const launch = [...setup.t3.launches.values()][0]!;
+  const entryBlockId = /Factory Block id: ([^.\s]+)/.exec(launch.payload.message)![1]!;
+  return { ...setup, runId: started.value.id, entryBlockId };
+}

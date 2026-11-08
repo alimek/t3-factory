@@ -1,5 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
-import { preparedWorktreeFlow } from "./support/prepared-runner.ts";
+import {
+  preparedIdleWorkers,
+  preparedWorktreeFlow,
+  preparedWorktreeReviewFlow,
+} from "./support/prepared-runner.ts";
+import { settleThread, workerFinal } from "./support/run-worker.ts";
 
 it("a worktree Start launches exactly one worktree-creating worker from the resolved base ref", async (c) => {
   // Arrange
@@ -163,5 +168,186 @@ it("a rejected worktree-creating launch is a Block error and launches no other w
       problem:
         "T3 rejected the worker that creates the Run worktree. This worker was not launched.",
     },
+  ]);
+});
+
+it("once the worktree is bound, every later Agent Block gets one idle worker on its path and branch, none of them visited", async (c) => {
+  // Arrange
+  const { f, t3, input } = await preparedWorktreeReviewFlow(c);
+  t3.worktreeMetadataPending = true;
+  const started = await f.startRun(input);
+  assert(started.ok);
+  await f.reconcileRuns();
+  t3.worktreeMetadataPending = false;
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const [creator] = [...t3.launches.values()].map((launch) => launch.payload);
+  const joined = {
+    type: "existing_worktree",
+    worktreePath: "/t3-worktrees/thread-1",
+    branch: (creator!.workspaceStrategy as { branch: string }).branch,
+  };
+  expect(t3.launches.size).toBe(1);
+  expect(
+    [...t3.idleLaunches.values()].map(({ payload }) => [payload.title, payload.workspaceStrategy]),
+  ).toStrictEqual([
+    ["Factory #1 · 3 Parallel work", joined],
+    ["Factory #1 · 4 Unused branch", joined],
+  ]);
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.blocks.map(({ threadId, state }) => ({ threadId, state }))).toStrictEqual([
+    { threadId: "thread-1", state: "working" },
+    { threadId: null, state: "not-started" },
+    { threadId: null, state: "not-started" },
+    { threadId: null, state: "not-started" },
+  ]);
+  expect(run.value.attention).toStrictEqual([]);
+});
+
+it("after a Human step, the first arrival at a prepared Block queues its task on the prepared thread and launches nothing", async (c) => {
+  // Arrange
+  const { f, t3, runId, entryBlockId } = await preparedIdleWorkers(c);
+  assert((await f.runtime.submit(workerFinal(entryBlockId))).code === "ACCEPTED");
+  t3.engineStatus = "completed";
+  settleThread(t3, "execution-1", "completed", "settled", "thread-1");
+  assert((await f.reconcileRuns()).ok);
+  const review = await f.getRun(runId);
+  assert(review.ok);
+  const occurrence = review.value.humanOccurrences.find((o) => o.state === "pending")!;
+  assert((await f.answerHumanOccurrence(occurrence.id, { exitId: "done" })).ok);
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const sends = [...t3.sends.values()].map(({ payload }) => payload);
+  expect(t3.launchCalls).toBe(3);
+  expect(sends).toStrictEqual([
+    expect.objectContaining({
+      threadId: "thread-2",
+      mode: "queue",
+      message: expect.stringMatching(/^\$factory-block\n\nFactory Block id: [0-9a-f-]{36}\./),
+    }),
+  ]);
+  const run = await f.getRun(runId);
+  assert(run.ok);
+  expect(run.value.blocks.map(({ threadId }) => threadId)).toStrictEqual([
+    "thread-1",
+    null,
+    "thread-2",
+    null,
+  ]);
+});
+
+it("a lost idle-worker reply is recovered by search without creating another thread", async (c) => {
+  // Arrange
+  const { f, t3, input } = await preparedWorktreeReviewFlow(c);
+  t3.worktreeMetadataPending = true;
+  const started = await f.startRun(input);
+  assert(started.ok);
+  await f.reconcileRuns();
+  t3.worktreeMetadataPending = false;
+  t3.loseLaunchReply = true;
+  t3.discoverAvailable = false;
+  await f.reconcileRuns();
+  t3.loseLaunchReply = false;
+  t3.discoverAvailable = true;
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(t3.launchCalls).toBe(3);
+  expect(
+    run.value.intents
+      .filter(({ kind }) => kind === "prepare")
+      .map(({ state, reference }) => [state, reference?.threadId]),
+  ).toStrictEqual([
+    ["acknowledged", "thread-2"],
+    ["acknowledged", "thread-3"],
+  ]);
+});
+
+it("restart during idle-worker preparation resumes it without a duplicate thread", async (c) => {
+  // Arrange
+  const { h, f, t3, input } = await preparedWorktreeReviewFlow(c);
+  t3.worktreeMetadataPending = true;
+  const started = await f.startRun(input);
+  assert(started.ok);
+  await f.reconcileRuns();
+  t3.worktreeMetadataPending = false;
+  t3.loseLaunchReply = true;
+  t3.discoverAvailable = false;
+  await f.reconcileRuns();
+  await f.close();
+  t3.loseLaunchReply = false;
+  t3.discoverAvailable = true;
+
+  // Act
+  const reopened = await h.open({ t3, connectionRetryMs: 60_000 });
+
+  // Assert
+  const run = await reopened.getRun(started.value.id);
+  assert(run.ok);
+  expect(t3.launchCalls).toBe(3);
+  expect(
+    run.value.intents.filter(({ kind }) => kind === "prepare").map(({ state }) => state),
+  ).toStrictEqual(["acknowledged", "acknowledged"]);
+});
+
+it("a worktree Run whose unvisited Blocks kept their idle workers settles once its visited Block finishes", async (c) => {
+  // Arrange
+  const { f, t3, runId, entryBlockId } = await preparedIdleWorkers(c);
+  assert(
+    (await f.runtime.submit(workerFinal(entryBlockId, "Shipped.", "ship"))).code === "ACCEPTED",
+  );
+  t3.engineStatus = "completed";
+  settleThread(t3, "execution-1", "completed", "settled", "thread-1");
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+});
+
+it("a worktree setup script that became blocking after Start holds idle-worker creation", async (c) => {
+  // Arrange
+  const { f, t3, input } = await preparedWorktreeReviewFlow(c);
+  t3.worktreeMetadataPending = true;
+  const started = await f.startRun(input);
+  assert(started.ok);
+  await f.reconcileRuns();
+  t3.worktreeMetadataPending = false;
+  t3.worktreeSetupScripts = [{ name: "Install", blocking: true }];
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(t3.idleLaunches.size).toBe(0);
+  expect(
+    run.value.intents
+      .filter(({ kind }) => kind === "prepare")
+      .map(({ state, problem }) => [state, problem]),
+  ).toStrictEqual([
+    [
+      "pending",
+      'The Project runs "Install" as a blocking worktree setup script, which idle workers do not support. Make it asynchronous in T3; Factory will retry creating this idle worker.',
+    ],
+    [
+      "pending",
+      'The Project runs "Install" as a blocking worktree setup script, which idle workers do not support. Make it asynchronous in T3; Factory will retry creating this idle worker.',
+    ],
   ]);
 });

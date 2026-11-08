@@ -159,10 +159,11 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 
 ## Execution operations
 
-- **Launch.** Each Agent Block's first visit is its own top-level thread. It uses that
+- **Launch.** Each Agent Block's worker is its own top-level thread. It uses that
   Agent's saved provider, model and options, the explicit project and environment, the
   Run's workspace strategy (`root` in a checkout Run; in a worktree Run `worktree` for the
-  creator and `existing_worktree` with the bound path and branch for every other worker, see
+  creator and `existing_worktree` with the bound path and branch for every other worker; later
+  Agent Blocks' workers are launched idle, with no message, and their first visit is a queued send, see
   [Run workspace](runner.md#run-workspace)), and the exact first message and request key. There is no Run
   conversation and no native-delegation launch. Launch omits `runtimeMode`; if the public
   schema requires it, Start fails with `launch_unsupported`. An uncertain launch is searched
@@ -195,7 +196,7 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 
 Factory-launched workers are top-level threads. A title is not ownership: recovery binds
 only when parentage, project, interaction mode, provider, model, options and one
-execution are all present. A missing or non-string parent or workspace withholds the search.
+execution are all present; an idle worker matches only with zero executions. A missing or non-string parent or workspace withholds the search.
 A null workspace is the project checkout and matches a root-strategy launch; any other path
 must equal the Run's project root. Worktree launches match on path and branch as the
 [recovery rules](runner.md#start-and-delivery-guarantees) describe. Threads a worker starts later, including subagents, are

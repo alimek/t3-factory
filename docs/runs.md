@@ -170,9 +170,11 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
   delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
-- A first visit launches the block's own top-level worker. Later visits queue independent turns on that same worker, each as
+- A first visit launches the block's own top-level worker; in a worktree Run, Agent Blocks no Flow input starts get an idle
+  worker once the worktree is bound, and the first visit queues on it ([Run workspace](runner.md#run-workspace)). An idle
+  worker is not a visit and never shows a missing report. Later visits queue independent turns on that same worker, each as
   its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
-  Partial fan-out survives restart; an unresolved launch holds later arrivals to that block only.
+  Partial fan-out survives restart; an unresolved launch or idle worker preparation holds later arrivals to that block only.
 - Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; a finished
   worker thread without a report is a **missing-report Problem**, also after a notification or reply turn; a worker waiting on
   delegated or background work T3 has not settled stays working. A failed, cancelled or interrupted latest run is a Problem until
