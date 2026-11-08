@@ -98,6 +98,37 @@ const workspaceIssue = (code: string, path: string, message: string): WorkspaceC
   ok: false,
   issues: [{ code, path, message }],
 });
+/**
+ * Factory attaches later workers idle, and T3 exposes no completion signal for their setup, so a
+ * blocking worktree setup script could still be running when the first activation arrives.
+ */
+function blockingSetupIssue(
+  t3: T3Adapter,
+  project: FactoryProject,
+): Effect.Effect<WorkspaceCheck | undefined> {
+  return Effect.tryPromise({
+    try: () => t3.readWorktreeSetupScripts(project),
+    catch: (error) => error,
+  }).pipe(
+    Effect.map((scripts) => {
+      const blocking = scripts.find((script) => script.blocking);
+      return blocking
+        ? workspaceIssue(
+            "workspace_blocking_setup",
+            "workspace.mode",
+            `${project.title} runs "${blocking.name}" as a blocking worktree setup script, which a new worktree does not support yet. Make the script asynchronous in T3 or choose the project checkout for this Flow.`,
+          )
+        : undefined;
+    }),
+    Effect.orElseSucceed(() =>
+      workspaceIssue(
+        "workspace_setup_unreadable",
+        "workspace.mode",
+        `T3 could not read the setup scripts of ${project.title}. Recheck the T3 connection and retry.`,
+      ),
+    ),
+  );
+}
 /** Resolves a worktree Flow's base against the selected Project's repository on this host. */
 function resolveStartWorkspace(
   t3: T3Adapter,
@@ -135,6 +166,8 @@ function resolveStartWorkspace(
             "workspace.base.ref",
             `${workspace.base.ref} is not a commit in ${project.title}. Choose an existing ref.`,
           );
+    const setup = yield* blockingSetupIssue(t3, project);
+    if (setup) return setup;
     return { ok: true, workspace: { mode: "worktree", baseRef: resolved } };
   });
 }

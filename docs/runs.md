@@ -12,7 +12,9 @@ is launched on rejection. For a Flow whose [workspace setting](studio.md#workspa
 resolves the base in the selected Project's repository on the Factory host: the default branch from `origin/HEAD`, or the
 custom ref verified as a commit, read through bounded `git` calls without a shell. A missing ref, an unset default branch or
 a T3 endpoint that is not on this computer rejects Start with a `workspace.*` issue and the **Open Studio → Flows** repair
-action; no Run, Task or worker is created. Correct configuration, accepted Start and accepted Block result are separate
+action; no Run, Task or worker is created. Start then reads the Project's T3 scripts and rejects the same way when a worktree
+setup script (one T3 runs on worktree creation) is blocking (`async: false`) or the scripts cannot be read; making the script
+asynchronous in T3 or choosing the project checkout repairs it ([support limit](installation.md#execution-and-safety-boundaries)). Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
