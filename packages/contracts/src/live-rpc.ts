@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import type { OperationError } from "./index.js";
-import type { ConnectionLiveMessage, NavigationLiveMessage, RunLiveMessage } from "./live.js";
+import type { OperationError } from "./index.ts";
+import type { ConnectionLiveMessage, NavigationLiveMessage, RunLiveMessage } from "./live.ts";
 
 /**
  * Server-produced values are typed but not re-validated by the client: the backend is the

@@ -1,4 +1,4 @@
-import type { RunDetail, RunNavigationEntry, T3Connection } from "./index.js";
+import type { RunDetail, RunNavigationEntry, T3Connection } from "./index.ts";
 
 /**
  * Live delivery over the shared window connection. Every scope starts with an authoritative
