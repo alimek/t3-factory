@@ -170,7 +170,15 @@ export function openRunnerSettle(
         yield* settleClaimed(run, candidate.thread_id, (sql) =>
           Effect.gen(function* () {
             const current = yield* settleableResults(sql, run.id);
-            if (!current.some((row) => row.activation_id === candidate.activation_id)) return [];
+            if (
+              !current.some(
+                (row) =>
+                  row.activation_id === candidate.activation_id &&
+                  row.thread_id === candidate.thread_id &&
+                  row.execution_id === candidate.execution_id,
+              )
+            )
+              return [];
             return yield* sql`INSERT INTO coordinator_settlements(run_id,thread_id,execution_id,attempted_at) SELECT run_id,thread_id,execution_id,${yield* now} FROM run_executions WHERE run_id=${run.id} AND thread_id=${candidate.thread_id} AND execution_id=${candidate.execution_id} ON CONFLICT DO NOTHING RETURNING thread_id`;
           }),
         );

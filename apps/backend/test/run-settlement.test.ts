@@ -217,6 +217,68 @@ it("a result replaced in the same T3 run does not settle the worker thread again
   expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
 });
 
+it("a result replaced by a newer T3 run during the thread read is settled once, for the newer run", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  const inspectSettleSupport = f.t3.inspectSettleSupport.bind(f.t3);
+  const readExecution = f.t3.readExecution.bind(f.t3);
+  // Arm after observation, when settlement has selected the old result as its candidate.
+  f.t3.inspectSettleSupport = async (target) => {
+    f.t3.inspectSettleSupport = inspectSettleSupport;
+    f.t3.readExecution = async (target, threadId) => {
+      f.t3.readExecution = readExecution;
+      const thread = await readExecution(target, threadId);
+      startWorkerTurn(f, "chat-execution", 2);
+      const replacement = await f.f.runtime.submit(workerFinal(f.blockId, "Updated result."));
+      assert(replacement.code === "ACCEPTED");
+      finishWorker(f);
+      // A repeated report observes the finished turn before the stale read returns.
+      assert(
+        (await f.f.runtime.submit(workerFinal(f.blockId, "Updated result."))).code === "ACCEPTED",
+      );
+      return thread;
+    };
+    return inspectSettleSupport(target);
+  };
+
+  // Act
+  await f.f.reconcileRuns();
+  await f.f.reconcileRuns();
+
+  // Assert
+  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("a failed per-Block T3 thread settlement keeps the Run Active and its result", async (c) => {
+  // Arrange
+  const f = await reportedWorker(c);
+  let settleAttempts = 0;
+  f.t3.settleThread = () => {
+    settleAttempts++;
+    return Promise.reject(Error("T3 could not settle the thread"));
+  };
+
+  // Act
+  await f.f.reconcileRuns();
+  const run = await f.f.getRun(f.runId);
+  const attemptsAfterFailure = settleAttempts;
+  await f.f.reconcileRuns();
+
+  // Assert
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(attemptsAfterFailure).toBe(1);
+  expect(settleAttempts).toBe(1);
+  expect(run.value.blocks[0]).toMatchObject({
+    state: "finished",
+    reportStatus: "finished",
+    workingMessage: null,
+  });
+  expect(run.value.reports).toMatchObject([
+    { blockId: "worker", status: "finished", resultMessage: "Implemented the requested result." },
+  ]);
+});
+
 it("a revisited Block's worker thread is settled again once its new T3 run finishes", async (c) => {
   // Arrange
   const f = await revisitReportingWorker(c);
