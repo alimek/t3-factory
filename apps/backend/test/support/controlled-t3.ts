@@ -15,7 +15,9 @@ import type {
   T3Inspection,
   T3Project,
   T3ProjectTarget,
+  T3ProjectRef,
   T3ProviderCapability,
+  WorktreeSetupScript,
 } from "../../src/adapters/t3.ts";
 
 /** Independent external-engine lifetime; no SQL or Factory internals. */
@@ -337,6 +339,10 @@ export class ControlledT3 implements T3Adapter {
   async resolveBaseRef(_workspaceRoot: string, base: FlowWorkspaceBase) {
     if (base.kind === "default") return this.defaultBranch;
     return this.refs.has(base.ref) ? base.ref : null;
+  }
+  worktreeSetupScripts: WorktreeSetupScript[] = [];
+  async readWorktreeSetupScripts(_target: T3ProjectRef) {
+    return this.worktreeSetupScripts;
   }
   async createProject(target: T3ProjectTarget) {
     await this.listProjects({

@@ -40,6 +40,13 @@ export interface T3Target {
 export type T3Endpoint = Pick<T3Target, "endpoint">;
 export type T3EnvironmentTarget = Pick<T3Target, "endpoint" | "environmentId">;
 export type T3ProjectTarget = Pick<T3Target, "endpoint" | "environmentId" | "workspaceRoot">;
+export type T3ProjectRef = Pick<T3Target, "endpoint" | "environmentId" | "projectId">;
+/** A project script T3 runs when it creates or attaches a thread's worktree. */
+export interface WorktreeSetupScript {
+  readonly name: string;
+  /** T3 holds the thread's first turn until the script finishes. */
+  readonly blocking: boolean;
+}
 export interface T3Adapter {
   /** `t3_thread_wait` for one run with its delegated and background work. Queues, native
    * requests and business completion stay separate. */
@@ -75,6 +82,8 @@ export interface T3Adapter {
   resolveRepository(path: string): Promise<string>;
   /** Same-host Git: the ref a new worktree starts from, or null when the repository lacks it. */
   resolveBaseRef(workspaceRoot: string, base: FlowWorkspaceBase): Promise<string | null>;
+  /** The project's current worktree setup scripts, read from T3 each call. */
+  readWorktreeSetupScripts(target: T3ProjectRef): Promise<readonly WorktreeSetupScript[]>;
   createProject(target: T3ProjectTarget): Promise<T3Project>;
   inspect(target: T3Endpoint): Promise<T3Inspection>;
   /** Starts backend-host approval; returns without waiting for the human. */

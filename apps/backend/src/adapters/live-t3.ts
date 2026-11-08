@@ -36,6 +36,7 @@ import type {
   T3Inspection,
   T3ConnectionReason,
   T3Project,
+  T3ProjectRef,
   T3ProjectTarget,
   ExecutionObservation,
   LaunchDiscovery,
@@ -49,6 +50,7 @@ import type {
   SendPayload,
   SendReference,
   T3ProviderCapability,
+  WorktreeSetupScript,
 } from "./t3.ts";
 import { isReportingDriver } from "../reporting-drivers.ts";
 import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
@@ -333,6 +335,24 @@ function executionObservation(threadId: string, body: ThreadExecutionRead): Exec
       };
     }),
   };
+}
+
+/** `t3_project_read` scripts; T3 runs a script asynchronously unless `async` is false. */
+function worktreeSetupScripts(body: unknown): WorktreeSetupScript[] {
+  const scripts = (body as { scripts?: unknown } | null)?.scripts;
+  if (!Array.isArray(scripts)) throw new Error("Invalid project scripts");
+  return scripts.flatMap((raw: unknown) => {
+    const script = raw as Record<string, unknown> | null;
+    if (
+      typeof script?.name !== "string" ||
+      typeof script.runOnWorktreeCreate !== "boolean" ||
+      !(script.async === undefined || typeof script.async === "boolean")
+    )
+      throw new Error("Invalid project script");
+    return script.runOnWorktreeCreate
+      ? [{ name: script.name, blocking: script.async === false }]
+      : [];
+  });
 }
 
 const PROJECT_TOOL_FIELDS = [
@@ -1270,6 +1290,21 @@ export class LiveT3Adapter implements T3Adapter {
     )
       throw new Error("Invalid project page");
     return { projects: body.projects, nextCursor: body.nextCursor as number | null };
+  }
+  async readWorktreeSetupScripts(target: T3ProjectRef): Promise<readonly WorktreeSetupScript[]> {
+    return this.withAuthorizedClient(target, async (client) =>
+      worktreeSetupScripts(
+        this.structuredToolResult(
+          await client.callTool(
+            {
+              name: "t3_project_read",
+              arguments: { projectId: target.projectId, environmentId: target.environmentId },
+            },
+            { timeout: 10_000 },
+          ),
+        ),
+      ),
+    );
   }
   async resolveRepository(path: string): Promise<string> {
     if (!this.endpoint || !isLocalEndpoint(this.endpoint) || !isAbsolute(path))
