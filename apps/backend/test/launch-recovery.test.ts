@@ -21,6 +21,7 @@ function foreignCandidate(
     projectId: launch.payload.projectId,
     parentThreadId: null,
     workspaceRoot,
+    branch: null,
     interactionMode: "default",
     providerInstanceId: launch.payload.modelSelection.instanceId,
     model: launch.payload.modelSelection.model,

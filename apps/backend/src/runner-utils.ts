@@ -17,13 +17,13 @@ export const intactPayload = <
   payload_json: string;
 } => !!intent.payload_json && fingerprint(intent.payload_json) === intent.fingerprint;
 /** Uncertain work may be replayed only within the retry scope recorded at reservation. */
+/** A worker launch: one with its first turn, or an idle worker preparation. */
+export const launchesWorker = (intent: Pick<IntentRow, "kind">) =>
+  intent.kind === "launch" || intent.kind === "prepare";
 export const replayUnproven = (intent: IntentRow, retryScope: string | null) =>
   intent.state !== "pending" && (!intent.retry_scope || intent.retry_scope !== retryScope);
 export const catalogProject = (catalog: Result<ProjectCatalog>, projectId: string) =>
   catalog.ok ? catalog.value.projects.find((project) => project.id === projectId) : undefined;
-/** Null is T3's project checkout. Any other path must be that checkout. */
-export const checkoutWorkspace = (workspaceRoot: string | null, checkout: string) =>
-  workspaceRoot === null || workspaceRoot === checkout;
 
 /** Convert the accepted, persisted Run context without reading current connection settings. */
 export function runTarget(

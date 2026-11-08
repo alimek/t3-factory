@@ -8,7 +8,13 @@ every referenced Agent's settings, reporting installation and explicit-call API 
 Failures explain recovery and keep the draft. Start collects setup problems for every referenced Agent,
 including later branches, labels each cause with its Agent and offers reporting, Studio or connection
 repair actions. Agent checks and launch capability inspection use the same Start preflight; no worker
-is launched on rejection. Correct configuration, accepted Start and accepted Block result are separate
+is launched on rejection. For a Flow whose [workspace setting](studio.md#workspace-setting) is a new worktree, Start
+resolves the base in the selected Project's repository on the Factory host: the default branch from `origin/HEAD`, or the
+custom ref verified as a commit, read through bounded `git` calls without a shell. A missing ref, an unset default branch or
+a T3 endpoint that is not on this computer rejects Start with a `workspace.*` issue and the **Open Studio → Flows** repair
+action; no Run, Task or worker is created. Start then reads the Project's T3 scripts and rejects the same way when a worktree
+setup script is blocking or the scripts cannot be read; making the script asynchronous in T3 or choosing the project checkout
+repairs it ([support limit](installation.md#execution-and-safety-boundaries)). Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
@@ -25,18 +31,19 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   own pending request, and per selected Factory server (a desktop client never checks it against another server); it is
   removed after a confirmed acceptance or rejection. When
   storage is blocked, the unknown-outcome notice says the request survives only while the window stays open.
-- **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Runs
-  work concurrently in the shared project checkout. A Run stays Active, including unresolved work, until it
+- **Concurrency.** Every Start creates its own Task, so Start never waits for, reuses or is blocked by another Run. Checkout
+  Runs work concurrently in the shared project checkout; each worktree Run works in its own worktree. A Run stays Active, including unresolved work, until it
   [settles](#settled-runs) or is [archived](#archive).
-- **Captured definitions.** The Run keeps its immutable input and references the Flow revision it started with and the
-  revision of every Agent that Flow references, frozen at Start. Every read and every later activation, also after restart,
+- **Captured definitions.** The Run keeps its immutable input and references the Flow revision it started with, including
+  its workspace setting, and the revision of every Agent that Flow references, frozen at Start. Every read and every later activation, also after restart,
   uses those revisions: the full graph and each Agent's prompt, settings and labels. Agent edits need no Flow save: the next
   Start uses the current saved Agents. Later edits and removals affect only future Runs.
 - **Launch.** Factory launches one top-level worker per Agent block visit, using that Agent's saved provider, model and
   options. Agents connected to the Flow input start in parallel and independently (no Agent is told about the others). There
   is no Run conversation. A lost launch is searched for by its saved title and verified thread evidence; Factory does not
   launch a second worker for it. A definitive rejection is an error. Other workers keep going.
-  Factory works in the project root with no isolated worktrees, omits `runtimeMode` and leaves execution permissions to T3
+  Factory works in the Run's workspace: the project root, or for a worktree Flow one worktree that all of the Run's
+  workers share ([Run workspace](runner.md#run-workspace)). It omits `runtimeMode` and leaves execution permissions to T3
   and its OAuth grant, so effective autonomy is not guaranteed by Factory. Use a repository you are willing to let agents
   change.
 - **Composer.** Project and Flow choices are remembered locally per selected Factory server, like drafts. Each blocking condition is a notice with a recovery action, and
@@ -97,10 +104,14 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. After the initial fit, live Run updates and container resize preserve the Run viewport.
-- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
+- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). An unvisited Block of a
+  worktree Run names the idle worker prepared for it. There is no editing here.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
-  prompt, Flow revision, project, work periods) opens from 1280 px wide.
+  prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
+  checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path** with the
+  number of prepared idle workers, or **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery
+  note. The timeline says **entered · prepared idle T3 thread** for a first visit queued on a prepared worker.
 - Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
 
 Engine termination alone never settles a Run; automatic settlement needs every condition in [Settled Runs](#settled-runs).
@@ -188,9 +199,11 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
   delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
-- A first visit launches the block's own top-level worker. Later visits queue independent turns on that same worker, each as
+- A first visit launches the block's own top-level worker; in a worktree Run, Agent Blocks no Flow input starts get an idle
+  worker once the worktree is bound, and the first visit queues on it ([Run workspace](runner.md#run-workspace)). An idle
+  worker is not a visit, never shows a missing report and does not keep the Run from settling. Later visits queue independent turns on that same worker, each as
   its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
-  Partial fan-out survives restart; an unresolved launch holds later arrivals to that block only.
+  Partial fan-out survives restart; an unresolved launch or idle worker preparation holds later arrivals to that block only.
 - Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; a finished
   worker thread without a report is a **missing-report Problem**, also after a notification or reply turn; a worker waiting on
   delegated or background work T3 has not settled stays working. A failed, cancelled or interrupted latest run is a Problem until

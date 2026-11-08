@@ -104,6 +104,7 @@ async function prepareWorkerRuns() {
     review: review.id,
     parallel: flow("Demo · Parallel review"),
     parallelStart: flow("Demo · Parallel review from one prompt"),
+    worktree: flow("Demo · Build and review in a worktree"),
   });
   releasing = await startScenario(
     workerContext,
@@ -246,6 +247,7 @@ if (!launchFlow.ok) throw Error("Launch Flow unavailable");
 await factory.updateFlow(launchFlow.value.id, {
   name: launchFlow.value.name,
   expectedRevision: 1,
+  workspace: { mode: "checkout" },
   graph: {
     flowInput: flowInputTo("worker", { x: 0, y: 0 }),
     blocks: [

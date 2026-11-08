@@ -96,14 +96,26 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
       yield* settleRecoveries(database, lifecycle, t3, id);
       if (phase === "observe") return;
+      const observed = (yield* row(id)) ?? runRow;
+      yield* dispatchIntents(observed, contextId);
+      // Binding the Run worktree during dispatch records the launches that join it.
+      const current = yield* row(id);
+      if (preparing(observed) && current && !preparing(current))
+        yield* dispatchIntents(current, contextId);
+    });
+  }
+  function dispatchIntents(runRow: RunRow, contextId: string | null) {
+    return Effect.gen(function* () {
       const intents =
-        yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE run_id=${id} AND state IN ('pending','reserved','uncertain') ORDER BY rowid`;
+        yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE run_id=${runRow.id} AND state IN ('pending','reserved','uncertain') ORDER BY rowid`;
       for (const intent of intents) {
         if (closed) break;
         yield* dispatchIntent(runRow, intent, contextId);
       }
     });
   }
+  const preparing = ({ workspace }: RunRow) =>
+    workspace.mode === "worktree" && workspace.state === "preparing";
   const reconcileRuns = Effect.fn("Runner.reconcile")(function* (): Effect.fn.Return<
     Result<void>,
     unknown

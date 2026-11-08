@@ -14,7 +14,8 @@ import type {
 export const FACTORY_PROTOCOL = 4;
 /** Server accepts historical clients; existing product operations remain supported. */
 export const FACTORY_MINIMUM_PEER_PROTOCOL = 1;
-/** The current UI requires worker repository metadata and navigation activity (protocol 4). */
+/** The current UI reads and saves each Flow's workspace setting and requires worker repository
+ * metadata and navigation activity (protocol 4). */
 export const FACTORY_MINIMUM_SERVER_PROTOCOL = 4;
 
 export const CLIENT_LABEL_LIMIT = 80;

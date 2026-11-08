@@ -17,7 +17,15 @@ A local repository represented by a T3 project, providing the context for Tasks 
 A user-defined graph of work steps and control rules. Its design determines which parts run autonomously and which require human participation.
 
 **Flow revision**:
-One immutable saved version of a Flow's name and graph. Every successful create or save appends the next revision; Studio shows the latest, and removing a Flow keeps its revisions.
+One immutable saved version of a Flow's name, graph and workspace setting. Every successful create or save appends the next revision; Studio shows the latest, and removing a Flow keeps its revisions.
+
+**Workspace setting**:
+The Flow's choice of where its Runs work: the selected Project's checkout or a new worktree, with the worktree's base (the Project repository's default branch or a custom Git ref). It belongs to the Flow revision, not the Run draft; Start resolves a worktree base against the selected Project and rejects a missing one.
+_Avoid_: Copying workspace choices into a Run draft.
+
+**Run workspace**:
+Where all workers of one Run work, fixed at Start: the project checkout, or for a worktree Flow one worktree that the Run's creator worker creates on a Factory-named branch and every other worker joins once Factory has bound its path and branch. The Run's project root stays its project identity.
+_Avoid_: A worktree per worker.
 
 **Flow block**:
 A constituent element of a flow: the Flow input block, an agent block or a human step.
@@ -62,7 +70,7 @@ Retired. Factory no longer saves a model selection for a primary Run conversatio
 Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The top-level T3 thread Factory launches for one Agent Block. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
+The top-level T3 thread Factory launches for one Agent Block. In a worktree Run, Factory may create it idle, with no turn, before the Block is reached; such a prepared worker is not a visit, and the visit starts with the first task sent to it. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
 
 **Worker thread finished**:
 Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement and Request report use it.

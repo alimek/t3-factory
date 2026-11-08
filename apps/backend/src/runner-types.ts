@@ -8,6 +8,7 @@ import type {
   RuntimeReadiness,
 } from "@t3-factory/contracts";
 import type { T3Target } from "./adapters/t3.ts";
+import type { RunWorkspace } from "./run-workspace.ts";
 
 /** A Run's row with the definitions it captured at Start. */
 export type RunRow = {
@@ -21,7 +22,9 @@ export type RunRow = {
   flow_revision_id: string;
   definitions: RunDefinitions;
   context_id: string;
+  /** The project root: the Run's T3 project identity, also for worktree Runs. */
   workspace_root: string;
+  workspace: RunWorkspace;
   gate_open: number;
   generation: number;
   number: number;

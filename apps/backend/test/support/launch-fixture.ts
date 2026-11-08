@@ -1,5 +1,5 @@
 import { expect, type TestContext } from "@effect/vitest";
-import type { LaunchPayload } from "../../src/adapters/t3.ts";
+import type { IdleLaunchPayload, LaunchPayload } from "../../src/adapters/t3.ts";
 import { authorizedLiveOAuth } from "./boundaries-setup.ts";
 
 export async function launchFixture(c: TestContext) {
@@ -14,10 +14,22 @@ export async function launchFixture(c: TestContext) {
   };
   Object.assign(schema.properties!, {
     modelSelection: { type: "object", properties: { instanceId: {}, model: {}, options: {} } },
-    workspaceStrategy: { type: "object" },
+    // T3's advertised strategy union, flattened into one object.
+    workspaceStrategy: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["root", "existing_worktree", "worktree"] },
+        baseRef: { type: "string" },
+        branch: { type: "string" },
+        startFromOrigin: { type: "boolean" },
+        worktreePath: { type: "string" },
+      },
+      required: ["type"],
+    },
   });
   let malformed = false;
   let wrongExact = false;
+  let worktree = false;
   const exactReads: string[] = [];
   let proof: string | null = null;
   const { adapter, external } = await authorizedLiveOAuth(
@@ -37,12 +49,13 @@ export async function launchFixture(c: TestContext) {
       },
       launch: (args) => {
         seen.push(args);
+        const idle = args.message === undefined;
         return {
           projectId: "neutral",
           threadId: "thread",
-          runId: malformed ? null : "exact",
+          runId: idle || malformed ? null : "exact",
           link: "t3://threads/thread",
-          status: "running",
+          status: idle ? null : "running",
         };
       },
       runtimeActivity: (args) => {
@@ -55,7 +68,8 @@ export async function launchFixture(c: TestContext) {
             activeRunId: "newer-direct-activity",
             latestRunId: "newer-direct-activity",
             link: "t3://threads/thread",
-            worktreePath: null,
+            worktreePath: worktree ? "/worktrees/factory-run-1" : null,
+            branch: worktree ? "factory/run-1" : null,
             pendingRequestCount: 1,
           },
           recentRuns: [
@@ -91,11 +105,25 @@ export async function launchFixture(c: TestContext) {
       options: { reasoning: "high" },
     },
   };
+  const idlePayload: IdleLaunchPayload = {
+    environmentId: payload.environmentId,
+    projectId: payload.projectId,
+    clientRequestId: "idle-key",
+    title: "Neutral review",
+    workspaceStrategy: {
+      type: "existing_worktree",
+      worktreePath: "/worktrees/factory-run-1",
+      branch: "factory/run-1",
+    },
+    interactionMode: payload.interactionMode,
+    modelSelection: payload.modelSelection,
+  };
   return {
     adapter,
     external,
     schema,
     payload,
+    idlePayload,
     seen,
     exactReads,
     setProof(value: string) {
@@ -106,6 +134,9 @@ export async function launchFixture(c: TestContext) {
     },
     wrongExact() {
       wrongExact = true;
+    },
+    attachWorktree() {
+      worktree = true;
     },
   };
 }

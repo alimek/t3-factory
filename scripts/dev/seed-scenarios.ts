@@ -237,9 +237,32 @@ async function parallelStartScenario(context: SeedContext, flowId: string) {
   });
 }
 
+/** The worker creates the Run worktree; the reviewer's idle worker waits on it, unvisited. */
+async function worktreeScenario(context: SeedContext, flowId: string) {
+  const run = await startScenario(
+    context,
+    flowId,
+    "worktree",
+    "Worktree · Search fix on its own branch",
+    "Fix the search highlighting in a separate worktree so the project checkout stays untouched, then hand off for review.",
+  );
+  await reconcileUntil(
+    context,
+    run.id,
+    (detail) =>
+      detail.workspace.mode === "worktree" && detail.workspace.preparedWorkers.length === 1,
+  );
+}
+
 export async function seedScenarios(
   context: SeedContext,
-  flows: { simple: string; review: string; parallel: string; parallelStart: string },
+  flows: {
+    simple: string;
+    review: string;
+    parallel: string;
+    parallelStart: string;
+    worktree: string;
+  },
 ) {
   await settledAndArchivedScenarios(context, flows.simple);
   await attentionScenarios(context, flows.simple);
@@ -255,6 +278,7 @@ export async function seedScenarios(
   await waitingForReview(context, flows.review, true);
   await parallelScenario(context, flows.parallel);
   await parallelStartScenario(context, flows.parallelStart);
+  await worktreeScenario(context, flows.worktree);
   await idleWorkingScenario(context, flows.simple, {
     key: "working-report",
     title: "Monitoring · Agent is watching CI for the search fix",

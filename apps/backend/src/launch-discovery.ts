@@ -38,6 +38,7 @@ export function threadIdentityRead(value: unknown, threadId: string): ThreadIden
     projectId: requiredString(body.projectId),
     parentThreadId: body.parentThreadId === null ? null : requiredString(body.parentThreadId),
     workspaceRoot: requiredWorkspace(body),
+    branch: knownBranch(body.branch),
     providerInstanceId: requiredString(body.providerInstanceId),
     model: requiredString(body.model),
     executions: runs.map(executionIdentity),
@@ -126,6 +127,7 @@ function flattenThreadRead(value: unknown): Record<string, unknown> {
     runs: firstDefined(body.runs, thread.runs),
     ...copiedParent(body, thread),
     ...copiedWorkspace(body, thread),
+    branch: firstDefined(body.branch, thread.branch),
   };
 }
 
@@ -149,6 +151,13 @@ function copiedWorkspace(body: Record<string, unknown>, thread: Record<string, u
   if ("worktreePath" in thread) return { workspaceRoot: thread.worktreePath };
   if ("workspaceRoot" in thread) return { workspaceRoot: thread.workspaceRoot };
   return {};
+}
+
+/** A thread without a branch, or a read that omits it, shows no branch. */
+function knownBranch(value: unknown) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string" && value.length > 0) return value;
+  throw Error("Thread branch evidence is unavailable");
 }
 
 /** Explicit null is T3's project checkout. A missing or non-string workspace stays unproven. */
@@ -212,6 +221,7 @@ function candidateFrom(
     projectId: requiredString(detail.projectId),
     parentThreadId: parentThread(detail.parentThreadId),
     workspaceRoot: optionalText(detail.workspaceRoot),
+    branch: knownBranch(detail.branch),
     interactionMode: optionalText(detail.interactionMode),
     providerInstanceId: requiredString(detail.providerInstanceId),
     model: requiredString(detail.model),

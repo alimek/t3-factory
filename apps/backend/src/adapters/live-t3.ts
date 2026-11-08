@@ -37,9 +37,12 @@ import type {
   T3Inspection,
   T3ConnectionReason,
   T3Project,
+  T3ProjectRef,
   T3ProjectTarget,
   ExecutionObservation,
   LaunchDiscovery,
+  IdleLaunchPayload,
+  IdleLaunchReference,
   LaunchPayload,
   LaunchReference,
   LaunchSupport,
@@ -48,11 +51,17 @@ import type {
   SendPayload,
   SendReference,
   T3ProviderCapability,
+  WorktreeSetupScript,
 } from "./t3.ts";
 import { isReportingDriver } from "../reporting-drivers.ts";
 import { discoverLaunches, threadIdentityRead } from "../launch-discovery.ts";
 import { LaunchRejected } from "./t3.ts";
-import type { AgentEnvironment, T3Contract } from "@t3-factory/contracts";
+import type {
+  AgentEnvironment,
+  FlowWorkspace,
+  FlowWorkspaceBase,
+  T3Contract,
+} from "@t3-factory/contracts";
 import { parseProjectFaviconPath, parseProjectIcon } from "@t3-factory/domain-validation";
 import { readDelegatedSettlement } from "./delegated-settlement.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
@@ -110,6 +119,7 @@ type SchemaProperty = {
   enum?: unknown[];
   const?: unknown;
   properties?: Record<string, unknown>;
+  required?: unknown;
 };
 
 /** Structured content, else the first text item that parses as JSON; undefined when neither exists. */
@@ -228,6 +238,27 @@ const preservesLaunchSettings = (
   ) &&
   props.workspaceStrategy?.type === "object";
 
+/** T3 advertises its strategy union flattened into one object: every field Factory may send for
+ * `worktree` or `existing_worktree` must be named, only `type` may be required, and the message
+ * must be omissible for an idle launch. */
+const expressesWorktreeLaunches = (
+  schema: T3Contract["tools"][number]["inputSchema"] | undefined,
+  props: Record<string, SchemaProperty>,
+) => {
+  const strategy = props.workspaceStrategy;
+  const fields = (strategy?.properties ?? {}) as Record<string, SchemaProperty>;
+  const strategyRequired = strategy?.required ?? [];
+  const launchRequired = schema?.required ?? [];
+  return (
+    ["worktree", "existing_worktree"].every((type) => fields.type?.enum?.includes(type)) &&
+    ["baseRef", "branch", "worktreePath"].every((field) => fields[field]?.type === "string") &&
+    Array.isArray(strategyRequired) &&
+    strategyRequired.every((field) => field === "type") &&
+    Array.isArray(launchRequired) &&
+    !launchRequired.includes("message")
+  );
+};
+
 function launchExplanation(supported: boolean, omissionPermitted: boolean) {
   if (supported)
     return "Launch schema supports saved settings and a request key. Replay requires separate continuity/retention proof.";
@@ -235,6 +266,12 @@ function launchExplanation(supported: boolean, omissionPermitted: boolean) {
     return "T3 launch schema does not establish support for omitting runtimeMode. Use a compatible T3 launch schema before starting or replaying this Run.";
   return "T3 launch schema cannot preserve the selected settings and request key.";
 }
+
+const launchedThread = (body: IdleLaunchReference): IdleLaunchReference => ({
+  projectId: body.projectId,
+  threadId: body.threadId,
+  link: body.link,
+});
 
 type ThreadExecutionRead = {
   thread: {
@@ -305,6 +342,24 @@ function executionObservation(threadId: string, body: ThreadExecutionRead): Exec
       };
     }),
   };
+}
+
+/** `t3_project_read` scripts; T3 runs a script asynchronously unless `async` is false. */
+function worktreeSetupScripts(body: unknown): WorktreeSetupScript[] {
+  const scripts = (body as { scripts?: unknown } | null)?.scripts;
+  if (!Array.isArray(scripts)) throw new Error("Invalid project scripts");
+  return scripts.flatMap((raw: unknown) => {
+    const script = raw as Record<string, unknown> | null;
+    if (
+      typeof script?.name !== "string" ||
+      typeof script.runOnWorktreeCreate !== "boolean" ||
+      !(script.async === undefined || typeof script.async === "boolean")
+    )
+      throw new Error("Invalid project script");
+    return script.runOnWorktreeCreate
+      ? [{ name: script.name, blocking: script.async === false }]
+      : [];
+  });
 }
 
 const PROJECT_TOOL_FIELDS = [
@@ -894,43 +949,62 @@ export class LiveT3Adapter implements T3Adapter {
     if (supported && config.retryScope) retryScope = (await config.retryScope()) ?? null;
     return { supported, retryScope, explanation };
   }
-  async inspectLaunchSupport(target: T3Endpoint): Promise<LaunchSupport> {
+  async inspectLaunchSupport(
+    target: T3Endpoint,
+    workspace: FlowWorkspace["mode"],
+  ): Promise<LaunchSupport> {
     return this.inspectContractSupport(target, {
       toolName: "t3_thread_launch",
       evaluate: ({ ready, schema, props }) => {
         const omissionPermitted = permitsOmittingRuntimeMode(schema);
-        const supported = omissionPermitted && ready && preservesLaunchSettings(schema, props);
-        return { supported, explanation: launchExplanation(supported, omissionPermitted) };
+        const launchable = omissionPermitted && ready && preservesLaunchSettings(schema, props);
+        if (launchable && workspace === "worktree" && !expressesWorktreeLaunches(schema, props))
+          return {
+            supported: false,
+            explanation:
+              "T3 launch schema cannot express idle worktree and existing_worktree launches. Update T3 before starting a worktree Run.",
+          };
+        return {
+          supported: launchable,
+          explanation: launchExplanation(launchable, omissionPermitted),
+        };
       },
       retryScope: async () => this.options.launchRecoveryScope?.(target.endpoint),
     });
   }
   async launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference> {
+    const body = await this.callLaunch(target, payload);
+    if (!body.runId || typeof body.runId !== "string" || typeof body.status !== "string")
+      throw Error("Invalid launch reference; outcome is uncertain");
+    return { ...launchedThread(body), runId: body.runId, status: body.status };
+  }
+  async launchIdleThread(
+    target: T3Endpoint,
+    payload: IdleLaunchPayload,
+  ): Promise<IdleLaunchReference> {
+    const body = await this.callLaunch(target, payload);
+    if (body.runId !== null || body.status !== null)
+      throw Error("Invalid idle launch reference; outcome is uncertain");
+    return launchedThread(body);
+  }
+  /** The launched thread's identity; the caller still proves its run evidence. */
+  private async callLaunch(target: T3Endpoint, payload: LaunchPayload | IdleLaunchPayload) {
     return this.withAuthorizedClient(target, async (client) => {
       const result = await client.callTool(
         { name: "t3_thread_launch", arguments: { ...payload } },
         { timeout: 30_000 },
       );
       if (result.isError) throw new LaunchRejected("T3 rejected the worker launch");
-      const body = this.structuredToolResult(result) as LaunchReference;
+      const body = this.structuredToolResult(result) as Record<string, unknown> | undefined;
       if (
         !body ||
         !body.threadId ||
         typeof body.threadId !== "string" ||
-        !body.runId ||
-        typeof body.runId !== "string" ||
         body.projectId !== payload.projectId ||
-        typeof body.status !== "string" ||
         !(body.link === null || typeof body.link === "string")
       )
         throw Error("Invalid launch reference; outcome is uncertain");
-      return {
-        projectId: body.projectId,
-        threadId: body.threadId,
-        runId: body.runId,
-        status: body.status,
-        link: body.link,
-      };
+      return body as Record<string, unknown> & IdleLaunchReference;
     });
   }
   async discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery> {
@@ -1221,6 +1295,21 @@ export class LiveT3Adapter implements T3Adapter {
       throw new Error("Invalid project page");
     return { projects: body.projects, nextCursor: body.nextCursor as number | null };
   }
+  async readWorktreeSetupScripts(target: T3ProjectRef): Promise<readonly WorktreeSetupScript[]> {
+    return this.withAuthorizedClient(target, async (client) =>
+      worktreeSetupScripts(
+        this.structuredToolResult(
+          await client.callTool(
+            {
+              name: "t3_project_read",
+              arguments: { projectId: target.projectId, environmentId: target.environmentId },
+            },
+            { timeout: 10_000 },
+          ),
+        ),
+      ),
+    );
+  }
   async resolveRepository(path: string): Promise<string> {
     if (!this.endpoint || !isLocalEndpoint(this.endpoint) || !isAbsolute(path))
       throw new Error("Existing local repository required.");
@@ -1239,6 +1328,32 @@ export class LiveT3Adapter implements T3Adapter {
     if (!root?.startsWith("worktree ")) throw new Error("Existing worktree required.");
     // An execution worktree belongs to its source project, rather than becoming another project.
     return realpath(root.slice(9));
+  }
+  async resolveBaseRef(workspaceRoot: string, base: FlowWorkspaceBase): Promise<string | null> {
+    if (!this.endpoint || !isLocalEndpoint(this.endpoint) || !isAbsolute(workspaceRoot))
+      throw new Error("Existing local repository required.");
+    // Exit status 1 is Git's answer for an absent ref; any other failure is not an answer.
+    const git = (args: string[]) =>
+      promisify(execFile)("git", ["-C", workspaceRoot, ...args], { timeout: 10_000 }).then(
+        (result) => result.stdout.trim(),
+        (error: { code?: unknown }) => {
+          if (error.code === 1) return null;
+          throw error;
+        },
+      );
+    const ref =
+      base.kind === "ref"
+        ? base.ref
+        : await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+    if (!ref) return null;
+    const commit = await git([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "--end-of-options",
+      `${ref}^{commit}`,
+    ]);
+    return commit ? ref : null;
   }
   async createProject(target: T3ProjectTarget): Promise<T3Project> {
     return this.projectSession(target.endpoint, async (client) => {

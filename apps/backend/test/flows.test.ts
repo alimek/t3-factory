@@ -2,7 +2,7 @@ import { assert, expect, it } from "@effect/vitest";
 import { factoryHarness } from "./support/factory.ts";
 import { readFlowAfterRestart } from "./support/domain-setup.ts";
 
-it("a named empty global Flow draft survives migrations and a fresh backend process", async (context) => {
+it("a named empty global Flow draft defaults to a new worktree from the default branch and survives a fresh backend process", async (context) => {
   // Arrange
   const harness = await factoryHarness(context);
   const factory = await harness.open();
@@ -16,6 +16,7 @@ it("a named empty global Flow draft survives migrations and a fresh backend proc
     connections: [],
     flowInput: { position: { x: 40, y: 50 }, targetBlockIds: [] },
   });
+  expect(saved.value.workspace).toStrictEqual({ mode: "worktree", base: { kind: "default" } });
   expect(saved.value.readiness.ready).toBe(false);
   expect(saved.value.readiness.issues[0]?.code).toBe("flow_input_required");
   await factory.close();

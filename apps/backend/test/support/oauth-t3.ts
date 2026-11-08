@@ -62,6 +62,7 @@ export async function oauthT3(
     readSchema?: Record<string, unknown>;
     runtimeActivity?: (args: Record<string, unknown>) => unknown;
     capabilities?: (args: Record<string, unknown>) => unknown;
+    projectRead?: (args: Record<string, unknown>) => unknown;
   } = {},
 ) {
   const projects: {
@@ -225,6 +226,7 @@ export async function oauthT3(
     ["t3_thread_wait", structuredTool(options.wait)],
     ["t3_thread_read", structuredTool(options.runtimeActivity)],
     ["orchestrator_capabilities", structuredTool(options.capabilities)],
+    ["t3_project_read", structuredTool(options.projectRead)],
   ]);
   /** Any other tool answers as `t3_environment_read`. */
   const readEnvironment = () => ({

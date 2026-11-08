@@ -10,6 +10,7 @@ import type {
   RunAttention,
   RunDetail,
   RunLifecycle,
+  RunWorkspaceDetail,
   TaskSummary,
 } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
@@ -17,6 +18,8 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
+import { readRunWorkspace, WORKTREE_REJECTED } from "./run-workspace.ts";
+import { launchesWorker } from "./runner-utils.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { currentWorkingMessages } from "./block-report.ts";
@@ -42,6 +45,8 @@ type RunEventRow = {
   engine_status: string | null;
 };
 
+const unresolved = ["pending", "reserved", "uncertain"];
+
 function runBlock(
   block: BlockRow,
   intents: readonly IntentRow[],
@@ -50,8 +55,8 @@ function runBlock(
   const recovering = intents.some(
     (intent) =>
       intent.block_id === block.block_id &&
-      intent.kind === "launch" &&
-      ["pending", "reserved", "uncertain"].includes(intent.state),
+      launchesWorker(intent) &&
+      unresolved.includes(intent.state),
   );
   return {
     blockId: block.block_id,
@@ -69,6 +74,48 @@ function runBlock(
     freshness: block.freshness,
     recovery: recovering ? "pending" : null,
   };
+}
+
+/** The Run workspace with its prepared idle workers that are not yet a Block's visit. A preparing worktree carries its creator
+ * launch's unresolved problem, if any. */
+function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly IntentRow[]) {
+  return Effect.gen(function* () {
+    const workspace = yield* readRunWorkspace(sql, runId);
+    if (workspace.mode === "checkout") return workspace satisfies RunWorkspaceDetail;
+    const prepared = yield* sql<{
+      block_id: string;
+      thread_id: string;
+      link: string | null;
+      prepared_at: string;
+    }>`SELECT p.block_id,p.thread_id,p.link,p.prepared_at FROM run_prepared_workers p JOIN run_blocks b ON b.run_id=p.run_id AND b.block_id=p.block_id WHERE p.run_id=${runId} AND b.thread_id IS NULL ORDER BY p.rowid`;
+    const creatorLaunch = intents.find(
+      (intent) =>
+        intent.kind === "launch" &&
+        intent.block_id === workspace.creatorBlockId &&
+        unresolved.includes(intent.state),
+    );
+    const problem =
+      workspace.state === "failed"
+        ? `${WORKTREE_REJECTED} No worker was launched into it.`
+        : workspace.state === "preparing"
+          ? (creatorLaunch?.problem ?? null)
+          : null;
+    const detail: RunWorkspaceDetail = {
+      mode: "worktree",
+      baseRef: workspace.baseRef,
+      state: workspace.state,
+      path: workspace.state === "bound" ? workspace.worktreePath : null,
+      branch: workspace.state === "bound" ? workspace.branch : null,
+      problem,
+      preparedWorkers: prepared.map((row) => ({
+        blockId: row.block_id,
+        threadId: row.thread_id,
+        link: threadHref(row.link),
+        preparedAt: row.prepared_at,
+      })),
+    };
+    return detail;
+  });
 }
 
 function runReport(report: ReportRow): RunDetail["reports"][number] {
@@ -246,6 +293,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
             flowId: definitions.flow.id,
             flowName: definitions.flow.name,
             definitions,
+            workspace: yield* runWorkspace(sql, id, intents),
             repositories: (yield* readWorkerRepositories(sql, id)).map(
               ({ runId: _runId, ...worker }) => worker,
             ),

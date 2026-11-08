@@ -11,8 +11,10 @@ type Success<T> = T extends { ok: true; value: infer V } ? V : never;
 type Value<K extends keyof Factory> = Factory[K] extends (...args: never[]) => infer R
   ? Success<Awaited<R>>
   : never;
+/** v0.2.0 Flows had no workspace setting; every worker used the project checkout. */
+type ReleasedFlow = Omit<Value<"getFlow">, "workspace">;
 /** v0.2.0 returned a Run's definitions as the snapshot it stored at Start. */
-type ReleasedSnapshot = { flow: Value<"getFlow">; agents: Value<"getAgent">[] };
+type ReleasedSnapshot = { flow: ReleasedFlow; agents: Value<"getAgent">[] };
 type CurrentRun = Value<"getRun">;
 /** v0.2.0 also returned report keys (retired per-turn report authority), Factory's own
  * completion evidence (activation coverage, remote work, Run-conversation control recoveries)
@@ -49,10 +51,10 @@ interface ReleasedCapture {
   clients: Value<"listClients">;
   approvedCredential: string;
   revokedCredential: string;
-  flow: Value<"getFlow">;
+  flow: ReleasedFlow;
   agent: Value<"getAgent">;
   /** Edited after the closed Run started, then removed from the catalog. */
-  retired: { flow: Value<"getFlow">; agent: Value<"getAgent"> };
+  retired: { flow: ReleasedFlow; agent: Value<"getAgent"> };
   /** Closed Finished. */
   closed: ReleasedRun;
   active: ReleasedRun;
@@ -63,14 +65,21 @@ interface ReleasedCapture {
   tasks: Value<"listTasks">;
 }
 
+/** A released Flow as current Factory reads it: the same revision in the project checkout. */
+export const checkoutFlow = <F extends object>(flow: F) => ({
+  ...flow,
+  workspace: { mode: "checkout" as const },
+});
+
 /**
  * The definitions a Run read from revisions must show for a released snapshot: the same saved
- * content, without the readiness and settings availability that were live checks at Start.
+ * content in the project checkout, without the readiness and settings availability that were
+ * live checks at Start.
  */
 function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
   const { readiness: _readiness, ...savedFlow } = flow;
   return {
-    flow: savedFlow,
+    flow: checkoutFlow(savedFlow),
     agents: agents.map(({ settingsStatus: _settingsStatus, ...saved }) => saved),
   };
 }
@@ -96,6 +105,8 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     repositories: [],
     gateOpen: lifecycle === "settled",
     definitions: capturedDefinitions(snapshot),
+    // Released Runs worked in the project checkout.
+    workspace: { mode: "checkout" },
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),
     activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),
