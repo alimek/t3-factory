@@ -171,8 +171,8 @@ export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVis
       id: activation.id,
       start: activation.createdAt,
       end:
-        run.reports.find((report) => report.activationId === activation.id)?.completionEligibleAt ??
-        null,
+        run.reports.findLast((report) => report.activationId === activation.id)
+          ?.completionEligibleAt ?? null,
       status: activation.phase,
     }));
 }

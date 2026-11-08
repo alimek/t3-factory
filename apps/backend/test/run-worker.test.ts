@@ -525,25 +525,6 @@ it("a question asked in a reply turn stays pending when Factory observes that tu
   expect(run.value.blocks[0]?.state).toBe("waiting");
 });
 
-it("an accepted worker final cannot be replaced by a different final", async (c) => {
-  // Arrange
-  const f = await directWorker(c);
-  expect((await f.f.runtime.submit(workerFinal(f.blockId))).code).toBe("ACCEPTED");
-
-  // Act
-  const result = await f.f.runtime.submit({
-    arguments: { ...workerFinal(f.blockId).arguments, message: "Changed result" },
-  });
-
-  // Assert
-  expect(result).toMatchObject({
-    code: "FINAL_CONFLICT",
-    state: "working",
-    allowedTransitions: [],
-    allowedExits: ["Done"],
-  });
-});
-
 it("completed direct worker recovery settles the original missing report only after source release", async (c) => {
   // Arrange
   const f = await completedWorkerRecovery(c);

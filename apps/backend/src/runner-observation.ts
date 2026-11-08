@@ -122,8 +122,9 @@ function blockState(
   activation: ActivationFacts,
 ) {
   if (problem) return "error";
-  if (activation.reported && finished) return "finished";
-  return activation.waiting ? "waiting" : "working";
+  // A question asked after a result is the Block's newer report.
+  if (activation.waiting) return "waiting";
+  return activation.reported && finished ? "finished" : "working";
 }
 
 function recordActivation(
@@ -148,10 +149,10 @@ function recordActivation(
       kind: RunAttention["kind"];
     }>`SELECT kind FROM run_attention WHERE run_id=${run.id} AND block_id=${block.block_id} AND kind IN ('execution-failed','missing-report') AND settled_at IS NULL ORDER BY kind LIMIT 1`;
     const problem = pending?.kind ?? null;
-    const phase = activation.reported
-      ? "reported"
-      : activation.waiting
-        ? "waiting-worker"
+    const phase = activation.waiting
+      ? "waiting-worker"
+      : activation.reported
+        ? "reported"
         : "assessing";
     yield* sql`UPDATE run_activations SET phase=CASE WHEN phase='finished' THEN phase ELSE ${phase} END,problem=${problem} WHERE id=${activation.id}`;
     yield* sql`UPDATE run_blocks SET execution_id=${latest?.runId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${worker.thread.pendingRequestCount},problem=${problem},state=${blockState(problem, worker, activation)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;

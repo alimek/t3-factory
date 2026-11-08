@@ -80,13 +80,8 @@ export function launchedBlockId(t3: ControlledT3, blockName = "Entry worker") {
   return /Factory Block id: ([^.\s]+)/.exec(launch?.payload.message ?? "")?.[1] ?? "";
 }
 
-export async function directWorker(
-  c: TestContext,
-  observe = true,
-  targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
-  requiresFeedback = false,
-) {
-  const fixture = await workerStart(c, targetBlockId, requiresFeedback);
+/** Starts the Run with the entry worker's first turn running. */
+async function startedWorker(fixture: Awaited<ReturnType<typeof prepared>>, observe: boolean) {
   seedFactoryWorker(fixture.t3, fixture.project);
   const started = await fixture.f.startRun(fixture.input);
   assert(started.ok, JSON.stringify(started));
@@ -94,14 +89,82 @@ export async function directWorker(
   if (observe) assert((await fixture.f.reconcileRuns()).ok);
   return { ...fixture, runId: started.value.id, blockId: launchedBlockId(fixture.t3) };
 }
-export const workerFinal = (blockId: string) => ({
-  arguments: {
-    blockId,
-    to: "finished",
-    exit: "done",
-    message: "Implemented the requested result.",
-  },
-});
+
+export async function directWorker(
+  c: TestContext,
+  observe = true,
+  targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
+  requiresFeedback = false,
+) {
+  return startedWorker(await workerStart(c, targetBlockId, requiresFeedback), observe);
+}
+
+/** The entry worker hands "Done" to Parallel work and "Revise" to Follow-up. */
+async function twoExitWorker(c: TestContext) {
+  const fixture = await prepared(c);
+  const source = fixture.flow.graph.blocks[0]!;
+  const revise = {
+    id: "revise",
+    name: "Revise",
+    description: "Needs another pass",
+    outcome: "custom" as const,
+    requiresFeedback: false,
+  };
+  const first = { ...source, exits: [...source.exits, revise] };
+  const flow = await fixture.f.updateFlow(fixture.flow.id, {
+    ...fixture.flow,
+    expectedRevision: fixture.flow.revision,
+    graph: {
+      ...fixture.flow.graph,
+      blocks: [
+        first,
+        { ...source, id: "parallel-block", name: "Parallel work" },
+        { ...source, id: "follow-up", name: "Follow-up" },
+      ],
+      connections: [
+        { sourceBlockId: first.id, exitId: "done", targetBlockId: "parallel-block" },
+        { sourceBlockId: first.id, exitId: "revise", targetBlockId: "follow-up" },
+      ],
+    },
+  });
+  assert(flow.ok);
+  return startedWorker({ ...fixture, flow: flow.value }, true);
+}
+
+/** The two-exit worker's "Done" result started Parallel work, and a later turn of the worker
+ * thread is running. */
+export async function releasedTwoExitWorker(c: TestContext) {
+  const f = await twoExitWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
+  assert((await f.f.reconcileRuns()).ok);
+  startWorkerTurn(f, "followup-execution", 2);
+  return f;
+}
+
+/** The worker replaced its first result before release, and its thread is finished. */
+export async function replacedBeforeRelease(c: TestContext) {
+  const f = await directWorker(c);
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "First draft."))).code === "ACCEPTED");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Final result."))).code === "ACCEPTED");
+  finishWorker(f);
+  return f;
+}
+
+/** A worker with no next Block reported its result, then asked the user a question. */
+export async function askedAfterResult(c: TestContext) {
+  const f = await directWorker(c, true, "");
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  const question = { blockId: f.blockId, to: "waiting", message: "Should I update the docs too?" };
+  assert((await f.f.runtime.submit({ arguments: question })).code === "ACCEPTED");
+  return f;
+}
+
+export const workerFinal = (
+  blockId: string,
+  message = "Implemented the requested result.",
+  exit = "done",
+) => ({ arguments: { blockId, to: "finished", exit, message } });
 /** The worker's runs end with `status` and T3 answers that the latest run's delegated and
  * background work have settled. */
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {
@@ -114,15 +177,16 @@ export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status
   settleThread(f.t3, prior.latestRunId ?? WORKER_EXECUTION, status);
 }
 
-/** T3's `t3_thread_wait` answer for the worker's `runId`. */
+/** T3's `t3_thread_wait` answer for `runId` of the entry worker or another `threadId`. */
 export function settleThread(
   t3: ControlledT3,
   runId: string,
   status = "completed",
   state: "settled" | "pending" = "settled",
+  threadId = WORKER_THREAD,
 ) {
-  t3.delegatedSettlements.set(JSON.stringify([WORKER_THREAD, runId]), {
-    threadId: WORKER_THREAD,
+  t3.delegatedSettlements.set(JSON.stringify([threadId, runId]), {
+    threadId,
     runId,
     state,
     status,

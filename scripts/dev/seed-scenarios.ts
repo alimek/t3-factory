@@ -192,6 +192,12 @@ async function parallelScenario(context: SeedContext, flowId: string) {
     "Two reviewers working in parallel",
     "Review the new project picker for code quality and keyboard accessibility. Each reviewer should report independently.",
   );
+  // The implementer replaces its first result before handoff; reviewers receive only the newer one.
+  run = await report(context, run, "worker", {
+    to: "finished",
+    exit: "Ready for review",
+    message: "The picker is ready for a code review.",
+  });
   run = await report(context, run, "worker", {
     to: "finished",
     exit: "Ready for review",

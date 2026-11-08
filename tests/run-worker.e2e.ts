@@ -219,7 +219,7 @@ test("a native worker reply completes the same activation and preserves its wait
   await app.screenshot("worker-answer-completed-same-visit");
 });
 
-test("a completed worker report releases review work as another direct worker", async ({
+test("a worker's replaced report releases only its newest result to review work", async ({
   app,
   screen,
   browser,
@@ -228,7 +228,7 @@ test("a completed worker report releases review work as another direct worker", 
   const found = await findRun(app.baseUrl, "UI worker · UI worker report release");
   await app.open(`/runs/${found.id}`);
 
-  // Act — the external worker reports through Factory's public runtime boundary.
+  // Act — the external worker reports a draft, then replaces it, through Factory's public runtime boundary.
   await workerEvent(app.baseUrl, "report");
 
   // Assert
@@ -238,11 +238,22 @@ test("a completed worker report releases review work as another direct worker", 
   await browser.reload();
   const saved = await readHistoryRun(app.baseUrl, found.id);
   expect(saved.threadBindings.map((b) => b.role)).toEqual(["worker", "worker"]);
-  expect(saved.reports[0]?.completionEligibleAt).not.toBe(null);
-  expect(saved.reports[0]?.exitId).toBe("review");
+  expect(saved.reports.map((r) => r.resultMessage)).toEqual([
+    "A first draft of the project picker change.",
+    "The project picker change is ready for review.",
+  ]);
+  expect(saved.reports[1]?.completionEligibleAt).not.toBe(null);
   expect(saved.activations.map((a) => a.blockId)).toEqual(["worker", "reviewer"]);
+  expect(saved.activations[1]?.cause).toContain(saved.reports[1]!.id);
   await expect(screen.getByRole("region", "Block activations")).toContainText(
     "Delivered → Review implementation",
+  );
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText(
+    "result version 2 replaces the earlier result",
+  );
+  await expect(screen.getByRole("region", "Timeline")).toContainText(
+    "Cancelled → Review implementation",
   );
   await expect(
     screen

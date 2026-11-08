@@ -1,4 +1,4 @@
-import { RetainedResult } from "./run-coordination.tsx";
+import { RetainedResult, resultVersion } from "./run-coordination.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import {
@@ -76,6 +76,12 @@ function reported(run: RunDetail, event: RunEvent): EventPhrase {
   if (!report) return { actorId: event.blockId, text: "reported" };
   if (report.status === "waiting")
     return { actorId: event.blockId, text: "waiting for your reply in T3 · not a final result" };
+  const version = resultVersion(run, report);
+  if (version > 1)
+    return {
+      actorId: event.blockId,
+      text: `result version ${version} replaces the earlier result`,
+    };
   return { actorId: event.blockId, text: "final result accepted · engine completion is separate" };
 }
 

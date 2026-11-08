@@ -45,7 +45,7 @@ export type RuntimeReply = {
 const WAITING_NEXT =
   "Factory waits for a user reply in this thread. Report again from any later turn: waiting replaces this question, finished completes the Block.";
 const FINISHED_NEXT =
-  "Factory keeps this final and releases downstream work after this thread and its delegated work settle.";
+  "This is the Block's result. Factory hands it off after this thread and its delegated work settle. A later finished report replaces it: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks.";
 
 /** The acknowledgement the model can act on: current Block state, remaining transitions, and Factory's next step. */
 export function acceptedTransition<T extends RuntimeReply>(
@@ -56,7 +56,7 @@ export function acceptedTransition<T extends RuntimeReply>(
   return {
     ...reply,
     state,
-    allowedTransitions: status === "waiting" ? ["waiting", "finished"] : [],
+    allowedTransitions: ["waiting", "finished"],
     next: status === "finished" ? FINISHED_NEXT : WAITING_NEXT,
   };
 }

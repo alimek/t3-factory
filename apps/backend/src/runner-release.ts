@@ -18,15 +18,8 @@ function explicitSourceReleaseGeneration(
   return Effect.gen(function* () {
     const current = yield* database.row(run.id);
     if (!current) return null;
-    const [report] = yield* database.transaction(
-      (sql) =>
-        sql<{
-          activation_id: string;
-        }>`SELECT activation_id FROM runtime_reports WHERE id=${intent.report_id}`,
-    );
     if (intent.report_id) {
-      if (!report) return null;
-      if (!(yield* releaseResult(database, t3, current, report.activation_id))) return null;
+      if (!(yield* releaseResult(database, t3, current, intent.report_id))) return null;
     } else {
       const answered = yield* database.transaction(
         (sql) =>

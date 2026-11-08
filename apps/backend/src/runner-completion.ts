@@ -56,8 +56,9 @@ export function completeRun(
       if (!fresh || (yield* liveContextId()) !== run.context_id) return;
       yield* database.mutate(id, (sql) =>
         Effect.gen(function* () {
+          // A replaced result's held handoffs are cancelled and owe no delivery.
           const pending =
-            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered'`;
+            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (kind='handoff' AND state='cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered'`;
           if (pending.length) return;
           if (!(yield* confirmClosure(sql, database.owner.token, fresh, "finished"))) return;
           yield* sql`UPDATE run_activations SET phase='finished',problem=NULL WHERE run_id=${id}`;

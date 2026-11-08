@@ -213,8 +213,8 @@ it("a worker reports its result by naming its Block id", async (c) => {
   expect(result).toMatchObject({
     code: "ACCEPTED",
     state: "working",
-    allowedTransitions: [],
-    next: "Factory keeps this final and releases downstream work after this thread and its delegated work settle.",
+    allowedTransitions: ["waiting", "finished"],
+    next: expect.stringContaining("A later finished report replaces it"),
   });
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);
