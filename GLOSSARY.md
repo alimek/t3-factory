@@ -50,8 +50,9 @@ A named outcome of a flow block whose connections determine which blocks run nex
 An agent's explicit report of its block's state and, where applicable, a selected exit and a message for subsequent blocks. A request for corrections is distinct from an inability to perform the work.
 
 **Final result**:
-The first accepted `finished` report for one Block activation, sent from any turn of
-the Block's worker thread with its Block id. It is immutable; acceptance and the worker thread being finished are
+The newest accepted `finished` report for one Block activation, sent from any turn of
+the Block's worker thread with its Block id. A later `finished` report for the same activation replaces it as a new
+version; earlier versions stay in the Run's history unchanged. Acceptance and the worker thread being finished are
 separate facts.
 
 **Run coordinator**:
@@ -133,7 +134,8 @@ The user's request to close a Run's handoff gate and reconcile cancellation of q
 **Handoff**:
 An accepted delivery from a block's selected exit to one connected recipient.
 It is held until the source worker thread is finished and no execution failure is
-pending on that Block; acceptance alone does not start work. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
+pending on that Block; acceptance alone does not start work. A held handoff is cancelled when its Final result is
+replaced before release. Each recipient and repeated arrival proceeds independently, using the routing rules of the Run's captured Flow revision.
 
 **Human occurrence**:
 One arrival at a Human step within a Run, with its own pending context and settlement. An occurrence from an Agent result activates only after that result is released; it has no T3 session. Answering or cancelling one occurrence does not settle another arrival.
