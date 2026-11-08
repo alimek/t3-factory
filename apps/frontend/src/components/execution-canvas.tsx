@@ -8,7 +8,7 @@ import {
 } from "@t3-factory/contracts";
 import { Bot, CircleHelp, Clock, User } from "lucide-react";
 import { CanvasZoomControls } from "./canvas-zoom-controls.tsx";
-import { fitGraphView, frameCanvasTargets, mergeGraphBounds } from "../canvas-fit.ts";
+import { fitGraphView, mergeGraphBounds } from "../canvas-fit.ts";
 import { selectExecutionTargets } from "../execution-focus.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { cn } from "@/lib/utils";
@@ -116,8 +116,6 @@ function executionFocusView(
   height: number,
 ) {
   const ids = new Set(targetIds);
-  if (!ids.size)
-    return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
   const rect = (block: FlowBlock) => ({
     ...block.position,
     width: BLOCK_WIDTH,
@@ -126,7 +124,7 @@ function executionFocusView(
   const targets = graph.blocks.filter((block) => ids.has(block.id)).map(rect);
   const [first, ...rest] = targets;
   if (!first) return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
-  return frameCanvasTargets(mergeGraphBounds(first, rest), width, height, FIT_PADDING);
+  return fitGraphView(mergeGraphBounds(first, rest), width, height, FIT_PADDING, 0);
 }
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -546,10 +544,7 @@ export function ExecutionCanvas({
     autoArrange,
   } = useExecutionLayout(run, observationUnavailable);
   const surface = useRef<HTMLElement>(null);
-  const focusTargets = selectExecutionTargets(
-    run.blocks,
-    run.blocks.some((block) => block.state === "error"),
-  );
+  const focusTargets = selectExecutionTargets(run.blocks);
   const { view, fitFlow, zoom, startPan, onKeyDown, following, focusChanged, followActive } =
     useCanvasViewport({
       surface,

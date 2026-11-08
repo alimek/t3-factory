@@ -67,7 +67,7 @@ function useViewAnimation(viewRef: { current: CanvasView }, setView: (view: Canv
       const from = viewRef.current;
       const start = performance.now();
       const step = (now: number) => {
-        const progress = Math.min(1, (now - start) / FOLLOW_ANIMATION_MS);
+        const progress = Math.max(0, Math.min(1, (now - start) / FOLLOW_ANIMATION_MS));
         const next = interpolateCanvasView(from, target, 1 - (1 - progress) ** 3);
         viewRef.current = next;
         setView(next);

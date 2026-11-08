@@ -87,16 +87,13 @@ test("a followed Run moves the view to the newly active Block", async ({
   browser,
 }) => {
   // Arrange
-  const canvas = await openFollowedReviewRun(app, screen, browser, "follow");
+  await openFollowedReviewRun(app, screen, browser, "follow");
 
   // Act
   await liveHandoff(app, "follow");
 
   // Assert
-  await expect
-    .poll(() => runCanvasHorizontalOffset(screen, "Review implementation"))
-    .toBeLessThan(2);
-  await expect(canvas).toHaveAttribute("data-following", "true");
+  await expectFollowingReview(screen);
   await app.screenshot("followed-run-moves-to-reviewer");
 });
 

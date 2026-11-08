@@ -1,5 +1,5 @@
 import { decideAutoFollow, selectExecutionTargets } from "../src/execution-focus.ts";
-import { frameCanvasTargets } from "../src/canvas-fit.ts";
+import { fitGraphView } from "../src/canvas-fit.ts";
 import { expect, it } from "vite-plus/test";
 import {
   canvasWheelZoomFactor,
@@ -101,7 +101,7 @@ it("a working Block takes precedence over an error Block", () => {
   ];
 
   // Act
-  const targets = selectExecutionTargets(blocks, true);
+  const targets = selectExecutionTargets(blocks);
 
   // Assert
   expect(targets).toStrictEqual(["active"]);
@@ -112,25 +112,23 @@ it("entry framing never enlarges a small target above 100 percent", () => {
   const target = { minX: 0, minY: 0, width: 200, height: 100 };
 
   // Act
-  const view = frameCanvasTargets(target, 1200, 800, { x: 0, top: 0, bottom: 0 });
+  const view = fitGraphView(target, 1200, 800, { x: 0, top: 0, bottom: 0 }, 0);
 
   // Assert
   expect(view).toStrictEqual({ x: 500, y: 350, scale: 1 });
 });
 
-it("a tall predecessor can be clipped without displacing the target", () => {
+it("an off-origin target is centered at full scale", () => {
   // Arrange
   const target = { minX: 500, minY: 100, width: 200, height: 100 };
-  const predecessor = { minX: 0, minY: -5000, width: 200, height: 10000 };
 
   // Act
-  const view = frameCanvasTargets(target, 1200, 800, { x: 0, top: 0, bottom: 0 });
+  const view = fitGraphView(target, 1200, 800, { x: 0, top: 0, bottom: 0 }, 0);
 
   // Assert
   expect(view).toStrictEqual({ x: 0, y: 250, scale: 1 });
   expect(view.x + (target.minX + target.width / 2) * view.scale).toBe(600);
   expect(view.y + (target.minY + target.height / 2) * view.scale).toBe(400);
-  expect(predecessor.height * view.scale).toBeGreaterThan(800);
 });
 
 it("a target at the graph edge stays centered", () => {
@@ -138,7 +136,7 @@ it("a target at the graph edge stays centered", () => {
   const target = { minX: -1000, minY: 0, width: 200, height: 100 };
 
   // Act
-  const view = frameCanvasTargets(target, 1000, 600, { x: 0, top: 0, bottom: 0 });
+  const view = fitGraphView(target, 1000, 600, { x: 0, top: 0, bottom: 0 }, 0);
 
   // Assert
   expect(view).toStrictEqual({ x: 1400, y: 250, scale: 1 });
@@ -149,7 +147,7 @@ it("parallel target bounds fit together inside the padded viewport", () => {
   const targets = { minX: 200, minY: 100, width: 200, height: 1000 };
 
   // Act
-  const view = frameCanvasTargets(targets, 1200, 800, { x: 48, top: 64, bottom: 80 });
+  const view = fitGraphView(targets, 1200, 800, { x: 48, top: 64, bottom: 80 }, 0);
 
   // Assert
   expect(view.scale).toBeCloseTo(0.656);
@@ -165,7 +163,7 @@ it("waiting and parallel working Blocks are all targets", () => {
   ];
 
   // Act
-  const targets = selectExecutionTargets(blocks, false);
+  const targets = selectExecutionTargets(blocks);
 
   // Assert
   expect(targets).toStrictEqual(["human", "worker"]);
@@ -176,7 +174,7 @@ it("no active Block selects the whole-graph overview", () => {
   const blocks = [{ blockId: "done", state: "finished" as const }];
 
   // Act
-  const targets = selectExecutionTargets(blocks, false);
+  const targets = selectExecutionTargets(blocks);
 
   // Assert
   expect(targets).toStrictEqual([]);
@@ -190,7 +188,7 @@ it("a failed Run targets its error-state Blocks", () => {
   ];
 
   // Act
-  const targets = selectExecutionTargets(blocks, true);
+  const targets = selectExecutionTargets(blocks);
 
   // Assert
   expect(targets).toStrictEqual(["failed"]);
@@ -334,7 +332,7 @@ it("a Run that fails while following animates to its error Block", () => {
   // Act
   const action = decideAutoFollow({
     seen: ["worker"],
-    targets: selectExecutionTargets(blocks, true),
+    targets: selectExecutionTargets(blocks),
     following: true,
     visibility: "visible",
     reducedMotion: false,
@@ -351,7 +349,7 @@ it("a Run that succeeds while following keeps the view on its last Block", () =>
   // Act
   const action = decideAutoFollow({
     seen: ["worker"],
-    targets: selectExecutionTargets(blocks, false),
+    targets: selectExecutionTargets(blocks),
     following: true,
     visibility: "visible",
     reducedMotion: false,

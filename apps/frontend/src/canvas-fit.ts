@@ -41,13 +41,3 @@ export function fitGraphView(
       padding.top + (available - bounds.height * scale) / 2 - (contentInsetY + bounds.minY) * scale,
   };
 }
-
-/** Fit only the target bounds; surrounding blocks remain visible wherever they fit at this scale. */
-export function frameCanvasTargets(
-  target: GraphBounds,
-  width: number,
-  height: number,
-  padding: { x: number; top: number; bottom: number },
-): CanvasView {
-  return fitGraphView(target, width, height, padding, 0);
-}
