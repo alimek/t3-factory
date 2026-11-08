@@ -196,7 +196,7 @@ test("a worker idle in working shows its message on the canvas and in its Run ro
   // Arrange
   const found = await findRun(
     app.baseUrl,
-    "Demo · Monitoring · Agent is watching CI for the search fix",
+    "UI worker · Monitoring · Agent is watching CI for the search fix",
   );
 
   // Act
@@ -209,7 +209,7 @@ test("a worker idle in working shows its message on the canvas and in its Run ro
   await expect(
     screen
       .getByRole("navigation", "Open Runs")
-      .getByRole("link", /^Demo · Monitoring · Agent is watching CI/),
+      .getByRole("link", /^UI worker · Monitoring · Agent is watching CI/),
   ).toContainText("CI checks are still running");
   await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   await app.screenshot("worker-working-message");

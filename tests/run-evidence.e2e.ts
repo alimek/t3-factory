@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
-import { test } from "@e2e-dev/web";
+import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
+import { workerEvent } from "./support/worker.ts";
+
+beforeEach(async ({ app }) => {
+  await workerEvent(app.baseUrl, "prepare");
+});
 
 test("long native identities remain readable in the selected waiting Block after reload", async ({
   app,
@@ -12,7 +17,7 @@ test("long native identities remain readable in the selected waiting Block after
   await browser.setViewport({ width: 1440, height: 1100 });
   const found = await findRun(
     app.baseUrl,
-    "Demo · Needs input · Agent asked about empty-state wording",
+    "UI worker · Needs input · Agent asked about empty-state wording",
   );
   const run = await readHistoryRun(app.baseUrl, found.id);
   const worker = run.blocks.find((block) => block.blockId === "worker");
@@ -50,7 +55,7 @@ test("a worker whose own turn ended while its subagents still run stays working 
 }) => {
   // Arrange
   await browser.setViewport({ width: 1440, height: 1100 });
-  const found = await findRun(app.baseUrl, "Demo · Working · Improve the project picker");
+  const found = await findRun(app.baseUrl, "UI worker · Working · Improve the project picker");
   const run = await readHistoryRun(app.baseUrl, found.id);
   expect(run.blocks.find((block) => block.blockId === "worker")).toMatchObject({
     state: "working",
