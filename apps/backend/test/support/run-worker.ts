@@ -57,6 +57,7 @@ function seedFactoryWorker(
     threadId: WORKER_THREAD,
     projectId: project.projectId,
     workspaceRoot: project.workspaceRoot,
+    branch: null,
     link: `t3://threads/${WORKER_THREAD}`,
     activeRunId: WORKER_EXECUTION,
     latestRunId: WORKER_EXECUTION,

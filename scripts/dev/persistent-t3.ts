@@ -99,6 +99,7 @@ export class PersistentT3 extends ControlledT3 {
       threadId,
       projectId: parent.projectId,
       workspaceRoot: parent.workspaceRoot,
+      branch: parent.branch,
       link: `t3://threads/${threadId}`,
       activeRunId: runId,
       latestRunId: runId,

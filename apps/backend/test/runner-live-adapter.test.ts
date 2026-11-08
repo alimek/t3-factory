@@ -118,6 +118,41 @@ it("launch support permits an absent runtime mode without inventing replay proof
   expect(support.retryScope).toBe(null);
 });
 
+it("T3's workspace strategy schema supports idle worktree launches", async (c) => {
+  // Arrange
+  const { adapter, external } = await launchFixture(c);
+
+  // Act
+  const support = await adapter.inspectWorktreeLaunchSupport({ endpoint: external.endpoint });
+
+  // Assert
+  expect(support.supported).toBe(true);
+});
+
+it("worktree launch support is refused when the strategy cannot name an existing worktree", async (c) => {
+  // Arrange
+  const { adapter, external, schema } = await launchFixture(c);
+  Object.assign(schema.properties!, {
+    workspaceStrategy: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["root", "worktree"] },
+        baseRef: { type: "string" },
+        branch: { type: "string" },
+      },
+    },
+  });
+
+  // Act
+  const support = await adapter.inspectWorktreeLaunchSupport({ endpoint: external.endpoint });
+
+  // Assert
+  expect(support).toMatchObject({
+    supported: false,
+    explanation: expect.stringMatching(/worktree/),
+  });
+});
+
 it("Start rejects a schema requiring runtime mode before accepting work", async (c) => {
   // Arrange
   const { adapter, external, schema } = await launchFixture(c);
@@ -155,6 +190,25 @@ it("SDK launch without an exact execution reference remains uncertain", async (c
   await expect(result).rejects.toThrow(/uncertain/);
 });
 
+it("an idle launch into the Run worktree is accepted with no run", async (c) => {
+  // Arrange
+  const fixture = await launchFixture(c);
+
+  // Act
+  const reference = await fixture.adapter.launchIdleThread(
+    { endpoint: fixture.external.endpoint },
+    fixture.idlePayload,
+  );
+
+  // Assert
+  expect(reference).toStrictEqual({
+    projectId: "neutral",
+    threadId: "thread",
+    link: "t3://threads/thread",
+  });
+  expect(fixture.seen).toStrictEqual([fixture.idlePayload]);
+});
+
 it("execution observation preserves native requests and renewed work references", async (c) => {
   // Arrange
   const { adapter, external } = await launchFixture(c);
@@ -168,6 +222,24 @@ it("execution observation preserves native requests and renewed work references"
   expect(observation.latestRunId).toBe("newer-direct-activity");
   expect(observation.recentRuns[1]?.ordinal).toBe(2);
   expect(observation.recentRuns[0]?.sourceAt).toBe("2026-11-01T08:01:00.000Z");
+});
+
+it("a worktree thread read exposes the worktree path and branch T3 bound", async (c) => {
+  // Arrange
+  const fixture = await launchFixture(c);
+  fixture.attachWorktree();
+
+  // Act
+  const observation = await fixture.adapter.readExecution(
+    { endpoint: fixture.external.endpoint },
+    "thread",
+  );
+
+  // Assert
+  expect(observation).toMatchObject({
+    workspaceRoot: "/worktrees/factory-run-1",
+    branch: "factory/run-1",
+  });
 });
 
 it("send replay proof stays independent from launch recovery scope", async (c) => {
