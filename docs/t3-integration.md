@@ -74,10 +74,10 @@ MCP server at `/mcp` on the backend's host-local listener (`http://127.0.0.1:431
 Each harness configuration registers it once by URL as `factory-runtime`; the harness connects at
 session start and lists the tools the running backend serves. Each call names the Block by its
 Block id; Factory returns a durable acknowledgement and never parses assistant text.
-Installation also writes the `$factory-block` skill beside the harness configuration. The skill names
-which tool to use when and how to pass the Block id; protocol rules live in the tool descriptions, so
-an application update changes them without touching harness files. The worker's first message starts
-with `$factory-block` followed by a `Factory Block id: <id>.` line.
+Installation also writes the `$factory-block` skill beside the harness configuration. The skill carries
+the worker's [reporting obligations](#reporting-authority); argument rules and Factory's next step live
+in the tool descriptions and replies, so an application update changes those without touching harness
+files. The worker's first message starts with `$factory-block` followed by a `Factory Block id: <id>.` line.
 
 ### Installation actions
 
@@ -91,11 +91,11 @@ publish the same per-provider `reporting` status, and Start blocks an unsupporte
 - **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
   Factory's own entry. **Repair installation** appears only when Factory can repair what it owns:
   a missing or outdated `$factory-block` skill, or Factory's entry pointing at another backend
-  address (a changed `port` or `FACTORY_PORT`). An application upgrade needs no Repair; a fresh
-  harness session sees the new tools. Any other `factory-runtime` entry, including a command
-  entry from an earlier stdio bridge, is a conflict to remove by hand. Conflicts, inaccessible
-  homes, unsupported providers and remote T3 hosts show diagnostics only; unknown homes and homes
-  on those hosts get manual-setup guidance.
+  address (a changed `port` or `FACTORY_PORT`). An application upgrade needs Repair only when it
+  changes the skill; a fresh harness session sees the new tools. Any other `factory-runtime`
+  entry, including a command entry from an earlier stdio bridge, is a conflict to remove by hand.
+  Conflicts, inaccessible homes, unsupported providers and remote T3 hosts show diagnostics only;
+  unknown homes and homes on those hosts get manual-setup guidance.
 - Installation is per effective home and is shared by all Agents, models and Projects using it.
   Studio's Agent list and editor show the selected provider's reporting installation status, including the actual
   diagnostic and **Open Agent reporting** for repair. Changing the provider updates the editor's status before saving.
@@ -239,16 +239,16 @@ origin is refused, so a browser page cannot drive it. It requires no credential.
   including a subagent the worker hands it to. Factory MCP is host-local for one user, so the
   expected failure is Agent confusion, not attack; the skill and tool descriptions tell
   workers not to share it.
-- **Installation freshness.** The `$factory-block` skill is part of installation readiness. A
-  missing or outdated skill, including one from before Block ids, is repairable and blocks
-  Start.
+- **Installation freshness.** The `$factory-block` skill is part of installation readiness.
+  Readiness compares each installed copy with the backend's exact skill text, so any skill change
+  marks earlier copies outdated. A missing or outdated skill is repairable and blocks Start.
 - **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
   is `INVALID_EXIT`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.
 
 ## Reporting authority
 
-The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final working and conversation waiting reports, held handoffs and manual Request report. The `$factory-block` skill carries these obligations. Request report repeats them on the same worker thread.
+The [Runner report contract](runner.md#report-acceptance) defines activation results, non-final working and conversation waiting reports, held handoffs and manual Request report. The `$factory-block` skill carries these obligations to the worker on every turn: it reports `working` rather than `finished` while CI, review, delegated or background work is pending, puts evidence and artifact references in its result, treats Request report as an assessment of existing work and keeps Factory tools with the Block's own agent. Request report repeats the report rules on the same worker thread.
 
 Report rejections return `code`, a static `reason` and a safe `next` step. A rejection for a
 known Block of an open Run also appears in Run attention; an unknown or missing Block id
