@@ -18,6 +18,7 @@
     "@tanstack/react-router-devtools": "1.167.2",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "effect": "4.1.2",
     "elkjs": "0.10.0",
     "lucide-react": "1.59.0",
     "radix-ui": "1.8.1",

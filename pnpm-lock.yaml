@@ -293,6 +293,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      effect:
+        specifier: 4.1.2
+        version: 4.1.2
       elkjs:
         specifier: 0.10.0
         version: 0.10.0
@@ -334,7 +337,11 @@ importers:
         specifier: 1.4.0
         version: 1.4.0(@types/node@24.10.1)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(typescript@5.9.3)
 
-  packages/contracts: {}
+  packages/contracts:
+    dependencies:
+      effect:
+        specifier: 4.1.2
+        version: 4.1.2
 
   packages/domain-validation:
     dependencies:
