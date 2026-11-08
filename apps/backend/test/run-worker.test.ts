@@ -2,6 +2,7 @@ import { assert, expect, it } from "@effect/vitest";
 import {
   completedWorkerRecovery,
   completedWorkingRecovery,
+  waitingWorkerRecovery,
 } from "./support/run-worker-recovery.ts";
 import {
   workerStart,
@@ -395,6 +396,7 @@ it("a worker's waiting report is a question in its own worker thread", async (c)
     run.value.threadBindings[0]?.id,
   );
   expect(run.value.reports).toStrictEqual([]);
+  expect(run.value.executions[0]?.reportStatus).toBe("waiting");
 });
 
 it("an explicit answer is delivered to the exact worker question", async (c) => {
@@ -416,6 +418,23 @@ it("an explicit answer is delivered to the exact worker question", async (c) => 
       (e) => e.executionId === [...f.t3.sends.values()][0]?.reference.runId,
     )?.activationId,
   ).toBe(result.value.activations[0]?.id);
+});
+
+it("a working report replacing a question records working on that work period", async (c) => {
+  // Arrange
+  const f = await waitingWorker(c);
+
+  // Act
+  const result = await f.f.runtime.submit(workerWorking(f.blockId));
+
+  // Assert
+  expect(result.code).toBe("ACCEPTED");
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.executions[0]?.reportStatus).toBe("working");
+  expect(run.value.attention.find((a) => a.id === f.question.id)?.settledAt).toEqual(
+    expect.any(String),
+  );
 });
 it("missing-report recovery targets the original worker and retains its activation", async (c) => {
   // Arrange
@@ -622,6 +641,33 @@ it("Request report on a worker idle in working settles once the assessment turn'
   expect(run.value.recoveries).toMatchObject([
     { attentionId: null, executionId: f.executionId, settledAt: expect.any(String) },
   ]);
+});
+
+it("a completed Request report turn that asks the user settles its recovery and keeps Needs input", async (c) => {
+  // Arrange
+  const f = await waitingWorkerRecovery(c);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.recoveries).toMatchObject([
+    { executionId: f.executionId, settledAt: expect.any(String) },
+  ]);
+  expect(run.value.executions.find((e) => e.executionId === f.executionId)?.reportStatus).toBe(
+    "waiting",
+  );
+  expect(run.value.attention.find((a) => a.kind === "missing-report")?.settledAt).toEqual(
+    expect.any(String),
+  );
+  expect(run.value.attention.find((a) => a.kind === "conversation-waiting")).toMatchObject({
+    executionId: f.executionId,
+    settledAt: null,
+    message: "Which audience?",
+  });
+  expect(run.value.blocks[0]?.state).toBe("waiting");
 });
 
 it("a Human answer releases its outgoing handoff without waiting for worker evidence", async (c) => {

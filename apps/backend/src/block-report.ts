@@ -70,13 +70,16 @@ export function repeatedReport(
 }
 
 /** What every accepted report ends before it is recorded: the activation's working report, the
- * Block's question, its execution failures and its missing reports, keeping their history. */
+ * Block's question, its execution failures and its missing reports, keeping their history.
+ * Record the accepted status on the work period for presentation and linked recovery. */
 export function settleForReport(
   sql: SqlClient.SqlClient,
   { runRow, block, activationId }: ReportTarget,
   time: string,
+  status: CurrentReport["status"],
 ) {
   return Effect.gen(function* () {
+    yield* sql`UPDATE run_executions SET report_status=${status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
     yield* sql`UPDATE working_reports SET replaced_at=${time} WHERE activation_id=${activationId} AND replaced_at IS NULL`;
     yield* settleQuestions(sql, runRow.id, block.block_id, time, true);
     yield* settlePending(

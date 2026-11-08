@@ -184,6 +184,9 @@ test("reloading a waiting worker retains its exact question link", async ({
   );
   expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(run.activations);
   await app.screenshot("worker-question-after-reload");
+  await screen.getByRole("heading", "Work periods", { exact: true }).scrollIntoView();
+  await expect(screen.getByText(/Report: accepted waiting/)).toBeVisible();
+  await app.screenshot("worker-waiting-work-period");
 });
 
 test("a worker idle in working shows its message on the canvas and in its Run row", async ({
@@ -225,6 +228,8 @@ test("Request report asks a worker idle in working to assess its existing work",
   await screen.getByRole("button", "Agent Implement change", { exact: false }).tap();
   const details = screen.getByRole("complementary", "Block details");
   await expect(details).toContainText("Opened pull request #42");
+  await expect(details.getByRole("listitem").getByText("working", { exact: true })).toBeVisible();
+  await app.screenshot("worker-working-visit");
 
   // Act
   await details.getByRole("button", "Request report", { exact: true }).tap();

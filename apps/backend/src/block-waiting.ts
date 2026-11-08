@@ -28,7 +28,7 @@ export function acceptWaiting(
       "waiting",
       "waiting",
     );
-    yield* settleForReport(sql, target, time);
+    yield* settleForReport(sql, target, time, report.status);
     yield* sql`UPDATE run_blocks SET state='waiting',report_status='waiting',problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
     yield* sql`INSERT INTO run_attention(id,run_id,block_id,execution_id,kind,source_key,appeared_at,message,binding_id) VALUES(${attentionId},${runRow.id},${block.block_id},${executionId},'conversation-waiting',${"attention:" + attentionId},${time},${report.message!},${binding?.id ?? null})`;
     yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${block.execution_id},${binding?.id ?? null},'attention-appeared',${"attention:" + attentionId},${attentionId},${time})`;

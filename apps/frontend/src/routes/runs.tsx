@@ -649,7 +649,13 @@ function BlockDetails({
                         {visitSpan(visit)} · {visit.id}
                       </p>
                     </div>
-                    <StatePill state={visit.status} />
+                    <StatePill
+                      state={
+                        block.kind === "agent" && number === visits.length
+                          ? recorded.state
+                          : visit.status
+                      }
+                    />
                   </li>
                 ))}
             </ul>

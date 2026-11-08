@@ -98,7 +98,7 @@ export type ExecutionRow = {
   block_id: string;
   execution_id: string;
   engine_status: string | null;
-  report_status: "waiting" | "finished" | null;
+  report_status: "waiting" | "working" | "finished" | null;
   working_reported: number;
   observed_at: string | null;
   ordinal: number | null;

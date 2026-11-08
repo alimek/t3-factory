@@ -30,18 +30,37 @@ async function reportedRecoveryTurn<F extends Awaited<ReturnType<typeof workerRe
   f: F,
 ) {
   assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  completeRecoveryTurn(f);
+  await f.f.reconcileRuns();
+  return f;
+}
+
+function completeRecoveryTurn(f: Awaited<ReturnType<typeof workerRecoveryTurn>>) {
   f.t3.sends.set(f.sent.payload.clientRequestId, {
     ...f.sent,
     reference: { ...f.sent.reference, status: "completed" },
   });
   finishWorker(f);
-  await f.f.reconcileRuns();
-  return f;
 }
 
 export async function completedWorkerRecovery(c: TestContext) {
   const f = await missingWorkerReport(c);
   return reportedRecoveryTurn(await workerRecoveryTurn(f, f.missing.blockId));
+}
+
+/** The Request report turn asks the user a question and finishes in T3. */
+export async function waitingWorkerRecovery(c: TestContext) {
+  const missing = await missingWorkerReport(c);
+  const f = await workerRecoveryTurn(missing, missing.missing.blockId);
+  assert(
+    (
+      await f.f.runtime.submit({
+        arguments: { blockId: f.blockId, to: "waiting", message: "Which audience?" },
+      })
+    ).code === "ACCEPTED",
+  );
+  completeRecoveryTurn(f);
+  return f;
 }
 
 /** Request report on a worker idle in working, answered with the Block's result. */

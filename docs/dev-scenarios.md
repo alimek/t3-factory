@@ -41,7 +41,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Run title after prefix | Initial state | Useful interaction |
 | --- | --- | --- |
 | Working · Improve the project picker | Open, one working Agent whose own turn completed while two simulated subagents still run, so T3's delegated wait stays pending | Inspect the working Block without a missing-report Problem; Archive (with confirmation); launch another Run |
-| Monitoring · Agent is watching CI for the search fix | Open, one Agent that reported `working` with a message about running CI checks; its turn completed and its worker thread is finished | Read the message on the canvas, in the Run row and in Block details with no missing-report Problem, and the accepted working report in Work periods; **Request report** queues one assessment turn on the same worker |
+| Monitoring · Agent is watching CI for the search fix | Open, one Agent that reported `working` with a message about running CI checks; its turn completed and its worker thread is finished | Read the message on the canvas, in the Run row and in Block details with no missing-report Problem, the working visit badge and the accepted working report in Work periods; **Request report** queues one assessment turn on the same worker |
 | Waiting for your review | Pending Human occurrence after implementation/review | Approve or request changes with feedback |
 | Applying your requested changes | Answered Human occurrence and renewed Agent work | Inspect correction handoff and work history |
 | Two reviewers working in parallel | Two active reviewer blocks; the implementer replaced its first result before handoff | Inspect independent branches and both result versions in the timeline: the first reads **Replaced by version 2** with cancelled handoffs, and only the second reached the reviewers; Archive |
@@ -52,7 +52,7 @@ monograms and repository images are covered by controlled fixtures rather than t
 | Archived · Earlier navigation experiment | Archived right after its worker launched; hidden from navigation | Check it is absent from the sidebar; open `/runs/<id>` (id from `/api/runs?projectId=<Atlas id>`) to read its history with the **Archived** badge and a stopped Block; no relaunch action |
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
-| Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message and Open in T3 (no Factory answer form); controlled backend fixtures cover replies after a reportless reply, a final or a replacing question from a later turn, and restart |
+| Needs input · Agent asked about empty-state wording | Agent waiting with a conversation question | Read the waiting message, accepted waiting in Work periods and Open in T3 (no Factory answer form); controlled backend fixtures cover replies after a reportless reply, a final or a replacing question from a later turn, a Request report answered with a question, and restart |
 
 **Worker thread completion coverage.** The Working scenario shows a worker held by
 unsettled delegated work; Factory reads only the worker thread and T3's delegated wait, never

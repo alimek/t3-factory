@@ -124,7 +124,7 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
         state,
       );
       const recipients = JSON.stringify(route.recipients);
-      yield* settleForReport(sql, target, time);
+      yield* settleForReport(sql, target, time, report.status);
       const handsOff = yield* replaceHeldResults(sql, runRow.id, activationId, route.exitId, time);
       yield* sql`INSERT INTO runtime_reports(id,run_id,block_id,execution_id,fingerprint,status,exit_id,recipients_json,pending_message,acknowledgement_json,accepted_at,activation_id,result_message) VALUES(${id},${runRow.id},${block.block_id},${block.execution_id},${content},${report.status},${route.exitId},${recipients},${handsOff && route.recipients.length ? (report.message ?? "") : null},${JSON.stringify(reply)},${time},${activationId},${report.message ?? null})`;
       yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${block.block_id},${block.execution_id},'report-accepted',${"report:" + id},${id},${time})`;
@@ -137,7 +137,6 @@ export function openRunnerReports(database: RunnerDatabase, lifecycle: RunnerLif
           pending_message: report.message ?? "",
           accepted_at: time,
         });
-      yield* sql`UPDATE run_executions SET report_status=${report.status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
       yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
       return reply;

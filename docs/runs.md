@@ -171,8 +171,8 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   "reported · the Run is Active again", "archived"). Every
   result version keeps its exit, message and deliveries; an earlier version reads **Replaced by version N** and its cancelled
   handoffs **Cancelled**, and a same-exit update after hand-off says it was not handed off again. Activations show the current
-  result. **Work periods** list each exact execution with its own state, the finished or working report accepted during it, and
-  its T3 link; elapsed times are approximate observations.
+  result, and the latest Agent visit shows the Block's current execution state. **Work periods** list each exact execution with
+  its own state, the finished, waiting or working report accepted during it, and its T3 link; elapsed times are approximate observations.
 
 ## Human steps
 
