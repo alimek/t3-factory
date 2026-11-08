@@ -1,10 +1,16 @@
 import type { ConnectionLiveMessage, T3Connection } from "@t3-factory/contracts";
-import { LiveOwner, type LiveDelivery, type SubscriptionEvents } from "../../src/live/owner.ts";
+import {
+  LiveOwner,
+  type LiveDelivery,
+  type LiveWatch,
+  type SubscriptionEvents,
+} from "../../src/live/owner.ts";
 
 type FakeSession = {
   readonly connected: () => void;
   readonly disconnected: () => void;
   readonly subscriptions: SubscriptionEvents[];
+  readonly watches: LiveWatch[];
   closed: boolean;
 };
 
@@ -16,11 +22,12 @@ export function liveHarness() {
   let delivery: LiveDelivery = "current";
   const owner = new LiveOwner({
     open(events) {
-      const session: FakeSession = { ...events, subscriptions: [], closed: false };
+      const session: FakeSession = { ...events, subscriptions: [], watches: [], closed: false };
       sessions.push(session);
       return {
-        subscribe(_watch, subscription) {
+        subscribe(watch, subscription) {
           session.subscriptions.push(subscription);
+          session.watches.push(watch);
           return () => undefined;
         },
         close() {
@@ -64,17 +71,13 @@ const connection = (state: T3Connection["state"]): T3Connection => ({
   contract: null,
 });
 
-export const snapshot = (state: T3Connection["state"]): ConnectionLiveMessage => ({
-  _tag: "snapshot",
-  connection: connection(state),
-});
+export const envelope = <M>(messages: readonly M[], current = true) => ({ current, messages });
 
-export const changed = (state: T3Connection["state"]): ConnectionLiveMessage => ({
-  _tag: "changed",
-  connection: connection(state),
-});
+export const snapshot = (state: T3Connection["state"], current = true) =>
+  envelope<ConnectionLiveMessage>([{ _tag: "snapshot", connection: connection(state) }], current);
 
-export const checked = (checkedAt: string): ConnectionLiveMessage => ({
-  _tag: "checked",
-  checkedAt,
-});
+export const changed = (state: T3Connection["state"]) =>
+  envelope<ConnectionLiveMessage>([{ _tag: "changed", connection: connection(state) }]);
+
+export const checked = (checkedAt: string) =>
+  envelope<ConnectionLiveMessage>([{ _tag: "checked", checkedAt }]);

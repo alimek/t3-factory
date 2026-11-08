@@ -6,7 +6,7 @@ import { useLiveScope } from "./live-connection.ts";
 export function runScope(runId: string): LiveScope<RunLiveMessage, RunDetail> {
   return {
     key: `run:${runId}`,
-    watch: { rpc: "WatchRun", runId },
+    part: { kind: "run", runId },
     snapshot: (message) => message.run,
     apply: applyRunChange,
   };

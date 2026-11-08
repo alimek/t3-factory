@@ -12,22 +12,29 @@ import { WebSocket } from "@effect/platform-node/NodeWS";
 import {
   LIVE_PATH,
   applyRunChange,
+  type LiveEnvelope,
+  type NavigationLiveMessage,
   type RunDetail,
+  type RunViewLiveMessage,
   type RunLiveMessage,
 } from "@t3-factory/contracts";
 import { FactoryLive } from "@t3-factory/contracts/live-rpc";
+import type { LiveStreams } from "../../src/live-streams.ts";
 
 /**
- * A running subscription to a live stream, as one window consumes it: every message in
- * arrival order, waits for a condition over them, and the stream's end.
+ * A running subscription to a live stream, as one window consumes it: every envelope and the
+ * messages they carry in arrival order, waits for a condition over the messages, and the
+ * stream's end.
  */
-export function subscribe<A, E>(context: TestContext, stream: Stream.Stream<A, E>) {
+export function subscribe<A, E>(context: TestContext, stream: Stream.Stream<LiveEnvelope<A>, E>) {
+  const envelopes: LiveEnvelope<A>[] = [];
   const messages: A[] = [];
   const waiters = new Set<() => void>();
   const fiber = Effect.runFork(
-    Stream.runForEach(stream, (message) =>
+    Stream.runForEach(stream, (envelope) =>
       Effect.sync(() => {
-        messages.push(message);
+        envelopes.push(envelope);
+        messages.push(...envelope.messages);
         for (const wake of waiters) wake();
       }),
     ),
@@ -35,6 +42,7 @@ export function subscribe<A, E>(context: TestContext, stream: Stream.Stream<A, E
   const ended = new Promise<Exit.Exit<void, E>>((resolve) => fiber.addObserver(resolve));
   context.onTestFinished(() => Effect.runPromise(Fiber.interrupt(fiber)));
   return {
+    envelopes,
     messages,
     ended,
     stop: () => Effect.runPromise(Fiber.interrupt(fiber)),
@@ -56,6 +64,33 @@ export function subscribe<A, E>(context: TestContext, stream: Stream.Stream<A, E
     },
   };
 }
+
+/** The envelopes of a view subscription with only the messages `pick` selects. */
+const project = <M, E>(
+  stream: Stream.Stream<LiveEnvelope<RunViewLiveMessage>, E>,
+  pick: (message: RunViewLiveMessage) => M | undefined,
+): Stream.Stream<LiveEnvelope<M>, E> =>
+  Stream.map(stream, (envelope) => ({
+    current: envelope.current,
+    messages: envelope.messages.flatMap((message) => {
+      const picked = pick(message);
+      return picked === undefined ? [] : [picked];
+    }),
+  }));
+
+/** One Run's messages, from a view that holds only that Run. */
+export const watchRun = (live: LiveStreams, runId: string) =>
+  project(live.watchRunView({ navigation: false, runIds: [runId] }), (message) =>
+    message._tag === "run" && message.runId === runId ? message.message : undefined,
+  );
+
+/** Navigation messages, from a view that holds only navigation. */
+export const watchNavigation = (live: LiveStreams) =>
+  project(
+    live.watchRunView({ navigation: true, runIds: [] }),
+    (message): NavigationLiveMessage | undefined =>
+      message._tag === "navigation" ? message.message : undefined,
+  );
 
 /** The Run a client holds after applying `messages` in order, as the Run screen does. */
 export function appliedRun(messages: readonly RunLiveMessage[]): RunDetail | undefined {

@@ -58,15 +58,18 @@ levels of evidence. A configuration check alone proves neither execution nor rep
 
 The Run screen and sidebar update live, including reports, attention, timeline and
 navigation membership. Shared T3 connection status also updates live. The selected Run
-has its own subscription; switching Runs releases its detail while navigation stays
-subscribed. Live updates preserve the canvas viewport and selected Block.
+and the sidebar share one view subscription; switching Runs refreshes that view with the
+new Run and releases the previous one. Live updates preserve the canvas viewport and
+selected Block.
 
 Project descriptions and the comparison with the current saved Flow load on screen entry.
 Edits in another window need not update those values until the Run is reopened or the page
 is reloaded; the Run's Captured definitions stay unchanged.
 
 During reconnect or **Synchronizing**, retained information stays visible and mutations
-are disabled until active scopes have fresh snapshots. Browsing and navigation remain
+are disabled until active scopes have fresh snapshots and any catch-up those snapshots
+needed, and again while a failed read is retried. The open Run and the sidebar share one
+subscription and show one commit's changes together. Browsing and navigation remain
 available; no command is queued for later. Hidden browser tabs and minimized or closed
 desktop windows detach live delivery; returning obtains current snapshots. A visible
 unfocused window keeps updating. These visibility changes never stop the Runner.

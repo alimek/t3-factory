@@ -63,13 +63,23 @@ by host and approved clients, with explicit [host-only boundaries](desktop-and-c
 
 Run detail, sidebar navigation and shared T3 connection status use typed Effect RPC
 streams over WebSocket at `/api/live`; commands and other reads remain HTTP operations.
-Each scope starts with an authoritative snapshot, followed by committed changes. The
+A window holds one connection-status subscription and one view subscription carrying
+navigation and its open Runs. Each read of a view covers navigation and those Runs in one
+read transaction, and its changes travel in one delivery that the window applies at once,
+so one commit's lifecycle, attention and report changes appear together in Run detail and
+the sidebar. Opening or leaving a Run resubscribes the view with a fresh joint snapshot.
+Each subscription starts with an authoritative snapshot, followed by committed changes. The
 owning modules publish only after a successful durable commit, or an authoritative
 in-memory connection transition. This covers reports, including committed rejection
 diagnostics, as well as background observation, recovery and lifecycle changes.
-Subscription registration precedes the snapshot read. A hint during that read triggers a
-fresh read before synchronization, up to three reads; under continuous writes the latest
-snapshot is emitted and the retained dirty hint drives the next diff.
+Subscription registration precedes the snapshot read. A relevant hint during that read
+triggers a fresh read, up to three reads. A delivery is current only when no relevant
+change arrived while it was read and no later read failed; a scope counts as synchronized,
+and mutations are enabled, only while its latest applied delivery is current. A snapshot
+or a later read raced by another commit stays unsynchronized until its catch-up arrives, and
+a failed re-read keeps the last value, marks the scope unsynchronized and retries. An unknown
+Run is final for that Run only, as is a Run beyond the view's capacity of 20 Runs per window;
+any other refused subscription is retried with backoff and keeps mutations disabled.
 
 Delivery replaces changed entities or logical sections by stable identity, sends navigation
 upserts/removals and appends timeline entries by sequence. Worker executions use the pair
@@ -77,7 +87,7 @@ of binding id and execution id, including observation metadata, so later turns p
 earlier executions. Observation-only timestamps
 travel as compact metadata rather than repeated Run data. Changes may coalesce into the
 latest committed state; delivery is not a record of every intermediate state, but preserves
-recorded timeline history. Related committed state is read and applied together.
+recorded timeline history.
 
 Pending change hints are bounded to one dirty marker per subscription. Slow consumers
 re-read committed state against the last value sent rather than accumulating a queue of

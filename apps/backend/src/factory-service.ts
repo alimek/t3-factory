@@ -4,7 +4,8 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { FactoryOperations, Result } from "@t3-factory/contracts";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { FactoryOperations, OperationError, Result } from "@t3-factory/contracts";
 import type { EffectOperations } from "./effect-operations.ts";
 import type { FactoryOptions } from "./factory-options.ts";
 import { makeConnection } from "./connection.ts";
@@ -54,6 +55,13 @@ function guardOperations(operations: FactoryEffectOperations): FactoryEffectOper
 }
 
 /** Composition root: wires domain modules to one T3 adapter and delegates each public operation. */
+/** The typed error a live read reports when its read transaction cannot run. */
+const liveReadError: OperationError = {
+  code: "internal",
+  message: "Live data could not be read.",
+  issues: [],
+};
+
 export const makeFactoryService = (
   options: FactoryOptions,
   owner: Awaited<ReturnType<typeof acquireRunnerOwner>>,
@@ -62,6 +70,7 @@ export const makeFactoryService = (
   Effect.gen(function* () {
     const intervalMs = options.connectionRetryMs ?? 5_000;
     const changes = makeLiveChanges();
+    const sql = yield* SqlClient.SqlClient;
     const connection = yield* makeConnection(t3, intervalMs, changes);
     const projects = yield* makeProjects(t3, connection, intervalMs, changes);
     yield* projects.recheckProjects();
@@ -161,7 +170,11 @@ export const makeFactoryService = (
       setRuntimeBackendUrl: (url) => {
         runtimeBackendUrl = url;
       },
-      live: makeLiveStreams(changes, guarded),
+      live: makeLiveStreams(changes, guarded, (read) =>
+        sql
+          .withTransaction(read)
+          .pipe(Effect.catchTag("SqlError", () => Effect.fail(liveReadError))),
+      ),
     };
     runner = yield* makeRunner(
       factory,

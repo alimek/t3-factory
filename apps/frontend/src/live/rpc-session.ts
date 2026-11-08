@@ -1,20 +1,20 @@
 import { Cause, Effect, Layer, Schedule, Stream } from "effect";
 import { RpcClient, RpcClientError, RpcSerialization } from "effect/rpc";
 import { Socket } from "effect/socket";
-import type { OperationError } from "@t3-factory/contracts";
+import type { LiveEnvelope, OperationError } from "@t3-factory/contracts";
 import { FactoryLive } from "@t3-factory/contracts/live-rpc";
 import type { LiveEnvironment, LiveWatch, SubscriptionEvents } from "./owner.ts";
 
 type Client = RpcClient.FromGroup<typeof FactoryLive, RpcClientError.RpcClientError>;
 
 type LiveStream = Stream.Stream<
-  { readonly _tag: string },
+  LiveEnvelope<{ readonly _tag: string }>,
   OperationError | RpcClientError.RpcClientError
 >;
 
 function watchStream(client: Client, watch: LiveWatch): LiveStream {
-  if (watch.rpc === "WatchRun") return client.WatchRun({ runId: watch.runId });
-  return watch.rpc === "WatchConnection" ? client.WatchConnection() : client.WatchNavigation();
+  if (watch.rpc === "WatchConnection") return client.WatchConnection();
+  return client.WatchRunView({ navigation: watch.navigation, runIds: watch.runIds });
 }
 
 /**
@@ -74,8 +74,8 @@ function subscribe(ready: Promise<Client>, watch: LiveWatch, handlers: Subscript
   const interrupt = Effect.runCallback(
     Effect.promise(() => ready).pipe(
       Effect.flatMap((client) =>
-        Stream.runForEach(watchStream(client, watch), (message) =>
-          Effect.sync(() => handlers.message(message)),
+        Stream.runForEach(watchStream(client, watch), (envelope) =>
+          Effect.sync(() => handlers.message(envelope)),
         ),
       ),
     ),

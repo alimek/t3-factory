@@ -21,8 +21,7 @@ export async function startLiveTransport(live: LiveStreams) {
       Effect.provide(
         FactoryLive.toLayer({
           WatchConnection: () => live.watchConnection(),
-          WatchNavigation: () => live.watchNavigation(),
-          WatchRun: ({ runId }) => live.watchRun(runId),
+          WatchRunView: (view) => live.watchRunView(view),
         }),
       ),
       Effect.provide(RpcSerialization.layerJson),

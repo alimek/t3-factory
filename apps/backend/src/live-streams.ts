@@ -1,4 +1,3 @@
-import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
@@ -6,6 +5,7 @@ import * as Stream from "effect/Stream";
 import {
   runEntityKeys,
   type ConnectionLiveMessage,
+  type LiveEnvelope,
   type NavigationLiveMessage,
   type OperationError,
   type Result,
@@ -14,15 +14,22 @@ import {
   type RunHeader,
   type RunLiveMessage,
   type RunNavigationEntry,
+  type RunViewLiveMessage,
   type T3Connection,
 } from "@t3-factory/contracts";
 import type { LiveChanges, LiveScope } from "./live-changes.ts";
 
 /** Scoped live observation exposed by the public Factory seam. */
 export interface LiveStreams {
-  readonly watchConnection: () => Stream.Stream<ConnectionLiveMessage, OperationError>;
-  readonly watchNavigation: () => Stream.Stream<NavigationLiveMessage, OperationError>;
-  readonly watchRun: (runId: string) => Stream.Stream<RunLiveMessage, OperationError>;
+  readonly watchConnection: () => Stream.Stream<
+    LiveEnvelope<ConnectionLiveMessage>,
+    OperationError
+  >;
+  /** Navigation (when wanted) and the given Runs, each envelope from one read transaction. */
+  readonly watchRunView: (view: {
+    readonly navigation: boolean;
+    readonly runIds: readonly string[];
+  }) => Stream.Stream<LiveEnvelope<RunViewLiveMessage>, OperationError>;
 }
 
 type Read<A> = Effect.Effect<Result<A>, unknown>;
@@ -31,53 +38,59 @@ const rereadRetry = "1 second";
 
 /**
  * Registers before the snapshot read, so a commit racing the snapshot marks the scope dirty.
- * Each later pull waits for a hint, re-reads the committed value and emits only its difference
+ * Each later pull waits for a hint, re-reads the committed value and sends only its difference
  * from the last value sent: hints coalesce while the consumer is slow, and history is neither
- * lost nor repeated.
+ * lost nor repeated. An envelope is current only when its read completed with no hint arriving
+ * during it, so a raced read is followed by catch-up; every change of currency is sent, and a
+ * failed re-read sends a non-current envelope and retries.
  */
 function watch<A, M>(
   changes: LiveChanges,
   scope: LiveScope,
-  read: Read<A>,
-  snapshot: (value: A) => M,
+  read: Effect.Effect<A, OperationError>,
+  snapshot: (value: A) => readonly M[],
   diff: (sent: A, current: A) => readonly M[],
-): Stream.Stream<M, OperationError> {
-  const current = read.pipe(
-    Effect.orDie,
-    Effect.flatMap((result) =>
-      result.ok ? Effect.succeed(result.value) : Effect.fail(result.error),
-    ),
-  );
+): Stream.Stream<LiveEnvelope<M>, OperationError> {
   return Stream.unwrap(
     Effect.gen(function* () {
       const dirty = yield* changes.watch(scope);
-      let sent = yield* current;
-      // Retry the synchronization barrier when a commit raced the read. Keep the final
-      // dirty hint open after the bound so continuous writes cannot starve the snapshot.
-      for (let attempt = 1; dirty.isOpen() && attempt < 3; attempt++) {
+      let sent = yield* read;
+      // Re-read a snapshot a commit raced, a bounded number of times so continuous writes
+      // cannot starve it; a snapshot that is not current is followed by catch-up.
+      for (let attempt = 1; attempt < 3 && dirty.isOpen(); attempt++) {
         dirty.closeUnsafe();
-        sent = yield* current;
+        sent = yield* read;
       }
+      let sentCurrent = !dirty.isOpen();
+      let failed = false;
+      const first: LiveEnvelope<M> = { current: sentCurrent, messages: snapshot(sent) };
       const next = Effect.gen(function* () {
         while (true) {
-          yield* dirty.await;
+          if (failed) yield* Effect.sleep(rereadRetry);
+          else yield* dirty.await;
           // Closed before the read: a hint arriving during the read schedules another pass.
           dirty.closeUnsafe();
-          const read = yield* Effect.exit(current);
-          if (Exit.isFailure(read)) {
-            // Only the snapshot read ends the scope. A failed re-read keeps the last value sent
-            // and retries, so one transient read error cannot freeze a healthy subscription.
-            dirty.openUnsafe();
-            yield* Effect.sleep(rereadRetry);
-            continue;
+          const result = yield* Effect.exit(read);
+          if (Exit.isFailure(result)) {
+            // Only the snapshot read ends the scope. A failed re-read keeps the last value sent,
+            // reports the scope as not current and retries.
+            failed = true;
+            if (!sentCurrent) continue;
+            sentCurrent = false;
+            const envelope: LiveEnvelope<M> = { current: false, messages: [] };
+            return [envelope] as const;
           }
-          const value = read.value;
-          const messages = diff(sent, value);
-          sent = value;
-          if (Arr.isReadonlyArrayNonEmpty(messages)) return messages;
+          failed = false;
+          const messages = diff(sent, result.value);
+          sent = result.value;
+          const current = !dirty.isOpen();
+          if (messages.length === 0 && current === sentCurrent) continue;
+          sentCurrent = current;
+          const envelope: LiveEnvelope<M> = { current, messages };
+          return [envelope] as const;
         }
       });
-      return Stream.concat(Stream.succeed(snapshot(sent)), Stream.fromPull(Effect.succeed(next)));
+      return Stream.concat(Stream.succeed(first), Stream.fromPull(Effect.succeed(next)));
     }),
   );
 }
@@ -218,6 +231,45 @@ function runDiff(sent: RunDetail, current: RunDetail): RunLiveMessage[] {
   return messages;
 }
 
+type RunState = RunDetail | OperationError;
+type RunView = {
+  readonly navigation: readonly RunNavigationEntry[] | null;
+  readonly runs: ReadonlyMap<string, RunState>;
+};
+const isRun = (state: RunState | undefined): state is RunDetail =>
+  state !== undefined && "blocks" in state;
+
+const runSnapshot = (runId: string, state: RunState): RunViewLiveMessage =>
+  isRun(state)
+    ? { _tag: "run", runId, message: { _tag: "snapshot", run: state } }
+    : { _tag: "missing", runId, error: state };
+
+function viewSnapshot(view: RunView): RunViewLiveMessage[] {
+  const messages: RunViewLiveMessage[] = view.navigation
+    ? [{ _tag: "navigation", message: { _tag: "snapshot", rows: view.navigation } }]
+    : [];
+  for (const [runId, state] of view.runs) messages.push(runSnapshot(runId, state));
+  return messages;
+}
+
+function viewDiff(sent: RunView, current: RunView): RunViewLiveMessage[] {
+  const messages: RunViewLiveMessage[] =
+    sent.navigation && current.navigation
+      ? navigationDiff(sent.navigation, current.navigation).map((message) => ({
+          _tag: "navigation",
+          message,
+        }))
+      : [];
+  for (const [runId, state] of current.runs) {
+    const previous = sent.runs.get(runId);
+    if (isRun(previous) && isRun(state))
+      for (const message of runDiff(previous, state))
+        messages.push({ _tag: "run", runId, message });
+    else if (isRun(previous) !== isRun(state)) messages.push(runSnapshot(runId, state));
+  }
+  return messages;
+}
+
 export function makeLiveStreams(
   changes: LiveChanges,
   reads: {
@@ -225,31 +277,49 @@ export function makeLiveStreams(
     readonly listRunNavigation: () => Read<readonly RunNavigationEntry[]>;
     readonly getRun: (id: string) => Read<RunDetail>;
   },
+  /** One read transaction, so a view's navigation and Runs describe the same committed state. */
+  consistently: <A>(read: Effect.Effect<A, OperationError>) => Effect.Effect<A, OperationError>,
 ): LiveStreams {
   return {
     watchConnection: () =>
       watch(
         changes,
         { kind: "connection" },
-        reads.getConnection(),
-        (connection) => ({ _tag: "snapshot", connection }),
+        settled(reads.getConnection()),
+        (connection) => [{ _tag: "snapshot", connection }],
         connectionDiff,
       ),
-    watchNavigation: () =>
-      watch(
+    watchRunView: ({ navigation, runIds }) => {
+      const ids = [...new Set(runIds)];
+      const read = consistently(
+        Effect.gen(function* () {
+          const rows = navigation ? yield* settled(reads.listRunNavigation()) : null;
+          const runs = new Map<string, RunState>();
+          for (const id of ids) {
+            const result = yield* reads.getRun(id).pipe(Effect.orDie);
+            if (result.ok) runs.set(id, result.value);
+            else if (result.error.code === "not_found") runs.set(id, result.error);
+            else return yield* Effect.fail(result.error);
+          }
+          return { navigation: rows, runs } satisfies RunView;
+        }),
+      );
+      return watch(
         changes,
-        { kind: "navigation" },
-        reads.listRunNavigation(),
-        (rows) => ({ _tag: "snapshot", rows }),
-        navigationDiff,
-      ),
-    watchRun: (runId) =>
-      watch(
-        changes,
-        { kind: "run", runId },
-        reads.getRun(runId),
-        (run) => ({ _tag: "snapshot", run }),
-        runDiff,
-      ),
+        { kind: "view", navigation, runIds: new Set(ids) },
+        read,
+        viewSnapshot,
+        viewDiff,
+      );
+    },
   };
 }
+
+/** A failed read result becomes the stream's typed error. */
+const settled = <A>(read: Read<A>): Effect.Effect<A, OperationError> =>
+  read.pipe(
+    Effect.orDie,
+    Effect.flatMap((result) =>
+      result.ok ? Effect.succeed(result.value) : Effect.fail(result.error),
+    ),
+  );

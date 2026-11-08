@@ -1,7 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
 import { assert, expect, it } from "@effect/vitest";
-import * as Cause from "effect/Cause";
-import * as Exit from "effect/Exit";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import type {
@@ -11,7 +9,14 @@ import type {
 } from "@t3-factory/contracts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
-import { appliedRun, raceFirstRead, subscribe, withoutGeneration } from "./support/live.ts";
+import {
+  appliedRun,
+  raceFirstRead,
+  subscribe,
+  watchNavigation,
+  watchRun,
+  withoutGeneration,
+} from "./support/live.ts";
 import {
   directWorker,
   finishWorker,
@@ -31,8 +36,8 @@ const showsWorking = (messages: readonly RunLiveMessage[]) =>
 it("an accepted Block report reaches open Run and navigation subscribers without another read", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  const run = subscribe(c, f.f.live.watchRun(f.runId));
-  const navigation = subscribe(c, f.f.live.watchNavigation());
+  const run = subscribe(c, watchRun(f.f.live, f.runId));
+  const navigation = subscribe(c, watchNavigation(f.f.live));
   await run.until((messages) => messages.length > 0);
   await navigation.until((messages) => messages.length > 0);
 
@@ -56,7 +61,7 @@ it("an accepted Block report reaches open Run and navigation subscribers without
 it("a later turn preserves both executions of the same worker binding", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  const run = subscribe(c, f.f.live.watchRun(f.runId));
+  const run = subscribe(c, watchRun(f.f.live, f.runId));
   await run.until((messages) => messages.length > 0);
   startWorkerTurn(f, "reply-execution", 2);
 
@@ -83,8 +88,8 @@ it("a report on another Run sends nothing to an open Run's subscriber", async (c
   const other = await f.f.startRun({ ...f.input, requestId: "start-two", title: "Other work" });
   assert(other.ok);
   assert((await f.f.reconcileRuns()).ok);
-  const unrelated = subscribe(c, f.f.live.watchRun(other.value.id));
-  const related = subscribe(c, f.f.live.watchRun(f.runId));
+  const unrelated = subscribe(c, watchRun(f.f.live, other.value.id));
+  const related = subscribe(c, watchRun(f.f.live, f.runId));
   await unrelated.until((messages) => messages.length > 0);
 
   // Act
@@ -99,7 +104,7 @@ it("a report on another Run sends nothing to an open Run's subscriber", async (c
 it("an unchanged worker observation sends only its observation times", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  const run = subscribe(c, f.f.live.watchRun(f.runId));
+  const run = subscribe(c, watchRun(f.f.live, f.runId));
   await run.until((messages) => messages.length > 0);
 
   // Act
@@ -120,21 +125,26 @@ it("the first Run snapshot includes a report committed during its read", async (
   const f = await directWorker(c);
 
   const changes = makeLiveChanges();
-  const live = makeLiveStreams(changes, {
-    getConnection: () => Effect.promise(() => f.f.getConnection()),
-    listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
-    getRun: () =>
-      raceFirstRead(
-        Effect.promise(() => f.f.getRun(f.runId)),
-        async () => {
-          expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
-          changes.runChanged(f.runId);
-        },
-      ),
-  });
+  // Built once: the first execution of this read commits a report while it runs.
+  const racedRead = raceFirstRead(
+    Effect.promise(() => f.f.getRun(f.runId)),
+    async () => {
+      expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+      changes.runChanged(f.runId);
+    },
+  );
+  const live = makeLiveStreams(
+    changes,
+    {
+      getConnection: () => Effect.promise(() => f.f.getConnection()),
+      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      getRun: () => racedRead,
+    },
+    (read) => read,
+  );
 
   // Act
-  const run = subscribe(c, live.watchRun(f.runId));
+  const run = subscribe(c, watchRun(live, f.runId));
 
   // Assert
   const delivered = await run.until(showsWorking);
@@ -142,25 +152,156 @@ it("the first Run snapshot includes a report committed during its read", async (
     _tag: "snapshot",
     run: { blocks: expect.arrayContaining([expect.objectContaining({ workingMessage: WORKING })]) },
   });
+  expect(run.envelopes[0]?.current).toBe(true);
   const current = await f.f.getRun(f.runId);
   assert(current.ok);
   expect(withoutGeneration(appliedRun(delivered))).toStrictEqual(withoutGeneration(current.value));
 });
 
-it("watching a Run that does not exist fails with not_found", async (c) => {
+it("a snapshot raced on every read is not current until its catch-up is delivered", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  const changes = makeLiveChanges();
+  let racedReads = 0;
+  const live = makeLiveStreams(
+    changes,
+    {
+      getConnection: () => Effect.promise(() => f.f.getConnection()),
+      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      getRun: () =>
+        Effect.promise(() => f.f.getRun(f.runId)).pipe(
+          Effect.tap(() =>
+            racedReads++ < 3
+              ? Effect.promise(async () => {
+                  expect((await f.f.renameRun(f.runId, { title: `Raced ${racedReads}` })).ok).toBe(
+                    true,
+                  );
+                  changes.runChanged(f.runId);
+                })
+              : Effect.void,
+          ),
+        ),
+    },
+    (read) => read,
+  );
+
+  // Act
+  const run = subscribe(c, watchRun(live, f.runId));
+
+  // Assert
+  await run.until(() => run.envelopes.some((envelope) => envelope.current));
+  expect(run.envelopes[0]?.current).toBe(false);
+  expect(appliedRun(run.messages)?.title).toBe("Raced 3");
+});
+
+it("a Run that does not exist is reported missing while the rest of its view stays live", async (c) => {
   // Arrange
   const factory = await (await factoryHarness(c)).open({ t3: new ControlledT3() });
 
   // Act
-  const run = subscribe(c, factory.live.watchRun("missing-run"));
+  const view = subscribe(
+    c,
+    factory.live.watchRunView({ navigation: true, runIds: ["missing-run"] }),
+  );
 
   // Assert
-  const ended = await run.ended;
-  assert(Exit.isFailure(ended));
-  expect(Cause.findErrorOption(ended.cause)).toMatchObject({
-    _tag: "Some",
-    value: { code: "not_found" },
-  });
+  const [snapshot] = await view.until((messages) => messages.length > 1);
+  expect(view.messages).toMatchObject([
+    { _tag: "navigation", message: { _tag: "snapshot", rows: [] } },
+    { _tag: "missing", runId: "missing-run", error: { code: "not_found" } },
+  ]);
+  expect(snapshot).toBeDefined();
+  expect(view.envelopes[0]?.current).toBe(true);
+});
+
+it("one commit's Run and navigation changes arrive in the same envelope", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  const view = subscribe(c, f.f.live.watchRunView({ navigation: true, runIds: [f.runId] }));
+  await view.until((messages) => messages.length > 0);
+
+  // Act
+  expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+
+  // Assert
+  const reported = (envelope: (typeof view.envelopes)[number]) =>
+    envelope.messages.some(
+      (message) => message._tag === "run" && message.message._tag === "changed",
+    );
+  await view.until(() => view.envelopes.some(reported));
+  const together = view.envelopes.find(reported);
+  expect(together?.messages.map((message) => message._tag).sort()).toStrictEqual([
+    "navigation",
+    "run",
+  ]);
+});
+
+it("a re-read raced by another commit is not current until its catch-up arrives", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  const changes = makeLiveChanges();
+  let reads = 0;
+  const live = makeLiveStreams(
+    changes,
+    {
+      getConnection: () => Effect.promise(() => f.f.getConnection()),
+      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      getRun: () =>
+        Effect.promise(() => f.f.getRun(f.runId)).pipe(
+          Effect.tap(() =>
+            reads++ === 1
+              ? Effect.promise(async () => {
+                  expect((await f.f.renameRun(f.runId, { title: "Raced later" })).ok).toBe(true);
+                  changes.runChanged(f.runId);
+                })
+              : Effect.void,
+          ),
+        ),
+    },
+    (read) => read,
+  );
+  const run = subscribe(c, watchRun(live, f.runId));
+  await run.until((messages) => messages.length > 0);
+
+  // Act
+  expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+  changes.runChanged(f.runId);
+
+  // Assert
+  await run.until((messages) => appliedRun(messages)?.title === "Raced later");
+  expect(run.envelopes.map((envelope) => envelope.current)).toStrictEqual([true, false, true]);
+});
+
+it("a failed re-read marks the view not current until a later read succeeds", async (c) => {
+  // Arrange
+  const f = await directWorker(c);
+  const changes = makeLiveChanges();
+  let reads = 0;
+  const live = makeLiveStreams(
+    changes,
+    {
+      getConnection: () => Effect.promise(() => f.f.getConnection()),
+      listRunNavigation: () => Effect.promise(() => f.f.listRunNavigation()),
+      getRun: () =>
+        reads++ === 1
+          ? Effect.succeed({
+              ok: false as const,
+              error: { code: "internal" as const, message: "Storage is busy.", issues: [] },
+            })
+          : Effect.promise(() => f.f.getRun(f.runId)),
+    },
+    (read) => read,
+  );
+  const run = subscribe(c, watchRun(live, f.runId));
+  await run.until((messages) => messages.length > 0);
+
+  // Act
+  expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+  changes.runChanged(f.runId);
+
+  // Assert
+  await run.until(showsWorking);
+  expect(run.envelopes.map((envelope) => envelope.current)).toStrictEqual([true, false, true]);
 });
 
 it("a T3 connection change reaches connection subscribers without another read", async (c) => {
@@ -194,8 +335,8 @@ it.effect("live subscribers neither multiply Runner observations nor own handoff
     const beforeZero = f.t3.executionReads;
     yield* TestClock.adjust(1000);
     const zeroSubscriberReads = f.t3.executionReads - beforeZero;
-    const first = subscribe(c, factory.live.watchRun(f.runId));
-    const second = subscribe(c, factory.live.watchRun(f.runId));
+    const first = subscribe(c, watchRun(factory.live, f.runId));
+    const second = subscribe(c, watchRun(factory.live, f.runId));
     yield* Effect.promise(() => first.until((messages) => messages.length > 0));
     yield* Effect.promise(() => second.until((messages) => messages.length > 0));
     const beforeTwo = f.t3.executionReads;
