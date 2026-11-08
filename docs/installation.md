@@ -149,7 +149,9 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
 - A new worktree is not supported for a Project with a blocking (`async: false`) T3 worktree setup script, and Start refuses it. Factory attaches later workers to the
   Run's worktree as idle threads; T3's public reads expose no completion signal for an idle thread's setup and a queued send has no fence for a running setup, so a
   first activation could start before setup finishes or alongside its failure. Asynchronous setup matches an ordinary T3 launch, which does not wait either. An
-  upstream T3 setup status for idle threads, or a send that waits for setup, would lift this limit.
+  upstream T3 setup status for idle threads, or a send that waits for setup, would lift this limit. Factory detects a blocking script only among the Project's saved
+  scripts, which `t3_project_read` returns. T3 runs the scripts its settings resolve, and project overrides or environment default scripts can replace the saved ones;
+  no public T3 read exposes them, so a blocking setup script configured there is not detected and Start and idle attach proceed.
 - Uncertain launch/send retries need unchanged authorization and independent, operation-specific continuity and retention proof; the default live proof is absent, and server restart, changed grants and
   unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and a Block id does not isolate adversarial processes sharing the OS user.
 - Automatic settlement relies on each worker thread as T3 reported it finished, not atomic cross-thread completion, repository quality or agreement on one revision. Native settlement is best effort with no compare-and-set or replay key; a possibly

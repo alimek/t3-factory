@@ -86,7 +86,8 @@ export interface T3Adapter {
   resolveRepository(path: string): Promise<string>;
   /** Same-host Git: the ref a new worktree starts from, or null when the repository lacks it. */
   resolveBaseRef(workspaceRoot: string, base: FlowWorkspaceBase): Promise<string | null>;
-  /** The project's current worktree setup scripts, read from T3 each call. */
+  /** The project's saved worktree setup scripts, read from T3 each call. T3 settings can replace
+   * them with scripts no public read exposes. */
   readWorktreeSetupScripts(target: T3ProjectRef): Promise<readonly WorktreeSetupScript[]>;
   createProject(target: T3ProjectTarget): Promise<T3Project>;
   inspect(target: T3Endpoint): Promise<T3Inspection>;
