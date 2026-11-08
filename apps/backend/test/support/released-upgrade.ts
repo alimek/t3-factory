@@ -29,6 +29,7 @@ type ReleasedRun = Omit<
   | "closure"
   | "coordinationActions"
   | "lifecycle"
+  | "repositories"
 > & {
   snapshot: ReleasedSnapshot;
   blocks: readonly Omit<CurrentRun["blocks"][number], "workingMessage">[];
@@ -101,6 +102,7 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
   return {
     ...run,
     lifecycle,
+    repositories: [],
     gateOpen: lifecycle === "settled",
     definitions: capturedDefinitions(snapshot),
     // Released Runs worked in the project checkout.

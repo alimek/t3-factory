@@ -55,7 +55,7 @@ export function RenameDialog({
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           const target =
-            document.getElementById(`run-actions-${id}`) ??
+            document.getElementById(`run-row-${id}`) ??
             document.querySelector<HTMLElement>("[data-app-main]");
           target?.focus({ preventScroll: true });
         }}

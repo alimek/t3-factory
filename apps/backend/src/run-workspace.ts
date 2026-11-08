@@ -111,13 +111,14 @@ export function sameStrategy(actual: WorkspaceStrategy, expected: WorkspaceStrat
  */
 export function inRunWorkspace(
   run: WorkspaceRun,
-  thread: Pick<ExecutionObservation, "workspaceRoot" | "branch">,
+  thread: Pick<ExecutionObservation, "workspaceRoot" | "repository">,
 ) {
   const { workspace } = run;
   if (workspace.mode === "checkout")
     return checkoutWorkspace(thread.workspaceRoot, run.workspace_root);
   if (workspace.state === "bound") return thread.workspaceRoot === workspace.worktreePath;
-  return thread.branch === null || thread.branch === workspace.plannedBranch;
+  const branch = thread.repository?.branch ?? null;
+  return branch === null || branch === workspace.plannedBranch;
 }
 
 /** A recovered launch shows its strategy's workspace. A null branch never matches a worktree. */

@@ -13,12 +13,10 @@ import type {
 } from "../../apps/backend/src/adapters/t3.ts";
 
 type Snapshot = ReturnType<PersistentT3["snapshot"]>;
-type SavedExecution = Snapshot["executions"][number][1];
-/** Version 4, or version 3 without idle launches and thread branches. */
-type SavedState = Omit<Snapshot, "version" | "idleLaunches" | "executions"> & {
+/** Version 4, or version 3 without idle launches. */
+type SavedState = Omit<Snapshot, "version" | "idleLaunches"> & {
   version: number;
   idleLaunches?: Snapshot["idleLaunches"];
-  executions: [string, Omit<SavedExecution, "branch"> & { branch?: string | null }][];
 };
 
 /** A local simulated engine. Its accepted keys outlive the Factory process. */
@@ -60,11 +58,10 @@ export class PersistentT3 extends ControlledT3 {
       this.projects = saved.projects;
       this.projectCreates = saved.projectCreates;
       for (const [key, value] of saved.launches) this.launches.set(key, value);
-      // Version 3 predates idle workers and worktree branches: its threads are checkout threads.
+      // Version 3 predates idle workers: its threads are checkout threads.
       for (const [key, value] of saved.idleLaunches ?? []) this.idleLaunches.set(key, value);
       for (const [key, value] of saved.sends) this.sends.set(key, value);
-      for (const [key, value] of saved.executions)
-        this.executionObservations.set(key, { ...value, branch: value.branch ?? null });
+      for (const [key, value] of saved.executions) this.executionObservations.set(key, value);
       for (const threadId of saved.settledThreads ?? []) this.settledThreads.add(threadId);
     } catch (cause) {
       throw new Error(
@@ -112,7 +109,7 @@ export class PersistentT3 extends ControlledT3 {
       threadId,
       projectId: parent.projectId,
       workspaceRoot: parent.workspaceRoot,
-      branch: parent.branch,
+      ...(parent.repository ? { repository: parent.repository } : {}),
       link: `t3://threads/${threadId}`,
       activeRunId: runId,
       latestRunId: runId,

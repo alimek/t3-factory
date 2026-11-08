@@ -14,6 +14,7 @@ import { stat, realpath } from "node:fs/promises";
 import { isAbsolute, basename, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { threadRepository } from "./worker-repository.ts";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -279,9 +280,11 @@ type ThreadExecutionRead = {
     activeRunId: string | null;
     link: string | null;
     worktreePath: string | null;
-    branch?: string | null;
     pendingRequestCount: number;
     latestRunId?: string | null;
+    branch?: unknown;
+    pullRequests?: unknown;
+    linkedPullRequest?: unknown;
   };
   recentRuns: RecentRun[];
 };
@@ -303,7 +306,6 @@ function isObservedThread(thread: ThreadExecutionRead["thread"] | undefined, thr
     isNullableString(thread.activeRunId) &&
     isNullableString(thread.link) &&
     isNullableString(thread.worktreePath) &&
-    (thread.branch === undefined || isNullableString(thread.branch)) &&
     Number.isInteger(thread.pendingRequestCount) &&
     thread.pendingRequestCount >= 0
   );
@@ -318,13 +320,14 @@ const isRecentRun = (recentRun: RecentRun) =>
     (Number.isInteger(recentRun.ordinal) && recentRun.ordinal >= 1));
 
 function executionObservation(threadId: string, body: ThreadExecutionRead): ExecutionObservation {
+  const repository = threadRepository(body.thread);
   return {
+    ...(repository ? { repository } : {}),
     threadId,
     projectId: body.thread.projectId,
     activeRunId: body.thread.activeRunId,
     link: body.thread.link,
     workspaceRoot: body.thread.worktreePath,
-    branch: body.thread.branch ?? null,
     pendingRequestCount: body.thread.pendingRequestCount,
     ...(body.thread.latestRunId !== undefined ? { latestRunId: body.thread.latestRunId } : {}),
     recentRuns: body.recentRuns.map((recentRun) => {

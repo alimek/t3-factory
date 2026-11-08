@@ -1,5 +1,6 @@
 import { MutationGate } from "@/client-gate";
 import { RootWork } from "../components/run-coordination-controls.tsx";
+import { RunRepositories } from "../components/run-repositories.tsx";
 import {
   BindingLink,
   bindingRole,
@@ -761,6 +762,11 @@ function RunContext({
       <RootWork run={run} />
       <CoordinatorActivations run={run} />
       <PendingIntents run={run} />
+      {run.repositories.some((worker) => worker.branch || worker.pullRequests.length > 0) && (
+        <ContextSection title="Branches and pull requests" label="Run repositories">
+          <RunRepositories workers={run.repositories} links />
+        </ContextSection>
+      )}
       <ContextSection title="Initial prompt" label="Run input">
         <pre className="font-mono text-xs leading-4.5 break-words whitespace-pre-wrap text-emphasis-foreground">
           {run.input}

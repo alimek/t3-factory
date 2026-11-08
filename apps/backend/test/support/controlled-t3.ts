@@ -287,17 +287,21 @@ export class ControlledT3 implements T3Adapter {
     const sentRuns = [...this.sends.values()]
       .filter((s) => s.payload.threadId === threadId)
       .map((s) => ({ runId: s.reference.runId, status: s.reference.status }));
+    const { workspaceRoot, branch } = this.threadWorkspace(
+      launch.payload,
+      threadId,
+      this.projects.find((p) => p.projectId === projectId)?.workspaceRoot ?? null,
+    );
     return {
       projectId,
       threadId,
       latestRunId: runId,
       activeRunId: this.engineStatus === "running" ? runId : null,
       link,
-      ...this.threadWorkspace(
-        launch.payload,
-        threadId,
-        this.projects.find((p) => p.projectId === projectId)?.workspaceRoot ?? null,
-      ),
+      workspaceRoot,
+      ...(launch.payload.workspaceStrategy.type === "root"
+        ? {}
+        : { repository: { branch, pullRequests: [] } }),
       pendingRequestCount: this.pendingRequestCount,
       recentRuns: [...launchRun, ...sentRuns].map((run, n) => ({ ...run, ordinal: n + 1 })),
     };

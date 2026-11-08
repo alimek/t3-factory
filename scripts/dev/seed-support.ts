@@ -2,6 +2,7 @@ import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { finishNativeTurn } from "./native-simulation.ts";
 import type { Result, RunBlock, RunDetail } from "../../packages/contracts/src/index.ts";
+import type { ExecutionObservation } from "../../apps/backend/src/adapters/t3.ts";
 
 export function requireSuccess<A>(result: Result<A>): A {
   if (!result.ok) throw Error(`Development seed: ${result.error.message}`);
@@ -28,6 +29,35 @@ export interface SeedContext {
   t3: PersistentT3;
   projectId: string;
 }
+
+/** Repository facts belong to simulated T3 workers, never direct Factory database writes. */
+export async function scenarioRepository(
+  context: SeedContext,
+  run: RunDetail,
+  blockId: string,
+  repository: NonNullable<ExecutionObservation["repository"]>,
+) {
+  const worker = executionBlock(run, blockId);
+  const observation = await context.t3.readExecution({ endpoint: "" }, worker.threadId);
+  context.t3.executionObservations.set(worker.threadId, { ...observation, repository });
+  context.t3.save();
+  return reconcileUntil(context, run.id, (detail) =>
+    detail.repositories.some(
+      (item) =>
+        item.threadId === worker.threadId &&
+        item.branch === repository.branch &&
+        item.pullRequests.length === repository.pullRequests.length,
+    ),
+  );
+}
+
+export const demoPullRequest = (number: number, state: "open" | "merged" = "open") => ({
+  host: "github.com",
+  repository: "example/atlas",
+  number,
+  state,
+  url: `https://github.com/example/atlas/pull/${number}`,
+});
 
 /** Bounded reconciliation, with an observable condition rather than elapsed time. */
 export async function reconcileUntil(

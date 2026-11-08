@@ -27,7 +27,8 @@ export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: R
     const threadId = creator?.thread_id;
     if (!threadId) return false;
     const thread = yield* Effect.tryPromise(() => t3.readExecution(runTarget(run), threadId));
-    const { workspaceRoot: worktreePath, branch } = thread;
+    const worktreePath = thread.workspaceRoot;
+    const branch = thread.repository?.branch;
     if (
       thread.threadId !== threadId ||
       thread.projectId !== run.t3_project_id ||

@@ -124,19 +124,30 @@ opening, renaming and closing never change either. Run drafts join the main list
 A draft's creation key is its id, and its Start sends that id as the request key, which becomes the Run's creation key. With
 the draft's title and creation time, the Run therefore replaces the draft row in place, also among entries created at the same
 time. Runs created before drafts carried a creation time use their start time and Run id. Creation times come from the
-client's clock. Rows show project, execution indicator (Working, Waiting, Settled, Observation unknown or
-stale) and chips, and a working Block's `working` message on a third line. Missing projects keep readable history; an
-unavailable open Run stays open.
+client's clock. Active rows show the project icon and name, execution indicator and time since the last
+Run activity, followed by the title. A third line appears for known worker branches, linked PRs or attention:
+one branch shows its name, several show a count, and a PR icon shows the number of distinct linked PRs.
+Branches and PRs are independent; neither requires the other and missing data has no placeholder or Flow fallback.
+The age advances from execution changes, accepted reports, Human answers, attention appearing, handoff release
+and settling or returning to Active, not unchanged observations, viewing or renaming. It does not change creation-based ordering.
+Missing projects keep readable history; an unavailable open Run stays open.
+
+Hovering or focusing a row opens one information card to the right, aligned to the row and constrained to
+the viewport. It shows the full title, project, captured Flow, execution/attention, working messages and known
+repository metadata, even when the title fits. Opening a row menu dismisses and blocks the card; hovering
+menu items never opens a row preview.
 
 - **Needs input**: a pending Human occurrence or native T3 question/permission.
   **Problem**: a pending missing report, execution failure or report problem. Both can show. Stale observations or an unavailable
   project are not Problems and opening a Run clears no chip.
-- **Settled** (collapsed, with a count) holds Settled Runs. **Snoozed** sits above it. Each group appears only after navigation loads and while it contains Runs; hiding it preserves its expanded state. Archived Runs are not listed.
+- **Settled** (collapsed, with a count) holds Settled Runs as compact single-line rows with just their project icon and title; details remain in the side preview. **Snoozed** sits above it. Each group appears only after navigation loads and while it contains Runs; hiding it preserves its expanded state. Archived Runs are not listed.
   Case-insensitive title search shows one list of matching Runs and drafts in creation order, with a total match count and no group headers. Snoozed and Settled matches have muted titles and status icons unless selected. Drafts are titled from the first non-empty prompt line, or **Untitled draft**; Escape or × clears search.
 - When Runs exist but none are open, the open list shows **Nothing open** / **You're all caught up.**
   Snooze and Settle focus the destination group toggle after it appears. Restore focuses the restored row; during search, all three actions keep focus on that row.
 - **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
-  The row menu opens from ⋯ (shown on hover, focus or selection), right click, Shift+F10 or the context-menu key; Rename
+  The same shadcn/Radix row menu serves desktop and browser clients. Right click opens it at the pointer;
+  Shift+F10 and the context-menu key anchor it below the focused row. Touch devices retain a ⋯ button;
+  mouse layouts omit it. Closing the menu or Rename/Archive dialogs returns focus to the row when it remains visible. Rename
   in the menu shows the current binding from the shortcut registry (default F2). With a Run open in detail, the same
   **Rename Run** command runs from that binding; customization is in [Keyboard shortcuts](keyboard-shortcuts.md).
   Keyboard **Snooze or restore**, **Settle** and **Archive…** apply to the open Run under the same availability rules as
@@ -148,6 +159,20 @@ unavailable open Run stays open.
 - A Settled Run returns to Active only when one of its Agents reports; an Archived Run is never reopened or relaunched. To
   work on the matter again otherwise, start a **New Run**: it uses the current saved Flow and Agent definitions, not an earlier
   Run's captured revisions.
+
+### Branches and pull requests
+
+Repository information is last known metadata from the Run's bound worker threads in T3. A Run can have
+several branches and PRs; the same PR linked to multiple workers counts once. Branch names describe the
+workers' T3 workspace metadata, not exclusive ownership of a branch by the Run. Factory does not infer
+associations from conversation text or the project's current checkout, and it does not create or switch branches.
+
+The side preview and Run context show the full branch list with the corresponding worker names and the
+distinct PR list. The Run context links to those PRs; their states are last known in T3, not live GitHub checks.
+Normal worker observations update the metadata; metadata-only changes affect neither the activity age nor list order. If an
+observation fails, retained metadata stays visible as Not live. Settled Runs keep their recorded metadata;
+expanding their group or hovering a row does not start background work or refresh T3. Older Runs have no
+repository metadata until their workers are observed by this version.
 
 ### Snooze and Woke
 

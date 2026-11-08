@@ -5,6 +5,7 @@ import type {
   FlowWorkspace,
   FlowWorkspaceBase,
   ProjectIcon,
+  RunPullRequest,
   T3Contract,
 } from "@t3-factory/contracts";
 
@@ -191,14 +192,18 @@ export interface ThreadIdentityRead {
   readonly executions: readonly LaunchCandidateExecution[];
 }
 export interface ExecutionObservation {
+  /** Absent when the upstream thread read supplies no repository metadata; a null branch is a
+   * thread T3 shows no branch for. */
+  readonly repository?: {
+    readonly branch: string | null;
+    readonly pullRequests: readonly RunPullRequest[];
+  };
   readonly projectId: string;
   readonly threadId: string;
   readonly activeRunId: string | null;
   readonly link: string | null;
   /** T3's `worktreePath`: null is the project checkout. */
   readonly workspaceRoot: string | null;
-  /** Null while T3 shows no branch, including when the read omits it. */
-  readonly branch: string | null;
   readonly pendingRequestCount: number;
   readonly latestRunId?: string | null;
   readonly recentRuns: readonly {
