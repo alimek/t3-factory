@@ -3,6 +3,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import {
   livePortMessage,
+  type DesktopMenuCommandId,
   type DesktopResult,
   type DesktopState,
   type FactoryDesktop,
@@ -31,9 +32,9 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),
   setUpdateChannel: (channel: string) =>
     ipcRenderer.invoke(channels.setUpdateChannel, String(channel)),
-  setMenuState: (commands: unknown) => ipcRenderer.invoke(channels.setMenuState, commands),
-  onMenuCommand(listener: (id: string) => void) {
-    const handler = (_event: IpcRendererEvent, id: unknown) => listener(String(id));
+  setMenuState: (state: unknown) => ipcRenderer.invoke(channels.setMenuState, state),
+  onMenuCommand(listener) {
+    const handler = (_event: IpcRendererEvent, id: DesktopMenuCommandId) => listener(id);
     ipcRenderer.on(channels.menuCommand, handler);
     return () => {
       ipcRenderer.removeListener(channels.menuCommand, handler);

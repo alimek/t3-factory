@@ -3,32 +3,16 @@
  * stays the only command executor: it publishes each command's label, binding and
  * availability, and menu clicks travel back to it over IPC.
  */
+import {
+  desktopMenuCommandIds,
+  type DesktopMenuCommand,
+  type DesktopMenuCommandId,
+  type DesktopMenuState,
+} from "@t3-factory/contracts/desktop-bridge";
 import type { KeyboardEvent, MenuItemConstructorOptions } from "electron";
 
-const menuCommandIds = [
-  "settings",
-  "newRun",
-  "palette",
-  "studio",
-  "shortcutsCheatSheet",
-  "back",
-  "forward",
-  "previousRun",
-  "nextRun",
-  "searchRuns",
-  "snoozeRestore",
-  "settle",
-  "archive",
-  "rename",
-] as const;
-
-type MenuCommandId = (typeof menuCommandIds)[number];
-type Binding = { key: string; mod: boolean; alt: boolean; shift: boolean };
-type MenuCommand = { label: string; binding: Binding | null; enabled: boolean };
-export type MenuState = Partial<Record<MenuCommandId, MenuCommand>>;
-
 export interface MenuActions {
-  run(id: MenuCommandId): void;
+  run(id: DesktopMenuCommandId): void;
   checkForUpdates(): void;
   openDocumentation(): void;
 }
@@ -42,7 +26,7 @@ export interface MenuEnvironment {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-function parseBinding(value: unknown): Binding | null | undefined {
+function parseBinding(value: unknown): DesktopMenuCommand["binding"] | undefined {
   if (value === null) return null;
   if (
     !isRecord(value) ||
@@ -55,34 +39,67 @@ function parseBinding(value: unknown): Binding | null | undefined {
   return { key: value.key, mod: value.mod, alt: value.alt, shift: value.shift };
 }
 
-/** Accepts the renderer's published commands; unknown or malformed entries are left out. */
-export function parseMenuState(value: unknown): MenuState {
-  if (!isRecord(value)) return {};
-  const state: MenuState = {};
-  for (const id of menuCommandIds) {
-    const command = value[id];
-    if (!isRecord(command)) continue;
-    const binding = parseBinding(command.binding);
-    if (
-      typeof command.label !== "string" ||
-      binding === undefined ||
-      typeof command.enabled !== "boolean"
-    )
-      continue;
-    state[id] = { label: command.label, binding, enabled: command.enabled };
+function parseCommand(value: unknown): DesktopMenuCommand | undefined {
+  if (!isRecord(value)) return undefined;
+  const binding = parseBinding(value.binding);
+  if (
+    typeof value.label !== "string" ||
+    binding === undefined ||
+    typeof value.enabled !== "boolean"
+  )
+    return undefined;
+  return { label: value.label, binding, enabled: value.enabled };
+}
+
+const declaredIds: ReadonlySet<string> = new Set(desktopMenuCommandIds);
+
+/**
+ * Accepts the renderer's publication whole or refuses it: `null` mounts no registry commands;
+ * otherwise every declared menu command must be present and well formed, and nothing else.
+ */
+export function parseMenuState(
+  value: unknown,
+):
+  | { readonly ok: true; readonly state: DesktopMenuState | null }
+  | { readonly ok: false; readonly message: string } {
+  if (value === null) return { ok: true, state: null };
+  if (!isRecord(value)) return { ok: false, message: "The menu publication is not an object." };
+  const undeclared = Object.keys(value).find((id) => !declaredIds.has(id));
+  if (undeclared !== undefined)
+    return { ok: false, message: `Menu command "${undeclared}" is not declared.` };
+  const state = {} as Record<DesktopMenuCommandId, DesktopMenuCommand>;
+  for (const id of desktopMenuCommandIds) {
+    const command = parseCommand(value[id]);
+    if (!command) return { ok: false, message: `Menu command "${id}" is missing or malformed.` };
+    state[id] = command;
   }
-  return state;
+  return { ok: true, state };
 }
 
 const runActionIds = ["snoozeRestore", "settle", "archive", "rename"] as const;
 
+/** Each menu section's registry commands, in menu order. */
+const sectionCommands = {
+  settings: ["settings"],
+  file: ["newRun"],
+  view: ["palette", "studio", "shortcutsCheatSheet"],
+  history: ["back", "forward"],
+  runNavigation: ["previousRun", "nextRun"],
+  search: ["searchRuns"],
+  run: runActionIds,
+} as const satisfies Record<string, readonly DesktopMenuCommandId[]>;
+
+type NoneLeft<Ids extends never> = Ids;
+// A declared menu command that no section places does not compile.
+type _EveryCommandPlaced = NoneLeft<
+  Exclude<DesktopMenuCommandId, (typeof sectionCommands)[keyof typeof sectionCommands][number]>
+>;
+
 /** Without a window no Run is open, so Run actions are unavailable until the renderer reports. */
-export function withoutOpenRun(state: MenuState): MenuState {
-  const next = { ...state };
-  for (const id of runActionIds) {
-    const command = next[id];
-    if (command) next[id] = { ...command, enabled: false };
-  }
+export function withoutOpenRun(state: DesktopMenuState | null): DesktopMenuState | null {
+  if (!state) return null;
+  const next: Record<DesktopMenuCommandId, DesktopMenuCommand> = { ...state };
+  for (const id of runActionIds) next[id] = { ...state[id], enabled: false };
   return next;
 }
 
@@ -102,7 +119,7 @@ function acceleratorKey(key: string) {
   return /^[\x21-\x7e]$/.test(key) ? key.toUpperCase() : undefined;
 }
 
-function accelerator(binding: Binding | null) {
+function accelerator(binding: DesktopMenuCommand["binding"]) {
   const key = binding && acceleratorKey(binding.key);
   if (!binding || !key) return undefined;
   return [
@@ -116,25 +133,23 @@ function accelerator(binding: Binding | null) {
 }
 
 function commandItems(
-  state: MenuState,
-  ids: readonly MenuCommandId[],
+  state: DesktopMenuState | null,
+  ids: readonly DesktopMenuCommandId[],
   actions: MenuActions,
 ): MenuItemConstructorOptions[] {
-  return ids.flatMap((id) => {
+  if (!state) return [];
+  return ids.map((id) => {
     const command = state[id];
-    if (!command) return [];
     const shortcut = accelerator(command.binding);
-    return [
-      {
-        label: command.label,
-        enabled: command.enabled,
-        ...(shortcut ? { accelerator: shortcut } : {}),
-        // The renderer already handled this key press; running it again would fire twice.
-        click: (_item: unknown, _window: unknown, event: KeyboardEvent) => {
-          if (!event.triggeredByAccelerator) actions.run(id);
-        },
+    return {
+      label: command.label,
+      enabled: command.enabled,
+      ...(shortcut ? { accelerator: shortcut } : {}),
+      // The renderer already handled this key press; running it again would fire twice.
+      click: (_item: unknown, _window: unknown, event: KeyboardEvent) => {
+        if (!event.triggeredByAccelerator) actions.run(id);
       },
-    ];
+    };
   });
 }
 
@@ -145,18 +160,15 @@ function sections(...groups: MenuItemConstructorOptions[][]): MenuItemConstructo
 }
 
 export function buildApplicationMenu(
-  state: MenuState,
+  state: DesktopMenuState | null,
   environment: MenuEnvironment,
   actions: MenuActions,
 ): MenuItemConstructorOptions[] {
   const mac = environment.platform === "darwin";
-  const commands = (...ids: MenuCommandId[]) => commandItems(state, ids, actions);
-  const go = sections(
-    commands("back", "forward"),
-    commands("previousRun", "nextRun"),
-    commands("searchRuns"),
-  );
-  const run = commands(...runActionIds);
+  const commands = (section: keyof typeof sectionCommands) =>
+    commandItems(state, sectionCommands[section], actions);
+  const go = sections(commands("history"), commands("runNavigation"), commands("search"));
+  const run = commands("run");
   return [
     {
       label: "T3 Factory",
@@ -169,13 +181,13 @@ export function buildApplicationMenu(
     },
     {
       label: "File",
-      submenu: sections(commands("newRun"), [{ role: "close", label: "Close Window" }]),
+      submenu: sections(commands("file"), [{ role: "close", label: "Close Window" }]),
     },
     { role: "editMenu" },
     {
       label: "View",
       submenu: sections(
-        commands("palette", "studio", "shortcutsCheatSheet"),
+        commands("view"),
         [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }],
         [{ role: "togglefullscreen" }],
         [

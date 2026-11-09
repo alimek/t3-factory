@@ -45,6 +45,29 @@ export interface ServerProbe {
   readonly systemTrusted: boolean;
 }
 
+/**
+ * The registry commands the native application menu shows, in publication order. The
+ * renderer publishes exactly these; the desktop menu places each of them.
+ */
+export const desktopMenuCommandIds = [
+  "settings",
+  "newRun",
+  "palette",
+  "studio",
+  "shortcutsCheatSheet",
+  "back",
+  "forward",
+  "previousRun",
+  "nextRun",
+  "searchRuns",
+  "snoozeRestore",
+  "settle",
+  "archive",
+  "rename",
+] as const;
+
+export type DesktopMenuCommandId = (typeof desktopMenuCommandIds)[number];
+
 /** One registry command as the native application menu shows it. */
 export interface DesktopMenuCommand {
   readonly label: string;
@@ -56,6 +79,8 @@ export interface DesktopMenuCommand {
   } | null;
   readonly enabled: boolean;
 }
+
+export type DesktopMenuState = Readonly<Record<DesktopMenuCommandId, DesktopMenuCommand>>;
 
 export interface FactoryDesktop {
   getState(): Promise<DesktopState>;
@@ -81,10 +106,11 @@ export interface FactoryDesktop {
    * `{ type: livePortMessage, nonce }`; use `desktopLiveSocket` rather than this directly.
    */
   openLive(query: string, nonce: string): Promise<DesktopResult>;
-  /** Publishes registry commands for the application menu; `null` when no commands are mounted. */
-  setMenuState(
-    commands: Readonly<Record<string, DesktopMenuCommand>> | null,
-  ): Promise<DesktopResult>;
+  /**
+   * Publishes every declared menu command for the application menu; `null` when no commands
+   * are mounted. A publication that is not exactly the declared set is refused whole.
+   */
+  setMenuState(state: DesktopMenuState | null): Promise<DesktopResult>;
   /** A menu item chosen with the pointer; menu accelerators never arrive here. */
-  onMenuCommand(listener: (id: string) => void): () => void;
+  onMenuCommand(listener: (id: DesktopMenuCommandId) => void): () => void;
 }

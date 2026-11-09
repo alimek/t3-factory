@@ -28,6 +28,7 @@ import type {
   UpdateChannel,
 } from "@t3-factory/contracts";
 import type {
+  DesktopMenuState,
   DesktopResult,
   DesktopRole,
   DesktopState,
@@ -36,7 +37,7 @@ import type {
 import { ApprovedClient } from "./approved-client.ts";
 import { BackendSupervisor } from "./backend.ts";
 import { channels } from "./ipc.ts";
-import { buildApplicationMenu, parseMenuState, withoutOpenRun, type MenuState } from "./menu.ts";
+import { buildApplicationMenu, parseMenuState, withoutOpenRun } from "./menu.ts";
 import { hostLiveSocket, livePath, refuseLive, relayLive, type LivePort } from "./live-relay.ts";
 import { appOrigin, factoryProtocolHandler, type ApiTarget } from "./protocol.ts";
 import { SettingsStore } from "./settings-store.ts";
@@ -67,7 +68,7 @@ let backend: BackendSupervisor;
 let updates: Updates;
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let menuState: MenuState = {};
+let menuState: DesktopMenuState | null = null;
 /** Set only after the local user confirmed and the backend stopped in order. */
 let quitting = false;
 let installingUpdate = false;
@@ -236,7 +237,7 @@ function refreshTray() {
   );
 }
 
-function applyMenuState(state: MenuState) {
+function applyMenuState(state: DesktopMenuState | null) {
   menuState = state;
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
@@ -430,8 +431,10 @@ const bridgeHandlers: BridgeHandlers = {
   },
   installUpdate: () => installUpdate(),
   setUpdateChannel: (_frame, channel: unknown) => setUpdateChannel(channel),
-  setMenuState: (_frame, commands: unknown) => {
-    applyMenuState(parseMenuState(commands));
+  setMenuState: (_frame, state: unknown) => {
+    const publication = parseMenuState(state);
+    if (!publication.ok) return failed(publication.message);
+    applyMenuState(publication.state);
     return { ok: true };
   },
   // A MessagePort cannot be an invoke result; it goes to the requesting frame, keyed by nonce.
@@ -539,7 +542,7 @@ async function start() {
   });
   registerUi();
   registerBridge();
-  applyMenuState({});
+  applyMenuState(null);
   if (store.get().role === "server") backend.start();
   updates.start(updateChannel());
   tray = new Tray(trayImage());

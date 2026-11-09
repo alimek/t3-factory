@@ -289,7 +289,7 @@ separate from T3 capability checks.
 ## Desktop security
 
 The renderer always runs bundled UI on `factory://app` with context isolation,
-sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. Remote servers only answer API requests
+sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. A menu publication is accepted whole or refused: anything but exactly the declared menu commands, each well formed, fails the bridge call and leaves the menu unchanged. Remote servers only answer API requests
 relayed by the main process; they never load content into the window. The desktop
 client credential stays in the main process, encrypted using Keychain; it is never exposed to the renderer.
 Live delivery also runs through the main process: the renderer exchanges frames over a
