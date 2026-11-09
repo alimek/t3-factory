@@ -188,3 +188,41 @@ it("a confirmed Start removes the draft's saved image bytes", async (context) =>
   // Assert
   expect(images.bytes.size).toBe(0);
 });
+
+it("a Start whose image bytes this browser lost unlocks once Factory reports the image missing", async (context) => {
+  // Arrange
+  const { draft, startRun, images } = composer(context);
+  await draft.attachImages([pngFile("lost.png", 1)]);
+  const [lost] = draft.getSnapshot().images;
+  images.bytes.clear();
+  startRun.mockRejectedValueOnce(
+    new ApiError({
+      code: "missing_images",
+      message: "Missing.",
+      issues: [{ code: "missing_images", path: `images.${lost!.sha256}`, message: "lost.png" }],
+    }),
+  );
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(startRun).toHaveBeenCalledTimes(1);
+  expect(draft.getSnapshot()).toMatchObject({
+    pending: false,
+    error: "lost.png is no longer saved in this browser. Remove it and attach it again.",
+  });
+});
+
+it("overlapping picks never attach more than eight images", async (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  const first = [1, 2, 3, 4, 5].map((seed) => pngFile(`first-${seed}.png`, seed));
+  const second = [6, 7, 8, 9, 10].map((seed) => pngFile(`second-${seed}.png`, seed));
+
+  // Act
+  await Promise.all([draft.attachImages(first), draft.attachImages(second)]);
+
+  // Assert
+  expect(draft.getSnapshot().images).toHaveLength(8);
+});

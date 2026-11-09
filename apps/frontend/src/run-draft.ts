@@ -254,6 +254,12 @@ const apiUploads: ImageUploads = {
 const missingDigests = (error: ApiError) =>
   new Set(error.detail.issues.map((issue) => issue.path.replace(/^images\./, "")));
 
+/**
+ * Factory reported an image missing and this browser no longer holds its bytes. Factory did not
+ * accept the request, so the draft unlocks for the image to be removed or attached again.
+ */
+class LocalImageMissing extends Error {}
+
 const missingImagesOutcome =
   "Factory still lacks some images of this request. Check the same request to upload them again.";
 
@@ -499,7 +505,11 @@ export function createRunDraft(
   }
   function rejectStart(id: string, failure: unknown, recoverable: boolean) {
     if (id !== currentId) return;
-    if (confirmedRejection(failure)) {
+    if (failure instanceof LocalImageMissing) {
+      error = failure.message;
+      issues = [];
+      remedy = "studio";
+    } else if (confirmedRejection(failure)) {
       error = failure.message;
       issues = failure.detail.issues;
       remedy = failure.detail.issues.some((issue) => issue.code === "reporting_installation")
@@ -539,7 +549,7 @@ export function createRunDraft(
       run = await submit(requestServer, request);
     } catch (failure) {
       inFlight.delete(id);
-      if (confirmedRejection(failure))
+      if (failure instanceof LocalImageMissing || confirmedRejection(failure))
         commit(requestServer, id, (latest) => latest && withoutSubmission(latest));
       if (requestServer === server) {
         rejectStart(id, failure, recoverable);
@@ -564,7 +574,9 @@ export function createRunDraft(
   }
   /**
    * Stages the request's images Factory lacks, then sends the same Start. Images Factory
-   * reports missing at acceptance are uploaded again and the request retried once.
+   * reports missing at acceptance are uploaded again and the request retried once. An image
+   * whose local bytes are gone is left to Factory's answer: an accepted request is still
+   * recovered, and only a confirmed `missing_images` makes it a rejection.
    */
   async function submit(scope: string, request: StartRunInput) {
     await stage(scope, request, request.images, true);
@@ -587,7 +599,11 @@ export function createRunDraft(
     for (const image of pending) {
       if (probe && (await images.uploads.has(image))) continue;
       const data = await images.store.load(scope, request.requestId, image.imageId);
-      if (!data) throw Error(`${image.name} is no longer saved in this browser.`);
+      if (!data && probe) continue;
+      if (!data)
+        throw new LocalImageMissing(
+          `${image.name} is no longer saved in this browser. Remove it and attach it again.`,
+        );
       await images.uploads.upload(image, data);
     }
   }
@@ -609,6 +625,16 @@ export function createRunDraft(
     imageRejections = rejected;
     publish();
   }
+  /** Identical bytes are already attached; past the limit a file is rejected. */
+  function admission(candidate: {
+    name: string;
+    sha256: string;
+  }): ImageRejection | "attached" | undefined {
+    if (current.images.some((image) => image.sha256 === candidate.sha256)) return "attached";
+    if (current.images.length >= RUN_IMAGE_LIMIT)
+      return { name: candidate.name, reason: `A Run takes at most ${RUN_IMAGE_LIMIT} images.` };
+    return undefined;
+  }
   /** A rejection, nothing when attached or already attached, or `left` if the draft changed. */
   async function attachImage(
     scope: string,
@@ -617,9 +643,8 @@ export function createRunDraft(
   ): Promise<ImageRejection | "left" | undefined> {
     const candidate = await readImageFile(file);
     if (!candidate.ok) return { name: candidate.name, reason: candidate.reason };
-    if (current.images.some((image) => image.sha256 === candidate.sha256)) return undefined;
-    if (current.images.length >= RUN_IMAGE_LIMIT)
-      return { name: candidate.name, reason: `A Run takes at most ${RUN_IMAGE_LIMIT} images.` };
+    const early = admission(candidate);
+    if (early) return early === "attached" ? undefined : early;
     const image: RunImage = {
       imageId: randomId(),
       sha256: candidate.sha256,
@@ -633,6 +658,14 @@ export function createRunDraft(
       return { name: candidate.name, reason: "Browser storage is full or unavailable." };
     }
     if (scope !== server || currentId !== id || find(id)?.submission) return "left";
+    // Another attach may have completed while these bytes were saved.
+    const late = admission(candidate);
+    if (late) {
+      images.store.remove(scope, id, [image.imageId]).catch(() => {
+        // The next composer load deletes bytes no draft references.
+      });
+      return late === "attached" ? undefined : late;
+    }
     current = { ...current, images: [...current.images, image] };
     save();
     return undefined;

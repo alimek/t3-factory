@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { beforeEach, test, type Browser } from "@e2e-dev/web";
+import { afterEach, beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Screen } from "e2e";
 import { sha256Hex, solidPng } from "../apps/backend/test/support/run-images.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
@@ -15,6 +15,11 @@ const files = {
   green: { path: join(directory, "mockup.png"), data: solidPng(123, 45, 200) },
   notes: { path: join(directory, "notes.txt"), data: Buffer.from("Not an image") },
 };
+
+/** Shared fixture state: restore attachment support even when a journey fails. */
+afterEach(async ({ app }) => {
+  await fixture(app, "attachments?supported=true");
+});
 
 beforeEach(async ({ browser }) => {
   await browser.setViewport({ width: 1440, height: 1100 });
@@ -175,5 +180,4 @@ test("a T3 without attachment support rejects the image Start and keeps the draf
   await expect(screen.getByRole("button", "Remove screenshot.png")).toBeVisible();
   expect(await runsTitled(app.baseUrl, "UI images unsupported")).toHaveLength(0);
   await app.screenshot("images-attachments-unsupported");
-  await fixture(app, "attachments?supported=true");
 });
