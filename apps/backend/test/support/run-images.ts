@@ -119,6 +119,15 @@ export function imageStart(input: {
   };
 }
 
+/** Stages the fixture's images and returns its image Start for a prepared Flow. */
+export async function imageRequest(setup: {
+  f: Pick<Factory, "stageRunImage">;
+  input: Parameters<typeof imageStart>[0];
+}) {
+  await stageImages(setup.f, Object.values(screenshots));
+  return imageStart(setup.input);
+}
+
 /**
  * Holds the Runner's first image dispatch at its attachment check until released; Start's own
  * preflight check passes. Lets a test change Factory storage or T3 support after Start.

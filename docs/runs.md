@@ -30,8 +30,10 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   hold yet, then sends the request; Factory accepts it only with every image uploaded and attaches them to the Run in
   order. Each Flow-input worker receives the same original images with its first message, named `image-N-<name>`, and
   the Run's input text spells each reference as `[Image N: name]` in place and ends with `Attached images:` listing every
-  image, referenced or not. Later
-  Blocks, revisits and Request report turns do not receive the images. An image Start needs a T3 that accepts uploaded
+  image, referenced or not. Later Blocks, revisits and Request report turns remain text-only. Every worker, including
+  during later user conversations, can discover the initial images and retrieve relevant originals through
+  [read-only Factory MCP access](t3-integration.md#run-image-reads). The immutable image labels keep the same meaning
+  across visits. An image Start needs a T3 that accepts uploaded
   launch attachments; otherwise it is rejected with "update T3 or remove the images" and nothing is created. Images are
   part of the Run's input and stay with it after Settle and Archive.
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or

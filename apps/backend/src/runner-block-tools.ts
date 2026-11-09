@@ -1,28 +1,86 @@
 import * as Effect from "effect/Effect";
-import type { RunDetail } from "@t3-factory/contracts";
+import type { RunDetail, RunImageMimeType } from "@t3-factory/contracts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { OPEN_TRANSITIONS, type RuntimeReply } from "./runtime-types.ts";
 import { reportDiagnostic } from "./runtime-report-diagnostic.ts";
 import { blockIdArgument, resolveBlock } from "./runtime-block-id.ts";
+import type { RunImages } from "./run-images.ts";
 
-/** Block and Run reads addressed by the Block id from the worker's message. */
+type ImageRow = {
+  image_id: string;
+  ordinal: number;
+  name: string;
+  mime_type: RunImageMimeType;
+  size_bytes: number;
+};
+
+const imageIdentity = (row: ImageRow): NonNullable<RuntimeReply["image"]> => ({
+  imageId: row.image_id,
+  ordinal: row.ordinal,
+  name: row.name,
+  mimeType: row.mime_type,
+  sizeBytes: row.size_bytes,
+});
+
+/** Block, Run and image reads addressed by the Block id from the worker's message. */
 export function openBlockTools(
   database: RunnerDatabase,
   getRun: (id: string) => Effect.Effect<{ ok: true; value: RunDetail } | { ok: false }, unknown>,
+  images: RunImages,
 ) {
-  return (kind: "block" | "run", input: unknown): Effect.Effect<RuntimeReply, unknown> =>
+  return (kind: "block" | "run" | "image", input: unknown): Effect.Effect<RuntimeReply, unknown> =>
     Effect.gen(function* () {
-      const publicId = blockIdArgument(input, []);
+      const publicId = blockIdArgument(input, kind === "image" ? ["imageId"] : []);
       if (typeof publicId !== "string") return reportDiagnostic(publicId);
+      const fields = (input as { arguments: Record<string, unknown> }).arguments;
+      if (kind === "image") {
+        if (!("imageId" in fields)) return reportDiagnostic({ code: "IMAGE_ID_REQUIRED" });
+        if (typeof fields.imageId !== "string" || !fields.imageId)
+          return reportDiagnostic({ code: "INVALID_ARGUMENT" });
+      }
       const block = yield* database.transaction((sql) => resolveBlock(sql, publicId));
       if (!block) return reportDiagnostic({ code: "UNKNOWN_BLOCK" });
+      if (kind === "image")
+        return yield* readImage(database, images, block.run_id, fields.imageId as string);
       const detail = yield* getRun(block.run_id);
       if (!detail.ok) return { code: "RUNTIME_UNAVAILABLE" };
-      return kind === "block" ? blockView(detail.value, block.block_id) : runView(detail.value);
+      if (kind === "run") return runView(detail.value);
+      const manifest = yield* database.transaction(
+        (sql) =>
+          sql<ImageRow>`SELECT image_id, ordinal, name, mime_type, size_bytes FROM run_images WHERE run_id=${block.run_id} ORDER BY ordinal`,
+      );
+      return blockView(detail.value, block.block_id, manifest.map(imageIdentity));
     }).pipe(Effect.catchCause(() => Effect.succeed<RuntimeReply>({ code: "RUNTIME_UNAVAILABLE" })));
 }
 
-function blockView(detail: RunDetail, blockId: string): RuntimeReply {
+function readImage(database: RunnerDatabase, images: RunImages, runId: string, imageId: string) {
+  return Effect.gen(function* () {
+    const [row] = yield* database.transaction(
+      (sql) =>
+        sql<
+          ImageRow & { sha256: string }
+        >`SELECT image_id, ordinal, name, mime_type, size_bytes, sha256 FROM run_images WHERE run_id=${runId} AND image_id=${imageId}`,
+    );
+    if (!row) return reportDiagnostic({ code: "UNKNOWN_IMAGE" });
+    const image = imageIdentity(row);
+    return yield* Effect.suspend(() => images.storedBytes(row.sha256)).pipe(
+      Effect.map((bytes): RuntimeReply =>
+        bytes.kind === "ok"
+          ? { code: "IMAGE", image, data: bytes.data }
+          : reportDiagnostic({ code: "IMAGE_UNAVAILABLE", image }),
+      ),
+      Effect.catchCause(() =>
+        Effect.succeed(reportDiagnostic({ code: "IMAGE_READ_FAILED", image })),
+      ),
+    );
+  });
+}
+
+function blockView(
+  detail: RunDetail,
+  blockId: string,
+  images: NonNullable<RuntimeReply["inputs"]>["images"],
+): RuntimeReply {
   const block = detail.blocks.find((entry) => entry.blockId === blockId);
   const graphBlock = detail.definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
   if (!block || !graphBlock) return reportDiagnostic({ code: "UNKNOWN_BLOCK" });
@@ -49,6 +107,7 @@ function blockView(detail: RunDetail, blockId: string): RuntimeReply {
         : [],
     inputs: {
       input: detail.input,
+      images,
       results: incomingResults(detail, cause),
       feedback: feedbackId
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)

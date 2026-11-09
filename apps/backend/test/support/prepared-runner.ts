@@ -276,11 +276,16 @@ export async function preparedWorktreeReviewFlow(c: TestContext) {
   return { ...setup, flow: flow.value };
 }
 
-/** The review Flow's Run with its worktree bound while Entry worker's first turn runs; no later
- * Block has a worker yet. */
-export async function boundWorktreeReview(c: TestContext) {
+type WorktreeReviewSetup = Awaited<ReturnType<typeof preparedWorktreeReviewFlow>>;
+
+/** The review Flow's Run, started with `request`, with its worktree bound while Entry worker's
+ * first turn runs; no later Block has a worker yet. */
+export async function boundWorktreeReview(
+  c: TestContext,
+  request: (setup: WorktreeReviewSetup) => Promise<object> = async (setup) => setup.input,
+) {
   const setup = await preparedWorktreeReviewFlow(c);
-  const started = await setup.f.startRun(setup.input);
+  const started = await setup.f.startRun(await request(setup));
   assert(started.ok);
   assert((await setup.f.reconcileRuns()).ok);
   const run = await setup.f.getRun(started.value.id);

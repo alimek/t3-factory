@@ -130,7 +130,16 @@ retries after a delay of 1 second doubling to 60; it is neither a Block error no
 the pending launch-unsupported path. Bytes missing from Factory storage or failing their digest cancel the launch and
 mark the Block error "Run image missing from Factory storage" (for a worktree creator, every other Flow-input Block too).
 A rejected launch is an error; an uncertain one is searched for and never uploaded or launched again. Downstream
-launches, revisits and Request report carry no images.
+launches, including a worktree Block's launch on its first arrival, revisits and Request report remain text-only.
+Factory does not use `t3_thread_send_attachments`: it has no retry key, and launch attachments cannot reach a worker
+that is already running.
+
+Every worker can instead discover and retrieve relevant original images through
+[read-only Factory MCP access](t3-integration.md#run-image-reads), including during later user conversations.
+A read creates no intent, turn, activation, handoff, attention or execution/lifecycle change. It can be repeated after a
+lost response without changing launch recovery or send uncertainty rules or authorizing a resend. Unlike missing bytes
+at Flow-input launch, an image-read failure does not fail the Block or raise attention; the worker handles any blocker
+through normal reporting.
 
 ## Ownership and restart
 

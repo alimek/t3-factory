@@ -1,0 +1,43 @@
+import type { TestContext } from "@effect/vitest";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import type { Factory } from "@t3-factory/backend";
+import { runtimeMcpHandler } from "../../src/runtime-mcp.ts";
+
+/**
+ * A worker's MCP client on the Factory MCP handler of an open backend, over Streamable HTTP
+ * without a listening socket. With `loseCallResponses`, every tool call is answered by Factory but
+ * its response never reaches the client.
+ */
+export async function factoryMcpClient(
+  c: TestContext,
+  factory: Pick<Factory, "runtime">,
+  options: { loseCallResponses?: boolean } = {},
+) {
+  const handler = runtimeMcpHandler(factory.runtime);
+  const lost = (init?: RequestInit) =>
+    options.loseCallResponses &&
+    typeof init?.body === "string" &&
+    init.body.includes('"method":"tools/call"');
+  const client = new Client({ name: "worker", version: "1" });
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
+      fetch: async (url, init) => {
+        const response = await handler(new Request(url, init));
+        if (lost(init)) throw new TypeError("Response lost");
+        return response;
+      },
+    }),
+  );
+  c.onTestFinished(() => client.close());
+  return client;
+}
+
+/** `factory_get_run_image` for one image of the Block's Run. */
+export const readRunImage = (client: Client, blockId: string, imageId: string) =>
+  client.callTool({ name: "factory_get_run_image", arguments: { blockId, imageId } });
+
+/** The JSON reply in a Factory tool result's first, text content item. */
+export const toolReply = (result: { content: unknown }) =>
+  JSON.parse((result.content as [{ text: string }])[0].text);
+
+export const base64 = (data: Uint8Array) => Buffer.from(data).toString("base64");

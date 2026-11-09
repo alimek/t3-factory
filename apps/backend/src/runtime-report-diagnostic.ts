@@ -9,6 +9,22 @@ const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
     "Factory tools need the Block id to know which Block you are working on.",
     "Pass blockId from the Factory Block id line of this thread's latest Factory message.",
   ],
+  IMAGE_ID_REQUIRED: [
+    "Factory needs an image id to read a Run image.",
+    "Pass an imageId from factory_get_block inputs.images.",
+  ],
+  UNKNOWN_IMAGE: [
+    "This image id is not in the Block's Run input.",
+    "Pass an imageId from factory_get_block inputs.images.",
+  ],
+  IMAGE_UNAVAILABLE: [
+    "The stored image bytes are missing or corrupt. Factory cannot provide this image.",
+    "Continue without it or explain the blocker in your normal reporting; do not repeat the task.",
+  ],
+  IMAGE_READ_FAILED: [
+    "A transient failure prevented Factory from reading this image.",
+    "Retry the same factory_get_run_image call.",
+  ],
   INVALID_ARGUMENT: [
     "The call has an unexpected argument or argument type.",
     "Read the tool's input schema and send only its documented arguments.",

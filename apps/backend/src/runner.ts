@@ -172,7 +172,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   yield* Effect.addFinalizer(close);
   return {
     ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
-    readFactoryTool: openBlockTools(database, getRun),
+    readFactoryTool: openBlockTools(database, getRun, images),
     answerHumanOccurrence,
     archiveRun,
     settleRun,

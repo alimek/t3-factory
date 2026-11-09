@@ -285,11 +285,13 @@ it("an installed Claude entry reaches the Factory tools on the listening backend
   expect(listed.tools.map((tool) => tool.name)).toStrictEqual([
     "factory_update_block",
     "factory_get_block",
+    "factory_get_run_image",
     "factory_get_run",
   ]);
   expect(listed.tools.map((tool) => tool.inputSchema.required)).toStrictEqual([
     ["blockId", "to"],
     ["blockId"],
+    ["blockId", "imageId"],
     ["blockId"],
   ]);
   expect(listed.tools[0]?.inputSchema.properties?.to).toMatchObject({
@@ -333,6 +335,7 @@ it("Repair installs the Factory Block skill under the Claude home", async (conte
   expect(installed).toContain("name: factory-block");
   expect(installed).toContain("factory_get_block");
   expect(installed).toContain("factory_get_run");
+  expect(installed).toContain("factory_get_run_image");
   expect(installed).toContain('to: "working"');
   expect(installed).toContain('to: "finished"');
   expect(installed).toContain("`blockId`");

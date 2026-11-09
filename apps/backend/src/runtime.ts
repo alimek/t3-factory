@@ -26,11 +26,12 @@ function blockUpdate(input: unknown): { publicId: string; report: RuntimeReport 
 /** Factory MCP operations. The Runner resolves the Block id and owns acceptance. */
 export function createRuntime(
   update: (publicId: string, report: RuntimeReport) => Effect.Effect<RuntimeReply, unknown>,
-  read: (kind: "block" | "run", input: unknown) => Effect.Effect<RuntimeReply, unknown>,
+  read: (kind: "block" | "run" | "image", input: unknown) => Effect.Effect<RuntimeReply, unknown>,
 ) {
   return {
     block: (input: unknown) => read("block", input),
     run: (input: unknown) => read("run", input),
+    image: (input: unknown) => read("image", input),
     submit: Effect.fn(function* (input: unknown) {
       const call = blockUpdate(input);
       if ("code" in call) return reportDiagnostic(call);
