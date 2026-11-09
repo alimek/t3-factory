@@ -15,19 +15,27 @@ a T3 endpoint that is not on this computer rejects Start with a `workspace.*` is
 action; no Run, Task or worker is created. Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
-- **Screenshots.** **Attach images** in the prompt field adds PNG, JPEG, GIF or WebP files, up to 8 images of
-  1 byte–10 MiB each, sent unchanged (no recompression or resizing). The field shows thumbnails with remove controls,
-  and a thumbnail opens a full-size preview. Each unsupported, oversized, excess or unsavable file is rejected with its
-  name and reason; valid files and existing attachments stay. Identical bytes attach once; different files with the same
-  name stay separate images. Start still requires prompt text. At Start the composer uploads every image Factory does not
+- **Screenshots.** Pasting images (Ctrl+V/Cmd+V) at the prompt caret or dropping image files on the prompt field attaches
+  them and inserts a clickable reference to each at the caret (a drop uses the last caret position, or the end of the
+  prompt). **Attach images** attaches files without inserting references. Images are PNG, JPEG, GIF or WebP files, up to 8
+  images of 1 byte–10 MiB each, sent unchanged (no recompression or resizing). The field shows thumbnails with remove
+  controls; a thumbnail or reference opens a full-size preview. A reference shows the image name with its size and points
+  to the attached image itself, so references to different images with the same name stay distinct. Each unsupported,
+  oversized, excess or unsavable file is rejected with its name and reason; valid files and existing attachments stay.
+  Identical bytes attach once: pasting or dropping them again inserts another reference to the attached image without
+  using another slot. Different files with the same name stay separate images. Removing a thumbnail removes that image
+  and every reference to it; deleting a reference from the text keeps its image attached and delivered. Start still
+  requires prompt text: references alone do not count, and a line holding only references does not supply the automatic
+  title. At Start the composer uploads every image Factory does not
   hold yet, then sends the request; Factory accepts it only with every image uploaded and attaches them to the Run in
   order. Each Flow-input worker receives the same original images with its first message, named `image-N-<name>`, and
-  the Run's input text refers to them as `[Image N: name]` and ends with `Attached images:` listing every image. Later
+  the Run's input text spells each reference as `[Image N: name]` in place and ends with `Attached images:` listing every
+  image, referenced or not. Later
   Blocks, revisits and Request report turns do not receive the images. An image Start needs a T3 that accepts uploaded
   launch attachments; otherwise it is rejected with "update T3 or remove the images" and nothing is created. Images are
   part of the Run's input and stay with it after Settle and Archive.
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
-  else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes
+  else its first non-empty line of prompt text limited to 500 characters. Start also carries the draft's creation time, which becomes
   the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
   title (after trimming) or a creation time not in `Date.toISOString()` form (for example `2026-11-07T08:00:00.000Z`),
   and creates nothing.
