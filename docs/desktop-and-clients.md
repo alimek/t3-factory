@@ -112,7 +112,7 @@ outside the draggable region, fullscreen and window controls stay native, and th
 The desktop app replaces Electron's default menu with its own: **T3 Factory** (About,
 Settings, Check for Updates…, Hide, Quit), **File** (New Run, Close Window), **Edit**
 (standard text-editing roles, which keep the clipboard working in text fields), **View**
-(Command palette, Studio, Keyboard shortcuts, page zoom, Full Screen), **Go** (Back,
+(Command palette, Studio, Keyboard shortcuts, page zoom, Full Screen, Reload), **Go** (Back,
 Forward, Previous/Next Run, Search Runs), **Run** (Snooze or restore, Settle, Archive…,
 Rename), **Window** and **Help** (Factory documentation). Registry commands
 appear once the window shows the connected application. Command labels and
@@ -127,8 +127,9 @@ the page; a menu accelerator never runs the command a second time. Choosing an i
 the pointer sends the command to the renderer, which runs it through the same path and
 overlay gating as the shortcut. Choosing one with no window open reopens the window
 without running the command. **Close Window** (Mod+W) closes the window and leaves the
-server running. Reload, Force Reload and DevTools exist only in unpackaged development
-builds; packaged builds also disable DevTools for the window. On Windows and Linux the
+server running. **View → Reload** (Mod+R) reloads the window in every build; Force
+Reload and DevTools exist only in unpackaged development builds, and packaged builds
+also disable DevTools for the window. On Windows and Linux the
 menu bar is hidden until Alt is pressed.
 
 ## Updates

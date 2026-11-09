@@ -103,7 +103,7 @@ it("an accelerator key press leaves the command to the renderer so it never fire
   expect(ran).toStrictEqual([]);
 });
 
-it("a production menu offers neither Reload nor DevTools", () => {
+it("a production menu reloads the window with Mod+R but offers no DevTools", () => {
   // Arrange
   const state = parseMenuState(published);
 
@@ -111,6 +111,8 @@ it("a production menu offers neither Reload nor DevTools", () => {
   const template = buildApplicationMenu(state, production, noActions);
 
   // Assert
-  expect(allRoles(template)).not.toContain("reload");
+  const view = template.find((entry) => entry.label === "View")?.submenu;
+  const reload = (view as MenuItemConstructorOptions[]).find((entry) => entry.role === "reload");
+  expect(reload?.accelerator).toBe("CommandOrControl+R");
   expect(allRoles(template)).not.toContain("toggleDevTools");
 });
