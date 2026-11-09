@@ -70,7 +70,7 @@ workers share one worktree; its project root stays the Run's project identity.
   failed send stays unresolved under the usual delivery rules.
 - Factory never removes the worktree; T3's cleanup rules apply to it.
 - **Earlier prepared workers.** Runs started before this contract prepared idle threads for
-  later Agent Blocks. Migration `069` cancels unresolved preparations; their acknowledged idle
+  later Agent Blocks. Migration `070` cancels unresolved preparations; their acknowledged idle
   threads stay recorded as history and in T3. A first visit already queued as a send to a
   prepared thread keeps its target and request key, and that thread becomes the Block's worker;
   the send is released without waiting, since the thread has never run, and is delivered or
