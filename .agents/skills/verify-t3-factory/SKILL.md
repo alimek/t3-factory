@@ -66,14 +66,30 @@ persisted simulator/scenario data for long identities and multiple workers;
 read the public API to confirm those values and links. Capture the rendered app
 without replacing DOM text, API responses or CSS for evidence.
 Capture the baseline from the PR base revision and the verified result in the same
-viewport; use comparable states and explain differences in the PR. Keep both sets
-separately under `.e2e/`, upload them as PR attachments and embed them in the PR body's
-**UI screenshots** section under `### Before` and `### After`.
+viewport; use comparable states and explain differences in the PR. Capture Before
+and After each in its own CLI run (fresh fixture) from a known seeded scenario,
+with distinct `--output .e2e/proof/<change>/before` and
+`--output .e2e/proof/<change>/after`, so an earlier journey cannot contaminate evidence.
+Embed both sets in the PR body's **UI screenshots** section: write local references
+such as `![Before: <view>](./before.png)` under `### Before` and `### After`, then
+check the installed `gh pr edit --help` and run
+`gh pr edit <PR> --body-file body.md --attach ./before.png --attach ./after.png`.
+It uploads the files and rewrites matching local references to uploaded URLs;
+attachments the body does not reference are appended at its end, outside those
+headings. Use this path when you can push to the repository; without push access
+(for example from a fork), `--attach` cannot upload, so drop the images into the PR
+description editor on GitHub under the same headings. Do not use gists or other
+hosting. On partial failure it still updates the body with successful uploads and
+exits non-zero.
+Then run `pnpm check:ui-evidence --pr <PR>`, the same validator as CI;
+`pnpm check:ui-evidence --body-file <file>` (`-` reads stdin) checks a draft body
+that already holds HTTPS image URLs.
 Record the base/head commit, viewport, scenario and command alongside the images.
 Capture After only after the last application edit; rebuild and repeat the affected
 journey if the UI changes afterward. Inspect both image sets yourself, including
 long text and each worker link. The **UI evidence attachments** CI check only
-checks for embedded HTTPS images outside comments and code, not their content,
+checks for embedded HTTPS images outside HTML comments and code, accepting alt
+text with nested or escaped brackets; it does not check their content,
 provenance or comparability.
 Human review still owns those judgments.
 
@@ -83,13 +99,21 @@ Report configuration checks, accepted Start and accepted Block result separately
 Controlled fixtures prove these local stages, not live harness tool visibility or
 model execution.
 
-`pnpm e2e:screenshots` saves named PNGs for Flows, Agents, Runs, Agent reporting,
+`pnpm e2e:screenshots` is a combined regression run: multi-test runs share seeded
+state within one CLI run, unlike the isolated Before/After captures above.
+It saves named PNGs for Flows, Agents, Runs, Agent reporting,
 and a Flow before saving and after reload under `.e2e/screenshots/results/`.
 Each output root has `report.json` listing exact artifact paths; `--trace on`
 keeps passing traces too, and `--video on` keeps the action sequence.
 In a test `await app.screenshot("name")` captures a named frame.
 A new run clears that output root's `results/`; choose a distinct
 `--output .e2e/proof/<change>` when evidence must survive later runs.
+
+The installed e2e CLI resolves `--config` relative to the working directory, then
+uses that config file's directory as the project root for test file arguments,
+`tests` globs, relative `--output`/config `output` and app-command `cwd` paths.
+Keep ad hoc configs at the repository root; output must remain inside that project
+root, even when given as an absolute path.
 
 Prove the real user action and resulting state. Check durable writes via reload
 and public API reads (Flow graph/revision, Runs and Human settlement), as existing
