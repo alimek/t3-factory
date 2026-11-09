@@ -1,7 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import { ApiError } from "../src/api.ts";
 import { draftTitle } from "../src/run-draft.ts";
-import { composer, pngFile, reopen } from "./support/run-draft.ts";
+import { composer, plain, pngFile, references, reopen } from "./support/run-draft.ts";
 
 const savedBeforeImages = {
   current: "draft-1",
@@ -83,6 +83,92 @@ it("identical image bytes attach once while same-named different images stay dis
   ]);
 });
 
+it("pasting identical bytes references the attached image without taking another slot", async (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  await draft.attachImages([pngFile("screenshot.png", 1)]);
+  const [attached] = draft.getSnapshot().images;
+
+  // Act
+  await draft.attachImages([pngFile("image.png", 1), pngFile("image.png", 2)], references);
+
+  // Assert
+  const { images, segments } = draft.getSnapshot();
+  expect(images.map((image) => image.name)).toStrictEqual(["screenshot.png", "image.png"]);
+  expect(segments).toStrictEqual([
+    { type: "image", imageId: attached!.imageId },
+    { type: "image", imageId: images[1]!.imageId },
+  ]);
+});
+
+it("removing an attached image removes every reference to it and keeps the others", async (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  await draft.attachImages([pngFile("header.png", 1), pngFile("footer.png", 2)]);
+  const [header, footer] = draft.getSnapshot().images.map((image) => image.imageId);
+  draft.edit({
+    segments: [
+      { type: "text", text: "Compare " },
+      { type: "image", imageId: header! },
+      { type: "text", text: " with " },
+      { type: "image", imageId: footer! },
+      { type: "text", text: " and " },
+      { type: "image", imageId: header! },
+    ],
+  });
+
+  // Act
+  draft.removeImage(header!);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    segments: [
+      { type: "text", text: "Compare  with " },
+      { type: "image", imageId: footer },
+      { type: "text", text: " and " },
+    ],
+    images: [{ imageId: footer, name: "footer.png" }],
+  });
+});
+
+it("a line holding only an image reference leaves the automatic title to the next text line", async (context) => {
+  // Arrange
+  const { draft } = composer(context);
+  await draft.attachImages([pngFile("header.png", 1)]);
+  const [header] = draft.getSnapshot().images.map((image) => image.imageId);
+  draft.leave();
+
+  // Act
+  draft.edit({
+    segments: [
+      { type: "image", imageId: header! },
+      { type: "text", text: " \nFix the header spacing\nDetails" },
+    ],
+  });
+
+  // Assert
+  expect(draft.getDrafts().map(draftTitle)).toStrictEqual(["Fix the header spacing"]);
+});
+
+it("removing an image in a stale tab keeps another tab's unresolved Start and its bytes", async (context) => {
+  // Arrange
+  const setup = composer(context);
+  await setup.draft.attachImages([pngFile("header.png", 1)]);
+  const [header] = setup.draft.getSnapshot().images.map((image) => image.imageId);
+  setup.startRun.mockRejectedValueOnce(new TypeError("Response lost"));
+  await reopen(setup).draft.start();
+
+  // Act
+  setup.draft.removeImage(header!);
+
+  // Assert
+  expect(reopen(setup).draft.getSnapshot()).toMatchObject({
+    pending: true,
+    images: [{ imageId: header, name: "header.png" }],
+  });
+  expect(setup.images.bytes.size).toBe(1);
+});
+
 it("an image whose bytes the browser cannot save is rejected and not referenced", async (context) => {
   // Arrange
   const { draft, images } = composer(context);
@@ -105,7 +191,7 @@ it("images without prompt text keep an Untitled draft after reload", async (cont
   await setup.draft.attachImages([pngFile("header.png", 1)]);
 
   // Act
-  setup.draft.edit({ input: "" });
+  setup.draft.edit({ segments: plain("") });
 
   // Assert
   const { draft } = reopen(setup);

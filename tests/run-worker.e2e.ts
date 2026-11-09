@@ -135,7 +135,7 @@ test("an unfinished prompt reopens as a Draft after reload and Starts exactly on
   await expect(journeyRows).toHaveText([/^UI newer draft/, /^UI saved draft/]);
   await browser.reload();
   await draftRow.tap();
-  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(prompt);
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveText(prompt);
   await expect(projectChoice).toHaveAttribute("aria-label", project!);
   await expect(screen.getByLabel("Select Flow: Demo · Focused change")).toBeVisible();
   await app.screenshot("draft-reopened-after-reload");
@@ -145,7 +145,9 @@ test("an unfinished prompt reopens as a Draft after reload and Starts exactly on
 
   // Assert
   await expect(screen.getByRole("heading", "UI saved draft", { exact: true })).toBeVisible();
-  expect(await runsTitled(app.baseUrl, "UI saved draft")).toHaveLength(1);
+  const started = await runsTitled(app.baseUrl, "UI saved draft");
+  expect(started).toHaveLength(1);
+  expect((await readHistoryRun(app.baseUrl, started[0]!.id)).input).toBe(prompt);
   await expect(draftRow).toHaveCount(0);
   await expect(journeyRows).toHaveText([/^UI newer draft\s*Draft$/, /UI saved draft/]);
   await app.screenshot("draft-started-once");
@@ -161,7 +163,7 @@ test("a Start whose response was lost is recovered after reload without a duplic
   await screen.getByLabel("Initial prompt", { exact: false }).fill("UI recovered lost Start");
   await startLosingResponse(screen, browser);
   await browser.reload();
-  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveText(
     "UI recovered lost Start",
   );
   await app.screenshot("lost-start-pending-after-reload");

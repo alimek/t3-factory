@@ -69,7 +69,7 @@ test("Mod+, opens connection Settings without losing the composer draft", async 
 
   // Assert
   await expect(screen.getByRole("heading", "T3 connection", { exact: true })).toBeVisible();
-  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveText(
     "Keyboard settings draft",
   );
 });
