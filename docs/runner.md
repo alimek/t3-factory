@@ -241,11 +241,11 @@ worker reports.
 - Waiting reports accepted before retirement keep their questions, settled attention and
   work-period report status. Upgrading settles each pending question as `upgraded-to-working`
   and makes the latest one of a Block's latest activation that activation's current `working`
-  report, with the question as its message, even after an earlier result. The upgrade sends
-  nothing and resumes no worker. Request report treats the upgraded work period like one idle in
-  `working`, although it keeps its historical waiting status. Migration `073` discards the wait
-  records with their acknowledgements, and the marker that showed such a report was derived by
-  the upgrade rather than reported by the Agent.
+  report, with the question as its message, even after an earlier result. That report's
+  `retired-wait:` id marks it as derived by the upgrade, not reported by the Agent; the upgrade
+  sends nothing and resumes no worker. Request report treats the upgraded work period like one
+  idle in `working`, although it keeps its historical waiting status. Migration `073` discards
+  the wait records with their acknowledgements.
 
 Report metadata retains fingerprints and references, not a second message archive.
 [Block ids](t3-integration.md#factory-mcp-and-block-ids) defines the tool contract.
