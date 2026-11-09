@@ -102,7 +102,11 @@ take no keyboard focus. Click a wire or its label to select it (the block panel 
 connection selected, Delete/Backspace (outside form controls) or the **Delete connection** button removes it. Removing a block or exit removes its connections.
 
 **Exits.** An Agent block offers its Agent's exits, minus those hidden in this Flow, followed by its Flow-local exits; inherited exits cannot be edited in a Flow. Hiding exits and adding
-Flow-local exits are stored with the Flow revision; Studio does not edit them yet, and Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
+Flow-local exits are stored with the Flow revision. **Exits from Agent** shows read-only names, descriptions and message requirements, with **Hide in this Flow** / **Show in this Flow**.
+Hidden rows remain visible in the panel but are absent from worker choices and cannot start new connections. Hiding a wired exit preserves its connection and reports a readiness issue until the exit is shown or the wire removed.
+Wired hidden or removed exits keep a separate, unavailable canvas endpoint marked **Agent · hidden** or **Agent · removed**, so their wires never appear to leave a usable exit.
+**Local exits · only in this Flow** offers editable name, description and message-required cards and **Add local exit**. Removing a local exit removes its connections.
+Changes to the saved Agent appear on the next Flow read; Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
 exits **Approve** (message optional) and **Request changes** (message required). An unconnected exit ends that branch.
 
 ### Automatic layout and canvas view
@@ -130,7 +134,7 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
 issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit named like one of its Agent's visible exits (also when
 the Agent adds that name later), a wire from an exit hidden in this Flow or no longer on the Agent, and unreachable blocks. Each names the block, the exit and the problem, and selecting one
-inspects its block. These issues block Start, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
+inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
 are separate Start gates ([Runs](runs.md)).
 
 A stale save returns a conflict and keeps local work. **Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { expect, type Screen } from "e2e";
 import type { FlowDraft, FlowWorkspace, Result } from "../../packages/contracts/src/index.ts";
 
 const mutation = { "content-type": "application/json", "X-Factory-Request": "1" };
@@ -29,4 +30,11 @@ export async function saveFlowCopy(
     headers: mutation,
     body: JSON.stringify({ name, expectedRevision: 1, workspace, graph: seeded.graph }),
   });
+  return created.id;
+}
+
+/** A repairable graph issue names its cause and prevents opening the Run composer. */
+export async function expectFlowBlocked(screen: Screen, message: RegExp) {
+  await expect(screen.getByRole("button", message)).toBeVisible();
+  await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeDisabled();
 }

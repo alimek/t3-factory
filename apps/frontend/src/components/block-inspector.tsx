@@ -1,13 +1,12 @@
 import { useId, type ComponentProps } from "react";
-import { ExternalLink, Lock, Trash2 } from "lucide-react";
+import { ExternalLink, Trash2 } from "lucide-react";
 import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
-import { effectiveExits, type EffectiveExit } from "@t3-factory/domain-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { StudioLink } from "../components/app-link.tsx";
-import { exitRecipients } from "../flow-graph.ts";
+import { BlockExitConfiguration } from "./block-exit-configuration.tsx";
 
 type AgentBlock = Extract<FlowBlock, { kind: "agent" }>;
 
@@ -47,8 +46,8 @@ export function BlockConfiguration({
             to Agent blocks.
           </p>
         )}
+        <BlockExitConfiguration block={block} graph={graph} agents={agents} onEdit={onEdit} />
         <PositionControls block={block} onEdit={onEdit} />
-        <BlockExitList block={block} graph={graph} agents={agents} />
       </div>
       <div className="flex items-center gap-2 border-t px-4 pt-3">
         <Button variant="destructive" onClick={onRemove}>
@@ -59,15 +58,6 @@ export function BlockConfiguration({
         </span>
       </div>
     </>
-  );
-}
-
-/** Figma panel section heading (EXITS). */
-function PanelHeading({ children }: { children: string }) {
-  return (
-    <h3 className="text-overline font-semibold tracking-section text-muted-foreground">
-      {children}
-    </h3>
   );
 }
 
@@ -179,76 +169,5 @@ function PositionControls({
         </div>
       ))}
     </div>
-  );
-}
-
-const EXIT_SOURCES: Record<EffectiveExit["source"], string> = {
-  agent: "From Agent",
-  local: "Local · only in this Flow",
-  human: "Locked",
-};
-
-/** The block's exits as its ports show them; Agent exits are edited on the Agent definition. */
-function BlockExitList({
-  block,
-  graph,
-  agents,
-}: {
-  block: FlowBlock;
-  graph: FlowGraph;
-  agents: readonly AgentDefinition[];
-}) {
-  const exits = effectiveExits(block, agents);
-  return (
-    <section aria-label="Exits" className="grid gap-2">
-      <div className="flex items-baseline gap-1.5">
-        <PanelHeading>EXITS</PanelHeading>
-        <span className="text-xs text-muted-foreground">
-          {block.kind === "human"
-            ? "· the same for every Human step"
-            : "· from the Agent definition, then local to this Flow"}
-        </span>
-      </div>
-      {exits.length ? (
-        <ul className="grid gap-2">
-          {exits.map((exit) => (
-            <ExitSummary
-              key={exit.id}
-              exit={exit}
-              recipients={exitRecipients(graph, block.id, exit.id).join(", ")}
-            />
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          This block has no exits. Add them to its Agent definition.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function ExitSummary({ exit, recipients }: { exit: EffectiveExit; recipients: string }) {
-  const name = exit.name || "Unnamed exit";
-  return (
-    <li
-      aria-label={`Exit ${name}`}
-      className="grid min-w-0 gap-1 rounded-lg border bg-muted px-3 py-2.5"
-    >
-      <div className="flex min-w-0 items-center gap-1.5">
-        {exit.source === "human" && (
-          <Lock aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-        )}
-        <span className="truncate font-mono text-xs font-medium text-foreground">{name}</span>
-        <span className="shrink-0 text-2xs tracking-label text-muted-foreground">
-          {EXIT_SOURCES[exit.source]}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-right text-xs text-emphasis-foreground">
-          → {recipients || "finish here"}
-        </span>
-      </div>
-      {exit.description && <p className="text-xs text-muted-foreground">{exit.description}</p>}
-      {exit.messageRequired && <p className="text-xs text-emphasis-foreground">Message required</p>}
-    </li>
   );
 }

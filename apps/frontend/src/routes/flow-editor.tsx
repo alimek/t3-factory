@@ -594,7 +594,10 @@ function EditorToolbar({
         </Button>
       </MutationGate>
       <MutationGate>
-        <Button disabled={draft.busy || draft.dirty} onClick={() => openFlowComposer(flowId)}>
+        <Button
+          disabled={draft.busy || draft.dirty || !draft.readiness?.ready}
+          onClick={() => openFlowComposer(flowId)}
+        >
           Start Run
         </Button>
       </MutationGate>
