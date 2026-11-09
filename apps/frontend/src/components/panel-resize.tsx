@@ -102,10 +102,13 @@ export function PanelResizeHandle({
   };
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const next = dragged(event.clientX);
-    if (next === null) return;
+    if (next === null || !drag.current) return;
+    const start = drag.current.width;
     drag.current = null;
     setDragging(false);
-    commit(next);
+    // A click without movement must not pin the responsive default to pixels.
+    if (clamp(next, bounds) !== clamp(start, bounds)) commit(next);
+    else applyWidth(bounds.variable, width);
   };
   const onPointerCancel = () => {
     if (!drag.current) return;
