@@ -71,6 +71,26 @@ it("a local exit whose name or ID is another Agent exit's ID or name is a readin
   ]);
 });
 
+it("a Flow-local exit named like another local exit's ID is refused, since workers finish by name or ID", async (c) => {
+  // Arrange
+  const { save, review } = await reviewedFlow(c);
+
+  // Act
+  const saved = await save({
+    ...review,
+    localExits: [
+      { ...escalate, id: "local-a", name: "local-b" },
+      { ...escalate, id: "local-b", name: "local-c" },
+    ],
+  });
+
+  // Assert
+  assert(!saved.ok);
+  expect(saved.error.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["invalid_exit_name", "graph.blocks.1.localExits.0.name"],
+  ]);
+});
+
 it("an Agent exit added later with a local exit's name makes every Flow using that Agent not ready", async (c) => {
   // Arrange
   const { factory, flowId, save, review, editReviewer } = await reviewedFlow(c);

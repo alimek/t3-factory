@@ -128,6 +128,17 @@ export function checkExits(
   }
   const seen = { ids: new Set<string>(), names: new Set<string>() };
   exits.forEach((exit, j) => checkExit(exit, `${path}.${j}`, seen, requireNames, issue));
+  // Workers finish on an exit's name or ID, so one exit's name must not be another exit's ID.
+  exits.forEach((exit, j) => {
+    if (!isRecord(exit) || typeof exit.name !== "string") return;
+    const name = exit.name.trim();
+    if (name && name !== exit.id && seen.ids.has(name))
+      issue(
+        "invalid_exit_name",
+        `${path}.${j}.name`,
+        "An exit's name must not be another exit's ID.",
+      );
+  });
 }
 
 /** An Agent's exits: unique IDs and distinct, non-empty names, stored trimmed. */
