@@ -132,7 +132,7 @@ export function openRunnerSettle(
       report_id: string;
       thread_id: string;
       execution_id: string;
-    }>`SELECT r.id AS report_id,b.thread_id,r.execution_id FROM run_blocks b JOIN run_activations a ON a.run_id=b.run_id AND a.block_id=b.block_id AND a.rowid=(SELECT MAX(l.rowid) FROM run_activations l WHERE l.run_id=b.run_id AND l.block_id=b.block_id) LEFT JOIN working_reports w ON w.activation_id=a.id AND w.replaced_at IS NULL JOIN runtime_reports r ON r.activation_id=a.id AND r.status='finished' AND r.rowid=(SELECT MAX(n.rowid) FROM runtime_reports n WHERE n.activation_id=a.id AND n.status='finished') WHERE b.run_id=${runId} AND EXISTS(SELECT 1 FROM runs WHERE id=b.run_id AND block_settlement_enabled=1) AND b.thread_id IS NOT NULL AND w.id IS NULL AND r.execution_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM coordinator_settlements s WHERE s.run_id=b.run_id AND s.thread_id=b.thread_id AND s.execution_id=r.execution_id) AND NOT EXISTS(SELECT 1 FROM run_attention a2 WHERE a2.run_id=b.run_id AND a2.block_id=b.block_id AND a2.kind IN('execution-failed','missing-report') AND a2.settled_at IS NULL) ORDER BY b.rowid`;
+    }>`SELECT r.id AS report_id,b.thread_id,r.execution_id FROM run_blocks b JOIN run_activations a ON a.run_id=b.run_id AND a.block_id=b.block_id AND a.rowid=(SELECT MAX(l.rowid) FROM run_activations l WHERE l.run_id=b.run_id AND l.block_id=b.block_id) LEFT JOIN working_reports w ON w.activation_id=a.id AND w.replaced_at IS NULL JOIN runtime_reports r ON r.activation_id=a.id AND r.status='finished' AND r.rowid=(SELECT MAX(n.rowid) FROM runtime_reports n WHERE n.activation_id=a.id AND n.status='finished') WHERE b.run_id=${runId} AND EXISTS(SELECT 1 FROM runs WHERE id=b.run_id AND block_settlement_enabled=1) AND b.thread_id IS NOT NULL AND w.id IS NULL AND r.execution_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t3_thread_settlements s WHERE s.run_id=b.run_id AND s.thread_id=b.thread_id AND s.execution_id=r.execution_id) AND NOT EXISTS(SELECT 1 FROM run_attention a2 WHERE a2.run_id=b.run_id AND a2.block_id=b.block_id AND a2.kind IN('execution-failed','missing-report') AND a2.settled_at IS NULL) ORDER BY b.rowid`;
 
   /** Claims one T3 run of a worker thread and issues native settlement when allowed. */
   function claimWorkerThreadSettlement(
@@ -154,8 +154,8 @@ export function openRunnerSettle(
             if (!candidates.some((candidate) => candidate.report_id === reportId)) return false;
           }
           const rows = yield* reportId === null
-            ? sql`INSERT INTO coordinator_settlements(run_id,thread_id,execution_id,attempted_at) SELECT ${run.id},${threadId},${executionId},${yield* now} FROM runs WHERE id=${run.id} AND settled_at IS NOT NULL ON CONFLICT DO NOTHING RETURNING thread_id`
-            : sql`INSERT INTO coordinator_settlements(run_id,thread_id,execution_id,attempted_at) SELECT ${run.id},${threadId},${executionId},${yield* now} FROM runs WHERE id=${run.id} AND archived_at IS NULL ON CONFLICT DO NOTHING RETURNING thread_id`;
+            ? sql`INSERT INTO t3_thread_settlements(run_id,thread_id,execution_id,attempted_at) SELECT ${run.id},${threadId},${executionId},${yield* now} FROM runs WHERE id=${run.id} AND settled_at IS NOT NULL ON CONFLICT DO NOTHING RETURNING thread_id`
+            : sql`INSERT INTO t3_thread_settlements(run_id,thread_id,execution_id,attempted_at) SELECT ${run.id},${threadId},${executionId},${yield* now} FROM runs WHERE id=${run.id} AND archived_at IS NULL ON CONFLICT DO NOTHING RETURNING thread_id`;
           return rows.length > 0;
         }),
       );
