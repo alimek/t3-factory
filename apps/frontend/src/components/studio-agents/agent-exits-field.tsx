@@ -29,7 +29,7 @@ export function AgentExitsField({
     onChange(exits.map((exit) => (exit.id === id ? { ...exit, ...patch } : exit)));
   return (
     <fieldset className="grid min-w-0 gap-1.5" disabled={disabled}>
-      <legend className={fieldLabelClass}>Exits</legend>
+      <legend className={`${fieldLabelClass} mb-1.5`}>Exits</legend>
       <div className="min-w-0 overflow-x-auto">
         <table
           aria-label="Agent exits"

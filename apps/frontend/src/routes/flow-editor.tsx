@@ -1,7 +1,7 @@
 import { MutationGate } from "@/client-gate";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import type {
   AgentDefinition,
   FlowBlock,
@@ -64,7 +64,12 @@ import {
 type FlowContent = Pick<FlowDraft, "name" | "workspace" | "graph">;
 
 /** The saved Flow, its local edits, and the save, readiness and revision-conflict operations. */
-function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => void) {
+function useFlowDraft(
+  id: string,
+  reportDraft: (id: string, dirty: boolean) => void,
+  active: boolean,
+  agents: readonly AgentDefinition[],
+) {
   const [saved, setSaved] = useState<FlowDraft | null>(null);
   const [graph, setGraph] = useState<FlowGraph>({
     blocks: [],
@@ -107,6 +112,24 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
       current = false;
     };
   }, [id]);
+  const refreshReadiness = useEffectEvent(() => (saved && !dirty ? api.getFlow(id) : null));
+  useEffect(() => {
+    setReadiness(null);
+    if (!active) return;
+    const request = refreshReadiness();
+    if (!request) return;
+    let current = true;
+    request
+      .then((value) => {
+        if (current) setReadiness(value.readiness);
+      })
+      .catch((e) => {
+        if (current) setError(e.message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [active, agents]);
   function change(next: FlowGraph) {
     setGraph(next);
     setDirty(true);
@@ -367,8 +390,8 @@ export function FlowDetail({
   reportDraft: (id: string, dirty: boolean) => void;
 }) {
   const canvas = useRef<HTMLElement>(null);
-  const draft = useFlowDraft(id, reportDraft);
   const { agents, agentError } = useSavedAgents(active);
+  const draft = useFlowDraft(id, reportDraft, active, agents);
   const [libraryOpen, setLibraryOpen] = useState(true);
   const { saved, graph, name, error, readiness } = draft;
   const { selected, select, wire, selectWire, deleteWire } = useCanvasSelection(

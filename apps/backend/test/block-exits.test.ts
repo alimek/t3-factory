@@ -21,12 +21,16 @@ it("an Agent block offers its Agent's exits, so a wire from an inherited exit ne
   expect(saved.value.readiness).toStrictEqual({ ready: true, issues: [] });
 });
 
-it("a local exit named like one of the Agent's exits is a readiness issue while the Flow still saves", async (c) => {
+it("a local exit named like a hidden Agent exit is a readiness issue while the Flow still saves", async (c) => {
   // Arrange
   const { save, review } = await reviewedFlow(c);
 
   // Act
-  const saved = await save({ ...review, localExits: [{ ...escalate, name: "pass" }] });
+  const saved = await save({
+    ...review,
+    hiddenExitIds: ["pass"],
+    localExits: [{ ...escalate, name: "pass" }],
+  });
 
   // Assert
   assert(saved.ok);

@@ -132,8 +132,8 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
 validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
-issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit named like one of its Agent's visible exits (also when
-the Agent adds that name later), a wire from an exit hidden in this Flow or no longer on the Agent, and unreachable blocks. Each names the block, the exit and the problem, and selecting one
+issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit sharing a name or ID with any current Agent exit, including hidden exits (also when
+the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, and unreachable blocks. Each names the block, the exit and the problem, and selecting one
 inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
 are separate Start gates ([Runs](runs.md)).
 
@@ -172,8 +172,8 @@ Structural failures return `Result` errors with `code`, `path` and `message`: in
 positions, Flow input targets, dangling or duplicate edges, a Human connection from another exit, malformed exits or hide entries and unknown block, exit, graph or Flow input
 fields. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
 
-Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name collisions and wires from hidden or removed exits can be saved.
-Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `exit_name_conflict`, `exit_hidden`, `exit_missing`), missing saved
+Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name or ID collisions and wires from hidden or removed exits can be saved.
+Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `exit_name_conflict`, `exit_id_conflict`, `exit_hidden`, `exit_missing`), missing saved
 Agents and blocks unreachable from the Flow input, resolving each block against the current saved Agents. Hide entries for exits the Agent no longer has are ignored. A
 terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3 capability or live execution readiness.
 

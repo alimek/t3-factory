@@ -1,4 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
+import { prepared } from "./support/prepared-runner.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
 import {
@@ -381,4 +382,59 @@ it("readiness identifies unfinished and unreachable blocks without rejecting dra
     ["unreachable_block", "graph.blocks.1"],
   ]);
   expect(result.value.revision).toBe(2);
+});
+
+it("local exit IDs matching visible or hidden Agent exits allow saving but block Start", async (context) => {
+  // Arrange
+  const { f, flow, input, project } = await prepared(context);
+  const [worker] = flow.graph.blocks;
+  assert(worker?.kind === "agent");
+  const localExits = [
+    { id: "done", name: "Local result", description: "", messageRequired: false },
+  ];
+  const saved = await f.updateFlow(flow.id, {
+    ...flow,
+    expectedRevision: flow.revision,
+    graph: {
+      ...flow.graph,
+      flowInput: { ...flow.graph.flowInput, targetBlockIds: [worker.id, "hidden-worker"] },
+      blocks: [
+        { ...worker, localExits },
+        {
+          ...worker,
+          id: "hidden-worker",
+          name: "Hidden worker",
+          hiddenExitIds: ["done"],
+          localExits,
+        },
+      ],
+    },
+  });
+  assert(saved.ok);
+  expect(saved.value.readiness).toStrictEqual({
+    ready: false,
+    issues: [
+      {
+        code: "exit_id_conflict",
+        path: "graph.blocks.0.localExits.0.id",
+        message:
+          'Entry worker: local exit "Local result" has the same ID as an exit from its Agent. Remove and recreate the local exit.',
+      },
+      {
+        code: "exit_id_conflict",
+        path: "graph.blocks.1.localExits.0.id",
+        message:
+          'Hidden worker: local exit "Local result" has the same ID as an exit from its Agent. Remove and recreate the local exit.',
+      },
+    ],
+  });
+
+  // Act
+  const started = await f.startRun(input);
+
+  // Assert
+  assert(!started.ok);
+  expect(started.error.code).toBe("validation");
+  expect(started.error.issues).toStrictEqual(saved.value.readiness.issues);
+  expect(await f.listRuns(project.id)).toStrictEqual({ ok: true, value: [] });
 });

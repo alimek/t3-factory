@@ -56,7 +56,7 @@ A named result a block finishes with, whose connections determine which blocks r
 _Avoid_: Exit outcome, completion or assessment exits (retired classifications); editing an inherited exit in a Flow.
 
 **Flow-local exit**:
-An exit a Flow adds to one agent block without changing its Agent. Its name must differ from the Agent's visible exits; a collision is a readiness issue.
+An exit a Flow adds to one agent block without changing its Agent. Its name and ID must differ from all current Agent exits, including hidden exits; a collision is a readiness issue.
 
 **Hidden exit**:
 An inherited Agent exit that one Flow hides on an agent block. Hiding an exit the Agent later removes has no effect.

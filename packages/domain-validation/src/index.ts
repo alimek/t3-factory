@@ -635,14 +635,17 @@ function blockReadiness(
     add("agent_required", `${path}.agentId`, `Choose a saved Agent for ${label}.`);
   if (!effectiveExits(block, agents).length)
     add("exit_required", path, `Add an exit to ${label} or its Agent.`);
-  const hidden = new Set(block.hiddenExitIds);
-  const agentNames = new Set(
-    inheritedExits(block, agents)
-      .filter((exit) => !hidden.has(exit.id))
-      .map((exit) => exit.name.trim()),
-  );
+  const inherited = inheritedExits(block, agents);
+  const agentNames = new Set(inherited.map((exit) => exit.name.trim()));
+  const agentIds = new Set(inherited.map((exit) => exit.id));
   block.localExits.forEach((exit, j) => {
     const name = exit.name.trim();
+    if (agentIds.has(exit.id))
+      add(
+        "exit_id_conflict",
+        `${path}.localExits.${j}.id`,
+        `${label}: local exit "${name || exit.id}" has the same ID as an exit from its Agent. Remove and recreate the local exit.`,
+      );
     if (!name)
       add(
         "exit_name_required",

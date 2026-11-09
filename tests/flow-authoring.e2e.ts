@@ -386,16 +386,17 @@ test("Agent exit edits persist, renaming keeps Flow wires and removing a wired e
   ).toBeVisible();
   await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeEnabled();
   await app.screenshot("agent-exit-renamed-wire");
-  await app.open(`/studio/agents/${agentId}`);
+  await screen.getByRole("link", "Agents", { exact: true }).tap();
+  await screen.getByRole("link", /Exit journey worker/).tap();
   await screen.getByRole("button", "Remove exit 1", { exact: true }).tap();
   await screen.getByRole("button", "Save", { exact: true }).tap();
   await expect(screen.getByText("Agent definition · rev 3", { exact: true })).toBeVisible();
-  await browser.reload();
   await expect(screen.getByLabel("Exit 1 name", { exact: true })).toHaveValue("changes-needed");
   await expect(
     screen.getByRole("checkbox", "Exit 1 message required", { exact: true }),
   ).toBeChecked();
-  await app.open(`/studio/flows/${created.value.id}`);
+  await screen.getByRole("link", "Flows", { exact: true }).tap();
+  await screen.getByRole("link", /Agent exit journey/).tap();
   await expect(
     screen.getByText(/Implementer: its Agent no longer has exit "ready-for-review"/),
   ).toBeVisible();
