@@ -129,7 +129,8 @@ function useFlowDraft(
     return () => {
       current = false;
     };
-  }, [active, agents]);
+    // The saved revision and dirty state retire a response requested before an edit or save.
+  }, [active, agents, saved?.revision, dirty]);
   function change(next: FlowGraph) {
     setGraph(next);
     setDirty(true);

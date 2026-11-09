@@ -48,6 +48,29 @@ it("a local exit named like a hidden Agent exit is a readiness issue while the F
   });
 });
 
+it("a local exit whose name or ID is another Agent exit's ID or name is a readiness issue, since workers finish by either", async (c) => {
+  // Arrange
+  const { save, review, editReviewer } = await reviewedFlow(c);
+  const [pass, fail] = reviewerExits;
+  assert((await editReviewer([{ ...pass!, id: "agent-pass" }, fail!])).ok);
+
+  // Act
+  const saved = await save({
+    ...review,
+    localExits: [
+      { ...escalate, id: "local-1", name: "agent-pass" },
+      { ...escalate, id: "pass", name: "escalate" },
+    ],
+  });
+
+  // Assert
+  assert(saved.ok);
+  expect(saved.value.readiness.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["exit_name_conflict", "graph.blocks.1.localExits.0.name"],
+    ["exit_name_conflict", "graph.blocks.1.localExits.1.name"],
+  ]);
+});
+
 it("an Agent exit added later with a local exit's name makes every Flow using that Agent not ready", async (c) => {
   // Arrange
   const { factory, flowId, save, review, editReviewer } = await reviewedFlow(c);

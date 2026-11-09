@@ -658,6 +658,13 @@ function blockReadiness(
         `${path}.localExits.${j}.name`,
         `${label}: local exit "${name}" has the same name as an exit from its Agent. Rename or remove the local exit.`,
       );
+    // Workers may finish on an exit's name or ID, so one exit's name must not be another's ID.
+    else if (agentIds.has(name) || agentNames.has(exit.id))
+      add(
+        "exit_name_conflict",
+        `${path}.localExits.${j}.name`,
+        `${label}: local exit "${name}" is ambiguous: its name or ID matches the ID or name of an exit from its Agent. Rename or remove the local exit.`,
+      );
   });
 }
 
