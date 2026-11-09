@@ -129,9 +129,7 @@ overlay gating as the shortcut. Choosing one with no window open reopens the win
 without running the command. **Close Window** (Mod+W) closes the window and leaves the
 server running. **View → Reload** (Mod+R) reloads the window in every build; Force
 Reload and DevTools exist only in unpackaged development builds, and packaged builds
-also disable DevTools for the window. Reloading, closing or quitting with unsaved Studio
-changes asks for a native confirmation: **Keep editing** cancels, **Discard changes**
-continues. On Windows and Linux the
+also disable DevTools for the window. On Windows and Linux the
 menu bar is hidden until Alt is pressed.
 
 ## Updates
