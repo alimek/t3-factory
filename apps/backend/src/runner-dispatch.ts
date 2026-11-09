@@ -28,6 +28,7 @@ import {
 import { activatePendingHumanHandoff, reservePendingExplicitHandoff } from "./runner-release.ts";
 import { inRunWorkspace } from "./run-workspace.ts";
 import { now } from "./time.ts";
+import type { RunImages } from "./run-images.ts";
 function storedPayload(intent: IntentRow): Checked<SendPayload> {
   if (!intactPayload(intent)) return unverified("Stored operation payload cannot be verified.");
   const payload = JSON.parse(intent.payload_json) as SendPayload;
@@ -60,6 +61,7 @@ export function openRunnerDispatch(
   t3: T3Adapter,
   checkAgent: RunnerOptions["checkAgent"],
   observe: (run: RunRow, block: BlockRow, contextId: string | null) => Effect.Effect<void, unknown>,
+  images: RunImages,
 ) {
   const { run, mutate, row, owner, problem, reserveIntent } = database;
   /** Agent handoffs become worker commands or revisit sends; Human handoffs become occurrences. */
@@ -121,7 +123,7 @@ export function openRunnerDispatch(
         return;
       }
       if (saved.kind === "launch") {
-        yield* dispatchBlockLaunch(database, t3, runRow, saved);
+        yield* dispatchBlockLaunch(database, t3, images, runRow, saved);
         const [block] = yield* run(
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
@@ -141,7 +143,7 @@ export function openRunnerDispatch(
             intent = prepared;
           }
           if (intent.kind === "launch") {
-            yield* dispatchBlockLaunch(database, t3, runRow, intent);
+            yield* dispatchBlockLaunch(database, t3, images, runRow, intent);
             return;
           }
           const checked = yield* verifyDispatch(runRow, intent);

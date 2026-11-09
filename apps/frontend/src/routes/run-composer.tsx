@@ -36,6 +36,11 @@ import {
 import { PickerMenuContent, PickerMenuSearch } from "../components/picker-menu-search.tsx";
 import { Label } from "../components/ui/label.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
+import {
+  AttachImagesButton,
+  ImageRejections,
+  PromptImageStrip,
+} from "../components/prompt-images.tsx";
 import { cn } from "../lib/utils.ts";
 import type { ConnectionPresentation } from "../connection-state.tsx";
 
@@ -490,7 +495,8 @@ function ComposerFields({ model }: { model: Composer }) {
         </Label>
         <div
           className={cn(
-            "flex h-42 flex-col gap-2 rounded-lg border bg-muted pt-3 pr-3.5 pb-2.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
+            "flex flex-col gap-2 rounded-lg border bg-muted pt-3 pr-3.5 pb-2.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
+            draft.images.length ? "min-h-42" : "h-42",
             missing && "border-destructive focus-within:border-destructive",
           )}
         >
@@ -504,12 +510,28 @@ function ComposerFields({ model }: { model: Composer }) {
             value={draft.input}
             onChange={(event) => edit({ input: event.target.value })}
             placeholder="Describe what this Run should do…"
-            className="field-sizing-fixed min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent p-0 text-base focus-visible:ring-0 aria-invalid:ring-0"
+            className={cn(
+              "field-sizing-fixed min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent p-0 text-base focus-visible:ring-0 aria-invalid:ring-0",
+              draft.images.length > 0 && "min-h-20",
+            )}
           />
-          <p id="prompt-help" className="text-2xs tracking-label text-subtle-foreground">
-            The first non-empty line becomes the Run title. You can rename it later.
-          </p>
+          <PromptImageStrip
+            images={draft.images}
+            load={runDraft.loadImage}
+            locked={locked}
+            onRemove={runDraft.removeImage}
+          />
+          <div className="flex items-center gap-2">
+            <p id="prompt-help" className="flex-1 text-2xs tracking-label text-subtle-foreground">
+              The first non-empty line becomes the Run title. You can rename it later.
+            </p>
+            <AttachImagesButton
+              disabled={locked}
+              onFiles={(files) => void runDraft.attachImages(files)}
+            />
+          </div>
         </div>
+        <ImageRejections rejections={draft.imageRejections} />
         {missing && (
           <p role="alert" className="text-2xs text-destructive">
             Enter an initial prompt to start the Run.

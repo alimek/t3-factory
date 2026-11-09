@@ -2,6 +2,7 @@ import type { RunDetail } from "../../packages/contracts/src/index.ts";
 import {
   executionBlock,
   scenarioRepository,
+  demoImages,
   demoPullRequest,
   failScenarioExecution,
   launchedBlockId,
@@ -99,6 +100,7 @@ async function settledAndArchivedScenarios(context: SeedContext, flowId: string)
     "archived",
     "Archived · Earlier navigation experiment",
     "Explore a compact navigation layout for Atlas. This experiment was dropped after a design direction changed.",
+    { images: [demoImages.headerDesktop, demoImages.mockup], referenced: 1 },
   );
   requireSuccess(await context.factory.archiveRun(archived.id));
 }
@@ -225,6 +227,15 @@ async function parallelStartScenario(context: SeedContext, flowId: string) {
     "parallel-start",
     "Parallel review from one prompt",
     "Review the Atlas settings page for code quality and for keyboard accessibility. Each reviewer starts from this prompt and reports independently.",
+    {
+      images: [
+        demoImages.headerDesktop,
+        demoImages.headerMobile,
+        demoImages.focusRing,
+        demoImages.mockup,
+      ],
+      referenced: 3,
+    },
   );
   const working = await bothReviewersWorking(context, run.id);
   await scenarioRepository(context, working, "reviewer", {

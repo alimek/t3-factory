@@ -7,8 +7,17 @@ import { toIncomingMessage } from "@effect/platform-node/NodeHttpServerRequest";
 import * as Effect from "effect/Effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
-import { LIVE_PATH, type ProtocolDescriptor, type Result } from "@t3-factory/contracts";
-import { FACTORY_MINIMUM_PEER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
+import {
+  LIVE_PATH,
+  type ProtocolDescriptor,
+  type Result,
+  type StageRunImageInput,
+} from "@t3-factory/contracts";
+import {
+  FACTORY_MINIMUM_PEER_PROTOCOL,
+  FACTORY_PROTOCOL,
+  RUN_IMAGE_MAX_BYTES,
+} from "@t3-factory/domain-validation";
 import type { FactoryOptions } from "./factory-options.ts";
 import { openFactory, type Factory } from "./open-factory.ts";
 import type { Configuration } from "./config.ts";
@@ -22,7 +31,9 @@ import {
 import {
   flowDocumentBody,
   readJsonBody,
+  readRawBody,
   resultResponse,
+  runImageResponse,
   sendFaviconResponse,
   standardBody,
   writeJsonResponse,
@@ -187,6 +198,7 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
           (result) => resultResponse(result, 201),
         ),
     },
+    ...runImageRoutes(factory),
     {
       method: "GET",
       path: /^\/api\/run-creation-policy$/,
@@ -220,6 +232,34 @@ function runRoutes(factory: Factory): readonly ApiRoute[] {
       method: "GET",
       path: /^\/api\/runs\/([^/]+)$/,
       handle: fromId((id) => factory.getRun(id)),
+    },
+  ];
+}
+
+/** Content-addressed Run image bytes: staged before Start, then retained by the Run. */
+function runImageRoutes(factory: Factory): readonly ApiRoute[] {
+  const path = /^\/api\/run-images\/([^/]+)$/;
+  return [
+    {
+      method: "HEAD",
+      path,
+      handle: fromId((sha256) => factory.getRunImageInfo(sha256)),
+    },
+    {
+      method: "PUT",
+      path,
+      rawBody: { bytes: RUN_IMAGE_MAX_BYTES, message: "Send one image up to 10 MiB." },
+      handle: fromCall((sha256, input: StageRunImageInput) => factory.stageRunImage(sha256, input)),
+    },
+    {
+      method: "GET",
+      path,
+      protocolOptional: true,
+      handle: ({ id }) =>
+        Effect.map(
+          Effect.promise(() => factory.getRunImage(id)),
+          runImageResponse,
+        ),
     },
   ];
 }
@@ -507,8 +547,10 @@ function dispatchApi(
     if (rejected) return rejected;
     const id = route.path.exec(target.pathname)?.[1] ?? "";
     let input: unknown;
-    if (route.body) {
-      const body = yield* readJsonBody(request, route.body);
+    if (route.body || route.rawBody) {
+      const body = route.body
+        ? yield* readJsonBody(request, route.body)
+        : yield* readRawBody(request, route.rawBody!);
       if (body.kind === "invalid") return body.response;
       input = body.value;
     }

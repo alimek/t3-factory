@@ -2,6 +2,7 @@ import type { AgentEnvironment, FlowWorkspace, FlowWorkspaceBase } from "@t3-fac
 import { LaunchRejected } from "../../src/adapters/t3.ts";
 import { isReportingDriver } from "../../src/reporting-drivers.ts";
 import type {
+  AttachmentUpload,
   AuthorizationResumption,
   LaunchPayload,
   LaunchReference,
@@ -72,6 +73,34 @@ export class ControlledT3 implements T3Adapter {
         : "T3 launch contract is unsupported. Recheck the T3 connection.",
     };
   }
+  attachmentsSupported = true;
+  attachmentLimit = 8;
+  /** Every pending upload T3 accepted, by attachment id, with the exact bytes received. */
+  readonly uploads = new Map<string, { upload: AttachmentUpload; data: Uint8Array }>();
+  uploadCalls = 0;
+  failUploads = false;
+  beforeUpload?: (upload: AttachmentUpload) => Promise<void>;
+  beforeAttachmentInspection?: () => Promise<void>;
+  async inspectAttachmentSupport(_target: T3Endpoint, count: number) {
+    if (!this.available || !this.authorized) throw Error("Unavailable");
+    await this.beforeAttachmentInspection?.();
+    const supported = this.attachmentsSupported && count <= this.attachmentLimit;
+    return {
+      supported,
+      explanation: supported
+        ? "Controlled attachment support"
+        : "T3 does not advertise launch attachments.",
+    };
+  }
+  async uploadAttachment(_target: T3Endpoint, upload: AttachmentUpload, data: Uint8Array) {
+    if (!this.available || !this.authorized) throw Error("Unavailable");
+    await this.beforeUpload?.(upload);
+    this.uploadCalls++;
+    if (this.failUploads) throw Error("T3 answered the upload with HTTP 500.");
+    const id = `pending-${this.uploads.size + 1}`;
+    this.uploads.set(id, { upload, data: Uint8Array.from(data) });
+    return id;
+  }
   protected launchIds(n: number) {
     return { threadId: `thread-${n}`, runId: `execution-${n}` };
   }
@@ -79,6 +108,8 @@ export class ControlledT3 implements T3Adapter {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     await this.beforeLaunch?.();
     this.launchCalls++;
+    if (payload.attachments?.some((attachment) => !this.uploads.has(attachment.id)))
+      throw new LaunchRejected("Attachment not found (removed or expired).");
     let launch = this.launches.get(payload.clientRequestId);
     if (launch && JSON.stringify(launch.payload) !== JSON.stringify(payload))
       throw Error("Key conflict");

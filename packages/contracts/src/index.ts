@@ -17,7 +17,9 @@ export interface OperationError {
     | "internal"
     | "unauthorized"
     | "host_only"
-    | "incompatible";
+    | "incompatible"
+    /** Start referenced images that Factory has not staged; upload them and retry the same request. */
+    | "missing_images";
   readonly message: string;
   readonly issues: readonly ValidationIssue[];
 }
@@ -236,6 +238,11 @@ export interface FactoryOperations {
   settleRun(id: string): Promise<Result<RunDetail>>;
   getRunCreationPolicy(): Promise<Result<RunCreationPolicy>>;
   startRun(input: unknown): Promise<Result<RunDetail>>;
+  /** Whether Factory holds the bytes of this digest, staged or retained by a Run. */
+  getRunImageInfo(sha256: string): Promise<Result<RunImageInfo>>;
+  /** Stages raw image bytes under their digest for a later Start; an existing digest succeeds. */
+  stageRunImage(sha256: string, input: StageRunImageInput): Promise<Result<RunImageInfo>>;
+  getRunImage(sha256: string): Promise<Result<RunImageContent>>;
   listRunNavigation(): Promise<Result<readonly RunNavigationEntry[]>>;
   renameRun(id: string, input: unknown): Promise<Result<RunDetail>>;
   snoozeRun(id: string): Promise<Result<RunPresentation>>;
@@ -476,18 +483,47 @@ export interface ProjectFavicon {
   readonly contentType: string;
   readonly data: Uint8Array;
 }
+export interface RunImageInfo {
+  readonly sha256: string;
+  readonly mimeType: RunImageMimeType;
+  readonly sizeBytes: number;
+}
+export interface StageRunImageInput {
+  /** The request's declared Content-Type; the bytes' signature must match it. */
+  readonly mimeType: string;
+  readonly data: Uint8Array;
+}
+export interface RunImageContent {
+  readonly mimeType: RunImageMimeType;
+  readonly data: Uint8Array;
+}
 export interface ProjectCatalog {
   readonly projects: readonly FactoryProject[];
   readonly selectedProjectId: string | null;
   readonly problem: string | null;
 }
 
+export type RunImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+/** One image of a Run's initial prompt. `imageId` is draft-local; `sha256` names the staged bytes. */
+export interface RunImage {
+  readonly imageId: string;
+  readonly sha256: string;
+  readonly name: string;
+  readonly mimeType: RunImageMimeType;
+  readonly sizeBytes: number;
+}
+/** The initial prompt in order: text, and references to images of the manifest. */
+export type PromptSegment =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "image"; readonly imageId: string };
 export interface StartRunInput {
   /** Also the Run's navigation `creationKey`. */
   readonly requestId: string;
   readonly projectId: string;
   readonly flowId: string;
-  readonly input: string;
+  readonly segments: readonly PromptSegment[];
+  /** Every image of the prompt in manifest order, including ones no segment references. */
+  readonly images: readonly RunImage[];
   /** The draft's chosen title; stored trimmed as the Run title. */
   readonly title: string;
   /** When the draft was created, as `Date.toISOString()` output; it orders Run navigation. */

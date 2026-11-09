@@ -86,8 +86,18 @@ Accepted Start atomically creates the Run's Task, assigns the Run number, refere
 Flow revision and freezes the current revision of each referenced Agent, and records each
 launch intent before contacting T3. An accepted request key is
 unique across the database: the same content returns the same Run; changed content
-conflicts. Content is the project, Flow, input, title and creation time. Rejected requests record nothing, and the
-accepted key is also the Run's navigation creation key. Flow input targets start independently and are not handoffs.
+conflicts. Content is the project, Flow, prompt text, title and creation time, plus for an image Start the ordered
+prompt segments and every manifest field (image id, digest, name, type and size). A text-only request keeps the
+earlier content form, so a request accepted before images recovers its Run, also when it is resent as prompt segments.
+Rejected requests record nothing, and the accepted key is also the Run's navigation creation key. A replay of an
+accepted key is recognized before image staging and capability checks.
+
+An image Start also requires T3's attachment support (`attachments_unsupported` otherwise), at most 8 images with unique
+ids and digests, every image reference in the manifest, names of 1–255 characters, and type and size matching the
+staged image. Inside the acceptance transaction every digest must be staged; otherwise Start fails with
+`missing_images` (HTTP 409, listing the digests), which is not a confirmed rejection, and creates no Run or Task. The
+transaction attaches the ordered manifest to the Run and stores the prompt segments; both are immutable. The Run's
+input holds the worker-readable text frozen at Start. Flow input targets start independently and are not handoffs.
 
 A worker is bound from the launch acknowledgement, or from exactly one search candidate
 whose title matches and whose thread, workspace, provider, model, options and execution
@@ -103,6 +113,24 @@ its unresolved launch; unrelated branches may continue.
 Start always resolves the current saved Flow and Agents on the backend; it never trusts a
 client-supplied graph or launches from an earlier Run's captured revisions. The composer requires the
 server's creation policy before Start.
+
+### Run images
+
+Image bytes are content-addressed files in `FACTORY_HOME/images`, written to a temporary file, synced and renamed; a
+staging row in SQLite exists only while its file is complete. Uploads and the staging sweep share one permit. The sweep
+runs at startup and before each upload and deletes staged images no Run references once they are 24 hours old, counted
+from the first upload; uploading again or checking an image does not extend that. A Run's reference keeps shared bytes
+for good, including after Settle and Archive. A failed write is an explicit storage error; there is no quota or eviction.
+
+Every Flow-input launch intent saves the ordered image list (ordinal, digest, name, type, size), covered by its payload
+fingerprint, also for workers that join a bound worktree later. T3 attachment ids are never saved. Each dispatch of a
+pending launch checks attachment support, reads and verifies each image, uploads it to T3 and only then reserves and
+launches with the attachments. An upload failure leaves the launch pending with "Image upload to T3 failed: …" and
+retries after a delay of 1 second doubling to 60; it is neither a Block error nor a Problem. Lost attachment support uses
+the pending launch-unsupported path. Bytes missing from Factory storage or failing their digest cancel the launch and
+mark the Block error "Run image missing from Factory storage" (for a worktree creator, every other Flow-input Block too).
+A rejected launch is an error; an uncertain one is searched for and never uploaded or launched again. Downstream
+launches, revisits and Request report carry no images.
 
 ## Ownership and restart
 

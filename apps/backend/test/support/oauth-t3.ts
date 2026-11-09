@@ -34,10 +34,10 @@ function json(response: ServerResponse, status: number, value: unknown) {
   response.end(JSON.stringify(value));
 }
 
-async function requestBody(request: IncomingMessage): Promise<string> {
+async function requestBody(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString();
+  return Buffer.concat(chunks);
 }
 
 const structuredTool = (tool: ToolHandler | undefined) =>
@@ -62,8 +62,44 @@ export async function oauthT3(
     readSchema?: Record<string, unknown>;
     runtimeActivity?: (args: Record<string, unknown>) => unknown;
     capabilities?: (args: Record<string, unknown>) => unknown;
+    /** `t3_attachment_prepare_upload` and its signed upload route on this origin. */
+    attachments?: boolean;
   } = {},
 ) {
+  /** Bytes received on signed upload addresses, with the Authorization header each POST carried. */
+  const uploads: {
+    attachmentId: string;
+    upload: Record<string, unknown>;
+    bytes: Buffer;
+    authorization: string | undefined;
+  }[] = [];
+  const signedUploads = new Map<
+    string,
+    { attachmentId: string; upload: Record<string, unknown> }
+  >();
+  function prepareUpload(args: ToolArguments) {
+    const attachmentId = `pending-${randomUUID()}`;
+    const token = randomUUID();
+    signedUploads.set(token, { attachmentId, upload: args.upload as Record<string, unknown> });
+    return {
+      attachmentId,
+      relativeUrl: `/api/attachments/upload/${token}`,
+      expiresAt: Date.now() + 600_000,
+    };
+  }
+  function receiveUpload(
+    request: IncomingMessage,
+    response: ServerResponse,
+    token: string,
+    body: Buffer,
+  ) {
+    const signed = signedUploads.get(token);
+    if (!signed) return void response.writeHead(404).end("Not Found");
+    if (body.length !== signed.upload.sizeBytes)
+      return void response.writeHead(400).end("Body length differs from the upload size.");
+    uploads.push({ ...signed, bytes: body, authorization: request.headers.authorization });
+    response.writeHead(204).end();
+  }
   const projects: {
     id: string;
     title: string | undefined;
@@ -173,6 +209,14 @@ export async function oauthT3(
       : []),
     ...(options.send ? [{ name: "t3_thread_send", inputSchema: options.sendSchema! }] : []),
     ...(options.launch ? [{ name: "t3_thread_launch", inputSchema: options.launchSchema! }] : []),
+    ...(options.attachments
+      ? [
+          {
+            name: "t3_attachment_prepare_upload",
+            inputSchema: { type: "object", properties: { upload: { type: "object" } } },
+          },
+        ]
+      : []),
   ];
   /** The contract tools sit on a second page so discovery must follow the cursor. */
   const toolsPage = (cursor: string | undefined) =>
@@ -225,6 +269,10 @@ export async function oauthT3(
     ["t3_thread_wait", structuredTool(options.wait)],
     ["t3_thread_read", structuredTool(options.runtimeActivity)],
     ["orchestrator_capabilities", structuredTool(options.capabilities)],
+    [
+      "t3_attachment_prepare_upload",
+      options.attachments ? structuredTool(prepareUpload) : undefined,
+    ],
   ]);
   /** Any other tool answers as `t3_environment_read`. */
   const readEnvironment = () => ({
@@ -256,7 +304,7 @@ export async function oauthT3(
     }
     return {};
   }
-  function answerMcp(request: IncomingMessage, response: ServerResponse, body: string) {
+  function answerMcp(request: IncomingMessage, response: ServerResponse, body: Buffer) {
     if (request.headers.authorization !== `Bearer ${accessToken}` || revoked) {
       response.setHeader(
         "www-authenticate",
@@ -269,7 +317,7 @@ export async function oauthT3(
       response.writeHead(405).end();
       return;
     }
-    const message = JSON.parse(body) as McpRequest;
+    const message = JSON.parse(body.toString()) as McpRequest;
     if (message.id === undefined) {
       response.writeHead(202).end();
       return;
@@ -285,9 +333,12 @@ export async function oauthT3(
       json(response, 200, authorizationServerMetadata());
     else if (url.pathname === "/register") {
       registrationCount++;
-      json(response, 201, { ...JSON.parse(body), client_id: randomUUID() });
-    } else if (url.pathname === "/token") exchangeToken(response, new URLSearchParams(body));
+      json(response, 201, { ...JSON.parse(body.toString()), client_id: randomUUID() });
+    } else if (url.pathname === "/token")
+      exchangeToken(response, new URLSearchParams(body.toString()));
     else if (url.pathname === "/mcp") answerMcp(request, response, body);
+    else if (options.attachments && url.pathname.startsWith("/api/attachments/upload/"))
+      receiveUpload(request, response, url.pathname.slice("/api/attachments/upload/".length), body);
     else response.writeHead(404).end();
   }
   const server = createServer((request, response) => {
@@ -300,6 +351,7 @@ export async function oauthT3(
   return {
     endpoint: base + "/mcp",
     projectRecords: projects,
+    uploads,
     get refreshes() {
       return refreshes;
     },

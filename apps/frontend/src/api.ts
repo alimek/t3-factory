@@ -10,6 +10,7 @@ import type {
   ServerUpdate,
   ServerUpdateAction,
   RunDetail,
+  RunImageInfo,
   StartRunInput,
   RunPresentation,
   RunNavigationEntry,
@@ -52,7 +53,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
-async function request<A>(path: string, init?: RequestInit): Promise<A> {
+/** Adds the Factory protocol and mutation headers; refuses a mutation the view cannot send now. */
+function factoryRequest(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   const mutation = !["GET", "HEAD"].includes(init?.method ?? "GET");
   if (mutation) headers.set("X-Factory-Request", "1");
@@ -60,7 +62,11 @@ async function request<A>(path: string, init?: RequestInit): Promise<A> {
   // A disconnected or synchronizing client never sends or queues a new command; the user
   // retries deliberately once the view is current.
   if (mutation && !transport.acceptsMutations()) throw new OfflineError("not-sent");
-  const response = await send(path, { ...init, headers });
+  return send(path, { ...init, headers });
+}
+
+async function request<A>(path: string, init?: RequestInit): Promise<A> {
+  const response = await factoryRequest(path, init);
   const result = (await response.json().catch(() => undefined)) as Result<A> | undefined;
   if (!result) {
     transport.unreachable();
@@ -104,6 +110,21 @@ export const api = {
   answerHumanOccurrence: (id: string, input: { exitId?: string; message?: string }) =>
     post<RunDetail>(`/api/human-occurrences/${encodeURIComponent(id)}/answer`, input),
   startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),
+  /** Whether Factory already holds this image; any answer but held or absent is a failure. */
+  async hasRunImage(sha256: string) {
+    const response = await factoryRequest(`/api/run-images/${encodeURIComponent(sha256)}`, {
+      method: "HEAD",
+    });
+    if (response.status === 404) return false;
+    if (response.ok) return true;
+    throw new Error("Factory could not check the image.");
+  },
+  stageRunImage: (sha256: string, data: Blob) =>
+    request<RunImageInfo>(`/api/run-images/${encodeURIComponent(sha256)}`, {
+      method: "PUT",
+      headers: { "content-type": data.type },
+      body: data,
+    }),
   archiveRun: (id: string) =>
     request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
   listRuns: (projectId: string) =>

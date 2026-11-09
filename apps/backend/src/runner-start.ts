@@ -22,8 +22,12 @@ import type {
 import {
   flowReadiness,
   isCanonicalTimestamp,
+  promptText,
   TASK_TITLE_LIMIT,
+  validateStartPrompt,
+  type StartPrompt,
 } from "@t3-factory/domain-validation";
+import { attachRunImages, stagedManifestProblem, workerPromptText } from "./run-images.ts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter } from "./adapters/t3.ts";
@@ -35,18 +39,33 @@ import { currentFlowRevisionNumber } from "./flow-revisions.ts";
 import { currentAgentRevisionNumber } from "./agent-revisions.ts";
 import { isLocalEndpoint } from "./endpoint-local.ts";
 import { now } from "./time.ts";
-function validStartInput(input: StartRunInput | undefined): input is StartRunInput {
+/** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
+function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
+  if (!input || typeof input !== "object") return false;
+  const { requestId, projectId, flowId } = input as Record<string, unknown>;
   return (
-    !!input &&
-    typeof input === "object" &&
-    [input.requestId, input.projectId, input.flowId, input.input].every(
+    [requestId, projectId, flowId].every(
       (candidate) => typeof candidate === "string" && candidate.trim(),
-    ) &&
-    input.requestId.length <= 256 &&
-    input.input.length <= 100000
+    ) && (requestId as string).length <= 256
   );
 }
-function startPresentationIssues(input: StartRunInput): ValidationIssue[] {
+/**
+ * The accepted key's content. A text-only prompt keeps the earlier `[project, Flow, input, title,
+ * creation time]` form, so a request accepted before images still recovers its Run; images add the
+ * ordered segments and every manifest field.
+ */
+function startFingerprint(
+  input: Pick<StartRunInput, "projectId" | "flowId" | "title" | "createdAt">,
+  prompt: StartPrompt,
+) {
+  const text = promptText(prompt.segments);
+  const content: unknown[] = [input.projectId, input.flowId, text, input.title, input.createdAt];
+  if (prompt.images.length) content.push(prompt.segments, prompt.images);
+  return fingerprint(JSON.stringify(content));
+}
+function startPresentationIssues(
+  input: Pick<StartRunInput, "title" | "createdAt">,
+): ValidationIssue[] {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   return [
     ...(title && title.length <= TASK_TITLE_LIMIT
@@ -138,8 +157,36 @@ function resolveStartWorkspace(
     return { ok: true, workspace: { mode: "worktree", baseRef: resolved } };
   });
 }
+/** An image-bearing Start needs T3 to accept uploads and launch attachments for every image. */
+function attachmentIssues(
+  t3: T3Adapter,
+  project: FactoryProject,
+  count: number,
+): Effect.Effect<ValidationIssue[]> {
+  if (!count) return Effect.succeed([]);
+  return Effect.promise(() => t3.inspectAttachmentSupport(project, count).catch(() => null)).pipe(
+    Effect.map((support) => {
+      if (support?.supported) return [];
+      return [
+        support
+          ? {
+              code: "attachments_unsupported",
+              path: "images",
+              message: `This T3 cannot receive image attachments: update T3 or remove the images. ${support.explanation}`,
+            }
+          : {
+              code: "launch_unsupported",
+              path: "connection.contract",
+              message:
+                "T3 attachment capabilities are unavailable. Recheck the connection and retry this Start.",
+            },
+      ];
+    }),
+  );
+}
 type StartPlan = {
-  input: StartRunInput;
+  input: Pick<StartRunInput, "requestId" | "title" | "createdAt">;
+  prompt: StartPrompt;
   requestFingerprint: string;
   project: FactoryProject;
   definitions: RunDefinitions;
@@ -191,6 +238,8 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
         : failure("conflict", "Start key content conflicts.");
     const conflict = yield* startConfigurationConflict(sql, plan);
     if (conflict) return conflict;
+    const unstaged = yield* stagedManifestProblem(sql, plan.prompt.images);
+    if (unstaged) return unstaged;
     const title = plan.input.title.trim();
     yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${title},${plan.time})`;
     const project = plan.project;
@@ -199,7 +248,9 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
     }>`SELECT COALESCE(MAX(number),0)+1 AS n FROM runs`;
     const number = allocated!.n;
     const { flow, agents } = plan.definitions;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,context_id,workspace_root,started_at,created_at,creation_key,title,number,block_settlement_enabled,flow_revision_id) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${plan.input.input},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number},1,(SELECT id FROM flow_revisions WHERE flow_id=${flow.id} AND revision=${flow.revision}))`;
+    const { segments, images } = plan.prompt;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,prompt_segments_json,context_id,workspace_root,started_at,created_at,creation_key,title,number,block_settlement_enabled,flow_revision_id) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${workerPromptText(segments, images)},${JSON.stringify(segments)},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number},1,(SELECT id FROM flow_revisions WHERE flow_id=${flow.id} AND revision=${flow.revision}))`;
+    yield* attachRunImages(sql, plan.runId, images);
     for (const agent of agents)
       yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
     for (const block of plan.definitions.flow.graph.blocks)
@@ -237,8 +288,8 @@ function runWorkspace(plan: StartPlan, number: number): RunWorkspace {
   };
 }
 /** The first worker message is checked before the acceptance transaction commits. */
-function prepareStartWork(definitions: RunDefinitions) {
-  if (entryMessagesTooLong(definitions))
+function prepareStartWork(definitions: RunDefinitions, prompt: StartPrompt) {
+  if (entryMessagesTooLong(definitions, prompt.images))
     return failure("validation", "The Agent prompt exceeds T3's first-message limit.");
   return { ok: true as const };
 }
@@ -258,19 +309,17 @@ export function openRunnerStart(
           "conflict",
           "Factory is shutting down. Retry this same Start request after restart.",
         );
-      const input = rawInput as StartRunInput | undefined;
-      if (!validStartInput(input))
-        return failure(
-          "validation",
-          "Choose a project and Flow and enter non-empty input (up to 100,000 characters).",
-          [
-            {
-              code: "start_input",
-              path: "input",
-              message: "Project, Flow, input and a stable Start request ID are required.",
-            },
-          ],
-        );
+      if (!validStartKeys(rawInput))
+        return failure("validation", "Choose a project and Flow before starting.", [
+          {
+            code: "start_request",
+            path: "projectId",
+            message: "Project, Flow and a stable Start request ID are required.",
+          },
+        ]);
+      const input = rawInput as typeof rawInput & Pick<StartRunInput, "title" | "createdAt">;
+      const prompt = validateStartPrompt(rawInput);
+      if (!prompt.ok) return prompt;
       const presentationIssues = startPresentationIssues(input);
       if (presentationIssues.length)
         return failure(
@@ -278,9 +327,7 @@ export function openRunnerStart(
           "Give the Run a title and a valid creation time.",
           presentationIssues,
         );
-      const content = fingerprint(
-        JSON.stringify([input.projectId, input.flowId, input.input, input.title, input.createdAt]),
-      );
+      const content = startFingerprint(input, prompt.value);
       const existing = yield* run(
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
@@ -294,16 +341,17 @@ export function openRunnerStart(
         return existing.request_fingerprint === content
           ? yield* getRun(existing.id)
           : failure("conflict", "This Start key was already accepted with different content.");
-      const checked = yield* startPreconditions(input);
+      const checked = yield* startPreconditions(input, prompt.value.images.length);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope, workspace } = checked.value;
       const definitions: RunDefinitions = { flow, agents };
-      const ready = prepareStartWork(definitions);
+      const ready = prepareStartWork(definitions, prompt.value);
       if (!ready.ok) return ready;
       const runId = yield* newId,
         taskId = yield* newId;
       const plan: StartPlan = {
-        input: input,
+        input,
+        prompt: prompt.value,
         requestFingerprint: content,
         project,
         definitions,
@@ -323,7 +371,10 @@ export function openRunnerStart(
     });
   }
   /** Before Start: connection/project, Flow readiness, every referenced Agent's runtime and launch schema. */
-  function startPreconditions(input: StartRunInput) {
+  function startPreconditions(
+    input: Pick<StartRunInput, "projectId" | "flowId">,
+    imageCount: number,
+  ) {
     return Effect.gen(function* () {
       yield* ops.recheckConnection();
       yield* ops.recheckProjects();
@@ -355,7 +406,9 @@ export function openRunnerStart(
         catch: (error) => error,
       });
       const workspace = yield* resolveStartWorkspace(t3, flow, target.project);
+      const attachments = yield* attachmentIssues(t3, target.project, imageCount);
       const issues: ValidationIssue[] = [
+        ...attachments,
         ...(!workspace.ok ? workspace.issues : []),
         ...(!agents.ok ? agents.error.issues : []),
         ...(!support || !support.supported
@@ -370,7 +423,7 @@ export function openRunnerStart(
             ]
           : []),
       ];
-      if (!workspace.ok || !agents.ok || !support || !support.supported)
+      if (attachments.length || !workspace.ok || !agents.ok || !support || !support.supported)
         return failure(
           "validation",
           "Flow execution setup is incomplete. No Run was created.",

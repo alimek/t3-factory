@@ -16,6 +16,7 @@ import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-ac
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
+import { sha256Hex } from "../../apps/backend/test/support/run-images.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
 import { seedScenarios } from "../../scripts/dev/seed-scenarios.ts";
 import { seedDevelopment } from "../../scripts/dev/seed.ts";
@@ -92,7 +93,11 @@ async function prepareWorkerRuns() {
         return factory.startRun({
           ...seed,
           requestId: `ui-worker:${seed.requestId}`,
-          input: seed.input.replace(/^Demo · /, "UI worker · "),
+          segments: seed.segments.map((segment, index) =>
+            index === 0 && segment.type === "text"
+              ? { ...segment, text: segment.text.replace(/^Demo · /, "UI worker · ") }
+              : segment,
+          ),
           title: seed.title.replace(/^Demo · /, "UI worker · "),
         });
       },
@@ -534,6 +539,20 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     connectionReads = 0;
   },
   "/__fixture/server-update-actions": () => serverUpdateActions,
+  "/__fixture/images/attachments": (query) => {
+    t3.attachmentsSupported = query.get("supported") !== "false";
+  },
+  /** Each worker launch of Run `number` with its attachment names and uploaded digests. */
+  "/__fixture/images/launches": (query) =>
+    [...t3.launches.values()]
+      .filter(({ payload }) => payload.title.startsWith(`Factory #${query.get("number")} · `))
+      .map(({ payload }) => ({
+        title: payload.title,
+        attachments: (payload.attachments ?? []).map((attachment) => ({
+          name: attachment.name,
+          sha256: sha256Hex(t3.uploads.get(attachment.id)!.data),
+        })),
+      })),
   "/__fixture/t3-observations": () => ({
     authorizationStarts: current.t3.authorizationStarts,
     reopenedApprovals: current.t3.reopenedApprovals,

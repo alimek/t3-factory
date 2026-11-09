@@ -99,7 +99,7 @@ export function openRunnerDatabase(
     return mutate(runRow.id, (sql) =>
       Effect.gen(function* () {
         const changed =
-          yield* sql`UPDATE operation_intents SET state='reserved',reserved_by=${owner.token},reserved_at=${yield* now},retry_scope=${intent.state === "pending" ? retryScope : intent.retry_scope},problem=NULL
+          yield* sql`UPDATE operation_intents SET state='reserved',reserved_by=${owner.token},reserved_at=${yield* now},retry_scope=${intent.state === "pending" ? retryScope : intent.retry_scope},problem=NULL,recovery_attempt=${intent.state === "pending" ? 0 : intent.recovery_attempt},recovery_not_before=${intent.state === "pending" ? null : intent.recovery_not_before}
         WHERE id=${intent.id} AND state=${intent.state}
         AND (${releaseGeneration ?? null} IS NULL OR EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND generation=${releaseGeneration ?? null}))
         AND EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND gate_open=1)

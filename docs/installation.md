@@ -145,6 +145,9 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
 
 ### Execution and safety boundaries
 
+- Prompt screenshots reach workers as T3 launch attachments. Controlled fixtures cover upload, fan-out and recovery; a
+  live T3 upload, relays or proxies in front of T3 and whether a model can see the images are unverified. A bounded
+  local Codex qualification of launch attachments is required before calling the feature release-ready.
 - A Run's threads share its workspace, the project checkout or that Run's one worktree: no conflict-free editing or exactly-once guarantee. Worktree Runs are not yet qualified against live T3.
 - Uncertain launch/send retries need unchanged authorization and independent, operation-specific continuity and retention proof; the default live proof is absent, and server restart, changed grants and
   unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and a Block id does not isolate adversarial processes sharing the OS user.

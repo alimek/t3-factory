@@ -23,6 +23,7 @@ export function resultResponse(
         host_only: 403,
         not_found: 404,
         conflict: 409,
+        missing_images: 409,
         incompatible: 426,
         internal: 500,
       }[result.error.code];
@@ -101,6 +102,41 @@ export function writeJsonResponse(
   });
 }
 
+/** A raw request body up to `bytes`, passed to the route with its declared Content-Type. */
+export function readRawBody(
+  request: HttpServerRequestType,
+  limit: JsonBodyLimit,
+): Effect.Effect<
+  | { readonly kind: "ok"; readonly value: { mimeType: string; data: Uint8Array } }
+  | { readonly kind: "invalid"; readonly response: HttpServerResponse.HttpServerResponse }
+> {
+  return Effect.gen(function* () {
+    const buffer = yield* request.arrayBuffer.pipe(
+      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.fromInputUnsafe(limit.bytes)),
+      Effect.catchCause(() => Effect.succeed(undefined)),
+    );
+    if (buffer === undefined)
+      return {
+        kind: "invalid" as const,
+        response: resultResponse(failure("validation", limit.message)),
+      };
+    const mimeType = (request.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+    return { kind: "ok" as const, value: { mimeType, data: new Uint8Array(buffer) } };
+  });
+}
+
+export function runImageResponse(
+  result: Result<{ mimeType: string; data: Uint8Array }>,
+): HttpServerResponse.HttpServerResponse {
+  if (!result.ok) return resultResponse(result);
+  return HttpServerResponse.uint8Array(result.value.data, {
+    status: 200,
+    contentType: result.value.mimeType,
+    // Content-addressed: the bytes behind a digest never change.
+    headers: { "cache-control": "private, max-age=31536000, immutable" },
+  });
+}
+
 export interface OperationCall {
   /** First path parameter; empty for routes without one. */
   readonly id: string;
@@ -117,6 +153,8 @@ export interface ApiRoute {
   readonly method: string;
   readonly path: RegExp;
   readonly body?: JsonBodyLimit;
+  /** Raw bytes instead of JSON; the input is `{ mimeType, data }`. */
+  readonly rawBody?: JsonBodyLimit;
   /** Route exists only on that listener; the other answers 404. */
   readonly surface?: "host" | "remote";
   /** The protocol handshake itself: answered before a client declares its protocol. */

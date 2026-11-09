@@ -2,6 +2,7 @@ import { assert, expect, it } from "@effect/vitest";
 import { dirname, join } from "node:path";
 import { LiveT3Adapter } from "@t3-factory/backend";
 import { launchFixture } from "./support/launch-fixture.ts";
+import { screenshots } from "./support/run-images.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
@@ -154,6 +155,71 @@ it("launch support permits an absent runtime mode without inventing replay proof
   // Assert
   expect(support.supported).toBe(true);
   expect(support.retryScope).toBe(null);
+});
+
+it("an image upload posts its exact bytes to T3's signed upload address without the OAuth bearer", async (c) => {
+  // Arrange
+  const { adapter, external } = await launchFixture(c);
+  const upload = { name: "image-1-screenshot.png", mimeType: "image/png", sizeBytes: 0 };
+  const data = screenshots.red.data;
+
+  // Act
+  const attachmentId = await adapter.uploadAttachment(
+    { endpoint: external.endpoint },
+    { ...upload, sizeBytes: data.byteLength },
+    data,
+  );
+
+  // Assert
+  expect(external.uploads).toHaveLength(1);
+  const received = external.uploads[0]!;
+  expect(received.attachmentId).toBe(attachmentId);
+  expect(received.upload).toStrictEqual({ type: "image", ...upload, sizeBytes: data.byteLength });
+  expect(received.bytes.equals(Buffer.from(data))).toBe(true);
+  expect(received.authorization).toBeUndefined();
+});
+
+it("T3 advertising upload preparation and launch attachments supports image launches", async (c) => {
+  // Arrange
+  const { adapter, external } = await launchFixture(c);
+
+  // Act
+  const support = await adapter.inspectAttachmentSupport({ endpoint: external.endpoint }, 8);
+
+  // Assert
+  expect(support.supported).toBe(true);
+});
+
+it("a launch schema without attachments does not support image launches", async (c) => {
+  // Arrange
+  const { adapter, external, schema } = await launchFixture(c);
+  delete (schema.properties as Record<string, unknown>).attachments;
+
+  // Act
+  const support = await adapter.inspectAttachmentSupport({ endpoint: external.endpoint }, 1);
+
+  // Assert
+  expect(support.supported).toBe(false);
+});
+
+it("a launch sends its uploaded attachments with the first message", async (c) => {
+  // Arrange
+  const { adapter, external, payload, seen } = await launchFixture(c);
+  const attachments = [
+    {
+      type: "image" as const,
+      id: "pending-1",
+      name: "image-1-screenshot.png",
+      mimeType: "image/png",
+      sizeBytes: 120,
+    },
+  ];
+
+  // Act
+  await adapter.launchThread({ endpoint: external.endpoint }, { ...payload, attachments });
+
+  // Assert
+  expect(seen).toStrictEqual([{ ...payload, attachments }]);
 });
 
 it("T3's workspace strategy schema supports worktree launches", async (c) => {

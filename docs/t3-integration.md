@@ -169,6 +169,15 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
   schema requires it, Start fails with `launch_unsupported`. An uncertain launch is searched
   for and is not replayed. A definitive rejection is an error. Unknown send acceptance
   cannot be replayed without independent continuity and key-retention proof, absent by default.
+- **Image attachments.** Factory treats image launches as supported only when T3 lists
+  `t3_attachment_prepare_upload` and `t3_thread_launch` advertises `attachments` (an array whose `maxItems` covers the
+  Run's images) and `clientRequestId`. For each image Factory calls `t3_attachment_prepare_upload` with type `image`,
+  name `image-N-<sanitized name>`, type and size, then POSTs the exact bytes to the returned relative URL on the MCP
+  endpoint's origin without the OAuth bearer, and launches with the returned attachment ids. Uploads are repeated for each
+  launch attempt; ids, signed upload URLs and context URLs never enter prompts, saved payloads or logs. Factory does not
+  discard pending uploads; T3's sweep removes them. Launches stay in the connection's own environment. The browser never
+  uploads to T3. Controlled fixtures cover the transport; live T3 upload, relays in front of T3 and model vision are
+  unverified.
 - **Observation.** One `t3_thread_read` per worker thread (`runLimit: 50`) supplies the
   active and latest runs, recent runs with ordinals and source timestamps, and the pending
   native request count, which includes permissions as well as questions. A read whose
