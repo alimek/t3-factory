@@ -4,7 +4,7 @@ import { expect } from "e2e";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { workerEvent } from "./support/worker.ts";
-import { openComposerWithFlow } from "./support/composer.ts";
+import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
 import { fillHumanReviewChanges } from "./support/keyboard-shortcuts.ts";
 
 beforeEach(async ({ app }) => {
@@ -159,14 +159,7 @@ test("a Start whose response was lost is recovered after reload without a duplic
   // Arrange
   await openComposerWithFlow(app, screen, "Demo · Focused change");
   await screen.getByLabel("Initial prompt", { exact: false }).fill("UI recovered lost Start");
-  await browser.route("**/api/runs", async (route) => {
-    if (route.request.method !== "POST") return route.continue();
-    await route.fetch();
-    await route.abort();
-  });
-  await screen.getByRole("button", "Start", { exact: true }).tap();
-  await expect(screen.getByRole("button", "Check same request", { exact: true })).toBeVisible();
-  await browser.unrouteAll();
+  await startLosingResponse(screen, browser);
   await browser.reload();
   await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(
     "UI recovered lost Start",

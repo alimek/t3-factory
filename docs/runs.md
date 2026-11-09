@@ -15,6 +15,17 @@ a T3 endpoint that is not on this computer rejects Start with a `workspace.*` is
 action; no Run, Task or worker is created. Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
+- **Screenshots.** **Attach images** in the prompt field adds PNG, JPEG, GIF or WebP files, up to 8 images of
+  1 byte–10 MiB each, sent unchanged (no recompression or resizing). The field shows thumbnails with remove controls,
+  and a thumbnail opens a full-size preview. Each unsupported, oversized, excess or unsavable file is rejected with its
+  name and reason; valid files and existing attachments stay. Identical bytes attach once; different files with the same
+  name stay separate images. Start still requires prompt text. At Start the composer uploads every image Factory does not
+  hold yet, then sends the request; Factory accepts it only with every image uploaded and attaches them to the Run in
+  order. Each Flow-input worker receives the same original images with its first message, named `image-N-<name>`, and
+  the Run's input text refers to them as `[Image N: name]` and ends with `Attached images:` listing every image. Later
+  Blocks, revisits and Request report turns do not receive the images. An image Start needs a T3 that accepts uploaded
+  launch attachments; otherwise it is rejected with "update T3 or remove the images" and nothing is created. Images are
+  part of the Run's input and stay with it after Settle and Archive.
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
   else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes
   the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
@@ -22,8 +33,12 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   and creates nothing.
 - **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
   records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
-  even after a lost response or restart; reusing the key with changed content, including title or creation time, conflicts. An unknown response keeps the
-  submitted fields read-only and offers **Check same request**; only confirmed success clears the prompt and opens the Run.
+  even after a lost response or restart; reusing the key with changed content, including title, creation time or the
+  images' bytes, order, names or positions, conflicts. An unknown response keeps the
+  submitted fields and images read-only (previews still open) and offers **Check same request**, which uploads missing
+  images again and repeats the same request; only confirmed success clears the prompt and opens the Run. If Factory
+  reports an image missing at acceptance, the composer uploads it again and retries once automatically; a further
+  failure keeps the request locked for another check.
   The submitted request is saved in browser storage before it is sent, so reloading or reopening the client during an
   in-flight or unknown Start offers the same check instead of a fresh request. It is kept with its draft, so each draft has its
   own pending request, and per selected Factory server (a desktop client never checks it against another server); it is
@@ -47,7 +62,10 @@ levels of evidence. A configuration check alone proves neither execution nor rep
 - **Composer.** Project and Flow choices are remembered locally per selected Factory server, like drafts. Each blocking condition is a notice with a recovery action, and
   fields that cause it are marked. The Project picker keeps searchable paths, **Recheck projects** and **Add repository**;
   unavailable references stay visible in history but cannot be selected for a new Run.
-- **Drafts.** Typing a prompt with a non-whitespace character creates a Run draft; clearing it to whitespace removes the draft.
+- **Drafts.** Typing a prompt with a non-whitespace character or attaching an image creates a Run draft; removing all
+  text and images removes it. A draft with images but no text is listed as **Untitled draft** and cannot Start. Image
+  bytes are kept in the browser's IndexedDB per selected Factory server and draft, saved before the draft refers to them;
+  opening the composer deletes bytes no draft references, and discarding a draft or a confirmed Start deletes its images.
   Drafts save silently while typing, without a T3 connection or ready choices, and the current composition is restored after a
   reload or reopening the client. A draft keeps the exact prompt and Project/Flow references only; Start resolves the current
   saved Flow and Agents. Drafts live in browser storage per client and selected Factory server; tabs sharing a profile share

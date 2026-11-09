@@ -5,7 +5,7 @@ import { beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Screen } from "e2e";
 import { sha256Hex, solidPng } from "../apps/backend/test/support/run-images.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
-import { openComposerWithFlow } from "./support/composer.ts";
+import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
 
 /** Picked files live in ignored storage; red and blue share their original filename. */
 const directory = ".e2e/fixtures/run-images";
@@ -42,9 +42,7 @@ async function composeWithImages(
 ) {
   await openComposerWithFlow(app, screen, "Demo · Parallel review from one prompt");
   await screen.getByLabel("Initial prompt", { exact: false }).fill(prompt);
-  await browser
-    .locator('input[type="file"]')
-    .setInputFiles(picked.map((name) => files[name].path));
+  await browser.locator('input[type="file"]').setInputFiles(picked.map((name) => files[name].path));
 }
 
 const thumbnails = (screen: Screen) =>
@@ -119,14 +117,7 @@ test("a lost image Start stays read-only and Check same request recovers exactly
 }) => {
   // Arrange
   await composeWithImages(app, screen, browser, "UI images lost Start", ["red", "blue"]);
-  await browser.route("**/api/runs", async (route) => {
-    if (route.request.method !== "POST") return route.continue();
-    await route.fetch();
-    await route.abort();
-  });
-  await screen.getByRole("button", "Start", { exact: true }).tap();
-  await expect(screen.getByRole("button", "Check same request", { exact: true })).toBeVisible();
-  await browser.unrouteAll();
+  await startLosingResponse(screen, browser);
   await browser.reload();
   await expect(thumbnails(screen)).toHaveCount(2);
   await expect(screen.getByRole("button", /^Remove /)).toHaveCount(0);

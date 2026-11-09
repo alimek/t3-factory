@@ -73,7 +73,10 @@ export async function oauthT3(
     bytes: Buffer;
     authorization: string | undefined;
   }[] = [];
-  const signedUploads = new Map<string, { attachmentId: string; upload: Record<string, unknown> }>();
+  const signedUploads = new Map<
+    string,
+    { attachmentId: string; upload: Record<string, unknown> }
+  >();
   function prepareUpload(args: ToolArguments) {
     const attachmentId = `pending-${randomUUID()}`;
     const token = randomUUID();
@@ -84,7 +87,12 @@ export async function oauthT3(
       expiresAt: Date.now() + 600_000,
     };
   }
-  function receiveUpload(request: IncomingMessage, response: ServerResponse, token: string, body: Buffer) {
+  function receiveUpload(
+    request: IncomingMessage,
+    response: ServerResponse,
+    token: string,
+    body: Buffer,
+  ) {
     const signed = signedUploads.get(token);
     if (!signed) return void response.writeHead(404).end("Not Found");
     if (body.length !== signed.upload.sizeBytes)
@@ -261,7 +269,10 @@ export async function oauthT3(
     ["t3_thread_wait", structuredTool(options.wait)],
     ["t3_thread_read", structuredTool(options.runtimeActivity)],
     ["orchestrator_capabilities", structuredTool(options.capabilities)],
-    ["t3_attachment_prepare_upload", options.attachments ? structuredTool(prepareUpload) : undefined],
+    [
+      "t3_attachment_prepare_upload",
+      options.attachments ? structuredTool(prepareUpload) : undefined,
+    ],
   ]);
   /** Any other tool answers as `t3_environment_read`. */
   const readEnvironment = () => ({

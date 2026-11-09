@@ -63,7 +63,9 @@ function startFingerprint(
   if (prompt.images.length) content.push(prompt.segments, prompt.images);
   return fingerprint(JSON.stringify(content));
 }
-function startPresentationIssues(input: Pick<StartRunInput, "title" | "createdAt">): ValidationIssue[] {
+function startPresentationIssues(
+  input: Pick<StartRunInput, "title" | "createdAt">,
+): ValidationIssue[] {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   return [
     ...(title && title.length <= TASK_TITLE_LIMIT
@@ -367,7 +369,10 @@ export function openRunnerStart(
     });
   }
   /** Before Start: connection/project, Flow readiness, every referenced Agent's runtime and launch schema. */
-  function startPreconditions(input: Pick<StartRunInput, "projectId" | "flowId">, imageCount: number) {
+  function startPreconditions(
+    input: Pick<StartRunInput, "projectId" | "flowId">,
+    imageCount: number,
+  ) {
     return Effect.gen(function* () {
       yield* ops.recheckConnection();
       yield* ops.recheckProjects();

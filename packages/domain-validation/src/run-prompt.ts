@@ -9,7 +9,7 @@ import type {
 export const RUN_IMAGE_LIMIT = 8;
 export const RUN_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const RUN_IMAGE_NAME_LIMIT = 255;
-export const RUN_PROMPT_TEXT_LIMIT = 100_000;
+const RUN_PROMPT_TEXT_LIMIT = 100_000;
 export const RUN_IMAGE_MIME_TYPES: readonly RunImageMimeType[] = [
   "image/png",
   "image/jpeg",
@@ -20,7 +20,8 @@ export const RUN_IMAGE_MIME_TYPES: readonly RunImageMimeType[] = [
 const startsWith = (bytes: Uint8Array, signature: readonly number[], offset = 0) =>
   bytes.length >= offset + signature.length &&
   signature.every((byte, index) => bytes[offset + index] === byte);
-const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
+const ascii = (text: string) =>
+  Array.from({ length: text.length }, (_, index) => text.charCodeAt(index));
 
 /** The image type the bytes' file signature identifies, or undefined for any other content. */
 export function imageSignatureMime(bytes: Uint8Array): RunImageMimeType | undefined {
@@ -66,7 +67,13 @@ function readImage(value: unknown): RunImage | undefined {
   if (!RUN_IMAGE_MIME_TYPES.includes(mimeType as RunImageMimeType)) return undefined;
   if (!Number.isInteger(sizeBytes) || (sizeBytes as number) < 1) return undefined;
   if ((sizeBytes as number) > RUN_IMAGE_MAX_BYTES) return undefined;
-  return { imageId, sha256, name, mimeType: mimeType as RunImageMimeType, sizeBytes: sizeBytes as number };
+  return {
+    imageId,
+    sha256,
+    name,
+    mimeType: mimeType as RunImageMimeType,
+    sizeBytes: sizeBytes as number,
+  };
 }
 
 function manifestIssues(images: readonly RunImage[]): ValidationIssue[] {
@@ -111,7 +118,9 @@ export function validateStartPrompt(request: object): Result<StartPrompt> {
       error: {
         code: "validation",
         message: "Send the prompt as text and image segments with a valid image manifest.",
-        issues: [issue("start_prompt", "segments", "The prompt or its image manifest is malformed.")],
+        issues: [
+          issue("start_prompt", "segments", "The prompt or its image manifest is malformed."),
+        ],
       },
     };
   const prompt = { segments: segments as PromptSegment[], images: images as RunImage[] };

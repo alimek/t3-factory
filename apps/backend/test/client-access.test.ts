@@ -217,7 +217,10 @@ it("a pending client cannot even probe whether Factory holds a known image", asy
   await pending.requestAccess("Laptop");
 
   // Act
-  const probe = await pending.sendBytes("HEAD", `/api/run-images/${sha256Hex(screenshots.green.data)}`);
+  const probe = await pending.sendBytes(
+    "HEAD",
+    `/api/run-images/${sha256Hex(screenshots.green.data)}`,
+  );
 
   // Assert
   expect(probe.status).toBe(401);

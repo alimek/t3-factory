@@ -138,7 +138,7 @@ A meaningful change in a Run's work, such as an accepted Agent report, an execut
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
 
 **Flow input**:
-The data supplied to a particular flow execution: the plain text entered when starting a Run. Every Agent block connected to the Flow input block receives it, each in its own independent session.
+The data supplied to a particular flow execution: the required prompt text entered when starting a Run, with any attached images. Every Agent block connected to the Flow input block receives the text and the same original images with its first message, each in its own independent session; image references in the text read `[Image N: name]`.
 _Avoid_: Initial input, initial prompt as a separate concept
 
 **Flow input block**:
@@ -202,14 +202,14 @@ Retired. Earlier releases recorded a permanent Finished or Stopped outcome with 
 
 **Run composer**:
 The full-page launch surface for choosing a Project, global Flow and required
-initial prompt. It edits one Run draft at a time and opens a fresh composition from
+initial prompt, with optional attached images. It edits one Run draft at a time and opens a fresh composition from
 New Run or a Flow's Start Run; opening it does not start execution. Start always uses
 the current saved Flow and Agent definitions.
 
 **Run draft**:
 A client-local composition saved in browser storage while its prompt has a
-non-whitespace character: the exact prompt, Project/Flow references, title and
-creation time. It has no Task, Run or captured revisions until Start is accepted, which removes
+non-whitespace character or it has an image: the exact prompt text and images, Project/Flow
+references, title and creation time. A draft with images but no text cannot Start. It has no Task, Run or captured revisions until Start is accepted, which removes
 it; the Run keeps its title and creation time. Not to be confused with an unsaved Flow draft in Studio.
 
 **Request report**:

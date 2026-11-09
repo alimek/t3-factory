@@ -69,11 +69,7 @@ export interface T3Adapter {
   /** `t3_attachment_prepare_upload` and launch `attachments` that carry `count` images. */
   inspectAttachmentSupport(target: T3Endpoint, count: number): Promise<ReportSupport>;
   /** Prepares one pending upload and posts its exact bytes; returns its attachment id. */
-  uploadAttachment(
-    target: T3Endpoint,
-    upload: AttachmentUpload,
-    data: Uint8Array,
-  ): Promise<string>;
+  uploadAttachment(target: T3Endpoint, upload: AttachmentUpload, data: Uint8Array): Promise<string>;
   launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference>;
   /** Search one project for a launch that may already exist. Incomplete scans withhold candidates. */
   discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery>;

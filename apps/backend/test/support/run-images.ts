@@ -22,7 +22,10 @@ export function solidPng(red: number, green: number, blue: number): Uint8Array {
   header.writeUInt32BE(size, 0);
   header.writeUInt32BE(size, 4);
   header.set([8, 2, 0, 0, 0], 8);
-  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(size).fill([red, green, blue]).flat())]);
+  const row = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from(Array(size).fill([red, green, blue]).flat()),
+  ]);
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", header),
@@ -103,7 +106,7 @@ export function imageStart(input: {
  * Holds the Runner's first image dispatch at its attachment check until released; Start's own
  * preflight check passes. Lets a test change Factory storage or T3 support after Start.
  */
-export function holdImageDispatch(t3: ControlledT3) {
+function holdImageDispatch(t3: ControlledT3) {
   let release!: () => void;
   const released = new Promise<void>((resolve) => {
     release = resolve;

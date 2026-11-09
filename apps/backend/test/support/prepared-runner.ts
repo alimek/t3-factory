@@ -108,10 +108,18 @@ export function preparedService(c: TestContext) {
       preparedHomes(h.processHome),
     );
     const factory = yield* h.service({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
-    const operations = factory as unknown as Record<string, (...args: unknown[]) => Effect.Effect<unknown>>;
+    const operations = factory as unknown as Record<
+      string,
+      (...args: unknown[]) => Effect.Effect<unknown>
+    >;
     const promised = new Proxy(
       {},
-      { get: (_, name: string) => (...args: unknown[]) => Effect.runPromise(operations[name]!(...args)) },
+      {
+        get:
+          (_, name: string) =>
+          (...args: unknown[]) =>
+            Effect.runPromise(operations[name]!(...args)),
+      },
     ) as Factory;
     const ready = yield* Effect.promise(() => readyFlow(promised, t3, root));
     return { factory, t3, ...ready };
@@ -189,45 +197,41 @@ export async function preparedWorkspaceFlow(c: TestContext, workspace: FlowWorks
   return { ...setup, flow: flow.value };
 }
 
-/** A checkout Flow whose input starts Entry worker and Second entry; Entry worker's "Done" goes to Follow-up. */
-export async function preparedFanOutFlow(c: TestContext) {
+/** Entry worker and Second entry both start from the Flow input; optionally "Done" goes to Follow-up. */
+async function twoEntryFlow(
+  c: TestContext,
+  options: { workspace?: FlowWorkspace; followUp?: boolean },
+) {
   const setup = await prepared(c);
   const entry = setup.flow.graph.blocks[0]!;
+  const followUp = { ...entry, id: "follow-up", name: "Follow-up" };
   const flow = await setup.f.updateFlow(setup.flow.id, {
     ...setup.flow,
     expectedRevision: setup.flow.revision,
+    workspace: options.workspace ?? setup.flow.workspace,
     graph: {
       ...setup.flow.graph,
       flowInput: { ...setup.flow.graph.flowInput, targetBlockIds: [entry.id, "second"] },
       blocks: [
         entry,
         { ...entry, id: "second", name: "Second entry" },
-        { ...entry, id: "follow-up", name: "Follow-up" },
+        ...(options.followUp ? [followUp] : []),
       ],
-      connections: [{ sourceBlockId: entry.id, exitId: "done", targetBlockId: "follow-up" }],
+      connections: options.followUp
+        ? [{ sourceBlockId: entry.id, exitId: "done", targetBlockId: followUp.id }]
+        : [],
     },
   });
   assert(flow.ok, JSON.stringify(flow));
   return { ...setup, flow: flow.value };
 }
 
+/** A checkout Flow starting Entry worker and Second entry; Entry worker's "Done" goes to Follow-up. */
+export const preparedFanOutFlow = (c: TestContext) => twoEntryFlow(c, { followUp: true });
+
 /** A worktree Flow from the default branch whose input starts two Agents: Entry worker and Second entry. */
-export async function preparedWorktreeFlow(c: TestContext) {
-  const setup = await prepared(c);
-  const entry = setup.flow.graph.blocks[0]!;
-  const flow = await setup.f.updateFlow(setup.flow.id, {
-    ...setup.flow,
-    expectedRevision: setup.flow.revision,
-    workspace: { mode: "worktree", base: { kind: "default" } },
-    graph: {
-      ...setup.flow.graph,
-      flowInput: { ...setup.flow.graph.flowInput, targetBlockIds: [entry.id, "second"] },
-      blocks: [entry, { ...entry, id: "second", name: "Second entry" }],
-    },
-  });
-  assert(flow.ok);
-  return { ...setup, flow: flow.value };
-}
+export const preparedWorktreeFlow = (c: TestContext) =>
+  twoEntryFlow(c, { workspace: { mode: "worktree", base: { kind: "default" } } });
 
 /**
  * A worktree Flow with one Flow-input Agent: Entry worker's "Done" goes to a Human Review that

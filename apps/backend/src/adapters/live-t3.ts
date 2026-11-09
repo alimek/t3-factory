@@ -943,7 +943,10 @@ export class LiveT3Adapter implements T3Adapter {
     const inspection = await this.inspect(target);
     const tools = inspection.contract?.tools ?? [];
     const launch = tools.find((tool) => tool.name === "t3_thread_launch")?.inputSchema;
-    const props = (launch?.properties ?? {}) as Record<string, SchemaProperty & { maxItems?: unknown }>;
+    const props = (launch?.properties ?? {}) as Record<
+      string,
+      SchemaProperty & { maxItems?: unknown }
+    >;
     const attachments = props.attachments;
     const supported =
       inspection.state === "ready" &&

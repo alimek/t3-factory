@@ -245,9 +245,7 @@ function runImageRoutes(factory: Factory): readonly ApiRoute[] {
       method: "PUT",
       path,
       rawBody: { bytes: 10 * 1024 * 1024, message: "Send one image up to 10 MiB." },
-      handle: fromCall((sha256, input: StageRunImageInput) =>
-        factory.stageRunImage(sha256, input),
-      ),
+      handle: fromCall((sha256, input: StageRunImageInput) => factory.stageRunImage(sha256, input)),
     },
     {
       method: "GET",

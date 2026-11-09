@@ -147,7 +147,10 @@ it("images alone without prompt text are not a valid Start", async (c) => {
   // Act
   const started = await f.f.startRun({
     ...request,
-    segments: [{ type: "text", text: "  " }, { type: "image", imageId: "red" }],
+    segments: [
+      { type: "text", text: "  " },
+      { type: "image", imageId: "red" },
+    ],
   });
 
   // Assert
@@ -243,27 +246,29 @@ it("a Start manifest may repeat a filename but not the same image bytes", async 
 const HOUR = 60 * 60_000;
 const upload = (image: { data: Uint8Array }) => ({ mimeType: "image/png", data: image.data });
 
-it.effect("an unreferenced staged image is swept 24 hours after its first upload, even when uploaded again", (c) =>
-  Effect.gen(function* () {
-    // Arrange
-    const harness = yield* Effect.promise(() => factoryHarness(c));
-    const factory = yield* harness.service({ t3: new ControlledT3() });
-    const red = sha256Hex(screenshots.red.data);
-    assert((yield* factory.stageRunImage(red, upload(screenshots.red))).ok);
-    yield* TestClock.adjust(23 * HOUR);
-    assert((yield* factory.stageRunImage(red, upload(screenshots.red))).ok);
-    yield* TestClock.adjust(2 * HOUR);
+it.effect(
+  "an unreferenced staged image is swept 24 hours after its first upload, even when uploaded again",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const harness = yield* Effect.promise(() => factoryHarness(c));
+      const factory = yield* harness.service({ t3: new ControlledT3() });
+      const red = sha256Hex(screenshots.red.data);
+      assert((yield* factory.stageRunImage(red, upload(screenshots.red))).ok);
+      yield* TestClock.adjust(23 * HOUR);
+      assert((yield* factory.stageRunImage(red, upload(screenshots.red))).ok);
+      yield* TestClock.adjust(2 * HOUR);
 
-    // Act
-    const later = yield* factory.stageRunImage(
-      sha256Hex(screenshots.blue.data),
-      upload(screenshots.blue),
-    );
+      // Act
+      const later = yield* factory.stageRunImage(
+        sha256Hex(screenshots.blue.data),
+        upload(screenshots.blue),
+      );
 
-    // Assert
-    assert(later.ok);
-    expect((yield* factory.getRunImageInfo(red)).ok).toBe(false);
-  }),
+      // Assert
+      assert(later.ok);
+      expect((yield* factory.getRunImageInfo(red)).ok).toBe(false);
+    }),
 );
 
 it.effect("an image a Run retains is never swept as staging", (c) =>

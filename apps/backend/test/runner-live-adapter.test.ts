@@ -206,7 +206,13 @@ it("a launch sends its uploaded attachments with the first message", async (c) =
   // Arrange
   const { adapter, external, payload, seen } = await launchFixture(c);
   const attachments = [
-    { type: "image" as const, id: "pending-1", name: "image-1-screenshot.png", mimeType: "image/png", sizeBytes: 120 },
+    {
+      type: "image" as const,
+      id: "pending-1",
+      name: "image-1-screenshot.png",
+      mimeType: "image/png",
+      sizeBytes: 120,
+    },
   ];
 
   // Act

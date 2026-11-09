@@ -79,13 +79,23 @@ function Thumbnail({
   );
 }
 
-function Preview({ image, load, onClose }: { image: RunImage; load: LoadImage; onClose: () => void }) {
+function Preview({
+  image,
+  load,
+  onClose,
+}: {
+  image: RunImage;
+  load: LoadImage;
+  onClose: () => void;
+}) {
   const url = useImageUrl(load, image.imageId);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-3xl">
         <DialogTitle className="truncate pr-6">{image.name}</DialogTitle>
-        <DialogDescription className="sr-only">Full-size preview of an attached image.</DialogDescription>
+        <DialogDescription className="sr-only">
+          Full-size preview of an attached image.
+        </DialogDescription>
         {url ? (
           <img src={url} alt={image.name} className="max-h-[70vh] w-full object-contain" />
         ) : null}
@@ -170,9 +180,7 @@ export function ImageRejections({ rejections }: { rejections: readonly ImageReje
   if (!rejections.length) return null;
   return (
     <div role="alert" className="grid gap-0.5 text-2xs text-destructive">
-      <p>
-        Not attached (PNG, JPEG, GIF or WebP up to 10 MiB, at most {RUN_IMAGE_LIMIT} images):
-      </p>
+      <p>Not attached (PNG, JPEG, GIF or WebP up to 10 MiB, at most {RUN_IMAGE_LIMIT} images):</p>
       <ul className="grid gap-0.5">
         {rejections.map((rejection, index) => (
           <li key={`${rejection.name}-${index}`}>

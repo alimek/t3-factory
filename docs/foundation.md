@@ -23,6 +23,10 @@ and restricted OAuth credentials live outside project repositories.
   execution, recovery and Run history read these revisions, so later edits and removals
   cannot rewrite history.
   External skill files are not frozen.
+- Run images are bytes on disk under `FACTORY_HOME/images`, named by their SHA-256 digest, with
+  staging metadata in SQLite. Start attaches the ordered manifest to the Run; the prompt segments
+  and manifest are immutable and the Run's input keeps the worker-readable text. Migration `071`
+  gives every existing Run one text segment and no images.
 - Each Start creates a new Task, Run and threads. A Settled Run returns to Active when one of
   its Blocks reports; Archived Runs are final and never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
@@ -44,7 +48,8 @@ new attempts, and failed Agent work is never retried automatically; see
 **Retention.** History, input, revisions, events, deduplication metadata and closure evidence
 are kept indefinitely. Message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
-remain. Initial input and revision prompts are intentional exceptions. There is no
+remain. Initial input, including its images, and revision prompts are intentional exceptions;
+staged images no Run references are deleted after 24 hours. There is no
 transcript archive, and payload clearing is not secure erasure.
 
 ## Public operations
@@ -146,8 +151,10 @@ changes must migrate or explicitly invalidate saved preferences under the
 [current-contract policy](../AGENTS.md#one-current-contract). The composer retains an
 unknown Start's identical key and payload for an explicit check, across reloads when
 storage allows; only confirmed success clears its prompt. Run drafts are client-local
-preparation in browser storage, never backend records, and blocked storage shows that a
-draft lasts only while the window is open. Client-local state that belongs
+preparation in browser storage, never backend records: metadata in localStorage and image
+bytes in IndexedDB, keyed by selected server, draft and image. Drafts and pending requests
+saved before images become one text segment with the same request identity. Blocked storage
+shows that a draft lasts only while the window is open. Client-local state that belongs
 to a server is scoped by that server: browsers are isolated by origin, while the desktop
 renderer shares one origin and names its role and selected server. Backend idempotency
 remains authoritative.

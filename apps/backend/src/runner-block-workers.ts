@@ -126,7 +126,8 @@ export function persistEntryLaunches(
   blockIds: readonly string[],
 ) {
   return Effect.gen(function* () {
-    const images = yield* sql<LaunchImage>`SELECT ordinal,sha256,name,mime_type AS "mimeType",size_bytes AS "sizeBytes" FROM run_images WHERE run_id=${plan.runId} ORDER BY ordinal`;
+    const images =
+      yield* sql<LaunchImage>`SELECT ordinal,sha256,name,mime_type AS "mimeType",size_bytes AS "sizeBytes" FROM run_images WHERE run_id=${plan.runId} ORDER BY ordinal`;
     for (const blockId of blockIds) {
       const block = plan.definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
       const strategy = launchStrategy(plan.workspace, blockId);
@@ -194,45 +195,49 @@ export function dispatchBlockLaunch(
       return;
     }
     if (intent.state === "pending") {
-      if (!runRow.gate_open) return;
-      if (intent.recovery_not_before && intent.recovery_not_before > (yield* now)) return;
-      const target = runTarget(runRow);
-      const support = yield* Effect.tryPromise({
-        try: () => t3.inspectLaunchSupport(target, runRow.workspace.mode).catch(() => null),
-        catch: () => null,
-      });
-      if (!support?.supported) {
-        yield* database.problem(
-          intent,
-          support?.explanation ??
-            "T3 launch capabilities are unavailable. Factory will retry this launch.",
-        );
-        return;
-      }
-      const { images: launchImages = [], ...payload } = checked.value;
-      const attachments = yield* uploadLaunchImages(
-        { database, t3, images, runRow, intent },
-        launchImages,
-      );
-      if (!attachments) return;
-      if (!(yield* database.reserveIntent(runRow, intent, support.retryScope))) return;
-      const request = attachments.length ? { ...payload, attachments } : payload;
-      yield* recoverOperation(
-        Effect.gen(function* () {
-          const reference = yield* Effect.tryPromise({
-            try: () => t3.launchThread(target, request),
-            catch: (error) => error,
-          });
-          yield* bindLaunchedWorker(database, runRow, intent, reference);
-        }),
-        (error) =>
-          isLaunchRejected(error)
-            ? failLaunch(database, runRow, intent, "T3 rejected the worker launch.")
-            : noteLaunchUncertain(database, intent),
-      );
+      yield* sendPendingLaunch({ database, t3, images, runRow, intent }, checked.value);
       return;
     }
     yield* searchLaunchedWorker(database, t3, runRow, intent, checked.value);
+  });
+}
+
+/** Uploads its images, reserves, then launches once; a lost reply leaves it uncertain. */
+function sendPendingLaunch(context: LaunchContext, stored: StoredLaunchPayload) {
+  const { database, t3, runRow, intent } = context;
+  return Effect.gen(function* () {
+    if (!runRow.gate_open) return;
+    if (intent.recovery_not_before && intent.recovery_not_before > (yield* now)) return;
+    const target = runTarget(runRow);
+    const support = yield* Effect.promise(() =>
+      t3.inspectLaunchSupport(target, runRow.workspace.mode).catch(() => null),
+    );
+    if (!support?.supported) {
+      yield* database.problem(
+        intent,
+        support?.explanation ??
+          "T3 launch capabilities are unavailable. Factory will retry this launch.",
+      );
+      return;
+    }
+    const { images: launchImages = [], ...payload } = stored;
+    const attachments = yield* uploadLaunchImages(context, launchImages);
+    if (!attachments) return;
+    if (!(yield* database.reserveIntent(runRow, intent, support.retryScope))) return;
+    const request = attachments.length ? { ...payload, attachments } : payload;
+    yield* recoverOperation(
+      Effect.gen(function* () {
+        const reference = yield* Effect.tryPromise({
+          try: () => t3.launchThread(target, request),
+          catch: (error) => error,
+        });
+        yield* bindLaunchedWorker(database, runRow, intent, reference);
+      }),
+      (error) =>
+        isLaunchRejected(error)
+          ? failLaunch(database, runRow, intent, "T3 rejected the worker launch.")
+          : noteLaunchUncertain(database, intent),
+    );
   });
 }
 

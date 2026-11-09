@@ -126,9 +126,7 @@ it("Start uploads only the images Factory lacks before sending the request", asy
   await draft.start();
 
   // Assert
-  expect(images.uploads.upload.mock.calls.map(([image]) => image.name)).toStrictEqual([
-    "new.png",
-  ]);
+  expect(images.uploads.upload.mock.calls.map(([image]) => image.name)).toStrictEqual(["new.png"]);
   expect(startRun.mock.calls[0]?.[0].images.map((image) => image.name)).toStrictEqual([
     "held.png",
     "new.png",

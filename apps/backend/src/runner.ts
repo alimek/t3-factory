@@ -57,14 +57,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
   const { consumeBlockUpdate } = openRunnerReports(database, lifecycle);
   const { observe } = openRunnerObservation(database, t3);
-  const { dispatchIntent } = openRunnerDispatch(
-    database,
-    ops,
-    t3,
-    checkAgent,
-    observe,
-    images,
-  );
+  const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe, images);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
   const { archiveRun } = openRunnerArchive(database, t3, lifecycle, liveContextId);

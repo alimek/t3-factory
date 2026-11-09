@@ -60,7 +60,7 @@ const missingFile = (error: unknown) =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
 
 /** The file's bytes when they still hash to their name; `missing` when absent or corrupt. */
-export type StoredImageBytes = { kind: "ok"; data: Uint8Array } | { kind: "missing" };
+type StoredImageBytes = { kind: "ok"; data: Uint8Array } | { kind: "missing" };
 
 /**
  * Content-addressed Run image bytes and their staging metadata. Uploads and the staging sweep
@@ -190,7 +190,8 @@ export function stagedManifestProblem(sql: SqlClient.SqlClient, images: readonly
     const missing: ValidationIssue[] = [];
     const mismatched: ValidationIssue[] = [];
     for (const [index, image] of images.entries()) {
-      const [row] = yield* sql<StagedRow>`SELECT sha256,mime_type,size_bytes FROM staged_images WHERE sha256=${image.sha256}`;
+      const [row] =
+        yield* sql<StagedRow>`SELECT sha256,mime_type,size_bytes FROM staged_images WHERE sha256=${image.sha256}`;
       if (!row)
         missing.push({
           code: "missing_images",
