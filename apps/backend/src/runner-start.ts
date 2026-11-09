@@ -20,6 +20,7 @@ import type {
   ValidationIssue,
 } from "@t3-factory/contracts";
 import {
+  flowReadiness,
   isCanonicalTimestamp,
   promptText,
   TASK_TITLE_LIMIT,
@@ -399,6 +400,13 @@ export function openRunnerStart(
       if (!flow.readiness.ready)
         return failure("validation", "Fix Flow readiness before starting.", flow.readiness.issues);
       const agents = yield* readyAgents(flow, target.project.id);
+      // An Agent saved after the Flow read is what this Run captures, so recheck the graph against it.
+      const captured = agents.ok
+        ? flowReadiness(
+            flow.graph,
+            agents.value.map((agent) => ({ ...agent, formerExitNames: new Map() })),
+          )
+        : null;
       const support = yield* Effect.tryPromise({
         try: () => t3.inspectLaunchSupport(target.project, flow.workspace.mode).catch(() => null),
         catch: (error) => error,
@@ -409,6 +417,7 @@ export function openRunnerStart(
         ...attachments,
         ...(!workspace.ok ? workspace.issues : []),
         ...(!agents.ok ? agents.error.issues : []),
+        ...(captured && !captured.ready ? captured.issues : []),
         ...(!support || !support.supported
           ? [
               {
@@ -421,7 +430,14 @@ export function openRunnerStart(
             ]
           : []),
       ];
-      if (attachments.length || !workspace.ok || !agents.ok || !support || !support.supported)
+      if (
+        attachments.length ||
+        !workspace.ok ||
+        !agents.ok ||
+        !captured?.ready ||
+        !support ||
+        !support.supported
+      )
         return failure(
           "validation",
           "Flow execution setup is incomplete. No Run was created.",
