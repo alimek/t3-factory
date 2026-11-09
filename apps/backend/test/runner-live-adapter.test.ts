@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { dirname, join } from "node:path";
-import { LiveT3Adapter } from "@t3-factory/backend";
+import { LiveT3Adapter } from "../src/index.ts";
 import { launchFixture } from "./support/launch-fixture.ts";
 import { screenshots } from "./support/run-images.ts";
 import { factoryHarness } from "./support/factory.ts";

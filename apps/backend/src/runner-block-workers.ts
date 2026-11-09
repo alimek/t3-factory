@@ -240,18 +240,11 @@ function sendPendingLaunch(context: LaunchContext, stored: StoredLaunchPayload) 
         yield* bindLaunchedWorker(database, runRow, intent, reference);
       }),
       (error) =>
-        isLaunchRejected(error)
+        error instanceof LaunchRejected
           ? failLaunch(database, runRow, intent, LAUNCH_REJECTED)
           : noteLaunchUncertain(database, intent),
     );
   });
-}
-
-/** Name as well as class: a test adapter and the backend dist each load this error. */
-function isLaunchRejected(error: unknown): error is LaunchRejected {
-  return (
-    error instanceof LaunchRejected || (error instanceof Error && error.name === "LaunchRejected")
-  );
 }
 
 /** The stored launch still names the Run's environment, project, workspace, settings and turn. */

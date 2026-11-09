@@ -1,9 +1,9 @@
 import { assert, type TestContext } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import type { Factory } from "@t3-factory/backend";
+import type { Factory } from "../../src/index.ts";
 import type { FlowWorkspace } from "@t3-factory/contracts";
-import { loadConfiguration } from "@t3-factory/backend/config";
-import { startServer } from "@t3-factory/backend/server";
+import { loadConfiguration } from "../../src/config.ts";
+import { startServer } from "../../src/server.ts";
 import { writeReportingState } from "./reporting-home.ts";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
