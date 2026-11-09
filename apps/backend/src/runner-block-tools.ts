@@ -35,7 +35,7 @@ export function openBlockTools(
       const fields = (input as { arguments: Record<string, unknown> }).arguments;
       if (kind === "image") {
         if (!("imageId" in fields)) return reportDiagnostic({ code: "IMAGE_ID_REQUIRED" });
-        if (typeof fields.imageId !== "string" || !fields.imageId.trim())
+        if (typeof fields.imageId !== "string" || !fields.imageId)
           return reportDiagnostic({ code: "INVALID_ARGUMENT" });
       }
       const block = yield* database.transaction((sql) => resolveBlock(sql, publicId));
