@@ -118,7 +118,7 @@ barrier for people with disabilities.
 The workflow runs through `pull_request_target` using trusted base-branch
 configuration without checking out or executing PR code. A new workflow or label
 configuration takes effect after merge, so the PR introducing it does not prove
-live automation. CodeRabbit's automatic labeling is disabled to keep one owner.
+live automation.
 
 ## Static correctness policy
 
