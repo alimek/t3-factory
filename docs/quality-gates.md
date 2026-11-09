@@ -103,8 +103,8 @@ gate** in branch protection for the CI check to block merges.
 The `main` ruleset requires **Quality gate** and **PR title**, squash merges and
 resolved review threads. It does not require the branch to be up to date with
 `main`: merge `main` into a PR only to resolve a conflict, because every update
-reruns CI and CodeRabbit. A broken combination surfaces in the quality gate on
-the push to `main`.
+reruns CI and CodeRabbit. A combination the checks exercise fails the quality
+gate on the push to `main`; one they do not exercise can still pass.
 
 CodeRabbit skips draft PRs. Open the PR as a draft, mark it ready
 (`gh pr ready`) once the local gate passes, and fix every open finding from one
