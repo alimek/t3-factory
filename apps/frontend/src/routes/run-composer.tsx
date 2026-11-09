@@ -522,7 +522,7 @@ function PromptField({ model }: { model: Composer }) {
       >
         <PromptEditor
           ref={prompt}
-          draftId={draft.draftId}
+          opening={draft.opening}
           segments={draft.segments}
           images={draft.images}
           locked={locked}

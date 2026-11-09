@@ -131,43 +131,22 @@ function focusAtEnd(root: HTMLElement, force = false) {
 }
 
 /**
- * Rewrites `element` from `segments` only when they differ from what it spells (`shown`), so
- * typing keeps the caret. Returns whether it rewrote.
+ * Places the caret at the end of `root` whenever the composer opens a draft (`opening`), including
+ * the first mount, and returns the last selection inside it; a live Range follows later edits.
  */
-function showSegments(
-  element: HTMLElement,
-  shown: { current: readonly PromptSegment[] | undefined },
-  segments: readonly PromptSegment[],
-) {
-  if (shown.current && sameSegments(shown.current, segments)) return false;
-  writeSegments(element, segments);
-  shown.current = segments;
-  return true;
-}
-
-/**
- * Places the caret at the end of `root` whenever a draft opens, including the first mount.
- * `last` is the last selection inside it; a live Range follows later edits. Each commit reports
- * through `contentReplaced` whether it rewrote the editor: opening another draft does, while a
- * fresh draft receiving its id as the user types does not, so only the latter keeps the caret.
- */
-function useCaret(root: RefObject<HTMLElement | null>, draftId: string | undefined) {
-  const last = useRef<Range>(undefined);
-  const replaced = useRef(false);
-  useEffect(() => focusAtEnd(root.current!, replaced.current), [root, draftId]);
+function useCaret(root: RefObject<HTMLElement | null>, opening: number) {
+  const caret = useRef<Range>(undefined);
+  useEffect(() => focusAtEnd(root.current!, true), [root, opening]);
   useEffect(() => {
     const remember = () => {
       const selection = document.getSelection();
       if (selection?.rangeCount && root.current?.contains(selection.anchorNode))
-        last.current = selection.getRangeAt(0).cloneRange();
+        caret.current = selection.getRangeAt(0).cloneRange();
     };
     document.addEventListener("selectionchange", remember);
     return () => document.removeEventListener("selectionchange", remember);
   }, [root]);
-  const contentReplaced = (value: boolean) => {
-    replaced.current = value;
-  };
-  return { last, contentReplaced };
+  return caret;
 }
 
 /** Inserts a reference to each image at `at`, each followed by a space, with the caret after. */
@@ -203,7 +182,7 @@ const referencedImage = (target: EventTarget) =>
  */
 export function PromptEditor({
   ref,
-  draftId,
+  opening,
   segments,
   images,
   locked,
@@ -216,7 +195,8 @@ export function PromptEditor({
   onPreview,
 }: {
   ref: Ref<PromptEditorHandle>;
-  draftId: string | undefined;
+  /** Changes when the composer opens another draft; see RunDraft. */
+  opening: number;
   segments: readonly PromptSegment[];
   images: readonly RunImage[];
   locked: boolean;
@@ -231,11 +211,14 @@ export function PromptEditor({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const shown = useRef<readonly PromptSegment[]>(undefined);
-  const caret = useCaret(root, draftId);
+  const caret = useCaret(root, opening);
 
   useLayoutEffect(() => {
     const element = root.current!;
-    caret.contentReplaced(showSegments(element, shown, segments));
+    if (!shown.current || !sameSegments(shown.current, segments)) {
+      writeSegments(element, segments);
+      shown.current = segments;
+    }
     labelReferences(element, images);
   });
 
@@ -254,7 +237,7 @@ export function PromptEditor({
   async function insertImages(files: readonly File[], replaceSelection = false) {
     const element = root.current;
     if (!element) return;
-    const saved = caret.last.current;
+    const saved = caret.current;
     const at = saved && element.contains(saved.startContainer) ? saved : endOf(element);
     await attachImages(files, (attached) => {
       if (!element.isConnected) return undefined;

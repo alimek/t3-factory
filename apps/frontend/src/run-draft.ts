@@ -65,6 +65,11 @@ const rejection = (name: string, reason: string): FileOutcome => ({ rejected: { 
 
 interface RunDraft {
   draftId: string | undefined;
+  /**
+   * Changes each time the composer opens a saved draft or a fresh composition, and never while
+   * the open one is edited, so a fresh draft receiving its id keeps the same value.
+   */
+  opening: number;
   projectId: string;
   flowId: string;
   /** The prompt in order: text, and references to images of the manifest. */
@@ -323,6 +328,7 @@ export function createRunDraft(
   let listedDrafts: readonly SavedRunDraft[] = [];
   let current: Composition = { projectId: "", flowId: "", segments: [], images: [] };
   let currentId: string | undefined;
+  let opening = 0;
   let imageRejections: readonly ImageRejection[] = [];
   let error = "";
   let remedy: StartRemedy = "studio";
@@ -337,6 +343,7 @@ export function createRunDraft(
     const saved = drafts.find((d) => d.id === currentId);
     return {
       draftId: currentId,
+      opening,
       ...current,
       text: promptText(current.segments),
       imageRejections,
@@ -405,6 +412,7 @@ export function createRunDraft(
     return drafts.find((d) => d.id === id);
   }
   function show(saved: SavedRunDraft | undefined) {
+    opening += 1;
     currentId = saved?.id;
     issues = [];
     error = saved?.submission && !inFlight.has(saved.id) ? unknownOutcome : "";

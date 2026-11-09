@@ -178,29 +178,34 @@ test("a reopened Draft continues typing at the end of its prompt", async ({
   await expect(prompt).toHaveText("UI caret draft continued");
 });
 
-test("a Draft opened by keyboard from a focused prompt continues typing at the end of its prompt", async ({
+test("a Draft opened by keyboard from a focused prompt with the same text continues typing at its end", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
+  const text = "UI keyboard caret draft";
   const prompt = screen.getByLabel("Initial prompt", { exact: false });
+  const listedDrafts = screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${text}\\s*Draft$`));
   await installDesktopBridge(browser);
   await app.open("/runs/new");
-  await prompt.fill("UI keyboard caret draft");
+  await prompt.fill(text);
   await app.open("/studio/flows");
   await app.open("/runs/new");
   await screen.getByRole("button", "New Run (+)").tap();
-  await prompt.fill("UI keyboard caret newer");
-  await expect(prompt).toBeFocused();
+  await prompt.fill(text);
+  await browser.keyboard.press("Home");
   await browser.keyboard.press(`${shortcutMod}+1`);
-  await expect(prompt).toHaveText("UI keyboard caret draft");
+  await expect(listedDrafts).toHaveCount(2);
+  await expect(prompt).toHaveText(text);
 
   // Act
   await browser.keyboard.type(" continued");
 
   // Assert
-  await expect(prompt).toHaveText("UI keyboard caret draft continued");
+  await expect(prompt).toHaveText(`${text} continued`);
 });
 
 test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({
