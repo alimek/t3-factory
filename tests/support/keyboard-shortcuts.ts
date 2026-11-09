@@ -1,12 +1,12 @@
 import { expect, type App, type Screen } from "e2e";
 import type { Browser } from "@e2e-dev/web";
-import { desktopBridgeScript } from "./desktop-bridge.ts";
+import { desktopBridgeOptions, desktopBridgeScript } from "./desktop-bridge.ts";
 
 export const shortcutMod = process.platform === "darwin" ? "Meta" : "Control";
 export const desktopNewRunHint = process.platform === "darwin" ? "⌘N" : "Ctrl+N";
 
 export async function installDesktopBridge(browser: Browser) {
-  await browser.addInitScript(desktopBridgeScript("client"));
+  await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client"));
 }
 
 export async function expectFactoryConnected(screen: Screen) {
