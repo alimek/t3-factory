@@ -76,8 +76,11 @@ check the installed `gh pr edit --help` and run
 `gh pr edit <PR> --body-file body.md --attach ./before.png --attach ./after.png`.
 It uploads the files and rewrites matching local references to uploaded URLs;
 attachments the body does not reference are appended at its end, outside those
-headings. Use this supported path without browser or gist fallbacks. On partial
-failure it still updates the body with successful uploads and exits non-zero.
+headings. Use this path when you can push to the repository; without push access
+(for example from a fork), `--attach` cannot upload, so drop the images into the PR
+description editor on GitHub under the same headings. Do not use gists or other
+hosting. On partial failure it still updates the body with successful uploads and
+exits non-zero.
 Then run `pnpm check:ui-evidence --pr <PR>`, the same validator as CI;
 `pnpm check:ui-evidence --body-file <file>` (`-` reads stdin) checks a draft body
 that already holds HTTPS image URLs.
