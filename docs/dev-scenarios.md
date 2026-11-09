@@ -37,6 +37,7 @@ The Agents carry their exits: the product engineer **Ready for review**, both re
 **Focused change** hides the engineer's exit and adds the Flow-local **Done**, and **Build, review and decide** hides the code reviewer's
 **Approved** and adds the local **Ready for your decision**. Open a block's configuration to see the read-only **From Agent** and **Local**
 exits, and the review step's locked **Approve** and **Request changes**.
+In Studio → Agents, the exits table edits the same inherited definitions. Rename the code reviewer’s **Approved** exit and its wires remain connected; remove it and **Parallel review** shows a readiness issue with **Start Run** disabled. Save each Agent edit before reopening the Flow. These authoring checks use the existing scenario; no Run needs to be launched.
 The worktree Flow is saved with **New worktree · default branch** (the simulator resolves it to `origin/main`); every other
 ready Flow is saved with the **Project checkout** workspace, and the unsaved release-checklist Flow
 shows a new Flow's default, **New worktree · default branch**. Choose a missing **Custom ref** on a ready Flow and Start it to

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readAgentDefinition } from "./support/agents.ts";
 import type { FlowDraft, Result } from "../packages/contracts/src/index.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
@@ -155,4 +156,118 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
   await expect(screen.getByLabel("Flow name")).toHaveValue("My preserved draft");
   await expect(screen.getByRole("button", "Workspace: New worktree · develop")).toBeVisible();
   await expect(screen.getByText("Graph ready")).toBeVisible();
+});
+
+test("Agent exit edits persist, renaming keeps Flow wires and removing a wired exit blocks Start", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange: author a reusable Agent and connect its default exit in a saved Flow.
+  await browser.setViewport({ width: 1440, height: 1100 });
+  await app.open("/studio/agents/new");
+  await screen.getByLabel("Name", { exact: true }).fill("Exit journey worker");
+  await screen
+    .getByLabel("Prompt", { exact: true })
+    .fill("Implement the requested change and report its result.");
+  await expect(screen.getByLabel("Exit 1 name", { exact: true })).toHaveValue("done");
+  await app.screenshot("agent-exits-new");
+  await expect(screen.getByRole("table", "Agent exits")).toBeVisible();
+  await screen.getByRole("button", "Add exit", { exact: true }).tap();
+  await screen.getByLabel("Exit 2 name", { exact: true }).fill("changes-needed");
+  await screen
+    .getByLabel("Exit 2 description", { exact: true })
+    .fill("Explain the changes needed before this work can continue.");
+  await screen.getByRole("checkbox", "Exit 2 message required", { exact: true }).tap();
+  await screen.getByRole("button", "Create Agent", { exact: true }).tap();
+  await expect(screen.getByRole("button", "Save", { exact: true })).toBeVisible();
+  const agentId = new URL(await browser.url()).pathname.split("/").at(-1)!;
+  const agent = await readAgentDefinition(app.baseUrl, agentId);
+  assert.equal(agent.exits[1]?.messageRequired, true);
+  assert.equal(
+    agent.exits[1]?.description,
+    "Explain the changes needed before this work can continue.",
+  );
+  const headers = { "content-type": "application/json", "X-Factory-Request": "1" };
+  const created = (await (
+    await fetch(new URL("/api/flows", app.baseUrl), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "Agent exit journey" }),
+    })
+  ).json()) as Result<FlowDraft>;
+  assert(created.ok);
+  const flowEndpoint = new URL(`/api/flows/${created.value.id}`, app.baseUrl);
+  const saved = (await (
+    await fetch(flowEndpoint, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        name: created.value.name,
+        expectedRevision: 1,
+        graph: {
+          flowInput: { position: { x: 40, y: 50 }, targetBlockIds: ["worker"] },
+          blocks: [
+            {
+              id: "worker",
+              kind: "agent",
+              name: "Implementer",
+              agentId,
+              hiddenExitIds: [],
+              localExits: [],
+              position: { x: 320, y: 50 },
+            },
+            { id: "review", kind: "human", name: "Review", position: { x: 680, y: 50 } },
+          ],
+          connections: [
+            { sourceBlockId: "worker", exitId: agent.exits[0]!.id, targetBlockId: "review" },
+          ],
+        },
+      }),
+    })
+  ).json()) as Result<FlowDraft>;
+  assert(saved.ok);
+
+  // Act: save a rename on the Agent, retaining the exit's identity.
+  await screen.getByLabel("Exit 1 name", { exact: true }).fill("ready-for-review");
+  await screen
+    .getByLabel("Exit 1 description", { exact: true })
+    .fill("The implementation is ready for a human review.");
+  await screen.getByRole("button", "Save", { exact: true }).tap();
+  await expect(screen.getByText("Agent definition · rev 2", { exact: true })).toBeVisible();
+  await browser.reload();
+
+  // Assert: the saved revision keeps the wire; removing that exit exposes its readiness blocker.
+  await expect(screen.getByLabel("Exit 1 name", { exact: true })).toHaveValue("ready-for-review");
+  const renamed = await readAgentDefinition(app.baseUrl, agentId);
+  assert.equal(renamed.exits[0]!.id, agent.exits[0]!.id);
+  await app.screenshot("agent-exits-saved");
+  await browser.setViewport({ width: 900, height: 1100 });
+  await screen.getByRole("table", "Agent exits").scrollIntoView();
+  await app.screenshot("agent-exits-narrow");
+  await browser.setViewport({ width: 1440, height: 1100 });
+  await app.open(`/studio/flows/${created.value.id}`);
+  await expect(
+    screen.getByRole("button", "Connection ready-for-review from Implementer to Review"),
+  ).toBeVisible();
+  await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeEnabled();
+  await app.screenshot("agent-exit-renamed-wire");
+  await app.open(`/studio/agents/${agentId}`);
+  await screen.getByRole("button", "Remove exit 1", { exact: true }).tap();
+  await screen.getByRole("button", "Save", { exact: true }).tap();
+  await expect(screen.getByText("Agent definition · rev 3", { exact: true })).toBeVisible();
+  await browser.reload();
+  await expect(screen.getByLabel("Exit 1 name", { exact: true })).toHaveValue("changes-needed");
+  await expect(
+    screen.getByRole("checkbox", "Exit 1 message required", { exact: true }),
+  ).toBeChecked();
+  await app.open(`/studio/flows/${created.value.id}`);
+  await expect(
+    screen.getByText(/Implementer: its Agent no longer has exit "ready-for-review"/),
+  ).toBeVisible();
+  await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeDisabled();
+  const retained = (await (await fetch(flowEndpoint)).json()) as Result<FlowDraft>;
+  assert(retained.ok);
+  assert.deepEqual(retained.value.graph.connections, saved.value.graph.connections);
+  await app.screenshot("agent-exit-removed-readiness");
 });
