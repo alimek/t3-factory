@@ -153,6 +153,27 @@ test("an unfinished prompt reopens as a Draft after reload and Starts exactly on
   await app.screenshot("draft-started-once");
 });
 
+test("a reopened Draft continues typing at the end of its prompt", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const openRuns = screen.getByRole("navigation", "Open Runs");
+  const prompt = screen.getByLabel("Initial prompt", { exact: false });
+  await app.open("/runs/new");
+  await prompt.fill("UI caret draft");
+  await openRuns.getByRole("link", /Demo · Working · Improve the project picker/).tap();
+  await openRuns.getByRole("link", /^UI caret draft\s*Draft$/).tap();
+
+  // Act
+  await browser.keyboard.type(" continued");
+
+  // Assert
+  await expect(prompt).toBeFocused();
+  await expect(prompt).toHaveText("UI caret draft continued");
+});
+
 test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({
   app,
   screen,

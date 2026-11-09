@@ -1,4 +1,11 @@
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  type Ref,
+  type RefObject,
+} from "react";
 import type { PromptSegment, RunImage } from "@t3-factory/contracts";
 import { joinedSegments, type PlaceReferences } from "../run-draft.ts";
 import { cn } from "../lib/utils.ts";
@@ -111,6 +118,34 @@ function endOf(root: HTMLElement) {
   return range;
 }
 
+/** Focuses the editor with the caret after its content, unless it already holds the focus. */
+function focusAtEnd(root: HTMLElement) {
+  if (root.contains(document.activeElement)) return;
+  root.focus();
+  const selection = document.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(endOf(root));
+}
+
+/**
+ * Places the caret at the end of `root` whenever a draft opens, including the first mount, and
+ * returns the last selection inside it; a live Range follows later edits.
+ */
+function useCaret(root: RefObject<HTMLElement | null>, draftId: string | undefined) {
+  const caret = useRef<Range>(undefined);
+  useEffect(() => focusAtEnd(root.current!), [root, draftId]);
+  useEffect(() => {
+    const remember = () => {
+      const selection = document.getSelection();
+      if (selection?.rangeCount && root.current?.contains(selection.anchorNode))
+        caret.current = selection.getRangeAt(0).cloneRange();
+    };
+    document.addEventListener("selectionchange", remember);
+    return () => document.removeEventListener("selectionchange", remember);
+  }, [root]);
+  return caret;
+}
+
 /** Inserts a reference to each image at `at`, each followed by a space, with the caret after. */
 function insertReferences(
   root: HTMLElement,
@@ -144,6 +179,7 @@ const referencedImage = (target: EventTarget) =>
  */
 export function PromptEditor({
   ref,
+  draftId,
   segments,
   images,
   locked,
@@ -156,6 +192,7 @@ export function PromptEditor({
   onPreview,
 }: {
   ref: Ref<PromptEditorHandle>;
+  draftId: string | undefined;
   segments: readonly PromptSegment[];
   images: readonly RunImage[];
   locked: boolean;
@@ -170,8 +207,7 @@ export function PromptEditor({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const shown = useRef<readonly PromptSegment[]>(undefined);
-  /** The last selection inside the editor; a live Range follows later edits. */
-  const caret = useRef<Range>(undefined);
+  const caret = useCaret(root, draftId);
 
   useLayoutEffect(() => {
     const element = root.current!;
@@ -181,17 +217,6 @@ export function PromptEditor({
     }
     labelReferences(element, images);
   });
-
-  useEffect(() => {
-    root.current?.focus();
-    const remember = () => {
-      const selection = document.getSelection();
-      if (selection?.rangeCount && root.current?.contains(selection.anchorNode))
-        caret.current = selection.getRangeAt(0).cloneRange();
-    };
-    document.addEventListener("selectionchange", remember);
-    return () => document.removeEventListener("selectionchange", remember);
-  }, []);
 
   function changed() {
     const element = root.current!;
@@ -219,7 +244,7 @@ export function PromptEditor({
   }
 
   useImperativeHandle(ref, () => ({
-    focus: () => root.current?.focus(),
+    focus: () => focusAtEnd(root.current!),
     insertImages: (files) => insertImages(files),
   }));
 
