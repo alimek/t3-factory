@@ -676,6 +676,7 @@ export interface RunWorkerRepository {
 /** Global navigation reads durable Run identity without loading definitions or Task hierarchies. */
 export interface RunNavigationEntry {
   readonly id: string;
+  readonly number: number | null;
   readonly title: string;
   readonly createdAt: string;
   readonly lastActivityAt: string;
@@ -708,8 +709,8 @@ export interface RunCoordinationActions {
 }
 export interface RunDetail extends RunSummary {
   readonly repositories: readonly RunWorkerRepository[];
-  /** Durable sequence used in worker titles. Assigned when the Run is accepted. */
-  readonly number: number;
+  /** Durable sequence used in worker titles; null when absent from stored history. */
+  readonly number: number | null;
   readonly coordinationActions: RunCoordinationActions;
   /** Root work is Run-owned, never a Block execution or reporting binding. */
   readonly rootWork: readonly {

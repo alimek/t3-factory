@@ -98,7 +98,9 @@ shortcuts could not be restored. Defaults are in use.**
 Run actions, sidebar navigation and the cheat sheet do not run over overlays or menus.
 Settings, New Run and Studio shortcuts can switch between the workspace dialogs using
 the unsaved-change guard; nested dialogs, menus, the palette and cheat sheet block them.
-The palette binding still toggles the palette. Studio and Settings leave the underlying
+The palette binding still toggles the palette. A bare Run number or `#` followed by
+that number finds the exact Run number (`13` and `#13` find Run #13, not #130);
+normal title and keyword matching still applies. Studio and Settings leave the underlying
 Run composer and detail **inert**; see
 [Studio keyboard shortcuts](studio.md#keyboard-shortcuts).
 

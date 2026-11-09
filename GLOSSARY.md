@@ -129,7 +129,8 @@ A concrete matter to work on within a project, such as a coding change, an idea 
 
 **Run**:
 One execution of a selected flow for a task in a project, with its own editable title
-and global navigation entry.
+and global navigation entry. Its **Run number** is a global sequence assigned at Start,
+shared with worker thread titles and worktree branches; stored history may have no number.
 
 **Captured definitions**:
 The Flow revision a Run started with and the Agent revision of every Agent that Flow references, frozen at Start. Every read and later activation of the Run uses them; later saves and removals affect only future Runs.

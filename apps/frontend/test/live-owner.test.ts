@@ -176,6 +176,7 @@ it("navigation and the open Run share one view and apply one commit together", (
   const run = runDetail();
   const row: RunNavigationEntry = {
     id: run.id,
+    number: run.number,
     title: run.title,
     createdAt: run.startedAt,
     creationKey: "key",

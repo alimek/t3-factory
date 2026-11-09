@@ -163,7 +163,9 @@ A draft's creation key is its id, and its Start sends that id as the request key
 the draft's title and creation time, the Run therefore replaces the draft row in place, also among entries created at the same
 time. Runs created before drafts carried a creation time use their start time and Run id. Creation times come from the
 client's clock. Active rows show the project icon and name, execution indicator and time since the last
-Run activity, followed by the title. A third line appears for known worker branches, linked PRs or attention:
+Run activity, followed by the title. The [Run number](../GLOSSARY.md) appears as a `#N` pill after the project name in
+active rows, before the title in compact rows and palette results, and first in the Run top bar meta line; Runs without a number show none.
+A third line appears for known worker branches, linked PRs or attention:
 one branch shows its name, several show a count, and a PR icon shows the number of distinct linked PRs.
 Branches and PRs are independent; neither requires the other and missing data has no placeholder or Flow fallback.
 The age advances from execution changes, accepted reports, Human answers, attention appearing, handoff release

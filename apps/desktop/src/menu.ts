@@ -35,7 +35,7 @@ export interface MenuActions {
 
 export interface MenuEnvironment {
   platform: NodeJS.Platform;
-  /** Unpackaged builds keep Reload and DevTools; release packages expose neither. */
+  /** Unpackaged builds add Force Reload and DevTools; release packages offer only Reload. */
   development: boolean;
 }
 
@@ -178,9 +178,12 @@ export function buildApplicationMenu(
         commands("palette", "studio", "shortcutsCheatSheet"),
         [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }],
         [{ role: "togglefullscreen" }],
-        environment.development
-          ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }]
-          : [],
+        [
+          { role: "reload", accelerator: "CommandOrControl+R" },
+          ...(environment.development
+            ? [{ role: "forceReload" as const }, { role: "toggleDevTools" as const }]
+            : []),
+        ],
       ),
     },
     ...(go.length ? [{ label: "Go", submenu: go }] : []),
