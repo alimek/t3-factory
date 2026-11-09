@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { ImagePlus, X } from "lucide-react";
 import type { RunImage } from "@t3-factory/contracts";
 import { RUN_IMAGE_LIMIT, RUN_IMAGE_MIME_TYPES } from "@t3-factory/domain-validation";
@@ -106,7 +113,8 @@ export function ImagePreviewDialog({
 
 export const previewImageClass = "max-h-[70vh] w-full object-contain";
 
-function Preview({
+/** Full-size preview of one attached image. */
+export function ImagePreview({
   image,
   load,
   onClose,
@@ -128,33 +136,77 @@ export function PromptImageStrip({
   images,
   load,
   locked,
+  onPreview,
   onRemove,
 }: {
   images: readonly RunImage[];
   load: LoadImage;
   locked: boolean;
+  onPreview: (imageId: string) => void;
   onRemove: (imageId: string) => void;
 }) {
-  const [previewing, setPreviewing] = useState<RunImage>();
   if (!images.length) return null;
   return (
-    <>
-      <ul aria-label="Attached images" className="flex flex-wrap gap-2 pt-1.5 pr-1.5">
-        {images.map((image) => (
-          <Thumbnail
-            key={image.imageId}
-            image={image}
-            load={load}
-            locked={locked}
-            onOpen={() => setPreviewing(image)}
-            onRemove={() => onRemove(image.imageId)}
-          />
-        ))}
-      </ul>
-      {previewing && (
-        <Preview image={previewing} load={load} onClose={() => setPreviewing(undefined)} />
-      )}
-    </>
+    <ul aria-label="Attached images" className="flex flex-wrap gap-2 pt-1.5 pr-1.5">
+      {images.map((image) => (
+        <Thumbnail
+          key={image.imageId}
+          image={image}
+          load={load}
+          locked={locked}
+          onOpen={() => onPreview(image.imageId)}
+          onRemove={() => onRemove(image.imageId)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+const carriesFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
+
+/** Image files dropped on an element; other drags, such as moving selected text, pass through. */
+export function useImageDrop(enabled: boolean, onFiles: (files: File[]) => void) {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+  return {
+    dragging: dragging && enabled,
+    handlers: {
+      onDragEnter(event: DragEvent) {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        depth.current += 1;
+        setDragging(true);
+      },
+      onDragOver(event: DragEvent) {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = enabled ? "copy" : "none";
+      },
+      onDragLeave(event: DragEvent) {
+        if (!carriesFiles(event)) return;
+        depth.current = Math.max(0, depth.current - 1);
+        if (!depth.current) setDragging(false);
+      },
+      onDrop(event: DragEvent) {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        depth.current = 0;
+        setDragging(false);
+        const files = [...event.dataTransfer.files];
+        if (enabled && files.length) onFiles(files);
+      },
+    },
+  };
+}
+
+export function ImageDropOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-ring bg-muted/95">
+      <p className="text-sm font-semibold">Drop images to attach</p>
+      <p className="text-2xs tracking-label text-muted-foreground">
+        PNG, JPEG, GIF or WebP · up to {RUN_IMAGE_LIMIT} images
+      </p>
+    </div>
   );
 }
 

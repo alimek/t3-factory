@@ -44,7 +44,7 @@ test("Start names every blocked Agent including later branches and succeeds afte
     "Demo · Accessibility reviewer:",
   );
   expect(await runsTitled(app.baseUrl, "UI whole Flow readiness")).toHaveLength(0);
-  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveValue(
+  await expect(screen.getByLabel("Initial prompt", { exact: false })).toHaveText(
     "UI whole Flow readiness",
   );
   await screen.getByRole("link", "Open Settings → Agent reporting", { exact: true }).tap();

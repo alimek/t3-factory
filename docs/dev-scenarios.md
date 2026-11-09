@@ -123,8 +123,12 @@ active-list behavior.
   **Check same request**: exactly one Run opens. Pending Starts are browser-local and not reset by `db:reset`.
 - **Prompt screenshots.** In Atlas choose **Demo · Parallel review from one prompt**, type a prompt and use **Attach
   images** with two PNG files sharing a name plus a text file: the text file is listed as not attached, both images show
-  as thumbnails and open a full-size preview. Reload: the thumbnails return. Remove one and reload; Start: the Run's
-  input lists the remaining image. Draft image bytes are browser-local and not reset by `db:reset`.
+  as thumbnails and open a full-size preview. Copy a screenshot and paste it mid-sentence: a reference with its name and
+  size appears at the caret and opens the preview; paste the same image again for a second reference without a new
+  thumbnail, and drop another image file on the field. Delete one reference with Backspace: its thumbnail stays. Reload:
+  text, references and thumbnails return. Remove a thumbnail: its references disappear. Start: the Run's input shows
+  `[Image N: name]` where references stood and lists every remaining image. Draft image bytes are browser-local and not
+  reset by `db:reset`.
 - **Run drafts.** Drafts are browser-local and never seeded. In Atlas choose **Demo · Focused change**, type a prompt, open a
   seeded Run (the draft appears with **Draft**), press **New Run** and type another, reload, then search a draft title and
   reopen it: prompt and choices are restored. From the older draft's ··· menu choose **Rename**, edit its prompt and reload:

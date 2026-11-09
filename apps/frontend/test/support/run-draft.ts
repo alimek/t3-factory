@@ -1,5 +1,5 @@
 import { vi, type Mock, type TestContext } from "vite-plus/test";
-import type { RunImage, StartRunInput } from "@t3-factory/contracts";
+import type { PromptSegment, RunImage, StartRunInput } from "@t3-factory/contracts";
 import type { DraftImageStore, ImageUploads } from "../../src/draft-images.ts";
 import { createRunDraft } from "../../src/run-draft.ts";
 
@@ -58,6 +58,13 @@ function memoryImages(): MemoryImages {
   };
 }
 
+/** A prompt typed as plain text. */
+export const plain = (text: string): PromptSegment[] => (text ? [{ type: "text", text }] : []);
+
+/** A paste's placement: the prompt becomes references to the pasted images. */
+export const references = (imageIds: readonly string[]): PromptSegment[] =>
+  imageIds.map((imageId) => ({ type: "image", imageId }));
+
 const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 /** A picked PNG file; `seed` makes its bytes, and so its digest, distinct. */
 export const pngFile = (name: string, seed: number) =>
@@ -85,7 +92,7 @@ export function composer(context: TestContext): Composer {
   const images = memoryImages();
   const draft = createRunDraft(startRun, images);
   draft.selectServer("server-a");
-  draft.edit({ projectId: "project", flowId: "flow", input: "Do the work" });
+  draft.edit({ projectId: "project", flowId: "flow", segments: plain("Do the work") });
   return { draft, startRun, storage, images };
 }
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, test, type Browser } from "@e2e-dev/web";
-import { expect, type App, type Screen } from "e2e";
+import { expect, type App, type Locator, type Screen } from "e2e";
 import { sha256Hex, solidPng } from "../apps/backend/test/support/run-images.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import {
@@ -10,16 +10,33 @@ import {
   expectGalleryImage,
   openImageHistory,
 } from "./support/run-images.ts";
-import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
+import {
+  dropFiles,
+  openComposerWithFlow,
+  pasteFiles,
+  startLosingResponse,
+  type CarriedFile,
+} from "./support/composer.ts";
 
-/** Picked files live in ignored storage; red and blue share their original filename. */
+/**
+ * Picked files live in ignored storage; red and blue share their original filename. Factory keeps
+ * staged images for the whole run, so a journey relying on an unstaged image owns that image.
+ */
 const directory = ".e2e/fixtures/run-images";
 const files = {
   red: { path: join(directory, "red", "screenshot.png"), data: solidPng(220, 40, 40) },
   blue: { path: join(directory, "blue", "screenshot.png"), data: solidPng(40, 70, 220) },
   green: { path: join(directory, "mockup.png"), data: solidPng(123, 45, 200) },
+  amber: { path: join(directory, "diagram.png"), data: solidPng(230, 160, 20) },
   notes: { path: join(directory, "notes.txt"), data: Buffer.from("Not an image") },
 };
+
+/** A fixture file as a paste or drop carries it. */
+const carried = (name: keyof typeof files): CarriedFile => ({
+  name: basename(files[name].path),
+  type: name === "notes" ? "text/plain" : "image/png",
+  data: files[name].data,
+});
 
 /** Shared fixture state: restore attachment support even when a journey fails. */
 afterEach(async ({ app }) => {
@@ -58,6 +75,24 @@ async function composeWithImages(
 const thumbnails = (screen: Screen) =>
   screen.getByRole("list", "Attached images").getByRole("button", /^Preview /);
 
+const promptField = (screen: Screen) => screen.getByLabel("Initial prompt", { exact: false });
+
+const references = (screen: Screen, name: string) =>
+  promptField(screen).getByRole("button", `Preview reference ${name}`, { exact: true });
+
+/** Opens an image's full-size preview, captures it and closes it again. */
+async function checkPreview(app: App, screen: Screen, opener: Locator, frame: string) {
+  await opener.tap();
+  await expect(screen.getByRole("dialog", "screenshot.png")).toBeVisible();
+  await app.screenshot(frame);
+  await screen.getByRole("button", "Close", { exact: true }).tap();
+}
+
+async function launchedAttachments(app: App, number: number) {
+  const launches = (await fixture(app, `launches?number=${number}`)) as { attachments: unknown }[];
+  return launches.map((launch) => launch.attachments);
+}
+
 test("picked screenshots survive reload and every Flow-input worker receives the same originals", async ({
   app,
   screen,
@@ -71,10 +106,7 @@ test("picked screenshots survive reload and every Flow-input worker receives the
   await expect(thumbnails(screen)).toHaveCount(2);
   await browser.reload();
   await expect(thumbnails(screen)).toHaveCount(2);
-  await thumbnails(screen).first().tap();
-  await expect(screen.getByRole("dialog", "screenshot.png")).toBeVisible();
-  await app.screenshot("images-preview-after-reload");
-  await screen.getByRole("button", "Close", { exact: true }).tap();
+  await checkPreview(app, screen, thumbnails(screen).first(), "images-preview-after-reload");
 
   // Act
   await screen.getByRole("button", "Start", { exact: true }).tap();
@@ -90,11 +122,82 @@ test("picked screenshots survive reload and every Flow-input worker receives the
     { name: "image-1-screenshot.png", sha256: sha256Hex(files.red.data) },
     { name: "image-2-screenshot.png", sha256: sha256Hex(files.blue.data) },
   ];
-  const launches = (await fixture(app, `launches?number=${detail.number}`)) as {
-    attachments: unknown;
-  }[];
-  expect(launches.map((launch) => launch.attachments)).toEqual([expected, expected]);
+  expect(await launchedAttachments(app, detail.number)).toEqual([expected, expected]);
   await app.screenshot("images-run-started");
+});
+
+test("pasted and dropped screenshots become inline references and Start delivers every attached image", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openComposerWithFlow(app, screen, "Demo · Parallel review from one prompt");
+  await promptField(screen).pressSequentially("UI pasted references\nCompare ");
+  await pasteFiles(browser, [carried("red"), carried("notes")]);
+  await expect(references(screen, "screenshot.png")).toHaveCount(1);
+  await expect(screen.getByRole("alert").filter({ hasText: "notes.txt" })).toContainText(
+    "Only PNG, JPEG, GIF and WebP images can be attached.",
+  );
+  await promptField(screen).pressSequentially("with ");
+  await pasteFiles(browser, [carried("red"), carried("blue")]);
+  await expect(references(screen, "screenshot.png")).toHaveCount(3);
+  await expect(thumbnails(screen)).toHaveCount(2);
+  await dropFiles(browser, [carried("amber")]);
+  await expect(references(screen, "diagram.png")).toHaveCount(1);
+  await app.screenshot("references-composed");
+  await promptField(screen).press("Backspace");
+  await promptField(screen).press("Backspace");
+  await expect(references(screen, "diagram.png")).toHaveCount(0);
+  await expect(thumbnails(screen)).toHaveCount(3);
+  await browser.reload();
+  await checkPreview(
+    app,
+    screen,
+    references(screen, "screenshot.png").last(),
+    "references-preview-after-reload",
+  );
+
+  // Act
+  await screen.getByRole("button", "Start", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("heading", "UI pasted references", { exact: true })).toBeVisible();
+  const run = await findRun(app.baseUrl, "UI pasted references");
+  const detail = await readHistoryRun(app.baseUrl, run.id);
+  expect(detail.input).toBe(
+    "UI pasted references\nCompare [Image 1: screenshot.png] with [Image 1: screenshot.png] [Image 2: screenshot.png] \n\nAttached images: [Image 1: screenshot.png], [Image 2: screenshot.png], [Image 3: diagram.png]",
+  );
+  const expected = [
+    { name: "image-1-screenshot.png", sha256: sha256Hex(files.red.data) },
+    { name: "image-2-screenshot.png", sha256: sha256Hex(files.blue.data) },
+    { name: "image-3-diagram.png", sha256: sha256Hex(files.amber.data) },
+  ];
+  expect(await launchedAttachments(app, detail.number)).toEqual([expected, expected]);
+});
+
+test("removing an attached thumbnail removes that image and every reference to it", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openComposerWithFlow(app, screen, "Demo · Parallel review from one prompt");
+  await promptField(screen).pressSequentially("UI removed thumbnail ");
+  await pasteFiles(browser, [carried("red"), carried("blue")]);
+  await expect(references(screen, "screenshot.png")).toHaveCount(2);
+  await pasteFiles(browser, [carried("red")]);
+  await expect(references(screen, "screenshot.png")).toHaveCount(3);
+
+  // Act
+  await screen.getByRole("button", "Remove screenshot.png").first().tap();
+
+  // Assert
+  await expect(references(screen, "screenshot.png")).toHaveCount(1);
+  await expect(thumbnails(screen)).toHaveCount(1);
+  await browser.reload();
+  await expect(references(screen, "screenshot.png")).toHaveCount(1);
+  await expect(thumbnails(screen)).toHaveCount(1);
 });
 
 test("images without prompt text stay an Untitled draft with Start unavailable", async ({
@@ -126,10 +229,22 @@ test("a lost image Start stays read-only and Check same request recovers exactly
   browser,
 }) => {
   // Arrange
-  await composeWithImages(app, screen, browser, "UI images lost Start", ["red", "blue"]);
+  await openComposerWithFlow(app, screen, "Demo · Parallel review from one prompt");
+  await promptField(screen).pressSequentially("UI images lost Start ");
+  await pasteFiles(browser, [carried("red"), carried("blue")]);
+  await expect(references(screen, "screenshot.png")).toHaveCount(2);
   await startLosingResponse(screen, browser);
   await browser.reload();
+  await expect(promptField(screen)).toHaveAttribute("aria-readonly", "true");
+  await pasteFiles(browser, [carried("amber")]);
+  await checkPreview(
+    app,
+    screen,
+    references(screen, "screenshot.png").first(),
+    "images-pending-reference-preview",
+  );
   await expect(thumbnails(screen)).toHaveCount(2);
+  await expect(references(screen, "diagram.png")).toHaveCount(0);
   await expect(screen.getByRole("button", /^Remove /)).toHaveCount(0);
   await app.screenshot("images-pending-read-only");
 

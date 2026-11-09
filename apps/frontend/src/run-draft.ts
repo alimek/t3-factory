@@ -46,18 +46,31 @@ export interface SavedRunDraft {
 /** Where the user fixes a rejected Start: Agent reporting setup, or the Agent and Flow choices. */
 type StartRemedy = "reporting" | "studio";
 
+/**
+ * Places references to just-attached images, in order, into the prompt and returns the prompt,
+ * or nothing to leave it as it is.
+ */
+export type PlaceReferences = (imageIds: readonly string[]) => readonly PromptSegment[] | undefined;
+
 /** A file the composer did not attach, with why. */
 export interface ImageRejection {
   readonly name: string;
   readonly reason: string;
 }
 
+/** An accepted file's attached image, which may already have held its bytes, or its rejection. */
+type FileOutcome = { attached: string } | { rejected: ImageRejection };
+
+const rejection = (name: string, reason: string): FileOutcome => ({ rejected: { name, reason } });
+
 interface RunDraft {
   draftId: string | undefined;
   projectId: string;
   flowId: string;
-  /** The prompt's text segments; the composer edits them as ordinary text. */
-  input: string;
+  /** The prompt in order: text, and references to images of the manifest. */
+  segments: readonly PromptSegment[];
+  /** The prompt's text alone, which Start requires. */
+  text: string;
   images: readonly RunImage[];
   imageRejections: readonly ImageRejection[];
   pending: boolean;
@@ -73,14 +86,14 @@ type Choice = "projectId" | "flowId";
 interface Composition {
   projectId: string;
   flowId: string;
-  input: string;
+  segments: readonly PromptSegment[];
   images: readonly RunImage[];
 }
 
 const composition = (saved: SavedRunDraft): Composition => ({
   projectId: saved.projectId,
   flowId: saved.flowId,
-  input: promptText(saved.segments),
+  segments: saved.segments,
   images: saved.images,
 });
 
@@ -123,6 +136,19 @@ const filled = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "";
 
 const textSegments = (text: string): PromptSegment[] => (text ? [{ type: "text", text }] : []);
+
+/** Adjacent text segments joined and empty ones dropped: one spelling for each prompt. */
+export function joinedSegments(segments: readonly PromptSegment[]): PromptSegment[] {
+  const joined: PromptSegment[] = [];
+  for (const segment of segments) {
+    const last = joined.at(-1);
+    if (segment.type === "image") joined.push(segment);
+    else if (last?.type === "text")
+      joined[joined.length - 1] = { type: "text", text: last.text + segment.text };
+    else if (segment.text) joined.push(segment);
+  }
+  return joined;
+}
 
 function readSegments(value: unknown): PromptSegment[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -295,7 +321,7 @@ export function createRunDraft(
   }
   let drafts: readonly SavedRunDraft[] = [];
   let listedDrafts: readonly SavedRunDraft[] = [];
-  let current: Composition = { projectId: "", flowId: "", input: "", images: [] };
+  let current: Composition = { projectId: "", flowId: "", segments: [], images: [] };
   let currentId: string | undefined;
   let imageRejections: readonly ImageRejection[] = [];
   let error = "";
@@ -312,6 +338,7 @@ export function createRunDraft(
     return {
       draftId: currentId,
       ...current,
+      text: promptText(current.segments),
       imageRejections,
       pending: !!saved?.submission,
       busy: !!currentId && inFlight.has(currentId),
@@ -397,7 +424,7 @@ export function createRunDraft(
       current = {
         projectId: remembered("project"),
         flowId: remembered("flow"),
-        input: "",
+        segments: [],
         images: [],
       };
     }
@@ -421,7 +448,7 @@ export function createRunDraft(
   }
   function save() {
     if (server === undefined) return;
-    const prompt = { segments: textSegments(current.input), images: current.images };
+    const prompt = { segments: current.segments, images: current.images };
     if (!retained(prompt)) {
       const removed = currentId;
       currentId = undefined;
@@ -445,8 +472,9 @@ export function createRunDraft(
       // The next composer load deletes bytes no draft references.
     });
   }
-  function edit(change: Partial<Pick<RunDraft, Choice | "input">>) {
-    if (find(currentId)?.submission) return;
+  /** False while the draft awaits a Start outcome: its submitted content stays as sent. */
+  function edit(change: Partial<Pick<Composition, Choice | "segments">>) {
+    if (find(currentId)?.submission) return false;
     current = { ...current, ...change };
     error = "";
     issues = [];
@@ -457,6 +485,8 @@ export function createRunDraft(
     }
     save();
     publish();
+    // A stale tab's save keeps another tab's unresolved Start instead.
+    return !find(currentId)?.submission;
   }
   function openComposition(next: SavedRunDraft | undefined, flowId?: string) {
     leaveComposition();
@@ -465,7 +495,7 @@ export function createRunDraft(
       current = {
         projectId: remembered("project") || current.projectId,
         flowId: flowId ?? (remembered("flow") || current.flowId),
-        input: "",
+        segments: [],
         images: [],
       };
     if (server !== undefined) store(server, latestDrafts(server));
@@ -495,7 +525,7 @@ export function createRunDraft(
     if (server === undefined || !saved || saved.submission) return;
     if (id === currentId) {
       currentId = undefined;
-      current = { ...current, input: "", images: [] };
+      current = { ...current, segments: [], images: [] };
       error = "";
       issues = [];
       imageRejections = [];
@@ -568,7 +598,7 @@ export function createRunDraft(
     // Only the transport result decides Start's outcome; preferences and navigation do not.
     rememberChoice("project", request.projectId);
     rememberChoice("flow", request.flowId);
-    current = { ...current, input: "", images: [] };
+    current = { ...current, segments: [], images: [] };
     publish();
     return run.id;
   }
@@ -608,43 +638,58 @@ export function createRunDraft(
     }
   }
   /**
-   * Attaches picked images to the open draft. Each file is checked on its own; a rejected file
-   * leaves the others and the existing attachments. Identical bytes attach once.
+   * Attaches images to the open draft. Each file is checked on its own; a rejected file leaves
+   * the others and the existing attachments. Identical bytes resolve to the image already
+   * attached. `reference` receives the attached image of each accepted file, in order, and
+   * returns the prompt with references to them, or nothing to leave the prompt as it is. It is
+   * not called once the draft changed or awaits a Start outcome.
    */
-  async function attachImages(files: readonly File[]) {
+  async function attachImages(files: readonly File[], reference?: PlaceReferences) {
     const scope = server;
     if (scope === undefined || find(currentId)?.submission) return;
     const id = currentId ?? randomId();
     currentId = id;
     const rejected: ImageRejection[] = [];
+    const attached: string[] = [];
     for (const file of files) {
       const outcome = await attachImage(scope, id, file);
-      if (outcome === "left") return;
-      if (outcome) rejected.push(outcome);
+      if (outcome === undefined) return;
+      if ("attached" in outcome) attached.push(outcome.attached);
+      else rejected.push(outcome.rejected);
+    }
+    // References go only into the draft that is still open and editable (a stale tab's save
+    // keeps another tab's unresolved Start), and only to images it still has: one may have been
+    // removed while a later file was read.
+    const open = scope === server && currentId === id && !find(id)?.submission;
+    const placeable = attached.filter((imageId) =>
+      current.images.some((image) => image.imageId === imageId),
+    );
+    const segments = open && placeable.length ? reference?.(placeable) : undefined;
+    if (segments) {
+      current = { ...current, segments };
+      save();
     }
     imageRejections = rejected;
     publish();
   }
-  /** Identical bytes are already attached; past the limit a file is rejected. */
-  function admission(candidate: {
-    name: string;
-    sha256: string;
-  }): ImageRejection | "attached" | undefined {
-    if (current.images.some((image) => image.sha256 === candidate.sha256)) return "attached";
+  /** The image already holding these bytes, or a rejection past the limit. */
+  function admission(candidate: { name: string; sha256: string }): FileOutcome | undefined {
+    const existing = current.images.find((image) => image.sha256 === candidate.sha256);
+    if (existing) return { attached: existing.imageId };
     if (current.images.length >= RUN_IMAGE_LIMIT)
-      return { name: candidate.name, reason: `A Run takes at most ${RUN_IMAGE_LIMIT} images.` };
+      return rejection(candidate.name, `A Run takes at most ${RUN_IMAGE_LIMIT} images.`);
     return undefined;
   }
-  /** A rejection, nothing when attached or already attached, or `left` if the draft changed. */
+  /** The file's outcome, or nothing if the draft changed meanwhile. */
   async function attachImage(
     scope: string,
     id: string,
     file: File,
-  ): Promise<ImageRejection | "left" | undefined> {
+  ): Promise<FileOutcome | undefined> {
     const candidate = await readImageFile(file);
-    if (!candidate.ok) return { name: candidate.name, reason: candidate.reason };
+    if (!candidate.ok) return rejection(candidate.name, candidate.reason);
     const early = admission(candidate);
-    if (early) return early === "attached" ? undefined : early;
+    if (early) return early;
     const image: RunImage = {
       imageId: randomId(),
       sha256: candidate.sha256,
@@ -655,29 +700,40 @@ export function createRunDraft(
     try {
       await images.store.save(scope, id, image.imageId, candidate.data);
     } catch {
-      return { name: candidate.name, reason: "Browser storage is full or unavailable." };
+      return rejection(candidate.name, "Browser storage is full or unavailable.");
     }
-    if (scope !== server || currentId !== id || find(id)?.submission) return "left";
+    if (scope !== server || currentId !== id || find(id)?.submission) return undefined;
     // Another attach may have completed while these bytes were saved.
     const late = admission(candidate);
     if (late) {
       images.store.remove(scope, id, [image.imageId]).catch(() => {
         // The next composer load deletes bytes no draft references.
       });
-      return late === "attached" ? undefined : late;
+      return late;
     }
     current = { ...current, images: [...current.images, image] };
     save();
-    return undefined;
+    return { attached: image.imageId };
   }
+  /** Removes an attached image with every reference to it. */
   function removeImage(imageId: string) {
     const scope = server;
     const id = currentId;
     if (scope === undefined || !id || find(id)?.submission) return;
-    current = { ...current, images: current.images.filter((image) => image.imageId !== imageId) };
+    current = {
+      ...current,
+      segments: joinedSegments(
+        current.segments.filter(
+          (segment) => segment.type === "text" || segment.imageId !== imageId,
+        ),
+      ),
+      images: current.images.filter((image) => image.imageId !== imageId),
+    };
     imageRejections = [];
     save();
-    if (currentId === id)
+    // A stale tab's save keeps another tab's unresolved Start, which still needs these bytes.
+    const kept = find(id)?.images.some((image) => image.imageId === imageId);
+    if (currentId === id && !kept)
       images.store.remove(scope, id, [imageId]).catch(() => {
         // The next composer load deletes bytes no draft references.
       });
@@ -698,7 +754,7 @@ export function createRunDraft(
       current = composition(latest);
     } else if (currentId && !inFlight.has(currentId)) {
       currentId = undefined;
-      current = { ...current, input: "", images: [] };
+      current = { ...current, segments: [], images: [] };
     }
     publish();
   }
