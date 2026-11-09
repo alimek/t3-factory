@@ -75,7 +75,8 @@ it("Check same request sends the identical key and payload after a lost response
     requestId: expect.any(String),
     projectId: "project",
     flowId: "flow",
-    input: "Do the work",
+    segments: [{ type: "text", text: "Do the work" }],
+    images: [],
     title: "Do the work",
     createdAt: "2026-11-07T08:00:00.000Z",
   });
@@ -295,7 +296,8 @@ it("Start submits the draft's bounded first-line title and its original creation
     requestId: expect.any(String),
     projectId: "project",
     flowId: "flow",
-    input: prompt,
+    segments: [{ type: "text", text: prompt }],
+    images: [],
     title: "x".repeat(500),
     createdAt: "2026-11-07T08:00:00.000Z",
   });
