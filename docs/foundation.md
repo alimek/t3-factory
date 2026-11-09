@@ -124,6 +124,11 @@ a released migration. Each chunk contains **one SQLite statement**, separated by
 `-- statement-breakpoint` line. Do not add `BEGIN` or `COMMIT`: the migrator owns the
 transaction. An unknown migration ledger fails closed.
 
+The current-schema snapshot at `apps/backend/src/schema.sql` is generated and
+test-asserted. After adding a migration, regenerate it with
+`pnpm --filter @t3-factory/backend schema:update`. It is never an input to the
+build or runtime and is not shipped; migrations remain the only schema source.
+
 Persisted JSON (operational payloads, evidence and Agent model options) is versioned like
 the schema. Flow graphs and Run definitions are not stored as JSON: Flow and Agent revisions
 are relational rows that Runs reference, so changing their shape is an ordinary SQL migration

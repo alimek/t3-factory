@@ -21,6 +21,7 @@
     "build": "tsc -p tsconfig.json && node ../../scripts/copy-migrations.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json",
     "test": "vp test run",
+    "schema:update": "pnpm build && vp test run test/schema-snapshot.test.ts -u",
     "start": "node dist/main.js",
     "dev": "vpx --watch --clear-screen=false --no-rerun-on-enter --include \"src/migrations/**/*.sql\" --include \"../../packages/*/src/**/*.ts\" --conditions=factory-source ../../scripts/dev/server.ts",
     "dev:prod": "vpx --watch --clear-screen=false --no-rerun-on-enter --include \"src/migrations/**/*.sql\" --include \"../../packages/*/src/**/*.ts\" --conditions=factory-source src/main.ts --api-only"
