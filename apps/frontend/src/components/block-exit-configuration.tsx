@@ -75,7 +75,8 @@ export function BlockExitConfiguration({
           Local exits · only in this Flow
         </h3>
         <p className="text-xs text-muted-foreground">
-          Belong to this block in this Flow. Names must differ from the Agent’s visible exits.
+          Belong to this block in this Flow. Names must differ from every Agent exit, including
+          hidden ones.
         </p>
         {block.localExits.map((exit) => (
           <LocalExitCard
