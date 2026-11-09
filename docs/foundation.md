@@ -22,7 +22,12 @@ and restricted OAuth credentials live outside project repositories.
   visit; each Agent activation references that frozen revision. Runs keep no separate copy:
   execution, recovery and Run history read these revisions, so later edits and removals
   cannot rewrite history.
-  External skill files are not frozen.
+  External skill files are not frozen. Agent revisions hold the Agent's exits and Flow revisions
+  hold each Agent block's hidden and Flow-local exits, so a Run's block exits come from the same
+  frozen revisions. Migration `072` converted every stored Flow revision, including those Runs
+  captured: Agents started with no exits, Agent block exits became Flow-local with the same IDs,
+  and Human exits became Approve or Request changes by their feedback flag, with their wires,
+  answers and handoffs following. Earlier Human exit names are not kept.
 - Run images are bytes on disk under `FACTORY_HOME/images`, named by their SHA-256 digest, with
   staging metadata in SQLite. Start attaches the ordered manifest to the Run; the prompt segments
   and manifest are immutable and the Run's input keeps the worker-readable text. Migration `071`

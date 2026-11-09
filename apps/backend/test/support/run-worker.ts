@@ -11,20 +11,25 @@ const WORKER_EXECUTION = "execution-1";
 export async function workerStart(
   c: TestContext,
   targetBlockId: "parallel-block" | "review" | "worker" | "" = "parallel-block",
-  requiresFeedback = false,
+  messageRequired = false,
 ) {
   const fixture = await prepared(c);
-  const source = fixture.flow.graph.blocks[0]!;
-  const first = requiresFeedback
-    ? { ...source, exits: source.exits.map((exit) => ({ ...exit, requiresFeedback: true })) }
-    : source;
+  if (messageRequired) {
+    const { agent } = fixture;
+    const updated = await fixture.f.updateAgent(agent.id, {
+      ...agent,
+      expectedRevision: agent.revision,
+      exits: agent.exits.map((exit) => ({ ...exit, messageRequired: true })),
+    });
+    assert(updated.ok);
+  }
+  const first = fixture.flow.graph.blocks[0]!;
   const second = { ...first, id: "parallel-block", name: "Parallel work" };
   const review = {
     id: "review",
     kind: "human" as const,
     name: "Review",
     position: { x: 400, y: 0 },
-    exits: first.exits,
   };
   const flow = await fixture.f.updateFlow(fixture.flow.id, {
     ...fixture.flow,
@@ -40,7 +45,7 @@ export async function workerStart(
       connections: [
         ...(targetBlockId ? [{ sourceBlockId: first.id, exitId: "done", targetBlockId }] : []),
         ...(targetBlockId === "review"
-          ? [{ sourceBlockId: "review", exitId: "done", targetBlockId: second.id }]
+          ? [{ sourceBlockId: "review", exitId: "approve", targetBlockId: second.id }]
           : []),
       ],
     },
@@ -99,9 +104,38 @@ export async function directWorker(
   c: TestContext,
   observe = true,
   targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
-  requiresFeedback = false,
+  messageRequired = false,
 ) {
-  return startedWorker(await workerStart(c, targetBlockId, requiresFeedback), observe);
+  return startedWorker(await workerStart(c, targetBlockId, messageRequired), observe);
+}
+
+/** Entry worker's Agent has Done and Blocked; the Flow hides Blocked and adds a local Escalate. */
+export async function exitVariantWorker(c: TestContext) {
+  const fixture = await prepared(c);
+  const { f, agent, flow } = fixture;
+  const blocked = {
+    id: "blocked",
+    name: "Blocked",
+    description: "Explain the blocker.",
+    messageRequired: true,
+  };
+  const edited = await f.updateAgent(agent.id, {
+    ...agent,
+    expectedRevision: agent.revision,
+    exits: [...agent.exits, blocked],
+  });
+  assert(edited.ok);
+  const escalate = { id: "escalate", name: "Escalate", description: "", messageRequired: true };
+  const saved = await f.updateFlow(flow.id, {
+    ...flow,
+    expectedRevision: flow.revision,
+    graph: {
+      ...flow.graph,
+      blocks: [{ ...flow.graph.blocks[0]!, hiddenExitIds: ["blocked"], localExits: [escalate] }],
+    },
+  });
+  assert(saved.ok);
+  return startedWorker({ ...fixture, flow: saved.value }, true);
 }
 
 /** The entry worker hands "Done" to Parallel work and "Revise" to Follow-up. */
@@ -112,10 +146,9 @@ async function twoExitWorker(c: TestContext) {
     id: "revise",
     name: "Revise",
     description: "Needs another pass",
-    outcome: "custom" as const,
-    requiresFeedback: false,
+    messageRequired: false,
   };
-  const first = { ...source, exits: [...source.exits, revise] };
+  const first = { ...source, localExits: [revise] };
   const flow = await fixture.f.updateFlow(fixture.flow.id, {
     ...fixture.flow,
     expectedRevision: fixture.flow.revision,
@@ -371,7 +404,7 @@ export async function answeredReview(
   const review = await f.getRun(runId);
   assert(review.ok);
   const occurrence = review.value.humanOccurrences.find((o) => o.state === "pending")!;
-  assert((await f.answerHumanOccurrence(occurrence.id, { exitId: "done" })).ok);
+  assert((await f.answerHumanOccurrence(occurrence.id, { exitId: "approve" })).ok);
   return setup;
 }
 

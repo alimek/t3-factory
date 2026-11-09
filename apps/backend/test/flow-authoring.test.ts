@@ -1,4 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
+import { prepared } from "./support/prepared-runner.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
 import {
@@ -55,7 +56,7 @@ it("connecting the Flow input to an Agent makes a saved graph draft ready", asyn
   expect(ready.value.readiness.ready).toBe(true);
 });
 
-it("a saved graph draft keeps its blocks, exits, connections, Flow input order and custom worktree ref after restart", async (context) => {
+it("a saved graph draft keeps its blocks, hidden and local exits, connections, Flow input order and custom worktree ref after restart", async (context) => {
   // Arrange
   const { harness, factory, created, unconnectedGraph } = await flowWithAgent(context);
   const [coder, human] = unconnectedGraph.blocks;
@@ -65,21 +66,10 @@ it("a saved graph draft keeps its blocks, exits, connections, Flow input order a
     name: "",
     agentId: null,
     position: { x: -120.5, y: 7.25 },
-    exits: [
-      {
-        id: "done",
-        name: "",
-        description: "",
-        outcome: "custom" as const,
-        requiresFeedback: true,
-      },
-      {
-        id: "accepted",
-        name: "Accepted",
-        description: "Ship it",
-        outcome: "assessment-ok" as const,
-        requiresFeedback: false,
-      },
+    hiddenExitIds: ["review", "draft"],
+    localExits: [
+      { id: "done", name: "", description: "", messageRequired: true },
+      { id: "accepted", name: "Accepted", description: "Ship it", messageRequired: false },
     ],
   };
   const saved = await factory.updateFlow(created.value.id, {
@@ -259,23 +249,17 @@ it("updateFlow rejects dangling connections", async (context) => {
   assert(result.error.issues.some((issue) => issue.code === "invalid_connection"));
 });
 
-it("updateFlow rejects assessment-fail exits that omit required correction feedback", async (context) => {
+it("updateFlow rejects a Human connection from an exit other than Approve or Request changes", async (context) => {
   // Arrange
-  const { factory, created, block } = await validationFlow(context);
+  const { factory, created, unconnectedGraph } = await flowWithAgent(context);
   const graph = {
-    flowInput: flowInput("a"),
-    blocks: [
-      {
-        ...block,
-        exits: [{ ...block.exits[0], name: "renamed", outcome: "assessment-fail" as const }],
-      },
-    ],
-    connections: [],
+    ...unconnectedGraph,
+    connections: [{ sourceBlockId: "human", exitId: "retry", targetBlockId: "coder" }],
   };
 
   // Act
   const result = await factory.updateFlow(created.value.id, {
-    name: "Validation",
+    name: created.value.name,
     expectedRevision: 1,
     workspace: created.value.workspace,
     graph,
@@ -283,7 +267,10 @@ it("updateFlow rejects assessment-fail exits that omit required correction feedb
 
   // Assert
   assert(!result.ok);
-  assert(result.error.issues.some((issue) => issue.code === "correction_feedback_required"));
+  expect(result.error.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["invalid_connection", "graph.connections.0"],
+  ]);
+  expect(await factory.getFlow(created.value.id)).toStrictEqual(created);
 });
 
 it("updateFlow rejects a Flow input target that is not in the graph", async (context) => {
@@ -308,8 +295,7 @@ it("updateFlow rejects a Flow input target that is not in the graph", async (con
 it("updateFlow rejects a Human step as a Flow input target", async (context) => {
   // Arrange
   const { factory, created, block } = await validationFlow(context);
-  const { agentId: _agentId, ...fields } = block;
-  const human = { ...fields, id: "review", kind: "human" as const, name: "Review" };
+  const human = { id: "review", kind: "human" as const, name: "Review", position: block.position };
   const graph = { flowInput: flowInput("review"), blocks: [block, human], connections: [] };
 
   // Act
@@ -368,16 +354,17 @@ it("readiness identifies unfinished and unreachable blocks without rejecting dra
           agentId: null,
           name: "Worker",
           position: { x: 0, y: 0 },
-          exits: [],
+          hiddenExitIds: [],
+          localExits: [],
         },
         {
-          id: "human",
-          kind: "human",
+          id: "reviewer",
+          kind: "agent",
+          agentId: null,
           name: "",
           position: { x: 400, y: 0 },
-          exits: [
-            { id: "custom", name: "", description: "", outcome: "custom", requiresFeedback: true },
-          ],
+          hiddenExitIds: [],
+          localExits: [{ id: "custom", name: "", description: "", messageRequired: true }],
         },
       ],
     },
@@ -388,10 +375,66 @@ it("readiness identifies unfinished and unreachable blocks without rejecting dra
   expect(result.value.readiness.ready).toBe(false);
   expect(result.value.readiness.issues.map((i) => [i.code, i.path])).toStrictEqual([
     ["agent_required", "graph.blocks.0.agentId"],
-    ["exit_required", "graph.blocks.0.exits"],
+    ["exit_required", "graph.blocks.0"],
     ["block_name_required", "graph.blocks.1.name"],
-    ["exit_name_required", "graph.blocks.1.exits.0.name"],
+    ["agent_required", "graph.blocks.1.agentId"],
+    ["exit_name_required", "graph.blocks.1.localExits.0.name"],
     ["unreachable_block", "graph.blocks.1"],
   ]);
   expect(result.value.revision).toBe(2);
+});
+
+it("local exit IDs matching visible or hidden Agent exits allow saving but block Start", async (context) => {
+  // Arrange
+  const { f, flow, input, project } = await prepared(context);
+  const [worker] = flow.graph.blocks;
+  assert(worker?.kind === "agent");
+  const localExits = [
+    { id: "done", name: "Local result", description: "", messageRequired: false },
+  ];
+  const saved = await f.updateFlow(flow.id, {
+    ...flow,
+    expectedRevision: flow.revision,
+    graph: {
+      ...flow.graph,
+      flowInput: { ...flow.graph.flowInput, targetBlockIds: [worker.id, "hidden-worker"] },
+      blocks: [
+        { ...worker, localExits },
+        {
+          ...worker,
+          id: "hidden-worker",
+          name: "Hidden worker",
+          hiddenExitIds: ["done"],
+          localExits,
+        },
+      ],
+    },
+  });
+  assert(saved.ok);
+  expect(saved.value.readiness).toStrictEqual({
+    ready: false,
+    issues: [
+      {
+        code: "exit_id_conflict",
+        path: "graph.blocks.0.localExits.0.id",
+        message:
+          'Entry worker: local exit "Local result" has the same ID as an exit from its Agent. Remove and recreate the local exit.',
+      },
+      {
+        code: "exit_id_conflict",
+        path: "graph.blocks.1.localExits.0.id",
+        message:
+          'Hidden worker: local exit "Local result" has the same ID as an exit from its Agent. Remove and recreate the local exit.',
+      },
+    ],
+  });
+
+  // Act
+  const started = await f.startRun(input);
+
+  // Assert
+  assert(!started.ok);
+  expect(started.error.code).toBe("validation");
+  expect(started.error.issues).toStrictEqual(saved.value.readiness.issues);
+  expect(await f.listRuns(project.id)).toStrictEqual({ ok: true, value: [] });
 });

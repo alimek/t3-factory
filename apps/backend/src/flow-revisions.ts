@@ -1,12 +1,6 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type {
-  BlockExit,
-  FlowBlock,
-  FlowGraph,
-  FlowWorkspace,
-  RunDefinitions,
-} from "@t3-factory/contracts";
+import type { FlowBlock, FlowGraph, FlowWorkspace, RunDefinitions } from "@t3-factory/contracts";
 import { newId } from "./ids.ts";
 
 /** A saved Flow revision as Studio and Start read it; readiness is derived separately. */
@@ -33,15 +27,16 @@ type BlockRow = {
   x: number;
   y: number;
 };
+/** A Flow-local exit of an Agent block. */
 type ExitRow = {
   flow_revision_id: string;
   block_id: string;
   exit_id: string;
   name: string;
   description: string;
-  outcome: BlockExit["outcome"];
-  requires_feedback: number;
+  message_required: number;
 };
+type HiddenExitRow = { flow_revision_id: string; block_id: string; exit_id: string };
 type ConnectionRow = {
   flow_revision_id: string;
   source_block_id: string;
@@ -91,12 +86,20 @@ export const appendFlowRevision = Effect.fnUntraced(function* (
         yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, x, y)
         VALUES (${revisionId}, ${block.id}, ${ordinal}, ${block.kind}, ${block.name},
           ${block.kind === "agent" ? block.agentId : null}, ${block.position.x}, ${block.position.y})`;
+        if (block.kind !== "agent") return;
         yield* Effect.forEach(
-          block.exits,
+          block.localExits,
           (exit, exitOrdinal) =>
-            sql`INSERT INTO flow_revision_exits (flow_revision_id, block_id, exit_id, ordinal, name, description, outcome, requires_feedback)
+            sql`INSERT INTO flow_revision_exits (flow_revision_id, block_id, exit_id, ordinal, name, description, message_required)
             VALUES (${revisionId}, ${block.id}, ${exit.id}, ${exitOrdinal}, ${exit.name},
-              ${exit.description}, ${exit.outcome}, ${exit.requiresFeedback ? 1 : 0})`,
+              ${exit.description}, ${exit.messageRequired ? 1 : 0})`,
+          { discard: true },
+        );
+        yield* Effect.forEach(
+          block.hiddenExitIds,
+          (exitId, hiddenOrdinal) =>
+            sql`INSERT INTO flow_revision_hidden_exits (flow_revision_id, block_id, exit_id, ordinal)
+            VALUES (${revisionId}, ${block.id}, ${exitId}, ${hiddenOrdinal})`,
           { discard: true },
         );
       }),
@@ -129,22 +132,25 @@ const toWorkspace = (row: RevisionRow): FlowWorkspace => {
   };
 };
 
-const toBlock = (row: BlockRow, exits: readonly ExitRow[]): FlowBlock => {
-  const base = {
-    id: row.block_id,
-    name: row.name,
-    position: { x: row.x, y: row.y },
-    exits: exits.map((exit) => ({
+const toBlock = (
+  row: BlockRow,
+  exits: readonly ExitRow[],
+  hidden: readonly HiddenExitRow[],
+): FlowBlock => {
+  const base = { id: row.block_id, name: row.name, position: { x: row.x, y: row.y } };
+  if (row.kind === "human") return { ...base, kind: "human" };
+  return {
+    ...base,
+    kind: "agent",
+    agentId: row.agent_id,
+    hiddenExitIds: hidden.map((entry) => entry.exit_id),
+    localExits: exits.map((exit) => ({
       id: exit.exit_id,
       name: exit.name,
       description: exit.description,
-      outcome: exit.outcome,
-      requiresFeedback: exit.requires_feedback === 1,
+      messageRequired: exit.message_required === 1,
     })),
   };
-  return row.kind === "agent"
-    ? { ...base, kind: "agent", agentId: row.agent_id }
-    : { ...base, kind: "human" };
 };
 
 /** The latest revision of each non-removed Flow (or only `flowId`), newest Flow first. */
@@ -178,14 +184,16 @@ const withGraphs = Effect.fnUntraced(function* (
 ) {
   if (!revisions.length) return [];
   const ids = sql.in(revisions.map((revision) => revision.id));
-  const [blocks, exits, connections, targets] = yield* Effect.all([
+  const [blocks, exits, hidden, connections, targets] = yield* Effect.all([
     sql<BlockRow>`SELECT * FROM flow_revision_blocks WHERE flow_revision_id IN ${ids} ORDER BY ordinal`,
     sql<ExitRow>`SELECT * FROM flow_revision_exits WHERE flow_revision_id IN ${ids} ORDER BY ordinal`,
+    sql<HiddenExitRow>`SELECT * FROM flow_revision_hidden_exits WHERE flow_revision_id IN ${ids} ORDER BY ordinal`,
     sql<ConnectionRow>`SELECT * FROM flow_revision_connections WHERE flow_revision_id IN ${ids} ORDER BY ordinal`,
     sql<TargetRow>`SELECT * FROM flow_revision_input_targets WHERE flow_revision_id IN ${ids} ORDER BY ordinal`,
   ]);
   const blocksByRevision = groupBy(blocks, byRevision);
   const exitsByBlock = groupBy(exits, byBlock);
+  const hiddenByBlock = groupBy(hidden, byBlock);
   const connectionsByRevision = groupBy(connections, byRevision);
   const targetsByRevision = groupBy(targets, byRevision);
   return revisions.map((revision): FlowRevision => ({
@@ -194,7 +202,11 @@ const withGraphs = Effect.fnUntraced(function* (
     revision: revision.revision,
     graph: {
       blocks: (blocksByRevision.get(revision.id) ?? []).map((block) =>
-        toBlock(block, exitsByBlock.get(byBlock(block)) ?? []),
+        toBlock(
+          block,
+          exitsByBlock.get(byBlock(block)) ?? [],
+          hiddenByBlock.get(byBlock(block)) ?? [],
+        ),
       ),
       connections: (connectionsByRevision.get(revision.id) ?? []).map((connection) => ({
         sourceBlockId: connection.source_block_id,

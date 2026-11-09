@@ -1,6 +1,7 @@
 import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
+import { effectiveExits } from "@t3-factory/domain-validation";
 import { workerTurn } from "./runner-block-workers.ts";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
@@ -140,7 +141,10 @@ export function openRunnerRecovery(
             id: string;
           }>`SELECT id FROM run_attention WHERE run_id=${current.id} AND block_id=${blockId} AND kind='missing-report' AND execution_id=${executionId} AND settled_at IS NULL`;
           const { definitions } = current;
-          const exits = definitions.flow.graph.blocks.find((block) => block.id === blockId)!.exits;
+          const exits = effectiveExits(
+            definitions.flow.graph.blocks.find((block) => block.id === blockId)!,
+            definitions.agents,
+          );
           const payload: SendPayload = {
             environmentId: current.environment_id,
             threadId,

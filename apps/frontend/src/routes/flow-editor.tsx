@@ -1,7 +1,7 @@
 import { MutationGate } from "@/client-gate";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import type {
   AgentDefinition,
   FlowBlock,
@@ -49,19 +49,27 @@ import { IssueLink, ReadinessPanel } from "../components/flow-readiness.tsx";
 import { FlowWorkspaceControl } from "../components/flow-workspace-control.tsx";
 import { Page } from "../components/page.tsx";
 import {
+  canvasGraph,
   hasWire,
   newBlock,
   removeBlock,
   removeWire,
   replaceBlock,
   type BlockPosition,
+  type CanvasBlock,
+  type CanvasGraph,
   type FlowWire,
 } from "../flow-graph.ts";
 
 type FlowContent = Pick<FlowDraft, "name" | "workspace" | "graph">;
 
 /** The saved Flow, its local edits, and the save, readiness and revision-conflict operations. */
-function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => void) {
+function useFlowDraft(
+  id: string,
+  reportDraft: (id: string, dirty: boolean) => void,
+  active: boolean,
+  agents: readonly AgentDefinition[],
+) {
   const [saved, setSaved] = useState<FlowDraft | null>(null);
   const [graph, setGraph] = useState<FlowGraph>({
     blocks: [],
@@ -104,6 +112,25 @@ function useFlowDraft(id: string, reportDraft: (id: string, dirty: boolean) => v
       current = false;
     };
   }, [id]);
+  const refreshReadiness = useEffectEvent(() => (saved && !dirty ? api.getFlow(id) : null));
+  useEffect(() => {
+    setReadiness(null);
+    if (!active) return;
+    const request = refreshReadiness();
+    if (!request) return;
+    let current = true;
+    request
+      .then((value) => {
+        if (current) setReadiness(value.readiness);
+      })
+      .catch((e) => {
+        if (current) setError(e.message);
+      });
+    return () => {
+      current = false;
+    };
+    // The saved revision and dirty state retire a response requested before an edit or save.
+  }, [active, agents, saved?.revision, dirty]);
   function change(next: FlowGraph) {
     setGraph(next);
     setDirty(true);
@@ -326,7 +353,7 @@ const PANEL_CLOSE_MS = 140;
 const AUTHORING_FLOW_INPUT_HEIGHT = 88;
 const AUTHORING_FIT_PADDING = { x: 48, top: 64, bottom: 80 };
 
-function authoringBlockDisplayHeight(graph: FlowGraph, block: FlowBlock) {
+function authoringBlockDisplayHeight(graph: CanvasGraph, block: CanvasBlock) {
   return blockHeightForIncomingFanIn(
     incomingFanIn(graph, block.id),
     AUTHORING_PORTS,
@@ -334,7 +361,7 @@ function authoringBlockDisplayHeight(graph: FlowGraph, block: FlowBlock) {
   );
 }
 
-function authoringGraphBounds(graph: FlowGraph) {
+function authoringGraphBounds(graph: CanvasGraph) {
   const input = graph.flowInput;
   return mergeGraphBounds(
     {
@@ -364,8 +391,8 @@ export function FlowDetail({
   reportDraft: (id: string, dirty: boolean) => void;
 }) {
   const canvas = useRef<HTMLElement>(null);
-  const draft = useFlowDraft(id, reportDraft);
   const { agents, agentError } = useSavedAgents(active);
+  const draft = useFlowDraft(id, reportDraft, active, agents);
   const [libraryOpen, setLibraryOpen] = useState(true);
   const { saved, graph, name, error, readiness } = draft;
   const { selected, select, wire, selectWire, deleteWire } = useCanvasSelection(
@@ -380,7 +407,7 @@ export function FlowDetail({
   const viewport = useCanvasViewport({
     surface: canvas,
     scope: saved?.id === id ? id : null,
-    getBounds: () => authoringGraphBounds(graph),
+    getBounds: () => authoringGraphBounds(canvasGraph(graph, agents)),
     padding: AUTHORING_FIT_PADDING,
     contentInsetY: 64,
     reservedRight,
@@ -397,12 +424,14 @@ export function FlowDetail({
   } = useFlowLayoutSession({
     scope: id,
     graph,
+    agents,
     profile: { kind: "authoring" },
     authoring: {
       busy: draft.busy,
       savedGraph: draft.saved?.graph,
       change: draft.change,
-      onAccepted: (acceptedGraph) => viewport.fit(authoringGraphBounds(acceptedGraph)),
+      onAccepted: (acceptedGraph) =>
+        viewport.fit(authoringGraphBounds(canvasGraph(acceptedGraph, agents))),
     },
   });
   function add(kind: FlowBlock["kind"], agent?: AgentDefinition, position?: BlockPosition) {
@@ -517,7 +546,6 @@ function EditorSelectionPanel({
       agents={agents}
       onClose={() => select(null)}
       onEdit={draft.editBlock}
-      onChange={draft.change}
       onRemove={(removed) => {
         draft.change(removeBlock(graph, removed.id));
         select(null);
@@ -590,7 +618,10 @@ function EditorToolbar({
         </Button>
       </MutationGate>
       <MutationGate>
-        <Button disabled={draft.busy || draft.dirty} onClick={() => openFlowComposer(flowId)}>
+        <Button
+          disabled={draft.busy || draft.dirty || !draft.readiness?.ready}
+          onClick={() => openFlowComposer(flowId)}
+        >
           Start Run
         </Button>
       </MutationGate>
@@ -751,7 +782,6 @@ function BlockPanel({
   agents,
   onClose,
   onEdit,
-  onChange,
   onRemove,
 }: {
   block: FlowBlock;
@@ -760,7 +790,6 @@ function BlockPanel({
   agents: readonly AgentDefinition[];
   onClose: () => void;
   onEdit: (block: FlowBlock) => void;
-  onChange: (graph: FlowGraph) => void;
   onRemove: (block: FlowBlock) => void;
 }) {
   return (
@@ -809,7 +838,6 @@ function BlockPanel({
           graph={graph}
           agents={agents}
           onEdit={onEdit}
-          onChange={onChange}
           onRemove={() => onRemove(block)}
         />
       </div>

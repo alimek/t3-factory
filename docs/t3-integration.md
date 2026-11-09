@@ -262,8 +262,10 @@ A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED
   A missing or outdated skill is repairable and blocks Start.
   Repair does not rewrite running harness sessions: a worker keeps the instructions and tool
   schema already in its context until the harness reloads them.
-- **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
-  is `INVALID_EXIT`. Names are quoted in prompts, and the exact report content determines
+- **Exit names.** The tool accepts the exact name or ID of one of the Block's exits in the Run's
+  captured definitions; an exit hidden in the Flow, an unknown name or an ambiguous match is
+  `INVALID_EXIT` with the allowed exit names. Finishing on an exit that requires a message without
+  one is `FEEDBACK_REQUIRED`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.
 
 ## Reporting authority
@@ -282,7 +284,9 @@ Factory-launched Block workers report for their Block from any turn of their thr
 ### Block and Run reads
 
 `factory_get_block({ blockId })` returns the Block's current visit, reason, exits, inputs and allowed transitions, also while
-Factory is still confirming the worker's launch.
+Factory is still confirming the worker's launch. `exits` lists the exits the worker may finish with, each
+`{ id, name, description, messageRequired }`: its captured Agent revision's exits not hidden in the Flow, then the Flow-local
+exits. A Request report message lists the same exits with their descriptions and message requirement.
 
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source

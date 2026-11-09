@@ -137,7 +137,9 @@ their cause; do not add retries or larger per-test timeouts.
 ## Database upgrade baseline
 
 Keep one representative captured database from the supported released
-baseline. Open it with the current Factory and assert important public outcomes:
+baseline, plus a capture only where a stored-shape migration needs data that baseline lacks
+(see the [fixtures README](../apps/backend/test/fixtures/README.md)). Open each with the current
+Factory and assert important public outcomes:
 retained definitions, pending work, client access and immutable history. The
 fixture and its provenance are reviewed test inputs, not a source archive or a
 production backup.

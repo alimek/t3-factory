@@ -1,6 +1,9 @@
 import { strict as assert } from "node:assert";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { ControlledT3 } from "./controlled-t3.ts";
+import { writeReportingState } from "./reporting-home.ts";
 
 interface MigrationData<Expected> {
   format: number;
@@ -43,4 +46,33 @@ export async function loadMigrationData<Expected>(databasePath: string, fixtureN
     db.close();
   }
   return fixture.expected;
+}
+
+/**
+ * The controlled adapter state a capture recorded, with its Maps and Sets restored, and a
+ * disposable reporting home for it. `retired` names captured fields current code no longer has.
+ */
+export async function restoreCapturedAdapter(
+  observations: Record<string, unknown>,
+  processHome: string,
+  retired: ReadonlySet<string> = new Set(),
+) {
+  const t3 = new ControlledT3();
+  for (const [key, value] of Object.entries(observations)) {
+    if (retired.has(key)) continue;
+    assert(Object.hasOwn(t3, key), `Unknown captured adapter field: ${key}`);
+    const restored =
+      value && typeof value === "object" && "map" in value && Array.isArray(value.map)
+        ? new Map(value.map as [string, unknown][])
+        : value && typeof value === "object" && "set" in value
+          ? new Set(value.set as unknown[])
+          : value;
+    Object.assign(t3, { [key]: restored });
+  }
+  const state = join(processHome, "reporting-state");
+  const home = join(processHome, "codex-home");
+  await mkdir(state);
+  await mkdir(home);
+  await writeReportingState(state, t3.environmentId, home);
+  return t3;
 }
