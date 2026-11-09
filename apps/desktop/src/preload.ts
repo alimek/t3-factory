@@ -34,7 +34,9 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
     ipcRenderer.invoke(channels.setUpdateChannel, String(channel)),
   setMenuState: (state: unknown) => ipcRenderer.invoke(channels.setMenuState, state),
   onMenuCommand(listener) {
-    const handler = (_event: IpcRendererEvent, id: DesktopMenuCommandId) => listener(id);
+    // The main process sends only ids it built its menu from.
+    const handler = (_event: IpcRendererEvent, id: unknown) =>
+      listener(String(id) as DesktopMenuCommandId);
     ipcRenderer.on(channels.menuCommand, handler);
     return () => {
       ipcRenderer.removeListener(channels.menuCommand, handler);
