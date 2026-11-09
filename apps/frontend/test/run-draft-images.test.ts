@@ -101,6 +101,24 @@ it("pasting identical bytes references the attached image without taking another
   ]);
 });
 
+it("an image removed while another pasted image is saved gets no reference", async (context) => {
+  // Arrange
+  const { draft, images } = composer(context);
+  await draft.attachImages([pngFile("header.png", 1)]);
+  const [header] = draft.getSnapshot().images.map((image) => image.imageId);
+  images.store.save.mockImplementationOnce(async () => {
+    draft.removeImage(header!);
+  });
+
+  // Act
+  await draft.attachImages([pngFile("header.png", 1), pngFile("footer.png", 2)], references);
+
+  // Assert
+  const { images: attached, segments } = draft.getSnapshot();
+  expect(attached.map((image) => image.name)).toStrictEqual(["footer.png"]);
+  expect(segments).toStrictEqual([{ type: "image", imageId: attached[0]!.imageId }]);
+});
+
 it("removing an attached image removes every reference to it and keeps the others", async (context) => {
   // Arrange
   const { draft } = composer(context);

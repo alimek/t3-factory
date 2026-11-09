@@ -657,8 +657,14 @@ export function createRunDraft(
       if ("attached" in outcome) attached.push(outcome.attached);
       else rejected.push(outcome.rejected);
     }
-    // A stale tab's save keeps another tab's unresolved Start instead of these images.
-    const segments = attached.length && !find(id)?.submission ? reference?.(attached) : undefined;
+    // References go only into the draft that is still open and editable (a stale tab's save
+    // keeps another tab's unresolved Start), and only to images it still has: one may have been
+    // removed while a later file was read.
+    const open = scope === server && currentId === id && !find(id)?.submission;
+    const placeable = attached.filter((imageId) =>
+      current.images.some((image) => image.imageId === imageId),
+    );
+    const segments = open && placeable.length ? reference?.(placeable) : undefined;
     if (segments) {
       current = { ...current, segments };
       save();
