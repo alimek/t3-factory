@@ -32,18 +32,11 @@ import { StudioLink } from "../components/app-link.tsx";
 import { useStudioNavigation } from "../settings-navigation.ts";
 import { BlockConfiguration } from "../components/block-inspector.tsx";
 import { BlockLibrary } from "../components/block-library.tsx";
-import { AutoArrangeButton, AutoArrangeStatus } from "../components/flow-arrange-control.tsx";
-import { canvasPlacement, FlowCanvas, type DropAt } from "../components/flow-canvas.tsx";
-import { CanvasZoomControls } from "../components/canvas-zoom-controls.tsx";
-import { useCanvasViewport } from "../use-canvas-viewport.ts";
-import { AUTHORING_DIMENSIONS } from "../components/canvas-dimensions.ts";
-import { createCanvasGeometry, CANVAS_FIT_PADDING } from "../flow-geometry.ts";
-import { useFlowLayoutSession } from "../use-flow-layout.ts";
+import { FlowCanvas, type DropAt } from "../components/flow-canvas.tsx";
 import { IssueLink, ReadinessPanel } from "../components/flow-readiness.tsx";
 import { FlowWorkspaceControl } from "../components/flow-workspace-control.tsx";
 import { Page } from "../components/page.tsx";
 import {
-  canvasGraph,
   hasWire,
   newBlock,
   removeBlock,
@@ -354,6 +347,7 @@ export function FlowDetail({
   reportDraft: (id: string, dirty: boolean) => void;
 }) {
   const canvas = useRef<HTMLElement>(null);
+  const placement = useRef<DropAt | null>(null);
   const { agents, agentError } = useSavedAgents(active);
   const draft = useFlowDraft(id, reportDraft, active, agents);
   const [libraryOpen, setLibraryOpen] = useState(true);
@@ -367,45 +361,12 @@ export function FlowDetail({
   const block = graph.blocks.find((b) => b.id === selected);
   const closing = usePanelBlock(block);
   const reservedRight = block ? PANEL_WIDTH + 24 : 0;
-  const viewport = useCanvasViewport({
-    surface: canvas,
-    scope: saved?.id === id ? id : null,
-    getBounds: () =>
-      createCanvasGeometry(canvasGraph(graph, agents), AUTHORING_DIMENSIONS).bounds(),
-    padding: CANVAS_FIT_PADDING,
-    contentInsetY: 64,
-    reservedRight,
-    resize: "refit",
-    onTap: () => select(null),
-  });
-  const {
-    pending: arrangePending,
-    error: arrangeError,
-    dismissError: dismissArrangeError,
-    wireRoutes,
-    cancel: beginMove,
-    autoArrange,
-  } = useFlowLayoutSession({
-    scope: id,
-    graph,
-    agents,
-    profile: { kind: "authoring" },
-    authoring: {
-      busy: draft.busy,
-      savedGraph: draft.saved?.graph,
-      change: draft.change,
-      onAccepted: (acceptedGraph) =>
-        viewport.fit(
-          createCanvasGeometry(canvasGraph(acceptedGraph, agents), AUTHORING_DIMENSIONS).bounds(),
-        ),
-    },
-  });
   function add(kind: FlowBlock["kind"], agent?: AgentDefinition, position?: BlockPosition) {
     const next = newBlock(graph, kind, agent, position);
     draft.change({ ...graph, blocks: [...graph.blocks, next] });
     select(next.id);
   }
-  const dropAt: DropAt = (x, y, grab) => canvasPlacement(canvas.current, x, y, grab, viewport.view);
+  const dropAt: DropAt = (x, y, grab) => placement.current?.(x, y, grab) ?? null;
   if (!saved)
     return (
       <Page>
@@ -441,38 +402,17 @@ export function FlowDetail({
             selected={selected}
             selectedWire={wire}
             reservedRight={reservedRight}
-            viewport={viewport}
+            scope={id}
+            savedGraph={saved.id === id ? saved.graph : undefined}
+            busy={draft.busy}
+            placementRef={placement}
             onSelect={select}
             onSelectWire={selectWire}
             onDeleteWire={deleteWire}
             onEdit={draft.editBlock}
             onChange={draft.change}
-            wireRoutes={wireRoutes}
-            onMoveStart={beginMove}
           />
           <ReadinessPanel readiness={readiness} graph={graph} onSelect={select} />
-          <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col items-start gap-2">
-            <CanvasZoomControls
-              scale={viewport.view.scale}
-              onZoom={viewport.zoom}
-              onFit={() => viewport.fit()}
-              trailing={
-                <>
-                  <span aria-hidden className="h-5 w-px bg-border" />
-                  <AutoArrangeButton
-                    pending={arrangePending}
-                    disabled={draft.busy}
-                    onClick={() => void autoArrange()}
-                  />
-                </>
-              }
-              hint="Pan empty canvas · zoom · fit · auto-arrange. Graph coordinates stay saved."
-            />
-            <AutoArrangeStatus error={arrangeError} onDismiss={dismissArrangeError} />
-            <p className="text-2xs tracking-label text-muted-foreground">
-              Global Flow · shared by all projects
-            </p>
-          </div>
           <EditorSelectionPanel
             block={block}
             closing={closing}

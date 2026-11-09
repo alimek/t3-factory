@@ -320,5 +320,3 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     followActive: follow.followActive,
   };
 }
-
-export type CanvasViewport = ReturnType<typeof useCanvasViewport>;

@@ -1,12 +1,23 @@
 import { AUTHORING_DIMENSIONS } from "./canvas-dimensions.ts";
-import { useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
+import {
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type RefObject,
+} from "react";
 import { clientToGraphPoint, clampGraphPosition, type CanvasView } from "../canvas-viewport.ts";
-import type { CanvasViewport } from "../use-canvas-viewport.ts";
+import { useCanvasViewport } from "../use-canvas-viewport.ts";
+import { useFlowLayoutSession } from "../use-flow-layout.ts";
+import { AutoArrangeButton, AutoArrangeStatus } from "./flow-arrange-control.tsx";
+import { CanvasZoomControls } from "./canvas-zoom-controls.tsx";
 import { GripVertical } from "lucide-react";
 import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
 import {
+  CANVAS_FIT_PADDING,
   AUTHORING_PORTS,
   createCanvasGeometry,
   BLOCK_WIDTH,
@@ -78,7 +89,7 @@ function canvasDropPosition(
  * Where a block dropped at x/y lands, including the clamped corner in viewport coordinates,
  * so a drag ghost can show exactly where the block will be placed.
  */
-export function canvasPlacement(
+function canvasPlacement(
   surface: HTMLElement | null,
   x: number,
   y: number,
@@ -287,22 +298,7 @@ function moveGraphNode(
   if (block) onEdit({ ...block, position });
 }
 
-export function FlowCanvas({
-  ref,
-  graph: draftGraph,
-  agents,
-  selected,
-  selectedWire,
-  reservedRight,
-  viewport,
-  onSelect,
-  onSelectWire,
-  onDeleteWire,
-  onEdit,
-  onChange,
-  wireRoutes = null,
-  onMoveStart,
-}: {
+type FlowCanvasProps = {
   ref: RefObject<HTMLElement | null>;
   graph: FlowGraph;
   agents: readonly AgentDefinition[];
@@ -310,22 +306,112 @@ export function FlowCanvas({
   selectedWire: FlowWire | null;
   /** Width the floating panel covers, kept scrollable so no block stays hidden under it. */
   reservedRight: number;
-  viewport: CanvasViewport;
+  scope: string;
+  savedGraph: FlowGraph | undefined;
+  busy: boolean;
+  /** Returns placement without exposing the canvas view transform to the library. */
+  placementRef: RefObject<DropAt | null>;
   /** A block, or null for empty canvas or the Flow input, which clears every selection. */
   onSelect: (blockId: string | null) => void;
   onSelectWire: (wire: FlowWire) => void;
   onDeleteWire: (wire: FlowWire) => void;
   onEdit: (block: FlowBlock) => void;
   onChange: (graph: FlowGraph) => void;
-  wireRoutes?: ReadonlyMap<string, WireRoute> | null;
-  onMoveStart?: () => void;
-}) {
+};
+
+/** Keeps authoring view and arrangement wiring together, independent of draft/selection state. */
+function useAuthoringCanvasView({
+  ref,
+  graph,
+  agents,
+  scope,
+  savedGraph,
+  busy,
+  reservedRight,
+  placementRef,
+  onSelect,
+  onChange,
+}: Pick<
+  FlowCanvasProps,
+  | "ref"
+  | "graph"
+  | "agents"
+  | "scope"
+  | "savedGraph"
+  | "busy"
+  | "reservedRight"
+  | "placementRef"
+  | "onSelect"
+  | "onChange"
+>) {
+  const viewport = useCanvasViewport({
+    surface: ref,
+    scope: savedGraph ? scope : null,
+    getBounds: () =>
+      createCanvasGeometry(canvasGraph(graph, agents), AUTHORING_DIMENSIONS).bounds(),
+    padding: CANVAS_FIT_PADDING,
+    contentInsetY: TOP_INSET,
+    reservedRight,
+    resize: "refit",
+    onTap: () => onSelect(null),
+  });
+  const layout = useFlowLayoutSession({
+    scope,
+    graph,
+    agents,
+    profile: { kind: "authoring" },
+    authoring: {
+      busy,
+      savedGraph,
+      change: onChange,
+      onAccepted: (acceptedGraph) =>
+        viewport.fit(
+          createCanvasGeometry(canvasGraph(acceptedGraph, agents), AUTHORING_DIMENSIONS).bounds(),
+        ),
+    },
+  });
+  useImperativeHandle(
+    placementRef,
+    () => (x, y, grab) => canvasPlacement(ref.current, x, y, grab, viewport.view),
+  );
+  return { viewport, layout };
+}
+
+export function FlowCanvas({
+  ref,
+  graph: draftGraph,
+  agents,
+  selected,
+  selectedWire,
+  reservedRight,
+  scope,
+  savedGraph,
+  busy,
+  placementRef,
+  onSelect,
+  onSelectWire,
+  onDeleteWire,
+  onEdit,
+  onChange,
+}: FlowCanvasProps) {
+  const { viewport, layout } = useAuthoringCanvasView({
+    ref,
+    graph: draftGraph,
+    agents,
+    scope,
+    savedGraph,
+    busy,
+    reservedRight,
+    placementRef,
+    onSelect,
+    onChange,
+  });
   const { view, startPan, onKeyDown } = viewport;
   const { drag, handlers } = useMoveDrag(
     ref,
     view,
     (moved, position) => moveGraphNode(draftGraph, moved, position, onChange, onEdit),
-    onMoveStart,
+    layout.cancel,
   );
   const { connect, handlers: connectHandlers } = useConnectDrag(ref, view, draftGraph, onChange);
   // Drawn with the exits each block offers; edits above apply to the draft graph.
@@ -334,57 +420,95 @@ export function FlowCanvas({
   // The saved positions keep the canvas from shrinking mid-drag, which would clamp the scroll.
   const extent = [...positions(draftGraph), ...positions(graph)];
   return (
-    <section
-      aria-label="Flow canvas"
-      ref={ref}
-      data-zoom={view.scale.toFixed(3)}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset bg-[radial-gradient(var(--border)_1px,transparent_1px)] bg-size-[22px_22px]"
-    >
-      <div data-canvas-pan className="absolute inset-0" onPointerDown={startPan} />
-      <div
-        className="absolute top-0 left-0 origin-top-left"
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+    <>
+      <section
+        aria-label="Flow canvas"
+        ref={ref}
+        data-zoom={view.scale.toFixed(3)}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset bg-[radial-gradient(var(--border)_1px,transparent_1px)] bg-size-[22px_22px]"
       >
+        <div data-canvas-pan className="absolute inset-0" onPointerDown={startPan} />
         <div
-          className="relative"
-          style={{
-            marginTop: TOP_INSET,
-            width: Math.max(900, ...extent.map((p) => p.x + 300)) + reservedRight,
-            height: Math.max(600, ...extent.map((p) => p.y + 260)),
-          }}
-          data-canvas-pan
-          onPointerDown={startPan}
+          className="absolute top-0 left-0 origin-top-left"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
         >
-          <FlowWires
-            graph={graph}
-            routes={visibleWireRoutes(wireRoutes, drag, pendingWire)}
-            pendingWire={pendingWire}
-            selection={{ selected: selectedWire, onSelect: onSelectWire, onDelete: onDeleteWire }}
-          />
-          <OptionalConnectPreview graph={graph} connect={connect} />
-          <CanvasFlowInput
-            graph={graph}
-            drag={drag}
-            connect={connect}
-            handlers={handlers}
-            connectHandlers={connectHandlers}
-            onSelect={onSelect}
-          />
-          <GraphBlocks
-            graph={graph}
-            agents={agents}
-            selected={selected}
-            drag={drag}
-            connect={connect}
-            handlers={handlers}
-            connectHandlers={connectHandlers}
-            onSelect={onSelect}
-          />
+          <div
+            className="relative"
+            style={{
+              marginTop: TOP_INSET,
+              width: Math.max(900, ...extent.map((p) => p.x + 300)) + reservedRight,
+              height: Math.max(600, ...extent.map((p) => p.y + 260)),
+            }}
+            data-canvas-pan
+            onPointerDown={startPan}
+          >
+            <FlowWires
+              graph={graph}
+              routes={visibleWireRoutes(layout.wireRoutes, drag, pendingWire)}
+              pendingWire={pendingWire}
+              selection={{ selected: selectedWire, onSelect: onSelectWire, onDelete: onDeleteWire }}
+            />
+            <OptionalConnectPreview graph={graph} connect={connect} />
+            <CanvasFlowInput
+              graph={graph}
+              drag={drag}
+              connect={connect}
+              handlers={handlers}
+              connectHandlers={connectHandlers}
+              onSelect={onSelect}
+            />
+            <GraphBlocks
+              graph={graph}
+              agents={agents}
+              selected={selected}
+              drag={drag}
+              connect={connect}
+              handlers={handlers}
+              connectHandlers={connectHandlers}
+              onSelect={onSelect}
+            />
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+      <AuthoringCanvasControls viewport={viewport} layout={layout} busy={busy} />
+    </>
+  );
+}
+
+function AuthoringCanvasControls({
+  viewport,
+  layout,
+  busy,
+}: {
+  viewport: ReturnType<typeof useCanvasViewport>;
+  layout: ReturnType<typeof useFlowLayoutSession>;
+  busy: boolean;
+}) {
+  return (
+    <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col items-start gap-2">
+      <CanvasZoomControls
+        scale={viewport.view.scale}
+        onZoom={viewport.zoom}
+        onFit={() => viewport.fit()}
+        trailing={
+          <>
+            <span aria-hidden className="h-5 w-px bg-border" />
+            <AutoArrangeButton
+              pending={layout.pending}
+              disabled={busy}
+              onClick={() => void layout.autoArrange()}
+            />
+          </>
+        }
+        hint="Pan empty canvas · zoom · fit · auto-arrange. Graph coordinates stay saved."
+      />
+      <AutoArrangeStatus error={layout.error} onDismiss={layout.dismissError} />
+      <p className="text-2xs tracking-label text-muted-foreground">
+        Global Flow · shared by all projects
+      </p>
+    </div>
   );
 }
 
