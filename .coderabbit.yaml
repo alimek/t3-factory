@@ -12,41 +12,9 @@ reviews:
   review_status: true
   collapse_walkthrough: true
   sequence_diagrams: false
-  suggested_labels: true
-  auto_apply_labels: true
-  labeling_instructions:
-    - label: bug
-      instructions: "Fixes incorrect existing behavior (fix: PR title)."
-    - label: enhancement
-      instructions: "Adds a new feature or user-visible capability (feat: PR title)."
-    - label: documentation
-      instructions: "Changes only documentation, with no runtime code change."
-    - label: accessibility
-      instructions: "Removes a barrier for people with disabilities."
-    - label: refactor
-      instructions: "Restructures code without changing behavior (refactor: PR title)."
-    - label: performance
-      instructions: "Improves speed or resource usage (perf: PR title)."
-    - label: chore
-      instructions: "Changes tooling, CI, configuration or dependencies only (chore:, ci:, build: PR title)."
-    - label: tests
-      instructions: "Changes only tests, with no production code change."
-    - label: "area: backend"
-      instructions: "Touches files under apps/backend."
-    - label: "area: frontend"
-      instructions: "Touches files under apps/frontend."
-    - label: "area: desktop"
-      instructions: "Touches files under apps/desktop."
-    - label: "area: contracts"
-      instructions: "Touches files under packages/contracts or packages/domain-validation."
-    - label: "area: ci"
-      instructions: "Touches files under .github."
-    - label: breaking-change
-      instructions: "Changes an existing contract, API or stored format without a compatibility path."
-    - label: migration
-      instructions: "Adds or changes SQL migrations or the shape of stored data."
-    - label: security
-      instructions: "Changes input validation at boundaries, secret handling, authentication or permissions."
+  # PR labels are maintained by .github/workflows/pr-labels.yml.
+  suggested_labels: false
+  auto_apply_labels: false
   suggested_reviewers: false
   abort_on_close: true
   finishing_touches:

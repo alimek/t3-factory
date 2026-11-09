@@ -1,0 +1,65 @@
+name: PR labels
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: pr-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # The privileged workflow reads trusted base-branch configuration, never PR code.
+      - name: Synchronize path labels
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: true
+      - name: Synchronize title labels
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const params = { ...context.repo, issue_number: context.issue.number };
+            // A queued run must reconcile the current title, not its older event payload.
+            const { data: pull } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.issue.number,
+            });
+            const typeLabels = {
+              feat: "enhancement",
+              fix: "bug",
+              docs: "documentation",
+              refactor: "refactor",
+              perf: "performance",
+              test: "tests",
+              chore: "chore",
+              ci: "chore",
+              build: "chore",
+              style: "chore",
+              revert: "chore",
+            };
+            const match = pull.title.match(/^(feat|fix|perf|revert|refactor|docs|test|build|ci|chore|style)(?:\([a-z0-9._/-]+\))?(!)?: [^ ].*$/);
+            const desired = new Set();
+            if (match) {
+              desired.add(typeLabels[match[1]]);
+              if (match[2]) desired.add("breaking-change");
+            }
+            const current = new Set(pull.labels.map((label) => label.name));
+            const managed = new Set([...Object.values(typeLabels), "breaking-change"]);
+            for (const name of managed) {
+              if (current.has(name) && !desired.has(name)) {
+                await github.rest.issues.removeLabel({ ...params, name });
+              }
+            }
+            const labels = [...desired].filter((name) => !current.has(name));
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({ ...params, labels });
+            }

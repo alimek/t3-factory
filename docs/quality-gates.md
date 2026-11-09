@@ -98,6 +98,28 @@ CI can validate PR fields before merge and the actual message after a main push,
 but cannot inspect an unsaved override in the merge dialog. Require **Quality
 gate** in branch protection for the CI check to block merges.
 
+## Pull request labels
+
+The **PR labels** workflow maintains change-type labels from the Conventional
+Commit title, area labels from changed paths, `migration` for migration files,
+and `breaking-change` for a title with `!` before the colon. Types without a
+dedicated label (`build`, `ci`, `style` and `revert`) use `chore`. A title that
+fails the PR-title syntax check has no automatic change-type or breaking label
+until corrected.
+
+Labels are reconciled when a PR opens, reopens, is edited or receives commits,
+including draft and fork PRs. When a title or changed paths no longer match,
+the workflow removes the corresponding labels; unrelated labels are preserved.
+Authors and agents add `security` with `gh pr edit --add-label security` for
+boundary validation, secrets, authentication or permission changes, and
+`accessibility` with `gh pr edit --add-label accessibility` when removing a
+barrier for people with disabilities.
+
+The workflow runs through `pull_request_target` using trusted base-branch
+configuration without checking out or executing PR code. A new workflow or label
+configuration takes effect after merge, so the PR introducing it does not prove
+live automation. CodeRabbit's automatic labeling is disabled to keep one owner.
+
 ## Static correctness policy
 
 The root `vite.config.ts` owns lint and formatting for the workspace through
