@@ -5,7 +5,11 @@ import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { workerEvent } from "./support/worker.ts";
 import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
-import { fillHumanReviewChanges } from "./support/keyboard-shortcuts.ts";
+import {
+  fillHumanReviewChanges,
+  installDesktopBridge,
+  shortcutMod,
+} from "./support/keyboard-shortcuts.ts";
 
 beforeEach(async ({ app }) => {
   await workerEvent(app.baseUrl, "prepare");
@@ -172,6 +176,31 @@ test("a reopened Draft continues typing at the end of its prompt", async ({
   // Assert
   await expect(prompt).toBeFocused();
   await expect(prompt).toHaveText("UI caret draft continued");
+});
+
+test("a Draft opened by keyboard from a focused prompt continues typing at the end of its prompt", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const prompt = screen.getByLabel("Initial prompt", { exact: false });
+  await installDesktopBridge(browser);
+  await app.open("/runs/new");
+  await prompt.fill("UI keyboard caret draft");
+  await app.open("/studio/flows");
+  await app.open("/runs/new");
+  await screen.getByRole("button", "New Run (+)").tap();
+  await prompt.fill("UI keyboard caret newer");
+  await expect(prompt).toBeFocused();
+  await browser.keyboard.press(`${shortcutMod}+1`);
+  await expect(prompt).toHaveText("UI keyboard caret draft");
+
+  // Act
+  await browser.keyboard.type(" continued");
+
+  // Assert
+  await expect(prompt).toHaveText("UI keyboard caret draft continued");
 });
 
 test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({

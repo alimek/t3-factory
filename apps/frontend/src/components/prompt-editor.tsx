@@ -118,9 +118,12 @@ function endOf(root: HTMLElement) {
   return range;
 }
 
-/** Focuses the editor with the caret after its content, unless it already holds the focus. */
-function focusAtEnd(root: HTMLElement) {
-  if (root.contains(document.activeElement)) return;
+/**
+ * Focuses the editor with the caret after its content. Unless `force`d, an editor that already
+ * holds the focus keeps its caret.
+ */
+function focusAtEnd(root: HTMLElement, force = false) {
+  if (!force && root.contains(document.activeElement)) return;
   root.focus();
   const selection = document.getSelection();
   selection?.removeAllRanges();
@@ -128,22 +131,43 @@ function focusAtEnd(root: HTMLElement) {
 }
 
 /**
- * Places the caret at the end of `root` whenever a draft opens, including the first mount, and
- * returns the last selection inside it; a live Range follows later edits.
+ * Rewrites `element` from `segments` only when they differ from what it spells (`shown`), so
+ * typing keeps the caret. Returns whether it rewrote.
+ */
+function showSegments(
+  element: HTMLElement,
+  shown: { current: readonly PromptSegment[] | undefined },
+  segments: readonly PromptSegment[],
+) {
+  if (shown.current && sameSegments(shown.current, segments)) return false;
+  writeSegments(element, segments);
+  shown.current = segments;
+  return true;
+}
+
+/**
+ * Places the caret at the end of `root` whenever a draft opens, including the first mount.
+ * `last` is the last selection inside it; a live Range follows later edits. Each commit reports
+ * through `contentReplaced` whether it rewrote the editor: opening another draft does, while a
+ * fresh draft receiving its id as the user types does not, so only the latter keeps the caret.
  */
 function useCaret(root: RefObject<HTMLElement | null>, draftId: string | undefined) {
-  const caret = useRef<Range>(undefined);
-  useEffect(() => focusAtEnd(root.current!), [root, draftId]);
+  const last = useRef<Range>(undefined);
+  const replaced = useRef(false);
+  useEffect(() => focusAtEnd(root.current!, replaced.current), [root, draftId]);
   useEffect(() => {
     const remember = () => {
       const selection = document.getSelection();
       if (selection?.rangeCount && root.current?.contains(selection.anchorNode))
-        caret.current = selection.getRangeAt(0).cloneRange();
+        last.current = selection.getRangeAt(0).cloneRange();
     };
     document.addEventListener("selectionchange", remember);
     return () => document.removeEventListener("selectionchange", remember);
   }, [root]);
-  return caret;
+  const contentReplaced = (value: boolean) => {
+    replaced.current = value;
+  };
+  return { last, contentReplaced };
 }
 
 /** Inserts a reference to each image at `at`, each followed by a space, with the caret after. */
@@ -211,10 +235,7 @@ export function PromptEditor({
 
   useLayoutEffect(() => {
     const element = root.current!;
-    if (!shown.current || !sameSegments(shown.current, segments)) {
-      writeSegments(element, segments);
-      shown.current = segments;
-    }
+    caret.contentReplaced(showSegments(element, shown, segments));
     labelReferences(element, images);
   });
 
@@ -233,7 +254,7 @@ export function PromptEditor({
   async function insertImages(files: readonly File[], replaceSelection = false) {
     const element = root.current;
     if (!element) return;
-    const saved = caret.current;
+    const saved = caret.last.current;
     const at = saved && element.contains(saved.startContainer) ? saved : endOf(element);
     await attachImages(files, (attached) => {
       if (!element.isConnected) return undefined;
