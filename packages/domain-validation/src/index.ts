@@ -600,10 +600,25 @@ export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
         value: {
           ...name.value,
           expectedRevision: raw.expectedRevision as number,
-          graph: raw.graph as FlowGraph,
+          graph: trimLocalExitNames(raw.graph as FlowGraph),
           ...(workspace ? { workspace } : {}),
         },
       };
+}
+
+/** Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly. */
+function trimLocalExitNames(graph: FlowGraph): FlowGraph {
+  return {
+    ...graph,
+    blocks: graph.blocks.map((block) =>
+      block.kind === "agent"
+        ? {
+            ...block,
+            localExits: block.localExits.map((exit) => ({ ...exit, name: exit.name.trim() })),
+          }
+        : block,
+    ),
+  };
 }
 
 /** Whether any Agent block in the graph references the saved Agent definition. */

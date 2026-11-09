@@ -91,6 +91,20 @@ it("a Flow-local exit named like another local exit's ID is refused, since worke
   ]);
 });
 
+it("a Flow-local exit name is saved trimmed, so a worker reporting the bare name matches it", async (c) => {
+  // Arrange
+  const { save, review } = await reviewedFlow(c);
+
+  // Act
+  const saved = await save({ ...review, localExits: [{ ...escalate, name: "  escalate  " }] });
+
+  // Assert
+  assert(saved.ok);
+  const block = saved.value.graph.blocks[1];
+  assert(block?.kind === "agent");
+  expect(block.localExits.map((exit) => exit.name)).toStrictEqual(["escalate"]);
+});
+
 it("an Agent exit added later with a local exit's name makes every Flow using that Agent not ready", async (c) => {
   // Arrange
   const { factory, flowId, save, review, editReviewer } = await reviewedFlow(c);
