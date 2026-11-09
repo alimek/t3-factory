@@ -1,0 +1,12 @@
+version: 1.0
+
+# Issues are specs in the GitHub tracker; review pull requests only.
+issues: false
+
+user_settings:
+  min_severity: minor
+  skeptic_pass: true
+
+  # One deeper review per push instead of findings trickling in over several pushes.
+  max_rounds: 2
+  default_thinking_level: medium

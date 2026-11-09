@@ -1,0 +1,29 @@
+"area: backend":
+  - changed-files:
+      - any-glob-to-any-file: "apps/backend/**"
+
+"area: frontend":
+  - changed-files:
+      - any-glob-to-any-file: "apps/frontend/**"
+
+"area: desktop":
+  - changed-files:
+      - any-glob-to-any-file: "apps/desktop/**"
+
+"area: landing":
+  - changed-files:
+      - any-glob-to-any-file: "apps/landing/**"
+
+"area: contracts":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/contracts/**"
+          - "packages/domain-validation/**"
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+migration:
+  - changed-files:
+      - any-glob-to-any-file: "apps/backend/src/migrations/**"
