@@ -192,6 +192,19 @@ function openWindow() {
   created.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith(`${appOrigin}/`)) event.preventDefault();
   });
+  // Electron silently cancels Reload and Close when a dirty Studio draft blocks unload;
+  // ask instead, and the decision must be synchronous to take effect.
+  created.webContents.on("will-prevent-unload", (event) => {
+    const choice = dialog.showMessageBoxSync(created, {
+      type: "warning",
+      buttons: ["Keep editing", "Discard changes"],
+      defaultId: 0,
+      cancelId: 0,
+      message: "Discard unsaved changes?",
+      detail: "Studio has unsaved changes. Keep editing to save them, or discard them to continue.",
+    });
+    if (choice === 1) event.preventDefault();
+  });
   created.once("ready-to-show", () => created.show());
   created.on("minimize", broadcast);
   created.on("restore", broadcast);
