@@ -168,7 +168,8 @@ const liveShim = (
     globalName: "factoryLive",
   })
 ).outputFiles[0].text;
-// The protocol range the current frontend declares, so the probe tracks protocol raises.
+// The protocol range this checkout's frontend declares; the probe first checks that the
+// packaged backend reports the same protocol, so it only probes a package of this checkout.
 const liveQuery = new URLSearchParams({
   protocol: String(FACTORY_PROTOCOL),
   minimum: String(FACTORY_MINIMUM_SERVER_PROTOCOL),
@@ -294,6 +295,11 @@ try {
   await stage("the packaged backend serves Factory MCP to harnesses", mcpReport);
 
   await stage("the host relay streams the backend's live connection snapshot", async () => {
+    const packaged = (await (await api("/api/protocol")).json()).value.protocol;
+    if (packaged !== FACTORY_PROTOCOL)
+      throw new Error(
+        `The packaged backend reports protocol ${packaged}, this checkout ${FACTORY_PROTOCOL}: package this checkout, then probe.`,
+      );
     await evaluate(9441, liveShim);
     const outcome = await withTimeout(evaluate(9441, openLiveSocket("hostLive")), 15_000);
     if (!outcome.open) throw new Error(`Live socket did not open: ${JSON.stringify(outcome)}`);
