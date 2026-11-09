@@ -64,6 +64,8 @@ let tray: Tray | null = null;
 let menuState: MenuState = {};
 /** Set only after the local user confirmed and the backend stopped in order. */
 let quitting = false;
+/** Quit waits for the window to unload, so a kept Studio draft still has its services. */
+let quitAfterWindowCloses = false;
 let installingUpdate = false;
 /** An approved client's install request was accepted and starts on the next tick. */
 let serverInstallAccepted = false;
@@ -204,6 +206,7 @@ function openWindow() {
       detail: "Studio has unsaved changes. Keep editing to save them, or discard them to continue.",
     });
     if (choice === 1) event.preventDefault();
+    else quitAfterWindowCloses = false;
   });
   created.once("ready-to-show", () => created.show());
   created.on("minimize", broadcast);
@@ -212,6 +215,7 @@ function openWindow() {
   created.on("closed", () => {
     window = null;
     applyMenuState(withoutOpenRun(menuState));
+    if (quitAfterWindowCloses) app.quit();
   });
   window = created;
   void created.loadURL(`${appOrigin}/`);
@@ -465,6 +469,12 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", (event) => {
     if (quitting) return;
     event.preventDefault();
+    if (window) {
+      quitAfterWindowCloses = true;
+      window.close();
+      return;
+    }
+    quitAfterWindowCloses = false;
     const finish = () => {
       approvedClient.close();
       quitting = true;
