@@ -98,6 +98,19 @@ CI can validate PR fields before merge and the actual message after a main push,
 but cannot inspect an unsaved override in the merge dialog. Require **Quality
 gate** in branch protection for the CI check to block merges.
 
+### Pull request review loop
+
+The `main` ruleset requires **Quality gate** and **PR title**, squash merges and
+resolved review threads. It does not require the branch to be up to date with
+`main`: merge `main` into a PR only to resolve a conflict, because every update
+reruns CI and the Sentinel review. A combination the checks exercise fails the
+quality gate on the push to `main`; one they do not exercise can still pass.
+
+Sentinel reviews a PR once it is ready, not while it is a draft. Open the PR as a
+draft, mark it ready (`gh pr ready`) once the local gate passes, and fix every
+open finding from one review round in a single push. Each push starts another
+review round of several minutes.
+
 ## Static correctness policy
 
 The root `vite.config.ts` owns lint and formatting for the workspace through
