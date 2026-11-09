@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: agent_exits
+-- Newest applied migration: drop_retired_history
 
 CREATE TABLE agent_revision_exits (
   agent_revision_id TEXT NOT NULL REFERENCES agent_revisions(id),
@@ -84,16 +84,6 @@ CREATE TABLE coordinator_settlements (
   attempted_at TEXT NOT NULL,
   PRIMARY KEY(run_id,thread_id,execution_id),
   FOREIGN KEY(run_id,thread_id,execution_id) REFERENCES run_executions(run_id,thread_id,execution_id)
-);
-
-CREATE TABLE coordinator_waits (
-  id TEXT PRIMARY KEY,
-  activation_id TEXT NOT NULL REFERENCES run_activations(id),
-  fingerprint TEXT NOT NULL,
-  acknowledgement_json TEXT NOT NULL,
-  target_binding_id TEXT REFERENCES run_thread_bindings(id),
-  target_execution_id TEXT,
-  attention_id TEXT NOT NULL REFERENCES run_attention(id)
 );
 
 CREATE TABLE "effect_sql_migrations" (
@@ -413,13 +403,6 @@ CREATE TABLE run_coordinator_commands (
   problem TEXT,
   intent_id TEXT REFERENCES operation_intents(id), cancelled_at TEXT);
 
-CREATE TABLE run_coordinator_obligations (
-  run_id TEXT NOT NULL REFERENCES run_coordinators(run_id),
-  source_key TEXT NOT NULL,
-  evidence_json TEXT NOT NULL,
-  PRIMARY KEY(run_id,source_key)
-);
-
 CREATE TABLE run_coordinators (
   run_id TEXT PRIMARY KEY REFERENCES runs(id),
   selection_json TEXT NOT NULL,
@@ -499,18 +482,6 @@ CREATE INDEX run_images_sha256 ON run_images(sha256)
 CREATE TRIGGER immutable_run_images_delete BEFORE DELETE ON run_images BEGIN SELECT RAISE(ABORT, 'Run images are immutable'); END;
 
 CREATE TRIGGER immutable_run_images_update BEFORE UPDATE ON run_images BEGIN SELECT RAISE(ABORT, 'Run images are immutable'); END;
-
-CREATE TABLE run_prepared_workers (
-  run_id TEXT NOT NULL REFERENCES runs(id),
-  block_id TEXT NOT NULL,
-  thread_id TEXT NOT NULL,
-  link TEXT,
-  intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),
-  prepared_at TEXT NOT NULL,
-  PRIMARY KEY (run_id, block_id),
-  UNIQUE (run_id, thread_id),
-  FOREIGN KEY (run_id, block_id) REFERENCES run_blocks(run_id, block_id)
-);
 
 CREATE TABLE run_presentation (
   run_id TEXT PRIMARY KEY REFERENCES runs(id),
@@ -677,7 +648,7 @@ CREATE TABLE worker_repositories (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE working_reports (
+CREATE TABLE "working_reports" (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL,
   block_id TEXT NOT NULL,
@@ -687,7 +658,7 @@ CREATE TABLE working_reports (
   message TEXT NOT NULL,
   acknowledgement_json TEXT NOT NULL,
   accepted_at TEXT NOT NULL,
-  replaced_at TEXT, retired_wait_id TEXT REFERENCES coordinator_waits(id),
+  replaced_at TEXT,
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
 
