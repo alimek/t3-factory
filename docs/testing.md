@@ -86,7 +86,9 @@ it("a whitespace-only Flow name is rejected and no draft is created", async (con
 ## Runner and Effect integration
 
 Backend tests run through Vite+ (`vp test run`) and import `it`, `expect`, and
-assertion narrowing from `@effect/vitest`. `pnpm test` runs the backend, desktop and frontend rule suites;
+assertion narrowing from `@effect/vitest`. `pnpm test` runs the backend, desktop and frontend rule suites, then
+repository script tests (`scripts/*.test.mjs`) with `node:test` through `pnpm test:scripts`; those
+scripts run in CI before dependencies install, so their tests need no workspace packages;
 `pnpm --filter @t3-factory/backend test test/flows.test.ts` selects a file.
 Build first on a fresh checkout: public-operation tests and spawned processes
 use the backend package's compiled exports.

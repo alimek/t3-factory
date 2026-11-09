@@ -7,7 +7,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
-    "test": "pnpm --filter @t3-factory/backend --filter @t3-factory/desktop --filter @t3-factory/frontend test",
+    "test": "pnpm --filter @t3-factory/backend --filter @t3-factory/desktop --filter @t3-factory/frontend test && pnpm test:scripts",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "start": "pnpm --filter @t3-factory/backend start",
     "dev": "node scripts/dev.mjs",
     "dev:prod": "node scripts/dev.mjs --production-data",
@@ -24,6 +25,7 @@
     "lint": "vp lint",
     "fallow": "fallow --fail-on-issues",
     "check:git-attribution": "node scripts/check-git-attribution.mjs",
+    "check:ui-evidence": "node scripts/check-ui-evidence.mjs",
     "prepare": "vp config --no-agent",
     "check": "pnpm format:check && pnpm fallow && pnpm build && pnpm lint && pnpm typecheck && pnpm test"
   },
