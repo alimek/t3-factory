@@ -53,6 +53,8 @@ export function runDetail(): RunDetail {
     repositories: [],
     startedAt: "2026-11-08T00:00:00Z",
     input: "Task",
+    segments: [{ type: "text", text: "Task" }],
+    images: [],
     gateOpen: true,
     generation: 1,
     definitions: {

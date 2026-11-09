@@ -126,6 +126,27 @@ it("an image Start freezes worker text with numbered references and lists every 
   );
 });
 
+it("an Archived Run read after restart returns its submitted segments and ordered images with duplicate names", async (c) => {
+  // Arrange
+  const f = await prepared(c);
+  await stageImages(f.f, allScreenshots);
+  const request = imageStart(f.input);
+  const started = await f.f.startRun(request);
+  assert(started.ok);
+  assert((await f.f.archiveRun(started.value.id)).ok);
+  await f.f.close();
+
+  // Act
+  const reopened = await f.h.open({ t3: f.t3 });
+
+  // Assert
+  const restored = await reopened.getRun(started.value.id);
+  assert(restored.ok);
+  expect(restored.value.lifecycle).toBe("archived");
+  expect(restored.value.images).toStrictEqual(request.images);
+  expect(restored.value.segments).toStrictEqual(request.segments);
+});
+
 it("an image Start whose image is not uploaded reports the missing digest and creates no Run", async (c) => {
   // Arrange
   const f = await prepared(c);

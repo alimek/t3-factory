@@ -102,6 +102,9 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
   return {
     ...run,
     lifecycle,
+    // Released Runs had text-only prompts.
+    segments: [{ type: "text", text: run.input }],
+    images: [],
     repositories: [],
     gateOpen: lifecycle === "settled",
     definitions: capturedDefinitions(snapshot),

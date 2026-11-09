@@ -721,7 +721,12 @@ export interface RunDetail extends RunSummary {
     readonly problem: string | null;
   } | null;
   readonly title: string;
+  /** The worker-readable prompt frozen at Start, with `[Image N: name]` references. */
   readonly input: string;
+  /** The prompt as accepted at Start; image segments name entries of `images`. */
+  readonly segments: readonly PromptSegment[];
+  /** Every image of the initial prompt in manifest order; position + 1 is its `Image N` ordinal. */
+  readonly images: readonly RunImage[];
   readonly definitions: RunDefinitions;
   readonly workspace: RunWorkspaceDetail;
   readonly activations: readonly RunActivation[];
