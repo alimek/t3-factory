@@ -300,7 +300,10 @@ try {
 
   await stage("the host relay streams the backend's live connection snapshot", async () => {
     // The same pair rule the live upgrade gate applies, plus the exact protocol of this checkout.
-    const packaged = (await (await api("/api/protocol")).json()).value;
+    const response = await api("/api/protocol");
+    if (!response.ok)
+      throw new Error(`The packaged backend answered /api/protocol with HTTP ${response.status}.`);
+    const packaged = (await response.json()).value;
     const declared = {
       protocol: FACTORY_PROTOCOL,
       minimumPeerProtocol: FACTORY_MINIMUM_SERVER_PROTOCOL,
