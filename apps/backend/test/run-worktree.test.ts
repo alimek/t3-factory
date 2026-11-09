@@ -319,3 +319,23 @@ it("a worktree Run settles once its visited Block finishes, with no worker for i
   expect(run.value.lifecycle).toBe("settled");
   expect(t3.launchCalls).toBe(1);
 });
+
+it("a rejected launch for a later Block keeps the worktree Run from settling without that Block's result", async (c) => {
+  // Arrange
+  const { f, t3, runId } = await answeredReview(c);
+  t3.rejectLaunch = true;
+
+  // Act
+  await f.reconcileRuns();
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(runId);
+  assert(run.ok);
+  expect(run.value.blocks[2]).toMatchObject({
+    threadId: null,
+    state: "error",
+    problem: "T3 rejected the worker launch.",
+  });
+  expect(run.value.lifecycle).toBe("active");
+});

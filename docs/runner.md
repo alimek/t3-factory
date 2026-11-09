@@ -303,8 +303,9 @@ settle an Active Run with an open gate automatically. That requires all of the f
 - Every visited Block's current activation has its worker's accepted final result with no
   later `working` report, and no attention is pending; every Human occurrence is answered.
   Unvisited branches need not run.
-- Every delivery is acknowledged, with no outstanding launch, handoff or send. Cancelled
-  operations, such as handoffs whose result was replaced, owe no delivery.
+- Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
+  cancelled because their result was replaced, and idle-worker preparations of
+  [earlier Runs](#run-workspace), owe no delivery; a rejected launch still holds settlement.
 - A fresh read finds every Block's worker thread [finished](#worker-thread-completion).
 
 Engine termination or a final report alone is insufficient. The local decision must still

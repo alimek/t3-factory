@@ -104,10 +104,12 @@ export function openRunnerSettle(
             settled_at: string | null;
           }>`SELECT generation,settled_at FROM runs WHERE id=${id}`;
           if (current?.generation !== run.generation || current.settled_at) return false;
-          // Cancelled operations, such as a replaced result's held handoffs, owe no delivery. An
-          // unbound worktree still owes the launches that join it.
+          // A replaced result's held handoffs are cancelled and owe no delivery, nor do idle-worker
+          // preparations Runs made before Factory stopped preparing them. A rejected launch is
+          // cancelled too, but its Block has no result. An unbound worktree still owes the launches
+          // that join it.
           const pending =
-            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state NOT IN ('acknowledged','cancelled') UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing'`;
+            yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing'`;
           if (pending.length) return false;
           const time = yield* now;
           yield* markSettled(sql, id, "automatic", time);
