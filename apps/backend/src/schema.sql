@@ -1,6 +1,13 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: drop_retired_history
+-- Newest applied migration: glossary_table_names
+
+CREATE TABLE "activation_messages" (
+  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
+  request_key TEXT NOT NULL UNIQUE,
+  input_fingerprint TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'planned' CHECK(state='planned')
+, accepted_json TEXT);
 
 CREATE TABLE agent_revision_exits (
   agent_revision_id TEXT NOT NULL REFERENCES agent_revisions(id),
@@ -72,19 +79,6 @@ CREATE TABLE coordinator_question_replies (
 
 CREATE TRIGGER immutable_coordinator_answer BEFORE UPDATE ON coordinator_question_replies
 BEGIN SELECT RAISE(ABORT,'Coordinator answer is immutable'); END;
-
-CREATE TABLE coordinator_revisits (
-  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
-  original_activation_id TEXT NOT NULL REFERENCES run_activations(id));
-
-CREATE TABLE coordinator_settlements (
-  run_id TEXT NOT NULL,
-  thread_id TEXT NOT NULL,
-  execution_id TEXT NOT NULL,
-  attempted_at TEXT NOT NULL,
-  PRIMARY KEY(run_id,thread_id,execution_id),
-  FOREIGN KEY(run_id,thread_id,execution_id) REFERENCES run_executions(run_id,thread_id,execution_id)
-);
 
 CREATE TABLE "effect_sql_migrations" (
   migration_id integer PRIMARY KEY NOT NULL,
@@ -254,6 +248,10 @@ CREATE TABLE projects (
   UNIQUE(endpoint, environment_id, project_id)
 );
 
+CREATE TABLE "repeated_visits" (
+  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
+  original_activation_id TEXT NOT NULL REFERENCES run_activations(id));
+
 CREATE TABLE "report_recoveries" (
   intent_id TEXT PRIMARY KEY REFERENCES operation_intents(id),
   attention_id TEXT UNIQUE REFERENCES run_attention(id),
@@ -421,13 +419,6 @@ CREATE TABLE run_coordinators (
   created_at TEXT NOT NULL,
   acknowledged_at TEXT
 , instruction_version INTEGER NOT NULL DEFAULT 0 CHECK(instruction_version IN (0,1)), freshness TEXT NOT NULL DEFAULT 'unknown', observed_at TEXT, pending_request_count INTEGER, queued_count INTEGER);
-
-CREATE TABLE run_delegations (
-  activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
-  request_key TEXT NOT NULL UNIQUE,
-  input_fingerprint TEXT NOT NULL,
-  state TEXT NOT NULL DEFAULT 'planned' CHECK(state='planned')
-, accepted_json TEXT);
 
 CREATE TABLE run_events (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -623,6 +614,15 @@ CREATE TABLE t3_connection (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   endpoint TEXT NOT NULL,
   context_id TEXT REFERENCES t3_authorization_contexts(id)
+);
+
+CREATE TABLE "t3_thread_settlements" (
+  run_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  execution_id TEXT NOT NULL,
+  attempted_at TEXT NOT NULL,
+  PRIMARY KEY(run_id,thread_id,execution_id),
+  FOREIGN KEY(run_id,thread_id,execution_id) REFERENCES run_executions(run_id,thread_id,execution_id)
 );
 
 CREATE TABLE tasks (

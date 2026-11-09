@@ -31,7 +31,7 @@ export function prepareCoordinatorHandoff(
           accepted_json: string;
           thread_id: string;
           result_id: string | null;
-        }>`SELECT a.id,COALESCE(v.original_activation_id,a.id) AS original_id,d.accepted_json,b.thread_id,(SELECT r.id FROM runtime_reports r WHERE r.activation_id=a.id AND r.status='finished' ORDER BY r.rowid DESC LIMIT 1) AS result_id FROM run_activations a JOIN run_delegations d ON d.activation_id=COALESCE((SELECT original_activation_id FROM coordinator_revisits WHERE activation_id=a.id),a.id) JOIN run_blocks b ON b.run_id=a.run_id AND b.block_id=a.block_id LEFT JOIN coordinator_revisits v ON v.activation_id=a.id WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} ORDER BY a.rowid DESC LIMIT 1`,
+        }>`SELECT a.id,COALESCE(v.original_activation_id,a.id) AS original_id,d.accepted_json,b.thread_id,(SELECT r.id FROM runtime_reports r WHERE r.activation_id=a.id AND r.status='finished' ORDER BY r.rowid DESC LIMIT 1) AS result_id FROM run_activations a JOIN activation_messages d ON d.activation_id=COALESCE((SELECT original_activation_id FROM repeated_visits WHERE activation_id=a.id),a.id) JOIN run_blocks b ON b.run_id=a.run_id AND b.block_id=a.block_id LEFT JOIN repeated_visits v ON v.activation_id=a.id WHERE a.run_id=${run.id} AND a.block_id=${intent.block_id} ORDER BY a.rowid DESC LIMIT 1`,
     );
     // An unresolved launch for the target holds its arrival.
     const pending = yield* database.transaction(
@@ -89,8 +89,8 @@ export function prepareCoordinatorHandoff(
             clientRequestId: intent.request_key,
             message: workerTurn(message, block!.public_id),
           };
-          yield* sql`UPDATE run_delegations SET accepted_json=${prior.accepted_json} WHERE activation_id=${plan.activationId}`;
-          yield* sql`INSERT INTO coordinator_revisits(activation_id,original_activation_id) VALUES(${plan.activationId},${prior.original_id})`;
+          yield* sql`UPDATE activation_messages SET accepted_json=${prior.accepted_json} WHERE activation_id=${plan.activationId}`;
+          yield* sql`INSERT INTO repeated_visits(activation_id,original_activation_id) VALUES(${plan.activationId},${prior.original_id})`;
           yield* sql`UPDATE run_activations SET phase='finished' WHERE id=${prior.id}`;
           yield* sql`UPDATE operation_intents SET target_json=${JSON.stringify({ ...target, threadId: prior.thread_id })} WHERE id=${intent.id}`;
         }
