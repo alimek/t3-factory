@@ -8,12 +8,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.tsx";
 
 const FLOW_INPUT_THUMBNAILS = 3;
 
-/**
- * Height of the Flow input card's prompt area when the Run has images: three 18 px prompt
- * lines, an 8 px gap, the 36 px thumbnail row and 10 px bottom padding.
- */
-export const FLOW_INPUT_IMAGES_PROMPT_HEIGHT = 108;
-
 /** Matches the worker's frozen `[Image N: name]` text: the ordinal is the manifest position + 1. */
 function imageLabel(image: RunImage, index: number) {
   return `Image ${index + 1}: ${image.name}`;

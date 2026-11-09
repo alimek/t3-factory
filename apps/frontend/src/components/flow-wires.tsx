@@ -15,7 +15,7 @@ import {
   blockInputPointForIndex,
   incomingApproachLane,
   incomingPortIndexForSource,
-} from "../flow-incoming-ports.ts";
+} from "../flow-geometry.ts";
 import {
   connectionWire,
   sameWire,

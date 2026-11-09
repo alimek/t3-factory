@@ -36,14 +36,8 @@ import { AutoArrangeButton, AutoArrangeStatus } from "../components/flow-arrange
 import { canvasPlacement, FlowCanvas, type DropAt } from "../components/flow-canvas.tsx";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls.tsx";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
-import { mergeGraphBounds } from "../canvas-fit.ts";
-import {
-  AUTHORING_PORTS,
-  authoringBlockHeight,
-  BLOCK_WIDTH,
-  FLOW_INPUT_WIDTH,
-} from "../flow-geometry.ts";
-import { blockHeightForIncomingFanIn, incomingFanIn } from "../flow-incoming-ports.ts";
+import { AUTHORING_DIMENSIONS } from "../components/canvas-dimensions.ts";
+import { createCanvasGeometry, CANVAS_FIT_PADDING } from "../flow-geometry.ts";
 import { useFlowLayoutSession } from "../use-flow-layout.ts";
 import { IssueLink, ReadinessPanel } from "../components/flow-readiness.tsx";
 import { FlowWorkspaceControl } from "../components/flow-workspace-control.tsx";
@@ -56,8 +50,6 @@ import {
   removeWire,
   replaceBlock,
   type BlockPosition,
-  type CanvasBlock,
-  type CanvasGraph,
   type FlowWire,
 } from "../flow-graph.ts";
 
@@ -350,35 +342,6 @@ const PANEL_WIDTH = 344;
 /** Matches `--duration-panel-out`; the reduced-motion fade is shorter and ends first. */
 const PANEL_CLOSE_MS = 140;
 
-const AUTHORING_FLOW_INPUT_HEIGHT = 88;
-const AUTHORING_FIT_PADDING = { x: 48, top: 64, bottom: 80 };
-
-function authoringBlockDisplayHeight(graph: CanvasGraph, block: CanvasBlock) {
-  return blockHeightForIncomingFanIn(
-    incomingFanIn(graph, block.id),
-    AUTHORING_PORTS,
-    authoringBlockHeight(block),
-  );
-}
-
-function authoringGraphBounds(graph: CanvasGraph) {
-  const input = graph.flowInput;
-  return mergeGraphBounds(
-    {
-      x: input.position.x,
-      y: input.position.y,
-      width: FLOW_INPUT_WIDTH,
-      height: AUTHORING_FLOW_INPUT_HEIGHT,
-    },
-    graph.blocks.map((block) => ({
-      x: block.position.x,
-      y: block.position.y,
-      width: BLOCK_WIDTH,
-      height: authoringBlockDisplayHeight(graph, block),
-    })),
-  );
-}
-
 export function FlowDetail({
   id,
   active,
@@ -407,8 +370,9 @@ export function FlowDetail({
   const viewport = useCanvasViewport({
     surface: canvas,
     scope: saved?.id === id ? id : null,
-    getBounds: () => authoringGraphBounds(canvasGraph(graph, agents)),
-    padding: AUTHORING_FIT_PADDING,
+    getBounds: () =>
+      createCanvasGeometry(canvasGraph(graph, agents), AUTHORING_DIMENSIONS).bounds(),
+    padding: CANVAS_FIT_PADDING,
     contentInsetY: 64,
     reservedRight,
     resize: "refit",
@@ -431,7 +395,9 @@ export function FlowDetail({
       savedGraph: draft.saved?.graph,
       change: draft.change,
       onAccepted: (acceptedGraph) =>
-        viewport.fit(authoringGraphBounds(canvasGraph(acceptedGraph, agents))),
+        viewport.fit(
+          createCanvasGeometry(canvasGraph(acceptedGraph, agents), AUTHORING_DIMENSIONS).bounds(),
+        ),
     },
   });
   function add(kind: FlowBlock["kind"], agent?: AgentDefinition, position?: BlockPosition) {

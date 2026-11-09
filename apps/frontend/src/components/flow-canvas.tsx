@@ -1,3 +1,4 @@
+import { AUTHORING_DIMENSIONS } from "./canvas-dimensions.ts";
 import { useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
 import { clientToGraphPoint, clampGraphPosition, type CanvasView } from "../canvas-viewport.ts";
 import type { CanvasViewport } from "../use-canvas-viewport.ts";
@@ -7,18 +8,17 @@ import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
 import {
   AUTHORING_PORTS,
-  authoringBlockHeight,
+  createCanvasGeometry,
   BLOCK_WIDTH,
   exitPoint,
   flowInputPoint,
 } from "../flow-geometry.ts";
 import {
   blockInputPointForIndex,
-  blockHeightForIncomingFanIn,
   incomingPortIndexForSource,
   incomingPortY,
   incomingWiresForBlock,
-} from "../flow-incoming-ports.ts";
+} from "../flow-geometry.ts";
 import {
   addWire,
   canConnect,
@@ -578,11 +578,10 @@ function GraphBlock({
         left: block.position.x,
         top: block.position.y,
         width: BLOCK_WIDTH,
-        minHeight: blockHeightForIncomingFanIn(
-          portCount,
-          AUTHORING_PORTS,
-          authoringBlockHeight(block),
-        ),
+        minHeight: createCanvasGeometry(
+          { ...graph, blocks: [block] },
+          AUTHORING_DIMENSIONS,
+        ).bodyHeight(block, portCount),
       }}
       aria-label={`Block ${name}`}
       data-block-id={block.id}

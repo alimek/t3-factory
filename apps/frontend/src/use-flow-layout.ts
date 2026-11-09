@@ -80,8 +80,11 @@ function useFlowLayoutWorker(profile: FlowLayoutProfile) {
           const elk = new ELK({ workerFactory: () => instance });
           instance.onerror = (event) => fail(event.message || "Auto-arrange failed. Try again.");
           instance.onmessageerror = () => fail("Could not read the arranged Flow. Try again.");
+          const resolvedGraph = canvasGraph(graph, agents);
           void elk
-            .layout(buildElkGraph(canvasGraph(graph, agents), layoutDimensions(profileRef.current)))
+            .layout(
+              buildElkGraph(resolvedGraph, layoutDimensions(profileRef.current, resolvedGraph)),
+            )
             .then((laidOut) => {
               if (pendingRequest.current?.generation !== id) return;
               const result = parseElkLayout(graph, laidOut);

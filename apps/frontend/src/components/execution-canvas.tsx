@@ -1,3 +1,4 @@
+import { EXECUTION_DIMENSIONS } from "./canvas-dimensions.ts";
 import { useRef, type ReactNode } from "react";
 import {
   attentionPresentation,
@@ -8,147 +9,59 @@ import {
 } from "@t3-factory/contracts";
 import { Bot, CircleHelp, Clock, User } from "lucide-react";
 import { CanvasZoomControls } from "./canvas-zoom-controls.tsx";
-import { fitGraphView, mergeGraphBounds } from "../canvas-fit.ts";
+import { fitGraphView } from "../canvas-fit.ts";
 import { selectExecutionTargets } from "../execution-focus.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { cn } from "@/lib/utils";
-import { canvasGraph, exitRecipients, type CanvasBlock, type CanvasGraph } from "../flow-graph.ts";
+import { canvasGraph, exitRecipients, type CanvasBlock } from "../flow-graph.ts";
 import { exitSourceLabel } from "./flow-wires.tsx";
 import {
   BLOCK_WIDTH,
   EXECUTION_PORTS,
-  executionBlockHeight,
+  createCanvasGeometry,
+  CANVAS_FIT_PADDING,
   FLOW_INPUT_WIDTH,
 } from "../flow-geometry.ts";
-import {
-  blockHeightForIncomingFanIn,
-  incomingFanIn,
-  incomingPortY,
-  incomingWiresForBlock,
-} from "../flow-incoming-ports.ts";
+import { incomingPortY, incomingWiresForBlock } from "../flow-geometry.ts";
 import { FlowInputIdentity, FlowInputNode } from "./flow-block.tsx";
-import { FLOW_INPUT_IMAGES_PROMPT_HEIGHT, FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
+import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
 import { clockTime, executionStateLabel, StatePill } from "./execution-state.tsx";
 import { useFlowLayoutSession } from "../use-flow-layout.ts";
 import { AutoArrangeButton, AutoArrangeStatus } from "./flow-arrange-control.tsx";
 import { FlowWires } from "./flow-wires.tsx";
 
-/** Fit never enlarges past 100 %, so a small Flow keeps the Figma block size. */
-/** Room left for the top-left badges and the bottom-left canvas controls. */
-const FIT_PADDING = { x: 48, top: 64, bottom: 80 };
-/** Flow input card on the execution canvas: border and identity rows above the prompt. */
-const EXECUTION_FLOW_INPUT_FRAME_HEIGHT = 76;
-/** An image-free prompt is one truncated line with its bottom padding. */
-const EXECUTION_FLOW_INPUT_PROMPT_LINE_HEIGHT = 26;
-
-function executionFlowInputHeight(run: RunDetail) {
-  return (
-    EXECUTION_FLOW_INPUT_FRAME_HEIGHT +
-    (run.images.length ? FLOW_INPUT_IMAGES_PROMPT_HEIGHT : EXECUTION_FLOW_INPUT_PROMPT_LINE_HEIGHT)
-  );
+/** Adapters supply execution facts, while geometry owns their sizes. */
+function executionGeometry(
+  run: RunDetail,
+  graph = canvasGraph(run.definitions.flow.graph, run.definitions.agents),
+  unavailable = false,
+) {
+  return createCanvasGeometry(graph, EXECUTION_DIMENSIONS, {
+    prompt: run.images.length ? "images" : "line",
+    reservedFooterCount: 2,
+    emptyGraphSize: { width: 640, height: 420 },
+    footerCount: (block) => {
+      const recorded = run.blocks.find((item) => item.blockId === block.id);
+      const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
+      const attention = blockAttention(run, block.id);
+      return (
+        Number(attention.needsInput || attention.problem) +
+        Number(observation === "stale" || observation === "unknown")
+      );
+    },
+  });
 }
-const EXECUTION_FOOTER_HEIGHT = 32;
-
-function executionBlockDisplayHeight(run: RunDetail, block: CanvasBlock, unavailable: boolean) {
-  const graph = run.definitions.flow.graph;
-  const recorded = run.blocks.find((item) => item.blockId === block.id);
-  const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
-  const attention = blockAttention(run, block.id);
-  let footers = 0;
-  if (attention.needsInput || attention.problem) footers += 1;
-  if (observation === "stale" || observation === "unknown") footers += 1;
-  const body = blockHeightForIncomingFanIn(
-    incomingFanIn(graph, block.id),
-    EXECUTION_PORTS,
-    executionBlockHeight(block),
-  );
-  return body + footers * EXECUTION_FOOTER_HEIGHT;
-}
-
-/** The captured graph drawn with the exits its captured Agent revisions offered. */
-function capturedGraph(run: RunDetail) {
-  return canvasGraph(run.definitions.flow.graph, run.definitions.agents);
-}
-
 function executionLayoutProfile(run: RunDetail) {
-  const graph = capturedGraph(run);
-  const blockHeights: Record<string, number> = {};
-  for (const block of graph.blocks) {
-    // Reserve both possible status footers so polling cannot make arranged nodes overlap.
-    const body = blockHeightForIncomingFanIn(
-      incomingFanIn(graph, block.id),
-      EXECUTION_PORTS,
-      executionBlockHeight(block),
-    );
-    blockHeights[block.id] = body + 2 * EXECUTION_FOOTER_HEIGHT;
-  }
+  const graph = canvasGraph(run.definitions.flow.graph, run.definitions.agents);
+  const geometry = executionGeometry(run, graph);
   return {
     kind: "execution" as const,
-    flowInputHeight: executionFlowInputHeight(run),
-    blockHeights,
+    flowInputHeight: geometry.flowInputBox.height,
+    blockHeights: Object.fromEntries(
+      graph.blocks.map((block) => [block.id, geometry.reservedHeight(block)]),
+    ),
   };
-}
-
-function executionLayout(run: RunDetail, unavailable: boolean) {
-  return {
-    ports: EXECUTION_PORTS,
-    blockHeight: (block: CanvasBlock) => executionBlockDisplayHeight(run, block, unavailable),
-  };
-}
-
-function graphBounds(
-  graph: CanvasGraph,
-  flowInputHeight: number,
-  blockHeight: (block: CanvasBlock) => number,
-) {
-  const input = graph.flowInput;
-  const bounds = mergeGraphBounds(
-    {
-      x: input.position.x,
-      y: input.position.y,
-      width: FLOW_INPUT_WIDTH,
-      height: flowInputHeight,
-    },
-    graph.blocks.map((block) => ({
-      x: block.position.x,
-      y: block.position.y,
-      width: BLOCK_WIDTH,
-      height: blockHeight(block),
-    })),
-  );
-  if (!graph.blocks.length) {
-    return {
-      ...bounds,
-      width: Math.max(640, bounds.width),
-      height: Math.max(420, bounds.height),
-    };
-  }
-  return bounds;
-}
-
-/** Only the focus targets determine zoom and center. */
-function executionFocusView(
-  targetIds: readonly string[],
-  graph: CanvasGraph,
-  flowInputHeight: number,
-  blockHeight: (block: CanvasBlock) => number,
-  width: number,
-  height: number,
-) {
-  const ids = new Set(targetIds);
-  const rect = (block: CanvasBlock) => ({
-    ...block.position,
-    width: BLOCK_WIDTH,
-    height: blockHeight(block),
-  });
-  const targets = graph.blocks.filter((block) => ids.has(block.id)).map(rect);
-  const [first, ...rest] = targets;
-  if (!first) {
-    const bounds = graphBounds(graph, flowInputHeight, blockHeight);
-    return fitGraphView(bounds, width, height, FIT_PADDING, 0);
-  }
-  return fitGraphView(mergeGraphBounds(first, rest), width, height, FIT_PADDING, 0);
 }
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -476,12 +389,7 @@ function ExecutionBlock({
         <span
           aria-hidden
           style={{
-            height:
-              blockHeightForIncomingFanIn(
-                incoming.length,
-                EXECUTION_PORTS,
-                executionBlockHeight(block),
-              ) - executionBlockHeight(block),
+            height: executionGeometry(run, undefined, unavailable).incomingGrowth(block),
           }}
         />
         <ExecutionBlockFooters
@@ -520,9 +428,12 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
     agents: run.definitions.agents,
     profile: executionLayoutProfile(run),
   });
-  const wireLayout = executionLayout(run, observationUnavailable);
+  const displayedGraph = canvasGraph(graph, run.definitions.agents);
+  const geometry = executionGeometry(run, displayedGraph, observationUnavailable);
+  const wireLayout = { ports: EXECUTION_PORTS, blockHeight: geometry.blockHeight };
   return {
-    graph: canvasGraph(graph, run.definitions.agents),
+    graph: displayedGraph,
+    geometry,
     wireRoutes,
     wireLayout,
     accepted,
@@ -557,6 +468,7 @@ export function ExecutionCanvas({
     graph,
     wireRoutes,
     wireLayout,
+    geometry,
     accepted,
     arrangePending,
     arrangeError,
@@ -564,25 +476,18 @@ export function ExecutionCanvas({
     autoArrange,
   } = useExecutionLayout(run, observationUnavailable);
   const surface = useRef<HTMLElement>(null);
-  const flowInputHeight = executionFlowInputHeight(run);
+  const flowInputHeight = geometry.flowInputBox.height;
   const focusTargets = selectExecutionTargets(run.blocks);
   const { view, fitFlow, zoom, startPan, onKeyDown, following, focusChanged, followActive } =
     useCanvasViewport({
       surface,
       scope: run.id,
       shown,
-      getBounds: () => graphBounds(graph, flowInputHeight, wireLayout.blockHeight),
+      getBounds: geometry.bounds,
       getFocusView: (width, height) =>
-        executionFocusView(
-          focusTargets,
-          graph,
-          flowInputHeight,
-          wireLayout.blockHeight,
-          width,
-          height,
-        ),
+        fitGraphView(geometry.focusBounds(focusTargets), width, height, CANVAS_FIT_PADDING, 0),
       focusTargets,
-      padding: FIT_PADDING,
+      padding: CANVAS_FIT_PADDING,
       resize: "preserve",
       fitRevision: accepted,
       onTap: () => onSelect(null),

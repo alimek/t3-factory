@@ -1,42 +1,138 @@
-import type { FlowInputBlock } from "@t3-factory/contracts";
-import type { CanvasBlock } from "./flow-graph.ts";
+import type { FlowBlock, FlowGraph, FlowInputBlock } from "@t3-factory/contracts";
+import { sameWire, type WireSource, type CanvasBlock } from "./flow-graph.ts";
 
-export const BLOCK_WIDTH = 240;
+import { AUTHORING_DIMENSIONS, EXECUTION_DIMENSIONS } from "./components/canvas-dimensions.ts";
+import { mergeGraphBounds } from "./canvas-fit.ts";
+import type { CanvasGraph } from "./flow-graph.ts";
 
-/** The Flow input block is a little narrower than work blocks. */
-export const FLOW_INPUT_WIDTH = 200;
-
-/**
- * The Flow input's output port, measured from its outer top edge: on its title row, level
- * with a block's input port, so a target placed at the same y gets a straight wire.
- */
-export const FLOW_INPUT_OUTPUT_Y = 51;
-
-type Point = { x: number; y: number };
-
-/** Vertical anchors of a block's ports, measured from the block's outer top edge. */
 export type BlockPorts = { inputY: number; firstExitY: number; exitRow: number };
-
-/** Figma Editor/CanvasBlock: header 30, title 44, divider 1, exit rows 24. */
-export const AUTHORING_PORTS: BlockPorts = { inputY: 51, firstExitY: 91, exitRow: 24 };
-
-/** Authoring canvas block height from its configured exits. */
-export function authoringBlockHeight(block: CanvasBlock) {
-  return 87 + block.exits.length * AUTHORING_PORTS.exitRow;
+type Point = { x: number; y: number };
+export type CanvasDimensions = {
+  readonly block: {
+    readonly width: number;
+    readonly border: number;
+    readonly header: number;
+    readonly title: number;
+    readonly divider: number;
+    readonly exitPaddingTop: number;
+    readonly exitPaddingBottom: number;
+    readonly anchorBorder: number;
+    readonly inputY: number;
+    readonly exitRow: number;
+    readonly footer: number;
+    readonly portSize: number;
+  };
+  readonly flowInput: {
+    readonly width: number;
+    readonly border: number;
+    readonly header: number;
+    readonly title: number;
+    readonly outputY: number;
+    readonly portSize: number;
+    readonly promptLine: number;
+    readonly promptImages: number;
+  };
+};
+function dimensionPorts({ block }: CanvasDimensions): BlockPorts {
+  return {
+    inputY: block.inputY,
+    firstExitY:
+      block.anchorBorder +
+      block.header +
+      block.title +
+      block.divider +
+      block.exitPaddingTop +
+      block.exitRow / 2,
+    exitRow: block.exitRow,
+  };
 }
+export const BLOCK_WIDTH = AUTHORING_DIMENSIONS.block.width;
+export const FLOW_INPUT_WIDTH = AUTHORING_DIMENSIONS.flowInput.width;
+export const FLOW_INPUT_OUTPUT_Y = AUTHORING_DIMENSIONS.flowInput.outputY;
+export const AUTHORING_PORTS = dimensionPorts(AUTHORING_DIMENSIONS);
+export const EXECUTION_PORTS = dimensionPorts(EXECUTION_DIMENSIONS);
+/** Space for top badges and bottom controls; fit never enlarges beyond 100%. */
+export const CANVAS_FIT_PADDING = { x: 48, top: 64, bottom: 80 };
 
-/** Flow input card height on the authoring canvas (header + title rows). */
-export const AUTHORING_FLOW_INPUT_HEIGHT = 76;
+type GeometryFacts = {
+  readonly prompt?: "none" | "line" | "images";
+  readonly footerCount?: (block: CanvasBlock) => number;
+  readonly reservedFooterCount?: number;
+  readonly emptyGraphSize?: { readonly width: number; readonly height: number };
+};
 
-/**
- * Figma Run/ExecBlock inside a 1.5 px frame: header 26 (input port on its row),
- * title 62 (name + state, Agent, activity), divider 1, exit rows 22 after 3 px.
- */
-export const EXECUTION_PORTS: BlockPorts = { inputY: 18.5, firstExitY: 104.5, exitRow: 22 };
-
-/** Run/ExecBlock height without its attention or observation footers. */
-export function executionBlockHeight(block: CanvasBlock) {
-  return EXECUTION_PORTS.firstExitY - 11 + block.exits.length * EXECUTION_PORTS.exitRow + 6.5;
+export function createCanvasGeometry(
+  graph: CanvasGraph,
+  dimensions: CanvasDimensions,
+  facts: GeometryFacts = {},
+) {
+  const rows = dimensions.block;
+  const input = dimensions.flowInput;
+  const baseHeight = (block: CanvasBlock) =>
+    rows.border * 2 +
+    rows.header +
+    rows.title +
+    rows.divider +
+    rows.exitPaddingTop +
+    rows.exitPaddingBottom +
+    block.exits.length * rows.exitRow;
+  const bodyHeight = (block: CanvasBlock, fanIn = incomingFanIn(graph, block.id)) =>
+    blockHeightForIncomingFanIn(fanIn, dimensionPorts(dimensions), baseHeight(block));
+  const blockHeight = (block: CanvasBlock) =>
+    bodyHeight(block) + (facts.footerCount?.(block) ?? 0) * rows.footer;
+  const flowInputBox = {
+    ...graph.flowInput.position,
+    width: input.width,
+    height:
+      input.border * 2 +
+      input.header +
+      input.title +
+      (facts.prompt === "images"
+        ? input.promptImages
+        : facts.prompt === "line"
+          ? input.promptLine
+          : 0),
+  };
+  const blockBox = (block: CanvasBlock) => ({
+    ...block.position,
+    width: rows.width,
+    height: blockHeight(block),
+  });
+  const bounds = () => {
+    const box = mergeGraphBounds(flowInputBox, graph.blocks.map(blockBox));
+    return graph.blocks.length || !facts.emptyGraphSize
+      ? box
+      : {
+          ...box,
+          width: Math.max(box.width, facts.emptyGraphSize.width),
+          height: Math.max(box.height, facts.emptyGraphSize.height),
+        };
+  };
+  const incomingPorts = (block: CanvasBlock) =>
+    incomingWiresForBlock(graph, block.id).map((source, index) => ({
+      source,
+      ...blockInputPointForIndex(block, index, dimensionPorts(dimensions)),
+    }));
+  const reservedHeight = (block: CanvasBlock) =>
+    Math.max(
+      blockHeight(block),
+      bodyHeight(block) + (facts.reservedFooterCount ?? 0) * rows.footer,
+    );
+  const focusBounds = (targetIds: readonly string[]) => {
+    const ids = new Set(targetIds);
+    const [first, ...rest] = graph.blocks.filter((block) => ids.has(block.id)).map(blockBox);
+    return first ? mergeGraphBounds(first, rest) : bounds();
+  };
+  return {
+    flowInputBox,
+    blockHeight,
+    bodyHeight,
+    bounds,
+    incomingPorts,
+    reservedHeight,
+    focusBounds,
+    incomingGrowth: (block: CanvasBlock) => bodyHeight(block) - baseHeight(block),
+  };
 }
 
 export function exitPoint(block: CanvasBlock, exitId: string, ports = AUTHORING_PORTS) {
@@ -75,7 +171,7 @@ export function wirePath(from: Point, to: Point, approachLane = 0) {
 
 const CORNER = 4;
 /** Ports are 10 px circles centred on the block edge; edges start and end at their rims. */
-export const PORT_RIM = 5;
+export const PORT_RIM = EXECUTION_DIMENSIONS.block.portSize / 2;
 
 /** A polyline with 4 px rounded corners (Figma execution edges). */
 export function roundedPolyline(points: readonly Point[]) {
@@ -125,4 +221,70 @@ export function orthogonalWirePath(exit: Point, input: Point, below: number, app
     { x: approachX, y: to.y },
     to,
   ]);
+}
+
+/** Minimum vertical gap between incoming port anchors on the same block (world px). */
+const INCOMING_PORT_SPACING = 18;
+
+function incomingFanIn(graph: FlowGraph, targetBlockId: string) {
+  let count = graph.flowInput.targetBlockIds.includes(targetBlockId) ? 1 : 0;
+  count += graph.connections.filter(
+    (connection) => connection.targetBlockId === targetBlockId,
+  ).length;
+  return count;
+}
+
+/** Flow input first, then configured connections in graph order. */
+export function incomingWiresForBlock(
+  graph: FlowGraph,
+  targetBlockId: string,
+): readonly WireSource[] {
+  const wires: WireSource[] = [];
+  if (graph.flowInput.targetBlockIds.includes(targetBlockId)) {
+    wires.push({ kind: "flow-input" });
+  }
+  for (const connection of graph.connections) {
+    if (connection.targetBlockId === targetBlockId) {
+      wires.push({
+        kind: "exit",
+        sourceBlockId: connection.sourceBlockId,
+        exitId: connection.exitId,
+      });
+    }
+  }
+  return wires;
+}
+
+export function incomingPortIndexForSource(
+  graph: FlowGraph,
+  targetBlockId: string,
+  wire: WireSource,
+) {
+  const wires = incomingWiresForBlock(graph, targetBlockId);
+  const index = wires.findIndex((item) =>
+    sameWire({ source: item, targetBlockId }, { source: wire, targetBlockId }),
+  );
+  return index >= 0 ? index : 0;
+}
+
+export function incomingPortY(index: number, ports: BlockPorts) {
+  return ports.inputY + index * INCOMING_PORT_SPACING;
+}
+
+export function blockInputPointForIndex(block: FlowBlock, index: number, ports: BlockPorts): Point {
+  return { x: block.position.x, y: block.position.y + incomingPortY(index, ports) };
+}
+
+export function elkInputPortId(targetBlockId: string, index: number) {
+  return `in:${targetBlockId}:${index}`;
+}
+
+/** Horizontal lane offset for backward manual routes so returns do not share one vertical. */
+export function incomingApproachLane(index: number) {
+  return index * 14;
+}
+
+function blockHeightForIncomingFanIn(fanIn: number, ports: BlockPorts, baseHeight: number) {
+  // Leave room for the last input circle without moving the existing exit rows.
+  return Math.max(baseHeight, incomingPortY(Math.max(0, fanIn - 1), ports) + 12);
 }
