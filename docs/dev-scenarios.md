@@ -78,6 +78,14 @@ closed; keyboard menus and Rename return focus to the row. Mouse layouts omit �
 devices retain it. Settled stays one line even with recorded repository details. These are simulated T3
 facts, not repository changes or live GitHub state.
 
+**Run number coverage.** Every seeded Run receives its global Run number at Start, so each open
+and Settled row shows a `#N` pill after the Project title (compact Settled rows place it between the
+Project icon and title), and the opened Run's top bar meta line leads with it. Open **Demo · Working ·
+Improve the project picker**, read its number from `/api/run-navigation`, then press **Mod+K** and search
+`N` and `#N`: only that Run matches by number, and a longer number sharing the prefix does not. The
+seed cannot create a Run without a number, which exists only in older stored data; the backend Run
+navigation test covers its `null` number and the pill renders nothing for it.
+
 **Native T3 settlement coverage.** Per-Block settlement after a current `finished`
 report and confirmed worker completion is covered by the controlled backend Run
 settlement tests, including handoff Blocks while the Run remains Active and

@@ -43,6 +43,7 @@ import { ContextMenuItem as RowMenuItem } from "./ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { ActivityAge, SidebarRow, SidebarRowsProvider } from "./sidebar-row.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
+import { RunNumber } from "./run-number.tsx";
 import { repositorySummary, RunRepositories } from "./run-repositories.tsx";
 import { cn } from "../lib/utils.ts";
 
@@ -698,15 +699,17 @@ function RunRow({
       ) : (
         <span className="flex min-w-0 items-center gap-2 text-2xs text-muted-foreground">
           <ProjectIcon icon={run.project.projectIcon} faviconUrl={run.project.faviconUrl} inline />
-          <span className="min-w-0 flex-1 truncate">{run.project.title}</span>
+          <span className="min-w-0 truncate">{run.project.title}</span>
+          <RunNumber number={run.number} aria-hidden />
           <state.Icon
             aria-hidden
             strokeWidth={1.5}
-            className={cn("size-3.5 shrink-0", state.className)}
+            className={cn("ml-auto size-3.5 shrink-0", state.className)}
           />
           <ActivityAge at={run.lastActivityAt} />
         </span>
       )}
+      {compact && <RunNumber number={run.number} aria-hidden />}
       <span
         className={cn(
           "block min-w-0 truncate text-sm leading-tight font-medium",

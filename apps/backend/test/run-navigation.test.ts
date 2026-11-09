@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { repositoryRun, siblingRuns } from "./support/navigation.ts";
+import { repositoryRun, siblingRuns, unnumberedRun } from "./support/navigation.ts";
 
 it("unchanged worker observations change neither navigation metadata nor the last activity time", async (c) => {
   // Arrange
@@ -191,4 +191,36 @@ it("snoozing an open Run leaves execution, attention and history unchanged", asy
   const navigation = await f.listRunNavigation();
   assert(navigation.ok);
   expect(navigation.value[0]?.presentation).toStrictEqual({ snoozed: true, woke: false });
+});
+
+it("navigation identifies a started Run with the same number as Run detail", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+  const started = await f.startRun(input);
+  assert(started.ok);
+  const detail = await f.getRun(started.value.id);
+  assert(detail.ok);
+
+  // Act
+  const navigation = await f.listRunNavigation();
+
+  // Assert
+  assert(navigation.ok);
+  expect(detail.value.number).toBeGreaterThan(0);
+  expect(navigation.value[0]?.number).toBe(detail.value.number);
+});
+
+it("navigation and Run detail preserve an absent stored Run number", async (c) => {
+  // Arrange
+  const { f, runId } = await unnumberedRun(c);
+
+  // Act
+  const navigation = await f.listRunNavigation();
+
+  // Assert
+  assert(navigation.ok);
+  expect(navigation.value[0]?.number).toBeNull();
+  const detail = await f.getRun(runId);
+  assert(detail.ok);
+  expect(detail.value.number).toBeNull();
 });

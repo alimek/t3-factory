@@ -37,6 +37,7 @@ import {
   RunAttentionDetails,
 } from "../components/run-attention.tsx";
 import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
+import { RunNumber } from "../components/run-number.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
 import { blockVisits, ExecutionCanvas } from "../components/execution-canvas.tsx";
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
@@ -352,6 +353,12 @@ function RunTopBar({
           {run.title}
         </h1>
         <p className={cn(metaClass, "flex min-w-0 items-center gap-1.5 whitespace-nowrap")}>
+          {run.number !== null && (
+            <>
+              <RunNumber number={run.number} />
+              <span aria-hidden>·</span>
+            </>
+          )}
           <span className="truncate font-medium">{project?.title ?? "Project"}</span>
           {unavailable && (
             <span className="inline-flex items-center gap-1 rounded-sm border bg-muted px-1.5 py-px font-medium text-muted-foreground">
