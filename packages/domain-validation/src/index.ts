@@ -741,7 +741,13 @@ export function resolveAgentModel(
   return { provider, model };
 }
 
-export { effectiveExits, HUMAN_EXITS, type EffectiveExit, type ExitSource } from "./block-exits.ts";
+export {
+  effectiveExits,
+  inheritedExits,
+  HUMAN_EXITS,
+  type EffectiveExit,
+  type ExitSource,
+} from "./block-exits.ts";
 export {
   CLIENT_LABEL_LIMIT,
   FACTORY_MINIMUM_PEER_PROTOCOL,

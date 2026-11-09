@@ -31,12 +31,16 @@ data ([testing policy](testing.md)). Native T3 links in simulated Runs are fixtu
 
 ## Scenario catalog
 
-The Atlas demo repository has three saved Agents (product engineer, code reviewer, accessibility reviewer), five ready Flows (focused change, build/review/decision, parallel review, parallel review from
-one prompt, build and review in a worktree) and an incomplete release-checklist Flow. Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
-The Agents carry their exits: the product engineer **Ready for review**, both reviewers **Approved**. Most blocks offer those inherited exits;
+The Atlas demo repository has four saved Agents (product engineer, code reviewer, accessibility reviewer and exit contract reviewer), five ready Flows (focused change, build/review/decision, parallel review, parallel review from
+one prompt, build and review in a worktree) and three incomplete Flows (release checklist, exit configuration repair and a hidden exit connection). Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
+The Agents carry their exits: the product engineer **Ready for review**, the code and accessibility reviewers **Approved**. Most blocks offer those inherited exits;
 **Focused change** hides the engineer's exit and adds the Flow-local **Done**, and **Build, review and decide** hides the code reviewer's
-**Approved** and adds the local **Ready for your decision**. Open a block's configuration to see the read-only **From Agent** and **Local**
-exits, and the review step's locked **Approve** and **Request changes**.
+**Approved** and adds the local **Ready for your decision**. Open a block's configuration to see the **Exits from Agent** rows with **Hide in this Flow** / **Show in this Flow**, editable **Local exits · only in this Flow**
+cards, and the review step's locked **Approve** and **Request changes**.
+**Exit configuration needs repair** starts with the **Exit contract review** block's inherited **pass** and **github-url**, hidden **needs-human**, and a local **github-url** requiring a message.
+The Agent was revised after wiring **fail** to **Apply review changes**: readiness names the removed **fail** and the **github-url** name conflict, and **Start Run** is disabled.
+Rename the local exit and delete the removed-exit wire to restore readiness; changes survive Save and reload. **Hidden exit connection** keeps a wire from the hidden inherited **Approved** exit on **Review implementation**.
+Choose **Show in this Flow** to repair it, or remove the connection. It can be saved while blocked. These scenarios use public definition operations and launch no model; backend tests cover the full validation matrix.
 In Studio → Agents, the exits table edits the same inherited definitions. Rename the code reviewer’s **Approved** exit and its wires remain connected; remove it and **Parallel review** shows a readiness issue with **Start Run** disabled. Save each Agent edit before reopening the Flow. These authoring checks use the existing scenario; no Run needs to be launched.
 The worktree Flow is saved with **New worktree · default branch** (the simulator resolves it to `origin/main`); every other
 ready Flow is saved with the **Project checkout** workspace, and the unsaved release-checklist Flow

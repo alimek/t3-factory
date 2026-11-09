@@ -124,5 +124,81 @@ export async function createDemoFlows(
     },
     { mode: "worktree", base: { kind: "default" } },
   );
+  await createExitReadinessScenarios(factory, agents.reviewer, agents.worker);
   return { simple, review, parallel, parallelStart, worktree };
+}
+
+/** Ready wiring followed by an Agent edit exposes saved, repairable exit-contract issues. */
+async function createExitReadinessScenarios(
+  factory: Factory,
+  reviewerId: string,
+  workerId: string,
+) {
+  const template = requireSuccess(await factory.getAgent(reviewerId));
+  const reviewer = requireSuccess(
+    await factory.createAgent({
+      name: "Demo · Exit contract reviewer",
+      prompt: template.prompt,
+      execution: template.execution,
+      exits: [
+        exit("pass", "pass"),
+        { ...exit("fail", "fail"), messageRequired: true },
+        exit("needs-human", "needs-human"),
+      ],
+    }),
+  );
+  const reviewBlock = agentBlock("reviewer", "Exit contract review", reviewer.id, 320, 120, {
+    hidden: ["needs-human"],
+    local: [
+      {
+        ...exit("github-url-local", "github-url"),
+        description: "A fix is ready. Include its GitHub URL in the message.",
+        messageRequired: true,
+      },
+    ],
+  });
+  await saveFlow(factory, "Demo · Exit configuration needs repair", {
+    flowInput: flowInput("reviewer"),
+    blocks: [reviewBlock, agentBlock("worker", "Apply review changes", workerId, 700, 120)],
+    connections: [
+      { sourceBlockId: "reviewer", exitId: "fail", targetBlockId: "worker" },
+      { sourceBlockId: "reviewer", exitId: "github-url-local", targetBlockId: "worker" },
+    ],
+  });
+  requireSuccess(
+    await factory.updateAgent(reviewer.id, {
+      name: reviewer.name,
+      prompt: reviewer.prompt,
+      execution: reviewer.execution,
+      expectedRevision: reviewer.revision,
+      exits: [
+        exit("pass", "pass"),
+        exit("github-url-agent", "github-url"),
+        exit("needs-human", "needs-human"),
+      ],
+    }),
+  );
+  const hiddenFlowId = await saveFlow(factory, "Demo · Hidden exit connection", {
+    flowInput: flowInput("reviewer"),
+    blocks: [
+      agentBlock("reviewer", "Review implementation", reviewerId, 320, 120),
+      agentBlock("worker", "Apply review changes", workerId, 700, 120),
+    ],
+    connections: [{ sourceBlockId: "reviewer", exitId: "approved", targetBlockId: "worker" }],
+  });
+  const hiddenFlow = requireSuccess(await factory.getFlow(hiddenFlowId));
+  requireSuccess(
+    await factory.updateFlow(hiddenFlowId, {
+      name: hiddenFlow.name,
+      expectedRevision: hiddenFlow.revision,
+      graph: {
+        ...hiddenFlow.graph,
+        blocks: hiddenFlow.graph.blocks.map((block) =>
+          block.kind === "agent" && block.id === "reviewer"
+            ? { ...block, hiddenExitIds: ["approved"] }
+            : block,
+        ),
+      },
+    }),
+  );
 }

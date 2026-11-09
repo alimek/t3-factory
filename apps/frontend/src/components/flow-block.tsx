@@ -68,16 +68,28 @@ export function BlockExits({
         return (
           <li key={exit.id} className="relative flex h-6 items-center gap-1.5 pr-3.5 pl-3">
             <span className="truncate text-2xs tracking-label text-muted-foreground">
-              {exitSourceLabel(exit)}
+              {exit.unavailable ? `Agent · ${exit.unavailable}` : exitSourceLabel(exit)}
             </span>
             <span className="flex-1" />
-            <span className="truncate font-mono text-xs font-medium text-foreground">
+            <span
+              className={cn(
+                "truncate font-mono text-xs font-medium text-foreground",
+                exit.unavailable && "text-attention line-through",
+              )}
+            >
               {exit.name || "Unnamed exit"}
             </span>
             <span className="sr-only">
               {connectionPrefix} {recipients || "finish here"}
             </span>
-            {port(exit)}
+            {exit.unavailable ? (
+              <span
+                aria-hidden
+                className="absolute -right-1.5 size-3 rounded-full border-[1.5px] border-attention bg-background"
+              />
+            ) : (
+              port(exit)
+            )}
           </li>
         );
       })}
