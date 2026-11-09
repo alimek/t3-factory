@@ -53,6 +53,7 @@ import { api, ApiError } from "../api.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
 import { RunInitialPrompt } from "../components/run-prompt.tsx";
+import { PanelResizeHandle, type PanelBounds } from "../components/panel-resize.tsx";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -168,6 +169,14 @@ function useEscapeToDeselect(active: boolean, deselect: () => void) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, deselect]);
 }
+
+/** The context rail and floating block details share one user-resizable width. */
+const sidePanelBounds: PanelBounds = {
+  variable: "--factory-run-panel-width",
+  storageKey: "factory.runSidePanelWidth",
+  min: 280,
+  max: 640,
+};
 
 /** The Run context rail starts open where it fits beside the canvas (Figma C02 hides it on compact). */
 function wideViewport() {
@@ -609,7 +618,7 @@ function BlockDetails({
       ref={panel}
       tabIndex={-1}
       aria-label="Block details"
-      className="absolute top-3 right-3 bottom-3 z-20 flex w-85 max-w-[calc(100%-1.5rem)] flex-col rounded-xl border bg-card shadow-panel outline-none"
+      className="absolute top-3 right-3 bottom-3 z-20 flex w-[var(--factory-run-panel-width,21.25rem)] max-w-[calc(100%-1.5rem)] flex-col rounded-xl border bg-card shadow-panel outline-none"
     >
       <header className="flex items-start gap-2.5 px-4 pt-4 pb-3">
         <KindIcon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
@@ -738,6 +747,7 @@ function BlockDetails({
           Selecting never answers or clears attention
         </p>
       </footer>
+      <PanelResizeHandle label="Resize block details" side="left" bounds={sidePanelBounds} />
     </aside>
   );
 }
@@ -756,33 +766,37 @@ function RunContext({
   return (
     <aside
       aria-label="Run context"
-      className="flex w-80 shrink-0 flex-col gap-6 overflow-auto border-l bg-background px-5 py-5"
+      className="relative flex w-[var(--factory-run-panel-width,20rem)] max-w-[50%] shrink-0 border-l bg-background"
     >
-      <RunAttentionDetails run={run} observationUnavailable={observationUnavailable} />
-      <RootWork run={run} />
-      <CoordinatorActivations run={run} />
-      <PendingIntents run={run} />
-      {run.repositories.some((worker) => worker.branch || worker.pullRequests.length > 0) && (
-        <ContextSection title="Branches and pull requests" label="Run repositories">
-          <RunRepositories workers={run.repositories} links />
+      <PanelResizeHandle label="Resize Run context" side="left" bounds={sidePanelBounds} />
+      <div className="flex min-w-0 flex-1 flex-col gap-6 overflow-auto px-5 py-5">
+        <RunAttentionDetails run={run} observationUnavailable={observationUnavailable} />
+        <RootWork run={run} />
+        <CoordinatorActivations run={run} />
+        <PendingIntents run={run} />
+        {run.repositories.some((worker) => worker.branch || worker.pullRequests.length > 0) && (
+          <ContextSection title="Branches and pull requests" label="Run repositories">
+            <RunRepositories workers={run.repositories} links />
+          </ContextSection>
+        )}
+        <ContextSection title="Initial prompt" label="Run input">
+          <RunInitialPrompt run={run} />
         </ContextSection>
-      )}
-      <ContextSection title="Initial prompt" label="Run input">
-        <RunInitialPrompt run={run} />
-      </ContextSection>
-      <ContextSection title="Flow revision">
-        <p className="text-sm text-emphasis-foreground">
-          {run.definitions.flow.name} — captured at Start. Later Flow edits do not change this Run.
-        </p>
-      </ContextSection>
-      <RunWorkspace run={run} />
-      <ContextSection title="Project">
-        <p className="text-sm text-emphasis-foreground">
-          {observed.project?.title ?? "Project"}
-          {unavailable ? " — unavailable in T3. History stays readable." : ""}
-        </p>
-      </ContextSection>
-      <WorkPeriods run={run} />
+        <ContextSection title="Flow revision">
+          <p className="text-sm text-emphasis-foreground">
+            {run.definitions.flow.name} — captured at Start. Later Flow edits do not change this
+            Run.
+          </p>
+        </ContextSection>
+        <RunWorkspace run={run} />
+        <ContextSection title="Project">
+          <p className="text-sm text-emphasis-foreground">
+            {observed.project?.title ?? "Project"}
+            {unavailable ? " — unavailable in T3. History stays readable." : ""}
+          </p>
+        </ContextSection>
+        <WorkPeriods run={run} />
+      </div>
     </aside>
   );
 }
