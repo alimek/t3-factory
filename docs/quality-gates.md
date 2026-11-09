@@ -21,7 +21,11 @@ The hook first checks attribution in the commits being pushed, then runs
 | 3    | `pnpm build`        | Compile errors; produces the `dist/` output that workspace packages export and later steps read                                         |
 | 4    | `pnpm lint`         | Vite+ lint rule violations (`vite.config.ts` `lint`, type-aware, warnings fail)                                                         |
 | 5    | `pnpm typecheck`    | Type errors in every workspace package, backend test code and `tests/*.e2e.ts`                                                          |
-| 6    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+ (see [testing policy](testing.md))                                                                  |
+| 6    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
+
+During implementation, run the cheap static steps (`pnpm format:check`,
+`pnpm fallow`, and `pnpm lint` after build) and the affected package's tests before
+handing work back; the full `pnpm check` remains required before push.
 
 The hook checks the working tree, including uncommitted changes, not only the
 pushed commits; commit or discard local changes before pushing so the result
@@ -41,8 +45,11 @@ GitHub ruleset setting; adding a workflow alone does not enable that requirement
 
 Run `pnpm check` from the repository root for the same sequence locally.
 
-For frontend changes, **UI evidence attachments** also checks the PR body's Before
-and After image links. It does not inspect image content or prove the final UI;
+For frontend changes, **UI evidence attachments** runs
+`scripts/check-ui-evidence.mjs --pr <number>` to check the PR body's Before and
+After image links. Run the same check locally with
+`pnpm check:ui-evidence --body-file <path>` (`-` for stdin) or
+`pnpm check:ui-evidence --pr <number>`. It does not inspect image content or prove the final UI;
 follow the [verification evidence requirements](../.agents/skills/verify-t3-factory/SKILL.md#evidence).
 
 When running `pnpm lint` or `pnpm typecheck` separately in a fresh checkout,
