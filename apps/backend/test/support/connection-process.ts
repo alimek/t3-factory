@@ -1,4 +1,4 @@
-import { openFactory } from "@t3-factory/backend";
+import { openFactory } from "../../src/index.ts";
 const databasePath = process.argv[2];
 if (!databasePath) throw new Error("Expected database path");
 const factory = await openFactory({ databasePath });

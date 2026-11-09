@@ -1,8 +1,10 @@
 import "vite-plus/test/config";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite-plus";
+import { defaultServerConditions, defineConfig } from "vite-plus";
 
 export default defineConfig({
+  // Tests run the shared packages from source, so a result reflects the working tree.
+  ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } },
   test: {
     environment: "node",
     include: ["test/*.test.ts"],

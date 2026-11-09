@@ -1,6 +1,6 @@
 import type { TestContext } from "@effect/vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import type { Factory } from "@t3-factory/backend";
+import type { Factory } from "../../src/index.ts";
 import { runtimeMcpHandler } from "../../src/runtime-mcp.ts";
 
 /**

@@ -71,7 +71,7 @@ workers share one worktree; its project root stays the Run's project identity.
 - Factory never removes the worktree; T3's cleanup rules apply to it.
 - **Earlier prepared workers.** Runs started before this contract prepared idle threads for
   later Agent Blocks. Migration `070` cancels unresolved preparations; their acknowledged idle
-  threads stay recorded as history and in T3. A first visit already queued as a send to a
+  threads stay in T3, and migration `073` discards Factory's record of them. A first visit already queued as a send to a
   prepared thread keeps its target and request key, and that thread becomes the Block's worker;
   the send is released without waiting, since the thread has never run, and is delivered or
   recovered like any other send. A Block of such a Run that has not been reached
@@ -238,13 +238,14 @@ worker reports.
   keep the question as the turn's final message, and records nothing. A `working` report with an
   exit is `EXIT_NOT_ALLOWED`, and one without a message is `MESSAGE_REQUIRED`, all with repair
   guidance.
-- Waiting reports accepted before retirement stay readable as history: their questions,
-  acknowledgements, settled attention and work-period report status are kept. Upgrading settles
-  each pending question as `upgraded-to-working` and makes the latest one of a Block's latest
-  activation that activation's current `working` report, with the question as its message, even
-  after an earlier result. That report is marked as derived by the upgrade, not reported by the
-  Agent; the upgrade sends nothing and resumes no worker. Request report treats the upgraded
-  work period like one idle in `working`, although it keeps its historical waiting status.
+- Waiting reports accepted before retirement keep their questions, settled attention and
+  work-period report status. Upgrading settles each pending question as `upgraded-to-working`
+  and makes the latest one of a Block's latest activation that activation's current `working`
+  report, with the question as its message, even after an earlier result. That report's
+  `retired-wait:` id marks it as derived by the upgrade, not reported by the Agent; the upgrade
+  sends nothing and resumes no worker. Request report treats the upgraded work period like one
+  idle in `working`, although it keeps its historical waiting status. Migration `073` discards
+  the wait records with their acknowledgements.
 
 Report metadata retains fingerprints and references, not a second message archive.
 [Block ids](t3-integration.md#factory-mcp-and-block-ids) defines the tool contract.
