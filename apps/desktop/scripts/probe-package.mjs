@@ -15,6 +15,7 @@ import { createServer } from "node:https";
 import { arch, release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { FACTORY_MINIMUM_SERVER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
 import { build } from "esbuild";
 import { WebSocketServer } from "ws";
 
@@ -167,7 +168,11 @@ const liveShim = (
     globalName: "factoryLive",
   })
 ).outputFiles[0].text;
-const liveQuery = "protocol=3&minimum=3";
+// The protocol range the current frontend declares, so the probe tracks protocol raises.
+const liveQuery = new URLSearchParams({
+  protocol: String(FACTORY_PROTOCOL),
+  minimum: String(FACTORY_MINIMUM_SERVER_PROTOCOL),
+}).toString();
 
 /** Page script: opens a live socket as `window[name]`, recording frames and its close. */
 const openLiveSocket = (name, query = liveQuery) => `(async () => {
