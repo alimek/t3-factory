@@ -238,7 +238,8 @@ An open harness session keeps the tool list it read at start; new tools reach th
 Factory MCP is stateless Streamable HTTP on the host-local listener only: the approved-client
 listener answers `/mcp` with `host_only`, and a request whose `Origin` is not the listener's own
 origin is refused, so a browser page cannot drive it. It requires no credential. It exposes
-`factory_get_block({ blockId })`, read-only `factory_get_run({ blockId })` and
+`factory_get_block({ blockId })`, read-only `factory_get_run({ blockId })`,
+read-only `factory_get_run_image({ blockId, imageId })` and
 `factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working` or `finished`.
 A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED` and current guidance.
 `factory_report` and `factory_context` are not exposed.
@@ -256,7 +257,9 @@ A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED
   workers not to share it.
 - **Installation freshness.** The `$factory-block` skill is part of installation readiness.
   Readiness compares each installed copy with the backend's exact skill text, so any skill change
-  marks earlier copies outdated. A missing or outdated skill is repairable and blocks Start.
+  marks earlier copies outdated. The skill explains `inputs.images` and tells workers to fetch
+  relevant images with `factory_get_run_image`, not every image automatically.
+  A missing or outdated skill is repairable and blocks Start.
   Repair does not rewrite running harness sessions: a worker keeps the instructions and tool
   schema already in its context until the harness reloads them.
 - **Exit names.** The tool accepts the exact captured exit name or ID; an ambiguous match
@@ -287,9 +290,41 @@ through this tool. `inputs.results` identifies the exact report that caused the 
 ids. Other visits' reports and unrelated graph neighbors are not inputs to that visit. Flow-input visits have no incoming result.
 A result the source Block replaces after hand-off does not change the inputs of a visit it already started.
 
+`inputs.images` is the ordered manifest of the Run's immutable initial images, with entries
+`{ imageId, ordinal, name, mimeType, sizeBytes }`. Its 1-based ordinal matches `[Image N: name]` in the Run's input,
+including when names repeat. Runs without images return an empty list. Block reads return metadata, never image bytes;
+the tool descriptions and read guidance explain the labels and [on-demand retrieval](#run-image-reads).
+
 The result message is plain text: it can describe decisions, include artifact URLs or give repository paths. No output schema
 declaration is required, and Factory does not automatically fetch linked artifacts. An Agent's prompt can specify an expected
 format when the next step needs one; the reporting contract's message requirements still apply.
 
 `factory_get_run({ blockId })` returns the Run number, title, input, state and each Block's state and latest result. It grants no
 routing authority.
+
+### Run image reads
+
+`factory_get_run_image({ blockId, imageId })` resolves the Block id by the same rules as other Factory tools, then
+looks up the image only in that Block's Run manifest. It accepts no path, URL, storage digest or T3 upload id as an
+alternate lookup. Success returns text identifying the image id, ordinal and name plus exactly one MCP image-content
+item containing the stored original MIME type and bytes, without resizing or recompression. A URL or base64 embedded
+in a text/JSON result is not the image-content contract.
+
+Every worker of the Run can use this read regardless of activation: a Flow-input worker, a downstream checkout launch,
+a worktree Block's worker launched on its first arrival, a revisit or a later user conversation. The same immutable images and
+label bindings remain available; a worker that received launch attachments can fetch an image again. The host-local
+MCP and Block-id access boundary above is unchanged.
+
+Malformed arguments return `IMAGE_ID_REQUIRED` for a missing image id or `INVALID_ARGUMENT` for other malformed
+arguments; existing Block-id validation still applies. `UNKNOWN_IMAGE` means the id is not in this Run's manifest,
+including an id belonging to another Run. Missing or corrupt stored bytes return `IMAGE_UNAVAILABLE`; a transient read
+failure returns `IMAGE_READ_FAILED` and may be retried. Errors carry the requested image identity when known and never
+image bytes.
+
+Reads create no intent, turn, activation, handoff, attention or execution/lifecycle change and are safe to repeat after
+a lost response. A failed read does not fail the Block or raise attention: the worker decides whether it can continue
+and explains blockers through normal conversation and reporting. Missing bytes required for a Flow-input launch instead
+cause the [launch-time Block error](runner.md#run-images). Image reads grant no authority to replay a handoff or launch.
+
+Controlled tests prove discovery and MCP image transport, not model vision. Live harness image-result compatibility
+remains **UNVERIFIED**; see [bounded live verification](installation.md#bounded-live-verification).

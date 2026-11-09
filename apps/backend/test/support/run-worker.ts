@@ -1,7 +1,7 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { boundWorktreeReview, prepared } from "./prepared-runner.ts";
-import { imageStart, screenshots, stageImages } from "./run-images.ts";
+import { imageRequest, startedImageFanOut } from "./run-images.ts";
 
 const WORKER_THREAD = "thread-1";
 const WORKER_EXECUTION = "execution-1";
@@ -69,7 +69,7 @@ function seedFactoryWorker(
 /** A first or later visit message: the Block skill, the Block id line, then the turn's body. */
 export function workerMessage(body: string) {
   return new RegExp(
-    `^\\$factory-block\\n\\nFactory Block id: [0-9a-f-]{36}\\. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block\\.\\n\\n${body.replaceAll(".", "\\.")}$`,
+    `^\\$factory-block\\n\\nFactory Block id: [0-9a-f-]{36}\\. Pass it as blockId to factory_get_block, factory_get_run, factory_get_run_image and factory_update_block\\.\\n\\n${body.replaceAll(".", "\\.")}$`,
   );
 }
 
@@ -205,11 +205,17 @@ export async function reportedWorker(
 /** As `reportedWorker`, started with the image fixture's prompt. */
 export async function reportedImageWorker(c: TestContext) {
   const fixture = await workerStart(c);
-  await stageImages(fixture.f, Object.values(screenshots));
-  const f = await startedWorker(fixture, true, imageStart(fixture.input));
+  const f = await startedWorker(fixture, true, await imageRequest(fixture));
   assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   finishWorker(f);
   return f;
+}
+
+/** The image fan-out Run with both Flow-input workers launched; `blockId` is Entry worker's. */
+export async function launchedImageFanOut(c: TestContext) {
+  const f = await startedImageFanOut(c);
+  assert((await f.f.reconcileRuns()).ok);
+  return { ...f, blockId: launchedBlockId(f.t3) };
 }
 
 /** A reported single worker whose thread is finished in T3. */
@@ -352,8 +358,11 @@ export async function revisitReportingWorker(c: TestContext) {
 }
 
 /** Entry worker finished and the Review answered: Parallel work's first arrival waits to be sent. */
-export async function answeredReview(c: TestContext) {
-  const setup = await boundWorktreeReview(c);
+export async function answeredReview(
+  c: TestContext,
+  request?: Parameters<typeof boundWorktreeReview>[1],
+) {
+  const setup = await boundWorktreeReview(c, request);
   const { f, t3, runId, entryBlockId } = setup;
   assert((await f.runtime.submit(workerFinal(entryBlockId))).code === "ACCEPTED");
   t3.engineStatus = "completed";
@@ -368,8 +377,11 @@ export async function answeredReview(c: TestContext) {
 
 /** Parallel work's first turn on its own worker finished with a "Done" result, which returns to
  * Entry worker. */
-export async function finishedParallelWork(c: TestContext) {
-  const setup = await answeredReview(c);
+export async function finishedParallelWork(
+  c: TestContext,
+  request?: Parameters<typeof boundWorktreeReview>[1],
+) {
+  const setup = await answeredReview(c, request);
   const { f, t3, project } = setup;
   assert((await f.reconcileRuns()).ok);
   const launched = [...t3.launches.values()][1]!;

@@ -40,11 +40,28 @@ const tools: Tool[] = [
   {
     name: "factory_get_block",
     description:
-      "Read your Block's current visit: state, why it was activated, its inputs, exits and allowed reports.",
+      "Read your Block's current visit: state, why it was activated, its inputs, exits and allowed reports. inputs.images is an ordered manifest {imageId, ordinal, name, mimeType, sizeBytes}; ordinal N matches [Image N: name] in the Run input. Fetch an image with factory_get_run_image; this read carries no image bytes.",
     inputSchema: {
       type: "object",
       properties: { blockId: blockIdProperty },
       required: ["blockId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "factory_get_run_image",
+    description:
+      "Return one original image of the Run's initial prompt as image content. Fetch only images relevant to your task. This read is read-only and safe to repeat.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        blockId: blockIdProperty,
+        imageId: {
+          type: "string",
+          description: "An imageId from factory_get_block inputs.images.",
+        },
+      },
+      required: ["blockId", "imageId"],
       additionalProperties: false,
     },
   },
@@ -64,6 +81,7 @@ const operations = {
   factory_update_block: "submit",
   factory_get_block: "block",
   factory_get_run: "run",
+  factory_get_run_image: "image",
 } as const;
 
 /** Runtime operations behind the tools; each receives the call's arguments. */
@@ -71,6 +89,7 @@ export interface RuntimeTools {
   submit(input: unknown): Promise<RuntimeReply>;
   block(input: unknown): Promise<RuntimeReply>;
   run(input: unknown): Promise<RuntimeReply>;
+  image(input: unknown): Promise<RuntimeReply>;
 }
 
 async function callTool(
@@ -80,9 +99,25 @@ async function callTool(
 ): Promise<CallToolResult> {
   try {
     const body = await runtime[operations[name]]({ arguments: args });
+    const { data, ...reply } = body;
+    const text = { type: "text" as const, text: JSON.stringify(reply) };
+    if (reply.code === "IMAGE") {
+      if (!data || !reply.image) throw new Error("Image reply is missing content");
+      return {
+        isError: false,
+        content: [
+          text,
+          {
+            type: "image",
+            data: Buffer.from(data).toString("base64"),
+            mimeType: reply.image.mimeType,
+          },
+        ],
+      };
+    }
     return {
-      isError: !SUCCESS_CODES.includes(body.code),
-      content: [{ type: "text", text: JSON.stringify(body) }],
+      isError: !SUCCESS_CODES.includes(reply.code),
+      content: [text],
     };
   } catch {
     return {

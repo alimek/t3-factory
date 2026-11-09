@@ -58,7 +58,7 @@ export function workerTurn(body: string, blockId: string, images: readonly Launc
   return [
     "$factory-block",
     "",
-    `Factory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block.`,
+    `Factory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run, factory_get_run_image and factory_update_block.`,
     ...(images.length
       ? [
           `Initial prompt images are attached to this message as ${names}; references like [Image N: name] in the initial prompt point to them.`,

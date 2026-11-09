@@ -1,3 +1,13 @@
+import type { RunImageMimeType } from "@t3-factory/contracts";
+
+type RuntimeImage = {
+  readonly imageId: string;
+  readonly ordinal: number;
+  readonly name: string;
+  readonly mimeType: RunImageMimeType;
+  readonly sizeBytes: number;
+};
+
 /** Report protocol shapes shared by the runtime boundary and the Runner that consumes it. */
 export interface RuntimeReport {
   readonly status: "working" | "finished";
@@ -6,6 +16,9 @@ export interface RuntimeReport {
 }
 export type RuntimeReply = {
   readonly code: string;
+  readonly image?: RuntimeImage;
+  /** Internal MCP image content; excluded from the JSON reply. */
+  readonly data?: Uint8Array;
   readonly reportId?: string;
   readonly acceptedAt?: string;
   readonly state?: string;
@@ -21,6 +34,7 @@ export type RuntimeReply = {
   }[];
   readonly inputs?: {
     readonly input: string;
+    readonly images: readonly RuntimeImage[];
     readonly results: readonly {
       readonly reportId: string;
       readonly blockId: string;
@@ -50,7 +64,13 @@ const NEXT: Record<RuntimeReport["status"], string> = {
 };
 
 /** Replies that report success to the harness; every other code is a tool error. */
-export const SUCCESS_CODES: readonly string[] = ["ACCEPTED", "RUN_ARCHIVED", "BLOCK", "RUN"];
+export const SUCCESS_CODES: readonly string[] = [
+  "ACCEPTED",
+  "RUN_ARCHIVED",
+  "BLOCK",
+  "RUN",
+  "IMAGE",
+];
 
 /** Every report for an archived Run succeeds and changes nothing. */
 export const RUN_ARCHIVED: RuntimeReply = {
