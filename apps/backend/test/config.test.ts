@@ -5,7 +5,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfiguration } from "@t3-factory/backend/config";
+import { loadConfiguration } from "../src/config.ts";
 
 const source = fileURLToPath(new URL("../../../", import.meta.url));
 const checkoutMessage = /FACTORY_HOME must be an absolute path outside the Factory source checkout/;

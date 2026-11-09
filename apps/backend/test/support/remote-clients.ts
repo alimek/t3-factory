@@ -6,12 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClientKind, FactoryClient, Result, ServerUpdateAction } from "@t3-factory/contracts";
 import { FACTORY_MINIMUM_SERVER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
-import { loadConfiguration } from "@t3-factory/backend/config";
-import {
-  startServer,
-  type ApplicationUpdates,
-  type ServerOptions,
-} from "@t3-factory/backend/server";
+import { loadConfiguration } from "../../src/config.ts";
+import { startServer, type ApplicationUpdates, type ServerOptions } from "../../src/server.ts";
 import { prepared } from "./prepared-runner.ts";
 import { installFirstReportingTarget, reportingFixture } from "./reporting.ts";
 import type { LiveEndpoint } from "./live.ts";
