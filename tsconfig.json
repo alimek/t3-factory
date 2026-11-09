@@ -2,6 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
+    "lib": ["ES2023", "DOM"],
     "customConditions": ["factory-source"]
   },
   "include": ["e2e*.config.ts", "tests/**/*.ts", "scripts/dev/**/*.ts"]
