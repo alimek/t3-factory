@@ -31,6 +31,7 @@ it("a Flow with two entry Agents launches an independent top-level worker for ea
     name: "Editor",
     prompt: "Edit the draft.",
     execution: { ...f.agent.execution, modelOptions: [{ id: "reasoning", value: "low" }] },
+    exits: f.agent.exits,
   });
   assert(editor.ok);
   const review = f.flow.graph.blocks[0]!;
@@ -48,7 +49,8 @@ it("a Flow with two entry Agents launches an independent top-level worker for ea
           kind: "agent",
           agentId: editor.value.id,
           position: { x: 240, y: 0 },
-          exits: review.exits,
+          hiddenExitIds: [],
+          localExits: [],
         },
       ],
       connections: [],
@@ -583,7 +585,7 @@ it("a Human answer releases its outgoing handoff without waiting for worker evid
   const f = await pendingReview(c);
 
   // Act
-  const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "done" });
+  const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "approve" });
 
   // Assert
   assert(result.ok);
@@ -593,6 +595,36 @@ it("a Human answer releases its outgoing handoff without waiting for worker evid
   expect(result.value.events).toContainEqual(
     expect.objectContaining({ kind: "handoff-created", causeId: handoff?.id }),
   );
+});
+
+it("a Request changes answer without a message is rejected and the review stays pending", async (c) => {
+  // Arrange
+  const f = await pendingReview(c);
+
+  // Act
+  const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "request-changes" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error).toMatchObject({
+    code: "validation",
+    message: "Request changes requires a message.",
+  });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.humanOccurrences).toMatchObject([{ state: "pending", exitId: null }]);
+});
+
+it("a Human answer naming an exit other than Approve or Request changes is rejected", async (c) => {
+  // Arrange
+  const f = await pendingReview(c);
+
+  // Act
+  const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "done" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.message).toBe("Choose Approve or Request changes.");
 });
 
 it("a held worker handoff launches exactly one next worker after a backend restart", async (c) => {

@@ -2,6 +2,7 @@ import { recordReportVerdict } from "./runner-report-diagnostics.ts";
 import { repeatedReport, settleForReport } from "./block-report.ts";
 import { newId } from "./ids.ts";
 import type { RunDefinitions } from "@t3-factory/contracts";
+import { effectiveExits } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { RunnerDatabase } from "./runner-database.ts";
@@ -20,20 +21,22 @@ import { readRunDefinitions } from "./run-definitions.ts";
 import { returnToActive } from "./runner-settle.ts";
 import { acceptWorking } from "./working-report.ts";
 
-/** Exact exit names and identities resolve against the captured Flow, never a later edit. */
+/** Exact exit names and identities resolve against the Run's captured definitions, never a later
+ * edit. */
 function reportRoute(definitions: RunDefinitions, blockId: string, report: RuntimeReport) {
   const block = definitions.flow.graph.blocks.find((block) => block.id === blockId);
   if (!block || block.kind !== "agent") return rejected("UNKNOWN_BLOCK");
-  const matches = block.exits.filter(
+  const exits = effectiveExits(block, definitions.agents);
+  const matches = exits.filter(
     (candidate) => candidate.name === report.exit || candidate.id === report.exit,
   );
   const exit = matches[0];
   if (report.status === "finished" && matches.length !== 1)
     return {
       ok: false as const,
-      reply: { code: "INVALID_EXIT", allowedExits: block.exits.map((exit) => exit.name) },
+      reply: { code: "INVALID_EXIT", allowedExits: exits.map((exit) => exit.name) },
     };
-  if (exit?.requiresFeedback && !report.message?.trim()) return rejected("FEEDBACK_REQUIRED");
+  if (exit?.messageRequired && !report.message?.trim()) return rejected("FEEDBACK_REQUIRED");
   const recipients = exit
     ? definitions.flow.graph.connections
         .filter((edge) => edge.sourceBlockId === block.id && edge.exitId === exit.id)

@@ -1,10 +1,12 @@
 import type {
   AgentCapabilities,
+  AgentDefinition,
   AgentExecutionSettings,
   AgentModelOptionValue,
   CreateAgentInput,
   CreateFlowInput,
   DuplicateAgentInput,
+  FlowBlock,
   FlowGraph,
   FlowWorkspace,
   UpdateFlowInput,
@@ -15,6 +17,16 @@ import type {
   UpdateAgentInput,
   ValidationIssue,
 } from "@t3-factory/contracts";
+import {
+  checkExits,
+  effectiveExits,
+  HUMAN_EXITS,
+  inheritedExits,
+  isId,
+  isRecord,
+  parseAgentExits,
+  type IssueReporter,
+} from "./block-exits.ts";
 
 export const TASK_TITLE_LIMIT = 500;
 
@@ -290,9 +302,18 @@ export function validateCreateAgent(input: unknown): Result<CreateAgentInput> {
   if (!prompt.ok) return prompt;
   const execution = parseExecution(input);
   if (!execution.ok) return execution;
+  const exits = parseAgentExits(
+    typeof input === "object" && input !== null && "exits" in input ? input.exits : undefined,
+  );
+  if (!exits.ok) return exits;
   return {
     ok: true,
-    value: { name: name.value, prompt: prompt.value, execution: execution.value },
+    value: {
+      name: name.value,
+      prompt: prompt.value,
+      execution: execution.value,
+      exits: exits.value,
+    },
   };
 }
 
@@ -352,12 +373,6 @@ export function validateDuplicateAgent(input: unknown): Result<DuplicateAgentInp
   return { ok: true, value: { name: name.value } };
 }
 
-type IssueReporter = (code: string, path: string, message: string) => void;
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-const isId = (v: unknown): v is string =>
-  typeof v === "string" && v.trim().length > 0 && v.length <= 200;
 const CANVAS_COORD_MIN = -10000;
 const CANVAS_COORD_MAX = 10000;
 const CANVAS_COORD_MESSAGE = `Use finite canvas coordinates from ${CANVAS_COORD_MIN} to ${CANVAS_COORD_MAX}.`;
@@ -368,58 +383,15 @@ const isCanvasPosition = (v: unknown) =>
     (c) =>
       typeof c === "number" && Number.isFinite(c) && c >= CANVAS_COORD_MIN && c <= CANVAS_COORD_MAX,
   );
-const EXIT_OUTCOMES = ["completion", "assessment-ok", "assessment-fail", "custom"];
-
-function checkExit(
-  exit: unknown,
-  path: string,
-  exitIds: Set<string>,
-  names: Set<string>,
-  issue: IssueReporter,
-) {
-  if (!isRecord(exit)) {
-    issue("invalid_exit", path, "Supply a named exit.");
-    return;
-  }
-  if (!isId(exit.id) || exitIds.has(exit.id))
-    issue("invalid_exit_id", `${path}.id`, "Exit IDs must be unique within a block.");
-  else exitIds.add(exit.id);
-  const name = typeof exit.name === "string" ? exit.name.trim() : undefined;
-  if (typeof exit.name !== "string" || exit.name.length > 200 || (name && names.has(name)))
-    issue(
-      "invalid_exit_name",
-      `${path}.name`,
-      "Exit names must be distinct within a block and up to 200 characters.",
-    );
-  if (name) names.add(name);
-  if (typeof exit.description !== "string" || exit.description.length > 4000)
-    issue(
-      "invalid_exit_description",
-      `${path}.description`,
-      "Use a description up to 4000 characters.",
-    );
+/** Hide entries name inherited exit IDs; whether the Agent still has them is not a save rule. */
+function checkHiddenExits(hidden: unknown, path: string, issue: IssueReporter) {
   if (
-    typeof exit.outcome !== "string" ||
-    !EXIT_OUTCOMES.includes(exit.outcome) ||
-    typeof exit.requiresFeedback !== "boolean"
+    !Array.isArray(hidden) ||
+    hidden.length > 100 ||
+    !hidden.every(isId) ||
+    new Set(hidden).size !== hidden.length
   )
-    issue("invalid_exit_semantics", path, "Choose an outcome and explicit feedback requirement.");
-  if (exit.outcome === "assessment-fail" && exit.requiresFeedback !== true)
-    issue(
-      "correction_feedback_required",
-      `${path}.requiresFeedback`,
-      "Assessment fail requires correction feedback, regardless of its name.",
-    );
-}
-
-/** Returns the block's valid exit IDs, empty when its exits are malformed. */
-function checkExits(exits: unknown, path: string, issue: IssueReporter): Set<string> {
-  const exitIds = new Set<string>();
-  const names = new Set<string>();
-  if (!Array.isArray(exits) || exits.length > 100)
-    issue("invalid_exits", `${path}.exits`, "Supply up to 100 exits.");
-  else exits.forEach((exit, j) => checkExit(exit, `${path}.exits.${j}`, exitIds, names, issue));
-  return exitIds;
+    issue("invalid_hidden_exits", path, "Hide up to 100 distinct inherited exit IDs.");
 }
 
 function checkBlockFields(
@@ -433,8 +405,7 @@ function checkBlockFields(
     "name",
     "kind",
     "position",
-    "exits",
-    ...(block.kind === "agent" ? ["agentId"] : []),
+    ...(block.kind === "agent" ? ["agentId", "hiddenExitIds", "localExits"] : []),
   ];
   if (Object.keys(block).some((key) => !allowed.includes(key)))
     issue(
@@ -459,11 +430,18 @@ function checkBlockFields(
     issue("invalid_position", `${path}.position`, CANVAS_COORD_MESSAGE);
 }
 
+/**
+ * The exit IDs a connection may leave each block by: a Human block's fixed exits, or `inherited`
+ * for an Agent block, whose wires may also name Agent exits that readiness resolves.
+ */
+type ConnectableExits = Map<string, ReadonlySet<string> | "inherited">;
+const HUMAN_EXIT_IDS: ReadonlySet<string> = new Set(HUMAN_EXITS.map((exit) => exit.id));
+
 function checkBlock(
   block: unknown,
   path: string,
   blockIds: Set<string>,
-  exits: Map<string, Set<string>>,
+  exits: ConnectableExits,
   issue: IssueReporter,
 ) {
   if (!isRecord(block)) {
@@ -471,8 +449,12 @@ function checkBlock(
     return;
   }
   checkBlockFields(block, path, blockIds, issue);
-  const exitIds = checkExits(block.exits, path, issue);
-  if (typeof block.id === "string") exits.set(block.id, exitIds);
+  if (block.kind === "agent") {
+    checkHiddenExits(block.hiddenExitIds, `${path}.hiddenExitIds`, issue);
+    checkExits(block.localExits, `${path}.localExits`, false, issue);
+  }
+  if (typeof block.id === "string")
+    exits.set(block.id, block.kind === "human" ? HUMAN_EXIT_IDS : "inherited");
 }
 
 const GRAPH_FIELDS = ["blocks", "connections", "flowInput"];
@@ -509,10 +491,16 @@ function checkFlowInput(
   });
 }
 
+const connectable = (exits: ConnectableExits, source: unknown, exitId: unknown) => {
+  const allowed = typeof source === "string" ? exits.get(source) : undefined;
+  if (allowed === undefined) return false;
+  return allowed === "inherited" ? isId(exitId) : typeof exitId === "string" && allowed.has(exitId);
+};
+
 function checkConnections(
   connections: readonly unknown[],
   blockIds: ReadonlySet<string>,
-  exits: ReadonlyMap<string, Set<string>>,
+  exits: ConnectableExits,
   issue: IssueReporter,
 ) {
   const edges = new Set<string>();
@@ -520,10 +508,8 @@ function checkConnections(
     const path = `graph.connections.${i}`;
     if (
       !isRecord(edge) ||
-      typeof edge.sourceBlockId !== "string" ||
-      typeof edge.exitId !== "string" ||
+      !connectable(exits, edge.sourceBlockId, edge.exitId) ||
       typeof edge.targetBlockId !== "string" ||
-      !exits.get(edge.sourceBlockId)?.has(edge.exitId) ||
       !blockIds.has(edge.targetBlockId)
     ) {
       issue("invalid_connection", path, "Connect an existing source exit to an existing block.");
@@ -548,7 +534,7 @@ function checkGraph(graph: unknown, issue: IssueReporter) {
       "A Flow graph has only blocks, connections and the Flow input block.",
     );
   const blockIds = new Set<string>();
-  const exits = new Map<string, Set<string>>();
+  const exits: ConnectableExits = new Map();
   if (graph.blocks.length > 500 || graph.connections.length > 5000)
     issue("graph_too_large", "graph", "Use at most 500 blocks and 5000 connections.");
   graph.blocks.forEach((block, i) =>
@@ -614,10 +600,25 @@ export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
         value: {
           ...name.value,
           expectedRevision: raw.expectedRevision as number,
-          graph: raw.graph as FlowGraph,
+          graph: trimLocalExitNames(raw.graph as FlowGraph),
           ...(workspace ? { workspace } : {}),
         },
       };
+}
+
+/** Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly. */
+function trimLocalExitNames(graph: FlowGraph): FlowGraph {
+  return {
+    ...graph,
+    blocks: graph.blocks.map((block) =>
+      block.kind === "agent"
+        ? {
+            ...block,
+            localExits: block.localExits.map((exit) => ({ ...exit, name: exit.name.trim() })),
+          }
+        : block,
+    ),
+  };
 }
 
 /** Whether any Agent block in the graph references the saved Agent definition. */
@@ -625,57 +626,131 @@ export function flowGraphReferencesAgent(graph: FlowGraph, agentId: string): boo
   return graph.blocks.some((block) => block.kind === "agent" && block.agentId === agentId);
 }
 
-/** Graph readiness only; live T3, project and provisioning gates remain separate. */
-export function flowReadiness(graph: FlowGraph, agentIds?: ReadonlySet<string>): FlowReadiness {
+/**
+ * A saved Agent as Flow readiness sees it: its current exits and, for naming a wire whose exit
+ * the Agent has since removed, the last name of each exit its earlier revisions had.
+ */
+export interface ReadinessAgent extends Pick<AgentDefinition, "id" | "exits"> {
+  readonly formerExitNames: ReadonlyMap<string, string>;
+}
+
+const blockLabel = (block: FlowBlock) => block.name || block.id;
+
+/** Names, Agent references and exits of one block. */
+function blockReadiness(
+  block: FlowBlock,
+  path: string,
+  agents: readonly ReadinessAgent[],
+  add: IssueReporter,
+) {
+  const label = blockLabel(block);
+  if (!block.name.trim()) add("block_name_required", `${path}.name`, `Name block ${block.id}.`);
+  if (block.kind !== "agent") return;
+  if (!agents.some((agent) => agent.id === block.agentId))
+    add("agent_required", `${path}.agentId`, `Choose a saved Agent for ${label}.`);
+  if (!effectiveExits(block, agents).length)
+    add("exit_required", path, `Add an exit to ${label} or its Agent.`);
+  const inherited = inheritedExits(block, agents);
+  const agentNames = new Set(inherited.map((exit) => exit.name.trim()));
+  const agentIds = new Set(inherited.map((exit) => exit.id));
+  block.localExits.forEach((exit, j) => {
+    const name = exit.name.trim();
+    if (agentIds.has(exit.id))
+      add(
+        "exit_id_conflict",
+        `${path}.localExits.${j}.id`,
+        `${label}: local exit "${name || exit.id}" has the same ID as an exit from its Agent. Remove and recreate the local exit.`,
+      );
+    if (!name)
+      add(
+        "exit_name_required",
+        `${path}.localExits.${j}.name`,
+        `Name local exit ${exit.id} on ${label}.`,
+      );
+    else if (agentNames.has(name))
+      add(
+        "exit_name_conflict",
+        `${path}.localExits.${j}.name`,
+        `${label}: local exit "${name}" has the same name as an exit from its Agent. Rename or remove the local exit.`,
+      );
+    // Workers may finish on an exit's name or ID, so one exit's name must not be another's ID.
+    else if (agentIds.has(name) || agentNames.has(exit.id))
+      add(
+        "exit_name_conflict",
+        `${path}.localExits.${j}.name`,
+        `${label}: local exit "${name}" is ambiguous: its name or ID matches the ID or name of an exit from its Agent. Rename or remove the local exit.`,
+      );
+  });
+}
+
+/** Wires from an Agent block must leave one of its effective exits. */
+function connectionReadiness(
+  graph: FlowGraph,
+  agents: readonly ReadinessAgent[],
+  add: IssueReporter,
+) {
+  const blocks = new Map(graph.blocks.map((block) => [block.id, block]));
+  graph.connections.forEach((edge, i) => {
+    const source = blocks.get(edge.sourceBlockId);
+    if (source?.kind !== "agent") return;
+    const agent = agents.find((candidate) => candidate.id === source.agentId);
+    if (!agent || effectiveExits(source, agents).some((exit) => exit.id === edge.exitId)) return;
+    const target = blocks.get(edge.targetBlockId);
+    const toTarget = `its connection to ${target ? blockLabel(target) : edge.targetBlockId}`;
+    const inherited = agent.exits.find((exit) => exit.id === edge.exitId);
+    if (inherited)
+      add(
+        "exit_hidden",
+        `graph.connections.${i}`,
+        `${blockLabel(source)}: exit "${inherited.name}" is hidden in this Flow. Show the exit or remove ${toTarget}.`,
+      );
+    else
+      add(
+        "exit_missing",
+        `graph.connections.${i}`,
+        `${blockLabel(source)}: its Agent no longer has exit "${agent.formerExitNames.get(edge.exitId) ?? edge.exitId}". Remove ${toTarget}.`,
+      );
+  });
+}
+
+/** Every block must be reachable from a Flow input target. */
+function reachabilityReadiness(graph: FlowGraph, add: IssueReporter) {
+  const reached = new Set(graph.flowInput.targetBlockIds);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of graph.connections)
+      if (reached.has(edge.sourceBlockId) && !reached.has(edge.targetBlockId)) {
+        reached.add(edge.targetBlockId);
+        changed = true;
+      }
+  }
+  graph.blocks.forEach((block, i) => {
+    if (!reached.has(block.id))
+      add(
+        "unreachable_block",
+        `graph.blocks.${i}`,
+        `Connect a path from the Flow input to ${blockLabel(block)}.`,
+      );
+  });
+}
+
+/**
+ * Graph readiness against the given saved Agents; live T3, project and provisioning gates remain
+ * separate. Issues block Start, never a save.
+ */
+export function flowReadiness(graph: FlowGraph, agents: readonly ReadinessAgent[]): FlowReadiness {
   const issues: ValidationIssue[] = [];
   const add = (code: string, path: string, message: string) => issues.push({ code, path, message });
-  const roots = graph.flowInput.targetBlockIds;
-  if (!roots.length)
+  if (!graph.flowInput.targetBlockIds.length)
     add(
       "flow_input_required",
       "graph.flowInput.targetBlockIds",
       "Connect the Flow input to at least one Agent before running this Flow.",
     );
-  graph.blocks.forEach((block, i) => {
-    const path = `graph.blocks.${i}`;
-    if (!block.name.trim()) add("block_name_required", `${path}.name`, `Name block ${block.id}.`);
-    if (block.kind === "agent" && (!block.agentId || (agentIds && !agentIds.has(block.agentId))))
-      add(
-        "agent_required",
-        `${path}.agentId`,
-        `Choose a saved Agent for ${block.name || block.id}.`,
-      );
-    if (!block.exits.length)
-      add("exit_required", `${path}.exits`, `Add an exit to ${block.name || block.id}.`);
-    block.exits.forEach((exit, j) => {
-      if (!exit.name.trim())
-        add(
-          "exit_name_required",
-          `${path}.exits.${j}.name`,
-          `Name exit ${exit.id} on ${block.name || block.id}.`,
-        );
-    });
-  });
-  if (roots.length) {
-    const reached = new Set(roots);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const edge of graph.connections)
-        if (reached.has(edge.sourceBlockId) && !reached.has(edge.targetBlockId)) {
-          reached.add(edge.targetBlockId);
-          changed = true;
-        }
-    }
-    graph.blocks.forEach((block, i) => {
-      if (!reached.has(block.id))
-        add(
-          "unreachable_block",
-          `graph.blocks.${i}`,
-          `Connect a path from the Flow input to ${block.name || block.id}.`,
-        );
-    });
-  }
+  graph.blocks.forEach((block, i) => blockReadiness(block, `graph.blocks.${i}`, agents, add));
+  connectionReadiness(graph, agents, add);
+  if (graph.flowInput.targetBlockIds.length) reachabilityReadiness(graph, add);
   return { ready: issues.length === 0, issues };
 }
 
@@ -691,6 +766,13 @@ export function resolveAgentModel(
   return { provider, model };
 }
 
+export {
+  effectiveExits,
+  inheritedExits,
+  HUMAN_EXITS,
+  type EffectiveExit,
+  type ExitSource,
+} from "./block-exits.ts";
 export {
   CLIENT_LABEL_LIMIT,
   FACTORY_MINIMUM_PEER_PROTOCOL,

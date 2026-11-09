@@ -1,4 +1,5 @@
 import type { Result, RunDetail } from "@t3-factory/contracts";
+import { HUMAN_EXITS } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
@@ -47,19 +48,10 @@ export function openRunnerHuman(database: RunnerDatabase, lifecycle: RunnerLifec
               if (!owned || !current?.gate_open)
                 return failure("conflict", "This Run is archived and accepts no answers.");
               if (!occurrence) return failure("not_found", "This Human occurrence does not exist.");
-              const block = runRow.definitions.flow.graph.blocks.find(
-                (block) => block.id === occurrence.block_id,
-              )!;
-              const exit =
-                exitId === undefined && block.exits.length === 1
-                  ? block.exits[0]
-                  : block.exits.find((candidate) => candidate.id === exitId);
-              if (!exit) return failure("validation", "Select a configured exit.");
-              if (exit.requiresFeedback && !message?.trim())
-                return failure(
-                  "validation",
-                  "Describe the requested changes for this correction exit.",
-                );
+              const exit = HUMAN_EXITS.find((candidate) => candidate.id === exitId);
+              if (!exit) return failure("validation", "Choose Approve or Request changes.");
+              if (exit.messageRequired && !message?.trim())
+                return failure("validation", `${exit.name} requires a message.`);
               const content = fingerprint(JSON.stringify([exit.id, message ?? ""]));
               if (occurrence.state !== "pending")
                 return occurrence.state === "answered" && occurrence.answer_fingerprint === content

@@ -212,8 +212,10 @@ worker reports.
 - Any accepted report on a [Settled](#settled-runs) Run, including a repeat of the current
   result, returns the Run to Active in the same transaction and records `run-activated`
   naming the Block.
-- Exits must match the captured ID or unambiguous exact name, with non-empty feedback
-  when required. Accepted results remain held until the
+- Exits must match the ID or unambiguous exact name of one of the Block's exits in the Run's
+  captured definitions (its captured Agent revision's exits minus those the Flow hid, plus its
+  Flow-local exits), with a non-empty message when that exit requires one (`FEEDBACK_REQUIRED`
+  otherwise). Accepted results remain held until the
   [handoff release](#routing-and-independent-queues) rule passes.
 - Workers report only `working` and `finished`. The worker reports `working` when it starts a
   visit's work and `finished` when the task is complete. Each activation needs its own report;
@@ -322,9 +324,10 @@ not secure erasure.
 ### Human occurrences
 
 Every arrival creates a distinct pending Human occurrence with no T3 thread. Parallel and
-repeated arrivals stay independent. Answers validate against the Run's captured Flow revision: a sole exit may
-be omitted, multiple exits require a configured ID, and feedback is required only when
-that exit demands it (up to 100,000 characters).
+repeated arrivals stay independent. An answer names one of the fixed Human exits, `approve` or
+`request-changes`; Request changes requires a non-empty message (up to 100,000 characters) and
+Approve accepts an optional one. An exact retry of an answer accepted before the Agent-exit upgrade
+names the new exit and so conflicts instead of repeating.
 
 Answering atomically records the answer, settles only that occurrence and creates every
 outgoing handoff. Identical retries return current detail; changed or competing answers

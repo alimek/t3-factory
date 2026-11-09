@@ -1,4 +1,5 @@
-import type { FlowBlock, FlowInputBlock } from "@t3-factory/contracts";
+import type { FlowInputBlock } from "@t3-factory/contracts";
+import type { CanvasBlock } from "./flow-graph.ts";
 
 export const BLOCK_WIDTH = 240;
 
@@ -20,7 +21,7 @@ export type BlockPorts = { inputY: number; firstExitY: number; exitRow: number }
 export const AUTHORING_PORTS: BlockPorts = { inputY: 51, firstExitY: 91, exitRow: 24 };
 
 /** Authoring canvas block height from its configured exits. */
-export function authoringBlockHeight(block: FlowBlock) {
+export function authoringBlockHeight(block: CanvasBlock) {
   return 87 + block.exits.length * AUTHORING_PORTS.exitRow;
 }
 
@@ -34,11 +35,11 @@ export const AUTHORING_FLOW_INPUT_HEIGHT = 76;
 export const EXECUTION_PORTS: BlockPorts = { inputY: 18.5, firstExitY: 104.5, exitRow: 22 };
 
 /** Run/ExecBlock height without its attention or observation footers. */
-export function executionBlockHeight(block: FlowBlock) {
+export function executionBlockHeight(block: CanvasBlock) {
   return EXECUTION_PORTS.firstExitY - 11 + block.exits.length * EXECUTION_PORTS.exitRow + 6.5;
 }
 
-export function exitPoint(block: FlowBlock, exitId: string, ports = AUTHORING_PORTS) {
+export function exitPoint(block: CanvasBlock, exitId: string, ports = AUTHORING_PORTS) {
   const index = Math.max(
     0,
     block.exits.findIndex((exit) => exit.id === exitId),

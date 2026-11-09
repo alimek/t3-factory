@@ -41,6 +41,7 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
       modelId: "gpt-6.1-sol",
       modelOptions: [{ id: "reasoning", value: "high" }],
     },
+    exits: [{ id: "done", name: "Done", description: "Completed", messageRequired: false }],
   });
   assert(a.ok);
   const draft = await f.createFlow({ name: "Single worker" });
@@ -58,15 +59,8 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
           kind: "agent",
           agentId: a.value.id,
           position: { x: 0, y: 0 },
-          exits: [
-            {
-              id: "done",
-              name: "Done",
-              description: "Completed",
-              outcome: "completion",
-              requiresFeedback: false,
-            },
-          ],
+          hiddenExitIds: [],
+          localExits: [],
         },
       ],
       connections: [],
@@ -153,6 +147,7 @@ export async function preparedBlockedFlow(c: TestContext) {
       name,
       prompt: agent.prompt,
       execution: { ...agent.execution, providerInstanceId: "later-provider" },
+      exits: agent.exits,
     });
     assert(created.ok);
     later.push(created.value);
@@ -241,10 +236,13 @@ export const preparedWorktreeFlow = (c: TestContext) =>
 export async function preparedWorktreeReviewFlow(c: TestContext) {
   const setup = await prepared(c);
   const source = setup.flow.graph.blocks[0]!;
-  const exit = source.exits[0]!;
+  const exit = setup.agent.exits[0]!;
   const entry = {
     ...source,
-    exits: [exit, { ...exit, id: "revise", name: "Revise" }, { ...exit, id: "ship", name: "Ship" }],
+    localExits: [
+      { ...exit, id: "revise", name: "Revise" },
+      { ...exit, id: "ship", name: "Ship" },
+    ],
   };
   const flow = await setup.f.updateFlow(setup.flow.id, {
     ...setup.flow,
@@ -259,7 +257,6 @@ export async function preparedWorktreeReviewFlow(c: TestContext) {
           kind: "human",
           name: "Review",
           position: { x: 400, y: 0 },
-          exits: [exit],
         },
         { ...source, id: "parallel-block", name: "Parallel work" },
         { ...source, id: "unused", name: "Unused branch" },
@@ -267,7 +264,7 @@ export async function preparedWorktreeReviewFlow(c: TestContext) {
       connections: [
         { sourceBlockId: entry.id, exitId: "done", targetBlockId: "review" },
         { sourceBlockId: entry.id, exitId: "revise", targetBlockId: "unused" },
-        { sourceBlockId: "review", exitId: "done", targetBlockId: "parallel-block" },
+        { sourceBlockId: "review", exitId: "approve", targetBlockId: "parallel-block" },
         { sourceBlockId: "parallel-block", exitId: "done", targetBlockId: entry.id },
       ],
     },

@@ -9,6 +9,7 @@ import type {
 } from "@t3-factory/contracts";
 import {
   flowReadiness,
+  type ReadinessAgent,
   validateCreateAgent,
   validateCreateFlow,
   validateDuplicateAgent,
@@ -28,7 +29,12 @@ import {
   readCurrentFlows,
   type FlowRevision,
 } from "./flow-revisions.ts";
-import { appendAgentRevision, readCurrentAgents, type AgentRevision } from "./agent-revisions.ts";
+import {
+  appendAgentRevision,
+  readCurrentAgents,
+  readFormerExitNames,
+  type AgentRevision,
+} from "./agent-revisions.ts";
 /** A new Flow starts with its Flow input block at the top-left of the canvas. */
 const NEW_FLOW_INPUT_POSITION = { x: 40, y: 50 };
 
@@ -39,9 +45,9 @@ const toAgent = (
   ...agent,
   settingsStatus: agentSettingsStatus(agent.execution, capabilities),
 });
-const toDraft = (flow: FlowRevision, agentIds?: ReadonlySet<string>): FlowDraft => ({
+const toDraft = (flow: FlowRevision, agents: readonly ReadinessAgent[]): FlowDraft => ({
   ...flow,
-  readiness: flowReadiness(flow.graph, agentIds),
+  readiness: flowReadiness(flow.graph, agents),
 });
 const flowNotFound = () => failure("not_found", "This Flow does not exist.");
 
@@ -63,9 +69,16 @@ export const makeDefinitions = (
       );
     const provideSql = <A>(operation: Effect.Effect<Result<A>, unknown, SqlClient.SqlClient>) =>
       operation.pipe(Effect.provideService(SqlClient.SqlClient, sql));
-    const savedAgentIds = sql<{ id: string }>`SELECT id FROM agents WHERE removed_at IS NULL`.pipe(
-      Effect.map((agents) => new Set(agents.map((agent) => agent.id))),
-    );
+    /** Flow readiness resolves blocks against the current saved Agents and their exits. */
+    const readinessAgents = Effect.gen(function* () {
+      const agents = yield* readCurrentAgents(sql);
+      const formerExitNames = yield* readFormerExitNames(sql);
+      return agents.map((agent): ReadinessAgent => ({
+        id: agent.id,
+        exits: agent.exits,
+        formerExitNames: formerExitNames.get(agent.id) ?? new Map(),
+      }));
+    });
     const loadCapabilities = Effect.fn("Definitions.loadCapabilities")(function* () {
       const status = yield* connection.getConnection();
       if (!status.ok || status.value.state !== "ready" || !status.value.endpoint) {
@@ -161,7 +174,7 @@ export const makeDefinitions = (
               };
               yield* sql`INSERT INTO flows (id, created_at) VALUES (${id}, ${now})`;
               yield* appendFlowRevision(sql, { ...flow, savedAt: now });
-              return { ok: true as const, value: toDraft(flow) };
+              return { ok: true as const, value: toDraft(flow, []) };
             }),
           ),
         );
@@ -173,7 +186,7 @@ export const makeDefinitions = (
           Effect.gen(function* () {
             return {
               ok: true as const,
-              value: flowReadiness(validated.value.graph, yield* savedAgentIds),
+              value: flowReadiness(validated.value.graph, yield* readinessAgents),
             };
           }),
         );
@@ -208,7 +221,7 @@ export const makeDefinitions = (
                 updatedAt: now,
               };
               yield* appendFlowRevision(sql, { ...flow, savedAt: now });
-              return { ok: true as const, value: toDraft(flow, yield* savedAgentIds) };
+              return { ok: true as const, value: toDraft(flow, yield* readinessAgents) };
             }),
           ),
         );
@@ -225,8 +238,8 @@ export const makeDefinitions = (
         return provideSql(
           Effect.gen(function* () {
             const flows = yield* readCurrentFlows(sql);
-            const agentIds = yield* savedAgentIds;
-            return { ok: true as const, value: flows.map((flow) => toDraft(flow, agentIds)) };
+            const agents = yield* readinessAgents;
+            return { ok: true as const, value: flows.map((flow) => toDraft(flow, agents)) };
           }),
         );
       },
@@ -235,7 +248,7 @@ export const makeDefinitions = (
           Effect.gen(function* () {
             const [flow] = yield* readCurrentFlows(sql, id);
             if (!flow) return flowNotFound();
-            return { ok: true as const, value: toDraft(flow, yield* savedAgentIds) };
+            return { ok: true as const, value: toDraft(flow, yield* readinessAgents) };
           }),
         );
       },
@@ -266,6 +279,7 @@ export const makeDefinitions = (
               name: validated.value.name,
               prompt: validated.value.prompt,
               execution: validated.value.execution,
+              exits: validated.value.exits,
               revision: 1,
               createdAt: now,
               updatedAt: now,
@@ -299,6 +313,7 @@ export const makeDefinitions = (
               name: validated.value.name,
               prompt: validated.value.prompt,
               execution: validated.value.execution,
+              exits: validated.value.exits,
               revision: saved.revision + 1,
               updatedAt: yield* currentTime,
             };

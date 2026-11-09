@@ -63,6 +63,7 @@ it("agent settings mark fastMode unavailable when the live catalog allows only f
       modelId: "gpt-6.1-sol",
       modelOptions: [{ id: "fastMode", value: true }],
     },
+    exits: [],
   });
 
   // Assert
@@ -84,6 +85,7 @@ it("agent settings mark mixed values outside the live catalog as unavailable", a
       modelId: "gpt-6.1-sol",
       modelOptions: [{ id: "mixed", value: true }],
     },
+    exits: [],
   });
 
   // Assert

@@ -30,9 +30,11 @@ id. Those lifecycle states were not captured live and do not prove live harness 
 schemas) construct synthetic transport responses, served by `support/oauth-t3.ts` through
 `support/boundaries-setup.ts`. They are not captured live sessions.
 
-## Released upgrade fixture
+## Upgrade fixtures
 
-Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). Do not retain
+Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). A second capture,
+[`flow-exits-upgrade-data.json`](flow-exits-upgrade-data.json), holds the outcome-exit data the Agent-exit migration (`072`)
+converts and that baseline lacks: Human steps, their answers and fan-out wires. Do not retain
 intermediate implementation snapshots, source archives or historical application builds, and do not replace them with compressed blobs or generated historical data.
 
 [`migration-data-upgrade.test.ts`](../migration-data-upgrade.test.ts) opens the capture through the current Factory and checks client access, current definitions, absence of removed definitions, the Finished Run becoming Settled (migration `062`) and the Stopped Run becoming Archived (migration `063`) with their captured definitions, history and Tasks, and removal of the active Run and its Task by migration `058` (Block id reporting). The capture's native call activity is not restored into the controlled adapter: it served only the retired call correlation.
@@ -41,6 +43,8 @@ Restoration uses disposable SQLite; business assertions use public operations. T
 Retain genuine schema, migration ledger, snapshots, keys, payloads, fingerprints and provenance. Never relabel a capture as another revision, rewrite its migration metadata or edit current state to
 simulate an old release. A replacement baseline must come from the public operations of that released version on disposable data. Keep only the representative rows and observations its assertions
 need; exclude transient process ownership, real credentials and user data. Raw capture scripts and logs stay outside Git.
+
+[`migration-flow-exits-upgrade.test.ts`](../migration-flow-exits-upgrade.test.ts) opens the outcome-exit capture and checks, through public reads only, that Agent block exits became Flow-local with the same IDs, the Agent has no exits, Human exits became Approve and Request changes with their wires merged into one fan-out without duplicates, and that the in-progress and settled Runs keep their captured graph in that shape, their reports and their Human answers and handoffs under the new exit IDs.
 
 See the [persistence contract](../../../../docs/foundation.md#sql-migrations) and [testing policy](../../../../docs/testing.md).
 
@@ -60,3 +64,6 @@ A second step extends that capture with a Stopped Run, again with `v0.2.0`'s own
 A third step extends the same baseline through `v0.2.0` public operations with a fourth Run: Start it on the current Flow, observe its worker, request Stop and leave the worker running without confirmation. Capture the Run with `closedAt: null`, a non-null `stopRequestedAt` and its gate closed. Re-read all Runs and Tasks and capture the database and adapter again, without changing schema or migration metadata. The upgrade test verifies this pending Stop survives migration `058` and becomes Archived in `063`, retaining its exact history and Task.
 
 Opening it applies every later migration. The captured Run snapshots are the only source of the Runs' definitions: migrations convert them into the Flow and Agent revisions the Runs reference, restoring the removed Flow and Agent as removed definitions, then drop the snapshots. This baseline does not represent every intermediate schema, and earlier pre-release upgrade paths are no longer captured.
+
+`flow-exits-upgrade-data.json` captures commit `cd0d25daf1b35326d0f49846ba89421eeea7b667` on `main`, the last build with outcome-based block exits (migration ledger through `071_run_images`). Capture runs that commit's own backend test harness against an empty disposable database with the controlled T3 adapter, using only public operations: connect T3, install reporting, add a synthetic repository and create one Agent, then save a checkout Flow where **Entry worker** (exits `done` and `blocked`, the second requiring feedback) hands to the Human step **Review** with two exits without the feedback flag (`looks-good` and `ship`, both wired to **Deploy**, `ship` also to **Notify**) and two with it (`changes` and `reject`, both wired back to Entry worker). Three Runs of that revision follow: one where Review requested changes and the correction was sent to Entry worker's running thread, one waiting on Review, and one where Review shipped and Deploy and Notify finished until the Run settled. Read the Flow, Agent, Runs and Tasks, close the backend, and capture table and index DDL (indexes load with the tables because foreign keys reference their unique keys), triggers as post-data schema, named-column rows except `runner_owner`, and the controlled adapter state. The capture script and logs stay outside Git.
+

@@ -43,8 +43,8 @@ const REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
   ],
   MESSAGE_REQUIRED: ["A working report needs a message.", "Say what you are doing or waiting on."],
   FEEDBACK_REQUIRED: [
-    "The selected exit requires a result message.",
-    "Add the required feedback without repeating the task.",
+    "The selected exit requires a message.",
+    "Add the result message without repeating the task.",
   ],
 };
 
