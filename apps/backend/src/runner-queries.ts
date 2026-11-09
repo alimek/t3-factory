@@ -1,5 +1,6 @@
 import { readCoordinationActions } from "./run-coordination-actions.ts";
 import { readRootWork } from "./run-root-history.ts";
+import { readRunImages } from "./run-images.ts";
 import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "./thread-link.ts";
@@ -244,7 +245,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
     return transaction((sql) =>
       Effect.gen(function* () {
         const [saved] = yield* sql<
-          Omit<RunRow, "definitions">
+          Omit<RunRow, "definitions"> & { prompt_segments_json: string }
         >`SELECT r.*,t.project_id,t.title AS task_title FROM runs r JOIN tasks t ON t.id=r.task_id WHERE r.id=${id}`;
         if (!saved) return failure("not_found", "This Run does not exist.");
         const runRow: RunRow = { ...saved, definitions: yield* readRunDefinitions(sql, saved) };
@@ -276,6 +277,8 @@ export function openRunnerQueries(database: RunnerDatabase) {
             title: runRow.title,
             task: { id: runRow.task_id, title: runRow.task_title, projectId: runRow.project_id },
             input: runRow.input,
+            segments: JSON.parse(saved.prompt_segments_json) as RunDetail["segments"],
+            images: yield* readRunImages(sql, id),
             flowId: definitions.flow.id,
             flowName: definitions.flow.name,
             definitions,

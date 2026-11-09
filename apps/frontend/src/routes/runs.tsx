@@ -51,6 +51,7 @@ import { exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
+import { RunInitialPrompt } from "../components/run-prompt.tsx";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -760,9 +761,7 @@ function RunContext({
         </ContextSection>
       )}
       <ContextSection title="Initial prompt" label="Run input">
-        <pre className="font-mono text-xs leading-4.5 break-words whitespace-pre-wrap text-emphasis-foreground">
-          {run.input}
-        </pre>
+        <RunInitialPrompt run={run} />
       </ContextSection>
       <ContextSection title="Flow revision">
         <p className="text-sm text-emphasis-foreground">

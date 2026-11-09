@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ImagePlus, X } from "lucide-react";
 import type { RunImage } from "@t3-factory/contracts";
 import { RUN_IMAGE_LIMIT, RUN_IMAGE_MIME_TYPES } from "@t3-factory/domain-validation";
@@ -79,6 +79,33 @@ function Thumbnail({
   );
 }
 
+/** Full-size image dialog shared by the composer preview and the Run image gallery. */
+export function ImagePreviewDialog({
+  title,
+  onClose,
+  onKeyDown,
+  children,
+}: {
+  title: ReactNode;
+  onClose: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl" onKeyDown={onKeyDown}>
+        <DialogTitle className="truncate pr-6">{title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Full-size preview of an attached image.
+        </DialogDescription>
+        {children}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export const previewImageClass = "max-h-[70vh] w-full object-contain";
+
 function Preview({
   image,
   load,
@@ -90,17 +117,9 @@ function Preview({
 }) {
   const url = useImageUrl(load, image.imageId);
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogTitle className="truncate pr-6">{image.name}</DialogTitle>
-        <DialogDescription className="sr-only">
-          Full-size preview of an attached image.
-        </DialogDescription>
-        {url ? (
-          <img src={url} alt={image.name} className="max-h-[70vh] w-full object-contain" />
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <ImagePreviewDialog title={image.name} onClose={onClose}>
+      {url ? <img src={url} alt={image.name} className={previewImageClass} /> : null}
+    </ImagePreviewDialog>
   );
 }
 

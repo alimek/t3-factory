@@ -19,6 +19,8 @@ it("a committed Run update preserves entity order and untouched identities witho
     repositories: run.repositories,
     startedAt: run.startedAt,
     input: run.input,
+    segments: run.segments,
+    images: run.images,
     workspace: run.workspace,
     coordinationActions: run.coordinationActions,
     runCoordinator: run.runCoordinator,

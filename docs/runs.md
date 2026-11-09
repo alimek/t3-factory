@@ -107,7 +107,15 @@ Opening a Run shows the Flow revision it captured at Start on a read-only canvas
 connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
 project is unavailable; a later edit or removal is labelled (**Flow edited since**, **Flow removed since**), never substituted.
 
-- The **Flow input** block shows the Run's truncated prompt and has no state or details panel.
+- The **Flow input** block shows the Run's truncated prompt and has no state or details panel. With images it shows up
+  to three prompt lines, each image reference as an **Image N: name** chip, the first three thumbnails and a **+N** control
+  for the rest. A chip, thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
+  its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
+  the workers' `[Image N: name]` text. The context rail's initial prompt shows the same references and every image, opening
+  the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)). Images are
+  read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
+  **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
+  retried and creates no attention or state change.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
   before it finished). Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the

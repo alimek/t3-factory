@@ -26,6 +26,7 @@ import {
   incomingWiresForBlock,
 } from "../flow-incoming-ports.ts";
 import { FlowInputIdentity, FlowInputNode } from "./flow-block.tsx";
+import { FLOW_INPUT_IMAGES_PROMPT_HEIGHT, FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
 import { clockTime, executionStateLabel, StatePill } from "./execution-state.tsx";
 import { useFlowLayoutSession } from "../use-flow-layout.ts";
@@ -35,8 +36,17 @@ import { FlowWires } from "./flow-wires.tsx";
 /** Fit never enlarges past 100 %, so a small Flow keeps the Figma block size. */
 /** Room left for the top-left badges and the bottom-left canvas controls. */
 const FIT_PADDING = { x: 48, top: 64, bottom: 80 };
-/** Flow input card on the execution canvas: identity rows plus one truncated prompt line. */
-const EXECUTION_FLOW_INPUT_HEIGHT = 102;
+/** Flow input card on the execution canvas: border and identity rows above the prompt. */
+const EXECUTION_FLOW_INPUT_FRAME_HEIGHT = 76;
+/** An image-free prompt is one truncated line with its bottom padding. */
+const EXECUTION_FLOW_INPUT_PROMPT_LINE_HEIGHT = 26;
+
+function executionFlowInputHeight(run: RunDetail) {
+  return (
+    EXECUTION_FLOW_INPUT_FRAME_HEIGHT +
+    (run.images.length ? FLOW_INPUT_IMAGES_PROMPT_HEIGHT : EXECUTION_FLOW_INPUT_PROMPT_LINE_HEIGHT)
+  );
+}
 const EXECUTION_FOOTER_HEIGHT = 32;
 
 function executionBlockDisplayHeight(run: RunDetail, block: FlowBlock, unavailable: boolean) {
@@ -69,7 +79,7 @@ function executionLayoutProfile(run: RunDetail) {
   }
   return {
     kind: "execution" as const,
-    flowInputHeight: EXECUTION_FLOW_INPUT_HEIGHT,
+    flowInputHeight: executionFlowInputHeight(run),
     blockHeights,
   };
 }
@@ -81,14 +91,18 @@ function executionLayout(run: RunDetail, unavailable: boolean) {
   };
 }
 
-function graphBounds(graph: FlowGraph, blockHeight: (block: FlowBlock) => number) {
+function graphBounds(
+  graph: FlowGraph,
+  flowInputHeight: number,
+  blockHeight: (block: FlowBlock) => number,
+) {
   const input = graph.flowInput;
   const bounds = mergeGraphBounds(
     {
       x: input.position.x,
       y: input.position.y,
       width: FLOW_INPUT_WIDTH,
-      height: EXECUTION_FLOW_INPUT_HEIGHT,
+      height: flowInputHeight,
     },
     graph.blocks.map((block) => ({
       x: block.position.x,
@@ -111,6 +125,7 @@ function graphBounds(graph: FlowGraph, blockHeight: (block: FlowBlock) => number
 function executionFocusView(
   targetIds: readonly string[],
   graph: FlowGraph,
+  flowInputHeight: number,
   blockHeight: (block: FlowBlock) => number,
   width: number,
   height: number,
@@ -123,7 +138,10 @@ function executionFocusView(
   });
   const targets = graph.blocks.filter((block) => ids.has(block.id)).map(rect);
   const [first, ...rest] = targets;
-  if (!first) return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
+  if (!first) {
+    const bounds = graphBounds(graph, flowInputHeight, blockHeight);
+    return fitGraphView(bounds, width, height, FIT_PADDING, 0);
+  }
   return fitGraphView(mergeGraphBounds(first, rest), width, height, FIT_PADDING, 0);
 }
 
@@ -382,7 +400,8 @@ function ExecutionFlowInput({
   flowInput: FlowGraph["flowInput"];
   onClearSelection: () => void;
 }) {
-  const prompt = run.input.trim();
+  const images = run.images.length > 0;
+  const prompt = images ? runPromptText(run) : run.input.trim();
   return (
     <FlowInputNode flowInput={flowInput}>
       <button
@@ -393,7 +412,8 @@ function ExecutionFlowInput({
       >
         <FlowInputIdentity
           detail={
-            prompt ? (
+            // Reference chips and thumbnails are controls, so they sit outside this button.
+            prompt && !images ? (
               <p className="truncate px-3 pb-2.5 text-xs text-foreground" title={run.input}>
                 {prompt}
               </p>
@@ -401,6 +421,7 @@ function ExecutionFlowInput({
           }
         />
       </button>
+      {images && <FlowInputPrompt run={run} />}
       <span aria-hidden className={cn(portClass, "top-[45px] -right-1.5")} />
     </FlowInputNode>
   );
@@ -544,15 +565,23 @@ export function ExecutionCanvas({
     autoArrange,
   } = useExecutionLayout(run, observationUnavailable);
   const surface = useRef<HTMLElement>(null);
+  const flowInputHeight = executionFlowInputHeight(run);
   const focusTargets = selectExecutionTargets(run.blocks);
   const { view, fitFlow, zoom, startPan, onKeyDown, following, focusChanged, followActive } =
     useCanvasViewport({
       surface,
       scope: run.id,
       shown,
-      getBounds: () => graphBounds(graph, wireLayout.blockHeight),
+      getBounds: () => graphBounds(graph, flowInputHeight, wireLayout.blockHeight),
       getFocusView: (width, height) =>
-        executionFocusView(focusTargets, graph, wireLayout.blockHeight, width, height),
+        executionFocusView(
+          focusTargets,
+          graph,
+          flowInputHeight,
+          wireLayout.blockHeight,
+          width,
+          height,
+        ),
       focusTargets,
       padding: FIT_PADDING,
       resize: "preserve",
@@ -582,7 +611,7 @@ export function ExecutionCanvas({
           ),
           height: Math.max(
             640,
-            graph.flowInput.position.y + EXECUTION_FLOW_INPUT_HEIGHT + 120,
+            graph.flowInput.position.y + flowInputHeight + 120,
             ...graph.blocks.map((block) => block.position.y + wireLayout.blockHeight(block) + 120),
           ),
         }}

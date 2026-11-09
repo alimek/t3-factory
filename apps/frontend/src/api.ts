@@ -93,6 +93,12 @@ const post = <A>(path: string, body: unknown) => jsonRequest<A>("POST", path, bo
 const put = <A>(path: string, body: unknown) => jsonRequest<A>("PUT", path, body);
 const patch = <A>(path: string, body: unknown) => jsonRequest<A>("PATCH", path, body);
 
+/**
+ * Retained Run image bytes on the selected server, for `<img src>`: an authenticated GET that
+ * needs no protocol header and is cached as immutable.
+ */
+export const runImageUrl = (sha256: string) => `/api/run-images/${encodeURIComponent(sha256)}`;
+
 export const api = {
   listRunNavigation: () => request<readonly RunNavigationEntry[]>("/api/run-navigation"),
   snoozeRun: (id: string) =>
@@ -112,7 +118,7 @@ export const api = {
   startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),
   /** Whether Factory already holds this image; any answer but held or absent is a failure. */
   async hasRunImage(sha256: string) {
-    const response = await factoryRequest(`/api/run-images/${encodeURIComponent(sha256)}`, {
+    const response = await factoryRequest(runImageUrl(sha256), {
       method: "HEAD",
     });
     if (response.status === 404) return false;
@@ -120,7 +126,7 @@ export const api = {
     throw new Error("Factory could not check the image.");
   },
   stageRunImage: (sha256: string, data: Blob) =>
-    request<RunImageInfo>(`/api/run-images/${encodeURIComponent(sha256)}`, {
+    request<RunImageInfo>(runImageUrl(sha256), {
       method: "PUT",
       headers: { "content-type": data.type },
       body: data,

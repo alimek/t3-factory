@@ -229,6 +229,16 @@ export function attachRunImages(
   );
 }
 
+export function readRunImages(sql: SqlClient.SqlClient, runId: string) {
+  return Effect.map(
+    sql<
+      StagedRow & { image_id: string; name: string }
+    >`SELECT image_id,sha256,name,mime_type,size_bytes FROM run_images WHERE run_id=${runId} ORDER BY ordinal`,
+    (rows): RunImage[] =>
+      rows.map((row) => ({ imageId: row.image_id, name: row.name, ...info(row) })),
+  );
+}
+
 const reference = (ordinal: number, name: string) => `[Image ${ordinal}: ${name}]`;
 
 /**

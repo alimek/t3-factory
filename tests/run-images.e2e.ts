@@ -5,6 +5,11 @@ import { afterEach, beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Screen } from "e2e";
 import { sha256Hex, solidPng } from "../apps/backend/test/support/run-images.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
+import {
+  expectFlowInputImages,
+  expectGalleryImage,
+  openImageHistory,
+} from "./support/run-images.ts";
 import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
 
 /** Picked files live in ignored storage; red and blue share their original filename. */
@@ -180,4 +185,105 @@ test("a T3 without attachment support rejects the image Start and keeps the draf
   await expect(screen.getByRole("button", "Remove screenshot.png")).toBeVisible();
   expect(await runsTitled(app.baseUrl, "UI images unsupported")).toHaveLength(0);
   await app.screenshot("images-attachments-unsupported");
+});
+
+test("Flow input overflow browses every image in manifest order, including unreferenced attachments", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const run = await openImageHistory(app);
+  await expectFlowInputImages(screen);
+  const input = screen.getByRole("article", "Flow input block");
+
+  // Act: browse the complete gallery from the overflow entry.
+  await input.getByRole("button", "Show all 4 images").tap();
+
+  // Assert
+  await expectGalleryImage(screen, browser, 4, "settings-mockup.png", run.images[3]!.sha256);
+  await screen.getByRole("button", "Next image").tap();
+  await expectGalleryImage(screen, browser, 1, "screenshot.png", run.images[0]!.sha256);
+  await screen.getByRole("button", "Next image").tap();
+  await expectGalleryImage(screen, browser, 2, "screenshot.png", run.images[1]!.sha256);
+  await browser.keyboard.press("ArrowRight");
+  await expectGalleryImage(screen, browser, 3, "focus-ring.png", run.images[2]!.sha256);
+  await screen.getByRole("button", "Previous image").tap();
+  await expectGalleryImage(screen, browser, 2, "screenshot.png", run.images[1]!.sha256);
+  await browser.keyboard.press("ArrowLeft");
+  await expectGalleryImage(screen, browser, 1, "screenshot.png", run.images[0]!.sha256);
+  await app.screenshot("flow-input-image-gallery");
+});
+
+test("reloading preserves Flow input thumbnails, the image list and ordinal reference bindings", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const run = await openImageHistory(app);
+  await expectFlowInputImages(screen);
+
+  // Act
+  await browser.reload();
+
+  // Assert
+  await expectFlowInputImages(screen);
+  const context = screen.getByRole("complementary", "Run context");
+  await expect(context.getByRole("list", "Prompt images").getByRole("button")).toHaveCount(4);
+  await context.getByRole("button", "Image 2: screenshot.png", { exact: true }).tap();
+  await expectGalleryImage(screen, browser, 2, "screenshot.png", run.images[1]!.sha256);
+  await app.screenshot("flow-input-gallery-after-reload");
+});
+
+test("unavailable image bytes preserve readable prompt history and other images without Run attention", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const run = await openImageHistory(app);
+  await browser.route(`**/api/run-images/${run.images[1]!.sha256}`, async (route) => {
+    return route.request.method === "GET" ? route.abort() : route.continue();
+  });
+
+  // Act
+  await browser.reload();
+
+  // Assert
+  const input = screen.getByRole("article", "Flow input block");
+  await expectFlowInputImages(screen);
+  await expect(input).toContainText("Review the Atlas settings page");
+  await input.getByRole("button", "Open Image 2: screenshot.png").tap();
+  const dialog = screen.getByRole("dialog", "Image 2 of 4 screenshot.png");
+  await expect(dialog.getByText("Image unavailable", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Image 2: screenshot.png", { exact: true })).toBeVisible();
+  await app.screenshot("flow-input-image-unavailable");
+  await screen.getByRole("button", "Previous image").tap();
+  await expectGalleryImage(screen, browser, 1, "screenshot.png", run.images[0]!.sha256);
+  await screen.getByRole("button", "Close", { exact: true }).tap();
+  const context = screen.getByRole("complementary", "Run context");
+  await expect(context).toContainText("Review the Atlas settings page");
+  await expect(context.getByRole("list", "Prompt images").getByRole("button")).toHaveCount(4);
+  await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
+  expect((await readHistoryRun(app.baseUrl, run.id)).attention).toEqual(run.attention);
+});
+
+test("a Flow input thumbnail opens the matching image even with a duplicate filename", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const run = await openImageHistory(app);
+  const input = screen.getByRole("article", "Flow input block");
+
+  // Act
+  await input
+    .getByRole("list", "Prompt images")
+    .getByRole("button", "Open Image 2: screenshot.png")
+    .tap();
+
+  // Assert
+  await expectGalleryImage(screen, browser, 2, "screenshot.png", run.images[1]!.sha256);
 });
