@@ -3,7 +3,7 @@ import { RadioGroup } from "radix-ui";
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 import { SectionLabel } from "@/components/page";
 import { cn } from "@/lib/utils";
-import type { DesktopState } from "../desktop-bridge.ts";
+import type { DesktopState } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { UpdateControl } from "./update-control.tsx";
 

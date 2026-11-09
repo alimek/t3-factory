@@ -1,12 +1,18 @@
 // Sandboxed preload: a fixed, typed request surface. No Node, IPC object or remote content
 // access is passed to the page; the main process validates the sender for every call.
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import {
+  livePortMessage,
+  type DesktopResult,
+  type DesktopState,
+  type FactoryDesktop,
+} from "@t3-factory/contracts/desktop-bridge";
 import { channels } from "./ipc.ts";
 
 contextBridge.exposeInMainWorld("factoryDesktop", {
   getState: () => ipcRenderer.invoke(channels.getState),
-  onState(listener: (state: unknown) => void) {
-    const handler = (_event: IpcRendererEvent, state: unknown) => listener(state);
+  onState(listener) {
+    const handler = (_event: IpcRendererEvent, state: DesktopState) => listener(state);
     ipcRenderer.on(channels.state, handler);
     return () => {
       ipcRenderer.removeListener(channels.state, handler);
@@ -35,14 +41,14 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
   },
   /**
    * contextBridge cannot pass a MessagePort: the port arrives here and is forwarded to the
-   * page as a same-origin window message `{ type: "factory:live-port", nonce }`.
+   * page as a same-origin window message `{ type: livePortMessage, nonce }`.
    */
   async openLive(query: string, nonce: string) {
     const expected = String(nonce);
     const deliver = (event: IpcRendererEvent, received: unknown) => {
       if (received !== expected) return;
       ipcRenderer.removeListener(channels.livePort, deliver);
-      window.postMessage({ type: channels.livePort, nonce: expected }, window.location.origin, [
+      window.postMessage({ type: livePortMessage, nonce: expected }, window.location.origin, [
         ...event.ports,
       ]);
     };
@@ -52,8 +58,8 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
       .catch((error: unknown) => {
         ipcRenderer.removeListener(channels.livePort, deliver);
         throw error;
-      })) as { ok: boolean };
+      })) as DesktopResult;
     if (!result.ok) ipcRenderer.removeListener(channels.livePort, deliver);
     return result;
   },
-});
+} satisfies FactoryDesktop);

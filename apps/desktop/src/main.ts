@@ -20,12 +20,19 @@ import {
   shell,
   Tray,
   type IpcMainInvokeEvent,
+  type WebFrameMain,
 } from "electron";
 import type {
   Result as OperationResult,
   ServerUpdateAction,
   UpdateChannel,
 } from "@t3-factory/contracts";
+import type {
+  DesktopResult,
+  DesktopRole,
+  DesktopState,
+  FactoryDesktop,
+} from "@t3-factory/contracts/desktop-bridge";
 import { ApprovedClient } from "./approved-client.ts";
 import { BackendSupervisor } from "./backend.ts";
 import { channels } from "./ipc.ts";
@@ -52,8 +59,7 @@ const uiDirectory = join(here, "ui");
 const uiPartition = "persist:factory-ui";
 const documentationUrl = "https://github.com/alimek/t3-factory/tree/main/docs#readme";
 
-type Result = { readonly ok: true } | { readonly ok: false; readonly message: string };
-const failed = (message: string): Result => ({ ok: false, message });
+const failed = (message: string): Extract<DesktopResult, { ok: false }> => ({ ok: false, message });
 
 let store: SettingsStore;
 let approvedClient: ApprovedClient;
@@ -70,7 +76,7 @@ let serverInstallAccepted = false;
 
 const updateChannel = (): UpdateChannel => store.get().updateChannel ?? buildChannel();
 
-function desktopState() {
+function desktopState(): DesktopState {
   const settings = store.get();
   return {
     version: app.getVersion(),
@@ -252,7 +258,7 @@ function applyMenuState(state: MenuState) {
   );
 }
 
-async function chooseRole(role: "server" | "client"): Promise<Result> {
+async function chooseRole(role: DesktopRole): Promise<DesktopResult> {
   const current = store.get().role;
   if (role === current) return { ok: true };
   if (current === "server" && !(await stopBackendFor("switch")))
@@ -264,7 +270,7 @@ async function chooseRole(role: "server" | "client"): Promise<Result> {
   return { ok: true };
 }
 
-async function connectServer(url: string, fingerprint: string): Promise<Result> {
+async function connectServer(url: string, fingerprint: string): Promise<DesktopResult> {
   try {
     await approvedClient.connect(url, fingerprint);
   } catch (error) {
@@ -274,7 +280,7 @@ async function connectServer(url: string, fingerprint: string): Promise<Result> 
   return { ok: true };
 }
 
-async function setLaunchAtLogin(enabled: boolean): Promise<Result> {
+async function setLaunchAtLogin(enabled: boolean): Promise<DesktopResult> {
   app.setLoginItemSettings({ openAtLogin: enabled });
   await store.update({ launchAtLogin: enabled });
   broadcast();
@@ -284,7 +290,7 @@ async function setLaunchAtLogin(enabled: boolean): Promise<Result> {
   return { ok: true };
 }
 
-async function setUpdateChannel(channel: unknown): Promise<Result> {
+async function setUpdateChannel(channel: unknown): Promise<DesktopResult> {
   if (channel !== "stable" && channel !== "beta") return failed("Choose stable or beta.");
   const problem = updates.configure(channel);
   if (problem) return failed(problem);
@@ -294,7 +300,7 @@ async function setUpdateChannel(channel: unknown): Promise<Result> {
 }
 
 /** Confirmed in the upgrade review; the backend still shuts down in order before replacement. */
-async function installUpdate(): Promise<Result> {
+async function installUpdate(): Promise<DesktopResult> {
   if (installingUpdate) return failed("Update installation is already in progress.");
   if (updates.current.state !== "downloaded") return failed("No downloaded update is ready.");
   installingUpdate = true;
@@ -370,19 +376,26 @@ function trustedFrame(event: IpcMainInvokeEvent) {
   return frame;
 }
 
-function handle<A extends unknown[]>(channel: string, run: (...args: A) => unknown) {
-  ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-    trustedFrame(event);
-    return run(...(args as A));
-  });
-}
+/** Bridge methods the page calls over `ipcRenderer.invoke`; the rest are main → page pushes. */
+type BridgeRequest = Exclude<keyof FactoryDesktop, "onState" | "onMenuCommand">;
+type BridgeAnswer<Name extends BridgeRequest> = Awaited<ReturnType<FactoryDesktop[Name]>>;
 
-function registerBridge() {
-  handle(channels.getState, () => desktopState());
-  handle(channels.chooseRole, (role: unknown) =>
+/**
+ * Arguments are typed as the preload sends them; a handler that cannot rely on the preload's
+ * coercion declares them `unknown` and validates them.
+ */
+type BridgeHandlers = {
+  readonly [Name in BridgeRequest]: (
+    frame: WebFrameMain,
+    ...args: Parameters<FactoryDesktop[Name]>
+  ) => BridgeAnswer<Name> | Promise<BridgeAnswer<Name>>;
+};
+
+const bridgeHandlers: BridgeHandlers = {
+  getState: () => desktopState(),
+  chooseRole: (_frame, role: unknown) =>
     role === "server" || role === "client" ? chooseRole(role) : failed("Unknown role."),
-  );
-  handle(channels.probeServer, async (address: string) => {
+  probeServer: async (_frame, address: string) => {
     try {
       const { url, fingerprint, matchesExpected, systemTrusted } =
         await approvedClient.probe(address);
@@ -394,45 +407,51 @@ function registerBridge() {
           : "No Factory server answered securely at that address. Check that the server app is running with remote access enabled.",
       );
     }
-  });
-  handle(channels.connectServer, (url: string, fingerprint: string) =>
-    connectServer(url, fingerprint),
-  );
-  handle(channels.forgetServer, async () => {
+  },
+  connectServer: (_frame, url: string, fingerprint: string) => connectServer(url, fingerprint),
+  forgetServer: async () => {
     await approvedClient.forget();
     broadcast();
     return { ok: true };
-  });
-  handle(channels.retryBackend, () => {
+  },
+  retryBackend: () => {
     if (store.get().role === "server") backend.start();
     return { ok: true };
-  });
-  handle(channels.setLaunchAtLogin, (enabled: boolean) => setLaunchAtLogin(enabled === true));
-  handle(channels.checkForUpdates, async () => {
+  },
+  setLaunchAtLogin: (_frame, enabled: boolean) => setLaunchAtLogin(enabled === true),
+  checkForUpdates: async () => {
     await updates.check();
     return { ok: true };
-  });
-  handle(channels.downloadUpdate, async () => {
+  },
+  downloadUpdate: async () => {
     if (updates.current.state !== "available") return failed("No update is available to download.");
     await updates.download();
     return { ok: true };
-  });
-  handle(channels.installUpdate, () => installUpdate());
-  handle(channels.setUpdateChannel, (channel: unknown) => setUpdateChannel(channel));
-  handle(channels.setMenuState, (commands: unknown) => {
+  },
+  installUpdate: () => installUpdate(),
+  setUpdateChannel: (_frame, channel: unknown) => setUpdateChannel(channel),
+  setMenuState: (_frame, commands: unknown) => {
     applyMenuState(parseMenuState(commands));
     return { ok: true };
-  });
+  },
   // A MessagePort cannot be an invoke result; it goes to the requesting frame, keyed by nonce.
-  ipcMain.handle(channels.openLive, (event, query: unknown, nonce: unknown) => {
-    const frame = trustedFrame(event);
+  openLive: (frame, query: unknown, nonce: unknown) => {
     if (typeof query !== "string" || typeof nonce !== "string")
       return failed("Invalid live request.");
     const { port1, port2 } = new MessageChannelMain();
     frame.postMessage(channels.livePort, nonce, [port2]);
     openLive(query, port1);
     return { ok: true };
-  });
+  },
+};
+
+function registerBridge() {
+  for (const name of Object.keys(bridgeHandlers) as BridgeRequest[]) {
+    const run = bridgeHandlers[name] as (frame: WebFrameMain, ...args: unknown[]) => unknown;
+    ipcMain.handle(channels[name], (event: IpcMainInvokeEvent, ...args: unknown[]) =>
+      run(trustedFrame(event), ...args),
+    );
+  }
 }
 
 function registerUi() {

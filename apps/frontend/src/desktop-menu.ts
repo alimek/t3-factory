@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { executeAppCommand } from "./app-keyboard-commands.ts";
-import { desktopBridge, type DesktopMenuCommand } from "./desktop-bridge.ts";
+import type { DesktopMenuCommand } from "@t3-factory/contracts/desktop-bridge";
+import { desktopBridge } from "./desktop-bridge.ts";
 import { shortcutDefinitions, type ShortcutId } from "./keyboard-shortcuts.ts";
 import { getOpenRunCommandSurface, subscribeOpenRunCommandSurface } from "./open-run-keyboard.tsx";
 import { getShortcutPreferences, subscribeShortcutPreferences } from "./shortcut-preferences.ts";

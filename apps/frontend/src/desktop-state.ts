@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { desktopBridge, type DesktopState } from "./desktop-bridge.ts";
+import type { DesktopState } from "@t3-factory/contracts/desktop-bridge";
+import { desktopBridge } from "./desktop-bridge.ts";
 
 /** Current native state; null until the first read, and always null in a browser. */
 export function useDesktopState(): DesktopState | null {

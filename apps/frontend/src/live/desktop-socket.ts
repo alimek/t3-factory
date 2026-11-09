@@ -1,7 +1,5 @@
+import { livePortMessage } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "../desktop-bridge.ts";
-
-/** Same-origin window message from the desktop preload that carries the relay port. */
-const livePortMessage = "factory:live-port";
 
 type LiveDelivery =
   | { readonly type: "open" }
