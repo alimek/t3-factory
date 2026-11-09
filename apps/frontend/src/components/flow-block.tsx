@@ -3,7 +3,8 @@ import { Bot, TextCursorInput, User } from "lucide-react";
 import type { FlowGraph, FlowInputBlock } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
-import { FLOW_INPUT_WIDTH } from "../flow-geometry.ts";
+import { FLOW_INPUT_WIDTH, type CanvasDimensions } from "../flow-geometry.ts";
+import { AUTHORING_DIMENSIONS } from "./canvas-dimensions.ts";
 import { exitRecipients, type CanvasBlock } from "../flow-graph.ts";
 import { exitSourceLabel } from "./flow-wires.tsx";
 
@@ -150,19 +151,24 @@ export function FlowInputNode({
 }
 
 /**
- * The Flow input block's header: kind, title and what it carries. `detail` shows a
- * particular Run's prompt below it.
+ * The Flow input block's header: kind, title and what it carries, in rows sized by the canvas
+ * dimensions. `detail` shows a particular Run's prompt below it.
  */
 export function FlowInputIdentity({
+  rows = AUTHORING_DIMENSIONS.flowInput,
   detail,
   trailing,
 }: {
+  rows?: CanvasDimensions["flowInput"];
   detail?: ReactNode;
   trailing?: ReactNode;
 }) {
   return (
     <>
-      <span className="flex h-7.5 w-full items-center gap-1.5 pt-1.5 pr-2 pl-3">
+      <span
+        className="flex w-full items-center gap-1.5 pt-1.5 pr-2 pl-3"
+        style={{ height: rows.header }}
+      >
         <TextCursorInput aria-hidden className="size-3 text-link" />
         <span className="text-2xs font-semibold tracking-section text-muted-foreground">
           FLOW INPUT
@@ -170,7 +176,7 @@ export function FlowInputIdentity({
         <span className="flex-1" />
         {trailing}
       </span>
-      <span className="flex h-11 w-full flex-col gap-1 px-3 pt-0.5">
+      <span className="flex w-full flex-col gap-1 px-3 pt-0.5" style={{ height: rows.title }}>
         <span className="truncate text-sm font-semibold text-foreground">Flow input</span>
         <span className="truncate text-2xs tracking-label text-muted-foreground">Run prompt</span>
       </span>

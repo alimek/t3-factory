@@ -68,6 +68,7 @@ export function createCanvasGeometry(
 ) {
   const rows = dimensions.block;
   const input = dimensions.flowInput;
+  const ports = dimensionPorts(dimensions);
   const baseHeight = (block: CanvasBlock) =>
     rows.border * 2 +
     rows.header +
@@ -77,7 +78,7 @@ export function createCanvasGeometry(
     rows.exitPaddingBottom +
     block.exits.length * rows.exitRow;
   const bodyHeight = (block: CanvasBlock, fanIn = incomingFanIn(graph, block.id)) =>
-    blockHeightForIncomingFanIn(fanIn, dimensionPorts(dimensions), baseHeight(block));
+    blockHeightForIncomingFanIn(fanIn, ports, baseHeight(block));
   const blockHeight = (block: CanvasBlock) =>
     bodyHeight(block) + (facts.footerCount?.(block) ?? 0) * rows.footer;
   const flowInputBox = {
@@ -111,7 +112,7 @@ export function createCanvasGeometry(
   const incomingPorts = (block: CanvasBlock) =>
     incomingWiresForBlock(graph, block.id).map((source, index) => ({
       source,
-      ...blockInputPointForIndex(block, index, dimensionPorts(dimensions)),
+      ...blockInputPointForIndex(block, index, ports),
     }));
   const reservedHeight = (block: CanvasBlock) =>
     Math.max(
@@ -124,6 +125,7 @@ export function createCanvasGeometry(
     return first ? mergeGraphBounds(first, rest) : bounds();
   };
   return {
+    ports,
     flowInputBox,
     blockHeight,
     bodyHeight,
