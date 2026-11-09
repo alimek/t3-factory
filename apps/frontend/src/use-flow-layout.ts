@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FlowGraph } from "@t3-factory/contracts";
+import type { AgentDefinition, FlowGraph } from "@t3-factory/contracts";
 import ELK from "elkjs/lib/elk-api.js";
 import ElkWorker from "elkjs/lib/elk-worker.min.js?worker";
 import {
@@ -9,6 +9,10 @@ import {
   type FlowLayoutResult,
 } from "./flow-layout-elk.ts";
 import { layoutDimensions, type FlowLayoutProfile } from "./flow-layout-profile.ts";
+import { canvasGraph } from "./flow-graph.ts";
+
+/** The Agents a layout resolves block exits against, which place each block's exit ports. */
+type LayoutAgents = readonly Pick<AgentDefinition, "id" | "exits">[];
 
 type PendingRequest = {
   readonly generation: number;
@@ -51,7 +55,7 @@ function useFlowLayoutWorker(profile: FlowLayoutProfile) {
   );
 
   const arrange = useCallback(
-    (graph: FlowGraph, feedback: "visible" | "silent" = "visible") => {
+    (graph: FlowGraph, agents: LayoutAgents, feedback: "visible" | "silent" = "visible") => {
       cancel();
       if (feedback === "visible") setError(null);
       setPending(feedback === "visible");
@@ -77,7 +81,7 @@ function useFlowLayoutWorker(profile: FlowLayoutProfile) {
           instance.onerror = (event) => fail(event.message || "Auto-arrange failed. Try again.");
           instance.onmessageerror = () => fail("Could not read the arranged Flow. Try again.");
           void elk
-            .layout(buildElkGraph(graph, layoutDimensions(profileRef.current)))
+            .layout(buildElkGraph(canvasGraph(graph, agents), layoutDimensions(profileRef.current)))
             .then((laidOut) => {
               if (pendingRequest.current?.generation !== id) return;
               const result = parseElkLayout(graph, laidOut);
@@ -110,6 +114,7 @@ type AuthoringPolicy = {
 type FlowLayoutSessionOptions = {
   readonly scope: string;
   readonly graph: FlowGraph;
+  readonly agents: LayoutAgents;
   readonly profile: FlowLayoutProfile;
   /** Omit for local, read-only Run presentation. */
   readonly authoring?: AuthoringPolicy;
@@ -143,7 +148,7 @@ function acceptedForGraph(accepted: AcceptedLayout | null, current: LayoutBasis)
 
 /** Owns request validity and commits positions/routes together, before notifying the caller. */
 export function useFlowLayoutSession(options: FlowLayoutSessionOptions) {
-  const { scope, graph, profile, authoring } = options;
+  const { scope, graph, agents, profile, authoring } = options;
   const basisKey = useMemo(() => JSON.stringify(graph), [graph]);
   // Authoring edits invalidate even equal-content graph replacements. Run polls do not.
   const basis = authoring ? graph : basisKey;
@@ -170,7 +175,11 @@ export function useFlowLayoutSession(options: FlowLayoutSessionOptions) {
       const start = live.current;
       if (!restoreOnly && start.options.authoring?.busy) return;
       const request = ++generation.current;
-      const result = await compute(start.options.graph, restoreOnly ? "silent" : "visible");
+      const result = await compute(
+        start.options.graph,
+        start.options.agents,
+        restoreOnly ? "silent" : "visible",
+      );
       const current = live.current;
       if (
         !result ||
@@ -199,11 +208,12 @@ export function useFlowLayoutSession(options: FlowLayoutSessionOptions) {
   );
 
   const savedGraph = authoring?.savedGraph;
+  // Agents arriving later move inherited exit ports, so saved routes are rebuilt with them.
   useEffect(() => {
     if (!savedGraph || savedGraph !== graph) return;
     void arrange(true);
     return cancel;
-  }, [savedGraph, graph, arrange, cancel]);
+  }, [savedGraph, graph, agents, arrange, cancel]);
 
   // Validate during render: navigation must never paint old geometry, even before effects.
   const valid = acceptedForGraph(accepted, { options, basisKey });

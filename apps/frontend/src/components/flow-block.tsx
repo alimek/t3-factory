@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { Bot, TextCursorInput, User } from "lucide-react";
-import type { BlockExit, FlowBlock, FlowGraph, FlowInputBlock } from "@t3-factory/contracts";
+import type { FlowGraph, FlowInputBlock } from "@t3-factory/contracts";
+import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
 import { FLOW_INPUT_WIDTH } from "../flow-geometry.ts";
-import { exitRecipients } from "../flow-graph.ts";
-import { exitKindLabel } from "./flow-wires.tsx";
+import { exitRecipients, type CanvasBlock } from "../flow-graph.ts";
+import { exitSourceLabel } from "./flow-wires.tsx";
 
 /** Shared block header: kind, name and the referenced Agent or person. */
 export function BlockIdentity({
@@ -46,8 +47,8 @@ export function BlockIdentity({
 }
 
 /**
- * Configured exits, each with its output port on the block's right edge. The screen-reader
- * prefix names the connection; it does not mark traversal.
+ * The block's exits, each marked Agent, local or fixed and with its output port on the block's
+ * right edge. The screen-reader prefix names the connection; it does not mark traversal.
  */
 export function BlockExits({
   graph,
@@ -56,9 +57,9 @@ export function BlockExits({
   port,
 }: {
   graph: FlowGraph;
-  block: FlowBlock;
+  block: CanvasBlock;
   connectionPrefix?: string;
-  port: (exit: BlockExit) => ReactNode;
+  port: (exit: EffectiveExit) => ReactNode;
 }) {
   return (
     <ul className="pt-1 pb-1.5">
@@ -67,7 +68,7 @@ export function BlockExits({
         return (
           <li key={exit.id} className="relative flex h-6 items-center gap-1.5 pr-3.5 pl-3">
             <span className="truncate text-2xs tracking-label text-muted-foreground">
-              {exitKindLabel(exit)}
+              {exitSourceLabel(exit)}
             </span>
             <span className="flex-1" />
             <span className="truncate font-mono text-xs font-medium text-foreground">

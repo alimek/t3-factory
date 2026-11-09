@@ -1,4 +1,5 @@
 import type { RunActivation, RunDetail, RunThreadBinding } from "@t3-factory/contracts";
+import { capturedExits } from "../flow-graph.ts";
 import { SessionResult } from "./session-result.tsx";
 import { sectionLabelClass } from "./page.tsx";
 
@@ -95,9 +96,7 @@ export function RetainedResult({
   run: RunDetail;
   report: RunDetail["reports"][number];
 }) {
-  const exit = run.definitions.flow.graph.blocks
-    .find((b) => b.id === report.blockId)
-    ?.exits.find((e) => e.id === report.exitId);
+  const exit = capturedExits(run.definitions, report.blockId).find((e) => e.id === report.exitId);
   const results = visitResults(run, report);
   const version = results.indexOf(report) + 1;
   const completion =

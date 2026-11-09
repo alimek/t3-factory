@@ -43,8 +43,13 @@ catalogs load or fail (errors name the section and offer Retry).
 ## Agent definitions
 
 Open **Studio → Agents** (`/studio/agents`) to create, edit or duplicate reusable definitions; an existing one opens at `/studio/agents/:agentId` and a new one at `/studio/agents/new`. A
-definition stores a name, plain-text prompt, T3 environment, provider, model and thinking options. There is no runtime-mode, permission, tools or exit field: exits belong to Flow blocks and T3
-chooses launch defaults. Definitions are global and Runs supply project context.
+definition stores a name, plain-text prompt, T3 environment, provider, model, thinking options and its exits. There is no runtime-mode, permission or tools field: T3 chooses launch
+defaults. Definitions are global and Runs supply project context.
+
+**Exits.** An Agent declares the exits its worker can finish with, listed under the Prompt. Each exit has a stable ID, a name, an optional description and **Message required**; names
+are distinct and non-empty. A new Agent starts with one exit, `done`, which needs no message. Every Flow block of the Agent offers its current exits, so an exit edit reaches every Flow on
+its next Run, while a Run keeps the exits of the Agent revision it captured. Renaming an exit keeps its ID and therefore every wire; removing a wired exit makes those Flows not ready (see
+[Saving and readiness](#saving-and-readiness)). Agents saved before Agent exits existed have none: their blocks kept their former exits as Flow-local exits.
 
 A persistent 300 px list sits beside the editor with **Search Agents**, **+ Add agent**, runtime summaries and counts of distinct saved Flows using each Agent (excluding Runs and unsaved
 drafts); narrow screens stack list and editor. The header shows name, revision, **Duplicate…**, **Delete** and **Save** (**Create Agent** for a new one). Leaving an edited Agent asks to **Keep
@@ -60,7 +65,7 @@ The list and editor also show the provider's [reporting installation status](t3-
 The editor follows the current provider choice, explains installation problems and links to **Settings → Agent reporting**.
 Installed configuration does not establish full execution readiness or live report visibility; Start still checks those gates.
 
-**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt and settings, and Studio shows the latest; a stale or invalid save returns an error,
+**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt, settings and exits, and Studio shows the latest; a stale or invalid save returns an error,
 appends nothing and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
 
@@ -81,10 +86,11 @@ The editor has a block library on the left (**Human step** and saved Agent defin
 **Add** action or drag the row onto the canvas (a ghost shows the drop position; dropping elsewhere adds nothing); undropped additions fill a three-column grid right of the Flow
 input and are selected. Drag a block's header or edit its X/Y fields; wires follow live and the draft changes once, on drop. Escape cancels any drag.
 
-Selecting a block (click, or focus + Enter) opens **Block configuration**, a panel floating over the canvas's right edge. It renames the block, chooses its saved Agent, edits exits
-and links to the Agent definition. Prompts and execution settings belong to the Agent; blocks have no overrides (create or duplicate an Agent for a variant), and two blocks may share a
-definition. Clicking empty canvas, **Close block configuration** or Escape closes the panel. Blocks show kind, Agent, an input port and one port per exit; wires carry `exit → recipient`
-labels, and multiple incoming connections each anchor to their own input port (Flow input first, at least 18 px apart).
+Selecting a block (click, or focus + Enter) opens **Block configuration**, a panel floating over the canvas's right edge. It renames the block, chooses its saved Agent, lists its exits
+read-only and links to the Agent definition. Prompts, execution settings and exits belong to the Agent; blocks have no overrides (create or duplicate an Agent for a variant), and two blocks
+may share a definition. Clicking empty canvas, **Close block configuration** or Escape closes the panel. Blocks show kind, Agent, an input port and one port per exit, each marked **Agent**,
+**local** or **fixed** and with **message** when it requires one; wires carry `exit → recipient` labels in one neutral style, and multiple incoming connections each anchor to their own
+input port (Flow input first, at least 18 px apart).
 
 Every Flow has one **Flow input block** (**FLOW INPUT** / **Flow input** / **Run prompt**) at the top left: one output port, no input, exits or configuration, and it cannot be removed. The
 Agent blocks it connects to start a Run, each with the same prompt in its own session; no block is marked "entry".
@@ -95,8 +101,9 @@ itself, an already connected block or pressing Escape changes nothing. Drag from
 take no keyboard focus. Click a wire or its label to select it (the block panel closes); each wire is also a keyboard button (**Connection *exit* from *source* to *target***). With a
 connection selected, Delete/Backspace (outside form controls) or the **Delete connection** button removes it. Removing a block or exit removes its connections.
 
-**Add exit** offers completion, assessment ok/fail and custom presets with editable names and descriptions. **Outcome** and **Require correction feedback** carry the semantics, never the
-name; assessment fail always requires non-empty feedback. A single-exit Human step can Continue without text, multiple exits need an exit choice, and an unconnected exit ends that branch.
+**Exits.** An Agent block offers its Agent's exits, minus those hidden in this Flow, followed by its Flow-local exits; inherited exits cannot be edited in a Flow. Hiding exits and adding
+Flow-local exits are stored with the Flow revision; Studio does not edit them yet, and Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
+exits **Approve** (message optional) and **Request changes** (message required). An unconnected exit ends that branch.
 
 ### Automatic layout and canvas view
 
@@ -121,8 +128,10 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
 validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
-issues: a Flow input connected to no Agent, a missing Agent reference, block/exit names, exits and unreachable blocks (selecting one inspects its block). **Graph ready** covers graph requirements only; live
-connection, Agent settings availability, project and reporting installation are separate Start gates ([Runs](runs.md)).
+issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit named like one of its Agent's visible exits (also when
+the Agent adds that name later), a wire from an exit hidden in this Flow or no longer on the Agent, and unreachable blocks. Each names the block, the exit and the problem, and selecting one
+inspects its block. These issues block Start, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
+are separate Start gates ([Runs](runs.md)).
 
 A stale save returns a conflict and keeps local work. **Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against
 revision N** (another explicit save, which can conflict again). There is no automatic merge or silent overwrite.
@@ -140,14 +149,14 @@ Flow.
 `{name, expectedRevision, graph, workspace}`. `workspace` is `{mode: "checkout"}` or
 `{mode: "worktree", base: {kind: "default"} | {kind: "ref", ref}}`; a custom ref is trimmed and
 must be 1–255 characters without whitespace, control characters or a leading `-`, and its
-issues use `workspace.*` paths. Clients before [protocol 4](desktop-and-clients.md#protocol-compatibility)
-omit `workspace`; their saves keep the saved setting. Factory does not save a Run coordinator on the Flow.
+issues use `workspace.*` paths. A save that omits `workspace` keeps the saved setting. Factory does not save a Run coordinator on the Flow.
 
 ### Graph shape
 
-Blocks have stable IDs, position, name, exits and an Agent reference or Human kind; exit IDs are scoped to their block.
-Connections identify source block, exit and target block. Outcome and explicit `requiresFeedback` are independent of the display name; assessment-fail requires that
-flag, and runtime consumers enforce non-empty feedback when it is true. No block execution settings or prompt overrides are accepted.
+Blocks have stable IDs, position and name. An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides) and `localExits`; a Human block has
+no exit fields. An exit is `{id, name, description, messageRequired}`, with IDs scoped to their block; runtime consumers enforce a non-empty message when
+`messageRequired` is true. Connections identify source block, exit ID and target block: a Human block's exit is `approve` or `request-changes`, and an Agent block's
+exit is resolved against its Agent by readiness, not by the save. No block execution settings or prompt overrides are accepted.
 
 #### Flow input block
 
@@ -156,12 +165,13 @@ Every graph carries exactly one `flowInput`: a canvas `position` and the `target
 ### Validation
 
 Structural failures return `Result` errors with `code`, `path` and `message`: invalid or duplicate IDs and names,
-positions, Flow input targets, dangling or duplicate edges, malformed exits, weakened assessment-fail semantics and unknown block, graph or Flow input fields. Limits: 500 blocks, 100
-exits per block, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
+positions, Flow input targets, dangling or duplicate edges, a Human connection from another exit, malformed exits or hide entries and unknown block, exit, graph or Flow input
+fields. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
 
-Unfinished names, unset Agents, an unconnected Flow input and empty exits can be saved. Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent),
-missing saved Agents and blocks unreachable from the Flow input. A terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3
-capability or live execution readiness.
+Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name collisions and wires from hidden or removed exits can be saved.
+Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `exit_name_conflict`, `exit_hidden`, `exit_missing`), missing saved
+Agents and blocks unreachable from the Flow input, resolving each block against the current saved Agents. Hide entries for exits the Agent no longer has are ignored. A
+terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3 capability or live execution readiness.
 
 ### Revisions
 
@@ -169,8 +179,8 @@ Each successful create or save appends one immutable Flow revision whose name, g
 workspace setting are stored as rows owned by that revision; Studio reads the latest revision of each Flow that is
 not removed, and `revision` is that revision's number. An update compares the expected revision
 atomically: a stale or invalid request returns an error and appends nothing, and an accepted save
-advances the revision exactly once. Within a revision, connections reference exits of their own
-source block and blocks of the same revision, and the Flow input targets blocks of that revision.
+advances the revision exactly once. Within a revision, connections reference blocks of the same
+revision, and the Flow input targets blocks of that revision.
 Agent references are resolved against saved definitions at read time, so a draft may still name a
 missing Agent. Stored shapes follow the
 [stored-data migration rules](foundation.md#sql-migrations). Start references the current

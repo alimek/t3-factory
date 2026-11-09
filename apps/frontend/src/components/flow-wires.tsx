@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import type { BlockExit, FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -16,28 +16,39 @@ import {
   incomingApproachLane,
   incomingPortIndexForSource,
 } from "../flow-incoming-ports.ts";
-import { connectionWire, sameWire, wireRouteKey, type FlowWire } from "../flow-graph.ts";
+import {
+  connectionWire,
+  sameWire,
+  wireRouteKey,
+  type CanvasBlock,
+  type CanvasGraph,
+  type FlowWire,
+} from "../flow-graph.ts";
 import { type WireRoute } from "../flow-layout-elk.ts";
 
-export function exitKindLabel(exit: BlockExit) {
-  const kind =
-    exit.outcome === "assessment-ok" || exit.outcome === "assessment-fail"
-      ? "assessment"
-      : exit.outcome;
-  return exit.requiresFeedback ? `${kind} · ↩ feedback` : kind;
+const EXIT_SOURCE_LABELS: Record<EffectiveExit["source"], string> = {
+  agent: "Agent",
+  local: "local",
+  human: "fixed",
+};
+
+/** Where an exit comes from, and whether finishing on it needs a message. */
+export function exitSourceLabel(exit: EffectiveExit) {
+  const source = EXIT_SOURCE_LABELS[exit.source];
+  return exit.messageRequired ? `${source} · message` : source;
 }
 
 /** Orthogonal routing for the read-only execution canvas (Figma execution edges). */
 type OrthogonalLayout = {
   readonly ports: BlockPorts;
-  readonly blockHeight: (block: FlowBlock) => number;
+  readonly blockHeight: (block: CanvasBlock) => number;
 };
 
 /** A wire from `from` into the target's input port, curved or orthogonal. */
 function routedPath(
   from: { x: number; y: number },
   fromBottom: number,
-  target: FlowBlock,
+  target: CanvasBlock,
   layout: OrthogonalLayout | undefined,
   incomingIndex: number,
 ) {
@@ -69,7 +80,7 @@ type Wire = {
 };
 
 function exitWires(
-  graph: FlowGraph,
+  graph: CanvasGraph,
   layout: OrthogonalLayout | undefined,
   routes: ReadonlyMap<string, WireRoute> | undefined,
 ): Wire[] {
@@ -101,7 +112,7 @@ function exitWires(
 }
 
 function flowInputWires(
-  graph: FlowGraph,
+  graph: CanvasGraph,
   layout: OrthogonalLayout | undefined,
   routes: ReadonlyMap<string, WireRoute> | undefined,
 ): Wire[] {
@@ -139,7 +150,7 @@ export function FlowWires({
   selection,
   pendingWire,
 }: {
-  graph: FlowGraph;
+  graph: CanvasGraph;
   labels?: boolean;
   label?: string;
   layout?: OrthogonalLayout;

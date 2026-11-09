@@ -2,14 +2,16 @@ import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
 import { reportedWorker, workerMessage } from "./support/run-worker.ts";
 
-it("each Start of the same Flow revision shows the Agent revision current when it started", async (c) => {
+it("each Start of the same Flow revision shows the Agent revision, with its exits, current when it started", async (c) => {
   // Arrange
   const { f, input, agent } = await prepared(c);
   const first = await f.startRun(input);
   assert(first.ok);
+  const blocked = { id: "blocked", name: "Blocked", description: "", messageRequired: true };
   const edited = await f.updateAgent(agent.id, {
     ...agent,
     prompt: "Follow repository instructions and update the changelog.",
+    exits: [...agent.exits, blocked],
     expectedRevision: agent.revision,
   });
   assert(edited.ok);
@@ -22,13 +24,14 @@ it("each Start of the same Flow revision shows the Agent revision current when i
   const before = await f.getRun(first.value.id);
   assert(before.ok);
   expect(before.value.definitions.agents).toMatchObject([
-    { id: agent.id, revision: 1, prompt: "Follow repository instructions." },
+    { id: agent.id, revision: 1, prompt: "Follow repository instructions.", exits: agent.exits },
   ]);
   expect(second.value.definitions.agents).toMatchObject([
     {
       id: agent.id,
       revision: 2,
       prompt: "Follow repository instructions and update the changelog.",
+      exits: [...agent.exits, blocked],
     },
   ]);
   expect(second.value.definitions.flow).toStrictEqual(before.value.definitions.flow);

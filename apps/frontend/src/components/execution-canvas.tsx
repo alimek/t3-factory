@@ -12,7 +12,8 @@ import { fitGraphView, mergeGraphBounds } from "../canvas-fit.ts";
 import { selectExecutionTargets } from "../execution-focus.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { cn } from "@/lib/utils";
-import { exitRecipients } from "../flow-graph.ts";
+import { canvasGraph, exitRecipients, type CanvasBlock, type CanvasGraph } from "../flow-graph.ts";
+import { exitSourceLabel } from "./flow-wires.tsx";
 import {
   BLOCK_WIDTH,
   EXECUTION_PORTS,
@@ -49,7 +50,7 @@ function executionFlowInputHeight(run: RunDetail) {
 }
 const EXECUTION_FOOTER_HEIGHT = 32;
 
-function executionBlockDisplayHeight(run: RunDetail, block: FlowBlock, unavailable: boolean) {
+function executionBlockDisplayHeight(run: RunDetail, block: CanvasBlock, unavailable: boolean) {
   const graph = run.definitions.flow.graph;
   const recorded = run.blocks.find((item) => item.blockId === block.id);
   const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
@@ -65,8 +66,13 @@ function executionBlockDisplayHeight(run: RunDetail, block: FlowBlock, unavailab
   return body + footers * EXECUTION_FOOTER_HEIGHT;
 }
 
+/** The captured graph drawn with the exits its captured Agent revisions offered. */
+function capturedGraph(run: RunDetail) {
+  return canvasGraph(run.definitions.flow.graph, run.definitions.agents);
+}
+
 function executionLayoutProfile(run: RunDetail) {
-  const graph = run.definitions.flow.graph;
+  const graph = capturedGraph(run);
   const blockHeights: Record<string, number> = {};
   for (const block of graph.blocks) {
     // Reserve both possible status footers so polling cannot make arranged nodes overlap.
@@ -87,14 +93,14 @@ function executionLayoutProfile(run: RunDetail) {
 function executionLayout(run: RunDetail, unavailable: boolean) {
   return {
     ports: EXECUTION_PORTS,
-    blockHeight: (block: FlowBlock) => executionBlockDisplayHeight(run, block, unavailable),
+    blockHeight: (block: CanvasBlock) => executionBlockDisplayHeight(run, block, unavailable),
   };
 }
 
 function graphBounds(
-  graph: FlowGraph,
+  graph: CanvasGraph,
   flowInputHeight: number,
-  blockHeight: (block: FlowBlock) => number,
+  blockHeight: (block: CanvasBlock) => number,
 ) {
   const input = graph.flowInput;
   const bounds = mergeGraphBounds(
@@ -124,14 +130,14 @@ function graphBounds(
 /** Only the focus targets determine zoom and center. */
 function executionFocusView(
   targetIds: readonly string[],
-  graph: FlowGraph,
+  graph: CanvasGraph,
   flowInputHeight: number,
-  blockHeight: (block: FlowBlock) => number,
+  blockHeight: (block: CanvasBlock) => number,
   width: number,
   height: number,
 ) {
   const ids = new Set(targetIds);
-  const rect = (block: FlowBlock) => ({
+  const rect = (block: CanvasBlock) => ({
     ...block.position,
     width: BLOCK_WIDTH,
     height: blockHeight(block),
@@ -228,18 +234,10 @@ function activityText(run: RunDetail, block: FlowBlock, recorded: RunBlock | und
   return `visit ${visits.length}${start ? ` · ${clockTime(start)}–${clockTime(end)}` : ""}`;
 }
 
-/** Figma exit row labels: the configured outcome, or "feedback" when the exit carries it. */
-function exitTypeLabel(exit: FlowBlock["exits"][number]) {
-  if (exit.requiresFeedback) return "feedback";
-  return exit.outcome === "assessment-ok" || exit.outcome === "assessment-fail"
-    ? "assessment"
-    : exit.outcome;
-}
-
 const portClass =
   "absolute size-2.5 rounded-full border-[1.5px] border-subtle-foreground bg-background";
 
-function ExecutionExits({ graph, block }: { graph: FlowGraph; block: FlowBlock }) {
+function ExecutionExits({ graph, block }: { graph: FlowGraph; block: CanvasBlock }) {
   return (
     <ul className="pt-0.75 pb-1.25">
       {block.exits.map((exit) => {
@@ -247,7 +245,7 @@ function ExecutionExits({ graph, block }: { graph: FlowGraph; block: FlowBlock }
         return (
           <li key={exit.id} className="relative flex h-5.5 items-center gap-1.5 pr-3.5 pl-3">
             <span className="truncate text-2xs tracking-label text-subtle-foreground">
-              {exitTypeLabel(exit)}
+              {exitSourceLabel(exit)}
             </span>
             <span className="flex-1" />
             <span className="truncate text-xs font-medium text-foreground">
@@ -435,7 +433,7 @@ function ExecutionBlock({
   onSelect,
 }: {
   run: RunDetail;
-  block: FlowBlock;
+  block: CanvasBlock;
   selected: boolean;
   unavailable: boolean;
   onSelect: () => void;
@@ -519,11 +517,12 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
   } = useFlowLayoutSession({
     scope: run.id,
     graph: run.definitions.flow.graph,
+    agents: run.definitions.agents,
     profile: executionLayoutProfile(run),
   });
   const wireLayout = executionLayout(run, observationUnavailable);
   return {
-    graph,
+    graph: canvasGraph(graph, run.definitions.agents),
     wireRoutes,
     wireLayout,
     accepted,

@@ -32,22 +32,36 @@ export interface CreateFlowInput {
   readonly name: string;
 }
 
-export type ExitOutcome = "completion" | "assessment-ok" | "assessment-fail" | "custom";
+/** A named result a Block finishes with. Wires leave by `id`, so renaming keeps them. */
 export interface BlockExit {
   readonly id: string;
   readonly name: string;
+  /** Empty when the exit has no description. */
   readonly description: string;
-  readonly outcome: ExitOutcome;
-  readonly requiresFeedback: boolean;
+  /** Finishing on this exit needs a non-empty message. */
+  readonly messageRequired: boolean;
 }
 interface BlockBase {
   readonly id: string;
   readonly name: string;
   readonly position: { readonly x: number; readonly y: number };
-  readonly exits: readonly BlockExit[];
 }
+/**
+ * An Agent block exposes its Agent's exits, minus those this Flow hides, plus its Flow-local
+ * exits. A Human block has the fixed Approve and Request changes exits.
+ */
 export type FlowBlock = BlockBase &
-  ({ readonly kind: "agent"; readonly agentId: string | null } | { readonly kind: "human" });
+  (
+    | {
+        readonly kind: "agent";
+        readonly agentId: string | null;
+        /** Inherited Agent exit IDs hidden in this Flow; IDs the Agent no longer has are ignored. */
+        readonly hiddenExitIds: readonly string[];
+        /** Exits only this Flow adds to the block. */
+        readonly localExits: readonly BlockExit[];
+      }
+    | { readonly kind: "human" }
+  );
 export interface FlowConnection {
   readonly sourceBlockId: string;
   readonly exitId: string;
@@ -128,6 +142,8 @@ export interface AgentDefinition {
   readonly prompt: string;
   readonly revision: number;
   readonly execution: AgentExecutionSettings;
+  /** Inherited live by every Flow block of this Agent; a Run keeps the revision it captured. */
+  readonly exits: readonly BlockExit[];
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly settingsStatus: AgentExecutionSettingsStatus;
@@ -185,13 +201,11 @@ export interface CreateAgentInput {
   readonly name: string;
   readonly prompt: string;
   readonly execution: AgentExecutionSettings;
+  readonly exits: readonly BlockExit[];
 }
 
-export interface UpdateAgentInput {
+export interface UpdateAgentInput extends CreateAgentInput {
   readonly expectedRevision: number;
-  readonly name: string;
-  readonly prompt: string;
-  readonly execution: AgentExecutionSettings;
 }
 
 export interface DuplicateAgentInput {

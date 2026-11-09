@@ -1,20 +1,32 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { assert, type TestContext } from "@effect/vitest";
+import type { TestContext } from "@effect/vitest";
 import type { Factory } from "@t3-factory/backend";
-import { writeReportingState } from "./reporting-home.ts";
+import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
 import { factoryHarness } from "./factory.ts";
-import { ControlledT3 } from "./controlled-t3.ts";
-import { loadMigrationData } from "./migration-data.ts";
+import { loadMigrationData, restoreCapturedAdapter } from "./migration-data.ts";
 
 type Success<T> = T extends { ok: true; value: infer V } ? V : never;
 type Value<K extends keyof Factory> = Factory[K] extends (...args: never[]) => infer R
   ? Success<Awaited<R>>
   : never;
+/** v0.2.0 exits lived on each Flow block, with an outcome and a feedback flag. */
+type ReleasedExit = {
+  id: string;
+  name: string;
+  description: string;
+  outcome: string;
+  requiresFeedback: boolean;
+};
+type ReleasedBlock = Pick<FlowBlock, "id" | "name" | "position"> & {
+  exits: ReleasedExit[];
+} & ({ kind: "agent"; agentId: string | null } | { kind: "human" });
 /** v0.2.0 Flows had no workspace setting; every worker used the project checkout. */
-type ReleasedFlow = Omit<Value<"getFlow">, "workspace">;
+type ReleasedFlow = Omit<Value<"getFlow">, "workspace" | "graph"> & {
+  graph: Omit<FlowGraph, "blocks"> & { blocks: ReleasedBlock[] };
+};
+/** v0.2.0 Agents had no exits. */
+type ReleasedAgent = Omit<Value<"getAgent">, "exits">;
 /** v0.2.0 returned a Run's definitions as the snapshot it stored at Start. */
-type ReleasedSnapshot = { flow: ReleasedFlow; agents: Value<"getAgent">[] };
+type ReleasedSnapshot = { flow: ReleasedFlow; agents: ReleasedAgent[] };
 type CurrentRun = Value<"getRun">;
 /** v0.2.0 also returned report keys (retired per-turn report authority), Factory's own
  * completion evidence (activation coverage, remote work, Run-conversation control recoveries)
@@ -52,9 +64,9 @@ interface ReleasedCapture {
   approvedCredential: string;
   revokedCredential: string;
   flow: ReleasedFlow;
-  agent: Value<"getAgent">;
+  agent: ReleasedAgent;
   /** Edited after the closed Run started, then removed from the catalog. */
-  retired: { flow: ReleasedFlow; agent: Value<"getAgent"> };
+  retired: { flow: ReleasedFlow; agent: ReleasedAgent };
   /** Closed Finished. */
   closed: ReleasedRun;
   active: ReleasedRun;
@@ -65,10 +77,31 @@ interface ReleasedCapture {
   tasks: Value<"listTasks">;
 }
 
-/** A released Flow as current Factory reads it: the same revision in the project checkout. */
-export const checkoutFlow = <F extends object>(flow: F) => ({
+/** A released block as current Factory reads it: its Agent block exits are now Flow-local. */
+const currentBlock = ({ exits, ...block }: ReleasedBlock): FlowBlock =>
+  block.kind === "human"
+    ? block
+    : {
+        ...block,
+        hiddenExitIds: [],
+        localExits: exits.map(({ outcome: _outcome, requiresFeedback, ...exit }) => ({
+          ...exit,
+          messageRequired: requiresFeedback,
+        })),
+      };
+
+/** A released Flow as current Factory reads it: the same revision in the project checkout, its
+ * block exits Flow-local. */
+export const currentFlow = <F extends Omit<ReleasedFlow, "readiness">>(flow: F) => ({
   ...flow,
+  graph: { ...flow.graph, blocks: flow.graph.blocks.map(currentBlock) },
   workspace: { mode: "checkout" as const },
+});
+
+/** A released Agent as current Factory reads it: it has no exits of its own. */
+export const currentAgent = <A extends Omit<ReleasedAgent, "settingsStatus">>(agent: A) => ({
+  ...agent,
+  exits: [],
 });
 
 /**
@@ -79,8 +112,8 @@ export const checkoutFlow = <F extends object>(flow: F) => ({
 function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
   const { readiness: _readiness, ...savedFlow } = flow;
   return {
-    flow: checkoutFlow(savedFlow),
-    agents: agents.map(({ settingsStatus: _settingsStatus, ...saved }) => saved),
+    flow: currentFlow(savedFlow),
+    agents: agents.map(({ settingsStatus: _settingsStatus, ...saved }) => currentAgent(saved)),
   };
 }
 
@@ -140,22 +173,6 @@ export async function releasedUpgradeData(c: TestContext) {
     h.databasePath,
     "v0.2.0-upgrade-data.json",
   );
-  const t3 = new ControlledT3();
-  for (const [key, value] of Object.entries(observations)) {
-    if (RETIRED_ADAPTER_FIELDS.has(key)) continue;
-    assert(Object.hasOwn(t3, key), `Unknown captured adapter field: ${key}`);
-    const restored =
-      value && typeof value === "object" && "map" in value && Array.isArray(value.map)
-        ? new Map(value.map as [string, unknown][])
-        : value && typeof value === "object" && "set" in value
-          ? new Set(value.set as unknown[])
-          : value;
-    Object.assign(t3, { [key]: restored });
-  }
-  const state = join(h.processHome, "reporting-state");
-  const home = join(h.processHome, "codex-home");
-  await mkdir(state);
-  await mkdir(home);
-  await writeReportingState(state, t3.environmentId, home);
+  const t3 = await restoreCapturedAdapter(observations, h.processHome, RETIRED_ADAPTER_FIELDS);
   return { h, t3, ...expected };
 }

@@ -47,7 +47,7 @@ import { OpenRunKeyboardHost } from "../open-run-keyboard.tsx";
 import { useLiveNavigation } from "../live/navigation.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { exitRecipients } from "../flow-graph.ts";
+import { capturedExits, exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
@@ -691,7 +691,7 @@ function BlockDetails({
         )}
         <DetailSection title="Exits in captured revision">
           <ul className="flex flex-col gap-1.5 px-2">
-            {block.exits.map((exit) => {
+            {capturedExits(run.definitions, block.id).map((exit) => {
               const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
               return (
                 <li key={exit.id} className="flex items-baseline gap-2 text-sm">

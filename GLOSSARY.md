@@ -32,10 +32,10 @@ A constituent element of a flow: the Flow input block, an agent block or a human
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
 
 **Agent**:
-A reusable worker definition consisting of a prompt and execution settings, independent of a particular project. An agent block uses this definition within a Flow; its execution belongs to a Run.
+A reusable worker definition consisting of a prompt, execution settings and its exits, independent of a particular project. An agent block uses this definition within a Flow; its execution belongs to a Run.
 
 **Agent revision**:
-One immutable saved version of an Agent's name, prompt and execution settings. Every successful create or save appends the next revision; Studio shows the latest, and removing an Agent keeps its revisions.
+One immutable saved version of an Agent's name, prompt, execution settings and exits. Every successful create or save appends the next revision; Studio shows the latest, and removing an Agent keeps its revisions.
 
 **Studio**:
 The modal authoring surface for global Flows and reusable Agent definitions. It opens over the current Run or composer from the sidebar icon beside Settings, and closing it returns to that underlying screen. Settings holds the T3 connection and does not edit Agents or Flows.
@@ -49,10 +49,17 @@ A desktop installation or browser profile the server owner approved on the host 
 _Avoid_: user or account (there are no team accounts); session (approval outlives connections).
 
 **Human step**:
-A flow block awaiting a person's confirmation or decision in Factory before the flow continues. Returning work for corrections requires a prompt describing the requested changes.
+A flow block awaiting a person's decision in Factory before the flow continues. Its exits are fixed: **Approve** (message optional) and **Request changes** (a message describing the changes is required). No Flow or Agent configures them.
 
 **Block exit**:
-A named outcome of a flow block whose connections determine which blocks run next.
+A named result a block finishes with, whose connections determine which blocks run next. An exit has a stable ID, a name, an optional description and a "message required" flag; there is no other classification. An agent block's exits are its Agent's current exits minus those hidden in this Flow, plus its Flow-local exits; a Run uses the Agent revisions it captured. Wires leave by exit ID, so renaming an exit keeps them.
+_Avoid_: Exit outcome, completion or assessment exits (retired classifications); editing an inherited exit in a Flow.
+
+**Flow-local exit**:
+An exit a Flow adds to one agent block without changing its Agent. Its name must differ from the Agent's visible exits; a collision is a readiness issue.
+
+**Hidden exit**:
+An inherited Agent exit that one Flow hides on an agent block. Hiding an exit the Agent later removes has no effect.
 
 **Block result**:
 An agent's explicit report of its block's state and, where applicable, a selected exit and a message for subsequent blocks. A request for corrections is distinct from an inability to perform the work.

@@ -1,6 +1,7 @@
 import { RetainedResult, resultVersion } from "./run-coordination.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
+import { capturedExits } from "../flow-graph.ts";
 import {
   ArrowRight,
   Bot,
@@ -36,8 +37,8 @@ function nameOf(run: RunDetail, blockId: string | null) {
 }
 
 function exitLabel(run: RunDetail, blockId: string, exitId: string | null) {
-  const block = run.definitions.flow.graph.blocks.find((item) => item.id === blockId);
-  return block?.exits.find((exit) => exit.id === exitId)?.name ?? exitId ?? "an exit";
+  const exit = capturedExits(run.definitions, blockId).find((item) => item.id === exitId);
+  return exit?.name ?? exitId ?? "an exit";
 }
 
 function intentOf(run: RunDetail, event: RunEvent) {

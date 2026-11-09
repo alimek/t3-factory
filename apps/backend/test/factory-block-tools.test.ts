@@ -2,6 +2,7 @@ import { assert, expect, it } from "@effect/vitest";
 import { uncertainLaunch } from "./support/lost-launch.ts";
 import {
   directWorker,
+  exitVariantWorker,
   launchedBlockId,
   repliedWorker,
   reportedWorker,
@@ -24,7 +25,7 @@ it("factory_get_block reads the Block named by the id in its launch message", as
     state: "working",
     visit: 1,
     reason: "first",
-    exits: [{ id: "done", name: "Done", requiresFeedback: false }],
+    exits: [{ id: "done", name: "Done", description: "Completed", messageRequired: false }],
     inputs: {
       input: "Improve search\nKeep it accessible.",
       results: [],
@@ -32,6 +33,38 @@ it("factory_get_block reads the Block named by the id in its launch message", as
     },
     allowedTransitions: ["working", "finished"],
   });
+});
+
+it("factory_get_block lists the Agent's visible exits, then the Flow's local exits, with description and message requirement", async (c) => {
+  // Arrange
+  const fixture = await exitVariantWorker(c);
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
+
+  // Assert
+  expect(result.exits).toStrictEqual([
+    { id: "done", name: "Done", description: "Completed", messageRequired: false },
+    { id: "escalate", name: "Escalate", description: "", messageRequired: true },
+  ]);
+});
+
+it("a finished report on an exit hidden in the Run's Flow is refused with the Block's exits", async (c) => {
+  // Arrange
+  const fixture = await exitVariantWorker(c);
+
+  // Act
+  const result = await fixture.f.runtime.submit({
+    arguments: {
+      blockId: fixture.blockId,
+      to: "finished",
+      exit: "Blocked",
+      message: "Waiting on credentials.",
+    },
+  });
+
+  // Assert
+  expect(result).toMatchObject({ code: "INVALID_EXIT", allowedExits: ["Done", "Escalate"] });
 });
 
 it("the launch message states the Block id and issues no tool ref", async (c) => {
@@ -378,7 +411,7 @@ it("an unknown exit names the exits captured for that Block", async (c) => {
   expect(result).toMatchObject({ code: "INVALID_EXIT", allowedExits: ["Done"] });
 });
 
-it("a finished report without a message is accepted when that exit does not require feedback", async (c) => {
+it("a finished report without a message is accepted when that exit does not require a message", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
 
@@ -391,7 +424,7 @@ it("a finished report without a message is accepted when that exit does not requ
   expect(result.code).toBe("ACCEPTED");
 });
 
-it("a finished report without a message is refused when that exit requires feedback", async (c) => {
+it("a finished report without a message is refused when that exit requires a message", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "", true);
 

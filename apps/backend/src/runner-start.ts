@@ -20,7 +20,6 @@ import type {
   ValidationIssue,
 } from "@t3-factory/contracts";
 import {
-  flowReadiness,
   isCanonicalTimestamp,
   promptText,
   TASK_TITLE_LIMIT,
@@ -397,9 +396,8 @@ export function openRunnerStart(
         );
       if (!savedFlow.ok) return savedFlow;
       const flow = savedFlow.value;
-      const readiness = flowReadiness(flow.graph);
-      if (!readiness.ready)
-        return failure("validation", "Fix Flow readiness before starting.", readiness.issues);
+      if (!flow.readiness.ready)
+        return failure("validation", "Fix Flow readiness before starting.", flow.readiness.issues);
       const agents = yield* readyAgents(flow, target.project.id);
       const support = yield* Effect.tryPromise({
         try: () => t3.inspectLaunchSupport(target.project, flow.workspace.mode).catch(() => null),

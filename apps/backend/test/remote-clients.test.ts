@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import type { FlowDraft, RunDetail } from "@t3-factory/contracts";
+import type { RunDetail } from "@t3-factory/contracts";
 import { remotePrepared, remoteServer } from "./support/remote-clients.ts";
 
 it("a Start whose response was lost resolves to the original Run when the client retries it", async (c) => {
@@ -37,10 +37,10 @@ it("concurrent edits from two approved clients keep revision conflicts", async (
   expect(saved.value.name).toBe("Laptop edit");
 });
 
-it("a protocol 3 client saving a Flow without a workspace keeps the saved workspace", async (c) => {
+it("a client saving a Flow without a workspace keeps the saved workspace", async (c) => {
   // Arrange
   const server = await remoteServer(c);
-  const older = await server.approved("Laptop", "desktop", { protocol: 3, minimum: 3 });
+  const laptop = await server.approved("Laptop");
   const created = await server.factory.createFlow({ name: "Shared plan" });
   assert(created.ok);
   const checkout = await server.factory.updateFlow(created.value.id, {
@@ -52,7 +52,7 @@ it("a protocol 3 client saving a Flow without a workspace keeps the saved worksp
   assert(checkout.ok);
 
   // Act
-  const reply = await older.send("PUT", `/api/flows/${created.value.id}`, {
+  const reply = await laptop.send("PUT", `/api/flows/${created.value.id}`, {
     name: "Laptop edit",
     expectedRevision: 2,
     graph: created.value.graph,
@@ -92,17 +92,4 @@ it("the current client refuses a protocol-one server before product access", asy
   expect(reply.status).toBe(426);
   assert(!reply.body.ok);
   expect(reply.body.error.message).toMatch(/Update the Factory server/);
-});
-
-it("a previously approved protocol-one client retains read access on the current server", async (c) => {
-  // Arrange
-  const server = await remoteServer(c);
-  const old = await server.approved("Retained browser", "browser", { protocol: 1, minimum: 1 });
-
-  // Act
-  const reply = await old.send<readonly FlowDraft[]>("GET", "/api/flows");
-
-  // Assert
-  expect(reply.status).toBe(200);
-  expect(reply.body).toStrictEqual({ ok: true, value: [] });
 });

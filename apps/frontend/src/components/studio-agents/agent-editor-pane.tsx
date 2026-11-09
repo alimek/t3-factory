@@ -24,8 +24,9 @@ import { api } from "../../api.ts";
 import { useActiveView } from "../../use-active-view.ts";
 import { editedLabel } from "../studio-list.tsx";
 import { flowUsageLabel } from "@/lib/agent-display";
+import { AgentExitsField, newAgentExits } from "./agent-exits-field.tsx";
 
-type AgentDraft = Pick<AgentDefinition, "name" | "prompt" | "execution">;
+type AgentDraft = Pick<AgentDefinition, "name" | "prompt" | "execution" | "exits">;
 
 function saveRequest(
   agent: AgentDefinition | null,
@@ -61,6 +62,7 @@ function useAgentForm({ agent, capabilities, onSaved, onConflict, reportDraft }:
   const draftId = agent?.id ?? "new";
   const [name, setName] = useState(agent?.name ?? "");
   const [prompt, setPrompt] = useState(agent?.prompt ?? "");
+  const [exits, setExits] = useState(() => agent?.exits ?? newAgentExits());
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const settings = useExecutionSettings(agent?.execution ?? null, capabilities);
@@ -68,11 +70,13 @@ function useAgentForm({ agent, capabilities, onSaved, onConflict, reportDraft }:
     name: agent?.name ?? "",
     prompt: agent?.prompt ?? "",
     execution: settings.execution,
+    exits,
   }));
   const dirty =
     name !== baseline.name ||
     prompt !== baseline.prompt ||
-    JSON.stringify(settings.execution) !== JSON.stringify(baseline.execution);
+    JSON.stringify(settings.execution) !== JSON.stringify(baseline.execution) ||
+    JSON.stringify(exits) !== JSON.stringify(baseline.exits);
   useEffect(() => {
     reportDraft(draftId, dirty);
     return () => reportDraft(draftId, false);
@@ -85,6 +89,7 @@ function useAgentForm({ agent, capabilities, onSaved, onConflict, reportDraft }:
       name,
       prompt,
       execution: settings.execution,
+      exits,
     });
     if ("error" in request) {
       setError(request.error);
@@ -116,6 +121,8 @@ function useAgentForm({ agent, capabilities, onSaved, onConflict, reportDraft }:
     setName,
     prompt,
     setPrompt,
+    exits,
+    setExits,
     settings,
     error,
     saving,
@@ -127,7 +134,7 @@ function useAgentForm({ agent, capabilities, onSaved, onConflict, reportDraft }:
 export function AgentEditorPane(props: AgentEditorProps) {
   const { capabilities } = props;
   const form = useAgentForm(props);
-  const { name, setName, prompt, setPrompt, settings, error, submit } = form;
+  const { name, setName, prompt, setPrompt, exits, setExits, settings, error, submit } = form;
   const saving = form.saving || props.duplicating;
   return (
     <>
@@ -178,13 +185,7 @@ export function AgentEditorPane(props: AgentEditorProps) {
                 <code className="font-mono">$review-code</code>. No skill catalog is required.
               </p>
             </div>
-            <div className="grid gap-1.5">
-              <p className={fieldLabelClass}>Exits</p>
-              <p className="rounded-md border bg-muted px-2.5 py-2 text-2xs text-muted-foreground">
-                Exit names are configured on each Agent block in a Flow, not on the saved Agent
-                definition.
-              </p>
-            </div>
+            <AgentExitsField exits={exits} disabled={saving} onChange={setExits} />
           </div>
           {error && (
             <Alert variant="destructive" className="mt-4">

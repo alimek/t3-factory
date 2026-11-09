@@ -32,17 +32,18 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
   await screen.getByLabel("Block name").fill("Reviewer");
   await screen.getByLabel("X position").fill("660");
   await screen.getByLabel("Y position").fill("260");
-  await screen.getByRole("button", "Remove exit 1").tap();
-  await screen.getByRole("button", "Add exit").tap();
-  await screen.getByRole("menuitem", "Add assessment ok/fail").tap();
   const wires = screen.getByRole("group", "Directed connections");
   const coder = screen.getByRole("article", "Block Coder");
   const reviewer = screen.getByRole("article", "Block Reviewer");
   await screen.getByRole("button", "Connect exit fail of Reviewer").dragTo(coder);
   await expect(wires).toHaveAttribute("data-connection-count", "1");
+  // The Reviewer block offers its Agent's exits; the Agent's fail exit requires a message.
   await expect(
-    screen.getByRole("group", "Exit 2").getByLabel("Require correction feedback"),
-  ).toBeChecked();
+    screen
+      .getByRole("complementary", "Block configuration")
+      .getByRole("listitem", "Exit fail")
+      .getByText("Message required"),
+  ).toBeVisible();
   await screen.getByRole("button", "Add Human step").tap();
   await screen.getByLabel("X position").fill("980");
   await screen.getByLabel("Y position").fill("60");

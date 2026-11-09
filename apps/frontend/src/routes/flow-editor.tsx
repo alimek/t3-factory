@@ -49,12 +49,15 @@ import { IssueLink, ReadinessPanel } from "../components/flow-readiness.tsx";
 import { FlowWorkspaceControl } from "../components/flow-workspace-control.tsx";
 import { Page } from "../components/page.tsx";
 import {
+  canvasGraph,
   hasWire,
   newBlock,
   removeBlock,
   removeWire,
   replaceBlock,
   type BlockPosition,
+  type CanvasBlock,
+  type CanvasGraph,
   type FlowWire,
 } from "../flow-graph.ts";
 
@@ -326,7 +329,7 @@ const PANEL_CLOSE_MS = 140;
 const AUTHORING_FLOW_INPUT_HEIGHT = 88;
 const AUTHORING_FIT_PADDING = { x: 48, top: 64, bottom: 80 };
 
-function authoringBlockDisplayHeight(graph: FlowGraph, block: FlowBlock) {
+function authoringBlockDisplayHeight(graph: CanvasGraph, block: CanvasBlock) {
   return blockHeightForIncomingFanIn(
     incomingFanIn(graph, block.id),
     AUTHORING_PORTS,
@@ -334,7 +337,7 @@ function authoringBlockDisplayHeight(graph: FlowGraph, block: FlowBlock) {
   );
 }
 
-function authoringGraphBounds(graph: FlowGraph) {
+function authoringGraphBounds(graph: CanvasGraph) {
   const input = graph.flowInput;
   return mergeGraphBounds(
     {
@@ -380,7 +383,7 @@ export function FlowDetail({
   const viewport = useCanvasViewport({
     surface: canvas,
     scope: saved?.id === id ? id : null,
-    getBounds: () => authoringGraphBounds(graph),
+    getBounds: () => authoringGraphBounds(canvasGraph(graph, agents)),
     padding: AUTHORING_FIT_PADDING,
     contentInsetY: 64,
     reservedRight,
@@ -397,12 +400,14 @@ export function FlowDetail({
   } = useFlowLayoutSession({
     scope: id,
     graph,
+    agents,
     profile: { kind: "authoring" },
     authoring: {
       busy: draft.busy,
       savedGraph: draft.saved?.graph,
       change: draft.change,
-      onAccepted: (acceptedGraph) => viewport.fit(authoringGraphBounds(acceptedGraph)),
+      onAccepted: (acceptedGraph) =>
+        viewport.fit(authoringGraphBounds(canvasGraph(acceptedGraph, agents))),
     },
   });
   function add(kind: FlowBlock["kind"], agent?: AgentDefinition, position?: BlockPosition) {
@@ -517,7 +522,6 @@ function EditorSelectionPanel({
       agents={agents}
       onClose={() => select(null)}
       onEdit={draft.editBlock}
-      onChange={draft.change}
       onRemove={(removed) => {
         draft.change(removeBlock(graph, removed.id));
         select(null);
@@ -751,7 +755,6 @@ function BlockPanel({
   agents,
   onClose,
   onEdit,
-  onChange,
   onRemove,
 }: {
   block: FlowBlock;
@@ -760,7 +763,6 @@ function BlockPanel({
   agents: readonly AgentDefinition[];
   onClose: () => void;
   onEdit: (block: FlowBlock) => void;
-  onChange: (graph: FlowGraph) => void;
   onRemove: (block: FlowBlock) => void;
 }) {
   return (
@@ -809,7 +811,6 @@ function BlockPanel({
           graph={graph}
           agents={agents}
           onEdit={onEdit}
-          onChange={onChange}
           onRemove={() => onRemove(block)}
         />
       </div>

@@ -1,6 +1,6 @@
 import type { ElkExtendedEdge, ElkNode, ElkPoint } from "elkjs/lib/elk-api.js";
-import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
-import { wireRouteKey } from "./flow-graph.ts";
+import type { FlowGraph } from "@t3-factory/contracts";
+import { wireRouteKey, type CanvasBlock, type CanvasGraph } from "./flow-graph.ts";
 import {
   AUTHORING_FLOW_INPUT_HEIGHT,
   AUTHORING_PORTS,
@@ -25,7 +25,7 @@ const FLOW_INPUT_NODE_ID = "__flow_input__";
 
 export type FlowLayoutDimensions = {
   readonly flowInputHeight: number;
-  readonly blockHeight: (block: FlowBlock) => number;
+  readonly blockHeight: (block: CanvasBlock) => number;
   readonly ports: BlockPorts;
   readonly labels: boolean;
 };
@@ -60,7 +60,7 @@ function flowInputPortId() {
   return "out:flow-input";
 }
 
-function blockPorts(block: FlowBlock, graph: FlowGraph, dims: FlowLayoutDimensions) {
+function blockPorts(block: CanvasBlock, graph: CanvasGraph, dims: FlowLayoutDimensions) {
   const { ports } = dims;
   const incoming = incomingWiresForBlock(graph, block.id);
   const inputPorts =
@@ -97,7 +97,7 @@ function blockPorts(block: FlowBlock, graph: FlowGraph, dims: FlowLayoutDimensio
 }
 
 /** Reverse DFS finishing order keeps forward paths rightward and only cycle back edges leftward. */
-function orderedBlocks(graph: FlowGraph): FlowBlock[] {
+function orderedBlocks(graph: CanvasGraph): CanvasBlock[] {
   const byId = new Map(graph.blocks.map((block) => [block.id, block]));
   const successors = new Map<string, string[]>();
   for (const connection of graph.connections) {
@@ -106,9 +106,9 @@ function orderedBlocks(graph: FlowGraph): FlowBlock[] {
     successors.set(connection.sourceBlockId, targets);
   }
   const visited = new Set<string>();
-  const ordered: FlowBlock[] = [];
+  const ordered: CanvasBlock[] = [];
   function traverse(roots: readonly string[]) {
-    const finished: FlowBlock[] = [];
+    const finished: CanvasBlock[] = [];
     const stack = roots.map((id) => ({ id, finish: false })).reverse();
     while (stack.length) {
       const entry = stack.pop()!;
@@ -156,12 +156,12 @@ function flowInputNode(dims: FlowLayoutDimensions): ElkNode {
   return node;
 }
 
-function layoutBlockHeight(block: FlowBlock, graph: FlowGraph, dims: FlowLayoutDimensions) {
+function layoutBlockHeight(block: CanvasBlock, graph: CanvasGraph, dims: FlowLayoutDimensions) {
   const base = dims.blockHeight(block);
   return blockHeightForIncomingFanIn(incomingFanIn(graph, block.id), dims.ports, base);
 }
 
-function blockNode(block: FlowBlock, graph: FlowGraph, dims: FlowLayoutDimensions): ElkNode {
+function blockNode(block: CanvasBlock, graph: CanvasGraph, dims: FlowLayoutDimensions): ElkNode {
   const node: ElkNode = {
     id: block.id,
     width: BLOCK_WIDTH,
@@ -172,7 +172,7 @@ function blockNode(block: FlowBlock, graph: FlowGraph, dims: FlowLayoutDimension
   return node;
 }
 
-function edgeLabel(graph: FlowGraph, connection: FlowGraph["connections"][number]) {
+function edgeLabel(graph: CanvasGraph, connection: FlowGraph["connections"][number]) {
   const source = graph.blocks.find((block) => block.id === connection.sourceBlockId);
   const target = graph.blocks.find((block) => block.id === connection.targetBlockId);
   const exit = source?.exits.find((item) => item.id === connection.exitId)?.name || "exit";
@@ -181,7 +181,7 @@ function edgeLabel(graph: FlowGraph, connection: FlowGraph["connections"][number
   return { text, width: text.length * 7 + 24, height: 22 };
 }
 
-function buildEdges(graph: FlowGraph, labels: boolean): ElkExtendedEdge[] {
+function buildEdges(graph: CanvasGraph, labels: boolean): ElkExtendedEdge[] {
   const edges: ElkExtendedEdge[] = [];
   for (const targetBlockId of graph.flowInput.targetBlockIds) {
     const index = incomingPortIndexForSource(graph, targetBlockId, { kind: "flow-input" });
@@ -208,7 +208,7 @@ function buildEdges(graph: FlowGraph, labels: boolean): ElkExtendedEdge[] {
   return edges;
 }
 
-export function buildElkGraph(graph: FlowGraph, dims: FlowLayoutDimensions): ElkNode {
+export function buildElkGraph(graph: CanvasGraph, dims: FlowLayoutDimensions): ElkNode {
   return {
     id: "root",
     layoutOptions: ROOT_LAYOUT,

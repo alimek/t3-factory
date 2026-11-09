@@ -258,16 +258,15 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **6**. The server accepts historical protocol **1** to **5**
-clients and keeps their approved credentials and HTTP operations working; protocol **1** to
-**3** clients cannot see a Flow's workspace setting, and their Flow saves keep the saved one,
-and older clients keep starting text-only Runs with their earlier Start request. The current
-UI requires server protocol **6**, whose Run reads include the prompt segments and image manifest
-for the Run screen's image history (protocol **5** added Starts with prompt segments and staged images, protocol
-**4** added Flow workspace settings, Run workspaces, navigation activity and worker repository
-metadata, protocol **3** live delivery); older servers show the
-existing update gate before product screens mount. Compatibility follows the declared protocol range,
-not the application release.
+The current protocol is **7**, and both sides require at least **7**. Protocol 7 replaced
+outcome-based block exits with Agent exits: Agents carry exits, Agent blocks carry hidden and
+Flow-local exits and Human steps have fixed exits, so older clients could neither read nor save
+current Flows. Their approved credentials are kept, but every product request answers that the
+client must update. Older servers likewise show the existing update gate before product screens
+mount (protocol **6** added Run prompt segments and image manifests, protocol **5** Starts with
+staged images, protocol **4** Flow workspace settings, Run workspaces, navigation activity and
+worker repository metadata, protocol **3** live delivery). Compatibility follows the declared
+protocol range, not the application release.
 Product HTTP API requests declare `X-Factory-Protocol` and `X-Factory-Protocol-Minimum`;
 WebSocket upgrades declare the same range in the query as described above.
 A pair is compatible when the client protocol is at least the server minimum and the

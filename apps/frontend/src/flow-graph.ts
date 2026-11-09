@@ -1,32 +1,39 @@
 import type {
   AgentDefinition,
-  BlockExit,
-  ExitOutcome,
   FlowBlock,
   FlowConnection,
   FlowGraph,
+  RunDefinitions,
 } from "@t3-factory/contracts";
+import { effectiveExits, type EffectiveExit } from "@t3-factory/domain-validation";
 import { randomId } from "@/lib/ids";
 
 export type BlockPosition = FlowBlock["position"];
 
 const uid = randomId;
 
-export function preset(outcome: ExitOutcome): BlockExit {
+/** A block as a canvas draws it: the exits it offers are derived and never saved. */
+export type CanvasBlock = FlowBlock & { readonly exits: readonly EffectiveExit[] };
+export type CanvasGraph = Omit<FlowGraph, "blocks"> & { readonly blocks: readonly CanvasBlock[] };
+
+/** The graph with each block's effective exits, resolved against `agents`. */
+export function canvasGraph(
+  graph: FlowGraph,
+  agents: readonly Pick<AgentDefinition, "id" | "exits">[],
+): CanvasGraph {
   return {
-    id: uid(),
-    name:
-      outcome === "assessment-ok"
-        ? "ok"
-        : outcome === "assessment-fail"
-          ? "fail"
-          : outcome === "completion"
-            ? "finish"
-            : "",
-    description: "",
-    outcome,
-    requiresFeedback: outcome === "assessment-fail",
+    ...graph,
+    blocks: graph.blocks.map((block) => ({ ...block, exits: effectiveExits(block, agents) })),
   };
+}
+
+/** The exits a Run's block offered: its captured Flow revision with its captured Agent revisions. */
+export function capturedExits(
+  definitions: RunDefinitions,
+  blockId: string,
+): readonly EffectiveExit[] {
+  const block = definitions.flow.graph.blocks.find((item) => item.id === blockId);
+  return block ? effectiveExits(block, definitions.agents) : [];
 }
 
 /** Without a drop position, new blocks fill a three-column grid right of the Flow input. */
@@ -43,17 +50,14 @@ export function newBlock(
       x: 320 + (graph.blocks.length % 3) * 300,
       y: Math.min(10000, 50 + Math.floor(graph.blocks.length / 3) * 220),
     },
-    exits: [preset("completion")],
   };
-  return kind === "agent" ? { ...base, kind, agentId: agent?.id ?? null } : { ...base, kind };
+  return kind === "agent"
+    ? { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] }
+    : { ...base, kind };
 }
 
 export function replaceBlock(graph: FlowGraph, next: FlowBlock): FlowGraph {
   return { ...graph, blocks: graph.blocks.map((b) => (b.id === next.id ? next : b)) };
-}
-
-export function replaceExit(block: FlowBlock, next: BlockExit): FlowBlock {
-  return { ...block, exits: block.exits.map((x) => (x.id === next.id ? next : x)) };
 }
 
 /** Where a wire starts: one exit of a block, or the Flow input block. */
@@ -99,7 +103,10 @@ export function canConnect(graph: FlowGraph, source: WireSource, targetBlockId: 
   return source.kind === "exit" || target.kind === "agent";
 }
 
-export function addWire(graph: FlowGraph, { source, targetBlockId }: FlowWire): FlowGraph {
+export function addWire<G extends FlowGraph | CanvasGraph>(
+  graph: G,
+  { source, targetBlockId }: FlowWire,
+): G {
   if (source.kind === "flow-input")
     return {
       ...graph,
@@ -127,18 +134,6 @@ export function removeWire(graph: FlowGraph, wire: FlowWire): FlowGraph {
   return {
     ...graph,
     connections: graph.connections.filter((c) => !sameWire(connectionWire(c), wire)),
-  };
-}
-
-export function removeExit(graph: FlowGraph, blockId: string, exitId: string): FlowGraph {
-  return {
-    ...graph,
-    blocks: graph.blocks.map((b) =>
-      b.id === blockId ? { ...b, exits: b.exits.filter((x) => x.id !== exitId) } : b,
-    ),
-    connections: graph.connections.filter(
-      (c) => c.sourceBlockId !== blockId || c.exitId !== exitId,
-    ),
   };
 }
 

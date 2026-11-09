@@ -174,6 +174,7 @@ async function legacyRuntimeRepository(c: TestContext, directoryName: string, cl
       modelId: "gpt-6.1-sol",
       modelOptions: [],
     },
+    exits: [],
   };
   const a = await f.createAgent(input);
   assert(a.ok);
@@ -201,6 +202,7 @@ export async function runtimeReadinessFixture(c: TestContext) {
       modelId: "gpt-6.1-sol",
       modelOptions: [],
     },
+    exits: [],
   });
   assert(p.ok && a.ok);
   return { f, t3, selection: { projectId: p.value.id, agentId: a.value.id }, root };
