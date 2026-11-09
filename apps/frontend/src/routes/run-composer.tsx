@@ -35,12 +35,15 @@ import {
 } from "../components/ui/dropdown-menu.tsx";
 import { PickerMenuContent, PickerMenuSearch } from "../components/picker-menu-search.tsx";
 import { Label } from "../components/ui/label.tsx";
-import { Textarea } from "../components/ui/textarea.tsx";
 import {
   AttachImagesButton,
+  ImageDropOverlay,
+  ImagePreview,
   ImageRejections,
   PromptImageStrip,
+  useImageDrop,
 } from "../components/prompt-images.tsx";
+import { PromptEditor, type PromptEditorHandle } from "../components/prompt-editor.tsx";
 import { cn } from "../lib/utils.ts";
 import type { ConnectionPresentation } from "../connection-state.tsx";
 
@@ -125,7 +128,7 @@ function useComposer() {
       runDraft.edit({ projectId: projects.catalog.selectedProjectId });
   }, [projects.catalog, draft.projectId]);
   useForgetUnavailable(choices);
-  const prompt = useRef<HTMLTextAreaElement>(null);
+  const prompt = useRef<PromptEditorHandle>(null);
   const [promptMissing, setPromptMissing] = useState(false);
   const project = projects.catalog?.projects.find((p) => p.id === draft.projectId);
   const flow = flows?.find((f) => f.id === draft.flowId);
@@ -140,7 +143,7 @@ function useComposer() {
     !projects.busy;
   const start = async () => {
     if (!draft.pending) {
-      if (!draft.input.trim()) {
+      if (!draft.text.trim()) {
         setPromptMissing(true);
         prompt.current?.focus();
         return;
@@ -179,7 +182,7 @@ function composerHelp({ presentation }: Composer) {
 export function RunComposer() {
   const model = useComposer();
   const { draft, project, projectReady, start } = model;
-  const inactive = !draft.pending && (!model.ready || !draft.input.trim());
+  const inactive = !draft.pending && (!model.ready || !draft.text.trim());
   return (
     <ScreenLayout title="New Run">
       <main className="flex flex-1 items-center justify-center px-6 pt-8 pb-16 max-sm:px-4">
@@ -214,7 +217,7 @@ export function RunComposer() {
             <MutationGate>
               <Button
                 type="submit"
-                disabled={draft.busy || (!draft.pending && !model.ready && !!draft.input.trim())}
+                disabled={draft.busy || (!draft.pending && !model.ready && !!draft.text.trim())}
                 aria-disabled={inactive}
                 className={cn(
                   "group/start h-9 shrink-0 gap-2 pr-3 pl-3.5 font-semibold has-[>svg]:pr-3 has-[>svg]:pl-3.5",
@@ -474,8 +477,7 @@ function FlowField({ model }: { model: Composer }) {
 }
 
 function ComposerFields({ model }: { model: Composer }) {
-  const { draft, projects, locked, edit, prompt, promptMissing } = model;
-  const missing = promptMissing && !draft.input.trim();
+  const { draft, projects, locked, edit } = model;
   return (
     <>
       {" "}
@@ -488,57 +490,82 @@ function ComposerFields({ model }: { model: Composer }) {
         />
         <FlowField model={model} />
       </fieldset>
-      <div className="grid gap-1.5">
-        <Label htmlFor="launch-prompt" className={cn(fieldLabelClass, "gap-1.5")}>
-          Initial prompt{" "}
-          <span className="font-normal tracking-label text-subtle-foreground">Required</span>
-        </Label>
-        <div
-          className={cn(
-            "flex flex-col gap-2 rounded-lg border bg-muted pt-3 pr-3.5 pb-2.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
-            draft.images.length ? "min-h-42" : "h-42",
-            missing && "border-destructive focus-within:border-destructive",
-          )}
-        >
-          <Textarea
-            ref={prompt}
-            id="launch-prompt"
-            aria-invalid={missing}
-            aria-describedby="prompt-help"
-            autoFocus
-            readOnly={locked}
-            value={draft.input}
-            onChange={(event) => edit({ input: event.target.value })}
-            placeholder="Describe what this Run should do…"
-            className={cn(
-              "field-sizing-fixed min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent p-0 text-base focus-visible:ring-0 aria-invalid:ring-0",
-              draft.images.length > 0 && "min-h-20",
-            )}
-          />
-          <PromptImageStrip
-            images={draft.images}
-            load={runDraft.loadImage}
-            locked={locked}
-            onRemove={runDraft.removeImage}
-          />
-          <div className="flex items-center gap-2">
-            <p id="prompt-help" className="flex-1 text-2xs tracking-label text-subtle-foreground">
-              The first non-empty line becomes the Run title. You can rename it later.
-            </p>
-            <AttachImagesButton
-              disabled={locked}
-              onFiles={(files) => void runDraft.attachImages(files)}
-            />
-          </div>
-        </div>
-        <ImageRejections rejections={draft.imageRejections} />
-        {missing && (
-          <p role="alert" className="text-2xs text-destructive">
-            Enter an initial prompt to start the Run.
-          </p>
-        )}
-      </div>
+      <PromptField model={model} />
     </>
+  );
+}
+
+/** Required prompt text with inline image references; images are pasted, dropped or picked. */
+function PromptField({ model }: { model: Composer }) {
+  const { draft, locked, edit, prompt, promptMissing } = model;
+  const missing = promptMissing && !draft.text.trim();
+  const [previewing, setPreviewing] = useState<string>();
+  const previewed = draft.images.find((image) => image.imageId === previewing);
+  const drop = useImageDrop(!locked, (files) => void prompt.current?.insertImages(files));
+  return (
+    <div className="grid gap-1.5">
+      <Label
+        id="launch-prompt-label"
+        onClick={() => prompt.current?.focus()}
+        className={cn(fieldLabelClass, "gap-1.5")}
+      >
+        Initial prompt{" "}
+        <span className="font-normal tracking-label text-subtle-foreground">Required</span>
+      </Label>
+      <div
+        {...drop.handlers}
+        className={cn(
+          "relative flex flex-col gap-2 rounded-lg border bg-muted pt-3 pr-3.5 pb-2.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
+          draft.images.length ? "min-h-42" : "h-42",
+          missing && "border-destructive focus-within:border-destructive",
+        )}
+      >
+        <PromptEditor
+          ref={prompt}
+          segments={draft.segments}
+          images={draft.images}
+          locked={locked}
+          invalid={missing}
+          labelledBy="launch-prompt-label"
+          describedBy="prompt-help"
+          placeholder="Describe what this Run should do…"
+          onChange={(segments) => edit({ segments })}
+          attachImages={runDraft.attachImages}
+          onPreview={setPreviewing}
+        />
+        <PromptImageStrip
+          images={draft.images}
+          load={runDraft.loadImage}
+          locked={locked}
+          onPreview={setPreviewing}
+          onRemove={runDraft.removeImage}
+        />
+        <div className="flex items-center gap-2">
+          <p id="prompt-help" className="flex-1 text-2xs tracking-label text-subtle-foreground">
+            The first text line becomes the Run title; you can rename it later. Paste or drop
+            screenshots to reference them.
+          </p>
+          <AttachImagesButton
+            disabled={locked}
+            onFiles={(files) => void runDraft.attachImages(files)}
+          />
+        </div>
+        {drop.dragging && <ImageDropOverlay />}
+      </div>
+      <ImageRejections rejections={draft.imageRejections} />
+      {missing && (
+        <p role="alert" className="text-2xs text-destructive">
+          Enter an initial prompt to start the Run.
+        </p>
+      )}
+      {previewed && (
+        <ImagePreview
+          image={previewed}
+          load={runDraft.loadImage}
+          onClose={() => setPreviewing(undefined)}
+        />
+      )}
+    </div>
   );
 }
 

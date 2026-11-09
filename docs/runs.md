@@ -15,22 +15,29 @@ a T3 endpoint that is not on this computer rejects Start with a `workspace.*` is
 action; no Run, Task or worker is created. Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
-- **Screenshots.** **Attach images** in the prompt field adds PNG, JPEG, GIF or WebP files, up to 8 images of
-  1 byte–10 MiB each, sent unchanged (no recompression or resizing). The field shows thumbnails with remove controls,
-  and a thumbnail opens a full-size preview. Each unsupported, oversized, excess or unsavable file is rejected with its
-  name and reason; valid files and existing attachments stay. Identical bytes attach once; different files with the same
-  name stay separate images. Start still requires prompt text. At Start the composer uploads every image Factory does not
+- **Screenshots.** Pasting images (Ctrl+V/Cmd+V) at the prompt caret or dropping image files on the prompt field attaches
+  them and inserts a clickable reference to each at the caret (a drop uses the last caret position, or the end of the
+  prompt). **Attach images** attaches files without inserting references. Images are PNG, JPEG, GIF or WebP files, up to 8
+  images of 1 byte–10 MiB each, sent unchanged (no recompression or resizing). The field shows thumbnails with remove
+  controls; a thumbnail or reference opens a full-size preview. A reference shows the image name with its size and points
+  to the attached image itself, so references to different images with the same name stay distinct. Each unsupported,
+  oversized, excess or unsavable file is rejected with its name and reason; valid files and existing attachments stay.
+  Identical bytes attach once: pasting or dropping them again inserts another reference to the attached image without
+  using another slot. Different files with the same name stay separate images. Removing a thumbnail removes that image
+  and every reference to it; deleting a reference from the text keeps its image attached and delivered. Start still
+  requires prompt text: references alone do not count, and a line holding only references does not supply the automatic
+  title. At Start the composer uploads every image Factory does not
   hold yet, then sends the request; Factory accepts it only with every image uploaded and attaches them to the Run in
   order. Each Flow-input worker receives the same original images with its first message, named `image-N-<name>`, and
-  the Run's input text refers to them as `[Image N: name]` and ends with `Attached images:` listing every image. Later
-  Blocks, revisits and Request report turns remain text-only. Every worker, including during later user conversations,
-  can discover the initial images and retrieve relevant originals through
+  the Run's input text spells each reference as `[Image N: name]` in place and ends with `Attached images:` listing every
+  image, referenced or not. Later Blocks, revisits and Request report turns remain text-only. Every worker, including
+  during later user conversations, can discover the initial images and retrieve relevant originals through
   [read-only Factory MCP access](t3-integration.md#run-image-reads). The immutable image labels keep the same meaning
   across visits. An image Start needs a T3 that accepts uploaded
   launch attachments; otherwise it is rejected with "update T3 or remove the images" and nothing is created. Images are
   part of the Run's input and stay with it after Settle and Archive.
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
-  else its first non-empty prompt line limited to 500 characters. Start also carries the draft's creation time, which becomes
+  else its first non-empty line of prompt text limited to 500 characters. Start also carries the draft's creation time, which becomes
   the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
   title (after trimming) or a creation time not in `Date.toISOString()` form (for example `2026-11-07T08:00:00.000Z`),
   and creates nothing.
@@ -110,7 +117,15 @@ Opening a Run shows the Flow revision it captured at Start on a read-only canvas
 connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
 project is unavailable; a later edit or removal is labelled (**Flow edited since**, **Flow removed since**), never substituted.
 
-- The **Flow input** block shows the Run's truncated prompt and has no state or details panel.
+- The **Flow input** block shows the Run's truncated prompt and has no state or details panel. With images it shows up
+  to three prompt lines, each image reference as an **Image N: name** chip, the first three thumbnails and a **+N** control
+  for the rest. A thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
+  its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
+  the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the context
+  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)). Images are
+  read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
+  **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
+  retried and creates no attention or state change.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
   before it finished). Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the

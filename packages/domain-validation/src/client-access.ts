@@ -11,11 +11,11 @@ import type {
  * peer must understand; raise the minimum only when older peers can no longer
  * interoperate safely. Application release numbers never decide compatibility.
  */
-export const FACTORY_PROTOCOL = 5;
+export const FACTORY_PROTOCOL = 6;
 /** Server accepts historical clients; existing product operations remain supported. */
 export const FACTORY_MINIMUM_PEER_PROTOCOL = 1;
-/** The current UI starts Runs with prompt segments and staged images (protocol 5). */
-export const FACTORY_MINIMUM_SERVER_PROTOCOL = 5;
+/** The current UI reads each Run's prompt segments and image manifest (protocol 6). */
+export const FACTORY_MINIMUM_SERVER_PROTOCOL = 6;
 
 export const CLIENT_LABEL_LIMIT = 80;
 

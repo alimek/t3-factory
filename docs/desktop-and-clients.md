@@ -258,11 +258,12 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **5**. The server accepts historical protocol **1** to **4**
+The current protocol is **6**. The server accepts historical protocol **1** to **5**
 clients and keeps their approved credentials and HTTP operations working; protocol **1** to
 **3** clients cannot see a Flow's workspace setting, and their Flow saves keep the saved one,
 and older clients keep starting text-only Runs with their earlier Start request. The current
-UI requires server protocol **5** for Starts with prompt segments and staged images (protocol
+UI requires server protocol **6**, whose Run reads include the prompt segments and image manifest
+for the Run screen's image history (protocol **5** added Starts with prompt segments and staged images, protocol
 **4** added Flow workspace settings, Run workspaces, navigation activity and worker repository
 metadata, protocol **3** live delivery); older servers show the
 existing update gate before product screens mount. Compatibility follows the declared protocol range,
