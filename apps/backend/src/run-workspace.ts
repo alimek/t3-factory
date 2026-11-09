@@ -1,12 +1,6 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type {
-  ExecutionObservation,
-  LaunchCandidate,
-  LaunchPayload,
-  T3Adapter,
-  T3ProjectRef,
-} from "./adapters/t3.ts";
+import type { ExecutionObservation, LaunchCandidate, LaunchPayload } from "./adapters/t3.ts";
 
 /**
  * The workspace a Run's workers share. A checkout Run works in its project root. A worktree Run's
@@ -58,16 +52,6 @@ export const readRunWorkspace = Effect.fnUntraced(function* (
       : { ...plan, state: row.state };
   return workspace;
 });
-
-/**
- * The Project's first blocking worktree setup script, read from T3 now; fails when T3 cannot read
- * the scripts. Factory attaches later workers idle and T3 shows no setup completion for an idle
- * thread, so a blocking script could still run when its first activation arrives.
- */
-export const blockingSetupScript = (t3: T3Adapter, target: T3ProjectRef) =>
-  Effect.tryPromise(() => t3.readWorktreeSetupScripts(target)).pipe(
-    Effect.map((scripts) => scripts.find((script) => script.blocking) ?? null),
-  );
 
 export const WORKTREE_REJECTED = "T3 rejected the worker that creates the Run worktree.";
 

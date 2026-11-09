@@ -156,7 +156,7 @@ it("launch support permits an absent runtime mode without inventing replay proof
   expect(support.retryScope).toBe(null);
 });
 
-it("T3's workspace strategy schema supports idle worktree launches", async (c) => {
+it("T3's workspace strategy schema supports worktree launches", async (c) => {
   // Arrange
   const { adapter, external } = await launchFixture(c);
 
@@ -227,25 +227,6 @@ it("SDK launch without an exact execution reference remains uncertain", async (c
 
   // Assert
   await expect(result).rejects.toThrow(/uncertain/);
-});
-
-it("an idle launch into the Run worktree is accepted with no run", async (c) => {
-  // Arrange
-  const fixture = await launchFixture(c);
-
-  // Act
-  const reference = await fixture.adapter.launchIdleThread(
-    { endpoint: fixture.external.endpoint },
-    fixture.idlePayload,
-  );
-
-  // Assert
-  expect(reference).toStrictEqual({
-    projectId: "neutral",
-    threadId: "thread",
-    link: "t3://threads/thread",
-  });
-  expect(fixture.seen).toStrictEqual([fixture.idlePayload]);
 });
 
 it("execution observation preserves native requests and renewed work references", async (c) => {

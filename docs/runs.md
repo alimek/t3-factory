@@ -12,9 +12,7 @@ is launched on rejection. For a Flow whose [workspace setting](studio.md#workspa
 resolves the base in the selected Project's repository on the Factory host: the default branch from `origin/HEAD`, or the
 custom ref verified as a commit, read through bounded `git` calls without a shell. A missing ref, an unset default branch or
 a T3 endpoint that is not on this computer rejects Start with a `workspace.*` issue and the **Open Studio → Flows** repair
-action; no Run, Task or worker is created. Start then reads the Project's T3 scripts and rejects the same way when a worktree
-setup script is blocking or the scripts cannot be read; making the script asynchronous in T3 or choosing the project checkout
-repairs it ([support limit](installation.md#execution-and-safety-boundaries)). Correct configuration, accepted Start and accepted Block result are separate
+action; no Run, Task or worker is created. Correct configuration, accepted Start and accepted Block result are separate
 levels of evidence. A configuration check alone proves neither execution nor report acceptance.
 
 - **Task and Run.** Each Start creates a new Task and its Run, both named with the draft's chosen title: a manual title, or
@@ -106,14 +104,13 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
-- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). An unvisited Block of a
-  worktree Run names the idle worker prepared for it. There is no editing here.
+- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
   prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
-  checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path** with the
-  number of prepared idle workers, or **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery
-  note. The timeline says **entered · prepared idle T3 thread** for a first visit queued on a prepared worker.
+  checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
+  **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery note. Retained Runs that queued a
+  first visit on an idle worker prepared under the earlier contract still show **entered · prepared idle T3 thread**.
 - Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
 
 Engine termination alone never settles a Run; automatic settlement needs every condition in [Settled Runs](#settled-runs).
@@ -201,11 +198,10 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 - Acceptance holds every outgoing handoff until the worker thread is finished in T3: no active run, no native request and its
   delegated or background work settled ([rule](runner.md#worker-thread-completion)). The timeline shows **handoff held**, then
   **handoff released** (dispatch reserved); the recipient's launch or send acknowledgement is separate.
-- A first visit launches the block's own top-level worker; in a worktree Run, Agent Blocks no Flow input starts get an idle
-  worker once the worktree is bound, and the first visit queues on it ([Run workspace](runner.md#run-workspace)). An idle
-  worker is not a visit, never shows a missing report and does not keep the Run from settling. Later visits queue independent turns on that same worker, each as
-  its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
-  Partial fan-out survives restart; an unresolved launch or idle worker preparation holds later arrivals to that block only.
+- A first visit launches the block's own top-level worker with its task; no T3 thread exists for a block before it is
+  reached. In a worktree Run that worker joins the bound worktree ([Run workspace](runner.md#run-workspace)). Later visits
+  queue independent turns on that same worker, each as its own activation. Two Reviewers returning corrections create two Worker turns, with no Join or agreement on a revision.
+  Partial fan-out survives restart; an unresolved launch holds later arrivals to that block only.
 - Block state, report, engine status and freshness are separate: a finished report can appear while T3 still works; a finished
   worker thread without a report is a **missing-report Problem**, also after a notification or reply turn; a worker waiting on
   delegated or background work T3 has not settled stays working. A failed, cancelled or interrupted latest run is a Problem until

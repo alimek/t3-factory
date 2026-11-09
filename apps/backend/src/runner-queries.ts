@@ -19,7 +19,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import { readRunWorkspace, WORKTREE_REJECTED } from "./run-workspace.ts";
-import { launchesWorker } from "./runner-utils.ts";
 import { attentionRows } from "./runner-attention.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { currentWorkingMessages } from "./block-report.ts";
@@ -55,7 +54,7 @@ function runBlock(
   const recovering = intents.some(
     (intent) =>
       intent.block_id === block.block_id &&
-      launchesWorker(intent) &&
+      intent.kind === "launch" &&
       unresolved.includes(intent.state),
   );
   return {
@@ -76,18 +75,11 @@ function runBlock(
   };
 }
 
-/** The Run workspace with its prepared idle workers that are not yet a Block's visit. A preparing worktree carries its creator
- * launch's unresolved problem, if any. */
+/** The Run workspace. A preparing worktree carries its creator launch's unresolved problem, if any. */
 function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly IntentRow[]) {
   return Effect.gen(function* () {
     const workspace = yield* readRunWorkspace(sql, runId);
     if (workspace.mode === "checkout") return workspace satisfies RunWorkspaceDetail;
-    const prepared = yield* sql<{
-      block_id: string;
-      thread_id: string;
-      link: string | null;
-      prepared_at: string;
-    }>`SELECT p.block_id,p.thread_id,p.link,p.prepared_at FROM run_prepared_workers p JOIN run_blocks b ON b.run_id=p.run_id AND b.block_id=p.block_id WHERE p.run_id=${runId} AND b.thread_id IS NULL ORDER BY p.rowid`;
     const creatorLaunch = intents.find(
       (intent) =>
         intent.kind === "launch" &&
@@ -107,12 +99,6 @@ function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly
       path: workspace.state === "bound" ? workspace.worktreePath : null,
       branch: workspace.state === "bound" ? workspace.branch : null,
       problem,
-      preparedWorkers: prepared.map((row) => ({
-        blockId: row.block_id,
-        threadId: row.thread_id,
-        link: threadHref(row.link),
-        preparedAt: row.prepared_at,
-      })),
     };
     return detail;
   });

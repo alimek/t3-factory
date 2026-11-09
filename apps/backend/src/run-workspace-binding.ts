@@ -1,7 +1,6 @@
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { persistEntryLaunches } from "./runner-block-workers.ts";
-import { persistWorkerPreparations } from "./run-prepared-workers.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { RunRow } from "./runner-types.ts";
 import { runTarget } from "./runner-utils.ts";
@@ -9,9 +8,9 @@ import { now } from "./time.ts";
 
 /**
  * Binds a worktree Run's worktree once its creator's thread shows both a path and a branch, and in
- * the same transaction records one launch per other Flow-input target and one idle worker per
- * later Agent Block on that worktree. The path is not readiness: T3 queues each launched worker's
- * own setup behind its workspace preparation.
+ * the same transaction records one launch per other Flow-input target on that worktree. Later
+ * Agent Blocks launch their workers there on their first arrival. The path is not readiness: T3
+ * queues each launched worker's own setup behind its workspace preparation.
  * Returns whether this call bound the worktree.
  */
 export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: RunRow) {
@@ -43,18 +42,15 @@ export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: R
         const bound =
           yield* sql`UPDATE run_workspaces SET state='bound',worktree_path=${worktreePath},branch=${branch},bound_at=${time} WHERE run_id=${run.id} AND state='preparing' RETURNING run_id`;
         if (!bound.length) return false;
-        const plan = {
-          runId: run.id,
-          number: run.number,
-          definitions: run.definitions,
-          workspace: { ...workspace, state: "bound" as const, worktreePath, branch },
-          project: runTarget(run),
-          contextId: run.context_id,
-        };
         yield* persistEntryLaunches(
           sql,
           {
-            ...plan,
+            runId: run.id,
+            number: run.number,
+            definitions: run.definitions,
+            workspace: { ...workspace, state: "bound", worktreePath, branch },
+            project: runTarget(run),
+            contextId: run.context_id,
             // Reservation records the retry scope T3 offers when each launch is sent.
             retryScope: null,
             time,
@@ -63,7 +59,6 @@ export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: R
             (blockId) => blockId !== workspace.creatorBlockId,
           ),
         );
-        yield* persistWorkerPreparations(sql, plan);
         yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
         return true;
       }),

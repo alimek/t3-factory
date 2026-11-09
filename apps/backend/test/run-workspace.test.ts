@@ -42,42 +42,6 @@ it("a worktree Start without a resolvable default branch is rejected with a Flow
   expect(t3.launches.size).toBe(0);
 });
 
-it("a worktree Start for a Project with a blocking worktree setup script is rejected and launches nothing", async (c) => {
-  // Arrange
-  const { f, t3, input, project } = await preparedWorkspaceFlow(c, {
-    mode: "worktree",
-    base: { kind: "default" },
-  });
-  t3.worktreeSetupScripts = [{ name: "Install dependencies", blocking: true }];
-
-  // Act
-  const result = await f.startRun(input);
-
-  // Assert
-  assert(!result.ok);
-  expect(result.error.code).toBe("validation");
-  expect(result.error.issues).toMatchObject([
-    { code: "workspace_blocking_setup", path: "workspace.mode" },
-  ]);
-  expect(await f.listRuns(project.id)).toStrictEqual({ ok: true, value: [] });
-  expect(t3.launches.size).toBe(0);
-});
-
-it("a worktree Start for a Project with an asynchronous worktree setup script is accepted", async (c) => {
-  // Arrange
-  const { f, t3, input } = await preparedWorkspaceFlow(c, {
-    mode: "worktree",
-    base: { kind: "default" },
-  });
-  t3.worktreeSetupScripts = [{ name: "Install dependencies", blocking: false }];
-
-  // Act
-  const result = await f.startRun(input);
-
-  // Assert
-  expect(result.ok).toBe(true);
-});
-
 it("saving a different workspace after Start leaves the Run's captured project checkout", async (c) => {
   // Arrange
   const { f, input, flow } = await preparedWorkspaceFlow(c, { mode: "checkout" });

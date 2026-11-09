@@ -237,7 +237,7 @@ async function parallelStartScenario(context: SeedContext, flowId: string) {
   });
 }
 
-/** The worker creates the Run worktree; the reviewer's idle worker waits on it, unvisited. */
+/** The worker creates the Run worktree; the reviewer stays unvisited, with no worker yet. */
 async function worktreeScenario(context: SeedContext, flowId: string) {
   const run = await startScenario(
     context,
@@ -249,8 +249,7 @@ async function worktreeScenario(context: SeedContext, flowId: string) {
   await reconcileUntil(
     context,
     run.id,
-    (detail) =>
-      detail.workspace.mode === "worktree" && detail.workspace.preparedWorkers.length === 1,
+    (detail) => detail.workspace.mode === "worktree" && detail.workspace.state === "bound",
   );
 }
 
