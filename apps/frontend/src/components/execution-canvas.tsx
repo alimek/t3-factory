@@ -8,7 +8,8 @@ import {
 } from "@t3-factory/contracts";
 import { Bot, CircleHelp, Clock, User } from "lucide-react";
 import { CanvasZoomControls } from "./canvas-zoom-controls.tsx";
-import { mergeGraphBounds } from "../canvas-fit.ts";
+import { fitGraphView, mergeGraphBounds } from "../canvas-fit.ts";
+import { selectExecutionTargets } from "../execution-focus.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { cn } from "@/lib/utils";
 import { exitRecipients } from "../flow-graph.ts";
@@ -104,6 +105,26 @@ function graphBounds(graph: FlowGraph, blockHeight: (block: FlowBlock) => number
     };
   }
   return bounds;
+}
+
+/** Only the focus targets determine zoom and center. */
+function executionFocusView(
+  targetIds: readonly string[],
+  graph: FlowGraph,
+  blockHeight: (block: FlowBlock) => number,
+  width: number,
+  height: number,
+) {
+  const ids = new Set(targetIds);
+  const rect = (block: FlowBlock) => ({
+    ...block.position,
+    width: BLOCK_WIDTH,
+    height: blockHeight(block),
+  });
+  const targets = graph.blocks.filter((block) => ids.has(block.id)).map(rect);
+  const [first, ...rest] = targets;
+  if (!first) return fitGraphView(graphBounds(graph, blockHeight), width, height, FIT_PADDING, 0);
+  return fitGraphView(mergeGraphBounds(first, rest), width, height, FIT_PADDING, 0);
 }
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -493,19 +514,21 @@ function useExecutionLayout(run: RunDetail, observationUnavailable: boolean) {
 }
 
 /**
- * Read-only canvas of a captured Flow revision. The viewport is local UI state: polling replaces
- * block facts in place and does not fit or move the view again.
+ * Read-only canvas of a captured Flow revision. The viewport is local UI state: live updates
+ * replace block facts in place and move the view only while it follows the active Blocks.
  */
 export function ExecutionCanvas({
   run,
   selected,
   observationUnavailable,
+  shown,
   onSelect,
   overlay,
 }: {
   run: RunDetail;
   selected: string | null;
   observationUnavailable: boolean;
+  shown: boolean;
   onSelect: (blockId: string | null) => void;
   /** Top-left badges and notices (Figma "Overlay · top-left"); they never block panning. */
   overlay?: ReactNode;
@@ -521,20 +544,27 @@ export function ExecutionCanvas({
     autoArrange,
   } = useExecutionLayout(run, observationUnavailable);
   const surface = useRef<HTMLElement>(null);
-  const { view, fit, zoom, startPan, onKeyDown } = useCanvasViewport({
-    surface,
-    scope: run.id,
-    getBounds: () => graphBounds(graph, wireLayout.blockHeight),
-    padding: FIT_PADDING,
-    resize: "preserve",
-    fitRevision: accepted,
-    onTap: () => onSelect(null),
-  });
+  const focusTargets = selectExecutionTargets(run.blocks);
+  const { view, fitFlow, zoom, startPan, onKeyDown, following, focusChanged, followActive } =
+    useCanvasViewport({
+      surface,
+      scope: run.id,
+      shown,
+      getBounds: () => graphBounds(graph, wireLayout.blockHeight),
+      getFocusView: (width, height) =>
+        executionFocusView(focusTargets, graph, wireLayout.blockHeight, width, height),
+      focusTargets,
+      padding: FIT_PADDING,
+      resize: "preserve",
+      fitRevision: accepted,
+      onTap: () => onSelect(null),
+    });
   return (
     <section
       ref={surface}
       aria-label="Execution canvas"
       data-zoom={view.scale.toFixed(3)}
+      data-following={following}
       tabIndex={0}
       onKeyDown={onKeyDown}
       className="relative h-full min-h-0 w-full overflow-hidden bg-background outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
@@ -590,14 +620,19 @@ export function ExecutionCanvas({
         <CanvasZoomControls
           scale={view.scale}
           onZoom={zoom}
-          onFit={() => fit()}
+          onFit={fitFlow}
+          follow={{
+            available: focusTargets.length > 0,
+            changed: focusChanged,
+            onFollow: followActive,
+          }}
           trailing={
             <>
               <span aria-hidden className="h-5 w-px bg-border" />
               <AutoArrangeButton pending={arrangePending} onClick={() => void autoArrange()} />
             </>
           }
-          hint="The view stays put while statuses update."
+          hint="The view follows active Blocks until you move it."
         />
         <AutoArrangeStatus error={arrangeError} onDismiss={dismissError} />
       </div>

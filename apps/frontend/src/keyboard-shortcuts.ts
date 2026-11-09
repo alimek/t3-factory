@@ -38,6 +38,7 @@ export const shortcutDefinitions = [
   { id: "zoomIn", label: "Zoom in", scope: "canvas", group: "canvas" },
   { id: "zoomOut", label: "Zoom out", scope: "canvas", group: "canvas" },
   { id: "fit", label: "Fit canvas", scope: "canvas", group: "canvas" },
+  { id: "followActive", label: "Follow active", scope: "canvas", group: "canvas" },
 ] as const;
 
 export type ShortcutId = (typeof shortcutDefinitions)[number]["id"];
@@ -84,6 +85,7 @@ const sharedPlatformDefaults = {
   zoomIn: binding("="),
   zoomOut: binding("-"),
   fit: binding("0"),
+  followActive: binding("."),
 } satisfies Partial<Record<ShortcutId, ShortcutBinding>>;
 
 const desktopOnlyDefaults = {

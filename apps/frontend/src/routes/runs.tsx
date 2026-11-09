@@ -8,6 +8,7 @@ import {
 } from "../components/run-coordination.tsx";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { RunConversationAction, RunConversationNotice } from "../components/run-conversation.tsx";
+import { useSettings, useStudio } from "../settings-navigation.ts";
 import { useLocation } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -229,6 +230,8 @@ function RunDetailView({
   onSelect: (blockId: string | null) => void;
   onToggleContext: () => void;
 }) {
+  const settings = useSettings();
+  const studio = useStudio();
   const graphBlock = run.definitions.flow.graph.blocks.find((block) => block.id === selected);
   const recorded = run.blocks.find((block) => block.blockId === selected);
   const unavailable = observed.unavailable;
@@ -244,6 +247,7 @@ function RunDetailView({
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-72 flex-1">
             <ExecutionCanvas
+              shown={!settings && !studio}
               run={run}
               selected={selected}
               observationUnavailable={unavailable}

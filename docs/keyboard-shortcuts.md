@@ -31,9 +31,14 @@ desktop app can use.
 | Zoom in | + (or =) | + (or =) |
 | Zoom out | − | − |
 | Fit canvas | 0 | 0 |
+| Follow active | . | . |
 
 New Run never starts execution. Canvas zoom shortcuts apply only while a Flow or
 execution canvas is focused; they zoom around the viewport center, not the pointer.
+**Follow active** applies only while the Run execution canvas itself is focused: it
+recenters on the active Blocks and resumes following. It does not run on the Flow
+authoring canvas or inside editable fields. With no active or failed Block to focus,
+it does nothing.
 Pinch and **Mod**+wheel pan/zoom at the pointer follow the canvas rules in
 [Studio](studio.md#automatic-layout-and-canvas-view) and [Runs](runs.md#execution-canvas).
 

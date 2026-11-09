@@ -342,12 +342,12 @@ async function approvedBrowserCookie() {
 
 /** Runs a live journey started on demand, under whichever T3 context is current. */
 const liveRuns = new Map<string, string>();
-async function liveRun(key: string) {
+async function liveRun(key: string, flowName = "Demo · Focused change") {
   const known = liveRuns.get(key);
   if (known) return requireSuccess(await factory.getRun(known));
   const started = await startScenario(
     context,
-    flows.find((flow) => flow.name === "Demo · Focused change")!.id,
+    flows.find((flow) => flow.name === flowName)!.id,
     `ui-live-${key}`,
     `Live ${key} · Tidy the project picker`,
     "Tidy the spacing of the Atlas project picker.",
@@ -447,7 +447,21 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   },
 
   async "/__fixture/live/run"(query) {
-    return { id: (await liveRun(query.get("key")!)).id };
+    return { id: (await liveRun(query.get("key")!, query.get("flow") ?? undefined)).id };
+  },
+  // The implementing Agent hands off to the reviewer, which becomes the active Block.
+  async "/__fixture/live/handoff"(query) {
+    const run = await liveRun(query.get("key")!);
+    const accepted = await report(context, run, "worker", {
+      to: "finished",
+      exit: "review",
+      message: "Ready for review.",
+    });
+    await observeTerminal(t3, executionBlock(accepted), "completed");
+    await reconcileUntil(context, run.id, (detail) =>
+      detail.blocks.some((block) => block.blockId === "reviewer" && block.state === "working"),
+    );
+    return { ok: true };
   },
   // An Agent's Factory MCP report on the live journey's Run.
   async "/__fixture/live/report"(query) {
