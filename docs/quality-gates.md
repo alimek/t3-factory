@@ -98,6 +98,19 @@ CI can validate PR fields before merge and the actual message after a main push,
 but cannot inspect an unsaved override in the merge dialog. Require **Quality
 gate** in branch protection for the CI check to block merges.
 
+### Pull request review loop
+
+The `main` ruleset requires **Quality gate** and **PR title**, squash merges and
+resolved review threads. It does not require the branch to be up to date with
+`main`: merge `main` into a PR only to resolve a conflict, because every update
+reruns CI and CodeRabbit. A broken combination surfaces in the quality gate on
+the push to `main`.
+
+CodeRabbit skips draft PRs. Open the PR as a draft, mark it ready
+(`gh pr ready`) once the local gate passes, and fix every open finding from one
+review round in a single push. Each push starts another incremental review
+round of several minutes.
+
 ## Static correctness policy
 
 The root `vite.config.ts` owns lint and formatting for the workspace through
