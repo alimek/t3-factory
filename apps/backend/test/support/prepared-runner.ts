@@ -1,4 +1,5 @@
 import { assert, type TestContext } from "@effect/vitest";
+import * as Effect from "effect/Effect";
 import type { Factory } from "@t3-factory/backend";
 import type { FlowWorkspace } from "@t3-factory/contracts";
 import { loadConfiguration } from "@t3-factory/backend/config";
@@ -96,6 +97,27 @@ export async function prepared(c: TestContext) {
   return { h, f, t3, ...(await readyFlow(f, t3, root)) };
 }
 
+/**
+ * The ready Flow on backend services in the test's scope, so TestClock drives their time. Setup
+ * runs through a Promise view of the same operations.
+ */
+export function preparedService(c: TestContext) {
+  return Effect.gen(function* () {
+    const h = yield* Effect.promise(() => factoryHarness(c));
+    const { root, t3, reportingStateDirectory } = yield* Effect.promise(() =>
+      preparedHomes(h.processHome),
+    );
+    const factory = yield* h.service({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
+    const operations = factory as unknown as Record<string, (...args: unknown[]) => Effect.Effect<unknown>>;
+    const promised = new Proxy(
+      {},
+      { get: (_, name: string) => (...args: unknown[]) => Effect.runPromise(operations[name]!(...args)) },
+    ) as Factory;
+    const ready = yield* Effect.promise(() => readyFlow(promised, t3, root));
+    return { factory, t3, ...ready };
+  });
+}
+
 /** The ready Flow on a listening backend, whose Factory MCP endpoint harnesses call. */
 export async function preparedServer(c: TestContext) {
   const h = await factoryHarness(c);
@@ -164,6 +186,28 @@ export async function preparedWorkspaceFlow(c: TestContext, workspace: FlowWorks
     workspace,
   });
   assert(flow.ok);
+  return { ...setup, flow: flow.value };
+}
+
+/** A checkout Flow whose input starts Entry worker and Second entry; Entry worker's "Done" goes to Follow-up. */
+export async function preparedFanOutFlow(c: TestContext) {
+  const setup = await prepared(c);
+  const entry = setup.flow.graph.blocks[0]!;
+  const flow = await setup.f.updateFlow(setup.flow.id, {
+    ...setup.flow,
+    expectedRevision: setup.flow.revision,
+    graph: {
+      ...setup.flow.graph,
+      flowInput: { ...setup.flow.graph.flowInput, targetBlockIds: [entry.id, "second"] },
+      blocks: [
+        entry,
+        { ...entry, id: "second", name: "Second entry" },
+        { ...entry, id: "follow-up", name: "Follow-up" },
+      ],
+      connections: [{ sourceBlockId: entry.id, exitId: "done", targetBlockId: "follow-up" }],
+    },
+  });
+  assert(flow.ok, JSON.stringify(flow));
   return { ...setup, flow: flow.value };
 }
 

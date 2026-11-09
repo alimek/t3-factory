@@ -699,3 +699,14 @@ export {
   protocolCompatibility,
   validateClientAccessRequest,
 } from "./client-access.ts";
+export {
+  imageSignatureMime,
+  isSha256Hex,
+  promptText,
+  RUN_IMAGE_LIMIT,
+  RUN_IMAGE_MAX_BYTES,
+  RUN_IMAGE_MIME_TYPES,
+  RUN_IMAGE_NAME_LIMIT,
+  validateStartPrompt,
+  type StartPrompt,
+} from "./run-prompt.ts";

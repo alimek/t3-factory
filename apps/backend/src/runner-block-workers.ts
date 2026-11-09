@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { RunDefinitions } from "@t3-factory/contracts";
+import type { RunDefinitions, RunImage } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import {
   LaunchRejected,
+  type LaunchAttachment,
   type LaunchCandidate,
   type LaunchDiscovery,
   type LaunchPayload,
@@ -26,13 +27,40 @@ import type { RunWorkspace } from "./run-workspace.ts";
 import { scopedThreadHref } from "./thread-link.ts";
 import { now } from "./time.ts";
 import { newId } from "./ids.ts";
+import { attachmentName, RUN_IMAGE_MISSING, type RunImages } from "./run-images.ts";
 
 const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
-/** The installed Block skill, the Block id its Factory tools take, and the turn to act on. */
-export function workerTurn(body: string, blockId: string) {
-  return `$factory-block\n\nFactory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block.\n\n${body}`;
+/** An initial-prompt image a Flow-input launch carries, in manifest order. */
+export interface LaunchImage {
+  readonly ordinal: number;
+  readonly sha256: string;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+}
+/** The saved launch: T3's request, plus the Run images uploaded anew for each dispatch. */
+type StoredLaunchPayload = LaunchPayload & { readonly images?: readonly LaunchImage[] };
+
+/**
+ * The installed Block skill, the Block id its Factory tools take, how attached images map to the
+ * initial prompt's references, and the turn to act on.
+ */
+export function workerTurn(body: string, blockId: string, images: readonly LaunchImage[] = []) {
+  const names = images.map((image) => attachmentName(image.ordinal, image.name)).join(", ");
+  return [
+    "$factory-block",
+    "",
+    `Factory Block id: ${blockId}. Pass it as blockId to factory_get_block, factory_get_run and factory_update_block.`,
+    ...(images.length
+      ? [
+          `Initial prompt images are attached to this message as ${names}; references like [Image N: name] in the initial prompt point to them.`,
+        ]
+      : []),
+    "",
+    body,
+  ].join("\n");
 }
 
 /** Stable title saved with the launch. Later Block renames do not change recovery's target. */
@@ -49,7 +77,8 @@ export function workerLaunchPayload(
   number: number,
   publicId: string,
   workspaceStrategy: LaunchPayload["workspaceStrategy"],
-): LaunchPayload {
+  images: readonly LaunchImage[] = [],
+): StoredLaunchPayload {
   const blocks = definitions.flow.graph.blocks;
   const index = blocks.findIndex((entry) => entry.id === blockId);
   const block = blocks[index];
@@ -70,7 +99,8 @@ export function workerLaunchPayload(
         agent.execution.modelOptions.map((option) => [option.id, option.value]),
       ),
     },
-    message: workerTurn(agent.prompt, publicId),
+    message: workerTurn(agent.prompt, publicId, images),
+    ...(images.length ? { images } : {}),
   };
 }
 
@@ -96,6 +126,7 @@ export function persistEntryLaunches(
   blockIds: readonly string[],
 ) {
   return Effect.gen(function* () {
+    const images = yield* sql<LaunchImage>`SELECT ordinal,sha256,name,mime_type AS "mimeType",size_bytes AS "sizeBytes" FROM run_images WHERE run_id=${plan.runId} ORDER BY ordinal`;
     for (const blockId of blockIds) {
       const block = plan.definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
       const strategy = launchStrategy(plan.workspace, blockId);
@@ -113,6 +144,7 @@ export function persistEntryLaunches(
         plan.number,
         saved!.public_id,
         strategy,
+        images,
       );
       yield* persistActivation(
         sql,
@@ -134,10 +166,11 @@ export function persistEntryLaunches(
   });
 }
 
-export function entryMessagesTooLong(definitions: RunDefinitions) {
+export function entryMessagesTooLong(definitions: RunDefinitions, images: readonly RunImage[]) {
+  const launched = images.map((image, index) => ({ ...image, ordinal: index + 1 }));
   return definitions.flow.graph.flowInput.targetBlockIds.some((blockId) => {
     const agent = blockAgent(definitions, blockId);
-    return !!agent && workerTurn(agent.prompt, "0".repeat(36)).length > 120000;
+    return !!agent && workerTurn(agent.prompt, "0".repeat(36), launched).length > 120000;
   });
 }
 
@@ -150,6 +183,7 @@ function blockAgent(definitions: RunDefinitions, blockId: string) {
 export function dispatchBlockLaunch(
   database: RunnerDatabase,
   t3: T3Adapter,
+  images: RunImages,
   runRow: RunRow,
   intent: IntentRow,
 ) {
@@ -161,6 +195,7 @@ export function dispatchBlockLaunch(
     }
     if (intent.state === "pending") {
       if (!runRow.gate_open) return;
+      if (intent.recovery_not_before && intent.recovery_not_before > (yield* now)) return;
       const target = runTarget(runRow);
       const support = yield* Effect.tryPromise({
         try: () => t3.inspectLaunchSupport(target, runRow.workspace.mode).catch(() => null),
@@ -174,19 +209,25 @@ export function dispatchBlockLaunch(
         );
         return;
       }
-      const payload = checked.value;
+      const { images: launchImages = [], ...payload } = checked.value;
+      const attachments = yield* uploadLaunchImages(
+        { database, t3, images, runRow, intent },
+        launchImages,
+      );
+      if (!attachments) return;
       if (!(yield* database.reserveIntent(runRow, intent, support.retryScope))) return;
+      const request = attachments.length ? { ...payload, attachments } : payload;
       yield* recoverOperation(
         Effect.gen(function* () {
           const reference = yield* Effect.tryPromise({
-            try: () => t3.launchThread(target, payload),
+            try: () => t3.launchThread(target, request),
             catch: (error) => error,
           });
           yield* bindLaunchedWorker(database, runRow, intent, reference);
         }),
         (error) =>
           isLaunchRejected(error)
-            ? rejectLaunchedWorker(database, runRow, intent)
+            ? failLaunch(database, runRow, intent, "T3 rejected the worker launch.")
             : noteLaunchUncertain(database, intent),
       );
       return;
@@ -205,7 +246,7 @@ function isLaunchRejected(error: unknown): error is LaunchRejected {
 /** The stored launch still names the Run's environment, project, workspace, settings and turn. */
 function verifiedStoredLaunch(run: RunRow, intent: IntentRow) {
   if (!intactPayload(intent)) return unverified("Stored launch payload cannot be verified.");
-  const payload = JSON.parse(intent.payload_json) as LaunchPayload;
+  const payload = JSON.parse(intent.payload_json) as StoredLaunchPayload;
   const target = JSON.parse(intent.target_json) as T3Target;
   if (
     payload.clientRequestId !== intent.request_key ||
@@ -340,24 +381,112 @@ function bindLaunchedWorker(
   );
 }
 
-/** A rejected launch is a Block error. */
-function rejectLaunchedWorker(database: RunnerDatabase, runRow: RunRow, intent: IntentRow) {
+/**
+ * A launch that cannot happen is a Block error: T3 rejected it, or its Run images are gone. Without
+ * the Run worktree no other Flow-input worker launches, and none falls back to the project root.
+ */
+function failLaunch(database: RunnerDatabase, runRow: RunRow, intent: IntentRow, problem: string) {
   return database.mutate(runRow.id, (sql) =>
     Effect.gen(function* () {
       if (!(yield* database.runHeldUnderContext(sql, runRow))) return;
       const time = yield* now;
-      const problem = "T3 rejected the worker launch.";
+      const cancelled =
+        yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem},reconciled_at=${time} WHERE id=${intent.id} AND state IN ('pending','reserved','uncertain') RETURNING id`;
+      if (!cancelled.length) return;
       yield* sql`UPDATE run_blocks SET state='error',problem=${problem} WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
-      yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem},reconciled_at=${time} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;
-      // Without the Run worktree no other Flow-input worker launches, and none falls back to the project root.
       const failed =
         yield* sql`UPDATE run_workspaces SET state='failed' WHERE run_id=${runRow.id} AND creator_block_id=${intent.block_id} AND state='preparing' RETURNING run_id`;
+      const creatorProblem =
+        problem === RUN_IMAGE_MISSING
+          ? `The worker that creates the Run worktree could not launch: ${RUN_IMAGE_MISSING}.`
+          : WORKTREE_REJECTED;
       if (failed.length)
         for (const blockId of runRow.definitions.flow.graph.flowInput.targetBlockIds)
-          yield* sql`UPDATE run_blocks SET state='error',problem=${`${WORKTREE_REJECTED} This worker was not launched.`} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
+          yield* sql`UPDATE run_blocks SET state='error',problem=${`${creatorProblem} This worker was not launched.`} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
     }),
   );
+}
+
+/** One retry delay schedule for launch searches and image uploads: 1 s doubling to 60 s. */
+function retryNotBefore(current: string, attempt: number) {
+  const delay = Math.min(60_000, 1000 * 2 ** Math.min(attempt - 1, 16));
+  return new Date(Date.parse(current) + delay).toISOString();
+}
+
+type LaunchContext = {
+  database: RunnerDatabase;
+  t3: T3Adapter;
+  images: RunImages;
+  runRow: RunRow;
+  intent: IntentRow;
+};
+
+/**
+ * Uploads the launch's Run images to T3 before reservation, anew for every dispatch: T3 ids are
+ * never saved. Undefined leaves the launch pending (retried with backoff) or cancels it when
+ * Factory no longer holds the bytes.
+ */
+function uploadLaunchImages(context: LaunchContext, launchImages: readonly LaunchImage[]) {
+  return Effect.gen(function* () {
+    if (!launchImages.length) return [];
+    const { database, t3, images, runRow, intent } = context;
+    const target = runTarget(runRow);
+    const support = yield* Effect.promise(() =>
+      t3.inspectAttachmentSupport(target, launchImages.length).catch(() => null),
+    );
+    if (!support?.supported) {
+      yield* database.problem(
+        intent,
+        `T3 no longer accepts image attachments. Factory will retry this launch. ${support?.explanation ?? ""}`.trim(),
+      );
+      return undefined;
+    }
+    const attachments: LaunchAttachment[] = [];
+    for (const image of launchImages) {
+      const stored = yield* images.storedBytes(image.sha256).pipe(Effect.result);
+      if (stored._tag === "Failure")
+        return yield* noteUploadFailure(context, "Factory could not read the image.");
+      const bytes = stored.success;
+      if (bytes.kind === "missing") {
+        yield* failLaunch(database, runRow, intent, RUN_IMAGE_MISSING);
+        return undefined;
+      }
+      const upload = {
+        name: attachmentName(image.ordinal, image.name),
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+      };
+      const uploaded = yield* Effect.tryPromise({
+        try: () => t3.uploadAttachment(target, upload, bytes.data),
+        catch: (error) => error,
+      }).pipe(Effect.result);
+      if (uploaded._tag === "Failure")
+        return yield* noteUploadFailure(context, uploadFailureReason(uploaded.failure));
+      attachments.push({ type: "image", id: uploaded.success, ...upload });
+    }
+    return attachments;
+  });
+}
+
+const uploadFailureReason = (error: unknown) =>
+  error instanceof Error && error.message ? error.message : "T3 did not accept the upload.";
+
+/** The launch stays pending: nothing was launched, so this is neither a Block error nor a Problem. */
+function noteUploadFailure(context: LaunchContext, reason: string) {
+  const { database, intent } = context;
+  return Effect.gen(function* () {
+    const current = yield* now;
+    const notBefore = retryNotBefore(current, intent.recovery_attempt + 1);
+    const problem = `Image upload to T3 failed: ${reason}`;
+    yield* database.mutate(intent.run_id, (sql) =>
+      Effect.gen(function* () {
+        yield* sql`UPDATE operation_intents SET recovery_attempt=recovery_attempt+1,recovery_not_before=${notBefore},problem=${problem},reconciled_at=${current} WHERE id=${intent.id} AND state='pending'`;
+        yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${intent.run_id}`;
+      }),
+    );
+    return undefined;
+  });
 }
 
 function noteLaunchUncertain(database: RunnerDatabase, intent: IntentRow) {
@@ -371,9 +500,7 @@ function noteLaunchUncertain(database: RunnerDatabase, intent: IntentRow) {
 }
 
 function noteLaunchSearchMiss(database: RunnerDatabase, intent: IntentRow, current: string) {
-  const attempt = intent.recovery_attempt + 1;
-  const delay = Math.min(60_000, 1000 * 2 ** Math.min(attempt - 1, 16));
-  const notBefore = new Date(Date.parse(current) + delay).toISOString();
+  const notBefore = retryNotBefore(current, intent.recovery_attempt + 1);
   return database.mutate(intent.run_id, (sql) =>
     Effect.gen(function* () {
       yield* sql`UPDATE operation_intents SET recovery_attempt=recovery_attempt+1,recovery_not_before=${notBefore},state=CASE WHEN state='reserved' THEN 'uncertain' ELSE state END,problem=${LAUNCH_RECOVERY},reconciled_at=${current} WHERE id=${intent.id} AND state IN ('reserved','uncertain')`;

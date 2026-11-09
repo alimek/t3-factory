@@ -30,7 +30,9 @@ import {
   type OAuthDiscoveryState,
 } from "@modelcontextprotocol/client";
 import type {
+  AttachmentUpload,
   AuthorizationResumption,
+  ReportSupport,
   T3Adapter,
   T3Endpoint,
   T3EnvironmentTarget,
@@ -936,6 +938,63 @@ export class LiveT3Adapter implements T3Adapter {
       },
       retryScope: async () => this.options.launchRecoveryScope?.(target.endpoint),
     });
+  }
+  async inspectAttachmentSupport(target: T3Endpoint, count: number): Promise<ReportSupport> {
+    const inspection = await this.inspect(target);
+    const tools = inspection.contract?.tools ?? [];
+    const launch = tools.find((tool) => tool.name === "t3_thread_launch")?.inputSchema;
+    const props = (launch?.properties ?? {}) as Record<string, SchemaProperty & { maxItems?: unknown }>;
+    const attachments = props.attachments;
+    const supported =
+      inspection.state === "ready" &&
+      tools.some((tool) => tool.name === "t3_attachment_prepare_upload") &&
+      props.clientRequestId?.type === "string" &&
+      attachments?.type === "array" &&
+      typeof attachments.maxItems === "number" &&
+      attachments.maxItems >= count;
+    return {
+      supported,
+      explanation: supported
+        ? "T3 accepts uploaded image attachments on launches."
+        : `T3 does not advertise t3_attachment_prepare_upload and launch attachments for ${count} images with a request key.`,
+    };
+  }
+  /** The upload URL is a signed capability on the MCP origin: it is sent without the OAuth bearer
+   * and never logged or included in errors. */
+  async uploadAttachment(
+    target: T3Endpoint,
+    upload: AttachmentUpload,
+    data: Uint8Array,
+  ): Promise<string> {
+    const prepared = await this.withAuthorizedClient(target, async (client) =>
+      this.structuredToolResult(
+        await client.callTool(
+          {
+            name: "t3_attachment_prepare_upload",
+            arguments: { upload: { type: "image", ...upload } },
+          },
+          { timeout: 30_000 },
+        ),
+      ),
+    ).catch(() => {
+      throw new Error("T3 did not prepare the upload.");
+    });
+    const { attachmentId, relativeUrl } = (prepared ?? {}) as Record<string, unknown>;
+    const origin = new URL(target.endpoint).origin;
+    const url = typeof relativeUrl === "string" ? new URL(relativeUrl, origin) : undefined;
+    if (typeof attachmentId !== "string" || !attachmentId || url?.origin !== origin)
+      throw new Error("T3 returned an invalid upload address.");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": upload.mimeType },
+      body: Buffer.from(data),
+      signal: AbortSignal.timeout(60_000),
+    }).catch(() => {
+      throw new Error("T3 upload is temporarily unavailable.");
+    });
+    await response.body?.cancel();
+    if (!response.ok) throw new Error(`T3 answered the upload with HTTP ${response.status}.`);
+    return attachmentId;
   }
   async launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference> {
     return this.withAuthorizedClient(target, async (client) => {

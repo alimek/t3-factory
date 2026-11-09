@@ -1,7 +1,13 @@
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { finishNativeTurn } from "./native-simulation.ts";
-import type { Result, RunBlock, RunDetail } from "../../packages/contracts/src/index.ts";
+import type {
+  PromptSegment,
+  Result,
+  RunBlock,
+  RunDetail,
+} from "../../packages/contracts/src/index.ts";
+import { sha256Hex, solidPng } from "../../apps/backend/test/support/run-images.ts";
 import type { ExecutionObservation } from "../../apps/backend/src/adapters/t3.ts";
 
 export function requireSuccess<A>(result: Result<A>): A {
@@ -74,19 +80,61 @@ export async function reconcileUntil(
   throw Error(`Development seed did not settle Run ${runId}.`);
 }
 
+/** Distinguishable demo screenshots; two share an original filename. */
+export const demoImages = {
+  headerDesktop: { name: "screenshot.png", data: solidPng(220, 40, 40) },
+  headerMobile: { name: "screenshot.png", data: solidPng(40, 70, 220) },
+  focusRing: { name: "focus-ring.png", data: solidPng(240, 180, 30) },
+  mockup: { name: "settings-mockup.png", data: solidPng(40, 180, 90) },
+};
+type DemoImage = (typeof demoImages)[keyof typeof demoImages];
+
+/**
+ * The Start prompt with its images staged first, as the composer does. The first `referenced`
+ * images appear inline after the text; the rest stay attached without a reference.
+ */
+async function scenarioPrompt(
+  context: SeedContext,
+  text: string,
+  attachments: { images: readonly DemoImage[]; referenced: number },
+) {
+  const images = attachments.images.map((image, index) => ({
+    imageId: `image-${index + 1}`,
+    sha256: sha256Hex(image.data),
+    name: image.name,
+    mimeType: "image/png" as const,
+    sizeBytes: image.data.byteLength,
+  }));
+  for (const [index, image] of attachments.images.entries())
+    requireSuccess(
+      await context.factory.stageRunImage(images[index]!.sha256, {
+        mimeType: "image/png",
+        data: image.data,
+      }),
+    );
+  const segments: PromptSegment[] = [{ type: "text", text }];
+  for (const [index, image] of images.slice(0, attachments.referenced).entries())
+    segments.push(
+      { type: "text", text: index === 0 ? "\n\nCompare " : " with " },
+      { type: "image", imageId: image.imageId },
+    );
+  return { segments, images };
+}
+
 export async function startScenario(
   context: SeedContext,
   flowId: string,
   key: string,
   title: string,
   prompt: string,
+  attachments: { images: readonly DemoImage[]; referenced: number } = { images: [], referenced: 0 },
 ) {
   const run = requireSuccess(
     await context.factory.startRun({
       requestId: `development-v1:${key}`,
       projectId: context.projectId,
       flowId,
-      input: `Demo · ${title}\n\n${prompt}`,
+      ...(await scenarioPrompt(context, `Demo · ${title}\n\n${prompt}`, attachments)),
       title: `Demo · ${title}`,
       createdAt: new Date().toISOString(),
     }),

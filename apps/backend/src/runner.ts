@@ -24,6 +24,7 @@ import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import type { LiveChanges } from "./live-changes.ts";
+import type { RunImages } from "./run-images.ts";
 
 /** One scoped Runner owner. Accepted work drains before SQL and ownership are released. */
 export const makeRunner = Effect.fn("Runner.make")(function* (
@@ -33,6 +34,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   intervalMs: number,
   checkAgent: RunnerOptions["checkAgent"],
   changes: LiveChanges,
+  images: RunImages,
 ) {
   const sql = yield* SqlClient.SqlClient;
   const scope = yield* Effect.scope;
@@ -55,7 +57,14 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
   const { consumeBlockUpdate } = openRunnerReports(database, lifecycle);
   const { observe } = openRunnerObservation(database, t3);
-  const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe);
+  const { dispatchIntent } = openRunnerDispatch(
+    database,
+    ops,
+    t3,
+    checkAgent,
+    observe,
+    images,
+  );
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
   const { archiveRun } = openRunnerArchive(database, t3, lifecycle, liveContextId);

@@ -18,6 +18,7 @@ import { createRuntime, type RuntimeReports } from "./runtime.ts";
 import type { acquireRunnerOwner } from "./runner-owner.ts";
 import { makeRunner } from "./runner.ts";
 import { makeClientAccess } from "./client-access.ts";
+import { makeRunImages } from "./run-images.ts";
 import { failure } from "./result.ts";
 import { makeLiveChanges } from "./live-changes.ts";
 import { makeLiveStreams, type LiveStreams } from "./live-streams.ts";
@@ -76,6 +77,7 @@ export const makeFactoryService = (
     yield* projects.recheckProjects();
     const definitions = yield* makeDefinitions(t3, connection, changes);
     const clients = yield* makeClientAccess;
+    const images = yield* makeRunImages(join(dirname(options.databasePath), "images"));
     let runtimeBackendUrl = options.runtimeBackendUrl ?? "http://127.0.0.1:4310";
     const reportingContext = yield* Layer.build(
       ReportingInstaller.ReportingInstallerLayer(
@@ -132,6 +134,9 @@ export const makeFactoryService = (
       settleRun: (id) => runner.settleRun(id),
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),
       startRun: (i) => runner.startRun(i),
+      getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
+      stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
+      getRunImage: (sha256) => images.getRunImage(sha256),
       listRunNavigation: () => runner.listRunNavigation(),
       renameRun: (id, input) => runner.renameRun(id, input),
       snoozeRun: (id) => runner.snoozeRun(id),
@@ -186,6 +191,7 @@ export const makeFactoryService = (
       intervalMs,
       (projectId, agent) => setup.recheckAgent(projectId, agent),
       changes,
+      images,
     );
     yield* runner.initialize();
     return factory;

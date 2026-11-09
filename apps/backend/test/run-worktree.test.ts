@@ -4,6 +4,7 @@ import {
   preparedWorktreeFlow,
   preparedWorktreeReviewFlow,
 } from "./support/prepared-runner.ts";
+import { imageStart, screenshots, stageImages } from "./support/run-images.ts";
 import {
   answeredReview,
   finishedParallelWork,
@@ -50,6 +51,26 @@ it("once T3 shows the worktree path and branch, the other Flow-input worker laun
     worktreePath: "/t3-worktrees/thread-1",
     branch: (creator!.workspaceStrategy as { branch: string }).branch,
   });
+});
+
+it("the Flow-input worker joining a bound worktree receives the Run images too", async (c) => {
+  // Arrange
+  const { f, t3, input } = await preparedWorktreeFlow(c);
+  await stageImages(f, Object.values(screenshots));
+  t3.worktreeMetadataPending = true;
+  assert((await f.startRun(imageStart(input))).ok);
+  await f.reconcileRuns();
+  t3.worktreeMetadataPending = false;
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const launches = [...t3.launches.values()].map((launch) => launch.payload);
+  expect(launches.map((launch) => launch.attachments?.map((a) => a.name))).toStrictEqual([
+    ["image-1-screenshot.png", "image-2-screenshot.png", "image-3-mockup.png"],
+    ["image-1-screenshot.png", "image-2-screenshot.png", "image-3-mockup.png"],
+  ]);
 });
 
 it("a creator thread that shows its worktree path before its branch is observed without a scope change", async (c) => {

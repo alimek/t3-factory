@@ -92,7 +92,11 @@ async function prepareWorkerRuns() {
         return factory.startRun({
           ...seed,
           requestId: `ui-worker:${seed.requestId}`,
-          input: seed.input.replace(/^Demo · /, "UI worker · "),
+          segments: seed.segments.map((segment, index) =>
+            index === 0 && segment.type === "text"
+              ? { ...segment, text: segment.text.replace(/^Demo · /, "UI worker · ") }
+              : segment,
+          ),
           title: seed.title.replace(/^Demo · /, "UI worker · "),
         });
       },

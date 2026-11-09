@@ -106,6 +106,27 @@ class RemoteClient {
     });
   }
 
+  /** A request with a raw body, such as an image upload or a HEAD probe; the reply is not JSON. */
+  sendBytes(
+    method: string,
+    path: string,
+    body?: { contentType: string; data: Uint8Array },
+  ): Promise<{ status: number; data: Buffer }> {
+    return new Promise((resolve, reject) => {
+      const outgoing = request(
+        this.options(method, path, body ? { "content-type": body.contentType } : {}),
+        (response) => {
+          void readStreamBuffer(response).then(
+            (data) => resolve({ status: response.statusCode ?? 0, data }),
+            reject,
+          );
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end(body ? Buffer.from(body.data) : undefined);
+    });
+  }
+
   send<A = unknown>(
     method: string,
     path: string,

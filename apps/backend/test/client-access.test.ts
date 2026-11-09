@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
-import type { FactoryClient, FlowDraft } from "@t3-factory/contracts";
-import { remoteServer } from "./support/remote-clients.ts";
+import type { FactoryClient, FlowDraft, RunDetail } from "@t3-factory/contracts";
+import { remotePrepared, remoteServer } from "./support/remote-clients.ts";
+import { imageStart, screenshots, sha256Hex, stageImages } from "./support/run-images.ts";
 
 it("a remote read without an approved credential is refused before any operation", async (c) => {
   // Arrange
@@ -167,4 +168,57 @@ it("a denied access request cannot later be approved", async (c) => {
   // Assert
   expect(approved.status).toBe(409);
   expect((await laptop.send("GET", "/api/flows")).status).toBe(401);
+});
+
+it("an approved client uploads images and starts a Run with them over the secure listener", async (c) => {
+  // Arrange
+  const { server, laptop, input } = await remotePrepared(c);
+  const request = imageStart(input);
+  const uploads = await Promise.all(
+    Object.values(screenshots).map((image) =>
+      laptop.sendBytes("PUT", `/api/run-images/${sha256Hex(image.data)}`, {
+        contentType: "image/png",
+        data: image.data,
+      }),
+    ),
+  );
+
+  // Act
+  const reply = await laptop.send<RunDetail>("POST", "/api/runs", request);
+
+  // Assert
+  expect(uploads.map((upload) => upload.status)).toStrictEqual([200, 200, 200]);
+  expect(reply.status).toBe(201);
+  const runs = await server.factory.listRuns(input.projectId);
+  assert(runs.ok && reply.body.ok);
+  expect(runs.value.map((run) => run.id)).toStrictEqual([reply.body.value.id]);
+});
+
+it("an approved client's image load returns the original bytes with immutable caching", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const laptop = await server.approved("Laptop");
+  await stageImages(server.factory, [screenshots.green]);
+
+  // Act
+  const image = await laptop.asset(`/api/run-images/${sha256Hex(screenshots.green.data)}`);
+
+  // Assert
+  expect(image.status).toBe(200);
+  expect(image.contentType).toBe("image/png");
+  expect(image.data.equals(Buffer.from(screenshots.green.data))).toBe(true);
+});
+
+it("a pending client cannot even probe whether Factory holds a known image", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  await stageImages(server.factory, [screenshots.green]);
+  const pending = server.client();
+  await pending.requestAccess("Laptop");
+
+  // Act
+  const probe = await pending.sendBytes("HEAD", `/api/run-images/${sha256Hex(screenshots.green.data)}`);
+
+  // Assert
+  expect(probe.status).toBe(401);
 });

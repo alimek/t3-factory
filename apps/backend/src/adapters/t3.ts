@@ -66,6 +66,14 @@ export interface T3Adapter {
     target: T3Endpoint,
     workspace: FlowWorkspace["mode"],
   ): Promise<LaunchSupport>;
+  /** `t3_attachment_prepare_upload` and launch `attachments` that carry `count` images. */
+  inspectAttachmentSupport(target: T3Endpoint, count: number): Promise<ReportSupport>;
+  /** Prepares one pending upload and posts its exact bytes; returns its attachment id. */
+  uploadAttachment(
+    target: T3Endpoint,
+    upload: AttachmentUpload,
+    data: Uint8Array,
+  ): Promise<string>;
   launchThread(target: T3Endpoint, payload: LaunchPayload): Promise<LaunchReference>;
   /** Search one project for a launch that may already exist. Incomplete scans withhold candidates. */
   discoverLaunchCandidates(target: T3Target, title: string): Promise<LaunchDiscovery>;
@@ -121,6 +129,17 @@ export interface LaunchPayload {
     readonly options: Readonly<Record<string, string | boolean>>;
   };
   readonly message: string;
+  /** Uploaded images for the first turn, named as the message refers to them. */
+  readonly attachments?: readonly LaunchAttachment[];
+}
+export interface AttachmentUpload {
+  readonly name: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+}
+export interface LaunchAttachment extends AttachmentUpload {
+  readonly type: "image";
+  readonly id: string;
 }
 export interface LaunchSupport {
   readonly supported: boolean;

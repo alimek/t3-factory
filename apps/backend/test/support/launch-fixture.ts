@@ -13,6 +13,7 @@ export async function launchFixture(c: TestContext) {
     ),
   };
   Object.assign(schema.properties!, {
+    attachments: { type: "array", maxItems: 8, items: { type: "object" } },
     modelSelection: { type: "object", properties: { instanceId: {}, model: {}, options: {} } },
     // T3's advertised strategy union, flattened into one object.
     workspaceStrategy: {
@@ -35,6 +36,7 @@ export async function launchFixture(c: TestContext) {
   const { adapter, external } = await authorizedLiveOAuth(
     c,
     {
+      attachments: true,
       launchSchema: schema,
       wait: (args) => {
         expect(args.threadId).toBe("thread");

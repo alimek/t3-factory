@@ -1,6 +1,7 @@
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { boundWorktreeReview, prepared } from "./prepared-runner.ts";
+import { imageStart, screenshots, stageImages } from "./run-images.ts";
 
 const WORKER_THREAD = "thread-1";
 const WORKER_EXECUTION = "execution-1";
@@ -81,9 +82,13 @@ export function launchedBlockId(t3: ControlledT3, blockName = "Entry worker") {
 }
 
 /** Starts the Run with the entry worker's first turn running. */
-async function startedWorker(fixture: Awaited<ReturnType<typeof prepared>>, observe: boolean) {
+async function startedWorker(
+  fixture: Awaited<ReturnType<typeof prepared>>,
+  observe: boolean,
+  request: object = fixture.input,
+) {
   seedFactoryWorker(fixture.t3, fixture.project);
-  const started = await fixture.f.startRun(fixture.input);
+  const started = await fixture.f.startRun(request);
   assert(started.ok, JSON.stringify(started));
   await fixture.f.reconcileRuns();
   if (observe) assert((await fixture.f.reconcileRuns()).ok);
@@ -194,6 +199,16 @@ export async function reportedWorker(
   const f = await directWorker(c, true, targetBlockId);
   assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
   finishWorker(f, status);
+  return f;
+}
+
+/** As `reportedWorker`, started with the image fixture's prompt. */
+export async function reportedImageWorker(c: TestContext) {
+  const fixture = await workerStart(c);
+  await stageImages(fixture.f, Object.values(screenshots));
+  const f = await startedWorker(fixture, true, imageStart(fixture.input));
+  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
+  finishWorker(f);
   return f;
 }
 
