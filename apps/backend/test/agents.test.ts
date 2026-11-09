@@ -5,10 +5,15 @@ import {
   sampleAgentInput,
 } from "./support/domain-setup.ts";
 
-it("saved Agent definitions survive restart with execution settings intact", async (context) => {
+const reviewExits = [
+  { id: "pass", name: "pass", description: "The change is ready.", messageRequired: false },
+  { id: "fail", name: "fail", description: "Corrections are needed.", messageRequired: true },
+];
+
+it("saved Agent definitions survive restart with execution settings and exits intact", async (context) => {
   // Arrange
   const { harness, factory } = await openFactoryWithApprovedT3(context);
-  const saved = await factory.createAgent(sampleAgentInput());
+  const saved = await factory.createAgent({ ...sampleAgentInput(), exits: reviewExits });
   assert(saved.ok);
   const { id } = saved.value;
   await factory.close();
@@ -20,6 +25,45 @@ it("saved Agent definitions survive restart with execution settings intact", asy
   expect(recovered.ok).toBe(true);
   expect(recovered.value.name).toBe("Coder");
   expect(recovered.value.execution).toStrictEqual(saved.value.execution);
+  expect(recovered.value.exits).toStrictEqual(reviewExits);
+});
+
+it("renaming an Agent exit appends a revision that keeps the exit's identity", async (context) => {
+  // Arrange
+  const { factory } = await openFactoryWithApprovedT3(context);
+  const saved = await factory.createAgent({ ...sampleAgentInput(), exits: reviewExits });
+  assert(saved.ok);
+  const renamed = [reviewExits[0], { ...reviewExits[1], name: "changes" }];
+
+  // Act
+  const updated = await factory.updateAgent(saved.value.id, {
+    ...sampleAgentInput(),
+    exits: renamed,
+    expectedRevision: saved.value.revision,
+  });
+
+  // Assert
+  assert(updated.ok);
+  expect(await factory.getAgent(saved.value.id)).toMatchObject({
+    ok: true,
+    value: { revision: 2, exits: renamed },
+  });
+});
+
+it("an Agent with two exits of the same name is rejected without creating a definition", async (context) => {
+  // Arrange
+  const { factory } = await openFactoryWithApprovedT3(context);
+
+  // Act
+  const result = await factory.createAgent({
+    ...sampleAgentInput(),
+    exits: [reviewExits[0], { ...reviewExits[1], name: " pass " }],
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues[0]?.path).toBe("exits.1.name");
+  expect(await factory.listAgents()).toStrictEqual({ ok: true, value: [] });
 });
 
 it("duplicateAgent copies execution settings under a new identity", async (context) => {

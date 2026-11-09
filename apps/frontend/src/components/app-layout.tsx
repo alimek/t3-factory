@@ -7,6 +7,14 @@ import { StudioModal } from "./studio-modal.tsx";
 import { useStudio, useSettings } from "../settings-navigation.ts";
 import { KeyboardCommandsProvider } from "../keyboard-commands.tsx";
 import { DesktopTitlebar } from "./desktop-titlebar.tsx";
+import { PanelResizeHandle, type PanelBounds } from "./panel-resize.tsx";
+
+const sidebarBounds: PanelBounds = {
+  variable: "--factory-sidebar-width",
+  storageKey: "factory.sidebarWidth",
+  min: 224,
+  max: 480,
+};
 
 function AppShell() {
   const path = useLocation({ select: (location) => location.pathname });
@@ -15,10 +23,11 @@ function AppShell() {
   const backgroundInert = !!studio || !!settings;
   return (
     <div className="flex h-dvh">
-      <aside className="flex w-70 shrink-0 flex-col min-h-0 border-r bg-sidebar min-[1280px]:w-75 max-sm:w-56">
+      <aside className="relative flex w-[var(--factory-sidebar-width,17.5rem)] max-w-[50vw] shrink-0 flex-col min-h-0 border-r bg-sidebar min-[1280px]:w-[var(--factory-sidebar-width,18.75rem)] max-sm:w-[var(--factory-sidebar-width,14rem)]">
         <DesktopTitlebar />
         <RunSidebar path={path} />
         <SidebarFooter />
+        <PanelResizeHandle label="Resize sidebar" side="right" bounds={sidebarBounds} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <div

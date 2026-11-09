@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import type { RunDetail, RunImageMimeType } from "@t3-factory/contracts";
+import { effectiveExits } from "@t3-factory/domain-validation";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { OPEN_TRANSITIONS, type RuntimeReply } from "./runtime-types.ts";
 import { reportDiagnostic } from "./runtime-report-diagnostic.ts";
@@ -97,14 +98,12 @@ function blockView(
       : cause.startsWith("human:")
         ? "Human answer"
         : "feedback",
-    exits:
-      graphBlock.kind === "agent"
-        ? graphBlock.exits.map((exit) => ({
-            id: exit.id,
-            name: exit.name,
-            requiresFeedback: exit.requiresFeedback,
-          }))
-        : [],
+    exits: effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({
+      id: exit.id,
+      name: exit.name,
+      description: exit.description,
+      messageRequired: exit.messageRequired,
+    })),
     inputs: {
       input: detail.input,
       images,
@@ -128,7 +127,9 @@ function incomingResults(detail: RunDetail, cause: string) {
       reportId: report.id,
       blockId: report.blockId,
       blockName: source.name,
-      exitName: source.exits.find((exit) => exit.id === report.exitId)!.name,
+      exitName: effectiveExits(source, detail.definitions.agents).find(
+        (exit) => exit.id === report.exitId,
+      )!.name,
       message: report.resultMessage ?? null,
       threadLink: detail.blocks.find((block) => block.blockId === report.blockId)!.link,
     },

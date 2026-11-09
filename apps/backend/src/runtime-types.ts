@@ -1,4 +1,4 @@
-import type { RunImageMimeType } from "@t3-factory/contracts";
+import type { BlockExit, RunImageMimeType } from "@t3-factory/contracts";
 
 type RuntimeImage = {
   readonly imageId: string;
@@ -27,11 +27,7 @@ export type RuntimeReply = {
   readonly allowedExits?: readonly string[];
   readonly visit?: number;
   readonly reason?: string;
-  readonly exits?: readonly {
-    readonly id: string;
-    readonly name: string;
-    readonly requiresFeedback: boolean;
-  }[];
+  readonly exits?: readonly BlockExit[];
   readonly inputs?: {
     readonly input: string;
     readonly images: readonly RuntimeImage[];

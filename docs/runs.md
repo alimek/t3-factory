@@ -116,6 +116,9 @@ The [foundation contract](foundation.md#live-delivery) describes consistency and
 Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow revision**). Positions, exits,
 connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
 project is unavailable; a later edit or removal is labelled (**Flow edited since**, **Flow removed since**), never substituted.
+A block's exits are its captured Agent revision's exits minus those the Flow hid, plus its Flow-local exits. Reports and handoffs
+keep the exit they recorded; Human steps upgraded from earlier releases show their exits as **Approve** and **Request changes**, the
+fixed Human exits their old exits were mapped to.
 
 - The **Flow input** block shows the Run's truncated prompt and has no state or details panel. With images it shows up
   to three prompt lines, each image reference as an **Image N: name** chip, the first three thumbnails and a **+N** control
@@ -141,6 +144,10 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
+- Drag the inner edge of the shell sidebar (224–480 px) or of the right panel beside the canvas (280–640 px; the context rail and
+  block details share one width) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
+  Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
+  on this device.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
   prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
@@ -222,8 +229,8 @@ Settled Runs cannot be snoozed. T3 reports only a count, so a replacement questi
 ## Reports and attention
 
 For new Runs a worker calls `factory_update_block` with its Block id (stated in every Factory message to that worker):
-`to: "working"` with a message and no exit when it starts a visit's work, and `to: "finished"` (a configured exit and a message
-when feedback is required) when the task is complete. Questions and replies in between need no report.
+`to: "working"` with a message and no exit when it starts a visit's work, and `to: "finished"` (one of the Block's exits and a
+message, required when that exit requires one) when the task is complete. Questions and replies in between need no report.
 A report from any turn of the worker's thread, including a user reply or a notification after delegated work, applies to the
 Block's current visit. Factory returns acceptance only after saving it. The model supplies no report key or Run id.
 
@@ -279,8 +286,8 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
 ## Human steps
 
 Each arrival creates its own pending occurrence, including parallel arrivals and repeated visits. Answer under **Attention →
-Pending**. A single exit offers **Continue** with optional text; multiple exits require a selection; an exit requiring correction
-feedback needs non-empty text. Validation comes from the saved exit rules, never the exit name. Submission settles only that
+Pending** by choosing one of the fixed exits: **Approve** with optional text, or **Request changes** with a non-empty message
+describing the changes. Submission settles only that
 occurrence and atomically saves all outgoing handoffs: double submission cannot send twice and a competing answer conflicts. Agent
 recipients get independent deliveries on the existing thread/queue rules; a Human recipient gets a new occurrence. The block stays
 waiting until its last occurrence is answered. Context and delivery text survive restart, are cleared after settlement and

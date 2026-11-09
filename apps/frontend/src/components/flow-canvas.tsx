@@ -1,8 +1,9 @@
-import { useRef, useState, type ComponentProps, type RefObject } from "react";
+import { useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
 import { clientToGraphPoint, clampGraphPosition, type CanvasView } from "../canvas-viewport.ts";
 import type { CanvasViewport } from "../use-canvas-viewport.ts";
 import { GripVertical } from "lucide-react";
-import type { AgentDefinition, BlockExit, FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
 import {
   AUTHORING_PORTS,
@@ -21,7 +22,10 @@ import {
 import {
   addWire,
   canConnect,
+  canvasGraph,
   type BlockPosition,
+  type CanvasBlock,
+  type CanvasGraph,
   type FlowWire,
   type WireSource,
 } from "../flow-graph.ts";
@@ -205,14 +209,14 @@ function useConnectDrag(
 }
 
 /** Where a wire from `source` starts, or null when its block is gone. */
-function sourcePoint(graph: FlowGraph, source: WireSource) {
+function sourcePoint(graph: CanvasGraph, source: WireSource) {
   if (source.kind === "flow-input") return flowInputPoint(graph.flowInput);
   const block = graph.blocks.find((b) => b.id === source.sourceBlockId);
   return block ? exitPoint(block, source.exitId) : null;
 }
 
 /** The wire being drawn: from its source port to the target's input port, or to the pointer. */
-function ConnectPreview({ graph, connect }: { graph: FlowGraph; connect: ConnectDrag }) {
+function ConnectPreview({ graph, connect }: { graph: CanvasGraph; connect: ConnectDrag }) {
   const from = sourcePoint(graph, connect.source);
   if (!from) return null;
   const target = graph.blocks.find((b) => b.id === connect.targetBlockId);
@@ -228,14 +232,14 @@ function ConnectPreview({ graph, connect }: { graph: FlowGraph; connect: Connect
 }
 
 /** Reserve the future incoming order without changing the draft while connecting. */
-function previewConnection(graph: FlowGraph, connect: ConnectDrag | null) {
+function previewConnection(graph: CanvasGraph, connect: ConnectDrag | null) {
   if (!connect?.targetBlockId) return { graph, pendingWire: null };
   const pendingWire = { source: connect.source, targetBlockId: connect.targetBlockId };
   return { graph: addWire(graph, pendingWire), pendingWire };
 }
 
 /** The graph as shown: the dragged block or Flow input, and so its wires, at its live position. */
-function withDragged(graph: FlowGraph, drag: MoveDrag | null): FlowGraph {
+function withDragged(graph: CanvasGraph, drag: MoveDrag | null): CanvasGraph {
   if (!drag) return graph;
   const { moved, position } = drag;
   if (moved.kind === "flow-input") return { ...graph, flowInput: { ...graph.flowInput, position } };
@@ -262,7 +266,7 @@ function OptionalConnectPreview({
   graph,
   connect,
 }: {
-  graph: FlowGraph;
+  graph: CanvasGraph;
   connect: ConnectDrag | null;
 }) {
   return connect && <ConnectPreview graph={graph} connect={connect} />;
@@ -324,7 +328,9 @@ export function FlowCanvas({
     onMoveStart,
   );
   const { connect, handlers: connectHandlers } = useConnectDrag(ref, view, draftGraph, onChange);
-  const { graph, pendingWire } = previewConnection(withDragged(draftGraph, drag), connect);
+  // Drawn with the exits each block offers; edits above apply to the draft graph.
+  const shown = useMemo(() => canvasGraph(draftGraph, agents), [draftGraph, agents]);
+  const { graph, pendingWire } = previewConnection(withDragged(shown, drag), connect);
   // The saved positions keep the canvas from shrinking mid-drag, which would clamp the scroll.
   const extent = [...positions(draftGraph), ...positions(graph)];
   return (
@@ -429,7 +435,7 @@ function GraphBlocks({
   connectHandlers,
   onSelect,
 }: {
-  graph: FlowGraph;
+  graph: CanvasGraph;
   agents: readonly AgentDefinition[];
   selected: string | null;
   drag: MoveDrag | null;
@@ -539,8 +545,8 @@ function GraphBlock({
   drag,
   connectFrom,
 }: {
-  block: FlowBlock;
-  graph: FlowGraph;
+  block: CanvasBlock;
+  graph: CanvasGraph;
   agents: readonly AgentDefinition[];
   selected: boolean;
   /** Lifted above the other blocks while it follows the pointer. */
@@ -551,7 +557,7 @@ function GraphBlock({
   connectingExitId: string | null;
   onSelect: () => void;
   drag: DragHandlers;
-  connectFrom: (exit: BlockExit) => DragHandlers;
+  connectFrom: (exit: EffectiveExit) => DragHandlers;
 }) {
   const human = block.kind === "human";
   const name = block.name || "Unnamed block";

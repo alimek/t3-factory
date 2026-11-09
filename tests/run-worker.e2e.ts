@@ -5,7 +5,11 @@ import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { workerEvent } from "./support/worker.ts";
 import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
-import { fillHumanReviewChanges } from "./support/keyboard-shortcuts.ts";
+import {
+  fillHumanReviewChanges,
+  installDesktopBridge,
+  shortcutMod,
+} from "./support/keyboard-shortcuts.ts";
 
 beforeEach(async ({ app }) => {
   await workerEvent(app.baseUrl, "prepare");
@@ -151,6 +155,57 @@ test("an unfinished prompt reopens as a Draft after reload and Starts exactly on
   await expect(draftRow).toHaveCount(0);
   await expect(journeyRows).toHaveText([/^UI newer draft\s*Draft$/, /UI saved draft/]);
   await app.screenshot("draft-started-once");
+});
+
+test("a reopened Draft continues typing at the end of its prompt", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const openRuns = screen.getByRole("navigation", "Open Runs");
+  const prompt = screen.getByLabel("Initial prompt", { exact: false });
+  await app.open("/runs/new");
+  await prompt.fill("UI caret draft");
+  await openRuns.getByRole("link", /Demo · Working · Improve the project picker/).tap();
+  await openRuns.getByRole("link", /^UI caret draft\s*Draft$/).tap();
+
+  // Act
+  await browser.keyboard.type(" continued");
+
+  // Assert
+  await expect(prompt).toBeFocused();
+  await expect(prompt).toHaveText("UI caret draft continued");
+});
+
+test("a Draft opened by keyboard from a focused prompt with the same text continues typing at its end", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const text = "UI keyboard caret draft";
+  const prompt = screen.getByLabel("Initial prompt", { exact: false });
+  const listedDrafts = screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", new RegExp(`^${text}\\s*Draft$`));
+  await installDesktopBridge(browser);
+  await app.open("/runs/new");
+  await prompt.fill(text);
+  await app.open("/studio/flows");
+  await app.open("/runs/new");
+  await screen.getByRole("button", "New Run (+)").tap();
+  await prompt.fill(text);
+  await browser.keyboard.press("Home");
+  await browser.keyboard.press(`${shortcutMod}+1`);
+  await expect(listedDrafts).toHaveCount(2);
+  await expect(prompt).toHaveText(text);
+
+  // Act
+  await browser.keyboard.type(" continued");
+
+  // Assert
+  await expect(prompt).toHaveText(`${text} continued`);
 });
 
 test("a Start whose response was lost is recovered after reload without a duplicate Run", async ({

@@ -184,6 +184,11 @@ const response = await fetch(`http://127.0.0.1:${server.address.port}/api/agents
       modelId: "gpt-6.1-sol",
       modelOptions: [],
     },
+    exits: [
+      { id: "finish", name: "finish", description: "", messageRequired: false },
+      { id: "ok", name: "ok", description: "The work passes review.", messageRequired: false },
+      { id: "fail", name: "fail", description: "Corrections are needed.", messageRequired: true },
+    ],
   }),
 });
 if (!response.ok) throw new Error("Could not seed saved Agent definition");
@@ -202,6 +207,7 @@ const targets = await factory.getReportingInstallations();
 if (!targets.ok || !(await factory.installReporting({ targetId: targets.value[0]!.id })).ok)
   throw Error("Fixture installation failed");
 const runtimeProject = await factory.addRepository({ path: neutral });
+const doneExit = { id: "done", name: "Done", description: "Complete", messageRequired: false };
 const agent = await factory.createAgent({
   name: "Runtime worker",
   prompt: "Neutral integration fixture",
@@ -211,6 +217,7 @@ const agent = await factory.createAgent({
     modelId: "gpt-6.1-sol",
     modelOptions: [],
   },
+  exits: [doneExit],
 });
 if (!runtimeProject.ok || !agent.ok) throw Error("Could not seed runtime fixture");
 // Exercise repository favicons through the actual public binary endpoint.
@@ -244,6 +251,7 @@ const launchAgent = await factory.createAgent({
     modelId: "gpt-6.1-sol",
     modelOptions: [],
   },
+  exits: [doneExit],
 });
 if (!launchAgent.ok) throw Error("Launch Agent unavailable");
 await factory.createFlow({ name: "Launch blocked draft" });
@@ -262,15 +270,8 @@ await factory.updateFlow(launchFlow.value.id, {
         kind: "agent",
         agentId: launchAgent.value.id,
         position: { x: 0, y: 0 },
-        exits: [
-          {
-            id: "done",
-            name: "Done",
-            description: "Complete",
-            outcome: "completion",
-            requiresFeedback: false,
-          },
-        ],
+        hiddenExitIds: [],
+        localExits: [],
       },
     ],
     connections: [],

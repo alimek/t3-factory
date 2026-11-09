@@ -3,12 +3,12 @@ import { bindingRole } from "./run-coordination.tsx";
 import { useId, useState, type FormEvent } from "react";
 import {
   attentionPresentation,
-  type FlowBlock,
   type HumanOccurrence,
   type RunAttention,
   type RunBlock,
   type RunDetail,
 } from "@t3-factory/contracts";
+import { HUMAN_EXITS } from "@t3-factory/domain-validation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -94,9 +94,7 @@ function recordedProblem(run: RunDetail, item: RunAttention) {
 function selectedExit(run: RunDetail, item: RunAttention) {
   const occurrence = run.humanOccurrences.find((entry) => entry.id === item.occurrenceId);
   if (!occurrence?.exitId) return;
-  return run.definitions.flow.graph.blocks
-    .find((block) => block.id === occurrence.blockId)
-    ?.exits.find((exit) => exit.id === occurrence.exitId)?.name;
+  return HUMAN_EXITS.find((exit) => exit.id === occurrence.exitId)?.name;
 }
 
 /**
@@ -317,37 +315,18 @@ function SettledMatter({ run, item }: { run: RunDetail; item: RunAttention }) {
 
 function PendingHuman({ run, item }: { run: RunDetail; item: RunAttention }) {
   const occurrence = run.humanOccurrences.find((entry) => entry.id === item.occurrenceId);
-  const block = run.definitions.flow.graph.blocks.find((entry) => entry.id === item.blockId);
-  if (!block || !occurrence || occurrence.state !== "pending")
+  if (!occurrence || occurrence.state !== "pending")
     return <p className="text-sm text-muted-foreground">This occurrence is no longer pending.</p>;
-  return (
-    <HumanResponseForm
-      blockName={item.blockName}
-      block={block}
-      occurrence={occurrence}
-      link={item.link}
-    />
-  );
+  return <HumanResponseForm blockName={item.blockName} occurrence={occurrence} link={item.link} />;
 }
 
-function answerButtonLabel(busy: boolean, singleExit: boolean, feedbackRequired: boolean) {
-  if (busy) return "Submitting…";
-  if (singleExit && !feedbackRequired) return "Continue";
-  return "Submit answer";
-}
-
-function answerInput(exitId: string | undefined, message: string) {
-  return exitId === undefined ? { message } : { exitId, message };
-}
-
+/** A Human step answers with one of its fixed exits: Approve, or Request changes with a message. */
 function HumanResponseForm({
   blockName,
-  block,
   occurrence,
   link,
 }: {
   blockName: string;
-  block: FlowBlock;
   occurrence: HumanOccurrence;
   link: string | null;
 }) {
@@ -355,16 +334,16 @@ function HumanResponseForm({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const singleExit = block.exits.length === 1;
-  const selected = singleExit ? block.exits[0] : block.exits.find((exit) => exit.id === exitId);
-  const feedbackRequired = !!selected?.requiresFeedback;
-  const ready = !!selected && (!feedbackRequired || message.trim().length > 0);
+  const selected = HUMAN_EXITS.find((exit) => exit.id === exitId);
+  const messageRequired = !!selected?.messageRequired;
+  const ready = !!selected && (!messageRequired || message.trim().length > 0);
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!selected) return;
     setBusy(true);
     setError("");
     try {
-      await api.answerHumanOccurrence(occurrence.id, answerInput(selected?.id, message));
+      await api.answerHumanOccurrence(occurrence.id, { exitId: selected.id, message });
       setMessage("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not submit this answer.");
@@ -380,8 +359,8 @@ function HumanResponseForm({
     >
       {occurrence.context && <p className="text-sm text-muted-foreground">{occurrence.context}</p>}
       <p className="text-2xs tracking-label text-subtle-foreground">Occurrence {occurrence.id}</p>
-      {block.exits.length > 1 && <ExitSelect block={block} value={exitId} onChange={setExitId} />}
-      <ResponseField feedbackRequired={feedbackRequired} value={message} onChange={setMessage} />
+      <ExitSelect value={exitId} onChange={setExitId} />
+      <ResponseField messageRequired={messageRequired} value={message} onChange={setMessage} />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -390,7 +369,7 @@ function HumanResponseForm({
       <div className="flex flex-wrap items-center gap-2">
         <MutationGate>
           <Button type="submit" disabled={busy || !ready}>
-            {answerButtonLabel(busy, singleExit, feedbackRequired)}
+            {busy ? "Submitting…" : "Submit answer"}
           </Button>
         </MutationGate>
         {link && <OpenInT3 href={link} />}
@@ -399,15 +378,7 @@ function HumanResponseForm({
   );
 }
 
-function ExitSelect({
-  block,
-  value,
-  onChange,
-}: {
-  block: FlowBlock;
-  value: string;
-  onChange: (exitId: string) => void;
-}) {
+function ExitSelect({ value, onChange }: { value: string; onChange: (exitId: string) => void }) {
   const id = useId();
   return (
     <div className="grid gap-1.5">
@@ -422,7 +393,7 @@ function ExitSelect({
         required
       >
         <NativeSelectOption value="">Select an exit</NativeSelectOption>
-        {block.exits.map((exit) => (
+        {HUMAN_EXITS.map((exit) => (
           <NativeSelectOption key={exit.id} value={exit.id}>
             {exit.name}
           </NativeSelectOption>
@@ -433,16 +404,16 @@ function ExitSelect({
 }
 
 function ResponseField({
-  feedbackRequired,
+  messageRequired,
   value,
   onChange,
 }: {
-  feedbackRequired: boolean;
+  messageRequired: boolean;
   value: string;
   onChange: (message: string) => void;
 }) {
-  const label = feedbackRequired ? "Requested changes (required)" : "Response (optional)";
-  const ariaLabel = feedbackRequired ? "Requested changes" : "Response";
+  const label = messageRequired ? "Requested changes (required)" : "Response (optional)";
+  const ariaLabel = messageRequired ? "Requested changes" : "Response";
   const id = useId();
   return (
     <div className="grid gap-1.5">
@@ -453,7 +424,7 @@ function ResponseField({
         id={id}
         placeholder="Type your response…"
         aria-label={ariaLabel}
-        required={feedbackRequired}
+        required={messageRequired}
         maxLength={100000}
         value={value}
         onChange={(event) => onChange(event.target.value)}

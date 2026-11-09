@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
-import { createDemoFlows } from "./seed-flows.ts";
+import { createDemoFlows, exit } from "./seed-flows.ts";
 import { seedScenarios } from "./seed-scenarios.ts";
 import { requireSuccess } from "./seed-support.ts";
 
@@ -38,21 +38,24 @@ async function createDemoProject(factory: Factory, t3: PersistentT3, home: strin
 
 async function createDemoAgents(factory: Factory, t3: PersistentT3) {
   const agents = { worker: "", reviewer: "", accessibility: "" };
-  for (const [key, name, prompt] of [
+  for (const [key, name, prompt, exits] of [
     [
       "worker",
       "Demo · Product engineer",
       "Implement small, clear improvements to Atlas. Keep changes focused and hand off for review with a concise summary.",
+      [exit("review", "Ready for review")],
     ],
     [
       "reviewer",
       "Demo · Code reviewer",
       "Review the implementation for correctness, clarity and focused scope. Explain remaining decisions for the human reviewer.",
+      [exit("approved", "Approved")],
     ],
     [
       "accessibility",
       "Demo · Accessibility reviewer",
       "Review Atlas keyboard navigation, focus behavior and accessible labels. Report concrete findings independently.",
+      [exit("approved", "Approved")],
     ],
   ] as const) {
     const agent = requireSuccess(
@@ -65,6 +68,7 @@ async function createDemoAgents(factory: Factory, t3: PersistentT3) {
           modelId: "gpt-6.1-sol",
           modelOptions: [{ id: "reasoning", value: "high" }],
         },
+        exits,
       }),
     );
     agents[key] = agent.id;

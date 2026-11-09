@@ -52,7 +52,7 @@ async function applyCorrection(context: SeedContext, run: RunDetail) {
   if (!occurrence) throw Error("Development seed: review occurrence missing.");
   requireSuccess(
     await context.factory.answerHumanOccurrence(occurrence.id, {
-      exitId: "changes",
+      exitId: "request-changes",
       message: "Rename Reset filters to Clear filters and keep keyboard focus in the search field.",
     }),
   );

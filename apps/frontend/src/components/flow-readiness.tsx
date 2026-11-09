@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 function issueSelection(path: string, graph: FlowGraph): string | null | undefined {
   const block = /^graph\.blocks\.(\d+)/.exec(path)?.[1];
   if (block) return graph.blocks[Number(block)]?.id ?? null;
+  const connection = /^graph\.connections\.(\d+)/.exec(path)?.[1];
+  if (connection) return graph.connections[Number(connection)]?.sourceBlockId ?? null;
   if (!path.startsWith("graph.flowInput")) return undefined;
   const target = /^graph\.flowInput\.targetBlockIds\.(\d+)/.exec(path)?.[1];
   const id = target === undefined ? undefined : graph.flowInput.targetBlockIds[Number(target)];
@@ -15,8 +17,9 @@ function issueSelection(path: string, graph: FlowGraph): string | null | undefin
 }
 
 /**
- * Validation issue paths such as `graph.blocks.2.name` select the block they refer to; a
- * Flow input target path selects that target, and other Flow input issues clear the selection.
+ * Validation issue paths such as `graph.blocks.2.name` select the block they refer to and a
+ * connection path its source block; a Flow input target path selects that target, and other
+ * Flow input issues clear the selection.
  */
 export function IssueLink({
   issue,
