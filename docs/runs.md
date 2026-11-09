@@ -144,6 +144,10 @@ fixed Human exits their old exits were mapped to.
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
+- Drag the inner edge of the shell sidebar (224–480 px) or of the right panel beside the canvas (280–640 px; the context rail and
+  block details share one width) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
+  Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
+  on this device.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
   recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
   prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
