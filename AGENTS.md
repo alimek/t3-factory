@@ -38,7 +38,7 @@ For UI changes, exploration, or application screenshots, use [verify-t3-factory]
 
 ### Quality gates
 
-Before pushing, run the gate in `docs/quality-gates.md` and fix every failure at its cause:
+Before handback, run the cheap static checks and affected suite described in [quality gates](docs/quality-gates.md); before pushing, run the full gate and fix every failure at its cause:
 
 - Make the gate green by fixing code; fallow, lint and type findings are never suppressed or baselined (`fallow-ignore` only for a justified false positive).
 - Push with hooks enabled; never `--no-verify`. If the gate cannot pass for reasons outside your change, stop and report.
@@ -49,4 +49,4 @@ Before adding, changing, or reviewing tests, read [the testing policy](docs/test
 
 ### Before finishing
 
-Review the diff against the [change review criteria](docs/quality-gates.md#change-review) and remove additions without a current purpose. The PR should state the outcome, verification, documentation impact and any migration or intentional break. Keep execution notes in the PR or ignored local storage.
+Review the diff against the [change review criteria](docs/quality-gates.md#change-review) and remove additions without a current purpose. The PR should state the outcome, verification, documentation impact and any migration or intentional break. The [repository PR template](.github/pull_request_template.md) headings take precedence; reusable writing templates or skills supply content within those headings, not replacement headings. Keep execution notes in the PR or ignored local storage.
