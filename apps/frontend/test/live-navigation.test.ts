@@ -6,6 +6,7 @@ it("navigation changes replace rows, remove archived Runs and retain backend cre
   // Arrange
   const older: RunNavigationEntry = {
     id: "older",
+    number: 1,
     title: "Older Run",
     createdAt: "2026-11-07T12:00:00.000Z",
     creationKey: "first",

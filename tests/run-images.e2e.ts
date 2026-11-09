@@ -122,6 +122,7 @@ test("picked screenshots survive reload and every Flow-input worker receives the
     { name: "image-1-screenshot.png", sha256: sha256Hex(files.red.data) },
     { name: "image-2-screenshot.png", sha256: sha256Hex(files.blue.data) },
   ];
+  assert(detail.number !== null);
   expect(await launchedAttachments(app, detail.number)).toEqual([expected, expected]);
   await app.screenshot("images-run-started");
 });
@@ -173,6 +174,7 @@ test("pasted and dropped screenshots become inline references and Start delivers
     { name: "image-2-screenshot.png", sha256: sha256Hex(files.blue.data) },
     { name: "image-3-diagram.png", sha256: sha256Hex(files.amber.data) },
   ];
+  assert(detail.number !== null);
   expect(await launchedAttachments(app, detail.number)).toEqual([expected, expected]);
 });
 

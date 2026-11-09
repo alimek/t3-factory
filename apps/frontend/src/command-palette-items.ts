@@ -20,6 +20,7 @@ export const paletteActionShortcut: Partial<Record<string, ShortcutId>> = {
 export type PaletteItem = {
   id: string;
   kind: "run" | "flow" | "agent" | "action";
+  number?: number | null;
   label: string;
   detail?: string;
   icon: LucideIcon;
@@ -41,7 +42,12 @@ export function paletteMatchesQuery(item: PaletteItem, query: string) {
     return false;
   }
   const haystack = `${item.label} ${item.detail ?? ""} ${item.keywords}`.toLowerCase();
-  return haystack.includes(q);
+  return (
+    (item.kind === "run" &&
+      typeof item.number === "number" &&
+      q.replace(/^#/, "") === String(item.number)) ||
+    haystack.includes(q)
+  );
 }
 
 export function buildPaletteItems(input: {
@@ -108,6 +114,7 @@ export function buildPaletteItems(input: {
   const runItems = runs.map((run) => ({
     id: `run-${run.id}`,
     kind: "run" as const,
+    number: run.number,
     label: run.title,
     detail: run.project.title,
     icon: Play,

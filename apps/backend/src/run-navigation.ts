@@ -23,6 +23,7 @@ export function openRunNavigation(
         Effect.gen(function* () {
           const rows = yield* sql<{
             id: string;
+            number: number | null;
             title: string;
             created_at: string;
             last_activity_at: string;
@@ -37,7 +38,7 @@ export function openRunNavigation(
             project_title: string;
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
-          }>`SELECT r.id,r.title,r.created_at,r.creation_key,r.settled_at,rp.snoozed,rp.woke,
+          }>`SELECT r.id,r.number,r.title,r.created_at,r.creation_key,r.settled_at,rp.snoozed,rp.woke,
           COALESCE((SELECT MAX(e.observed_at) FROM run_events e WHERE e.run_id=r.id AND e.kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','run-settled','run-activated')),r.started_at) AS last_activity_at,
           f.name AS flow_name,p.project_icon_json,p.favicon_path,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
@@ -103,6 +104,7 @@ export function openRunNavigation(
               const active = !row.settled_at;
               return {
                 id: row.id,
+                number: row.number,
                 title: row.title,
                 createdAt: row.created_at,
                 lastActivityAt: row.last_activity_at,

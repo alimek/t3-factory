@@ -13,6 +13,7 @@ import type { ShortcutId } from "../keyboard-shortcuts.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
+import { RunNumber } from "./run-number.tsx";
 import { cn } from "@/lib/utils";
 
 type Catalog = {
@@ -97,7 +98,10 @@ function PaletteResults({
       >
         <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{item.label}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <RunNumber number={item.number ?? null} />
+            <span className="truncate font-medium">{item.label}</span>
+          </span>
           {item.detail && (
             <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
           )}
