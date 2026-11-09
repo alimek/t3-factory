@@ -15,7 +15,11 @@ import { createServer } from "node:https";
 import { arch, release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { FACTORY_MINIMUM_SERVER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
+import {
+  FACTORY_MINIMUM_SERVER_PROTOCOL,
+  FACTORY_PROTOCOL,
+  protocolCompatibility,
+} from "@t3-factory/domain-validation";
 import { build } from "esbuild";
 import { WebSocketServer } from "ws";
 
@@ -295,10 +299,16 @@ try {
   await stage("the packaged backend serves Factory MCP to harnesses", mcpReport);
 
   await stage("the host relay streams the backend's live connection snapshot", async () => {
-    const packaged = (await (await api("/api/protocol")).json()).value.protocol;
-    if (packaged !== FACTORY_PROTOCOL)
+    // The same pair rule the live upgrade gate applies, plus the exact protocol of this checkout.
+    const packaged = (await (await api("/api/protocol")).json()).value;
+    const declared = {
+      protocol: FACTORY_PROTOCOL,
+      minimumPeerProtocol: FACTORY_MINIMUM_SERVER_PROTOCOL,
+    };
+    const compatibility = protocolCompatibility(declared, packaged);
+    if (packaged.protocol !== FACTORY_PROTOCOL || compatibility.kind !== "compatible")
       throw new Error(
-        `The packaged backend reports protocol ${packaged}, this checkout ${FACTORY_PROTOCOL}: package this checkout, then probe.`,
+        `The packaged backend reports ${JSON.stringify(packaged)}, this checkout declares ${JSON.stringify(declared)}: package this checkout, then probe.`,
       );
     await evaluate(9441, liveShim);
     const outcome = await withTimeout(evaluate(9441, openLiveSocket("hostLive")), 15_000);
