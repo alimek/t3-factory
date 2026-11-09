@@ -109,10 +109,10 @@ project is unavailable; a later edit or removal is labelled (**Flow edited since
 
 - The **Flow input** block shows the Run's truncated prompt and has no state or details panel. With images it shows up
   to three prompt lines, each image reference as an **Image N: name** chip, the first three thumbnails and a **+N** control
-  for the rest. A chip, thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
+  for the rest. A thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
   its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
-  the workers' `[Image N: name]` text. The context rail's initial prompt shows the same references and every image, opening
-  the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)). Images are
+  the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the context
+  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)). Images are
   read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
   **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
   retried and creates no attention or state change.
