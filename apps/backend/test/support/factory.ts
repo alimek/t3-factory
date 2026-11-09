@@ -11,7 +11,7 @@ import {
   openFactory,
   type Factory,
   type FactoryOptions,
-} from "@t3-factory/backend";
+} from "../../src/index.ts";
 
 /** Real storage and restartable backend lifetime, without leaking persistence internals. */
 export async function factoryHarness(context: TestContext) {

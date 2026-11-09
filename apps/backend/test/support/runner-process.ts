@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
-import { openFactory } from "@t3-factory/backend";
+import { openFactory } from "../../src/index.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 const [databasePath, fixturePath, mode] = process.argv.slice(2);
 const fixture = JSON.parse(await readFile(fixturePath!, "utf8"));

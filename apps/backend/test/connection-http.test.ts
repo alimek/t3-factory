@@ -2,8 +2,8 @@ import { expect, it, type TestContext } from "@effect/vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfiguration } from "@t3-factory/backend/config";
-import { startServer } from "@t3-factory/backend/server";
+import { loadConfiguration } from "../src/config.ts";
+import { startServer } from "../src/server.ts";
 import { hostStatus } from "./support/boundaries-setup.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 

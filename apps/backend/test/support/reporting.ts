@@ -3,8 +3,8 @@ import { isolatedUserHome, writeReportingState } from "./reporting-home.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { FactoryOperations } from "@t3-factory/contracts";
-import { loadConfiguration } from "@t3-factory/backend/config";
-import { startServer } from "@t3-factory/backend/server";
+import { loadConfiguration } from "../../src/config.ts";
+import { startServer } from "../../src/server.ts";
 import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 
