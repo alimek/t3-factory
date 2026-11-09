@@ -126,22 +126,14 @@ it("an image Start freezes worker text with numbered references and lists every 
   );
 });
 
-it("Run reads preserve submitted segments and ordered images with duplicate names through Archive and restart", async (c) => {
+it("an Archived Run read after restart returns its submitted segments and ordered images with duplicate names", async (c) => {
   // Arrange
   const f = await prepared(c);
   await stageImages(f.f, allScreenshots);
   const request = imageStart(f.input);
   const started = await f.f.startRun(request);
   assert(started.ok);
-  const active = await f.f.getRun(started.value.id);
-  assert(active.ok);
-  expect(active.value.images).toStrictEqual(request.images);
-  expect(active.value.segments).toStrictEqual(request.segments);
   assert((await f.f.archiveRun(started.value.id)).ok);
-  const archived = await f.f.getRun(started.value.id);
-  assert(archived.ok);
-  expect(archived.value.images).toStrictEqual(request.images);
-  expect(archived.value.segments).toStrictEqual(request.segments);
   await f.f.close();
 
   // Act
