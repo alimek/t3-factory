@@ -88,7 +88,12 @@ class RemoteClient {
     path: string,
     method = "GET",
     headers: Record<string, string> = {},
-  ): Promise<{ status: number; data: Buffer; contentType: string | undefined }> {
+  ): Promise<{
+    status: number;
+    data: Buffer;
+    contentType: string | undefined;
+    cacheControl: string | undefined;
+  }> {
     return new Promise((resolve, reject) => {
       const outgoing = request(this.options(method, path, headers, false), (response) => {
         void readStreamBuffer(response).then(
@@ -97,6 +102,7 @@ class RemoteClient {
               status: response.statusCode ?? 0,
               data,
               contentType: response.headers["content-type"],
+              cacheControl: response.headers["cache-control"],
             }),
           reject,
         );

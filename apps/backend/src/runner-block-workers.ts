@@ -29,6 +29,12 @@ import { now } from "./time.ts";
 import { newId } from "./ids.ts";
 import { attachmentName, RUN_IMAGE_MISSING, type RunImages } from "./run-images.ts";
 
+const LAUNCH_REJECTED = { block: "T3 rejected the worker launch.", worktree: WORKTREE_REJECTED };
+const IMAGE_MISSING = {
+  block: RUN_IMAGE_MISSING,
+  worktree: `The worker that creates the Run worktree could not launch: ${RUN_IMAGE_MISSING}.`,
+};
+
 const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
@@ -235,7 +241,7 @@ function sendPendingLaunch(context: LaunchContext, stored: StoredLaunchPayload) 
       }),
       (error) =>
         isLaunchRejected(error)
-          ? failLaunch(database, runRow, intent, "T3 rejected the worker launch.")
+          ? failLaunch(database, runRow, intent, LAUNCH_REJECTED)
           : noteLaunchUncertain(database, intent),
     );
   });
@@ -390,24 +396,25 @@ function bindLaunchedWorker(
  * A launch that cannot happen is a Block error: T3 rejected it, or its Run images are gone. Without
  * the Run worktree no other Flow-input worker launches, and none falls back to the project root.
  */
-function failLaunch(database: RunnerDatabase, runRow: RunRow, intent: IntentRow, problem: string) {
+function failLaunch(
+  database: RunnerDatabase,
+  runRow: RunRow,
+  intent: IntentRow,
+  problem: { block: string; worktree: string },
+) {
   return database.mutate(runRow.id, (sql) =>
     Effect.gen(function* () {
       if (!(yield* database.runHeldUnderContext(sql, runRow))) return;
       const time = yield* now;
       const cancelled =
-        yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem},reconciled_at=${time} WHERE id=${intent.id} AND state IN ('pending','reserved','uncertain') RETURNING id`;
+        yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem.block},reconciled_at=${time} WHERE id=${intent.id} AND state IN ('pending','reserved','uncertain') RETURNING id`;
       if (!cancelled.length) return;
-      yield* sql`UPDATE run_blocks SET state='error',problem=${problem} WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
+      yield* sql`UPDATE run_blocks SET state='error',problem=${problem.block} WHERE run_id=${runRow.id} AND block_id=${intent.block_id} AND thread_id IS NULL`;
       const failed =
         yield* sql`UPDATE run_workspaces SET state='failed' WHERE run_id=${runRow.id} AND creator_block_id=${intent.block_id} AND state='preparing' RETURNING run_id`;
-      const creatorProblem =
-        problem === RUN_IMAGE_MISSING
-          ? `The worker that creates the Run worktree could not launch: ${RUN_IMAGE_MISSING}.`
-          : WORKTREE_REJECTED;
       if (failed.length)
         for (const blockId of runRow.definitions.flow.graph.flowInput.targetBlockIds)
-          yield* sql`UPDATE run_blocks SET state='error',problem=${`${creatorProblem} This worker was not launched.`} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
+          yield* sql`UPDATE run_blocks SET state='error',problem=${`${problem.worktree} This worker was not launched.`} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${intent.block_id} AND thread_id IS NULL`;
       yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
     }),
   );
@@ -454,7 +461,7 @@ function uploadLaunchImages(context: LaunchContext, launchImages: readonly Launc
         return yield* noteUploadFailure(context, "Factory could not read the image.");
       const bytes = stored.success;
       if (bytes.kind === "missing") {
-        yield* failLaunch(database, runRow, intent, RUN_IMAGE_MISSING);
+        yield* failLaunch(database, runRow, intent, IMAGE_MISSING);
         return undefined;
       }
       const upload = {

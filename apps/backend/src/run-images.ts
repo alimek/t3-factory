@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
@@ -122,13 +122,9 @@ export const makeRunImages = (directory: string) =>
         Effect.gen(function* () {
           yield* sweep;
           const existing = yield* stagedRow(sha256);
-          const present = yield* Effect.promise(() =>
-            access(file(sha256)).then(
-              () => true,
-              () => false,
-            ),
-          );
-          if (existing && present) return { ok: true as const, value: info(existing) };
+          // A missing or corrupt file under a staged digest is written again from these bytes.
+          const intact = existing && (yield* storedBytes(sha256)).kind === "ok";
+          if (existing && intact) return { ok: true as const, value: info(existing) };
           const written = yield* writeFile(sha256, input.data).pipe(Effect.result);
           if (written._tag === "Failure") return failure("internal", STORAGE_FAILURE);
           const mimeType = input.mimeType as RunImageMimeType;
@@ -141,10 +137,12 @@ export const makeRunImages = (directory: string) =>
       );
     }
 
+    /** Held only while its bytes are intact, so a client uploads a missing or corrupt image again. */
     function getRunImageInfo(sha256: string): Effect.Effect<Result<RunImageInfo>, unknown> {
       return Effect.gen(function* () {
         const row = isSha256Hex(sha256) ? yield* stagedRow(sha256) : undefined;
-        return row ? { ok: true as const, value: info(row) } : unavailable();
+        if (!row || (yield* storedBytes(sha256)).kind === "missing") return unavailable();
+        return { ok: true as const, value: info(row) };
       });
     }
 

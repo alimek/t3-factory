@@ -11,12 +11,22 @@ export interface DraftImageStore {
   save(server: string, draftId: string, imageId: string, data: Blob): Promise<void>;
   load(server: string, draftId: string, imageId: string): Promise<Blob | undefined>;
   remove(server: string, draftId: string, imageIds?: readonly string[]): Promise<void>;
-  /** Deletes this server's bytes that no saved draft references, as `draftId/imageId`. */
+  /**
+   * Deletes this server's bytes that no saved draft references, as `draftId/imageId`. Bytes saved
+   * within the last minute stay: another tab may not have saved the draft that refers to them yet.
+   */
   retainOnly(server: string, referenced: ReadonlySet<string>): Promise<void>;
 }
 
 const DATABASE = "factory-run-draft-images";
 const STORE = "images";
+const UNREFERENCED_GRACE_MS = 60_000;
+
+/** Stored bytes with when they were saved. */
+interface SavedImage {
+  data: Blob;
+  savedAt: number;
+}
 
 function opened(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -51,13 +61,15 @@ const draftRange = (server: string, draftId: string) =>
 
 export const indexedDbImages: DraftImageStore = {
   async save(server, draftId, imageId, data) {
-    await transact("readwrite", (store) => store.put(data, [server, draftId, imageId]));
+    const saved: SavedImage = { data, savedAt: Date.now() };
+    await transact("readwrite", (store) => store.put(saved, [server, draftId, imageId]));
   },
   async load(server, draftId, imageId) {
     const value = await transact<unknown>("readonly", (store) =>
       store.get([server, draftId, imageId]),
     );
-    return value instanceof Blob ? value : undefined;
+    const data = (value as Partial<SavedImage> | undefined)?.data;
+    return data instanceof Blob ? data : undefined;
   },
   async remove(server, draftId, imageIds) {
     await transact("readwrite", (store) => {
@@ -66,13 +78,15 @@ export const indexedDbImages: DraftImageStore = {
     });
   },
   async retainOnly(server, referenced) {
+    const cutoff = Date.now() - UNREFERENCED_GRACE_MS;
     await transact("readwrite", (store) => {
-      const cursor = store.openKeyCursor(IDBKeyRange.bound([server], [server, []]));
+      const cursor = store.openCursor(IDBKeyRange.bound([server], [server, []]));
       cursor.onsuccess = () => {
         const current = cursor.result;
         if (!current) return;
         const [, draftId, imageId] = current.key as [string, string, string];
-        if (!referenced.has(`${draftId}/${imageId}`)) store.delete(current.primaryKey);
+        const { savedAt = 0 } = current.value as Partial<SavedImage>;
+        if (!referenced.has(`${draftId}/${imageId}`) && savedAt < cutoff) current.delete();
         current.continue();
       };
     });

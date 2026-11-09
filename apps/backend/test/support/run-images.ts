@@ -3,7 +3,8 @@ import { crc32, deflateSync } from "node:zlib";
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { preparedFanOutFlow } from "./prepared-runner.ts";
-import type { Factory } from "@t3-factory/backend";
+import type { Factory, FactoryService } from "@t3-factory/backend";
+import * as Effect from "effect/Effect";
 import type { PromptSegment, RunImage, StartRunInput } from "@t3-factory/contracts";
 
 function chunk(type: string, data: Buffer) {
@@ -68,6 +69,22 @@ export async function stageImages(
     });
     assert(staged.ok, JSON.stringify(staged));
   }
+}
+
+/** As `stageImages`, on backend services whose operations are Effects (TestClock time). */
+export function stageImageEffects(
+  factory: Pick<FactoryService["Service"], "stageRunImage">,
+  images: readonly { name: string; data: Uint8Array }[],
+) {
+  return Effect.forEach(
+    images,
+    (image) =>
+      Effect.map(
+        factory.stageRunImage(sha256Hex(image.data), { mimeType: "image/png", data: image.data }),
+        (staged) => assert(staged.ok, JSON.stringify(staged)),
+      ),
+    { discard: true },
+  );
 }
 
 /**

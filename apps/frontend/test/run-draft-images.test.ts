@@ -95,7 +95,7 @@ it("an image whose bytes the browser cannot save is rejected and not referenced"
   const snapshot = draft.getSnapshot();
   expect(snapshot.images.map((image) => image.name)).toStrictEqual(["small.png"]);
   expect(snapshot.imageRejections).toStrictEqual([
-    { name: "large.png", reason: "Browser storage could not save it." },
+    { name: "large.png", reason: "Browser storage is full or unavailable." },
   ]);
 });
 

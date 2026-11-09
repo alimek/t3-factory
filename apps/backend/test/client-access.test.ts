@@ -206,7 +206,25 @@ it("an approved client's image load returns the original bytes with immutable ca
   // Assert
   expect(image.status).toBe(200);
   expect(image.contentType).toBe("image/png");
+  expect(image.cacheControl).toContain("immutable");
   expect(image.data.equals(Buffer.from(screenshots.green.data))).toBe(true);
+});
+
+it("a revoked client cannot probe whether Factory holds a known image", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  await stageImages(server.factory, [screenshots.green]);
+  const laptop = await server.approved("Laptop");
+  assert((await server.host("POST", `/api/host/clients/${laptop.id}/revoke`)).body.ok);
+
+  // Act
+  const probe = await laptop.sendBytes(
+    "HEAD",
+    `/api/run-images/${sha256Hex(screenshots.green.data)}`,
+  );
+
+  // Assert
+  expect(probe.status).toBe(401);
 });
 
 it("a pending client cannot even probe whether Factory holds a known image", async (c) => {

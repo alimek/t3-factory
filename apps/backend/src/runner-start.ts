@@ -165,17 +165,23 @@ function attachmentIssues(
 ): Effect.Effect<ValidationIssue[]> {
   if (!count) return Effect.succeed([]);
   return Effect.promise(() => t3.inspectAttachmentSupport(project, count).catch(() => null)).pipe(
-    Effect.map((support) =>
-      support?.supported
-        ? []
-        : [
-            {
+    Effect.map((support) => {
+      if (support?.supported) return [];
+      return [
+        support
+          ? {
               code: "attachments_unsupported",
               path: "images",
-              message: `This T3 cannot receive image attachments: update T3 or remove the images.${support ? ` ${support.explanation}` : ""}`,
+              message: `This T3 cannot receive image attachments: update T3 or remove the images. ${support.explanation}`,
+            }
+          : {
+              code: "launch_unsupported",
+              path: "connection.contract",
+              message:
+                "T3 attachment capabilities are unavailable. Recheck the connection and retry this Start.",
             },
-          ],
-    ),
+      ];
+    }),
   );
 }
 type StartPlan = {
@@ -304,17 +310,13 @@ export function openRunnerStart(
           "Factory is shutting down. Retry this same Start request after restart.",
         );
       if (!validStartKeys(rawInput))
-        return failure(
-          "validation",
-          "Choose a project and Flow and enter non-empty input (up to 100,000 characters).",
-          [
-            {
-              code: "start_input",
-              path: "input",
-              message: "Project, Flow, input and a stable Start request ID are required.",
-            },
-          ],
-        );
+        return failure("validation", "Choose a project and Flow before starting.", [
+          {
+            code: "start_request",
+            path: "projectId",
+            message: "Project, Flow and a stable Start request ID are required.",
+          },
+        ]);
       const input = rawInput as typeof rawInput & Pick<StartRunInput, "title" | "createdAt">;
       const prompt = validateStartPrompt(rawInput);
       if (!prompt.ok) return prompt;

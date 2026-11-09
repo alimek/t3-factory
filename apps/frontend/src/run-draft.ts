@@ -630,7 +630,7 @@ export function createRunDraft(
     try {
       await images.store.save(scope, id, image.imageId, candidate.data);
     } catch {
-      return { name: candidate.name, reason: "Browser storage could not save it." };
+      return { name: candidate.name, reason: "Browser storage is full or unavailable." };
     }
     if (scope !== server || currentId !== id || find(id)?.submission) return "left";
     current = { ...current, images: [...current.images, image] };

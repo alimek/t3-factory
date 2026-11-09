@@ -13,7 +13,11 @@ import {
   type Result,
   type StageRunImageInput,
 } from "@t3-factory/contracts";
-import { FACTORY_MINIMUM_PEER_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
+import {
+  FACTORY_MINIMUM_PEER_PROTOCOL,
+  FACTORY_PROTOCOL,
+  RUN_IMAGE_MAX_BYTES,
+} from "@t3-factory/domain-validation";
 import type { FactoryOptions } from "./factory-options.ts";
 import { openFactory, type Factory } from "./open-factory.ts";
 import type { Configuration } from "./config.ts";
@@ -244,7 +248,7 @@ function runImageRoutes(factory: Factory): readonly ApiRoute[] {
     {
       method: "PUT",
       path,
-      rawBody: { bytes: 10 * 1024 * 1024, message: "Send one image up to 10 MiB." },
+      rawBody: { bytes: RUN_IMAGE_MAX_BYTES, message: "Send one image up to 10 MiB." },
       handle: fromCall((sha256, input: StageRunImageInput) => factory.stageRunImage(sha256, input)),
     },
     {

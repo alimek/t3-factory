@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { assert, expect, it } from "@effect/vitest";
 import { factoryHarness } from "./support/factory.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
@@ -10,10 +12,13 @@ import {
   screenshots,
   sha256Hex,
   solidPng,
+  stageImageEffects,
   stageImages,
 } from "./support/run-images.ts";
 
 const allScreenshots = [screenshots.red, screenshots.blue, screenshots.green];
+const HOUR = 60 * 60_000;
+const upload = (image: { data: Uint8Array }) => ({ mimeType: "image/png", data: image.data });
 
 it("a staged image is served with its stored type and exact bytes", async (c) => {
   // Arrange
@@ -67,6 +72,42 @@ it("an upload whose content is not the declared image type is rejected", async (
   // Assert
   assert(!staged.ok);
   expect(staged.error.issues[0]?.code).toBe("image_signature");
+});
+
+it("a staged image whose file was corrupted reads as absent and an upload of its bytes repairs it", async (c) => {
+  // Arrange
+  const harness = await factoryHarness(c);
+  const factory = await harness.open({ t3: new ControlledT3() });
+  const digest = sha256Hex(screenshots.red.data);
+  await stageImages(factory, [screenshots.red]);
+  await writeFile(join(harness.processHome, "images", digest), "damaged");
+  assert(!(await factory.getRunImageInfo(digest)).ok);
+
+  // Act
+  const staged = await factory.stageRunImage(digest, upload(screenshots.red));
+
+  // Assert
+  assert(staged.ok);
+  const served = await factory.getRunImage(digest);
+  assert(served.ok);
+  expect(Buffer.from(served.value.data).equals(Buffer.from(screenshots.red.data))).toBe(true);
+});
+
+it("an image Factory cannot write to disk is an explicit storage error and nothing is staged", async (c) => {
+  // Arrange
+  const harness = await factoryHarness(c);
+  await writeFile(join(harness.processHome, "images"), "not a directory");
+  const factory = await harness.open({ t3: new ControlledT3() });
+  const digest = sha256Hex(screenshots.red.data);
+
+  // Act
+  const staged = await factory.stageRunImage(digest, upload(screenshots.red));
+
+  // Assert
+  assert(!staged.ok);
+  expect(staged.error.code).toBe("internal");
+  expect(staged.error.message).toContain("could not store the image on disk");
+  expect((await factory.getRunImageInfo(digest)).ok).toBe(false);
 });
 
 it("an image Start freezes worker text with numbered references and lists every attached image", async (c) => {
@@ -243,9 +284,6 @@ it("a Start manifest may repeat a filename but not the same image bytes", async 
   expect(started.error.issues.map((issue) => issue.code)).toStrictEqual(["image_duplicate"]);
 });
 
-const HOUR = 60 * 60_000;
-const upload = (image: { data: Uint8Array }) => ({ mimeType: "image/png", data: image.data });
-
 it.effect(
   "an unreferenced staged image is swept 24 hours after its first upload, even when uploaded again",
   (c) =>
@@ -275,8 +313,7 @@ it.effect("an image a Run retains is never swept as staging", (c) =>
   Effect.gen(function* () {
     // Arrange
     const f = yield* preparedService(c);
-    for (const image of allScreenshots)
-      assert((yield* f.factory.stageRunImage(sha256Hex(image.data), upload(image))).ok);
+    yield* stageImageEffects(f.factory, allScreenshots);
     assert((yield* f.factory.startRun(imageStart(f.input))).ok);
     yield* TestClock.adjust(25 * HOUR);
     const extra = solidPng(10, 10, 10);

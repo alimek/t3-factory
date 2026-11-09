@@ -54,7 +54,7 @@ function Thumbnail({
         variant="outline"
         aria-label={`Preview ${image.name}`}
         onClick={onOpen}
-        className="size-14 overflow-hidden rounded-md p-0 has-[>svg]:px-0"
+        className="size-14 overflow-hidden rounded-md p-0"
       >
         {url ? <img src={url} alt="" className="size-full object-cover" /> : null}
       </Button>
