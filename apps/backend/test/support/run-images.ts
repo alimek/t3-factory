@@ -3,7 +3,7 @@ import { crc32, deflateSync } from "node:zlib";
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { preparedFanOutFlow } from "./prepared-runner.ts";
-import type { Factory, FactoryService } from "@t3-factory/backend";
+import type { Factory, FactoryService } from "../../src/index.ts";
 import * as Effect from "effect/Effect";
 import type { PromptSegment, RunImage, StartRunInput } from "@t3-factory/contracts";
 

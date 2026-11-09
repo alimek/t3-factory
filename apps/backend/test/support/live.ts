@@ -19,7 +19,7 @@ import {
   type RunLiveMessage,
 } from "@t3-factory/contracts";
 import { FactoryLive } from "@t3-factory/contracts/live-rpc";
-import type { Factory } from "@t3-factory/backend";
+import type { Factory } from "../../src/index.ts";
 import type { LiveStreams, makeLiveStreams } from "../../src/live-streams.ts";
 
 /**

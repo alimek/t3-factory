@@ -127,6 +127,23 @@ export default defineConfig({
         },
       },
       {
+        files: ["apps/backend/test/**"],
+        rules: {
+          "no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                {
+                  regex: "^@t3-factory/backend(/|$)|(^|/)dist(/|$)",
+                  message:
+                    "Backend tests import backend modules by relative source path, so one copy of the backend loads.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
         files: ["apps/desktop/src/**"],
         rules: {
           "no-restricted-imports": [
