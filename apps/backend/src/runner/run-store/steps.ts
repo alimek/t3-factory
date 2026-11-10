@@ -45,7 +45,7 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
   | { readonly kind: "human-answered"; readonly blockId: string; readonly occurrenceId: string }
   | { readonly kind: "human-waiting"; readonly blockId: string; readonly occurrenceId: string }
   | {
-      readonly kind: "wait-started" | "wait-forwarded" | "wait-cancelled";
+      readonly kind: "wait-started" | "wait-forwarded" | "wait-continued" | "wait-cancelled";
       readonly blockId: string;
       readonly arrivalId: string;
     }

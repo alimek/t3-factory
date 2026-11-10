@@ -22,6 +22,7 @@ import { BLOCK_KINDS, exitDisplayName, exitSourceLabel } from "./flow-block.tsx"
 import { pendingArrivals, waitDurationText } from "../wait-display.ts";
 import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
+import { ContinueNow } from "./wait-arrivals.tsx";
 import { clockTime, dayAndTime, executionStateLabel, StatePill } from "./execution-state.tsx";
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -311,11 +312,19 @@ function ExecutionBlockTitle({
   );
 }
 
-/** A block draws at most an attention footer and an observation footer. */
+/** A block draws at most an attention footer (a Wait: its Continue now footer instead) and an
+ * observation footer. */
 const MAX_FOOTERS = 2;
 
 const footerClass =
   "flex min-w-0 flex-1 items-center gap-1.5 rounded-b-lg border-t px-2.5 py-1.5 text-2xs tracking-label";
+
+/** A Wait with exactly one pending arrival offers Continue now for it on the block. */
+function continuableArrival(run: RunDetail, block: FlowBlock) {
+  if (block.kind !== "wait") return undefined;
+  const [only, ...others] = pendingArrivals(run, block.id);
+  return others.length ? undefined : only;
+}
 
 /** Independent footers: attention chips and observation strips never encode the state. */
 function executionFooters(
@@ -326,6 +335,13 @@ function executionFooters(
 ) {
   const attention = blockAttention(run, block.id);
   const footers: ReactNode[] = [];
+  const continuable = continuableArrival(run, block);
+  if (continuable)
+    footers.push(
+      <span className={cn(footerClass, "bg-muted [&>p]:truncate")}>
+        <ContinueNow arrival={continuable} label={`Continue ${block.name || "Wait"} now`} />
+      </span>,
+    );
   if (attention.needsInput || attention.problem)
     footers.push(
       <span className={cn(footerClass, "bg-muted")}>
@@ -411,7 +427,8 @@ function executionBlock(
     className: cn(frameColor[state], selected && "border-primary ring-1 ring-primary"),
     selected,
     press: {
-      covers: "block",
+      // Continue now is its own control, so it sits outside the press target.
+      covers: continuableArrival(run, block) ? "identity" : "block",
       render: (rows) => (
         <button
           type="button"

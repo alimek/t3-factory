@@ -214,6 +214,7 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "human-cancelled": said("question cancelled by Archive"),
   "wait-started": waitStarted,
   "wait-forwarded": said("wait elapsed → forwarded"),
+  "wait-continued": said("forwarded early by you"),
   "wait-cancelled": said("wait cancelled by Archive"),
   "continuation-queued": said("waits behind the prompt"),
   "continuation-prompt-sent": continuationPromptSent,

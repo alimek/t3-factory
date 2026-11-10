@@ -25,7 +25,7 @@ import { openRunWaits } from "./waits.ts";
 export type { Delivery, Handoff } from "./records.ts";
 export type { StartPlan, StartWorkspace } from "./start.ts";
 export type { RequestReportSettlement } from "./request-report.ts";
-export type { ScheduledWait } from "./waits.ts";
+export type { ScheduledWait, WaitForwarding } from "./waits.ts";
 
 /**
  * The Run store owns a Run's execution records and reads. Transitions own their guards,

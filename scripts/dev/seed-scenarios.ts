@@ -34,6 +34,7 @@ export type SeedScenario = {
   | { state: "result released to two workers"; first: Report; final: Report }
   | { state: "two workers started from one prompt"; repositories: readonly Repository[] }
   | { state: "result released to a Wait"; result: Report }
+  | { state: "Wait continued now"; result: Report }
   | { state: "results released to a Wait"; results: readonly [Report, Report] }
   | { state: "review approved into a Wait"; result: Report; approval: string }
   | { state: "delegated work pending"; repository: Repository; delegations: number }
@@ -215,6 +216,18 @@ export const seedScenarioList: readonly SeedScenario[] = [
       message: "Release branch prepared with the changelog and version bump. Ready for approval.",
     },
     approval: "Approved. Announce it once the release window opens.",
+  },
+  {
+    key: "wait-continued",
+    title: "Working · Hotfix notes reviewed without waiting for CI",
+    flow: "wait",
+    state: "Wait continued now",
+    prompt:
+      "Draft the release notes for the Atlas search hotfix; CI already passed, so the review need not wait.",
+    result: {
+      exit: "Ready for review",
+      message: "Hotfix notes drafted; CI is green on the merged fix. Ready for review now.",
+    },
   },
   {
     key: "wait-arrivals",

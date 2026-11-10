@@ -34,6 +34,15 @@ export function makeWaitTimers(
       timers.set(wait.id, fiber);
     });
 
+  /** Disables the wake-up of an arrival forwarded before its deadline. */
+  const cancel = (arrivalId: string) =>
+    Effect.gen(function* () {
+      const fiber = timers.get(arrivalId);
+      if (!fiber) return;
+      timers.delete(arrivalId);
+      yield* Fiber.interrupt(fiber);
+    });
+
   /** Stops every pending wake-up; the deadlines stay in the Run store for the next owner. */
   const close = () =>
     Effect.gen(function* () {
@@ -42,5 +51,5 @@ export function makeWaitTimers(
       timers.clear();
     });
 
-  return { schedule, close };
+  return { schedule, cancel, close };
 }

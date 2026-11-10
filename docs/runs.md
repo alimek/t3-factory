@@ -309,9 +309,16 @@ Wait's output gets the unchanged message, and an unconnected output ends the bra
 the deadline keeps it; restarting after it forwards the arrival once, without moving the deadline or repeating anything, and
 closing Factory over a deadline does the same on the next start.
 
-The Wait's details list each arrival with its start, deadline, retained message and outcome. A forwarded arrival keeps its
-message, which is the input its recipients read; Archive clears every arrival's message and the details say so. The timeline
-records **wait started · until …** and **wait elapsed → forwarded** with the Wait icon. A pending Wait is visible work, never
+**Continue now** forwards one selected pending arrival immediately, without confirmation, exactly as its deadline would, and
+disables its timer; other arrivals keep waiting. The Wait's details offer it beside each pending arrival, and the canvas block
+offers it only while exactly one arrival is pending; like other Run actions it is unavailable while offline or synchronizing.
+If the timer or an earlier Continue now already forwarded the arrival, Factory answers that it was already forwarded and
+delivers nothing more. An archived Run's arrivals cannot be continued, and a manually Settled Run stays Settled.
+
+The Wait's details list each arrival with its start, deadline, retained message and outcome, and say when you forwarded one
+early. A forwarded arrival keeps its message, which is the input its recipients read; Archive clears every arrival's message
+and the details say so. The timeline records **wait started · until …**, **wait elapsed → forwarded** and **forwarded early
+by you** with the Wait icon. A pending Wait is visible work, never
 Needs input or a Problem, and does not wake a Snoozed Run. A Continuation after a Wait continues the thread of the worker
 whose message waited.
 

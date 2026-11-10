@@ -1,5 +1,10 @@
 import type { RunDetail, WaitArrival } from "@t3-factory/contracts";
+import { FastForward } from "lucide-react";
+import { useState } from "react";
+import { MutationGate } from "@/client-gate";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { api } from "../api.ts";
 import { clockTime, dayAndTime, StatePill } from "./execution-state.tsx";
 import { sectionLabelClass } from "./page.tsx";
 
@@ -13,8 +18,53 @@ function arrivalTiming(arrival: WaitArrival) {
   const started = `started ${clockTime(arrival.startedAt)}`;
   if (arrival.state === "pending") return `${started} · until ${dayAndTime(arrival.deadlineAt)}`;
   const settled = arrival.settledAt ? dayAndTime(arrival.settledAt) : "";
-  if (arrival.state === "forwarded") return `${started} · elapsed, forwarded ${settled}`;
+  if (arrival.state === "forwarded")
+    return arrival.forwardedBy === "user"
+      ? `${started} · forwarded early by you ${settled} · was due ${dayAndTime(arrival.deadlineAt)}`
+      : `${started} · elapsed, forwarded ${settled}`;
   return `${started} · cancelled by Archive ${settled} · was due ${dayAndTime(arrival.deadlineAt)}`;
+}
+
+/**
+ * Continue now: forwards one pending arrival immediately, without confirmation. The live Run
+ * update replaces the control with the arrival's outcome.
+ */
+export function ContinueNow({ arrival, label }: { arrival: WaitArrival; label: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.continueWaitArrival(arrival.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not continue this arrival.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <MutationGate>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-label={label}
+          disabled={busy}
+          onClick={() => void submit()}
+        >
+          <FastForward aria-hidden />
+          {busy ? "Continuing…" : "Continue now"}
+        </Button>
+      </MutationGate>
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </>
+  );
 }
 
 /** Each arrival at a Wait with its deadline, retained message and outcome, newest first. */
@@ -38,6 +88,11 @@ export function WaitArrivals({ run, blockId }: { run: RunDetail; blockId: string
               <p className="min-w-0 flex-1 text-sm font-medium">Arrival {number}</p>
               <StatePill state={OUTCOME[arrival.state]} />
             </div>
+            {arrival.state === "pending" && (
+              <div className="flex flex-col items-start gap-1">
+                <ContinueNow arrival={arrival} label={`Continue arrival ${number} now`} />
+              </div>
+            )}
             <p className="text-2xs tracking-label text-subtle-foreground">
               {arrivalTiming(arrival)}
             </p>

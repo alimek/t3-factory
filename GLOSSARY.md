@@ -56,7 +56,7 @@ A flow block that holds each arrival for a fixed duration from 1 minute to 7 day
 _Avoid_: Timer or delay as the block name; manual resume (not a Wait mode).
 
 **Wait arrival**:
-One accepted delivery to a Wait within a Run, with its retained message, worker provenance, absolute deadline counted from the delivery's release, and outcome: pending, forwarded or cancelled by Archive. Arrivals never join or reset one another.
+One accepted delivery to a Wait within a Run, with its retained message, worker provenance, absolute deadline counted from the delivery's release, and outcome: pending, forwarded (at its deadline, or early by the user with **Continue now**) or cancelled by Archive. Arrivals never join or reset one another.
 
 **Continuation**:
 A flow block with a name, a prompt and one unnamed output, and no Agent or exits of its own. The first message that reaches it in a Run sends its prompt into the worker thread that message belongs to; the work shows on that worker's Agent block while the Continuation is **sent**. Its response leaves the single output, and from then on, for the rest of the Run, every message **passes through** unchanged with its own worker. It needs an Agent before it; human steps, Waits and other Continuations pass the worker on.

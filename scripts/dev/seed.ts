@@ -19,6 +19,7 @@ import {
   settled,
   snoozed,
   twoWorkersStarted,
+  waitContinuedNow,
   woke,
   workerAtWork,
   workingReportedIdle,
@@ -270,6 +271,12 @@ async function finishScenario(
       await resultReleasedToWait(context, await reviewApproved(context, review, scenario.approval));
       break;
     }
+    case "Wait continued now":
+      await waitContinuedNow(
+        context,
+        await resultReleasedToWait(context, await resultReported(context, worker, scenario.result)),
+      );
+      break;
     case "delegated work pending":
       await repositoryFactsObserved(context, worker, scenario.repository);
       await delegatedWorkPending(context, worker, scenario.delegations);

@@ -141,6 +141,7 @@ export interface ScenarioWorld {
     | "archiveRun"
     | "snoozeRun"
     | "answerHumanOccurrence"
+    | "continueWaitArrival"
   > & {
     readonly runtime: { submit(input: unknown): Promise<{ readonly code: string }> };
   };
@@ -1165,6 +1166,26 @@ export function resultReleasedToWait(world: ScenarioWorld, worker: WorkerHandle)
       detail.waitArrivals.some((arrival) => arrival.state === "pending"),
     );
     return { ...worker, arrival: run.waitArrivals.find((item) => item.state === "pending")! };
+  });
+}
+
+/** The user continued the Wait's pending arrival early with Continue now, and Factory launched the
+ * Wait's recipient with the arrival's message. */
+export function waitContinuedNow(
+  world: ScenarioWorld,
+  waiting: Awaited<ReturnType<typeof resultReleasedToWait>>,
+) {
+  return reach("Wait continued now", async () => {
+    stepResult(
+      "continue the Wait now",
+      await world.factory.continueWaitArrival(waiting.arrival.id),
+    );
+    await observeFor("observe the recipient's launch", world, waiting.runId, (run) =>
+      run.intents.some(
+        (intent) => intent.waitArrivalId === waiting.arrival.id && intent.state === "acknowledged",
+      ),
+    );
+    return waiting;
   });
 }
 
