@@ -5,21 +5,26 @@ import { preparedService } from "./support/prepared-runner.ts";
 import {
   allTurnsEnd,
   consecutiveWaitFlow,
+  humanThenWaitFlow,
   launchBlockId,
   loopWaitFlow,
   nextLaunch,
   nextSend,
   observeFor,
+  parallelHumanWaitFlow,
   parallelWaitFlow,
   resultHeld,
+  resultReleasedToHumanReview,
   resultReleasedToWait,
   resultReported,
+  reviewedLoopWaitFlow,
   sentTurnBegins,
   snoozed,
   terminalWaitFlow,
   twoWorkersStarted,
   WAIT_MINUTES,
   waitFlow,
+  waitHumanWaitFlow,
   workerAtWork,
 } from "./support/scenarios.ts";
 
@@ -454,4 +459,164 @@ it.effect("a loop back through a Wait records each revisit as its own arrival", 
     expect(run.waitArrivals[0]?.deadlineAt).toBe(first.arrival.deadlineAt);
     expect(run.waitArrivals[1]?.origin?.activationId).not.toBe(first.arrival.origin?.activationId);
   }),
+);
+
+it.effect(
+  "an approved Human answer waits with the reviewed worker's origin and reaches the next Agent",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, humanThenWaitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker, { message: "Ready to review." }));
+      const review = yield* Effect.promise(() => resultReleasedToHumanReview(f.world, worker));
+      const answered = yield* f.factory.answerHumanOccurrence(review.occurrence.id, {
+        exitId: "approve",
+        message: "Ship it after the cool-down.",
+      });
+      assert(answered.ok);
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      const followUpLaunch = nextLaunch(f.world);
+
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+      // Assert
+      const launched = yield* Effect.promise(() => followUpLaunch);
+      const run = yield* f.factory.getRun(worker.runId);
+      assert(run.ok);
+      const reviewed = run.value.intents.find(
+        (intent) => intent.id === review.occurrence.incomingIntentId,
+      )!.origin;
+      expect(reviewed).toMatchObject({ runId: worker.runId, threadId: worker.threadId });
+      expect(waiting.arrival).toMatchObject({
+        message: "Ship it after the cool-down.",
+        origin: reviewed,
+      });
+      expect(
+        run.value.intents.find((intent) => intent.blockId === "follow-up")?.origin,
+      ).toStrictEqual(reviewed);
+      const followUp = yield* f.factory.runtime.block({
+        arguments: { blockId: launchBlockId(launched.message) },
+      });
+      expect(followUp).toMatchObject({ inputs: { feedback: "Ship it after the cool-down." } });
+      expect(run.value.blocks.find((block) => block.blockId === "review")).toMatchObject({
+        state: "finished",
+        threadId: null,
+      });
+    }),
+);
+
+it.effect(
+  "a Human review pending across a restart forwards the delayed worker's origin with its answer",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, waitHumanWaitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker, { message: "Delayed review." }));
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+      const review = yield* Effect.promise(() => resultReleasedToHumanReview(f.world, worker));
+      yield* f.close;
+      const recovered = yield* f.reopen;
+
+      // Act
+      const answered = yield* recovered.answerHumanOccurrence(review.occurrence.id, {
+        exitId: "approve",
+      });
+
+      // Assert
+      assert(answered.ok);
+      expect(review.occurrence.context).toBe("Delayed review.");
+      expect(
+        answered.value.intents.find((intent) => intent.occurrenceId === review.occurrence.id),
+      ).toMatchObject({ blockId: "settle-in", origin: waiting.arrival.origin });
+      expect(waiting.arrival.origin).toMatchObject({ threadId: worker.threadId });
+    }),
+);
+
+it.effect(
+  "answering one of two parallel reviews forwards its own worker's origin, not the other's",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, parallelHumanWaitFlow, scheduledOnly);
+      const [first, second] = yield* Effect.promise(() => twoWorkersStarted(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, first, { message: "First branch." }));
+      yield* Effect.promise(() => resultReported(f.world, second, { message: "Second branch." }));
+      const reviews = yield* Effect.promise(() =>
+        observeFor(
+          "observe both reviews",
+          f.world,
+          first.runId,
+          (run) =>
+            run.humanOccurrences.filter((occurrence) => occurrence.state === "pending").length ===
+            2,
+        ),
+      );
+      const secondReview = reviews.humanOccurrences.find(
+        (occurrence) => occurrence.context === "Second branch.",
+      )!;
+
+      // Act
+      const answered = yield* f.factory.answerHumanOccurrence(secondReview.id, {
+        exitId: "approve",
+      });
+
+      // Assert
+      assert(answered.ok);
+      expect(
+        answered.value.intents.find((intent) => intent.occurrenceId === secondReview.id)?.origin,
+      ).toMatchObject({ runId: second.runId, threadId: second.threadId });
+      expect(second.threadId).not.toBe(first.threadId);
+      expect(answered.value.humanOccurrences).toMatchObject([
+        { context: "First branch.", state: "pending" },
+        { id: secondReview.id, state: "answered" },
+      ]);
+    }),
+);
+
+it.effect(
+  "a review answered after its worker's later visit forwards the reviewed visit's activation",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, reviewedLoopWaitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker, { message: "First pass." }));
+      const first = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      const revisitSent = nextSend(f.world);
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+      yield* Effect.promise(() => revisitSent);
+      const again = sentTurnBegins(f.world, worker);
+      yield* Effect.promise(() => resultReported(f.world, again, { message: "Second pass." }));
+      const reviews = yield* Effect.promise(() =>
+        observeFor(
+          "observe the second review",
+          f.world,
+          worker.runId,
+          (run) =>
+            run.humanOccurrences.filter((occurrence) => occurrence.state === "pending").length ===
+            2,
+        ),
+      );
+      const firstReview = reviews.humanOccurrences.find(
+        (occurrence) => occurrence.context === "First pass.",
+      )!;
+
+      // Act
+      const answered = yield* f.factory.answerHumanOccurrence(firstReview.id, {
+        exitId: "approve",
+      });
+
+      // Assert
+      assert(answered.ok);
+      const visits = answered.value.activations.filter((visit) => visit.blockId === "worker");
+      expect(visits).toHaveLength(2);
+      expect(first.arrival.origin?.activationId).toBe(visits[0]!.id);
+      expect(
+        answered.value.intents.find((intent) => intent.occurrenceId === firstReview.id)?.origin,
+      ).toStrictEqual(first.arrival.origin);
+    }),
 );

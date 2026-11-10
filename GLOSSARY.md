@@ -59,7 +59,7 @@ _Avoid_: Timer or delay as the block name; manual resume (not a Wait mode).
 One accepted delivery to a Wait within a Run, with its retained message, originating worker, absolute deadline counted from the delivery's release, and outcome: pending, forwarded or cancelled by Archive. Arrivals never join or reset one another.
 
 **Delivery origin**:
-The worker whose result a delivery carries: its Run, Block activation and T3 worker thread. An Agent result sets it and a Wait forwards it unchanged; a message without a known worker has none.
+The worker whose result a delivery carries: its Run, Block activation and T3 worker thread. An Agent result sets it; a Wait forwards it unchanged and a Human answer carries it on with the person's message. A message without a known worker has none.
 
 **Block exit**:
 A named result a block finishes with, whose connections determine which blocks run next. An exit has a stable ID, a name, an optional description and a "message required" flag; there is no other classification. An agent block's exits are its Agent's current exits minus those hidden in this Flow, plus its Flow-local exits; a Run uses the Agent revisions it captured. Wires leave by exit ID, so renaming an exit keeps them.

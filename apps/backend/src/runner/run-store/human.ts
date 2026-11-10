@@ -7,7 +7,8 @@ import { fingerprint } from "../runner-utils.ts";
 import { now } from "../../time.ts";
 import { settleHumanAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
-import { createHeldHandoffs } from "./handoffs.ts";
+import { createHeldHandoffs, storedOrigin } from "./handoffs.ts";
+import type { DeliveryRecord } from "./records.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
 import { writeBlockState } from "./blocks.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
@@ -69,8 +70,10 @@ export function openRunHuman(database: RunnerDatabase) {
                   .map((edge) => edge.targetBlockId),
               ),
             ];
+            const [incoming] = yield* sql<
+              Pick<DeliveryRecord, "origin_activation_id" | "origin_thread_id">
+            >`SELECT origin_activation_id,origin_thread_id FROM operation_intents WHERE id=${occurrence.incoming_intent_id}`;
             yield* sql`UPDATE human_occurrences SET state='answered',pending_context=NULL,settled_at=${time},exit_id=${exit.id},answer_fingerprint=${content} WHERE id=${id} AND state='pending'`;
-            // Human answers carry no originating worker yet; extending that is separate work.
             yield* createHeldHandoffs(sql, runRow, {
               kind: "human",
               id,
@@ -79,7 +82,7 @@ export function openRunHuman(database: RunnerDatabase) {
               recipients,
               message: message ?? "",
               at: time,
-              origin: null,
+              origin: storedOrigin(incoming!),
             });
             yield* writeBlockState(
               sql,

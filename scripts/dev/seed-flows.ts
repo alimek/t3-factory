@@ -117,8 +117,8 @@ export async function createDemoFlows(
   };
 }
 
-/** A Wait between implementation and review, Waits holding parallel reviews for a decision, and
- * a saved Wait draft with no duration yet. */
+/** A Wait between implementation and review, Waits holding parallel reviews for a decision, an
+ * approval held for the release window, and a saved Wait draft with no duration yet. */
 async function createWaitFlows(
   factory: Factory,
   agents: { worker: string; reviewer: string; accessibility: string },
@@ -165,6 +165,26 @@ async function createWaitFlows(
       connection("hold", WAIT_OUTPUT, "decision"),
     ],
   });
+  const humanWait = await saveFlow(factory, "Demo · Approve, then hold for release", {
+    flowInput: flowInput(["worker"], { x: 40, y: 180 }),
+    blocks: [
+      agentBlock("worker", "Implement change", agents.worker, { x: 320, y: 180 }),
+      humanStep("approval", "Approve release", { x: 700, y: 180 }),
+      waitBlock(
+        "window",
+        "Hold for the release window",
+        { amount: 1, unit: "days" },
+        { x: 1080, y: 180 },
+      ),
+      agentBlock("announce", "Announce release", agents.worker, { x: 1460, y: 180 }),
+    ],
+    connections: [
+      connection("worker", "review", "approval"),
+      connection("approval", "request-changes", "worker"),
+      connection("approval", "approve", "window"),
+      connection("window", WAIT_OUTPUT, "announce"),
+    ],
+  });
   const draft = requireSuccess(
     await factory.createFlow({ name: "Demo · Wait needs a duration (draft)" }),
   );
@@ -176,7 +196,7 @@ async function createWaitFlows(
       graph: graph(null),
     }),
   );
-  return { wait, parallelWait };
+  return { wait, parallelWait, humanWait };
 }
 
 /** Ready wiring followed by an Agent edit exposes saved, repairable exit-contract issues. */

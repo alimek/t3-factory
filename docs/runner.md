@@ -359,7 +359,8 @@ Approve accepts an optional one. An exact retry of an answer accepted before the
 names the new exit and so conflicts instead of repeating.
 
 Answering atomically records the answer, settles only that occurrence and creates every
-outgoing handoff. Identical retries return current detail; changed or competing answers
+outgoing handoff, which carries the answer and the [origin](#delivery-origin) of the occurrence's own incoming
+delivery. Identical retries return current detail; changed or competing answers
 conflict. Pending context is cleared after settlement. A Human Block stays waiting while
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
@@ -390,10 +391,13 @@ wake-ups; the deadlines stay in the store.
 
 Every Handoff, and the launch or send it becomes, records the originating worker of the message it carries: the Block
 activation and its bound T3 thread, within the Handoff's Run. An accepted Final result sets it to its activation and the
-Block's worker thread when bound; a Wait arrival keeps it and its forwarded Handoffs repeat it unchanged, through queued
-delivery, restart, fan-out and loop visits. It is never reconstructed from the graph or the latest activation. A message
-without a known worker has no origin: Human answers carry none yet. Migration `075` derived the origin of existing
-deliveries from their recorded Final result and its Block's bound thread, and left the others without one.
+Block's worker thread when bound; a Wait arrival keeps it and its forwarded Handoffs repeat it unchanged. A Human
+occurrence reads it from the incoming delivery it was recorded from, which keeps it after acknowledgement, and its answer's
+Handoffs repeat it with the person's message; neither a Wait nor a Human step acquires a worker. The origin survives queued
+delivery, restart, fan-out and loop visits, and is never reconstructed from the graph or the latest activation, so parallel
+occurrences and a review answered after a later visit of its worker keep their own. A message without a known worker has
+no origin. Migration `075` derived the origin of existing deliveries, including those already recorded as pending Human
+occurrences, from their recorded Final result and its Block's bound thread, and left the others without one.
 
 ## Settled Runs
 

@@ -294,7 +294,8 @@ describing the changes. Submission settles only that
 occurrence and atomically saves all outgoing handoffs: double submission cannot send twice and a competing answer conflicts. Agent
 recipients get independent deliveries on the existing thread/queue rules; a Human recipient gets a new occurrence. The block stays
 waiting until its last occurrence is answered. Context and delivery text survive restart, are cleared after settlement and
-acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
+acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread; an answer carries on the originating
+worker of the message it answered.
 
 ## Waits
 

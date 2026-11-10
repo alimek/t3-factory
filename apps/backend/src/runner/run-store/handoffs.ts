@@ -9,9 +9,19 @@ import { appendTimelineEvent } from "./steps.ts";
 
 /**
  * The worker whose result a delivery carries: its Block activation and T3 thread in the Run. It is
- * stored on every Handoff and kept when the Handoff becomes a delivery or reaches a Wait.
+ * stored on every Handoff and kept when the Handoff becomes a delivery, reaches a Wait or reaches
+ * a Human step, whose answer forwards it.
  */
 export type DeliveryOrigin = { readonly activationId: string; readonly threadId: string };
+
+/** The origin a stored delivery or Wait arrival carries, if any. */
+export const storedOrigin = (row: {
+  readonly origin_activation_id: string | null;
+  readonly origin_thread_id: string | null;
+}): DeliveryOrigin | null =>
+  row.origin_activation_id && row.origin_thread_id
+    ? { activationId: row.origin_activation_id, threadId: row.origin_thread_id }
+    : null;
 
 /**
  * What creates Handoffs: a Final result version, a Human answer or a Wait arrival's forwarding,
