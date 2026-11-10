@@ -19,9 +19,10 @@ export function openRunHuman(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
 
   /** Answers Human occurrence `id`. Guards: this backend owns the database and the gate is open
-   * (otherwise the Run accepts no answers); an occurrence already answered with the same answer
-   * is acknowledged without change, any other settlement is a conflict. Checked in that order,
-   * before the exit is. An answer settles the occurrence and its attention, sets the Human step
+   * (otherwise the Run accepts no answers). The exit and its required message are validated
+   * next, because the answer's fingerprint needs them; only then is an occurrence already
+   * answered with the same answer acknowledged without change, and any other settlement a
+   * conflict. An answer settles the occurrence and its attention, sets the Human step
    * waiting while another occurrence is pending and finished otherwise, creates its Handoffs and
    * advances the generation once. Only an applied or repeated answer is published. */
   function answerHumanOccurrence(
