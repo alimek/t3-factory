@@ -13,6 +13,7 @@ import {
   resultReleasedToTwoWorkers,
   resultReplacedBeforeRelease,
   resultReported,
+  resultWaitingAtWait,
   settled,
   snoozed,
   twoWorkersStarted,
@@ -267,6 +268,18 @@ async function finishScenario(
         await promptAnswered(context, worker, spec, scenario.spec);
         await promptSent(context, worker, "tickets");
       }
+      break;
+    }
+    case "reviews waiting at a Wait": {
+      const reviewers = await resultReleasedToTwoWorkers(
+        context,
+        await resultReported(context, worker, scenario.implementation),
+      );
+      for (const [index, review] of scenario.reviews.entries())
+        await resultWaitingAtWait(
+          context,
+          await resultReported(context, reviewers[index]!, review),
+        );
       break;
     }
   }

@@ -19,6 +19,9 @@ export type DeliveryRecord = {
   exit_id: string | null;
   /** The worker thread binding the message belongs to; null for launches and earlier records. */
   binding_id: string | null;
+  /** The Block activation whose result produced the message, kept with `binding_id`; null where
+   * the record names none. */
+  origin_activation_id: string | null;
   result_json: string | null;
   target_json: string;
   request_key: string;

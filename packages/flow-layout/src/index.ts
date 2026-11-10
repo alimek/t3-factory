@@ -175,14 +175,15 @@ function blockNode<B extends LayoutBlock>(
   return node;
 }
 
-/** A Continuation's single output is unnamed, so its wires carry no label to reserve room for. */
+/** A Continuation's or Wait's single output is unnamed, so its wires carry no label to reserve
+ * room for. */
 function edgeLabels<B extends LayoutBlock>(
   graph: LayoutGraph<B>,
   connection: FlowGraph["connections"][number],
   dims: FlowLayoutDimensions<B>,
 ) {
   const source = graph.blocks.find((block) => block.id === connection.sourceBlockId);
-  if (!dims.labels || source?.kind === "continuation") return [];
+  if (!dims.labels || source?.kind === "continuation" || source?.kind === "wait") return [];
   const target = graph.blocks.find((block) => block.id === connection.targetBlockId);
   const exit = source?.exits.find((item) => item.id === connection.exitId)?.name || "exit";
   const text = `${exit} → ${target?.name || "Unnamed block"}`;

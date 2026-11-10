@@ -10,6 +10,7 @@ import type {
   Result,
   RunAttention,
   RunDetail,
+  WaitArrival,
   RunWorkspaceDetail,
   TaskSummary,
 } from "@t3-factory/contracts";
@@ -270,6 +271,22 @@ export function openRunQueries(database: RunnerDatabase) {
           arrived_at: string;
           forwarded_at: string | null;
         }>`SELECT * FROM continuation_visits WHERE run_id=${id} ORDER BY rowid`;
+        const waitArrivals = yield* sql<{
+          id: string;
+          block_id: string;
+          incoming_intent_id: string;
+          source_block_id: string | null;
+          report_id: string | null;
+          binding_id: string | null;
+          thread_id: string | null;
+          origin_activation_id: string | null;
+          message: string | null;
+          state: WaitArrival["state"];
+          forward_reason: WaitArrival["forwardReason"];
+          started_at: string;
+          deadline_at: string;
+          settled_at: string | null;
+        }>`SELECT w.*,t.thread_id FROM wait_arrivals w LEFT JOIN run_thread_bindings t ON t.id=w.binding_id WHERE w.run_id=${id} ORDER BY w.rowid`;
         const attention = yield* attentionRows(sql, id);
         const working = new Map(
           (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
@@ -317,6 +334,27 @@ export function openRunQueries(database: RunnerDatabase) {
               state: visit.state,
               arrivedAt: visit.arrived_at,
               forwardedAt: visit.forwarded_at,
+            })),
+            waitArrivals: waitArrivals.map((arrival): WaitArrival => ({
+              id: arrival.id,
+              blockId: arrival.block_id,
+              incomingIntentId: arrival.incoming_intent_id,
+              sourceBlockId: arrival.source_block_id,
+              origin:
+                arrival.binding_id && arrival.thread_id
+                  ? {
+                      bindingId: arrival.binding_id,
+                      threadId: arrival.thread_id,
+                      activationId: arrival.origin_activation_id,
+                    }
+                  : null,
+              reportId: arrival.report_id,
+              state: arrival.state,
+              forwardReason: arrival.forward_reason,
+              message: arrival.message,
+              startedAt: arrival.started_at,
+              deadlineAt: arrival.deadline_at,
+              settledAt: arrival.settled_at,
             })),
             recoveries: yield* recoveryRows(sql, id),
             attention,

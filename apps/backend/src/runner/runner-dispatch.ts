@@ -1,6 +1,7 @@
 import { dispatchBlockLaunch } from "./runner-block-workers.ts";
 import { prepareCoordinatorHandoff } from "./runner-coordinator-handoffs.ts";
 import { prepareContinuationHandoff } from "./runner-continuations.ts";
+import { prepareWaitHandoff } from "./runner-waits.ts";
 import type { EffectOperations } from "../effect-operations.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { recoveryDispatchGeneration } from "./runner-recovery.ts";
@@ -12,7 +13,7 @@ import type { BlockRow, Checked, RunnerOptions, RunRow, StoredTarget } from "./r
 import {
   catalogProject,
   intactPayload,
-  passedThrough,
+  forwardedUnchanged,
   runTarget,
   unverified,
   verified,
@@ -58,7 +59,7 @@ export function openRunnerDispatch(
   images: RunImages,
 ) {
   /** Agent handoffs become worker commands or revisit sends, Continuation handoffs a prompt send
-   * or a pass-through; Human handoffs become occurrences. */
+   * or a pass-through; Human handoffs become occurrences and Wait handoffs arrivals. */
   function prepareHandoff(
     runRow: RunRow,
     handoff: Handoff,
@@ -69,6 +70,10 @@ export function openRunnerDispatch(
       )?.kind;
       if (kind === "continuation")
         return yield* prepareContinuationHandoff(store, t3, runRow, handoff);
+      if (kind === "wait") {
+        yield* prepareWaitHandoff(store, t3, runRow, handoff);
+        return;
+      }
       if (kind !== "agent") {
         yield* activatePendingHumanHandoff(store, t3, runRow, handoff);
         return;
@@ -148,7 +153,7 @@ export function openRunnerDispatch(
   function reserveSend(runRow: RunRow, intent: Delivery, retryScope: string | null) {
     return Effect.gen(function* () {
       const gated =
-        Boolean(intent.report_id || intent.occurrence_id || passedThrough(intent)) &&
+        Boolean(intent.report_id || intent.occurrence_id || forwardedUnchanged(intent)) &&
         intent.state === "pending";
       if (gated) return yield* reservePendingExplicitHandoff(store, t3, runRow, intent, retryScope);
       const generation = yield* recoveryDispatchGeneration(store, t3, runRow, intent);

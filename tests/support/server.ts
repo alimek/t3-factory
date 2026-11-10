@@ -3,6 +3,8 @@ import {
   flowInput,
   controlledExecution,
   agentBlock,
+  connection,
+  waitStep,
   resultHeld,
   resultReported,
   resultReleasedToSecondWorker,
@@ -83,6 +85,31 @@ factory.setRuntimeBackendUrl(`http://127.0.0.1:${server.address.port}`);
 await seedDevelopment(factory, t3, home);
 const project = requireSuccess(await factory.listProjects()).projects[0]!;
 const context = { factory, t3, projectId: project.id };
+// One worker whose result waits a minute, the shortest Wait, so a journey can watch it elapse.
+const waitWorker = requireSuccess(
+  await factory.createAgent({
+    name: "Wait journey worker",
+    prompt: "Neutral work before a pause",
+    execution: controlledExecution(t3.environmentId, { modelOptions: [] }),
+    exits: [blockExit("done", "Done", "Complete", false)],
+  }),
+);
+const minuteWait = requireSuccess(await factory.createFlow({ name: "Journey · One-minute wait" }));
+requireSuccess(
+  await factory.updateFlow(minuteWait.id, {
+    name: minuteWait.name,
+    expectedRevision: minuteWait.revision,
+    workspace: { mode: "checkout" },
+    graph: {
+      flowInput: flowInput(["worker"], { x: 0, y: 0 }),
+      blocks: [
+        agentBlock("worker", "Entry worker", waitWorker.id, { x: 320, y: 0 }),
+        waitStep("pause", "Pause", { amount: 1, unit: "minutes" }, { x: 700, y: 0 }),
+      ],
+      connections: [connection("worker", "done", "pause")],
+    },
+  }),
+);
 const flows = requireSuccess(await factory.listFlows());
 const review = flows.find((f) => f.name === "Demo · Build, review and decide")!;
 let workerRuns: Promise<Map<string, string>> | undefined;
@@ -98,6 +125,7 @@ async function prepareWorkerRuns() {
       parallelStart: flow("Demo · Parallel review from one prompt"),
       worktree: flow("Demo · Build and review in a worktree"),
       continuation: flow("Demo · Grill, spec and tickets"),
+      soak: flow("Demo · Review, soak and release"),
     },
     { titlePrefix: "UI worker · ", keyNamespace: "ui-worker:development-v1:" },
   );

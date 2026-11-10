@@ -16,6 +16,13 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
   | { readonly kind: "operation-cancelled"; readonly blockId: string; readonly intentId: string }
   | { readonly kind: "human-cancelled"; readonly blockId: string; readonly occurrenceId: string }
   | {
+      /** About one Wait arrival: counting started, its deadline elapsed and it was forwarded, or
+       * Archive cancelled it. */
+      readonly kind: "wait-started" | "wait-elapsed" | "wait-cancelled";
+      readonly blockId: string;
+      readonly arrivalId: string;
+    }
+  | {
       readonly kind: "attention-appeared";
       readonly blockId: string;
       readonly executionId: string;
@@ -126,9 +133,33 @@ function storedDeliveryEvent(event: DeliveryEvent) {
   });
 }
 
+/** Events about one Human occurrence or Wait arrival, keyed by it with a prefix per kind. */
+const ARRIVAL_KEY_PREFIXES = {
+  "human-waiting": "human:",
+  "human-answered": "human-answer:",
+  "human-cancelled": "human-cancelled:",
+  "wait-started": "wait-started:",
+  "wait-elapsed": "wait-elapsed:",
+  "wait-cancelled": "wait-cancelled:",
+} as const;
+type ArrivalEvent = Extract<TimelineEvent, { readonly kind: keyof typeof ARRIVAL_KEY_PREFIXES }>;
+const isArrivalEvent = (event: TimelineEvent): event is ArrivalEvent =>
+  event.kind in ARRIVAL_KEY_PREFIXES;
+
+function storedArrivalEvent(event: ArrivalEvent): StoredEvent {
+  const id = "arrivalId" in event ? event.arrivalId : event.occurrenceId;
+  return {
+    blockId: event.blockId,
+    executionId: null,
+    sourceKey: ARRIVAL_KEY_PREFIXES[event.kind] + id,
+    causeId: id,
+  };
+}
+
 function stored(event: TimelineEvent) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
     if ("intentId" in event) return yield* storedDeliveryEvent(event);
+    if (isArrivalEvent(event)) return storedArrivalEvent(event);
     switch (event.kind) {
       case "started":
         return { blockId: null, executionId: null, sourceKey: "start", causeId: null };
@@ -157,13 +188,6 @@ function stored(event: TimelineEvent) {
         };
       case "run-archived":
         return { blockId: null, executionId: null, sourceKey: "archived", causeId: null };
-      case "human-cancelled":
-        return {
-          blockId: event.blockId,
-          executionId: null,
-          sourceKey: "human-cancelled:" + event.occurrenceId,
-          causeId: event.occurrenceId,
-        };
       case "attention-appeared":
         return "occurrenceId" in event
           ? {
@@ -200,15 +224,6 @@ function stored(event: TimelineEvent) {
           executionId: event.executionId,
           sourceKey: (event.kind === "report-accepted" ? "report:" : "working:") + event.reportId,
           causeId: event.reportId,
-        };
-      case "human-answered":
-      case "human-waiting":
-        return {
-          blockId: event.blockId,
-          executionId: null,
-          sourceKey:
-            (event.kind === "human-answered" ? "human-answer:" : "human:") + event.occurrenceId,
-          causeId: event.occurrenceId,
         };
     }
   });

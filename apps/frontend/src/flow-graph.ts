@@ -5,6 +5,7 @@ import type {
   FlowConnection,
   FlowGraph,
   RunDefinitions,
+  WaitDuration,
 } from "@t3-factory/contracts";
 import {
   continuationSources,
@@ -31,6 +32,7 @@ const DEFAULT_BLOCK_NAMES: Record<FlowBlock["kind"], string> = {
   agent: "Agent block",
   human: "Human step",
   continuation: "Continuation",
+  wait: "Wait",
 };
 
 /** Without a drop position, new blocks fill a three-column grid right of the Flow input. */
@@ -50,7 +52,10 @@ export function newBlock(
   };
   if (kind === "agent")
     return { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] };
-  return kind === "continuation" ? { ...base, kind, prompt: "" } : { ...base, kind };
+  if (kind === "continuation") return { ...base, kind, prompt: "" };
+  // A new Wait has no duration yet; readiness asks for one, and the draft still saves.
+  if (kind === "wait") return { ...base, kind, duration: { amount: null, unit: "minutes" } };
+  return { ...base, kind };
 }
 
 export function replaceBlock(graph: FlowGraph, next: FlowBlock): FlowGraph {
@@ -96,7 +101,7 @@ export function hasWire(graph: FlowGraph, wire: FlowWire) {
 
 /**
  * Whether `source` may gain a wire to the block: any block for an exit, only Agent blocks
- * for the Flow input (never a Human step or a Continuation), and never a target the source
+ * for the Flow input (never a Human step, Continuation or Wait), and never a target the source
  * already reaches.
  */
 export function canConnect(graph: FlowGraph, source: WireSource, targetBlockId: string) {
@@ -162,6 +167,19 @@ export function continuedThread(graph: FlowGraph, blockId: string): string | nul
   if (sources.length > 1) return "the incoming Agent's thread";
   const agent = graph.blocks.find((block) => block.id === sources[0]);
   return agent ? `${agent.name || "Unnamed block"}'s thread` : null;
+}
+
+const WAIT_UNIT_NAMES: Record<WaitDuration["unit"], readonly [string, string]> = {
+  minutes: ["minute", "minutes"],
+  hours: ["hour", "hours"],
+  days: ["day", "days"],
+};
+
+/** A Wait duration as entered, such as "30 minutes"; null while its amount is empty. */
+export function waitDurationText(duration: WaitDuration): string | null {
+  if (duration.amount === null) return null;
+  const [one, many] = WAIT_UNIT_NAMES[duration.unit];
+  return `${duration.amount} ${duration.amount === 1 ? one : many}`;
 }
 
 export function exitRecipients(graph: FlowGraph, blockId: string, exitId: string) {

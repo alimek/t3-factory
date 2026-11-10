@@ -105,7 +105,7 @@ function acceptStartRecords(sql: SqlClient.SqlClient, plan: StartPlan) {
     for (const agent of agents)
       yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
     for (const block of plan.definitions.flow.graph.blocks)
-      yield* sql`INSERT INTO run_blocks(run_id,block_id,name,public_id) VALUES(${plan.runId},${block.id},${block.name},${block.kind === "human" ? null : randomUUID()})`;
+      yield* sql`INSERT INTO run_blocks(run_id,block_id,name,public_id) VALUES(${plan.runId},${block.id},${block.name},${block.kind === "agent" || block.kind === "continuation" ? randomUUID() : null})`;
     const workspace = runWorkspace(plan, number);
     if (workspace.mode === "worktree")
       yield* sql`INSERT INTO run_workspaces(run_id,base_ref,planned_branch,creator_block_id) VALUES(${plan.runId},${workspace.baseRef},${workspace.plannedBranch},${workspace.creatorBlockId})`;

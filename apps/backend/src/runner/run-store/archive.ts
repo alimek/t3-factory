@@ -17,9 +17,10 @@ import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 const pending: DeliveryState = "pending";
 const cancelled: DeliveryState = "cancelled";
 
-/** Nothing unsent leaves an archived Run: pending launches, handoffs and Human occurrences are
- * cancelled without inventing answers, pending attention settles and unfinished activated
- * Blocks show stopped. In-flight or uncertain operations keep their recorded state. */
+/** Nothing unsent leaves an archived Run: pending launches, handoffs, Human occurrences and Wait
+ * arrivals are cancelled without inventing answers or forwarding, pending attention settles and
+ * unfinished activated Blocks show stopped. In-flight or uncertain operations keep their recorded
+ * state. */
 function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
   return Effect.gen(function* () {
     const intents =
@@ -47,6 +48,18 @@ function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
         observedAt: time,
       });
     }
+    const waits = yield* sql<{
+      id: string;
+      block_id: string;
+    }>`UPDATE wait_arrivals SET state='cancelled',message=NULL,settled_at=${time} WHERE run_id=${id} AND state='pending' RETURNING id,block_id`;
+    for (const arrival of waits)
+      yield* appendTimelineEvent(sql, {
+        kind: "wait-cancelled",
+        runId: id,
+        blockId: arrival.block_id,
+        arrivalId: arrival.id,
+        observedAt: time,
+      });
     const attention = yield* sql<{
       id: string;
       block_id: string;

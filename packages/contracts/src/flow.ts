@@ -23,11 +23,19 @@ interface BlockBase {
   readonly name: string;
   readonly position: { readonly x: number; readonly y: number };
 }
+/** The units a Wait duration is entered in. */
+export type WaitUnit = "minutes" | "hours" | "days";
+/** A Wait's fixed delay: `amount` is null in a draft whose duration is not entered yet. */
+export interface WaitDuration {
+  readonly amount: number | null;
+  readonly unit: WaitUnit;
+}
 /**
  * An Agent block exposes its Agent's exits, minus those this Flow hides, plus its Flow-local
  * exits. A Human block has the fixed Approve and Request changes exits. A Continuation sends its
  * prompt once per Run into the worker thread of the message that reaches it and has one fixed,
- * unnamed output.
+ * unnamed output. A Wait holds each message that reaches it for its duration, then forwards it
+ * unchanged on its one fixed, unnamed output.
  */
 export type FlowBlock = BlockBase &
   (
@@ -45,6 +53,11 @@ export type FlowBlock = BlockBase &
         /** Stored trimmed; empty only in a draft, where readiness reports it. */
         readonly prompt: string;
       }
+    | {
+        readonly kind: "wait";
+        /** Readiness requires 1 minute through 7 days; a draft may save it missing or outside. */
+        readonly duration: WaitDuration;
+      }
   );
 export interface FlowConnection {
   readonly sourceBlockId: string;
@@ -54,7 +67,8 @@ export interface FlowConnection {
 /** The single, always-present source of a Flow; its targets start a Run in parallel. */
 export interface FlowInputBlock {
   readonly position: { readonly x: number; readonly y: number };
-  /** Agent blocks that each receive the Flow input in their own session at Start. */
+  /** Agent blocks that each receive the Flow input in their own session at Start. A draft may
+   * target a Wait, which readiness reports. */
   readonly targetBlockIds: readonly string[];
 }
 export interface FlowGraph {

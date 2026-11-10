@@ -10,7 +10,12 @@ import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { CircleHelp, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { selectExecutionTargets } from "../execution-focus.ts";
-import { continuedThread, exitRecipients, type CanvasBlock } from "../flow-graph.ts";
+import {
+  continuedThread,
+  exitRecipients,
+  waitDurationText,
+  type CanvasBlock,
+} from "../flow-graph.ts";
 import { EXECUTION_DIMENSIONS } from "./canvas-dimensions.ts";
 import {
   CanvasSurface,
@@ -39,7 +44,10 @@ function blockObservation(block: RunBlock, unavailable: boolean) {
   return "live" as const;
 }
 
-function agentLabel(run: RunDetail, block: Exclude<FlowBlock, { kind: "continuation" }>) {
+function agentLabel(
+  run: RunDetail,
+  block: Exclude<FlowBlock, { kind: "continuation" } | { kind: "wait" }>,
+) {
   if (block.kind === "human") return "asks you";
   if (!block.agentId) return "not chosen";
   return (
@@ -47,8 +55,14 @@ function agentLabel(run: RunDetail, block: Exclude<FlowBlock, { kind: "continuat
   );
 }
 
-/** The reference line under a block's name: what it runs, or whose thread a Continuation continues. */
+/** The reference line under a block's name: what it runs, whose thread a Continuation continues,
+ * or how long a Wait holds each message. */
 function referenceLine(run: RunDetail, block: FlowBlock) {
+  if (block.kind === "wait")
+    return {
+      text: `Wait · ${waitDurationText(block.duration) ?? "duration not set"}`,
+      color: "text-subtle-foreground",
+    };
   if (block.kind !== "continuation")
     return {
       text: `${block.kind === "human" ? "Human step" : "Agent"} · ${agentLabel(run, block)}`,
@@ -100,8 +114,34 @@ type BlockVisit = {
   readonly status: string;
 };
 
-/** Recorded visits: Block worker activations, Human occurrences or messages reaching a Continuation. */
+/** A Wait's arrivals still waiting, nearest deadline first. */
+function pendingArrivals(run: RunDetail, blockId: string) {
+  return run.waitArrivals
+    .filter((arrival) => arrival.blockId === blockId && arrival.state === "pending")
+    .sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt));
+}
+
+/** "until 14:05", with the count when several arrivals wait: the nearest deadline comes first. */
+export function waitingUntil(run: RunDetail, blockId: string) {
+  const pending = pendingArrivals(run, blockId);
+  const nearest = pending[0];
+  if (!nearest) return null;
+  return `until ${clockTime(nearest.deadlineAt)}${pending.length > 1 ? ` · ${pending.length} pending` : ""}`;
+}
+
+/** Recorded visits: Block worker activations, Human occurrences, messages reaching a Continuation
+ * or Wait arrivals. */
 export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVisit[] {
+  if (block.kind === "wait") {
+    return run.waitArrivals
+      .filter((arrival) => arrival.blockId === block.id)
+      .map((arrival) => ({
+        id: arrival.id,
+        start: arrival.startedAt,
+        end: arrival.settledAt,
+        status: arrival.state,
+      }));
+  }
   if (block.kind === "continuation") {
     return run.continuationVisits
       .filter((visit) => visit.blockId === block.id)
@@ -158,12 +198,21 @@ function activityText(run: RunDetail, block: FlowBlock, recorded: RunBlock | und
   const continuation =
     block.kind === "continuation" && continuationActivity(run, block.id, recorded.state);
   if (continuation) return continuation;
+  const waiting = block.kind === "wait" && waitingUntil(run, block.id);
+  if (waiting) return waiting;
   const start = latest.start ?? recorded.observedAt;
   const end = latest.end;
   const active = recorded.state === "working" || recorded.state === "waiting";
-  if (active || !end) return `visit ${visits.length}${start ? ` · since ${clockTime(start)}` : ""}`;
-  return `visit ${visits.length}${start ? ` · ${clockTime(start)}–${clockTime(end)}` : ""}`;
+  const visit = `${block.kind === "wait" ? "arrival" : "visit"} ${visits.length}`;
+  if (active || !end) return `${visit}${start ? ` · since ${clockTime(start)}` : ""}`;
+  return `${visit}${start ? ` · ${clockTime(start)}–${clockTime(end)}` : ""}`;
 }
+
+/** What the single, unnamed output of a Continuation or Wait carries, shown in place of a name. */
+const SINGLE_OUTPUT_NAMES: Partial<Record<EffectiveExit["source"], string>> = {
+  continuation: "response",
+  wait: "message",
+};
 
 /** One exit row: where the exit comes from, its name and, for screen readers, its recipients. */
 function ExecutionExit({
@@ -176,15 +225,15 @@ function ExecutionExit({
   exit: EffectiveExit;
 }) {
   const recipients = exitRecipients(graph, block.id, exit.id).join(", ");
-  const continuation = exit.source === "continuation";
+  const single = SINGLE_OUTPUT_NAMES[exit.source];
   return (
     <>
       <span className="truncate text-2xs tracking-label text-subtle-foreground">
-        {continuation ? "output" : exitSourceLabel(exit)}
+        {single ? "output" : exitSourceLabel(exit)}
       </span>
       <span className="flex-1" />
       <span className="truncate text-xs font-medium text-foreground">
-        {continuation ? "response" : exit.name || "Unnamed exit"}
+        {single ?? (exit.name || "Unnamed exit")}
       </span>
       <span className="sr-only">configured → {recipients || "finish here"}</span>
     </>
@@ -202,6 +251,7 @@ const EXECUTION_KIND_LABELS: Record<FlowBlock["kind"], string> = {
   agent: "AGENT",
   human: "HUMAN",
   continuation: "CONTINUATION",
+  wait: "WAIT",
 };
 
 function ExecutionBlockHeader({

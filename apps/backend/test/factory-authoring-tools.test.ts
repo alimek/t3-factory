@@ -1,28 +1,11 @@
 import { expect, it } from "@effect/vitest";
-import { authoringMcpClient, toolReply } from "./support/factory-mcp.ts";
+import { authoringMcpClient, mcpAgent, toolReply } from "./support/factory-mcp.ts";
 import { assertOk, sampleAgentInput } from "./support/domain-setup.ts";
 
 it("a partial-position save arranges the whole graph after creating a ready Flow at revision 1 without positions", async (c) => {
   // Arrange
   const { client } = await authoringMcpClient(c);
-  const capabilities = toolReply(
-    await client.callTool({ name: "factory_get_agent_capabilities", arguments: {} }),
-  );
-  const [provider] = capabilities.providers;
-  const agent = toolReply(
-    await client.callTool({
-      name: "factory_create_agent",
-      arguments: {
-        ...sampleAgentInput("Coder"),
-        execution: {
-          environmentId: capabilities.environments[0].environmentId,
-          providerInstanceId: provider.providerInstanceId,
-          modelId: provider.models[0].id,
-          modelOptions: [],
-        },
-      },
-    }),
-  );
+  const { agent, provider } = await mcpAgent(client, "Coder");
   const graph = {
     flowInput: { targetBlockIds: ["flow-input"] },
     blocks: [
@@ -87,6 +70,52 @@ it("a partial-position save arranges the whole graph after creating a ready Flow
   expect(
     toolReply(await client.callTool({ name: "factory_get_flow", arguments: { flowId: flow.id } })),
   ).toStrictEqual(saved);
+});
+
+it("an MCP client creates a Wait without positions and reads Studio's readiness for its missing duration", async (c) => {
+  // Arrange
+  const { client } = await authoringMcpClient(c);
+  const { agent } = await mcpAgent(client, "Coder");
+  const graph = {
+    flowInput: { targetBlockIds: ["coder"] },
+    blocks: [
+      {
+        id: "coder",
+        kind: "agent",
+        name: "Coder",
+        agentId: agent.id,
+        hiddenExitIds: [],
+        localExits: [],
+      },
+      { id: "pause", kind: "wait", name: "Pause", duration: { amount: null, unit: "hours" } },
+    ],
+    connections: [{ sourceBlockId: "coder", exitId: "done", targetBlockId: "pause" }],
+  };
+
+  // Act
+  const created = await client.callTool({
+    name: "factory_create_flow",
+    arguments: { name: "Paused change", graph },
+  });
+
+  // Assert
+  expect(created.isError).toBe(false);
+  const flow = toolReply(created);
+  expect(flow.graph.blocks[1]).toMatchObject(graph.blocks[1]!);
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_check_flow", arguments: { flowId: flow.id } }),
+    ),
+  ).toStrictEqual({
+    ready: false,
+    issues: [
+      {
+        code: "wait_duration_required",
+        path: "graph.blocks.1.duration.amount",
+        message: "Enter how long Pause waits.",
+      },
+    ],
+  });
 });
 
 it("an Agent save on a revision Studio has replaced is refused with a conflict and a next step", async (c) => {

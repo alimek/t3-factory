@@ -115,9 +115,13 @@ function blockView(
   };
 }
 
-/** One arrival activates one visit; graph neighbors and later reports are not its inputs. */
+/** One arrival activates one visit; graph neighbors and later reports are not its inputs. A visit
+ * a Wait's forwarding caused receives the result whose message waited, unchanged. */
 function incomingResults(detail: RunDetail, cause: string) {
-  const reportId = /^report:([^/]+)/.exec(cause)?.[1];
+  const waited = /^wait:([^/]+)/.exec(cause)?.[1];
+  const reportId =
+    /^report:([^/]+)/.exec(cause)?.[1] ??
+    detail.waitArrivals.find((arrival) => arrival.id === waited)?.reportId;
   const report = detail.reports.find((entry) => entry.id === reportId);
   if (!report) return [];
   const source = detail.definitions.flow.graph.blocks.find((entry) => entry.id === report.blockId)!;

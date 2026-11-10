@@ -51,6 +51,7 @@ export const runEntityKeys = {
   recoveries: (recovery: Entity<"recoveries">) => recovery.intentId,
   humanOccurrences: (occurrence: Entity<"humanOccurrences">) => occurrence.id,
   continuationVisits: (visit: Entity<"continuationVisits">) => visit.id,
+  waitArrivals: (arrival: Entity<"waitArrivals">) => arrival.id,
   attention: (matter: Entity<"attention">) => matter.id,
   executions: (execution: Pick<Entity<"executions">, "bindingId" | "executionId">) =>
     JSON.stringify([execution.bindingId, execution.executionId]),

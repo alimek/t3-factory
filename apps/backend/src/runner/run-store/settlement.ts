@@ -88,9 +88,9 @@ export function openRunSettlement(database: RunnerDatabase) {
           (yield* currentReports(sql, runId)).map((entry) => [entry.blockId, entry.report?.status]),
         );
         // A Continuation whose prompt is out owes its response, also once its worker's Block
-        // reported.
+        // reported; a pending Wait arrival owes its forwarding.
         const pending =
-          yield* sql`SELECT id FROM run_attention WHERE run_id=${runId} AND settled_at IS NULL UNION ALL SELECT id FROM continuation_visits WHERE run_id=${runId} AND state IN ('sent','queued')`;
+          yield* sql`SELECT id FROM run_attention WHERE run_id=${runId} AND settled_at IS NULL UNION ALL SELECT id FROM continuation_visits WHERE run_id=${runId} AND state IN ('sent','queued') UNION ALL SELECT id FROM wait_arrivals WHERE run_id=${runId} AND state='pending'`;
         const done =
           blocks.length > 0 &&
           !pending.length &&
@@ -124,7 +124,7 @@ export function openRunSettlement(database: RunnerDatabase) {
         // cancelled too, but its Block has no result. An unbound worktree still owes the launches
         // that join it.
         const pending =
-          yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing' UNION ALL SELECT id FROM continuation_visits WHERE run_id=${id} AND state IN ('sent','queued')`;
+          yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing' UNION ALL SELECT id FROM continuation_visits WHERE run_id=${id} AND state IN ('sent','queued') UNION ALL SELECT id FROM wait_arrivals WHERE run_id=${id} AND state='pending'`;
         if (pending.length) return false;
         const time = yield* now;
         yield* markSettled(sql, id, "automatic", time);

@@ -90,8 +90,8 @@ function FlowItems({
           <Workflow aria-hidden className="mb-4 size-8 text-subtle-foreground" strokeWidth={1.5} />
           <h2 className="text-title font-semibold">No Flows yet</h2>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            Create a Flow to give your process a name. Add Agent, Human and Continuation blocks on
-            the canvas, then save it for any project.
+            Create a Flow to give your process a name. Add Agent, Human, Wait and Continuation
+            blocks on the canvas, then save it for any project.
           </p>
           <div className="mt-5 flex items-center gap-3">
             <MutationGate>

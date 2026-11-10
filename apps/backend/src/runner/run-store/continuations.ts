@@ -164,8 +164,8 @@ export function openRunContinuations(database: RunnerDatabase) {
           const id = yield* newId,
             cause = `pass:${visit!.id}/recipient:${blockId}`;
           const inserted =
-            yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,source_block_id,exit_id,binding_id)
-              VALUES(${id},${current.id},${blockId},'handoff',${cause},${JSON.stringify({ ...target, blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${current.context_id},${handoff.block_id},${CONTINUATION_EXIT.id},${handoff.binding_id}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
+            yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,source_block_id,exit_id,binding_id,origin_activation_id)
+              VALUES(${id},${current.id},${blockId},'handoff',${cause},${JSON.stringify({ ...target, blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${current.context_id},${handoff.block_id},${CONTINUATION_EXIT.id},${handoff.binding_id},${handoff.origin_activation_id}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
           if (inserted.length)
             yield* appendTimelineEvent(sql, {
               kind: "handoff-created",

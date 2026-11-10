@@ -130,7 +130,9 @@ fixed Human exits their old exits were mapped to.
   **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
   retried and creates no attention or state change.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
-  before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
+  before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. A [Wait](#waits)
+  shows **waiting** with **until HH:MM**, the nearest deadline (and the pending count when several messages wait), and **finished** once
+  every arrival was forwarded. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
   timeline and executions keep the sequence. Connections use one neutral style, including never-run branches.
 - A working block whose Agent reported `working` shows that message in place of its visit time; its details show the full
@@ -181,7 +183,7 @@ the viewport. It shows the full title, project, captured Flow, execution/attenti
 repository metadata, even when the title fits. Opening a row menu dismisses and blocks the card; hovering
 menu items never opens a row preview.
 
-- **Needs input**: a pending Human occurrence or native T3 question/permission.
+- **Needs input**: a pending Human occurrence or native T3 question/permission. A pending [Wait](#waits) is neither Needs input nor a Problem.
   **Problem**: a pending missing report, execution failure or report problem. Both can show. Stale observations or an unavailable
   project are not Problems and opening a Run clears no chip.
 - **Settled** (collapsed, with a count) holds Settled Runs as compact single-line rows with just their project icon and title; details remain in the side preview. **Snoozed** sits above it. Each group appears only after navigation loads and while it contains Runs; hiding it preserves its expanded state. Archived Runs are not listed.
@@ -222,7 +224,7 @@ repository metadata until their workers are observed by this version.
 
 **Snooze** moves an Active Run to **Snoozed** and changes only presentation: Agents, handoffs and attention continue. A newly
 recorded Needs input or Problem identity, or a higher native pending-question count while questions are already pending,
-wakes it (**Woke**). Ordinary progress, stale observations and re-reads of the same matter do not. Opening a Run clears only Woke;
+wakes it (**Woke**). Ordinary progress, a pending Wait, stale observations and re-reads of the same matter do not. Opening a Run clears only Woke;
 **Restore** returns it to the main list. Snooze state survives reload and restart. Settling or archiving a Run clears both;
 Settled Runs cannot be snoozed. T3 reports only a count, so a replacement question with an unchanged count cannot be detected.
 
@@ -308,28 +310,47 @@ worker its message belongs to; Blocks that share a worker open the same conversa
 report after its prompt is a Problem on the Continuation, and **Request report** asks the same thread for it. Archive stops a pending
 Continuation and cancels waiting messages; its worker thread is interrupted with the other workers.
 
+## Waits
+
+A Wait holds each message that reaches it for its fixed duration, then forwards it unchanged with the worker it belongs to. Counting
+starts when the incoming handoff is released (for an Agent result, once its worker thread is finished, not when the report is
+accepted), and the deadline is kept as an absolute time. Every arrival, including parallel arrivals and loop revisits, keeps its own
+message, deadline and outcome; arrivals never join or reset each other, and a repeated delivery attempt is not a new arrival. At the
+deadline Factory forwards the message to every connected block, without an open browser, a worker or a T3 request of its own; the
+next blocks then start under the usual delivery rules, and an unconnected output ends that branch. Timing is best effort: a deadline
+that passed while Factory was closed or the computer slept is forwarded once on the next start or periodic check, with its deadline
+unchanged. System clock changes are not corrected.
+
+Its details list each arrival with the block it came from, when it started, its deadline, its outcome and, while it waits, its message.
+A forwarded or cancelled arrival keeps only this metadata, and its details say the message was cleared. The timeline records **wait
+started** and **elapsed → forwarded** with the Wait icon. A Wait is not Needs input or attention and does not wake a Snoozed Run;
+genuine attention from the blocks after it follows the usual rules. A pending arrival keeps the Run from settling automatically.
+Manual Settle leaves it counting and it is still forwarded at its deadline; Archive cancels it, clears its message and shows the Wait
+stopped.
+
 ## Settled Runs
 
 A Run **settles** automatically when every visited Block's current visit has its worker's accepted final result and no later
-working report, every Human step is answered, no delivery, launch, handoff or send is outstanding, no attention is pending, and
+working report, every Human step is answered, no Wait arrival is pending, no delivery, launch, handoff or send is outstanding, no attention is pending, and
 a fresh read finds every worker thread finished in T3. Never-visited branches need not run. A report or T3 completion alone keeps
 the Run Active. T3 reads are not an atomic cutoff, so direct T3 activity can arrive just before the Run settles; settling does not
 certify result quality or one reviewed revision.
 
 **Settle** in the row menu settles an Active or Snoozed Run at any time, without confirmation. It changes no execution: work in
-progress continues, owed handoffs are still released and delivered, and attention stays pending. Either way the Run moves to
+progress continues, owed handoffs are still released and delivered, pending Waits forward at their deadlines, and attention stays pending. Either way the Run moves to
 **Settled**, Snooze and Woke clear, and the timeline records why it settled.
 
 Any accepted report from one of its Blocks (`working` or `finished`, including a repeat of the current result) returns
 a Settled Run to **Active**, and the timeline names the Block that reported. Chat in a worker thread without a report leaves the
-Run Settled: Factory observes a Settled Run only while it still owes a launch, handoff, send or Request report, so later turns add
+Run Settled: Factory observes a Settled Run only while it still owes a launch, handoff, send, Request report or Wait forwarding, so later turns add
 no work periods or Problems. Human answers and Request report on a Settled Run are accepted and dispatched without returning it
 to Active. History, input, captured definitions and events remain; no transcript or response-body archive exists.
 
 ## Archive
 
 **Archive…** in the row menu and **Archive Run** in the Run's top bar both ask for confirmation, then end the Run for good.
-Archiving closes the handoff gate, cancels unsent launches and handoffs, cancels pending Human steps without inventing answers,
+Archiving closes the handoff gate, cancels unsent launches and handoffs, cancels pending Human steps without inventing answers and
+pending Wait arrivals without forwarding them (clearing their messages),
 settles pending attention as `archived` and shows activated blocks that had not finished as stopped. Factory then asks T3 once to
 interrupt every worker thread, which also stops its delegated work, and does not wait for or confirm termination; in-flight or
 uncertain deliveries keep their recorded state and are not retried.
@@ -343,7 +364,7 @@ stopped by an earlier release are Archived after the upgrade, with their recorde
 ## Restart and shutdown
 
 History stays readable when T3 is unavailable. On startup Factory restores bindings and reconciles Active Runs, and Settled Runs that
-still owe an operation, before dispatching, then
+still owe an operation or a Wait forwarding, before dispatching, keeps each pending Wait's original deadline, then
 observes periodically (no Resume button). Missing or incomplete observations stay stale and keep the last known facts. An uncertain
 launch or send replays only with the saved key and body under the same authorization context and a verified replay scope; otherwise it
 stays unresolved and keeps the Run open (see [Runner](runner.md#ownership-and-restart)). One backend owns a database; another

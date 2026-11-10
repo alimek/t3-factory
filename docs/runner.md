@@ -1,6 +1,6 @@
 # Durable Runner
 
-The Runner turns accepted Starts, reports, Human answers and Archive requests into
+The Runner turns accepted Starts, reports, Human answers, Wait deadlines and Archive requests into
 durable operations against T3, and decides when a Run settles. Inside it, the Run
 store owns Run state and its SQL transactions; orchestration owns T3 calls and
 scheduling. Persistence principles are in [Application foundation](foundation.md#persistence-model); user
@@ -64,6 +64,8 @@ reporting protocol.
   Conversation with the user stays in that worker thread; Factory does not track it.
 - A [Continuation](#continuations) has no worker of its own: its prompt is a later task in the worker
   thread its first message belongs to, with the Continuation's own Block id.
+- A [Wait](#waits) has no worker, Block id or reports: Factory itself holds each message that reaches it
+  until its deadline.
 
 ### Run workspace
 
@@ -356,8 +358,10 @@ not secure erasure.
 
 Every handoff records its [worker provenance](../GLOSSARY.md#worker-provenance): an Agent result carries its
 worker's binding, a Human answer the binding of the delivery it answered, a Continuation's result the thread
-its prompt ran on and a pass-through the arrival's own binding. Handoffs recorded before Continuations existed
-carry none; no Continuation can receive them.
+its prompt ran on and a pass-through or a Wait's forwarding the arrival's own binding. An Agent or Continuation
+result also records the Block activation that produced it, which pass-throughs and Waits keep unchanged; a Human
+answer records no activation. Handoffs recorded before Continuations existed carry no binding, and those recorded
+before Waits existed no activation; no Continuation or Wait can receive them.
 
 The first released handoff to a Continuation becomes its prompt visit: an activation, attributed to the
 worker's captured Agent revision, delivered by a send queued on the handoff's thread by its T3 id. A Factory
@@ -376,6 +380,36 @@ is pending are recorded as queued and wait. A run of the thread that Factory que
 the Continuation: its failure and a missing report after it are the Continuation's attention, while the
 worker's Agent block shows the thread's activity. A Run neither settles automatically nor has that thread
 settled natively while a Continuation is sent or a message waits.
+
+### Waits
+
+A released handoff to a Wait becomes one durable arrival in the same transition that acknowledges it: the
+arrival takes the message, the handoff's provenance and, for an Agent result (directly or through earlier
+Waits), the result version whose message it is. Its start is that release, read from the Runner's clock, and its
+deadline is the start plus the captured Wait duration, stored as an absolute time. The handoff's identity is the
+arrival's deduplication key: a repeated preparation after a crash or retry finds the handoff acknowledged and
+records nothing. Parallel arrivals and later visits are separate rows with separate deadlines; nothing joins.
+
+Forwarding is one guarded Run store transition, addressed by the arrival and given the reason it forwards;
+today the only reason is an elapsed deadline (`elapsed`). In one transaction under the Run's lane it requires the backend owner, a Run that is not
+Archived, an open gate and a pending arrival (for `elapsed`, a deadline not after now), then creates a released
+handoff with the arrival's message and provenance for every recipient of the Wait's output (cause `wait:`),
+records the outcome and clears the arrival's message. It needs no live authorization context and no T3 call; the
+outgoing handoffs keep the ordinary delivery guards. A second attempt finds the arrival forwarded or cancelled
+and changes nothing, so expiry, a restart and a later action produce one forwarding. A crash before the commit
+leaves the arrival pending; after it, the handoffs are durable and dispatched once like any other.
+
+Factory owns a wake-up for each pending arrival: a fiber in the Runner's scope that sleeps on the Runner's clock
+until the stored deadline, then forwards due arrivals, drives the Run and tries to settle it. Wake-ups are
+recreated from the stored deadlines whenever a pass finds a pending arrival without one, so startup reschedules
+them without shifting a deadline. Every dispatch pass also forwards arrivals that are overdue, which covers
+downtime and computer sleep with exactly one forwarding and no catch-up repetitions. Closing the Runner stops the
+sleeping wake-ups; the deadlines stay in SQLite.
+
+A visit a Wait's forwarding causes reads the result whose message waited as its incoming result in
+`factory_get_block`, as a visit caused directly by that result does. Pending arrivals keep automatic settlement
+waiting and keep a [Settled](#settled-runs) Run reconciled. A Wait shows `waiting` while any arrival is pending
+and `finished` afterwards; it raises no attention and wakes no Snoozed Run.
 
 ### Human occurrences
 
@@ -397,7 +431,8 @@ A Run is Active, Settled or [Archived](#archive). Each reconciliation pass tries
 settle an Active Run with an open gate automatically. That requires all of the following:
 
 - Every visited Block's current activation has its worker's accepted final result with no
-  later `working` report, and no attention is pending; every Human occurrence is answered.
+  later `working` report, and no attention is pending; every Human occurrence is answered and no
+  Wait arrival is pending.
   Unvisited branches need not run.
 - Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
   cancelled because their result was replaced, and idle-worker preparations of
@@ -417,7 +452,8 @@ changes no execution: the gate stays open, owed operations continue and attentio
 pending. Both ways clear Snooze and Woke.
 
 A Settled Run is reconciled only while it owes an operation in pending, reserved or uncertain
-state, so owed handoffs are still released and delivered. Otherwise Factory does not read its
+state or a pending Wait arrival, so owed handoffs are still released and delivered and Waits still
+forward at their deadlines. Otherwise Factory does not read its
 worker threads: later turns without a report record no work periods or attention and leave
 the Run Settled. Reports, Human answers and Request report are accepted as for an Active Run;
 only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
@@ -425,9 +461,9 @@ only an accepted report returns it to Active ([report acceptance](#report-accept
 ## Archive
 
 Archive is final and completes in one transaction in the Run's lane: it closes the handoff
-gate, records the Run Archived, cancels pending launches, handoffs and Human occurrences,
-clears pending delivery text, settles pending attention as `archived`, marks activated Blocks
-that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
+gate, records the Run Archived, cancels pending launches, handoffs, Human occurrences and Wait
+arrivals (without forwarding them), clears pending delivery text and waiting messages, settles pending attention as `archived`, marks activated Blocks
+that had not finished `stopped` and clears Snooze and Woke. No report, answer, Wait forwarding, dispatch or
 replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
 uncertain operations keep their recorded state.
 

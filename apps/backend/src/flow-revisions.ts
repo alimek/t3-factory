@@ -1,6 +1,12 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { FlowBlock, FlowGraph, FlowWorkspace, RunDefinitions } from "@t3-factory/contracts";
+import type {
+  FlowBlock,
+  FlowGraph,
+  FlowWorkspace,
+  RunDefinitions,
+  WaitUnit,
+} from "@t3-factory/contracts";
 import { newId } from "./ids.ts";
 
 /** A saved Flow revision as Studio and Start read it; readiness is derived separately. */
@@ -25,6 +31,8 @@ type BlockRow = {
   name: string;
   agent_id: string | null;
   prompt: string | null;
+  wait_amount: number | null;
+  wait_unit: WaitUnit | null;
   x: number;
   y: number;
 };
@@ -84,10 +92,12 @@ export const appendFlowRevision = Effect.fnUntraced(function* (
     graph.blocks,
     (block, ordinal) =>
       Effect.gen(function* () {
-        yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, x, y)
+        const duration = block.kind === "wait" ? block.duration : null;
+        yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, wait_amount, wait_unit, x, y)
         VALUES (${revisionId}, ${block.id}, ${ordinal}, ${block.kind}, ${block.name},
           ${block.kind === "agent" ? block.agentId : null},
-          ${block.kind === "continuation" ? block.prompt : null}, ${block.position.x}, ${block.position.y})`;
+          ${block.kind === "continuation" ? block.prompt : null},
+          ${duration?.amount ?? null}, ${duration?.unit ?? null}, ${block.position.x}, ${block.position.y})`;
         if (block.kind !== "agent") return;
         yield* Effect.forEach(
           block.localExits,
@@ -143,6 +153,8 @@ const toBlock = (
   if (row.kind === "human") return { ...base, kind: "human" };
   if (row.kind === "continuation")
     return { ...base, kind: "continuation", prompt: row.prompt ?? "" };
+  if (row.kind === "wait")
+    return { ...base, kind: "wait", duration: { amount: row.wait_amount, unit: row.wait_unit! } };
   return {
     ...base,
     kind: "agent",

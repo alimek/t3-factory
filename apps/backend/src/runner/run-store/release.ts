@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { RunRow } from "../runner-types.ts";
-import { passedThrough } from "../runner-utils.ts";
+import { forwardedUnchanged } from "../runner-utils.ts";
 import { now } from "../../time.ts";
 import { guardsHold } from "./guards.ts";
 import type { RunnerDatabase } from "./database.ts";
@@ -9,7 +9,7 @@ import { writeBlockState } from "./blocks.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
 /** Where a Handoff comes from: a Final result version, a Human occurrence's answer, or a message a
- * Continuation passed through (cause `pass:`). */
+ * Continuation passed through or a Wait forwarded (cause `pass:` or `wait:`). */
 type HandoffSource = {
   readonly cause: string;
   readonly report_id: string | null;
@@ -17,9 +17,9 @@ type HandoffSource = {
   readonly source_block_id: string | null;
 };
 
-/** A Human answer releases the Handoffs it creates, as passing through does. */
+/** A Human answer releases the Handoffs it creates, as forwarding a message unchanged does. */
 function humanAnswered(sql: SqlClient.SqlClient, runId: string, source: HandoffSource) {
-  if (passedThrough(source)) return Effect.succeed(true);
+  if (forwardedUnchanged(source)) return Effect.succeed(true);
   return Effect.map(
     sql`SELECT id FROM human_occurrences WHERE id=${source.occurrence_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='answered'`,
     (rows) => rows.length > 0,

@@ -18,8 +18,9 @@ import {
   type FlowBlock,
   type RunBlock,
   type RunDetail,
+  type WaitArrival,
 } from "@t3-factory/contracts";
-import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
+import { CONTINUATION_EXIT, WAIT_EXIT } from "@t3-factory/domain-validation";
 import {
   Archive,
   CircleCheck,
@@ -45,6 +46,7 @@ import {
   continuationPromptVisit,
   ExecutionCanvas,
   threadOwnerName,
+  waitingUntil,
 } from "../components/execution-canvas.tsx";
 import { BLOCK_KINDS } from "../components/flow-block.tsx";
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
@@ -55,7 +57,7 @@ import { OpenRunKeyboardHost } from "../open-run-keyboard.tsx";
 import { useLiveNavigation } from "../live/navigation.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { capturedExits, continuedThread, exitRecipients } from "../flow-graph.ts";
+import { capturedExits, continuedThread, exitRecipients, waitDurationText } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
@@ -596,6 +598,8 @@ function blockKindLine(run: RunDetail, block: FlowBlock) {
     const thread = continuedThread(run.definitions.flow.graph, block.id);
     return `Continuation · ${thread ? `continues ${thread}` : "no Agent before it"}`;
   }
+  if (block.kind === "wait")
+    return `Wait · ${waitDurationText(block.duration) ?? "duration not set"} · no worker`;
   const agent = run.definitions.agents.find((item) => item.id === block.agentId)?.name;
   const input = run.definitions.flow.graph.flowInput.targetBlockIds.includes(block.id)
     ? " · receives the Flow input"
@@ -709,7 +713,7 @@ function bindingLink(run: RunDetail, bindingId: string | null) {
   return run.threadBindings.find((binding) => binding.id === bindingId)?.link ?? null;
 }
 
-function sourceName(run: RunDetail, visit: ContinuationVisit) {
+function sourceName(run: RunDetail, visit: { readonly sourceBlockId: string | null }) {
   if (!visit.sourceBlockId) return "the Flow input";
   return (
     run.definitions.flow.graph.blocks.find((block) => block.id === visit.sourceBlockId)?.name ||
@@ -746,7 +750,12 @@ function ContinuationHistory({ run, block }: { run: RunDetail; block: Continuati
         </DetailSection>
       )}
       <DetailSection title="Output">
-        <ContinuationRecipients run={run} blockId={block.id} />
+        <OutputRecipients
+          run={run}
+          blockId={block.id}
+          exitId={CONTINUATION_EXIT.id}
+          label="response, then pass-through"
+        />
       </DetailSection>
     </>
   );
@@ -878,14 +887,133 @@ function ContinuationVisitItem({
   );
 }
 
-function ContinuationRecipients({ run, blockId }: { run: RunDetail; blockId: string }) {
-  const recipients = exitRecipients(run.definitions.flow.graph, blockId, CONTINUATION_EXIT.id);
+/** Where a Continuation's or Wait's single output leads in the captured revision. */
+function OutputRecipients({
+  run,
+  blockId,
+  exitId,
+  label,
+}: {
+  run: RunDetail;
+  blockId: string;
+  exitId: string;
+  label: string;
+}) {
+  const recipients = exitRecipients(run.definitions.flow.graph, blockId, exitId);
   return (
     <p className="flex items-baseline gap-2 px-2 text-sm">
-      <span className="min-w-0 flex-1 truncate">response, then pass-through</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
         {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
       </span>
+    </p>
+  );
+}
+
+type WaitBlock = Extract<FlowBlock, { kind: "wait" }>;
+
+/** A Wait's arrivals: each keeps its own deadline, message and outcome; newest first. */
+function WaitHistory({ run, block }: { run: RunDetail; block: WaitBlock }) {
+  const arrivals = run.waitArrivals.filter((arrival) => arrival.blockId === block.id);
+  return (
+    <>
+      <DetailSection title="Execution">
+        <dl className="flex flex-col gap-2">
+          <DetailRow label="Duration">
+            {waitDurationText(block.duration) ?? "not set"} · each arrival
+          </DetailRow>
+          <DetailRow label="Waiting">{waitingUntil(run, block.id) ?? "none"}</DetailRow>
+          <DetailRow label="Arrivals">{arrivals.length}</DetailRow>
+        </dl>
+      </DetailSection>
+      {arrivals.length > 0 && (
+        <DetailSection title={`Arrivals · ${arrivals.length}`}>
+          <ul className="flex flex-col gap-1.5">
+            {arrivals
+              .map((arrival, index) => ({ arrival, number: index + 1 }))
+              .reverse()
+              .map(({ arrival, number }) => (
+                <WaitArrivalItem key={arrival.id} run={run} arrival={arrival} number={number} />
+              ))}
+          </ul>
+        </DetailSection>
+      )}
+      <DetailSection title="Output">
+        <OutputRecipients
+          run={run}
+          blockId={block.id}
+          exitId={WAIT_EXIT.id}
+          label="message, unchanged"
+        />
+      </DetailSection>
+    </>
+  );
+}
+
+/** What happened to an arrival, by the time it settled. */
+function arrivalOutcome(arrival: WaitArrival) {
+  const settled = arrival.settledAt ? ` ${clockTime(arrival.settledAt)}` : "";
+  if (arrival.state === "pending") return `waiting until ${clockTime(arrival.deadlineAt)}`;
+  if (arrival.state === "cancelled") return `cancelled by Archive${settled} · nothing forwarded`;
+  return `elapsed → forwarded${settled}`;
+}
+
+const ARRIVAL_PILLS: Record<WaitArrival["state"], string> = {
+  pending: "waiting",
+  forwarded: "forwarded",
+  cancelled: "cancelled",
+};
+
+function WaitArrivalItem({
+  run,
+  arrival,
+  number,
+}: {
+  run: RunDetail;
+  arrival: WaitArrival;
+  number: number;
+}) {
+  const worker = arrival.origin ? threadOwnerName(run, arrival.origin.bindingId) : null;
+  return (
+    <li
+      aria-label={`Arrival ${number}`}
+      className="flex flex-col gap-1.5 rounded-md border bg-muted px-3 py-2"
+    >
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-sm font-medium">
+            Arrival {number} · from {sourceName(run, arrival)}
+          </p>
+          <p className="text-2xs tracking-label break-words text-subtle-foreground">
+            {clockTime(arrival.startedAt)} → {clockTime(arrival.deadlineAt)} ·{" "}
+            {arrivalOutcome(arrival)}
+          </p>
+          {worker && (
+            <p className="text-2xs tracking-label text-subtle-foreground">
+              keeps {worker}&apos;s thread
+            </p>
+          )}
+        </div>
+        <StatePill state={ARRIVAL_PILLS[arrival.state]} />
+      </div>
+      <ArrivalMessage run={run} arrival={arrival} />
+    </li>
+  );
+}
+
+function ArrivalMessage({ run, arrival }: { run: RunDetail; arrival: WaitArrival }) {
+  if (arrival.message !== null)
+    return (
+      <p className="line-clamp-4 text-xs break-words whitespace-pre-wrap text-foreground">
+        {arrival.message}
+      </p>
+    );
+  const recipients = exitRecipients(run.definitions.flow.graph, arrival.blockId, WAIT_EXIT.id);
+  return (
+    <p className="text-2xs tracking-label text-subtle-foreground">
+      {arrival.state === "cancelled"
+        ? "Message cleared when the Run was archived."
+        : `Message cleared after it was forwarded unchanged${recipients.length ? ` to ${recipients.join(", ")}` : ""}.`}
     </p>
   );
 }
@@ -949,9 +1077,9 @@ function BlockDetails({
         />
         <WorkingReport run={run} recorded={recorded} />
         <CoordinatorActivations run={run} blockId={block.id} />
-        {block.kind === "continuation" ? (
-          <ContinuationHistory run={run} block={block} />
-        ) : (
+        {block.kind === "continuation" && <ContinuationHistory run={run} block={block} />}
+        {block.kind === "wait" && <WaitHistory run={run} block={block} />}
+        {block.kind !== "continuation" && block.kind !== "wait" && (
           <BlockHistory
             run={run}
             block={block}
@@ -959,13 +1087,15 @@ function BlockDetails({
             observationUnavailable={observationUnavailable}
           />
         )}
-        <DetailSection title="T3 references">
-          <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
-            Thread: {threadId ?? "unresolved"}
-            <br />
-            Exact execution: {recorded.executionId ?? "unresolved"}
-          </p>
-        </DetailSection>
+        {block.kind !== "wait" && (
+          <DetailSection title="T3 references">
+            <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
+              Thread: {threadId ?? "unresolved"}
+              <br />
+              Exact execution: {recorded.executionId ?? "unresolved"}
+            </p>
+          </DetailSection>
+        )}
       </div>
       <footer className="mx-4 flex items-center gap-3 border-t py-4">
         {link ? (
@@ -979,7 +1109,7 @@ function BlockDetails({
           </a>
         ) : (
           <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
-            No T3 thread yet
+            {block.kind === "wait" ? "A Wait has no T3 thread" : "No T3 thread yet"}
           </span>
         )}
         <p className="text-2xs tracking-label text-subtle-foreground">

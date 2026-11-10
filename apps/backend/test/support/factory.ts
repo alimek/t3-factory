@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import {
   factoryLayer,
   FactoryService,
@@ -44,6 +46,25 @@ export async function factoryHarness(context: TestContext) {
           ...options,
         }),
       ).pipe(Effect.map(Context.get(FactoryService)));
+    },
+    /** As `service`, in a scope of its own that `close` ends, so a test can reopen the home. */
+    closableService(options: Omit<FactoryOptions, "databasePath"> = {}) {
+      return Effect.gen(function* () {
+        const scope = yield* Scope.make();
+        context.onTestFinished(() => Effect.runPromise(Scope.close(scope, Exit.void)));
+        const services = yield* Layer.buildWithScope(
+          factoryLayer({
+            databasePath,
+            reportingStateDirectory: join(directory, "reporting-state"),
+            ...options,
+          }),
+          scope,
+        );
+        return {
+          factory: Context.get(services, FactoryService),
+          close: Scope.close(scope, Exit.void),
+        };
+      });
     },
   };
 }

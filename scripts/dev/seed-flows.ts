@@ -5,6 +5,7 @@ import {
   humanStep,
   connection,
   continuationStep,
+  waitStep,
 } from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { FlowGraph, FlowWorkspace } from "../../packages/contracts/src/index.ts";
@@ -129,8 +130,58 @@ export async function createDemoFlows(
       connection("spec", "output", "tickets"),
     ],
   });
+  const soak = await saveFlow(factory, "Demo · Review, soak and release", {
+    flowInput: flowInput(["worker"], { x: 40, y: 180 }),
+    blocks: [
+      worker,
+      agentBlock("reviewer", "Code review", agents.reviewer, { x: 720, y: 40 }),
+      accessibilityReview(agents.accessibility, 720),
+      waitStep("soak", "Soak before release", { amount: 2, unit: "hours" }, { x: 1100, y: 180 }),
+      agentBlock("release", "Prepare release", agents.worker, { x: 1480, y: 180 }),
+    ],
+    connections: [
+      connection("worker", "review", "reviewer"),
+      connection("worker", "review", "accessibility"),
+      connection("reviewer", "approved", "soak"),
+      connection("accessibility", "approved", "soak"),
+      connection("soak", "output", "release"),
+    ],
+  });
   await createExitReadinessScenarios(factory, agents.reviewer, agents.worker);
-  return { simple, review, parallel, parallelStart, worktree, continuation };
+  await createWaitDraft(factory, agents.worker);
+  return { simple, review, parallel, parallelStart, worktree, continuation, soak };
+}
+
+/** A saved draft that cannot start until repaired: its Flow input reaches a Wait, and a later Wait
+ * has no duration yet. */
+async function createWaitDraft(factory: Factory, workerId: string) {
+  const draft = requireSuccess(
+    await factory.createFlow({ name: "Demo · Staged rollout (needs repair)" }),
+  );
+  requireSuccess(
+    await factory.updateFlow(draft.id, {
+      name: draft.name,
+      expectedRevision: draft.revision,
+      workspace: { mode: "checkout" },
+      graph: {
+        flowInput: flowInput(["cool-down"], { x: 40, y: 180 }),
+        blocks: [
+          waitStep("cool-down", "Cool down", { amount: 30, unit: "minutes" }, { x: 320, y: 180 }),
+          agentBlock("worker", "Roll out", workerId, { x: 700, y: 180 }),
+          waitStep(
+            "observe",
+            "Observe the rollout",
+            { amount: null, unit: "days" },
+            { x: 1080, y: 180 },
+          ),
+        ],
+        connections: [
+          connection("cool-down", "output", "worker"),
+          connection("worker", "review", "observe"),
+        ],
+      },
+    }),
+  );
 }
 
 /** Ready wiring followed by an Agent edit exposes saved, repairable exit-contract issues. */

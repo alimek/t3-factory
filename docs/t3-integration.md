@@ -274,7 +274,7 @@ A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED
 Any harness session with Factory MCP registered can author definitions without a Block id or an active Run:
 
 - `factory_list_agents`, `factory_get_agent`, `factory_create_agent` and `factory_save_agent` list, read, create and save Agents.
-- `factory_list_flows`, `factory_get_flow`, `factory_create_flow` and `factory_save_flow` do the same for Flows. Saves replace the whole graph; [Flow creation and layout](studio.md#validation-contract) support a graph and workspace in one creation and optional positions.
+- `factory_list_flows`, `factory_get_flow`, `factory_create_flow` and `factory_save_flow` do the same for Flows. Saves replace the whole graph; [Flow creation and layout](studio.md#validation-contract) support a graph and workspace in one creation and optional positions. Every block kind, including Wait with its `duration`, uses the [Studio graph shape](studio.md#graph-shape).
 - `factory_check_flow` checks the latest saved Flow's readiness using the same graph checks as Studio's **Check readiness**. It does not validate an unsaved draft or establish live execution readiness.
 - `factory_get_agent_capabilities` reads the live T3 catalog of environments, provider instances, models and model options, including each provider's `reporting.supported` flag and explanation.
 
@@ -310,7 +310,8 @@ it without an exit, with its response as the message.
 
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source
-`blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. These `blockId` values name Flow blocks, not Block
+`blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. A visit a [Wait](runs.md#waits) forwarded receives the
+result whose message waited, unchanged; a Wait adds no text of its own. These `blockId` values name Flow blocks, not Block
 ids. Other visits' reports and unrelated graph neighbors are not inputs to that visit. Flow-input visits have no incoming result.
 A result the source Block replaces after hand-off does not change the inputs of a visit it already started.
 

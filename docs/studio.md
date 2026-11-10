@@ -82,7 +82,7 @@ filters or assigns them, and no connection or project is needed to author. Block
 
 ### Canvas and block configuration
 
-The editor has a block library on the left (**Human step**, **Continuation** and saved Agent definitions; **Search Agents**, **Collapse**/**Expand library**) and the canvas. Add a block with the row's
+The editor has a block library on the left (**Human step**, **Wait**, **Continuation** and saved Agent definitions; **Search Agents**, **Collapse**/**Expand library**) and the canvas. Add a block with the row's
 **Add** action or drag the row onto the canvas (a ghost shows the drop position; dropping elsewhere adds nothing); undropped additions fill a three-column grid right of the Flow
 input and are selected. Drag a block's header or edit its X/Y fields; wires follow live and the draft changes once, on drop. Escape cancels any drag.
 
@@ -98,12 +98,17 @@ several Agents can reach it. It has one unnamed output port, and wires from it c
 message sends the prompt to that conversation and waits for its response, messages arriving meanwhile wait, and every later message passes through unchanged
 ([Runs](runs.md#continuations)). Returning to the Agent's conversation is shown as this text, not as an extra wire.
 
+A **Wait** block is configured with only a name and a fixed **Duration**: a whole number and a unit, **minutes**, **hours** or **days**. A new Wait starts without an amount, which
+readiness reports. It has no Agent, prompt, execution settings, reports or worker, and one unnamed output port whose wires carry no exit label. Each message that reaches it
+waits for the duration, counted from its own arrival, and then leaves the output unchanged to every connected block; an unconnected output ends that branch
+([Runs](runs.md#waits)).
+
 Every Flow has one **Flow input block** (**FLOW INPUT** / **Flow input** / **Run prompt**) at the top left: one output port, no input, exits or configuration, and it cannot be removed. The
 Agent blocks it connects to start a Run, each with the same prompt in its own session; no block is marked "entry".
 
 **Connections.** Drag from an exit's output port (right edge dot) onto any block, including earlier blocks and the source itself; an exit may connect to many recipients (independent
 fan-out; there are no Join or End blocks). A dashed preview snaps to the highlighted target's input port and the draft changes once on a valid drop; dropping on empty canvas, the port
-itself, an already connected block or pressing Escape changes nothing. Drag from the Flow input port (**Connect Flow input**) the same way; only Agent blocks are valid targets, not Human steps or Continuations. Ports
+itself, an already connected block or pressing Escape changes nothing. Drag from the Flow input port (**Connect Flow input**) the same way; only Agent blocks are valid targets, not Human steps, Waits or Continuations. Ports
 take no keyboard focus. Click a wire or its label to select it (the block panel closes); each wire is also a keyboard button (**Connection *exit* from *source* to *target***). With a
 connection selected, Delete/Backspace (outside form controls) or the **Delete connection** button removes it. Removing a block or exit removes its connections.
 
@@ -139,7 +144,8 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
 validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
 issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit sharing a name or ID with any current Agent exit, including hidden exits (also when
-the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, a Continuation without a prompt and unreachable blocks. Each names the block, the exit and the problem, and selecting one
+the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, a Continuation without a prompt, a Wait without a duration or with one outside 1 minute to 7 days, a
+Flow input connected to a Wait (saved through Factory MCP or an earlier draft; Studio does not draw it) and unreachable blocks. Each names the block, the exit and the problem, and selecting one
 inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
 are separate Start gates ([Runs](runs.md)).
 
@@ -168,22 +174,24 @@ issues use `workspace.*` paths. A save that omits `workspace` keeps the saved se
 Blocks have stable IDs, position and name. On create or save, positions are optional for every block and the Flow input. If any position is omitted, the backend arranges the whole graph with the same ELK layout as [Auto-arrange](#automatic-layout-and-canvas-view), replacing even the supplied positions. Fully positioned graphs are saved as given. Saved graphs always include all positions; Studio sends them all, so its saves preserve the draft's layout.
 
 An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides) and `localExits`; a Human block has
-no exit fields; a Continuation adds `prompt` (stored trimmed, up to 120,000 characters, empty only in a draft) and has one fixed, unnamed exit with ID `output`. An exit is `{id, name, description, messageRequired}`, with IDs scoped to their block; runtime consumers enforce a non-empty message when
-`messageRequired` is true. Connections identify source block, exit ID and target block: a Human block's exit is `approve` or `request-changes`, a Continuation's is `output`, and an Agent block's
+no exit fields; a Continuation adds `prompt` (stored trimmed, up to 120,000 characters, empty only in a draft) and has one fixed, unnamed exit with ID `output`; a Wait adds
+`duration: {amount, unit}`, where `amount` is a whole number or `null` in a draft and `unit` is `minutes`, `hours` or `days`, and has one fixed, unnamed exit with ID `output`. An exit is `{id, name, description, messageRequired}`, with IDs scoped to their block; runtime consumers enforce a non-empty message when
+`messageRequired` is true. Connections identify source block, exit ID and target block: a Human block's exit is `approve` or `request-changes`, a Continuation's or Wait's is `output`, and an Agent block's
 exit is resolved against its Agent by readiness, not by the save. No block execution settings or prompt overrides are accepted.
 
 #### Flow input block
 
-Every graph carries exactly one `flowInput`: a canvas `position` and the `targetBlockIds` of the Agent blocks it feeds (each at most once). It has no work execution state. Targets are distinct Agent blocks; Human and Continuation targets are rejected, so every path a Run can take into a Continuation passes an Agent. A new Flow has no Flow input targets; removing a block also removes its target reference. Reachability starts at every Flow input target. Initial activations are independent, are not Handoffs and receive the same prompt; a failed or uncertain activation creates its own Problem while other branches can continue.
+Every graph carries exactly one `flowInput`: a canvas `position` and the `targetBlockIds` of the Agent blocks it feeds (each at most once). It has no work execution state. Targets are distinct Agent blocks; Human and Continuation targets are rejected, so every path a Run can take into a Continuation passes an Agent. A Wait target is saved but is a readiness issue (`flow_input_wait`) that blocks Start: a Wait is never a Run's first block and there is no delayed Start. A new Flow has no Flow input targets; removing a block also removes its target reference. Reachability starts at every Flow input target. Initial activations are independent, are not Handoffs and receive the same prompt; a failed or uncertain activation creates its own Problem while other branches can continue.
 
 ### Validation
 
 Structural failures return `Result` errors with `code`, `path` and `message`: invalid or duplicate IDs and names,
-positions, Flow input targets, dangling or duplicate edges, a Human connection from another exit, malformed exits or hide entries and unknown block, exit, graph or Flow input
-fields. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
+positions, Flow input targets, dangling or duplicate edges, a Human connection from another exit, malformed exits or hide entries, a Wait duration whose amount is not a whole
+number or `null`, an unknown unit or extra duration fields, and unknown block, exit, graph or Flow input fields. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
 
 Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name or ID collisions and wires from hidden or removed exits can be saved.
-Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `continuation_prompt_required`; `exit_name_conflict`, `exit_id_conflict`, `exit_hidden`, `exit_missing`), missing saved
+Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `continuation_prompt_required`; `wait_duration_required` and `wait_duration_range`:
+a Wait's duration, normalized to minutes, from 1 minute through 7 days inclusive, so `168 hours` and `10080 minutes` equal `7 days`; `flow_input_wait`; `exit_name_conflict`, `exit_id_conflict`, `exit_hidden`, `exit_missing`), missing saved
 Agents and blocks unreachable from the Flow input, resolving each block against the current saved Agents. Hide entries for exits the Agent no longer has are ignored. A
 terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3 capability or live execution readiness.
 

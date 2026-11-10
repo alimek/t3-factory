@@ -528,6 +528,7 @@ const PANEL_BADGES: Record<FlowBlock["kind"], string> = {
   agent: "AGENT BLOCK",
   human: "HUMAN STEP",
   continuation: "CONTINUATION BLOCK",
+  wait: "WAIT BLOCK",
 };
 
 /** The floating configuration panel: anchored to the canvas's right edge, only while selected. */

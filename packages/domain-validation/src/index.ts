@@ -16,6 +16,8 @@ import type {
   Result,
   UpdateAgentInput,
   ValidationIssue,
+  WaitDuration,
+  WaitUnit,
 } from "@t3-factory/contracts";
 import {
   CONTINUATION_EXIT,
@@ -26,6 +28,7 @@ import {
   isId,
   isRecord,
   parseAgentExits,
+  WAIT_EXIT,
   type IssueReporter,
 } from "./block-exits.ts";
 
@@ -401,9 +404,42 @@ const KIND_FIELDS: ReadonlyMap<unknown, readonly string[]> = new Map([
   ["agent", ["agentId", "hiddenExitIds", "localExits"]],
   ["human", []],
   ["continuation", ["prompt"]],
+  ["wait", ["duration"]],
 ]);
 
-/** An Agent reference or a Continuation prompt, the fields only one kind has. */
+const WAIT_UNIT_MINUTES: ReadonlyMap<unknown, number> = new Map<WaitUnit, number>([
+  ["minutes", 1],
+  ["hours", 60],
+  ["days", 24 * 60],
+]);
+/** The inclusive range readiness accepts for a Wait, in minutes: 1 minute through 7 days. */
+export const WAIT_MINUTES = { min: 1, max: 7 * 24 * 60 } as const;
+
+/** A Wait duration's elapsed length in minutes; null while its amount is not entered. */
+export function waitDurationMinutes(duration: WaitDuration): number | null {
+  return duration.amount === null ? null : duration.amount * WAIT_UNIT_MINUTES.get(duration.unit)!;
+}
+
+/** A Wait duration is a whole number, or null while a draft leaves it out, in a known unit; its
+ * range is a readiness rule. */
+function checkWaitDuration(duration: unknown, path: string, issue: IssueReporter) {
+  if (!isRecord(duration)) {
+    issue("invalid_wait_duration", path, "Supply the Wait duration as an amount and a unit.");
+    return;
+  }
+  if (Object.keys(duration).some((key) => key !== "amount" && key !== "unit"))
+    issue("invalid_wait_duration", path, "A Wait duration has only an amount and a unit.");
+  if (duration.amount !== null && !Number.isSafeInteger(duration.amount))
+    issue(
+      "invalid_wait_duration",
+      `${path}.amount`,
+      "Enter the Wait duration as a whole number, or leave it empty.",
+    );
+  if (!WAIT_UNIT_MINUTES.has(duration.unit))
+    issue("invalid_wait_duration", `${path}.unit`, "Choose minutes, hours or days.");
+}
+
+/** An Agent reference, a Continuation prompt or a Wait duration, the fields only one kind has. */
 function checkKindFields(block: Record<string, unknown>, path: string, issue: IssueReporter) {
   if (block.kind === "agent" && block.agentId !== null && !isId(block.agentId))
     issue(
@@ -420,6 +456,7 @@ function checkKindFields(block: Record<string, unknown>, path: string, issue: Is
       `${path}.prompt`,
       "Enter a Continuation prompt up to 120,000 characters.",
     );
+  if (block.kind === "wait") checkWaitDuration(block.duration, `${path}.duration`, issue);
 }
 
 function checkBlockFields(
@@ -440,7 +477,7 @@ function checkBlockFields(
     issue("invalid_block_id", `${path}.id`, "Block IDs must be non-empty and unique.");
   else blockIds.add(block.id);
   if (!kindFields)
-    issue("invalid_block_kind", `${path}.kind`, "Use an Agent, Human or Continuation block.");
+    issue("invalid_block_kind", `${path}.kind`, "Use an Agent, Human, Continuation or Wait block.");
   if (typeof block.name !== "string" || block.name.length > 200)
     issue("invalid_block_name", `${path}.name`, "Use a block name up to 200 characters.");
   checkKindFields(block, path, issue);
@@ -449,12 +486,19 @@ function checkBlockFields(
 }
 
 /**
- * The exit IDs a connection may leave each block by: a Human block's or Continuation's fixed exits,
- * or `inherited` for an Agent block, whose wires may also name Agent exits that readiness resolves.
+ * The exit IDs a connection may leave each block by: a Human block's, Continuation's or Wait's fixed
+ * exits, or `inherited` for an Agent block, whose wires may also name Agent exits that readiness
+ * resolves.
  */
 type ConnectableExits = Map<string, ReadonlySet<string> | "inherited">;
 const HUMAN_EXIT_IDS: ReadonlySet<string> = new Set(HUMAN_EXITS.map((exit) => exit.id));
 const CONTINUATION_EXIT_IDS: ReadonlySet<string> = new Set([CONTINUATION_EXIT.id]);
+const WAIT_EXIT_IDS: ReadonlySet<string> = new Set([WAIT_EXIT.id]);
+const FIXED_EXIT_IDS: ReadonlyMap<unknown, ReadonlySet<string>> = new Map([
+  ["human", HUMAN_EXIT_IDS],
+  ["continuation", CONTINUATION_EXIT_IDS],
+  ["wait", WAIT_EXIT_IDS],
+]);
 const CONTINUATION_PROMPT_LIMIT = 120_000;
 
 function checkBlock(
@@ -465,7 +509,7 @@ function checkBlock(
   issue: IssueReporter,
 ) {
   if (!isRecord(block)) {
-    issue("invalid_block", path, "Supply an Agent, Human or Continuation block.");
+    issue("invalid_block", path, "Supply an Agent, Human, Continuation or Wait block.");
     return;
   }
   checkBlockFields(block, path, blockIds, issue);
@@ -474,23 +518,17 @@ function checkBlock(
     checkExits(block.localExits, `${path}.localExits`, false, issue);
   }
   if (typeof block.id === "string")
-    exits.set(
-      block.id,
-      block.kind === "human"
-        ? HUMAN_EXIT_IDS
-        : block.kind === "continuation"
-          ? CONTINUATION_EXIT_IDS
-          : "inherited",
-    );
+    exits.set(block.id, FIXED_EXIT_IDS.get(block.kind) ?? "inherited");
 }
 
 const GRAPH_FIELDS = ["blocks", "connections", "flowInput"];
 const FLOW_INPUT_FIELDS = ["position", "targetBlockIds"];
 
-/** The Flow input may target only existing Agent blocks, each at most once. */
+/** The Flow input may target only existing Agent blocks, each at most once. A Wait target saves
+ * so readiness can report it. */
 function checkFlowInput(
   flowInput: unknown,
-  agentBlockIds: ReadonlySet<string>,
+  targetableBlockIds: ReadonlySet<string>,
   issue: IssueReporter,
 ) {
   const path = "graph.flowInput";
@@ -508,7 +546,7 @@ function checkFlowInput(
     issue("invalid_position", `${path}.position`, CANVAS_COORD_MESSAGE);
   const targets = new Set<string>();
   flowInput.targetBlockIds.forEach((target, i) => {
-    if (!isId(target) || targets.has(target) || !agentBlockIds.has(target))
+    if (!isId(target) || targets.has(target) || !targetableBlockIds.has(target))
       issue(
         "invalid_flow_input_target",
         `${path}.targetBlockIds.${i}`,
@@ -567,12 +605,14 @@ function checkGraph(graph: unknown, issue: IssueReporter) {
   graph.blocks.forEach((block, i) =>
     checkBlock(block, `graph.blocks.${i}`, blockIds, exits, issue),
   );
-  const agentBlockIds = new Set(
+  const targetableBlockIds = new Set(
     graph.blocks.flatMap((block) =>
-      isRecord(block) && block.kind === "agent" && isId(block.id) ? [block.id] : [],
+      isRecord(block) && (block.kind === "agent" || block.kind === "wait") && isId(block.id)
+        ? [block.id]
+        : [],
     ),
   );
-  checkFlowInput(graph.flowInput, agentBlockIds, issue);
+  checkFlowInput(graph.flowInput, targetableBlockIds, issue);
   checkConnections(graph.connections, blockIds, exits, issue);
 }
 
@@ -688,7 +728,20 @@ export interface ReadinessAgent extends Pick<AgentDefinition, "id" | "exits"> {
 
 const blockLabel = (block: FlowBlockInput) => block.name || block.id;
 
-/** Names, Agent references and exits of one block. */
+/** A Wait's duration must be entered and lie from 1 minute through 7 days. */
+function waitReadiness(duration: WaitDuration, path: string, label: string, add: IssueReporter) {
+  const minutes = waitDurationMinutes(duration);
+  if (minutes === null)
+    add("wait_duration_required", `${path}.duration.amount`, `Enter how long ${label} waits.`);
+  else if (minutes < WAIT_MINUTES.min || minutes > WAIT_MINUTES.max)
+    add(
+      "wait_duration_range",
+      `${path}.duration.amount`,
+      `${label} must wait from 1 minute to 7 days.`,
+    );
+}
+
+/** Names, Agent references, exits and Wait durations of one block. */
 function blockReadiness(
   block: FlowBlockInput,
   path: string,
@@ -703,6 +756,7 @@ function blockReadiness(
       `${path}.prompt`,
       `Write the prompt ${label} sends to the conversation it continues.`,
     );
+  if (block.kind === "wait") waitReadiness(block.duration, path, label, add);
   if (block.kind !== "agent") return;
   if (!agents.some((agent) => agent.id === block.agentId))
     add("agent_required", `${path}.agentId`, `Choose a saved Agent for ${label}.`);
@@ -835,6 +889,15 @@ export function flowReadiness(
       "graph.flowInput.targetBlockIds",
       "Connect the Flow input to at least one Agent before running this Flow.",
     );
+  graph.flowInput.targetBlockIds.forEach((target, i) => {
+    const block = graph.blocks.find((entry) => entry.id === target);
+    if (block?.kind === "wait")
+      add(
+        "flow_input_wait",
+        `graph.flowInput.targetBlockIds.${i}`,
+        `${blockLabel(block)} cannot receive the Flow input: connect the Flow input to an Agent and place the Wait after it.`,
+      );
+  });
   graph.blocks.forEach((block, i) => blockReadiness(block, `graph.blocks.${i}`, agents, add));
   connectionReadiness(graph, agents, add);
   if (graph.flowInput.targetBlockIds.length) reachabilityReadiness(graph, add);
@@ -855,6 +918,7 @@ export function resolveAgentModel(
 
 export {
   CONTINUATION_EXIT,
+  WAIT_EXIT,
   effectiveExits,
   inheritedExits,
   HUMAN_EXITS,

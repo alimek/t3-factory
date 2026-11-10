@@ -14,6 +14,7 @@ import {
   canConnect,
   continuedThread,
   exitRecipients,
+  waitDurationText,
   type BlockPosition,
   type CanvasBlock,
   type FlowWire,
@@ -253,12 +254,24 @@ function blockReference(
       ? { label: "continues", value: thread, valueClassName: "text-brand-cyan" }
       : { label: "", value: "no Agent before it", valueClassName: "text-muted-foreground" };
   }
+  if (block.kind === "wait") {
+    const duration = waitDurationText(block.duration);
+    return duration
+      ? { label: "waits", value: duration }
+      : { label: "", value: "duration not set", valueClassName: "text-muted-foreground" };
+  }
   if (!block.agentId) return { label: "Agent", value: "not chosen" };
   return {
     label: "Agent",
     value: agents.find((a) => a.id === block.agentId)?.name ?? "Unavailable Agent",
   };
 }
+
+/** The row of a Continuation's or Wait's single, unnamed output, which has no name to show. */
+const SINGLE_OUTPUT_LINES: Partial<Record<CanvasBlock["exits"][number]["source"], string>> = {
+  continuation: "response · prompt sent once per Run",
+  wait: "message · forwarded when its wait elapses",
+};
 
 /**
  * One exit row: where the exit comes from, its name and, for screen readers, its recipients.
@@ -274,12 +287,11 @@ function AuthoringExit({
   exit: CanvasBlock["exits"][number];
 }) {
   const recipients = exitRecipients(graph, block.id, exit.id).join(", ");
-  if (exit.source === "continuation")
+  const single = SINGLE_OUTPUT_LINES[exit.source];
+  if (single)
     return (
       <>
-        <span className="truncate text-2xs tracking-label text-muted-foreground">
-          response · prompt sent once per Run
-        </span>
+        <span className="truncate text-2xs tracking-label text-muted-foreground">{single}</span>
         <span className="sr-only">→ {recipients || "finish here"}</span>
       </>
     );
@@ -367,7 +379,7 @@ function authoringBlock({
       exit.unavailable
         ? unavailablePort
         : connectionHandle(
-            exit.source === "continuation"
+            SINGLE_OUTPUT_LINES[exit.source]
               ? `Connect output of ${name}`
               : `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
             connectingExitId === exit.id,

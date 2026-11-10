@@ -9,6 +9,7 @@ import type {
   FlowWorkspace,
   Result,
   RunDetail,
+  WaitDuration,
 } from "@t3-factory/contracts";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import {
@@ -26,6 +27,8 @@ type HumanShape = Extract<FlowBlock, { kind: "human" }>;
 export type ScenarioHumanStep = { [Key in keyof HumanShape]: HumanShape[Key] };
 type ContinuationShape = Extract<FlowBlock, { kind: "continuation" }>;
 export type ScenarioContinuation = { [Key in keyof ContinuationShape]: ContinuationShape[Key] };
+type WaitShape = Extract<FlowBlock, { kind: "wait" }>;
+export type ScenarioWait = { [Key in keyof WaitShape]: WaitShape[Key] };
 type Position = FlowBlock["position"];
 export const blockExit = (
   id: string,
@@ -90,6 +93,12 @@ export const continuationStep = (
   prompt: string,
   position: Position = { x: 0, y: 0 },
 ): ScenarioContinuation => ({ id, name, kind: "continuation", prompt, position });
+export const waitStep = (
+  id: string,
+  name: string,
+  duration: WaitDuration,
+  position: Position = { x: 0, y: 0 },
+): ScenarioWait => ({ id, name, kind: "wait", duration, position });
 export const connection = (
   sourceBlockId: string,
   exitId: string,
@@ -431,6 +440,84 @@ export const queuedContinuationFlow: ReadyFlowShape = (world) =>
       connection("worker", "done", "parallel-block"),
       connection("parallel-block", "done", "spec"),
       connection("spec", "output", "follow-up"),
+    ],
+  }));
+
+const coolDown = waitStep("cool-down", "Cool down", { amount: 30, unit: "minutes" });
+
+/** Entry worker's "Done" waits 30 minutes at Cool down, whose output hands to Follow-up and
+ * Parallel work. */
+export const waitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown, followUp(agentId), parallelWork(agentId)],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", "output", "follow-up"),
+      connection("cool-down", "output", "parallel-block"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits at Cool down, whose output ends the branch. */
+export const terminalWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Terminal wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown],
+    connections: [connection("worker", "done", "cool-down")],
+  }));
+
+/** Entry worker's "Done" waits at Cool down, whose output returns to Entry worker. */
+export const waitLoopFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait loop", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", "output", "worker"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes to Cool down and to Parallel work, whose "Done" also waits at Cool
+ * down; Cool down hands to Follow-up. */
+export const parallelWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Parallel wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown, parallelWork(agentId), followUp(agentId)],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("worker", "done", "parallel-block"),
+      connection("parallel-block", "done", "cool-down"),
+      connection("cool-down", "output", "follow-up"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes to a Human Review whose Approve waits at Cool down, which hands to the
+ * Human step Sign-off. */
+export const humanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Human around a wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, coolDown, humanStep("sign-off", "Sign-off")],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("review", "approve", "cool-down"),
+      connection("cool-down", "output", "sign-off"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits 10 minutes at Settle, then 20 at Cool down, then reaches Spec. */
+export const waitContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait before continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      waitStep("settle", "Settle", { amount: 10, unit: "minutes" }),
+      waitStep("cool-down", "Cool down", { amount: 20, unit: "minutes" }),
+      specStep,
+    ],
+    connections: [
+      connection("worker", "done", "settle"),
+      connection("settle", "output", "cool-down"),
+      connection("cool-down", "output", "spec"),
     ],
   }));
 
@@ -960,6 +1047,19 @@ export function resultReleasedToTwoWorkers(world: ScenarioWorld, worker: WorkerH
     const workers = [];
     for (const block of working(run)) workers.push(await launchedWorker(world, run, block.blockId));
     return workers;
+  });
+}
+
+/** From a result reported on an exit that leads to a Wait: Factory observed the worker's end and
+ * released the result into the Wait, where its arrival is pending. */
+export function resultWaitingAtWait(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("result waiting at a Wait", async () => {
+    await observeFor("observe the arrival", world, worker.runId, (run) =>
+      run.waitArrivals.some(
+        (arrival) => arrival.sourceBlockId === worker.flowBlockId && arrival.state === "pending",
+      ),
+    );
+    return worker;
   });
 }
 

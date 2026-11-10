@@ -1,6 +1,6 @@
 import { useId, type ComponentProps } from "react";
 import { CornerDownLeft, ExternalLink, Trash2 } from "lucide-react";
-import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import type { AgentDefinition, FlowBlock, FlowGraph, WaitUnit } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { BlockExitConfiguration } from "./block-exit-configuration.tsx";
 
 type AgentBlock = Extract<FlowBlock, { kind: "agent" }>;
 type ContinuationBlock = Extract<FlowBlock, { kind: "continuation" }>;
+type WaitBlock = Extract<FlowBlock, { kind: "wait" }>;
 
 /** Configuration of the selected block, shown in the editor's floating panel. */
 export function BlockConfiguration({
@@ -53,6 +54,7 @@ export function BlockConfiguration({
         {block.kind === "continuation" && (
           <ContinuationBlockSettings block={block} graph={graph} onEdit={onEdit} />
         )}
+        {block.kind === "wait" && <WaitBlockSettings block={block} onEdit={onEdit} />}
         <BlockExitConfiguration block={block} graph={graph} agents={agents} onEdit={onEdit} />
         {block.kind === "continuation" && <OncePerRun />}
         <PositionControls block={block} onEdit={onEdit} />
@@ -200,6 +202,67 @@ function ContinuationBlockSettings({
         </div>
       </section>
     </>
+  );
+}
+
+const WAIT_UNITS: readonly WaitUnit[] = ["minutes", "hours", "days"];
+
+/** A whole number typed into the amount field, null when it is cleared; anything else is
+ * ignored so a draft never holds a fractional or signed amount. */
+function waitAmount(text: string): number | null | undefined {
+  const raw = text.trim();
+  if (!raw) return null;
+  return /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : undefined;
+}
+
+function WaitBlockSettings({
+  block,
+  onEdit,
+}: {
+  block: WaitBlock;
+  onEdit: (block: FlowBlock) => void;
+}) {
+  const amountId = useId();
+  return (
+    <div className="grid gap-1.5">
+      <FieldLabel htmlFor={amountId}>
+        Duration <span className="text-subtle-foreground">required</span>
+      </FieldLabel>
+      <div className="flex gap-2">
+        <Input
+          id={amountId}
+          type="number"
+          inputMode="numeric"
+          min="1"
+          step="1"
+          aria-describedby={`${amountId}-help`}
+          className="h-8.5 w-24 font-mono"
+          value={block.duration.amount ?? ""}
+          onChange={(e) => {
+            const amount = waitAmount(e.target.value);
+            if (amount !== undefined) onEdit({ ...block, duration: { ...block.duration, amount } });
+          }}
+        />
+        <NativeSelect
+          aria-label="Duration unit"
+          className="h-8.5"
+          value={block.duration.unit}
+          onChange={(e) =>
+            onEdit({ ...block, duration: { ...block.duration, unit: e.target.value as WaitUnit } })
+          }
+        >
+          {WAIT_UNITS.map((unit) => (
+            <NativeSelectOption key={unit} value={unit}>
+              {unit}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </div>
+      <p id={`${amountId}-help`} className="text-xs text-muted-foreground">
+        From 1 minute to 7 days. Each message waits this long from when it arrives, then is
+        forwarded unchanged. No Agent or worker runs while it waits.
+      </p>
+    </div>
   );
 }
 

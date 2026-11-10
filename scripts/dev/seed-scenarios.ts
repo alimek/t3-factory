@@ -2,7 +2,7 @@ import { demoImages, demoPullRequest, type DemoImage } from "./seed-support.ts";
 import type { ThreadFacts } from "../../apps/backend/test/support/controlled-thread.ts";
 
 export type DemoFlows = Record<
-  "simple" | "review" | "parallel" | "parallelStart" | "worktree" | "continuation",
+  "simple" | "review" | "parallel" | "parallelStart" | "worktree" | "continuation" | "soak",
   string
 >;
 type Repository = NonNullable<ThreadFacts["repository"]>;
@@ -30,6 +30,7 @@ export type SeedScenario = {
       | { state: "continuation prompt sent" }
       | { state: "continuation response forwarded"; spec: string }
     ))
+  | { state: "reviews waiting at a Wait"; implementation: Report; reviews: readonly Report[] }
 );
 
 const reviewContent = {
@@ -55,6 +56,23 @@ const continuationContent = {
     message: "We agreed on saved searches per project, shareable links and no email alerts yet.",
   },
   approval: "Approved. Leave email alerts out of the first version.",
+};
+
+const soakContent = {
+  prompt:
+    "Ship the saved-search ranking fix to Atlas. Let both reviews soak for two hours before the release step starts.",
+  implementation: {
+    exit: "Ready for review",
+    message: "Saved searches now rank exact title matches first. Ready for review.",
+  },
+  codeReview: {
+    exit: "Approved",
+    message: "Ranking change approved: tests cover exact and partial title matches.",
+  },
+  accessibilityReview: {
+    exit: "Approved",
+    message: "Approved: result order is announced and keyboard focus stays on the list.",
+  },
 };
 
 /** Stable keys, titles and creation order are shared with journeys and the scenario catalog.
@@ -213,6 +231,24 @@ export const seedScenarioList: readonly SeedScenario[] = [
     state: "continuation response forwarded",
     ...continuationContent,
     spec: "Spec written to docs/saved-searches.md with four open questions.",
+  },
+  {
+    key: "wait-one",
+    title: "Wait · Code review soaking before release",
+    flow: "soak",
+    state: "reviews waiting at a Wait",
+    prompt: soakContent.prompt,
+    implementation: soakContent.implementation,
+    reviews: [soakContent.codeReview],
+  },
+  {
+    key: "wait-two",
+    title: "Wait · Both reviews soaking before release",
+    flow: "soak",
+    state: "reviews waiting at a Wait",
+    prompt: soakContent.prompt,
+    implementation: soakContent.implementation,
+    reviews: [soakContent.codeReview, soakContent.accessibilityReview],
   },
   {
     key: "working",

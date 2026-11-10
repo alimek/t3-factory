@@ -2,8 +2,10 @@ import { openBlockTools } from "./runner-block-tools.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
 import { releaseContinuationResults } from "./runner-continuations.ts";
+import { forwardDueWaits } from "./runner-waits.ts";
 import { openRunNavigation } from "./run-navigation.ts";
 import type { FactoryOperations, Result } from "@t3-factory/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Semaphore from "effect/Semaphore";
@@ -46,6 +48,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const drives = makeRunLanes();
   const detached = new Set<Fiber.Fiber<unknown, unknown>>();
   let timer: Fiber.Fiber<never, unknown> | undefined;
+  /** Factory's wake-up for each pending Wait arrival this Runner knows of, by arrival id. */
+  const waitTimers = new Map<string, Fiber.Fiber<unknown, unknown>>();
   const fork = Effect.fn("Runner.fork")(function* (work: Effect.Effect<unknown, unknown>) {
     if (closed) return;
     const fiber = yield* Effect.forkIn(work.pipe(Effect.uninterruptible), scope);
@@ -100,6 +104,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
       yield* settleRecoveries(store, lifecycle, t3, id);
       if (phase === "observe") return;
+      yield* forwardDueWaits(store, id);
       yield* releaseContinuationResults(store, t3, (yield* row(id)) ?? runRow);
       const observed = (yield* row(id)) ?? runRow;
       yield* dispatchIntents(observed, contextId);
@@ -107,6 +112,34 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       const current = yield* row(id);
       if (preparing(observed) && current && !preparing(current))
         yield* dispatchIntents(current, contextId);
+      yield* scheduleWaits(id);
+    });
+  }
+  /** Starts a wake-up for each pending arrival of the Run without one: a fiber in the Runner's
+   * scope that sleeps on the Runner's clock until the arrival's stored deadline, then forwards due
+   * arrivals, drives the Run and tries to settle it. The deadline is durable; the wake-up is
+   * recreated from it after a restart, and a pass that finds an arrival overdue forwards it. */
+  function scheduleWaits(id: string) {
+    return Effect.gen(function* () {
+      const time = yield* Clock.currentTimeMillis;
+      for (const wait of yield* store.pendingWaits(id)) {
+        if (closed || waitTimers.has(wait.id)) continue;
+        const wake = Effect.gen(function* () {
+          waitTimers.delete(wait.id);
+          yield* fork(
+            recoverOperation(
+              Effect.gen(function* () {
+                yield* forwardDueWaits(store, id);
+                yield* drive(id);
+                yield* settleWhenDone(id);
+              }),
+              () => Effect.void,
+            ),
+          );
+        });
+        const delay = Math.max(0, Date.parse(wait.deadline_at) - time);
+        waitTimers.set(wait.id, yield* Effect.forkIn(Effect.delay(wake, delay), scope));
+      }
     });
   }
   function dispatchIntents(runRow: RunRow, contextId: string | null) {
@@ -155,6 +188,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           if (closed) return;
           closed = true;
           if (timer) yield* Fiber.interrupt(timer);
+          yield* Fiber.interruptAll(waitTimers.values());
           yield* starts.withPermit(Effect.void);
           yield* sweeps.withPermit(Effect.void);
           yield* Fiber.awaitAll(detached);

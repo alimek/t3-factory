@@ -17,6 +17,12 @@ function sourceBinding(sql: SqlClient.SqlClient, sourceId: string, occurrenceId:
   return sql`COALESCE((SELECT v.binding_id FROM continuation_visits v JOIN runtime_reports r ON r.activation_id=v.activation_id WHERE r.id=${sourceId}),(SELECT t.id FROM runtime_reports r JOIN run_blocks b ON b.run_id=r.run_id AND b.block_id=r.block_id JOIN run_thread_bindings t ON t.run_id=b.run_id AND t.thread_id=b.thread_id WHERE r.id=${sourceId}))`;
 }
 
+/** The Block activation whose result is the Handoff's message; a Human answer records none. */
+function sourceActivation(sql: SqlClient.SqlClient, sourceId: string, occurrenceId: string | null) {
+  if (occurrenceId) return sql`NULL`;
+  return sql`(SELECT activation_id FROM runtime_reports WHERE id=${sourceId})`;
+}
+
 /** One held Handoff per recipient of an accepted Final result or Human answer, deduplicated by its
  * cause. A Final result's Handoffs take its pending message, which the result then no longer
  * holds. */
@@ -38,8 +44,8 @@ export function createHeldHandoffs(
         cause = `${occurrenceId ? "human" : "report"}:${source.id}/recipient:${blockId}`;
       const payload = JSON.stringify({ message: source.pending_message ?? "" });
       const inserted =
-        yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,report_id,source_block_id,exit_id,occurrence_id,binding_id)
-          VALUES(${id},${runRow.id},${blockId},'handoff',${cause},${JSON.stringify({ ...runTarget(runRow), blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${runRow.context_id},${occurrenceId ? null : source.id},${source.block_id},${source.exit_id},${occurrenceId},${sourceBinding(sql, source.id, occurrenceId)}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
+        yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,report_id,source_block_id,exit_id,occurrence_id,binding_id,origin_activation_id)
+          VALUES(${id},${runRow.id},${blockId},'handoff',${cause},${JSON.stringify({ ...runTarget(runRow), blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${runRow.context_id},${occurrenceId ? null : source.id},${source.block_id},${source.exit_id},${occurrenceId},${sourceBinding(sql, source.id, occurrenceId)},${sourceActivation(sql, source.id, occurrenceId)}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
       if (inserted.length)
         yield* appendTimelineEvent(sql, {
           kind: occurrenceId ? "handoff-created" : "handoff-held",

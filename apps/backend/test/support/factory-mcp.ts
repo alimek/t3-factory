@@ -2,7 +2,7 @@ import type { TestContext } from "@effect/vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import type { Factory } from "../../src/index.ts";
 import { runtimeMcpHandler } from "../../src/runtime-mcp.ts";
-import { openFactoryWithApprovedT3 } from "./domain-setup.ts";
+import { openFactoryWithApprovedT3, sampleAgentInput } from "./domain-setup.ts";
 
 /**
  * A worker's MCP client on the Factory MCP handler of an open backend, over Streamable HTTP
@@ -39,12 +39,36 @@ export async function authoringMcpClient(c: TestContext) {
   return { factory, t3, client: await factoryMcpClient(c, factory) };
 }
 
-/** `factory_get_run_image` for one image of the Block's Run. */
-export const readRunImage = (client: Client, blockId: string, imageId: string) =>
-  client.callTool({ name: "factory_get_run_image", arguments: { blockId, imageId } });
-
 /** The JSON reply in a Factory tool result's first, text content item. */
 export const toolReply = (result: { content: unknown }) =>
   JSON.parse((result.content as [{ text: string }])[0].text);
+
+/** An Agent the authoring client creates on the first available environment, provider and model,
+ * with that provider's capabilities. */
+export async function mcpAgent(client: Client, name: string) {
+  const capabilities = toolReply(
+    await client.callTool({ name: "factory_get_agent_capabilities", arguments: {} }),
+  );
+  const [provider] = capabilities.providers;
+  const agent = toolReply(
+    await client.callTool({
+      name: "factory_create_agent",
+      arguments: {
+        ...sampleAgentInput(name),
+        execution: {
+          environmentId: capabilities.environments[0].environmentId,
+          providerInstanceId: provider.providerInstanceId,
+          modelId: provider.models[0].id,
+          modelOptions: [],
+        },
+      },
+    }),
+  );
+  return { agent, provider };
+}
+
+/** `factory_get_run_image` for one image of the Block's Run. */
+export const readRunImage = (client: Client, blockId: string, imageId: string) =>
+  client.callTool({ name: "factory_get_run_image", arguments: { blockId, imageId } });
 
 export const base64 = (data: Uint8Array) => Buffer.from(data).toString("base64");

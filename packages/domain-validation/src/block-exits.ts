@@ -40,8 +40,20 @@ export const CONTINUATION_EXIT: BlockExit = {
   messageRequired: true,
 };
 
-/** Where a block's exit comes from: its Agent, this Flow only, a Human step or a Continuation. */
-export type ExitSource = "agent" | "local" | "human" | "continuation";
+/**
+ * A Wait's single output. It has no name and no message requirement: it forwards the message that
+ * waited, unchanged, once that arrival's duration elapses.
+ */
+export const WAIT_EXIT: BlockExit = {
+  id: "output",
+  name: "",
+  description: "The waiting message, unchanged, once its duration elapses.",
+  messageRequired: false,
+};
+
+/** Where a block's exit comes from: its Agent, this Flow only, a Human step, a Continuation or a
+ * Wait. */
+export type ExitSource = "agent" | "local" | "human" | "continuation" | "wait";
 export interface EffectiveExit extends BlockExit {
   readonly source: ExitSource;
 }
@@ -57,8 +69,9 @@ export function inheritedExits(
 
 /**
  * The exits a block offers: an Agent block's Agent exits minus those hidden in this Flow, then its
- * Flow-local exits; a Human block's fixed exits; a Continuation's single output. Pass the Agents the reader resolves against: the
- * current saved ones for authoring, the captured revisions for a Run.
+ * Flow-local exits; a Human block's fixed exits; a Continuation's or Wait's single output. Pass the
+ * Agents the reader resolves against: the current saved ones for authoring, the captured revisions
+ * for a Run.
  */
 export function effectiveExits(
   block: FlowBlockInput,
@@ -66,6 +79,7 @@ export function effectiveExits(
 ): EffectiveExit[] {
   if (block.kind === "human") return HUMAN_EXITS.map((exit) => ({ ...exit, source: "human" }));
   if (block.kind === "continuation") return [{ ...CONTINUATION_EXIT, source: "continuation" }];
+  if (block.kind === "wait") return [{ ...WAIT_EXIT, source: "wait" }];
   const hidden = new Set(block.hiddenExitIds);
   return [
     ...inheritedExits(block, agents)

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, CornerDownLeft, TextCursorInput, User } from "lucide-react";
+import { Bot, CornerDownLeft, Hourglass, TextCursorInput, User } from "lucide-react";
 import type { FlowBlock } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ const EXIT_SOURCE_LABELS: Record<EffectiveExit["source"], string> = {
   local: "local",
   human: "fixed",
   continuation: "output",
+  wait: "output",
 };
 
 /** Each block kind's icon and the kind label its header shows. */
@@ -19,12 +20,14 @@ export const BLOCK_KINDS: Record<
   agent: { Icon: Bot, label: "AGENT", name: "Agent" },
   human: { Icon: User, label: "HUMAN STEP", name: "Human step" },
   continuation: { Icon: CornerDownLeft, label: "CONTINUATION", name: "Continuation" },
+  wait: { Icon: Hourglass, label: "WAIT", name: "Wait" },
 };
 
 const KIND_ICON_COLORS: Record<FlowBlock["kind"], string> = {
   agent: "text-link",
   human: "text-muted-foreground",
   continuation: "text-brand-cyan",
+  wait: "text-muted-foreground",
 };
 
 /** Where an exit comes from, and whether finishing on it needs a message. */

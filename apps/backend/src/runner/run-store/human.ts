@@ -86,7 +86,7 @@ export function openRunHuman(database: RunnerDatabase) {
             yield* writeBlockState(
               sql,
               { runId, blockId: occurrence.block_id },
-              { whileHumanPending: "waiting", otherwise: "finished" },
+              { whilePending: "waiting", otherwise: "finished" },
             );
             yield* appendTimelineEvent(sql, {
               kind: "human-answered",

@@ -32,6 +32,8 @@ function nameOf(run: RunDetail, blockId: string | null) {
 
 function exitLabel(run: RunDetail, blockId: string, exitId: string | null) {
   const exit = capturedExits(run.definitions, blockId).find((item) => item.id === exitId);
+  // A Continuation's or Wait's single output has no name.
+  if (exit && !exit.name) return "its output";
   return exit?.name ?? exitId ?? "an exit";
 }
 
@@ -134,6 +136,17 @@ function continuationPassed(run: RunDetail, event: RunEvent): EventPhrase {
   };
 }
 
+/** A Wait event is about one arrival, named by the event's cause. */
+function waitStarted(run: RunDetail, event: RunEvent): EventPhrase {
+  const arrival = run.waitArrivals.find((item) => item.id === event.causeId);
+  if (!arrival) return { actorId: event.blockId, text: "wait started" };
+  const source = arrival.sourceBlockId ? ` · ${nameOf(run, arrival.sourceBlockId)}'s message` : "";
+  return {
+    actorId: event.blockId,
+    text: `wait started${source} · until ${clockTime(arrival.deadlineAt)}`,
+  };
+}
+
 function attentionOf(run: RunDetail, event: RunEvent) {
   return run.attention.find((item) => item.id === event.causeId);
 }
@@ -208,6 +221,9 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "continuation-prompt-sent": continuationPromptSent,
   "continuation-forwarded": said("response forwarded"),
   "continuation-passed": continuationPassed,
+  "wait-started": waitStarted,
+  "wait-elapsed": said("elapsed → forwarded"),
+  "wait-cancelled": said("wait cancelled by Archive · nothing forwarded"),
   "operation-unresolved": operationUnresolved,
   "run-settled": (_run, event) => ({
     actorId: null,

@@ -114,6 +114,7 @@ export interface RunBlock {
   /**
    * `stopped`: the Run was archived before this activated Block finished. A Continuation is
    * `sent` while its prompt is in a worker thread and `pass-through` once its response went out.
+   * A Human step or a Wait is `waiting` while an occurrence or arrival is pending on it.
    */
   readonly state:
     | "not-started"
@@ -286,6 +287,7 @@ export interface RunDetail extends RunSummary {
   }[];
   readonly humanOccurrences: readonly HumanOccurrence[];
   readonly continuationVisits: readonly ContinuationVisit[];
+  readonly waitArrivals: readonly WaitArrival[];
   readonly attention: readonly RunAttention[];
   readonly executions: readonly {
     readonly bindingId: string;
@@ -419,6 +421,46 @@ export interface ContinuationVisit {
   readonly state: "queued" | "sent" | "forwarded" | "cancelled";
   readonly arrivedAt: string;
   readonly forwardedAt: string | null;
+}
+
+/**
+ * The worker a delivered message belongs to: the T3 thread of a worker binding of this Run, and the
+ * Block activation whose result produced the message when it is known.
+ */
+export interface MessageOrigin {
+  /** See `RunDetail.threadBindings`. */
+  readonly bindingId: string;
+  readonly threadId: string;
+  readonly activationId: string | null;
+}
+
+/**
+ * One message that reached a Wait. Each arrival waits for the Wait's duration from its own start
+ * and is forwarded unchanged on its own; parallel arrivals and later visits never join or reset.
+ */
+export interface WaitArrival {
+  readonly id: string;
+  readonly blockId: string;
+  /** The delivery that arrived, the arrival's deduplication identity; a retry of it is no new
+   * arrival. */
+  readonly incomingIntentId: string;
+  /** The block whose result or answer arrived. */
+  readonly sourceBlockId: string | null;
+  /** Null when the message arrived without a worker. */
+  readonly origin: MessageOrigin | null;
+  /** The Final result version whose message waits; null for a Human step's answer. */
+  readonly reportId: string | null;
+  /** `cancelled`: Archive cancelled the arrival before its deadline; nothing was forwarded. */
+  readonly state: "pending" | "forwarded" | "cancelled";
+  /** Why a forwarded arrival left: its deadline elapsed. */
+  readonly forwardReason: "elapsed" | null;
+  /** The waiting message, retained while pending; null once forwarded or cancelled. */
+  readonly message: string | null;
+  /** When counting started: the incoming handoff's release. */
+  readonly startedAt: string;
+  readonly deadlineAt: string;
+  /** When it was forwarded or cancelled. */
+  readonly settledAt: string | null;
 }
 
 /** Each incoming activation is independent, including repeated visits to the same block. */

@@ -57,7 +57,7 @@ type Wire = {
   readonly key: string;
   readonly wire: FlowWire;
   readonly path: { d: string; label: { x: number; y: number } | null };
-  /** The exit's name; Flow input and Continuation wires are unnamed and carry no label. */
+  /** The exit's name; Flow input, Continuation and Wait wires are unnamed and carry no label. */
   readonly exit: string | null;
   readonly source: string;
   readonly target: string;
@@ -88,7 +88,7 @@ function exitWires(
         wire: connectionWire(connection),
         path: routed ?? routedPath(kind, geometry, from, fromBottom, target, incomingIndex),
         exit:
-          source.kind === "continuation"
+          source.kind === "continuation" || source.kind === "wait"
             ? null
             : source.exits.find((item) => item.id === connection.exitId)?.name || "exit",
         source: source.name || "Unnamed block",

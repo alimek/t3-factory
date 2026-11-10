@@ -85,7 +85,7 @@ export function openRunDeliveries(database: RunnerDatabase) {
       (sql) =>
         sql<{
           id: string;
-        }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`,
+        }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain')) OR EXISTS(SELECT 1 FROM wait_arrivals w WHERE w.run_id=runs.id AND w.state='pending')) ORDER BY started_at,id`,
     );
 
   /** The Run's Handoffs not yet turned into deliveries and its deliveries not yet acknowledged or

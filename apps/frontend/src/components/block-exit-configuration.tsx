@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { Lock, Plus, Trash2 } from "lucide-react";
 import type { AgentDefinition, BlockExit, FlowBlock, FlowGraph } from "@t3-factory/contracts";
-import { CONTINUATION_EXIT, effectiveExits, inheritedExits } from "@t3-factory/domain-validation";
+import { effectiveExits, inheritedExits } from "@t3-factory/domain-validation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,8 @@ export function BlockExitConfiguration({
   agents: readonly AgentDefinition[];
   onEdit: (block: FlowBlock) => void;
 }) {
-  if (block.kind === "continuation") return <ContinuationOutput block={block} graph={graph} />;
+  if (block.kind === "continuation" || block.kind === "wait")
+    return <SingleOutput block={block} graph={graph} />;
   if (block.kind === "human")
     return (
       <section aria-label="Exits · built in" className="grid gap-2">
@@ -121,26 +122,43 @@ export function BlockExitConfiguration({
   );
 }
 
-/** A Continuation's single, unnamed output: nothing here is editable. */
-function ContinuationOutput({ block, graph }: { block: FlowBlock; graph: FlowGraph }) {
+/** What the single, unnamed output of a Continuation or Wait forwards; nothing is editable. */
+const SINGLE_OUTPUTS = {
+  continuation: {
+    intro:
+      "No exits to name. What leaves the block depends on whether its prompt was already sent in this Run.",
+    name: "response",
+    detail:
+      "First arrival: the worker's finished response to this prompt. Later arrivals: their own message, unchanged.",
+  },
+  wait: {
+    intro: "No exits to name. Each message leaves on its own when its wait elapses.",
+    name: "message",
+    detail:
+      "The message that arrived, forwarded unchanged with the worker it came from. Several waiting messages never join.",
+  },
+} as const;
+
+function SingleOutput({
+  block,
+  graph,
+}: {
+  block: Extract<FlowBlock, { kind: keyof typeof SINGLE_OUTPUTS }>;
+  graph: FlowGraph;
+}) {
+  const output = SINGLE_OUTPUTS[block.kind];
   return (
     <section aria-label="Output · one" className="grid gap-2">
       <h3 className="text-xs font-semibold text-muted-foreground">Output · one</h3>
-      <p className="text-xs text-muted-foreground">
-        No exits to name. What leaves the block depends on whether its prompt was already sent in
-        this Run.
-      </p>
+      <p className="text-xs text-muted-foreground">{output.intro}</p>
       <div className="grid gap-1 rounded-lg border bg-muted px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 font-mono text-xs">response</span>
+          <span className="min-w-0 flex-1 font-mono text-xs">{output.name}</span>
           <span className="shrink-0 text-2xs text-muted-foreground">Message forwarded</span>
           <Lock aria-label="Locked" className="size-3 shrink-0 text-muted-foreground" />
         </div>
-        <p className="text-xs text-muted-foreground">
-          First arrival: the worker&apos;s finished response to this prompt. Later arrivals: their
-          own message, unchanged.
-        </p>
-        <Recipients graph={graph} blockId={block.id} exitId={CONTINUATION_EXIT.id} />
+        <p className="text-xs text-muted-foreground">{output.detail}</p>
+        <Recipients graph={graph} blockId={block.id} exitId={effectiveExits(block, [])[0]!.id} />
       </div>
     </section>
   );

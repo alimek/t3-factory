@@ -28,7 +28,7 @@ Where all workers of one Run work, fixed at Start: the project checkout, or for 
 _Avoid_: A worktree per worker.
 
 **Flow block**:
-A constituent element of a flow: the Flow input block, an agent block, a human step or a Continuation.
+A constituent element of a flow: the Flow input block, an agent block, a human step, a Wait or a Continuation.
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
 
 **Agent**:
@@ -55,8 +55,15 @@ A flow block awaiting a person's decision in Factory before the flow continues. 
 A flow block with a name, a prompt and one unnamed output, and no Agent or exits of its own. The first message that reaches it in a Run sends its prompt into the worker thread that message belongs to; the work shows on that worker's Agent block while the Continuation is **sent**. Its response leaves the single output, and from then on, for the rest of the Run, every message **passes through** unchanged with its own worker. It needs an Agent before it; human steps and other Continuations pass the worker on.
 _Avoid_: continuity, follow-up block, reusing a worker by copying its conversation.
 
+**Wait**:
+A flow block with a name, a fixed duration (a whole number of minutes, hours or days, from 1 minute through 7 days) and one unnamed output, and no Agent, worker or reports. It holds each message that reaches it until that arrival's deadline, then forwards it unchanged with its worker provenance; an unconnected output ends the branch. It is never a Run's first block.
+_Avoid_: timer step, delay worker, wait-until-time.
+
+**Wait arrival**:
+One message that reached a Wait in a Run, keyed by the delivery that brought it, with its retained message, provenance, start (the incoming handoff's release), absolute deadline and outcome: pending, forwarded once its deadline elapsed, or cancelled by Archive. Parallel arrivals and loop revisits are separate arrivals that never join or reset each other; a pending one is owed work, not Needs input.
+
 **Worker provenance**:
-The worker thread a delivered message belongs to, recorded by its durable T3 thread id: an Agent's result carries its worker, a human step's answer the worker of the message it answered, and a Continuation's response the thread its prompt ran on. A Continuation reads it from the message it receives; titles never select a thread.
+The worker thread a delivered message belongs to, recorded by its durable T3 thread id: an Agent's result carries its worker, a human step's answer the worker of the message it answered, and a Continuation's response the thread its prompt ran on; a Wait and a passed-through message keep the provenance they arrived with. An Agent's or Continuation's result also records the Block activation that produced it. A Continuation reads it from the message it receives; titles never select a thread.
 
 **Block exit**:
 A named result a block finishes with, whose connections determine which blocks run next. An exit has a stable ID, a name, an optional description and a "message required" flag; there is no other classification. An agent block's exits are its Agent's current exits minus those hidden in this Flow, plus its Flow-local exits; a Run uses the Agent revisions it captured. Wires leave by exit ID, so renaming an exit keeps them.
@@ -110,7 +117,7 @@ _Avoid_: bridge (the retired stdio copy installed per harness).
 One accepted task at a Flow block, from its launch or visit message until its result is completed. Reports naming the Block id apply to the Block's current activation, whichever turn of the worker thread sends them.
 
 **Needs input**:
-Pending questions or decisions on a Run. This covers Human occurrences answered in Factory and native T3 questions or permissions, which stay Open in T3. An Agent's question in chat is ordinary conversation, not Needs input. It is not an execution state.
+Pending questions or decisions on a Run. This covers Human occurrences answered in Factory and native T3 questions or permissions, which stay Open in T3. An Agent's question in chat is ordinary conversation, not Needs input, and neither is a pending Wait arrival. It is not an execution state.
 
 **Conversation waiting**:
 A retired, non-final `waiting` report with which an Agent once asked the user in chat. Factory now refuses it; recorded ones stay readable as history, and an upgrade turned pending ones into Working reports.
@@ -167,7 +174,7 @@ endpoints or environments create another context. A matching reference is a
 necessary recovery check, not proof of execution readiness or retry retention.
 
 **Archived**:
-The final Run lifecycle state, set when the user archives a Run after confirming. Archiving closes the handoff gate, cancels unsent launches, handoffs and Human occurrences and asks T3 once to interrupt each worker thread, without waiting for confirmation. An Archived Run leaves navigation for good and keeps all its data; reports for it are acknowledged as a success that changes nothing. Archive does not undo repository changes.
+The final Run lifecycle state, set when the user archives a Run after confirming. Archiving closes the handoff gate, cancels unsent launches, handoffs, Human occurrences and pending Wait arrivals and asks T3 once to interrupt each worker thread, without waiting for confirmation. An Archived Run leaves navigation for good and keeps all its data; reports for it are acknowledged as a success that changes nothing. Archive does not undo repository changes.
 _Avoid_: Stop and Stopped (the retired confirmed-termination outcome).
 
 **Handoff**:
@@ -185,7 +192,7 @@ One T3 run of a Block's worker thread, including repeated visits, queued turns, 
 **Settled**:
 A Run lifecycle state for work that is done. A Run settles automatically when every
 visited Block has its Final result with no later working report, every Human
-occurrence is answered, nothing is owed or pending and every worker thread is
+occurrence is answered, no Wait arrival is pending, nothing is owed or pending and every worker thread is
 finished; the user can also settle an Active or Snoozed Run at any time. Settling
 changes no execution. Any accepted report from one of its Blocks returns it to
 Active; chat without a report does not. Navigation groups Settled Runs together.

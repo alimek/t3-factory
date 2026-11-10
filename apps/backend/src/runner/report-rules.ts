@@ -9,7 +9,9 @@ type BlockState = RunBlock["state"];
  * edit. */
 export function reportRoute(definitions: RunDefinitions, blockId: string, report: RuntimeReport) {
   const block = definitions.flow.graph.blocks.find((block) => block.id === blockId);
-  if (!block || block.kind === "human") return rejected("UNKNOWN_BLOCK");
+  // Only Agent blocks and Continuations have a Block id; a Human step or Wait has no worker.
+  if (!block || (block.kind !== "agent" && block.kind !== "continuation"))
+    return rejected("UNKNOWN_BLOCK");
   const exits = effectiveExits(block, definitions.agents);
   // A Continuation has one unnamed output: its worker finishes without naming it.
   const matches = exits.filter(

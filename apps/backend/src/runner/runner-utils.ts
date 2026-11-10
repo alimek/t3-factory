@@ -31,7 +31,7 @@ export function runTarget(
   };
 }
 
-/** A Continuation forwards a passed-through message as it arrived: its Handoffs (cause `pass:`)
- * are released. */
-export const passedThrough = (source: { readonly cause: string }) =>
-  source.cause.startsWith("pass:");
+/** A Continuation's pass-through (cause `pass:`) and a Wait (cause `wait:`) forward a message as it
+ * arrived: their Handoffs are released. */
+export const forwardedUnchanged = (source: { readonly cause: string }) =>
+  /^(?:pass|wait):/.test(source.cause);

@@ -146,8 +146,9 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),
     activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),
-    // Released Flows had no Continuation blocks.
+    // Released Flows had no Continuation or Wait blocks.
     continuationVisits: [],
+    waitArrivals: [],
     coordinationActions: actions,
   };
 }

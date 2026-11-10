@@ -39,22 +39,29 @@ and restricted OAuth credentials live outside project repositories.
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
   context needed to resolve uncertain outcomes. An acknowledgement is not completion.
+- A handoff also records its message's origin: the worker binding (T3 thread and Run) and the
+  Block activation whose result produced it, where present. A Wait arrival keeps that origin,
+  its message, its absolute deadline and its outcome, keyed by the delivery that arrived, and
+  forwarding copies the origin to its handoffs unchanged; no origin is derived from the graph
+  or the latest activation. Migration `076` added this origin, Wait durations on Flow revision
+  blocks and Wait arrivals without changing existing revisions, Runs or pending work; records
+  from before it carry no activation origin.
 - Reports name their Block by the Block id Factory issued; Run and Block identity never come
   from other model-supplied references.
   Attention settlement and the Run's Settled and Archived states remain separate, with cancelled Human work never
   represented as an answer.
 
 **Transactions and restart.** One backend owns a database. Start, reports, Human answers,
-delivery reservations, settling and Archive have atomic durable boundaries before their effects
-are acknowledged. Local mutations serialize per Run, and SQL transactions never span
+Wait arrivals and forwarding, delivery reservations, settling and Archive have atomic durable
+boundaries before their effects are acknowledged. Local mutations serialize per Run, and SQL transactions never span
 network I/O. Restart reconciles open Runs before dispatching. Uncertain operations are not
 new attempts, and failed Agent work is never retried automatically; see
 [ownership and recovery](runner.md#ownership-and-restart).
 
 **Retention.** History, input, revisions, events, deduplication metadata and closure evidence
 are kept indefinitely. Message payloads persist only while needed for pending Human context,
-uncertain delivery or recovery, then are cleared while keys, fingerprints and references
-remain. Initial input, including its images, and revision prompts are intentional exceptions;
+a pending Wait arrival, uncertain delivery or recovery, then are cleared while keys, fingerprints,
+deadlines, outcomes and references remain. Initial input, including its images, and revision prompts are intentional exceptions;
 staged images no Run references are deleted after 24 hours. There is no
 transcript archive, and payload clearing is not secure erasure.
 

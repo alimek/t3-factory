@@ -7,6 +7,8 @@ const colors: Record<string, string> = {
   finished: "border-success [&>span]:bg-success",
   sent: "border-primary [&>span]:bg-primary",
   "pass-through": "border-success [&>span]:bg-success",
+  forwarded: "border-success [&>span]:bg-success",
+  cancelled: "border-status-stopped [&>span]:bg-status-stopped",
   settled: "border-success [&>span]:bg-success",
   archived: "border-status-stopped [&>span]:bg-status-stopped",
   error: "border-destructive [&>span]:bg-destructive",

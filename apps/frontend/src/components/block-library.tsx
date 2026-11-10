@@ -102,6 +102,13 @@ export function BlockLibrary({
         onAdd={(position) => onAdd("human", undefined, position)}
       />
       <LibraryItem
+        name="Wait"
+        detail="Holds each message, then forwards it"
+        kind="wait"
+        dropAt={dropAt}
+        onAdd={(position) => onAdd("wait", undefined, position)}
+      />
+      <LibraryItem
         name="Continuation"
         detail="Same thread, new prompt"
         kind="continuation"
@@ -225,6 +232,7 @@ const LIBRARY_ICON_TILES: Record<FlowBlock["kind"], string> = {
   agent: "bg-brand-soft text-link",
   human: "border border-dashed bg-muted text-muted-foreground",
   continuation: "border bg-muted text-brand-cyan",
+  wait: "border bg-muted text-muted-foreground",
 };
 
 /** What a new block of each kind shows on its reference line before it is connected. */
@@ -232,6 +240,7 @@ const GHOST_REFERENCES: Record<FlowBlock["kind"], (name: string) => [string, str
   agent: (name) => ["Agent", name],
   human: () => ["Asks", "a person"],
   continuation: () => ["", "no Agent before it"],
+  wait: () => ["", "duration not set"],
 };
 
 /** A compact, non-interactive preview of the block a library drag would add. */
