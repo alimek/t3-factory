@@ -9,6 +9,10 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
 import {
   agentOperations,
+  flowOperations,
+  projectOperations,
+  projectServerOperations,
+  connectionOperations,
   LIVE_PATH,
   type ProtocolDescriptor,
   type Result,
@@ -139,9 +143,8 @@ function apiRoutes(factory: Factory) {
   return [
     ...runResponseRoutes(factory),
     ...runRoutes(factory),
-    ...reportingRoutes(factory),
-    ...projectRoutes(factory),
     ...connectionRoutes(factory),
+    ...projectRoutes(factory),
     ...flowRoutes(factory),
     ...agentRoutes(factory),
   ];
@@ -271,180 +274,93 @@ function runImageRoutes(factory: Factory): readonly ApiRoute[] {
   ];
 }
 
-function reportingRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/reporting$/,
-      handle: fromResult(() => factory.getReportingInstallations()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/reporting\/install$/,
+function connectionRoutes(factory: Factory) {
+  return operationRoutes(connectionOperations, {
+    getReportingInstallations: { handle: () => answer(() => factory.getReportingInstallations()) },
+    installReporting: {
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.installReporting(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.installReporting(input)),
     },
-    {
-      method: "POST",
-      path: /^\/api\/runtime\/recheck$/,
+    recheckRuntime: {
       hostOnly: true,
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.recheckRuntime(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.recheckRuntime(input)),
     },
-  ];
-}
-
-function projectRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/projects$/,
-      handle: fromResult(() => factory.listProjects()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/projects\/recheck$/,
-      handle: fromResult(() => factory.recheckProjects()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/projects$/,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.addRepository(input)),
-          resultResponse,
-        ),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/projects\/selection$/,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.selectProject(input)),
-          resultResponse,
-        ),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/projects\/([^/]+)\/favicon$/,
-      protocolOptional: true,
-      handle: ({ id }) =>
-        Effect.map(
-          Effect.promise(() => factory.getProjectFavicon(id)),
-          sendFaviconResponse,
-        ),
-    },
-    {
-      method: "HEAD",
-      path: /^\/api\/projects\/([^/]+)\/favicon$/,
-      protocolOptional: true,
-      handle: ({ id }) =>
-        Effect.map(
-          Effect.promise(() => factory.getProjectFavicon(id)),
-          sendFaviconResponse,
-        ),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/projects\/([^/]+)\/readiness$/,
-      handle: fromId((id) => factory.getProjectReadiness(id)),
-    },
-  ];
-}
-
-function connectionRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/connection$/,
-      handle: fromResult(() => factory.getConnection()),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/connection$/,
+    getConnection: { handle: () => answer(() => factory.getConnection()) },
+    configureConnection: {
       hostOnly: true,
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.configureConnection(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.configureConnection(input)),
     },
-    {
-      method: "POST",
-      path: /^\/api\/connection\/recheck$/,
-      handle: fromResult(() => factory.recheckConnection()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/connection\/authorize$/,
+    recheckConnection: { handle: () => answer(() => factory.recheckConnection()) },
+    authorizeConnection: {
       hostOnly: true,
-      handle: fromResult(() => factory.authorizeConnection()),
+      handle: () => answer(() => factory.authorizeConnection()),
     },
-    {
+    openConnectionAuthorization: {
       // Approved clients may ask the host to show T3 consent for the saved endpoint;
       // the consent page, state and tokens stay on the host.
-      method: "POST",
-      path: /^\/api\/connection\/authorization\/open$/,
-      handle: fromResult(() => factory.openConnectionAuthorization()),
+      handle: () => answer(() => factory.openConnectionAuthorization()),
     },
+  });
+}
+
+function projectRoutes(factory: Factory) {
+  return [
+    ...operationRoutes(projectOperations, {
+      listProjects: { handle: () => answer(() => factory.listProjects()) },
+      recheckProjects: { handle: () => answer(() => factory.recheckProjects()) },
+      addRepository: {
+        body: standardBody,
+        handle: ({ input }) => answer(() => factory.addRepository(input)),
+      },
+      selectProject: {
+        body: standardBody,
+        handle: ({ input }) => answer(() => factory.selectProject(input)),
+      },
+      getProjectFavicon: {
+        protocolOptional: true,
+        handle: ({ parameters }) =>
+          Effect.map(
+            Effect.promise(() => factory.getProjectFavicon(parameters.id)),
+            sendFaviconResponse,
+          ),
+      },
+      getProjectReadiness: {
+        handle: ({ parameters }) => answer(() => factory.getProjectReadiness(parameters.id)),
+      },
+    }),
+    ...operationRoutes(projectServerOperations, {
+      headProjectFavicon: {
+        protocolOptional: true,
+        handle: ({ parameters }) =>
+          Effect.map(
+            Effect.promise(() => factory.getProjectFavicon(parameters.id)),
+            sendFaviconResponse,
+          ),
+      },
+    }),
   ];
 }
 
-function flowRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/flows$/,
-      handle: fromResult(() => factory.listFlows()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/flows$/,
+function flowRoutes(factory: Factory) {
+  return operationRoutes(flowOperations, {
+    listFlows: { handle: () => answer(() => factory.listFlows()) },
+    createFlow: {
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.createFlow(input)),
-          (result) => resultResponse(result, 201),
-        ),
+      handle: ({ input }) => answer(() => factory.createFlow(input), 201),
     },
-    {
-      method: "POST",
-      path: /^\/api\/flows\/validate$/,
+    validateFlow: {
       body: flowDocumentBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.validateFlow(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.validateFlow(input)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/flows\/([^/]+)$/,
-      handle: fromId((id) => factory.getFlow(id)),
-    },
-    {
-      method: "DELETE",
-      path: /^\/api\/flows\/([^/]+)$/,
-      handle: fromId((id) => factory.removeFlow(id)),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/flows\/([^/]+)$/,
+    getFlow: { handle: ({ parameters }) => answer(() => factory.getFlow(parameters.id)) },
+    removeFlow: { handle: ({ parameters }) => answer(() => factory.removeFlow(parameters.id)) },
+    updateFlow: {
       body: flowDocumentBody,
-      handle: fromCall((id, input) => factory.updateFlow(id, input)),
+      handle: ({ parameters, input }) => answer(() => factory.updateFlow(parameters.id, input)),
     },
-  ];
+  });
 }
 
 function agentRoutes(factory: Factory) {
