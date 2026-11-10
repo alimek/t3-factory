@@ -1,6 +1,6 @@
 import { dispatchBlockLaunch } from "./runner-block-workers.ts";
 import { prepareCoordinatorHandoff } from "./runner-coordinator-handoffs.ts";
-import { COORDINATOR_HOLD } from "./runner-coordination.ts";
+import { UNOBSERVED_WORKER_HOLD } from "./runner-coordination.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { recoveryDispatchGeneration } from "./runner-recovery.ts";
@@ -100,7 +100,7 @@ export function openRunnerDispatch(
           const time = yield* now;
           yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${intent.id}`;
           yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,engine_status,binding_id,activation_id) VALUES(${runRow.id},${intent.block_id},${reference.threadId},${reference.runId},${reference.status},COALESCE((SELECT binding_id FROM coordinator_question_replies WHERE intent_id=${intent.id}),(SELECT id FROM run_thread_bindings WHERE run_id=${runRow.id} AND thread_id=${reference.threadId})),COALESCE((SELECT activation_id FROM coordinator_question_replies WHERE intent_id=${intent.id}),(SELECT id FROM run_activations WHERE run_id=${runRow.id} AND block_id=${intent.block_id} ORDER BY rowid DESC LIMIT 1))) ON CONFLICT DO NOTHING`;
-          yield* sql`UPDATE run_blocks SET state='working',execution_id=${reference.runId},engine_status=${reference.status},report_status=NULL,problem=${COORDINATOR_HOLD},freshness='unknown' WHERE run_id=${runRow.id} AND block_id=${intent.block_id}`;
+          yield* sql`UPDATE run_blocks SET state='working',execution_id=${reference.runId},engine_status=${reference.status},report_status=NULL,problem=${UNOBSERVED_WORKER_HOLD},freshness='unknown' WHERE run_id=${runRow.id} AND block_id=${intent.block_id}`;
           yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${runRow.id},${intent.block_id},${reference.runId},'send-acknowledged',${"ack:" + intent.id},${intent.id},${time},${reference.status})`;
         }),

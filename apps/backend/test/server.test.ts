@@ -3,8 +3,8 @@ import type { FlowDraft, Result } from "@t3-factory/contracts";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfiguration } from "@t3-factory/backend/config";
-import { startServer } from "@t3-factory/backend/server";
+import { loadConfiguration } from "../src/config.ts";
+import { startServer } from "../src/server.ts";
 
 it("foreground server binds to the configured host and serves the UI", async (c) => {
   // Arrange

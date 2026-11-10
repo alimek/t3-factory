@@ -15,6 +15,11 @@ import { createServer } from "node:https";
 import { arch, release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  FACTORY_MINIMUM_SERVER_PROTOCOL,
+  FACTORY_PROTOCOL,
+  protocolCompatibility,
+} from "@t3-factory/domain-validation";
 import { build } from "esbuild";
 import { WebSocketServer } from "ws";
 
@@ -167,7 +172,12 @@ const liveShim = (
     globalName: "factoryLive",
   })
 ).outputFiles[0].text;
-const liveQuery = "protocol=3&minimum=3";
+// The protocol range this checkout's frontend declares; the probe first checks that the
+// packaged backend reports the same protocol, so it only probes a package of this checkout.
+const liveQuery = new URLSearchParams({
+  protocol: String(FACTORY_PROTOCOL),
+  minimum: String(FACTORY_MINIMUM_SERVER_PROTOCOL),
+}).toString();
 
 /** Page script: opens a live socket as `window[name]`, recording frames and its close. */
 const openLiveSocket = (name, query = liveQuery) => `(async () => {
@@ -289,6 +299,20 @@ try {
   await stage("the packaged backend serves Factory MCP to harnesses", mcpReport);
 
   await stage("the host relay streams the backend's live connection snapshot", async () => {
+    // The same pair rule the live upgrade gate applies, plus the exact protocol of this checkout.
+    const response = await api("/api/protocol");
+    if (!response.ok)
+      throw new Error(`The packaged backend answered /api/protocol with HTTP ${response.status}.`);
+    const packaged = (await response.json()).value;
+    const declared = {
+      protocol: FACTORY_PROTOCOL,
+      minimumPeerProtocol: FACTORY_MINIMUM_SERVER_PROTOCOL,
+    };
+    const compatibility = protocolCompatibility(declared, packaged);
+    if (packaged.protocol !== FACTORY_PROTOCOL || compatibility.kind !== "compatible")
+      throw new Error(
+        `The packaged backend reports ${JSON.stringify(packaged)}, this checkout declares ${JSON.stringify(declared)}: package this checkout, then probe.`,
+      );
     await evaluate(9441, liveShim);
     const outcome = await withTimeout(evaluate(9441, openLiveSocket("hostLive")), 15_000);
     if (!outcome.open) throw new Error(`Live socket did not open: ${JSON.stringify(outcome)}`);

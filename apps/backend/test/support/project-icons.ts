@@ -2,7 +2,7 @@ import { assert, expect, type TestContext } from "@effect/vitest";
 import { mkdir, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ProjectIcon } from "@t3-factory/contracts";
-import { LiveT3Adapter } from "@t3-factory/backend";
+import { LiveT3Adapter } from "../../src/index.ts";
 import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 import { oauthT3 } from "./oauth-t3.ts";

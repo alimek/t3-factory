@@ -1,4 +1,4 @@
-import { openFactory } from "@t3-factory/backend";
+import { openFactory } from "../../src/index.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 const t3 = new ControlledT3();
 t3.available = false;

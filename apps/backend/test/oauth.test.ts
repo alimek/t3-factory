@@ -4,7 +4,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { LiveT3Adapter } from "@t3-factory/backend";
+import { LiveT3Adapter } from "../src/index.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
 import { readConnection, recheckConnection } from "./support/boundaries-setup.ts";

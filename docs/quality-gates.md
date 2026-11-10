@@ -164,13 +164,14 @@ dependencies, duplication and complexity checks. No findings baseline is allowed
 ## Dependency rules
 
 `vite.config.ts` enforces the workspace directions described in
-[Application foundation](foundation.md#workspace-boundaries) on production source:
+[Application foundation](foundation.md#workspace-boundaries) on production source, and one import rule on backend tests:
 
 - Frontend source imports neither backend nor desktop implementation, and uses no Node built-ins.
 - Backend source imports neither frontend nor desktop implementation.
 - Desktop source reaches backend code through its public package exports.
 - Shared packages import no application code or Node built-ins; network and browser-storage globals are rejected.
 - Contracts do not depend on validation. Cross-package imports use public exports, not `src` or `dist` files.
+- Backend tests and test support import backend modules by relative source path, never by the backend package name or from compiled output, so one test process loads one copy of the backend.
 
 These lint rules inspect import paths, including type-only imports, re-exports
 and literal dynamic imports. They do not resolve arbitrary computed paths or

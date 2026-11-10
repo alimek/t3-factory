@@ -1,5 +1,5 @@
 import type { TestContext } from "@effect/vitest";
-import type { Factory } from "@t3-factory/backend";
+import type { Factory } from "../../src/index.ts";
 import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
 import { factoryHarness } from "./factory.ts";
 import { loadMigrationData, restoreCapturedAdapter } from "./migration-data.ts";
