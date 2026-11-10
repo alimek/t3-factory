@@ -55,6 +55,15 @@ invocation and code runs for metadata-only edits.
 
 Run `pnpm check` from the repository root for the same sequence locally.
 
+**Controlled UI journeys** is a separate PR check on open, reopen, synchronization
+and becoming ready for review, including draft and fork PRs. It runs the complete
+controlled Chromium suite after a frozen install and build, or reports an explicit
+not-applicable success for documentation/review-only changes. Selection and
+execution failures fail the final check. See [PR journey selection and diagnostics](testing.md#pr-journey-check)
+for the allowlist, failure artifacts and evidence limits. Release/beta journeys
+and the local pre-push gate remain unchanged. Making this check required is an
+owner ruleset step tracked in [#203](https://github.com/alimek/t3-factory/issues/203).
+
 For frontend changes, **UI evidence attachments** runs
 `scripts/check-ui-evidence.mjs --pr <number>` to check the PR body's Before and
 After image links. Run the same check locally with
