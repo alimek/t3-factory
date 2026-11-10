@@ -445,16 +445,17 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   Repeating the request while stopping changes nothing; with an unresolved worker it starts the
   next attempt under the current owner.
 - **Stopping.** A pass runs right after acceptance and in every reconciliation, in the drive lane.
-  It reads every bound worker fresh. Only the first pass of an attempt, claimed by the backend
-  that accepted it, sends Stop: for each worker read unfinished in scope it records the request
+  It reads every bound worker fresh. The backend that accepted the attempt sends Stop once
+  for each worker read unfinished in scope: it records the request
   (`worker-stop-requested`, key derived from the Run, attempt and thread) before one
   `t3_thread_interrupt` with `stop: true`, records whether T3 acknowledged it, then reads the
   worker again. Each Stop is sent only after a recheck finds the Run's authorization context
   live, and recording it requires that context in the same transaction; a mismatch sends nothing
   and leaves the worker unresolved. Unsupported Stop, a refused request, an unreadable or
   out-of-scope thread, or a worker still unfinished 30 seconds after its acknowledged Stop is
-  unresolved, with the blocker it read. Later passes stop only a worker that joined the attempt
-  after its earlier passes, such as one a launch search bound, and otherwise observe. A
+  unresolved, with the blocker it read. Later passes can stop a worker whose earlier reads were
+  unavailable or which joined the attempt later, such as one a launch search bound. A recorded
+  Stop request or outcome prevents another request for that worker in the same attempt. A
   restarted backend never sends Stop for an earlier owner's attempt: its workers settle if they
   read finished, otherwise stay unresolved until the user retries.
 - **Settling.** When one pass reads every bound worker finished and no launch outcome is

@@ -345,7 +345,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
         yield* cancelOwedWork(sql, id, time, "settle");
         const stopped = yield* sql<{
           thread_id: string;
-        }>`SELECT DISTINCT thread_id FROM run_settlement_workers WHERE run_id=${id} AND stop_outcome='acknowledged'`;
+        }>`SELECT thread_id FROM run_settlement_workers WHERE run_id=${id} AND attempt=(SELECT attempt FROM run_settlements WHERE run_id=${id}) AND stop_outcome='acknowledged'`;
         for (const worker of workers)
           if (stopped.some((row) => row.thread_id === worker.threadId))
             yield* appendTimelineEvent(sql, {

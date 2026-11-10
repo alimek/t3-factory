@@ -283,10 +283,10 @@ export function openRunnerSettle(
 
   /**
    * One pass of a confirmed manual settlement, in the Run's drive lane. Its gate is already
-   * closed. Every bound worker is read fresh; the first pass of an attempt, by the backend that
-   * accepted it, stops the unfinished ones and reads them again. A worker bound later by a launch
-   * search joins the attempt and is stopped by a later pass of that backend. Once a pass reads
-   * every worker finished and no launch outcome is unresolved, the Run settles; otherwise each
+   * closed. Every bound worker is read fresh; the backend that accepted the attempt stops each
+   * readable unfinished worker once and reads it again. Unreadable workers keep their Stop
+   * eligibility for later passes; a worker bound later by a launch search joins the attempt.
+   * Once a pass reads every worker finished and no launch outcome is unresolved, the Run settles; otherwise each
    * worker's progress is recorded, and a worker that cannot be stopped or confirmed stays
    * unresolved until the user retries.
    */
@@ -304,14 +304,19 @@ export function openRunnerSettle(
             const read = reads.get(worker.thread_id)!;
             return !read.finished && read.readable;
           });
-          const stops = (yield* store.claimStopPass(run, operation.attempt))
-            ? stoppable
-            : operation.owned
-              ? stoppable.filter(
-                  (worker) =>
-                    !operation.workers.some((record) => record.thread_id === worker.thread_id),
-                )
-              : [];
+          const stops =
+            stoppable.length && (yield* store.claimStopPass(run, operation.attempt))
+              ? stoppable
+              : operation.owned
+                ? stoppable.filter(
+                    (worker) =>
+                      !operation.workers.some(
+                        (record) =>
+                          record.thread_id === worker.thread_id &&
+                          (record.stop_key !== null || record.stop_outcome !== null),
+                      ),
+                  )
+                : [];
           if (stops.length) {
             yield* requestStops(run, operation.attempt, stops, reads);
             for (const worker of stops)

@@ -93,3 +93,13 @@ export function changeAuthorizationBeforeStop(t3: ControlledT3) {
     return support;
   };
 }
+
+/** T3 cannot read this worker until the caller restores its reads. */
+export function pauseWorkerReads(t3: ControlledT3, threadId: string) {
+  const read = t3.readExecution.bind(t3);
+  t3.readExecution = (target, id) =>
+    id === threadId ? Promise.reject(Error("Temporary thread read failure")) : read(target, id);
+  return () => {
+    t3.readExecution = read;
+  };
+}
