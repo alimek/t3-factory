@@ -224,7 +224,7 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
           });
           if (asked === readinessRequest) readiness = checked;
         } catch (cause) {
-          reject(cause, "Could not check Flow.");
+          if (asked === readinessRequest) reject(cause, "Could not check Flow.");
         }
       });
     },

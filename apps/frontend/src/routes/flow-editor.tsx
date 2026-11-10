@@ -66,7 +66,11 @@ function useOpenedFlowDraft(
       removeFlow: definitions.removeFlow,
     }),
   );
-  useEffect(() => draft.reportVisibility(active), [draft, active]);
+  useEffect(() => {
+    draft.reportVisibility(active);
+    // An editor that is no longer mounted is hidden, so late answers start no readiness read.
+    return () => draft.reportVisibility(false);
+  }, [draft, active]);
   useEffect(() => {
     let agents = definitions.getSnapshot().agents.value;
     return definitions.subscribe(() => {

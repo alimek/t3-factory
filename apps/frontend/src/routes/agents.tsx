@@ -7,7 +7,11 @@ import {
   type AgentDraftOperations,
 } from "../agent-draft.ts";
 import { api } from "../api.ts";
-import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
+import {
+  useStudioRead,
+  type StudioDefinitions,
+  type StudioDefinitionsSnapshot,
+} from "../studio-definitions.ts";
 import { useVisitValue } from "../components/studio-list.tsx";
 import { useActiveView } from "../use-active-view.ts";
 import { AgentsListPane } from "../components/studio-agents/agents-list-pane.tsx";
@@ -15,19 +19,41 @@ import { AgentEditorPane } from "../components/studio-agents/agent-editor-pane.t
 import { flowUsageCount } from "@/lib/agent-display";
 import { useReportingState } from "../reporting-state.tsx";
 
+type ShownLists = {
+  readonly [K in keyof StudioDefinitionsSnapshot]: NonNullable<
+    StudioDefinitionsSnapshot[K]["value"]
+  >;
+};
+
 /**
- * The Agents page's saved lists: entering the page waits until both were read for this visit,
- * then later refreshes keep the shown rows. Reporting is checked on entry and after each write.
+ * Studio's saved Agents and Flows as the Agents page shows them: entering the page waits until
+ * both were read for this visit, then later refreshes keep the shown rows. Both lists are shown
+ * together, only once both reads of a refresh have answered, so Agents never appear beside
+ * another refresh's Flow usage.
  */
-function useAgentsLibrary(definitions: StudioDefinitions) {
-  const { refresh: refreshReporting } = useReportingState();
+function useShownLists(definitions: StudioDefinitions) {
   const agentsRead = useStudioRead(definitions, "agents");
   const flowsRead = useStudioRead(definitions, "flows");
   const visitAgents = useVisitValue(agentsRead);
   const visitFlows = useVisitValue(flowsRead);
-  const entered = visitAgents !== null && visitFlows !== null;
-  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>();
+  const [shown, setShown] = useState<ShownLists | null>(null);
+  const answered = agentsRead.synchronized && flowsRead.synchronized;
+  if (
+    answered &&
+    visitAgents !== null &&
+    visitFlows !== null &&
+    (shown?.agents !== visitAgents || shown.flows !== visitFlows)
+  )
+    setShown({ agents: visitAgents, flows: visitFlows });
   const error = agentsRead.error || flowsRead.error ? "Factory could not load Agents." : "";
+  return { shown, error };
+}
+
+/** The Agents page's saved lists and capabilities; reporting is checked on entry and after each write. */
+function useAgentsLibrary(definitions: StudioDefinitions) {
+  const { refresh: refreshReporting } = useReportingState();
+  const { shown, error } = useShownLists(definitions);
+  const [capabilities, setCapabilities] = useState<AgentCapabilities | null>();
   useEffect(() => {
     void refreshReporting();
   }, [refreshReporting]);
@@ -46,8 +72,8 @@ function useAgentsLibrary(definitions: StudioDefinitions) {
     };
   }, []);
   return {
-    agents: entered ? visitAgents : null,
-    flows: entered ? visitFlows : null,
+    agents: shown?.agents ?? null,
+    flows: shown?.flows ?? null,
     capabilities,
     error,
     definitions,

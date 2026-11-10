@@ -374,3 +374,18 @@ it("a save reaching a removed Flow keeps the local draft and reports the rejecti
     conflict: { status: "none" },
   });
 });
+
+it("a readiness check failing after the editor was hidden reports nothing", async () => {
+  // Arrange
+  const { draft, factory } = await openedFlow();
+  const check = held(factory.validateFlow);
+  const checking = draft.check();
+  draft.reportVisibility(false);
+
+  // Act
+  check.fail(rejection({ message: "Validation failed." }));
+  await checking;
+
+  // Assert
+  expect(draft.getSnapshot().error).toBe("");
+});
