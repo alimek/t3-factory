@@ -13,6 +13,7 @@ import type { RunnerOptions, RunRow } from "./runner-types.ts";
 import { openRunStore } from "./run-store/run-store.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
+import { openRunnerWaits } from "./runner-waits.ts";
 import { openRunnerObservation } from "./runner-observation.ts";
 import { openRunnerQueries } from "./runner-queries.ts";
 import { openRunnerReports } from "./runner-reports.ts";
@@ -67,6 +68,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   );
   const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
+  const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
     store,
@@ -185,6 +187,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     ...openRunnerRecovery(store, lifecycle, t3, liveContextId),
     readFactoryTool: openBlockTools(store, getRun, images),
     answerHumanOccurrence,
+    continueWaitArrival,
     archiveRun,
     settleRun,
     ...openRunNavigation(store),

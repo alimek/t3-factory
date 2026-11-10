@@ -33,7 +33,7 @@ export type ScheduledWait = {
   readonly deadlineAt: string;
 };
 
-/** Who forwards an arrival: its elapsed deadline. */
+/** Who forwards an arrival: its elapsed deadline, or the user through Continue now. */
 type WaitForwarder = NonNullable<WaitArrival["forwardedBy"]>;
 
 /**
@@ -41,7 +41,7 @@ type WaitForwarder = NonNullable<WaitArrival["forwardedBy"]>;
  * as it was: forwarded or cancelled already, not yet due for the timer, or a Run that no longer
  * accepts forwarding (closed gate or another owner).
  */
-type WaitForwarding =
+export type WaitForwarding =
   | "forwarded"
   | "already-forwarded"
   | "cancelled"
@@ -174,7 +174,7 @@ export function openRunWaits(database: RunnerDatabase) {
             { whileArrivalPending: "waiting", otherwise: "finished" },
           );
           yield* appendTimelineEvent(sql, {
-            kind: "wait-forwarded",
+            kind: forwardedBy === "user" ? "wait-continued" : "wait-forwarded",
             runId,
             blockId: arrival.block_id,
             arrivalId,
@@ -186,6 +186,15 @@ export function openRunWaits(database: RunnerDatabase) {
       (outcome) => outcome === "forwarded",
     );
   }
+
+  /** The Run that holds arrival `arrivalId`, if any. */
+  const waitArrivalRunId = (arrivalId: string) =>
+    database.transaction((sql) =>
+      Effect.map(
+        sql<{ run_id: string }>`SELECT run_id FROM wait_arrivals WHERE id=${arrivalId}`,
+        ([found]) => found?.run_id,
+      ),
+    );
 
   /** The Run's pending arrivals whose deadline has passed, oldest deadline first. */
   const dueWaitArrivals = (runId: string) =>
@@ -205,5 +214,11 @@ export function openRunWaits(database: RunnerDatabase) {
         sql<ScheduledWait>`SELECT w.id,w.run_id AS "runId",w.deadline_at AS "deadlineAt" FROM wait_arrivals w JOIN runs r ON r.id=w.run_id WHERE w.state='pending' AND r.archived_at IS NULL ORDER BY w.deadline_at,w.rowid`,
     );
 
-  return { handoffToWaitArrival, forwardWaitArrival, dueWaitArrivals, pendingWaits };
+  return {
+    handoffToWaitArrival,
+    forwardWaitArrival,
+    waitArrivalRunId,
+    dueWaitArrivals,
+    pendingWaits,
+  };
 }

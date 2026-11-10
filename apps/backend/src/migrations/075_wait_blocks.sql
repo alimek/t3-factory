@@ -48,7 +48,7 @@ CREATE TABLE wait_arrivals (
   block_id TEXT NOT NULL,
   incoming_intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),
   state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'forwarded', 'cancelled')),
-  forwarded_by TEXT CHECK (forwarded_by IN ('timer')),
+  forwarded_by TEXT CHECK (forwarded_by IN ('timer', 'user')),
   message TEXT,
   origin_activation_id TEXT REFERENCES run_activations(id),
   origin_thread_id TEXT,

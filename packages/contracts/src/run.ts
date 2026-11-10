@@ -425,8 +425,8 @@ export interface WaitArrival {
   readonly incomingIntentId: string;
   /** `cancelled`: Archive cancelled the arrival before it forwarded. */
   readonly state: "pending" | "forwarded" | "cancelled";
-  /** `timer`: the deadline elapsed. Null unless forwarded. */
-  readonly forwardedBy: "timer" | null;
+  /** `timer`: the deadline elapsed; `user`: Continue now forwarded it early. Null unless forwarded. */
+  readonly forwardedBy: "timer" | "user" | null;
   /** The retained incoming message; null once Archive cleared it. */
   readonly message: string | null;
   readonly origin: DeliveryOrigin | null;
@@ -484,6 +484,14 @@ export const runOperations = {
     method: "POST",
     path: "/api/human-occurrences/:id/answer",
     body: "json",
+  }),
+  /**
+   * Continue now: forwards one pending Wait arrival immediately, as its deadline would, and
+   * disables its timer. An arrival already forwarded or cancelled is a conflict without change.
+   */
+  continueWaitArrival: operation<never, RunDetail>()({
+    method: "POST",
+    path: "/api/wait-arrivals/:id/continue",
   }),
   listAttention: operation<never, readonly RunAttention[]>()({
     method: "GET",
