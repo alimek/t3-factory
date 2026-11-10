@@ -5,6 +5,9 @@ import { promptOn } from "./support/continuation.ts";
 import {
   allTurnsEnd,
   humanWaitFlow,
+  delayedHumanWaitFlow,
+  waitHumanWaitFlow,
+  parallelHumanWaitFlow,
   launchBlockId,
   parallelWaitFlow,
   sentTurnBegins,
@@ -255,15 +258,19 @@ it.effect(
       yield* TestClock.adjust(minutes(30));
 
       // Assert
-      const run = yield* runAfterWake(f.factory, f.worker.runId, (detail) =>
-        detail.humanOccurrences.some((occurrence) => occurrence.blockId === "sign-off"),
+      const run = yield* runAfterWake(
+        f.factory,
+        f.worker.runId,
+        (detail) =>
+          detail.humanOccurrences.some((occurrence) => occurrence.blockId === "sign-off") &&
+          f.t3.sends.size === 1,
       );
       expect(run.waitArrivals).toMatchObject([
         {
           sourceBlockId: "review",
           state: "forwarded",
           reportId: null,
-          origin: { threadId: f.worker.threadId },
+          origin: { threadId: f.worker.threadId, activationId: run.activations[0]!.id },
         },
       ]);
       expect(
@@ -273,6 +280,191 @@ it.effect(
         context: "Ship it after the cool-down.",
       });
       expect(f.t3.launches.size).toBe(1);
+      expect([...f.t3.sends.values()].map((send) => send.payload.threadId)).toStrictEqual([
+        f.worker.threadId,
+      ]);
+    }),
+);
+
+it.effect(
+  "a queued Human correction between Waits preserves its incoming origin across restart",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* resultWaiting(c, waitHumanWaitFlow);
+      yield* TestClock.adjust(minutes(10));
+      const reviewed = yield* runAfterWake(
+        f.factory,
+        f.worker.runId,
+        (run) => run.humanOccurrences.length === 1,
+      );
+      f.t3.available = false;
+      assert(
+        (yield* f.factory.answerHumanOccurrence(reviewed.humanOccurrences[0]!.id, {
+          exitId: "request-changes",
+          message: "Keep the agreed scope.",
+        })).ok,
+      );
+      yield* f.close;
+      f.t3.available = true;
+
+      // Act
+      const reopened = yield* openOnTestClock(f);
+
+      // Assert
+      const run = yield* runAfterWake(
+        reopened.factory,
+        f.worker.runId,
+        (detail) => detail.waitArrivals.length === 2,
+      );
+      expect(run.waitArrivals[1]).toMatchObject({
+        state: "pending",
+        message: "Keep the agreed scope.",
+        origin: { threadId: f.worker.threadId, activationId: run.activations[0]!.id },
+      });
+      expect(run.humanOccurrences[0]).toMatchObject({
+        state: "answered",
+        context: null,
+        exitId: "request-changes",
+      });
+    }),
+);
+
+it.effect(
+  "parallel Human answers retain their own activation even after a newer worker visit",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* workerAtWorkOnTestClock(c, parallelHumanWaitFlow);
+      assert(
+        (yield* reportOn(f.factory, f.worker, {
+          to: "finished",
+          exit: "done",
+          message: "First result.",
+        })) === "ACCEPTED",
+      );
+      allTurnsEnd(f.world, f.worker);
+      assert((yield* f.factory.reconcileRuns()).ok);
+      const parallel = yield* launchedWorker(
+        f,
+        yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("parallel-block")),
+        "parallel-block",
+      );
+      assert(
+        (yield* reportOn(f.factory, parallel, {
+          to: "finished",
+          exit: "done",
+          message: "Parallel result.",
+        })) === "ACCEPTED",
+      );
+      allTurnsEnd(f.world, parallel);
+      assert((yield* f.factory.reconcileRuns()).ok);
+      const reviewed = yield* runOn(f.factory, f.worker.runId);
+      assert(
+        (yield* f.factory.answerHumanOccurrence(reviewed.humanOccurrences[0]!.id, {
+          exitId: "approve",
+          message: "First approval.",
+        })).ok,
+      );
+      yield* runAfterWake(f.factory, f.worker.runId, () => f.t3.sends.size === 1);
+      const revisit = sentTurnBegins(f.world, f.worker);
+      assert(
+        (yield* reportOn(f.factory, revisit, {
+          to: "finished",
+          exit: "done",
+          message: "Newer result.",
+        })) === "ACCEPTED",
+      );
+      allTurnsEnd(f.world, revisit);
+      assert((yield* f.factory.reconcileRuns()).ok);
+
+      // Act
+      assert(
+        (yield* f.factory.answerHumanOccurrence(reviewed.humanOccurrences[1]!.id, {
+          exitId: "request-changes",
+          message: "Parallel correction.",
+        })).ok,
+      );
+
+      // Assert
+      const run = yield* runAfterWake(
+        f.factory,
+        f.worker.runId,
+        (detail) => detail.waitArrivals.length === 2,
+      );
+      expect(run.waitArrivals).toMatchObject([
+        {
+          message: "First approval.",
+          origin: { threadId: f.worker.threadId, activationId: reviewed.activations[0]!.id },
+        },
+        {
+          message: "Parallel correction.",
+          origin: { threadId: parallel.threadId, activationId: reviewed.activations[1]!.id },
+        },
+      ]);
+      expect(run.activations.filter((activation) => activation.blockId === "worker")).toHaveLength(
+        2,
+      );
+      expect(run.humanOccurrences.map((occurrence) => occurrence.state)).toStrictEqual([
+        "answered",
+        "answered",
+        "pending",
+      ]);
+      expect(f.t3.launches.size).toBe(2);
+    }),
+);
+
+it.effect(
+  "answering an older Human occurrence after a worker revisit forwards the original activation",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* reviewPendingOnTestClock(c, delayedHumanWaitFlow);
+      const before = yield* runOn(f.factory, f.worker.runId);
+      const signOff = before.humanOccurrences.find(
+        (occurrence) => occurrence.blockId === "sign-off",
+      )!;
+      assert(
+        (yield* f.factory.answerHumanOccurrence(f.review.occurrence.id, { exitId: "approve" })).ok,
+      );
+      yield* runAfterWake(f.factory, f.worker.runId, () => f.t3.sends.size === 1);
+      const revisit = sentTurnBegins(f.world, f.worker);
+      assert(
+        (yield* reportOn(f.factory, revisit, {
+          to: "finished",
+          exit: "done",
+          message: "New result.",
+        })) === "ACCEPTED",
+      );
+      allTurnsEnd(f.world, revisit);
+      assert((yield* f.factory.reconcileRuns()).ok);
+      yield* f.close;
+      const reopened = yield* openOnTestClock(f);
+
+      // Act
+      assert(
+        (yield* reopened.factory.answerHumanOccurrence(signOff.id, {
+          exitId: "approve",
+          message: "Approve the first result.",
+        })).ok,
+      );
+
+      // Assert
+      const run = yield* runAfterWake(
+        reopened.factory,
+        f.worker.runId,
+        (detail) => detail.waitArrivals.length === 1,
+      );
+      expect(run.waitArrivals[0]).toMatchObject({
+        message: "Approve the first result.",
+        origin: { threadId: f.worker.threadId, activationId: before.activations[0]!.id },
+      });
+      expect(run.activations.filter((activation) => activation.blockId === "worker")).toHaveLength(
+        2,
+      );
+      expect(
+        run.humanOccurrences.filter((occurrence) => occurrence.state === "pending"),
+      ).toHaveLength(2);
     }),
 );
 

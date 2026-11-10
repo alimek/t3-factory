@@ -359,9 +359,11 @@ not secure erasure.
 Every handoff records its [worker provenance](../GLOSSARY.md#worker-provenance): an Agent result carries its
 worker's binding, a Human answer the binding of the delivery it answered, a Continuation's result the thread
 its prompt ran on and a pass-through or a Wait's forwarding the arrival's own binding. An Agent or Continuation
-result also records the Block activation that produced it, which pass-throughs and Waits keep unchanged; a Human
-answer records no activation. Handoffs recorded before Continuations existed carry no binding, and those recorded
-before Waits existed no activation; no Continuation or Wait can receive them.
+result also records the Block activation that produced it. Human occurrences retain their incoming delivery
+reference; answers copy that delivery's binding and activation, as pass-throughs and Waits do. Neither a later
+Agent activation nor another occurrence can replace that origin. Handoffs recorded before Continuations
+existed carry no binding, and those recorded before Waits existed no activation; missing historical origins
+stay unknown.
 
 The first released handoff to a Continuation becomes its prompt visit: an activation, attributed to the
 worker's captured Agent revision, delivered by a send queued on the handoff's thread by its T3 id. A Factory
@@ -421,7 +423,8 @@ names the new exit and so conflicts instead of repeating.
 
 Answering atomically records the answer, settles only that occurrence and creates every
 outgoing handoff. Identical retries return current detail; changed or competing answers
-conflict. Pending context is cleared after settlement. A Human Block stays waiting while
+conflict. The incoming delivery reference keeps the worker origin across restart, answer fan-out and
+context clearing; answers forward the person's text, with that origin, through either exit. Pending context is cleared after settlement. A Human Block stays waiting while
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
 

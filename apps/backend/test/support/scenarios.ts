@@ -496,11 +496,66 @@ export const parallelWaitFlow: ReadyFlowShape = (world) =>
 export const humanWaitFlow: ReadyFlowShape = (world) =>
   workerShape(world, "Human around a wait", (agentId) => ({
     flowInput: flowInput("worker"),
-    blocks: [entryWorker(agentId), reviewStep, coolDown, humanStep("sign-off", "Sign-off")],
+    blocks: [
+      entryWorker(agentId),
+      reviewStep,
+      coolDown,
+      humanStep("sign-off", "Sign-off"),
+      specStep,
+    ],
     connections: [
       connection("worker", "done", "review"),
       connection("review", "approve", "cool-down"),
       connection("cool-down", "output", "sign-off"),
+      connection("cool-down", "output", "spec"),
+    ],
+  }));
+
+/** Two independent Human decisions on one result; one revisits the worker, the other waits. */
+export const delayedHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Older Human origin", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, humanStep("sign-off", "Sign-off"), coolDown],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("worker", "done", "sign-off"),
+      connection("review", "approve", "worker"),
+      connection("sign-off", "approve", "cool-down"),
+    ],
+  }));
+
+/** A worker's result waits before review; either Human exit waits again before continuing. */
+export const waitHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait around Human", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      waitStep("settle", "Settle", { amount: 10, unit: "minutes" }),
+      reviewStep,
+      coolDown,
+      specStep,
+    ],
+    connections: [
+      connection("worker", "done", "settle"),
+      connection("settle", "output", "review"),
+      connection("review", "approve", "cool-down"),
+      connection("review", "request-changes", "cool-down"),
+      connection("cool-down", "output", "spec"),
+    ],
+  }));
+
+/** Two workers reach one review; approving also revisits the first worker. */
+export const parallelHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Parallel Human origins", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), parallelWork(agentId), reviewStep, coolDown],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("worker", "done", "parallel-block"),
+      connection("parallel-block", "done", "review"),
+      connection("review", "approve", "worker"),
+      connection("review", "approve", "cool-down"),
+      connection("review", "request-changes", "cool-down"),
     ],
   }));
 
@@ -1050,19 +1105,6 @@ export function resultReleasedToTwoWorkers(world: ScenarioWorld, worker: WorkerH
   });
 }
 
-/** From a result reported on an exit that leads to a Wait: Factory observed the worker's end and
- * released the result into the Wait, where its arrival is pending. */
-export function resultWaitingAtWait(world: ScenarioWorld, worker: WorkerHandle) {
-  return reach("result waiting at a Wait", async () => {
-    await observeFor("observe the arrival", world, worker.runId, (run) =>
-      run.waitArrivals.some(
-        (arrival) => arrival.sourceBlockId === worker.flowBlockId && arrival.state === "pending",
-      ),
-    );
-    return worker;
-  });
-}
-
 /** Factory observed the worker's end and released its result to a Human review, whose pending
  * occurrence the returned handle carries beside the reviewed worker's. */
 export function resultReleasedToHumanReview(world: ScenarioWorld, worker: WorkerHandle) {
@@ -1077,6 +1119,24 @@ export function resultReleasedToHumanReview(world: ScenarioWorld, worker: Worker
 }
 
 type HumanReview = Awaited<ReturnType<typeof resultReleasedToHumanReview>>;
+
+/** This occurrence's answer reached a Wait, independently of earlier answers at the same step. */
+export function humanAnswerWaitingAtWait(world: ScenarioWorld, review: HumanReview) {
+  return reach("Human answer waiting at a Wait", async () => {
+    await observeFor("observe the answer's arrival", world, review.runId, (run) =>
+      run.waitArrivals.some(
+        (arrival) =>
+          arrival.state === "pending" &&
+          run.intents.some(
+            (intent) =>
+              intent.id === arrival.incomingIntentId &&
+              intent.occurrenceId === review.occurrence.id,
+          ),
+      ),
+    );
+    return review;
+  });
+}
 
 /** The user approved the pending review; Factory has not yet observed the answer's handoff. */
 export function reviewApproved(world: ScenarioWorld, review: HumanReview) {

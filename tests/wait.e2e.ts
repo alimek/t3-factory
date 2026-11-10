@@ -1,7 +1,7 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { createStudioFlow, expectFlowBlocked } from "./support/flows.ts";
-import { findRun } from "./support/run-history.ts";
+import { findRun, readHistoryRun } from "./support/run-history.ts";
 import { applyRunState, scenarioFixture } from "./support/scenarios.ts";
 
 /** A Flow in Studio whose Sample worker hands its result to a Wait named Cool down. */
@@ -120,19 +120,54 @@ test(
   },
 );
 
-test("two reviews waiting at one Wait show the nearest deadline and how many wait", async ({
+test("a Human approval waits with its reviewer, and parallel approvals keep separate deadlines", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
   await browser.setViewport({ width: 1440, height: 1100 });
-  const run = await findRun(app.baseUrl, "Demo · Wait · Both reviews soaking before release");
+  await app.open("/studio/flows");
+  await screen.getByRole("link", /Demo · Review, soak and release/).tap();
+  await screen.getByRole("button", "Save Flow", { exact: true }).tap();
+  await browser.reload();
+  await expect(screen.getByRole("article", "Block Approve release")).toBeVisible();
+  await expect(screen.getByRole("article", "Block Soak before release")).toContainText(
+    "waits 2 hours",
+  );
+  await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeEnabled();
+  await app.screenshot("human-wait-saved-flow");
+  const pending = await findRun(app.baseUrl, "Demo · Wait · Approve reviews before soaking");
+  const before = await readHistoryRun(app.baseUrl, pending.id);
+  await app.open(`/runs/${pending.id}`);
+  const answer = screen.getByRole("form", "Answer Approve release", { exact: true });
+  await answer.getByRole("combobox", "Exit").selectOption({ label: "Approve" });
+  await answer.getByRole("textbox", "Response").fill("Approved for the release soak.");
+  await app.screenshot("human-before-wait");
 
   // Act
-  await app.open(`/runs/${run.id}`);
+  await answer.getByRole("button", "Submit answer", { exact: true }).tap();
 
   // Assert
+  await expect
+    .poll(async () => (await readHistoryRun(app.baseUrl, pending.id)).waitArrivals.length)
+    .toBe(1);
+  await browser.reload();
+  const saved = await readHistoryRun(app.baseUrl, pending.id);
+  expect(saved.humanOccurrences[0]?.state).toBe("answered");
+  expect(saved.waitArrivals[0]?.message).toBe("Approved for the release soak.");
+  expect(saved.waitArrivals[0]?.origin?.activationId).toBe(
+    before.reports.find((report) => report.blockId === "reviewer")?.activationId,
+  );
+  const waiting = screen.getByRole("article", "Block Soak before release");
+  await expect(waiting).toContainText("waiting");
+  await waiting.getByRole("button", "Wait Soak before release", { exact: false }).tap();
+  await expect(screen.getByRole("complementary", "Block details")).toContainText(
+    "Approved for the release soak.",
+  );
+  await app.screenshot("human-answer-waiting");
+  const run = await findRun(app.baseUrl, "Demo · Wait · Both reviews soaking before release");
+  await app.open(`/runs/${run.id}`);
   const soak = screen.getByRole("article", "Block Soak before release");
   await expect(soak).toContainText("2 pending");
   await expect(soak).not.toContainText("Needs input");

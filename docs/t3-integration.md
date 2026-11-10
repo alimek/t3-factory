@@ -311,7 +311,9 @@ it without an exit, with its response as the message.
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source
 `blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. A visit a [Wait](runs.md#waits) forwarded receives the
-result whose message waited, unchanged; a Wait adds no text of its own. These `blockId` values name Flow blocks, not Block
+result whose message waited, unchanged; a Wait adds no text of its own. A Human answer instead forwards the
+person's text with the incoming message's worker binding and Block activation. Human/Wait composition
+therefore lets a Continuation reach that original thread after restart or a later Agent visit. These `blockId` values name Flow blocks, not Block
 ids. Other visits' reports and unrelated graph neighbors are not inputs to that visit. Flow-input visits have no incoming result.
 A result the source Block replaces after hand-off does not change the inputs of a visit it already started.
 

@@ -30,7 +30,11 @@ export type SeedScenario = {
       | { state: "continuation prompt sent" }
       | { state: "continuation response forwarded"; spec: string }
     ))
-  | { state: "reviews waiting at a Wait"; implementation: Report; reviews: readonly Report[] }
+  | {
+      state: "reviews waiting at a Wait" | "reviews awaiting Human approval";
+      implementation: Report;
+      reviews: readonly Report[];
+    }
 );
 
 const reviewContent = {
@@ -231,6 +235,15 @@ export const seedScenarioList: readonly SeedScenario[] = [
     state: "continuation response forwarded",
     ...continuationContent,
     spec: "Spec written to docs/saved-searches.md with four open questions.",
+  },
+  {
+    key: "wait-human",
+    title: "Wait · Approve reviews before soaking",
+    flow: "soak",
+    state: "reviews awaiting Human approval",
+    prompt: soakContent.prompt,
+    implementation: soakContent.implementation,
+    reviews: [soakContent.codeReview],
   },
   {
     key: "wait-one",

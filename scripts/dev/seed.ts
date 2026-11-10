@@ -13,7 +13,7 @@ import {
   resultReleasedToTwoWorkers,
   resultReplacedBeforeRelease,
   resultReported,
-  resultWaitingAtWait,
+  humanAnswerWaitingAtWait,
   settled,
   snoozed,
   twoWorkersStarted,
@@ -270,17 +270,40 @@ async function finishScenario(
       }
       break;
     }
+    case "reviews awaiting Human approval":
     case "reviews waiting at a Wait": {
-      const reviewers = await resultReleasedToTwoWorkers(
-        context,
-        await resultReported(context, worker, scenario.implementation),
-      );
-      for (const [index, review] of scenario.reviews.entries())
-        await resultWaitingAtWait(
-          context,
-          await resultReported(context, reviewers[index]!, review),
-        );
+      await releaseReviews(context, worker, scenario);
       break;
+    }
+  }
+}
+
+/** Reviewers reach separate Human decisions; approved decisions begin their own soak. */
+async function releaseReviews(
+  context: SeedContext,
+  worker: Worker,
+  scenario: Extract<
+    SeedScenario,
+    { state: "reviews waiting at a Wait" | "reviews awaiting Human approval" }
+  >,
+) {
+  const reviewers = await resultReleasedToTwoWorkers(
+    context,
+    await resultReported(context, worker, scenario.implementation),
+  );
+  for (const [index, review] of scenario.reviews.entries()) {
+    const pending = await resultReleasedToHumanReview(
+      context,
+      await resultReported(context, reviewers[index]!, review),
+    );
+    if (scenario.state === "reviews waiting at a Wait") {
+      requireSuccess(
+        await context.factory.answerHumanOccurrence(pending.occurrence.id, {
+          exitId: "approve",
+          message: `Release approved: ${review.message}`,
+        }),
+      );
+      await humanAnswerWaitingAtWait(context, pending);
     }
   }
 }

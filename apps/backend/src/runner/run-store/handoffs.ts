@@ -17,9 +17,10 @@ function sourceBinding(sql: SqlClient.SqlClient, sourceId: string, occurrenceId:
   return sql`COALESCE((SELECT v.binding_id FROM continuation_visits v JOIN runtime_reports r ON r.activation_id=v.activation_id WHERE r.id=${sourceId}),(SELECT t.id FROM runtime_reports r JOIN run_blocks b ON b.run_id=r.run_id AND b.block_id=r.block_id JOIN run_thread_bindings t ON t.run_id=b.run_id AND t.thread_id=b.thread_id WHERE r.id=${sourceId}))`;
 }
 
-/** The Block activation whose result is the Handoff's message; a Human answer records none. */
+/** The incoming origin survives a Human answer even after its pending context is cleared. */
 function sourceActivation(sql: SqlClient.SqlClient, sourceId: string, occurrenceId: string | null) {
-  if (occurrenceId) return sql`NULL`;
+  if (occurrenceId)
+    return sql`(SELECT i.origin_activation_id FROM human_occurrences h JOIN operation_intents i ON i.id=h.incoming_intent_id WHERE h.id=${occurrenceId})`;
   return sql`(SELECT activation_id FROM runtime_reports WHERE id=${sourceId})`;
 }
 
