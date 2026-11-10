@@ -6,7 +6,10 @@ import { api, ApiError } from "./api.ts";
 export type FlowContent = Pick<FlowDraft, "name" | "workspace" | "graph">;
 
 /** The Factory operations one Flow draft uses; the HTTP client in the app, fakes in tests. */
-export type FlowDraftOperations = Pick<typeof api, "getFlow" | "updateFlow" | "validateFlow">;
+export type FlowDraftOperations = Pick<
+  typeof api,
+  "getFlow" | "updateFlow" | "validateFlow" | "removeFlow"
+>;
 
 /** A save refused because Factory holds a newer revision, and that revision once compared. */
 export type FlowConflict =
@@ -23,6 +26,8 @@ export interface FlowDraftSnapshot {
   readonly dirty: boolean;
   /** A save or readiness check is in flight; edits wait for it. */
   readonly busy: boolean;
+  readonly removing: boolean;
+  readonly removalError: string;
   readonly error: string;
   readonly issues: readonly ValidationIssue[];
   /** Null while readiness is unknown. */
@@ -56,6 +61,8 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
   };
   let dirty = false;
   let busy = false;
+  let removing = false;
+  let removalError = "";
   let error = "";
   let issues: readonly ValidationIssue[] = [];
   let readiness: FlowReadiness | null = null;
@@ -74,6 +81,8 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
       content,
       dirty,
       busy,
+      removing,
+      removalError,
       error,
       issues,
       readiness,
@@ -178,6 +187,29 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
             conflict = { status: "detected" };
         }
       });
+    },
+    /** Accepted removal clears the guard before the caller navigates away. */
+    async remove() {
+      if (!saved || busy || removing) return false;
+      removing = true;
+      removalError = "";
+      publish();
+      try {
+        await operations.removeFlow(id);
+        dirty = false;
+        ++readinessRequest;
+        return true;
+      } catch (cause) {
+        removalError = failure(cause, "Could not remove Flow.");
+        return false;
+      } finally {
+        removing = false;
+        publish();
+      }
+    },
+    clearRemovalError() {
+      removalError = "";
+      publish();
     },
     /** Validates the content without saving it. */
     async check() {

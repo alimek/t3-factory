@@ -406,3 +406,28 @@ test("Agent exit edits persist, renaming keeps Flow wires and removing a wired e
   assert.deepEqual(retained.value.graph.connections, saved.value.graph.connections);
   await app.screenshot("agent-exit-removed-readiness");
 });
+
+test("removing a Flow with unsaved changes returns to the Flow list without a discard dialog", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const name = `Removal navigation ${crypto.randomUUID()}`;
+  const id = await saveFlowCopy(app.baseUrl, "Demo · Focused change", name, { mode: "checkout" });
+  await app.open(`/studio/flows/${id}`);
+  await screen.getByLabel("Flow name").fill(`${name} edited`);
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Unsaved changes");
+  await screen.getByRole("button", "Remove", { exact: true }).tap();
+  const confirmation = screen.getByRole("dialog", `Remove “${name} edited”?`);
+  await expect(confirmation).toContainText("Removing the Flow discards them.");
+
+  // Act
+  await confirmation.getByRole("button", "Remove Flow", { exact: true }).tap();
+
+  // Assert
+  await expect(browser).toHaveURL(/\/studio\/flows$/);
+  await expect(screen.getByRole("heading", "Flows", { exact: true })).toBeVisible();
+  await expect(screen.getByRole("dialog", "Discard unsaved Flow changes?")).toHaveCount(0);
+  await expect(screen.getByRole("link", new RegExp(name))).toHaveCount(0);
+});

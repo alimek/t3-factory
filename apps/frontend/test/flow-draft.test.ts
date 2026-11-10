@@ -310,3 +310,67 @@ it("a failed load reports the failure and offers no editable draft", async () =>
     canSave: false,
   });
 });
+
+it("an accepted Flow removal clears unsaved changes before its caller navigates", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow("Mine");
+  const reported: { dirty: boolean; removing: boolean }[] = [];
+  const unsubscribe = draft.subscribe(() => {
+    const { dirty, removing } = draft.getSnapshot();
+    reported.push({ dirty, removing });
+  });
+
+  // Act
+  const removed = await draft.remove();
+
+  // Assert
+  expect(removed).toBe(true);
+  expect(draft.getSnapshot()).toMatchObject({ dirty: false, removing: false, removalError: "" });
+  expect(factory.removeFlow).toHaveBeenCalledWith("flow");
+  expect(reported).toStrictEqual([
+    { dirty: true, removing: true },
+    { dirty: false, removing: false },
+  ]);
+  unsubscribe();
+});
+
+it("a failed Flow removal keeps the local draft unsaved and reports a separate removal error", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow("Mine");
+  factory.updateFlow.mockRejectedValueOnce(rejection({ message: "Save refused." }));
+  await draft.save();
+  const content = draft.getSnapshot().content;
+  factory.removeFlow.mockRejectedValueOnce(rejection({ message: "Removal refused." }));
+
+  // Act
+  const removed = await draft.remove();
+
+  // Assert
+  expect(removed).toBe(false);
+  expect(draft.getSnapshot().content).toBe(content);
+  expect(draft.getSnapshot()).toMatchObject({
+    dirty: true,
+    removing: false,
+    error: "Save refused.",
+    removalError: "Removal refused.",
+  });
+});
+
+it("a save reaching a removed Flow keeps the local draft and reports the rejection", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow("Mine");
+  await factory.removeFlow("flow");
+  const content = draft.getSnapshot().content;
+
+  // Act
+  await draft.save();
+
+  // Assert
+  expect(draft.getSnapshot().content).toBe(content);
+  expect(draft.getSnapshot()).toMatchObject({
+    dirty: true,
+    error: "Flow was removed.",
+    removalError: "",
+    conflict: { status: "none" },
+  });
+});

@@ -250,13 +250,7 @@ export function FlowDetail({
   return (
     <CanvasLayout>
       <h1 className="sr-only">{name}</h1>
-      <EditorToolbar
-        draft={draft}
-        state={state}
-        revision={saved.revision}
-        flowId={id}
-        onClearDirty={() => reportDraft(id, false)}
-      />
+      <EditorToolbar draft={draft} state={state} revision={saved.revision} flowId={id} />
       <DraftProblems draft={draft} state={state} onSelect={select} />
       <div inert={state.busy} className="flex min-h-0 flex-1">
         <BlockLibrary
@@ -342,13 +336,11 @@ function EditorToolbar({
   state,
   revision,
   flowId,
-  onClearDirty,
 }: {
   draft: FlowDraftModel;
   state: FlowDraftSnapshot;
   revision: number;
   flowId: string;
-  onClearDirty: () => void;
 }) {
   const { openFlowComposer } = useComposerNavigation();
   return (
@@ -404,46 +396,17 @@ function EditorToolbar({
           Start Run
         </Button>
       </MutationGate>
-      <RemoveFlowAction
-        flowId={flowId}
-        flowName={state.content.name}
-        dirty={state.dirty}
-        busy={state.busy}
-        onClearDirty={onClearDirty}
-      />
+      <RemoveFlowAction draft={draft} state={state} />
     </div>
   );
 }
 
-function RemoveFlowAction({
-  flowId,
-  flowName,
-  dirty,
-  busy,
-  onClearDirty,
-}: {
-  flowId: string;
-  flowName: string;
-  dirty: boolean;
-  busy: boolean;
-  onClearDirty: () => void;
-}) {
+function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: FlowDraftSnapshot }) {
   const navigate = useStudioNavigation();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState("");
-  const [removing, setRemoving] = useState(false);
+  const { removing, removalError, busy, dirty, content } = state;
   async function confirmRemove() {
-    setRemoving(true);
-    setError("");
-    try {
-      await api.removeFlow(flowId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove Flow.");
-      return;
-    } finally {
-      setRemoving(false);
-    }
-    onClearDirty();
+    if (!(await draft.remove())) return;
     setOpen(false);
     void navigate({ tab: "flows" });
   }
@@ -456,7 +419,7 @@ function RemoveFlowAction({
           disabled={busy || removing}
           className="text-destructive hover:text-destructive"
           onClick={() => {
-            setError("");
+            draft.clearRemovalError();
             setOpen(true);
           }}
         >
@@ -470,7 +433,7 @@ function RemoveFlowAction({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Remove “{flowName}”?</DialogTitle>
+            <DialogTitle>Remove “{content.name}”?</DialogTitle>
             <DialogDescription asChild>
               <div className="grid gap-2 text-sm text-muted-foreground">
                 <p>
@@ -485,9 +448,9 @@ function RemoveFlowAction({
               </div>
             </DialogDescription>
           </DialogHeader>
-          {error && (
+          {removalError && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {removalError}
             </p>
           )}
           <DialogFooter>

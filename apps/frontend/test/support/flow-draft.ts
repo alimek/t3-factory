@@ -23,6 +23,7 @@ export const rejection = (detail: Partial<OperationError> = {}) =>
   new ApiError({ code: "validation", message: "Flow is invalid.", issues: [], ...detail });
 
 export function memoryFactory(): MemoryFactory {
+  let removed = false;
   let latest: FlowDraft = {
     id: "flow",
     name: "Review",
@@ -47,11 +48,15 @@ export function memoryFactory(): MemoryFactory {
     getFlow: vi.fn<FlowDraftOperations["getFlow"]>(async () => latest),
     updateFlow: vi.fn<FlowDraftOperations["updateFlow"]>(
       async (_id, { expectedRevision, ...content }) => {
+        if (removed) throw rejection({ code: "not_found", message: "Flow was removed." });
         if (expectedRevision !== latest.revision)
           throw rejection({ code: "conflict", message: "Flow changed in another window." });
         return append(content);
       },
     ),
+    removeFlow: vi.fn<FlowDraftOperations["removeFlow"]>(async () => {
+      removed = true;
+    }),
     validateFlow: vi.fn<FlowDraftOperations["validateFlow"]>(async () => ready),
   };
 }
