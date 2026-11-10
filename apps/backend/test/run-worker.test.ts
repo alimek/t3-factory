@@ -11,6 +11,7 @@ import {
   reportedWorker,
   missingWorkerReport,
   revisitedWorker,
+  unsentRevisit,
   repliedWorker,
   followupReplyWorker,
   launchedBlockId,
@@ -460,6 +461,20 @@ it("a revisit reuses the direct worker with distinct activation ownership", asyn
       ?.activationId,
   ).toBe(run.value.activations[1]?.id);
   expect(f.t3.launches.size).toBe(1);
+});
+it("a prepared revisit is not sent while its worker thread has started another run", async (c) => {
+  // Arrange
+  const f = await unsentRevisit(c);
+  startWorkerTurn(f, "reply-execution", 2);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.intents.find((intent) => intent.kind === "send")?.state).toBe("pending");
+  expect(f.t3.sends.size).toBe(0);
 });
 it("restart preserves the worker binding without replaying accepted work", async (c) => {
   // Arrange

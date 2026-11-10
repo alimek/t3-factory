@@ -54,30 +54,6 @@ export type BlockRow = {
   freshness: RunBlock["freshness"];
 };
 
-export type IntentRow = {
-  cause: string;
-  id: string;
-  run_id: string;
-  block_id: string;
-  kind: string;
-  report_id: string | null;
-  occurrence_id: string | null;
-  source_block_id: string | null;
-  exit_id: string | null;
-  result_json: string | null;
-  target_json: string;
-  request_key: string;
-  payload_json: string | null;
-  fingerprint: string;
-  context_id: string;
-  retry_scope: string | null;
-  state: string;
-  reserved_at: string | null;
-  problem: string | null;
-  recovery_attempt: number;
-  recovery_not_before: string | null;
-};
-
 export type ExecutionRow = {
   binding_id: string;
   activation_id: string | null;

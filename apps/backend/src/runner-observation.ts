@@ -5,6 +5,8 @@ import type { T3Adapter } from "./adapters/t3.ts";
 import {
   currentReports,
   observeAttention,
+  recordActivationPhase,
+  refreshWorkerLink,
   settlePendingAttention,
   type CurrentReport,
   type RunnerDatabase,
@@ -73,7 +75,7 @@ function recordWorkerThread(
     }>`SELECT id FROM run_thread_bindings WHERE run_id=${run.id} AND thread_id=${thread.threadId}`;
     if (!binding) throw Error("Worker binding is missing.");
     yield* recordWorkerRepository(sql, binding.id, thread.repository, time);
-    yield* sql`UPDATE run_thread_bindings SET link=COALESCE(${thread.link},link) WHERE id=${binding.id}`;
+    yield* refreshWorkerLink(sql, binding.id, thread.link);
     const scope = { block_id: block.block_id, bindingId: binding.id };
     yield* observeAttention(
       sql,
@@ -161,7 +163,7 @@ function recordActivation(
     }>`SELECT kind FROM run_attention WHERE run_id=${run.id} AND block_id=${block.block_id} AND kind IN ('execution-failed','missing-report') AND settled_at IS NULL ORDER BY kind LIMIT 1`;
     const problem = pending?.kind ?? null;
     const phase = current === "finished" ? "reported" : "assessing";
-    yield* sql`UPDATE run_activations SET phase=CASE WHEN phase='finished' THEN phase ELSE ${phase} END,problem=${problem} WHERE id=${activation.activationId}`;
+    yield* recordActivationPhase(sql, activation.activationId, phase, problem);
     yield* sql`UPDATE run_blocks SET execution_id=${latest?.runId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${worker.thread.pendingRequestCount},problem=${problem},state=${blockState(problem, worker, current)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
   });
 }

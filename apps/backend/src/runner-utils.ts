@@ -1,7 +1,7 @@
 import type { ProjectCatalog, Result } from "@t3-factory/contracts";
 import { createHash } from "node:crypto";
 import type { T3Target } from "./adapters/t3.ts";
-import type { Checked, IntentRow, RunRow } from "./runner-types.ts";
+import type { Checked, RunRow } from "./runner-types.ts";
 export const fingerprint = (content: string) => createHash("sha256").update(content).digest("hex");
 export const verified = <A>(value: A): Checked<A> => ({ ok: true, value });
 export const unverified = (problem: string): Checked<never> => ({ ok: false, problem });
@@ -16,9 +16,6 @@ export const intactPayload = <
 ): intent is I & {
   payload_json: string;
 } => !!intent.payload_json && fingerprint(intent.payload_json) === intent.fingerprint;
-/** Uncertain work may be replayed only within the retry scope recorded at reservation. */
-export const replayUnproven = (intent: IntentRow, retryScope: string | null) =>
-  intent.state !== "pending" && (!intent.retry_scope || intent.retry_scope !== retryScope);
 export const catalogProject = (catalog: Result<ProjectCatalog>, projectId: string) =>
   catalog.ok ? catalog.value.projects.find((project) => project.id === projectId) : undefined;
 

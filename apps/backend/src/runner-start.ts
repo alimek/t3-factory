@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  entryMessagesTooLong,
-  persistEntryLaunches,
-  startLaunchTargets,
-} from "./runner-block-workers.ts";
+import { entryMessagesTooLong, startLaunchTargets } from "./runner-block-workers.ts";
 import { worktreeBranch, type RunWorkspace } from "./run-workspace.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import { newId } from "./ids.ts";
@@ -32,7 +28,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { failure } from "./result.ts";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
+import { createEntryLaunches, type RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { currentFlowRevisionNumber } from "./flow-revisions.ts";
@@ -258,7 +254,7 @@ function acceptStart(sql: SqlClient.SqlClient, plan: StartPlan) {
     const workspace = runWorkspace(plan, number);
     if (workspace.mode === "worktree")
       yield* sql`INSERT INTO run_workspaces(run_id,base_ref,planned_branch,creator_block_id) VALUES(${plan.runId},${workspace.baseRef},${workspace.plannedBranch},${workspace.creatorBlockId})`;
-    yield* persistEntryLaunches(
+    yield* createEntryLaunches(
       sql,
       {
         runId: plan.runId,

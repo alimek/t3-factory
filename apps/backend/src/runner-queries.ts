@@ -23,6 +23,7 @@ import { readRunWorkspace, WORKTREE_REJECTED } from "./run-workspace.ts";
 import { attentionRows } from "./runner-attention.ts";
 import {
   currentWorkingMessages,
+  type DeliveryRecord,
   type ResultRecord,
   type RunnerDatabase,
 } from "./runner/run-store/run-store.ts";
@@ -30,7 +31,6 @@ import type {
   BlockRow,
   ExecutionRow,
   HumanRow,
-  IntentRow,
   RunRow,
   TaskRow,
   TaskRunRow,
@@ -51,7 +51,7 @@ const unresolved = ["pending", "reserved", "uncertain"];
 
 function runBlock(
   block: BlockRow,
-  intents: readonly IntentRow[],
+  intents: readonly DeliveryRecord[],
   workingMessage: string | null,
 ): RunDetail["blocks"][number] {
   const recovering = intents.some(
@@ -79,7 +79,7 @@ function runBlock(
 }
 
 /** The Run workspace. A preparing worktree carries its creator launch's unresolved problem, if any. */
-function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly IntentRow[]) {
+function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly DeliveryRecord[]) {
   return Effect.gen(function* () {
     const workspace = yield* readRunWorkspace(sql, runId);
     if (workspace.mode === "checkout") return workspace satisfies RunWorkspaceDetail;
@@ -154,7 +154,7 @@ function humanOccurrence(occurrence: HumanRow): RunDetail["humanOccurrences"][nu
   };
 }
 
-function runIntent(intent: IntentRow): RunDetail["intents"][number] {
+function runIntent(intent: DeliveryRecord): RunDetail["intents"][number] {
   return {
     id: intent.id,
     kind: intent.kind,
@@ -254,7 +254,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const blocks =
           yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${id} ORDER BY rowid`;
         const intents =
-          yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE run_id=${id} ORDER BY rowid`;
+          yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE run_id=${id} ORDER BY rowid`;
         const events =
           yield* sql<RunEventRow>`SELECT * FROM run_events WHERE run_id=${id} ORDER BY sequence`;
         const reports =

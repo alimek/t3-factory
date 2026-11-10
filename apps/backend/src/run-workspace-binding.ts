@@ -1,7 +1,6 @@
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
-import { persistEntryLaunches } from "./runner-block-workers.ts";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
+import { createEntryLaunches, type RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { RunRow } from "./runner-types.ts";
 import { runTarget } from "./runner-utils.ts";
 import { now } from "./time.ts";
@@ -42,7 +41,7 @@ export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: R
         const bound =
           yield* sql`UPDATE run_workspaces SET state='bound',worktree_path=${worktreePath},branch=${branch},bound_at=${time} WHERE run_id=${run.id} AND state='preparing' RETURNING run_id`;
         if (!bound.length) return false;
-        yield* persistEntryLaunches(
+        yield* createEntryLaunches(
           sql,
           {
             runId: run.id,

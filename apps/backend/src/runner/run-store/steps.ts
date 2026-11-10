@@ -42,18 +42,61 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
       readonly intentId: string;
     }
   | { readonly kind: "human-answered"; readonly blockId: string; readonly occurrenceId: string }
+  | { readonly kind: "human-waiting"; readonly blockId: string; readonly occurrenceId: string }
+  | {
+      readonly kind: "handoff-released" | "operation-unresolved";
+      readonly blockId: string;
+      readonly intentId: string;
+    }
+  | {
+      readonly kind: "send-acknowledged" | "launch-acknowledged";
+      readonly blockId: string;
+      readonly executionId: string;
+      readonly intentId: string;
+      readonly engineStatus: string;
+    }
 );
 
 type StoredEvent = {
   blockId: string | null;
   executionId: string | null;
   bindingId?: string;
+  engineStatus?: string;
   sourceKey: string;
   causeId: string | null;
 };
 
+/** Events about one Handoff or delivery, keyed by it. */
+type DeliveryEvent = Extract<TimelineEvent, { readonly intentId: string }>;
+
+function storedDeliveryEvent(event: DeliveryEvent) {
+  return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
+    const about = { blockId: event.blockId, executionId: null, causeId: event.intentId };
+    switch (event.kind) {
+      case "operation-cancelled":
+        return { ...about, sourceKey: "cancelled:" + event.intentId };
+      case "handoff-held":
+      case "handoff-created":
+        return { ...about, sourceKey: event.cause };
+      case "handoff-released":
+        return { ...about, sourceKey: "release:" + event.intentId };
+      case "operation-unresolved":
+        return { ...about, sourceKey: yield* newId };
+      case "send-acknowledged":
+      case "launch-acknowledged":
+        return {
+          ...about,
+          executionId: event.executionId,
+          engineStatus: event.engineStatus,
+          sourceKey: "ack:" + event.intentId,
+        };
+    }
+  });
+}
+
 function stored(event: TimelineEvent) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
+    if ("intentId" in event) return yield* storedDeliveryEvent(event);
     switch (event.kind) {
       case "run-settled":
         return {
@@ -71,13 +114,6 @@ function stored(event: TimelineEvent) {
         };
       case "run-archived":
         return { blockId: null, executionId: null, sourceKey: "archived", causeId: null };
-      case "operation-cancelled":
-        return {
-          blockId: event.blockId,
-          executionId: null,
-          sourceKey: "cancelled:" + event.intentId,
-          causeId: event.intentId,
-        };
       case "human-cancelled":
         return {
           blockId: event.blockId,
@@ -122,19 +158,13 @@ function stored(event: TimelineEvent) {
           sourceKey: (event.kind === "report-accepted" ? "report:" : "working:") + event.reportId,
           causeId: event.reportId,
         };
-      case "handoff-held":
-      case "handoff-created":
-        return {
-          blockId: event.blockId,
-          executionId: null,
-          sourceKey: event.cause,
-          causeId: event.intentId,
-        };
       case "human-answered":
+      case "human-waiting":
         return {
           blockId: event.blockId,
           executionId: null,
-          sourceKey: "human-answer:" + event.occurrenceId,
+          sourceKey:
+            (event.kind === "human-answered" ? "human-answer:" : "human:") + event.occurrenceId,
           causeId: event.occurrenceId,
         };
     }
@@ -143,7 +173,8 @@ function stored(event: TimelineEvent) {
 
 export function appendTimelineEvent(sql: SqlClient.SqlClient, event: TimelineEvent) {
   return Effect.gen(function* () {
-    const { blockId, executionId, bindingId, sourceKey, causeId } = yield* stored(event);
-    yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${event.runId},${blockId},${executionId},${bindingId ?? null},${event.kind},${sourceKey},${causeId},${event.observedAt})`;
+    const { blockId, executionId, bindingId, engineStatus, sourceKey, causeId } =
+      yield* stored(event);
+    yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${event.runId},${blockId},${executionId},${bindingId ?? null},${event.kind},${sourceKey},${causeId},${event.observedAt},${engineStatus ?? null})`;
   });
 }

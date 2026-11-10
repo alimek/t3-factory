@@ -2,12 +2,13 @@ import type { Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";
-import type { HumanRow, IntentRow } from "../../runner-types.ts";
+import type { HumanRow } from "../../runner-types.ts";
 import { now } from "../../time.ts";
 import { settleAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
 import { withLifecycle } from "./lifecycle.ts";
 import { clearSnooze } from "./presentation.ts";
+import type { DeliveryRecord } from "./records.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import type { BlockState, DeliveryState } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
@@ -24,7 +25,7 @@ const stopped: BlockState = "stopped";
 function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
   return Effect.gen(function* () {
     const intents =
-      yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE run_id=${id} AND state=${pending}`;
+      yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE run_id=${id} AND state=${pending}`;
     for (const intent of intents) {
       yield* sql`UPDATE operation_intents SET state=${cancelled},payload_json=NULL,problem='cancelled-on-Archive',reconciled_at=${time} WHERE id=${intent.id}`;
       yield* appendTimelineEvent(sql, {

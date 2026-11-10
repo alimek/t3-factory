@@ -10,7 +10,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type { EffectOperations } from "./effect-operations.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { failure } from "./result.ts";
-import type { BlockRow, IntentRow, RunnerOptions, RunRow } from "./runner-types.ts";
+import type { BlockRow, RunnerOptions, RunRow } from "./runner-types.ts";
 import { openRunStore } from "./runner/run-store/run-store.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
@@ -57,7 +57,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(database, t3);
-  const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe, images);
+  const { dispatchIntent } = openRunnerDispatch(store, ops, t3, checkAgent, observe, images);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
@@ -113,11 +113,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   }
   function dispatchIntents(runRow: RunRow, contextId: string | null) {
     return Effect.gen(function* () {
-      const intents =
-        yield* sql<IntentRow>`SELECT * FROM operation_intents WHERE run_id=${runRow.id} AND state IN ('pending','reserved','uncertain') ORDER BY rowid`;
-      for (const intent of intents) {
+      for (const work of yield* store.dispatchable(runRow)) {
         if (closed) break;
-        yield* dispatchIntent(runRow, intent, contextId);
+        yield* dispatchIntent(runRow, work, contextId);
       }
     });
   }
@@ -133,9 +131,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         Effect.gen(function* () {
           if (closed) return failure("conflict", "Factory is shutting down.");
           // A Settled Run is driven only while it still owes an operation, so its work continues.
-          const ids = yield* sql<{
-            id: string;
-          }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain'))) ORDER BY started_at,id`;
+          const ids = yield* store.runsToReconcile();
           // Restart observes every Run before dispatching any pending intent.
           yield* Effect.forEach(ids, (run) => drive(run.id, "observe"), {
             concurrency: "unbounded",
@@ -171,7 +167,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       .pipe(Effect.uninterruptible);
   yield* Effect.addFinalizer(close);
   return {
-    ...openRunnerRecovery(database, lifecycle, t3, liveContextId),
+    ...openRunnerRecovery(store, lifecycle, t3, liveContextId),
     readFactoryTool: openBlockTools(database, getRun, images),
     answerHumanOccurrence,
     archiveRun,

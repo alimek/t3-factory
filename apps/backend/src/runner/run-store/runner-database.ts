@@ -1,8 +1,6 @@
-import { newId } from "../../ids.ts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { IntentRow, RunRow } from "../../runner-types.ts";
-import { now } from "../../time.ts";
+import type { RunRow } from "../../runner-types.ts";
 import { readRunDefinitions } from "../../run-definitions.ts";
 import { readRunWorkspace } from "../../run-workspace.ts";
 import type { LiveChanges } from "../../live-changes.ts";
@@ -79,52 +77,6 @@ export function openRunnerDatabase(
       ...(requireOpenGate ? { gateOpen: true as const } : {}),
     });
   }
-  function problem(intent: IntentRow, message: string) {
-    return Effect.gen(function* () {
-      yield* mutate(intent.run_id, (sql) =>
-        Effect.gen(function* () {
-          const time = yield* now;
-          const changed =
-            yield* sql`UPDATE operation_intents SET state=CASE WHEN state='reserved' THEN 'uncertain' ELSE state END,problem=${message},reconciled_at=${time} WHERE id=${intent.id} AND state NOT IN ('acknowledged','cancelled') AND (problem IS NOT ${message} OR state='reserved') RETURNING id`;
-          if (changed.length) {
-            yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${intent.run_id}`;
-            yield* sql`INSERT INTO run_events(run_id,block_id,kind,source_key,cause_id,observed_at) VALUES(${intent.run_id},${intent.block_id},'operation-unresolved',${yield* newId},${intent.id},${time})`;
-          }
-        }),
-      );
-    });
-  }
-  function reserveIntent(
-    runRow: RunRow,
-    intent: IntentRow,
-    retryScope: string | null,
-    releaseGeneration?: number,
-  ) {
-    return mutate(runRow.id, (sql) =>
-      Effect.gen(function* () {
-        const changed =
-          yield* sql`UPDATE operation_intents SET state='reserved',reserved_by=${owner.token},reserved_at=${yield* now},retry_scope=${intent.state === "pending" ? retryScope : intent.retry_scope},problem=NULL,recovery_attempt=${intent.state === "pending" ? 0 : intent.recovery_attempt},recovery_not_before=${intent.state === "pending" ? null : intent.recovery_not_before}
-        WHERE id=${intent.id} AND state=${intent.state}
-        AND (${releaseGeneration ?? null} IS NULL OR EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND generation=${releaseGeneration ?? null}))
-        AND EXISTS(SELECT 1 FROM runs WHERE id=${runRow.id} AND gate_open=1)
-        AND EXISTS(SELECT 1 FROM projects WHERE id=${runRow.project_id} AND workspace_root=${runRow.workspace_root} AND availability='available')
-        AND EXISTS(SELECT 1 FROM t3_connection WHERE context_id=${intent.context_id})
-        AND EXISTS(SELECT 1 FROM runner_owner WHERE token=${owner.token})
-        AND (${intent.cause.startsWith("recovery:") && intent.state === "pending" ? 1 : 0}=0 OR EXISTS(
-          SELECT 1 FROM report_recoveries rr JOIN run_executions e ON e.run_id=rr.run_id AND e.block_id=rr.block_id AND e.execution_id=rr.source_execution_id
-          JOIN run_blocks b ON b.run_id=rr.run_id AND b.block_id=rr.block_id
-          WHERE rr.intent_id=${intent.id} AND e.engine_status='completed' AND e.report_status IS NOT 'finished' AND b.execution_id=e.execution_id AND b.pending_request_count=0))
-        AND NOT EXISTS(SELECT 1 FROM operation_intents WHERE run_id=${runRow.id} AND state='reserved' AND id!=${intent.id}) RETURNING id`;
-        if (changed.length && releaseGeneration !== undefined && intent.report_id) {
-          yield* sql`INSERT INTO run_events(run_id,block_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${intent.block_id},'handoff-released',${"release:" + intent.id},${intent.id},${yield* now}) ON CONFLICT DO NOTHING`;
-          yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${yield* now}) WHERE id=${intent.report_id} AND activation_id IS NOT NULL`;
-        }
-        if (changed.length)
-          yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
-        return changed.length > 0;
-      }),
-    );
-  }
   return {
     run,
     owner,
@@ -133,8 +85,6 @@ export function openRunnerDatabase(
     row,
     transaction,
     runHeldUnderContext,
-    problem,
-    reserveIntent,
   };
 }
 export type RunnerDatabase = ReturnType<typeof openRunnerDatabase>;

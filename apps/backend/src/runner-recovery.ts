@@ -2,14 +2,19 @@ import { recoverOperation } from "./runner-effects.ts";
 import { newId } from "./ids.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
 import { effectiveExits } from "@t3-factory/domain-validation";
-import { workerTurn } from "./runner-block-workers.ts";
+import { workerTurn } from "./worker-payloads.ts";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter, SendPayload } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
+import {
+  blockHasUnresolvedWork,
+  createDelivery,
+  type Delivery,
+  type RunStore,
+} from "./runner/run-store/run-store.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
-import { fingerprint, runTarget } from "./runner-utils.ts";
+import { runTarget } from "./runner-utils.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import { failure } from "./result.ts";
 import { now } from "./time.ts";
@@ -53,12 +58,12 @@ function recoveryReady(t3: T3Adapter, run: RunRow, threadId: string, executionId
   });
 }
 export function openRunnerRecovery(
-  database: RunnerDatabase,
+  store: RunStore,
   lifecycle: RunnerLifecycle,
   t3: T3Adapter,
   liveContextId: () => Effect.Effect<string | null, unknown>,
 ) {
-  const { row, mutate, runHeldUnderContext } = database;
+  const { row, mutate, runHeldUnderContext } = store.database;
   function requestReport(
     runId: string,
     input: { blockId: string },
@@ -124,9 +129,8 @@ export function openRunnerRecovery(
           const eligible =
             yield* sql`SELECT r.id FROM runs r JOIN run_blocks b ON b.run_id=r.id JOIN run_executions e ON e.run_id=r.id AND e.block_id=b.block_id AND e.execution_id=b.execution_id
         WHERE r.id=${current.id} AND r.generation=${detail.value.generation} AND b.block_id=${blockId} AND b.execution_id=${executionId} AND e.engine_status='completed' AND e.thread_id=${threadId}
-        AND NOT EXISTS(SELECT 1 FROM runtime_reports WHERE activation_id=${visit.id})
-        AND NOT EXISTS(SELECT 1 FROM operation_intents WHERE run_id=r.id AND block_id=b.block_id AND state NOT IN ('acknowledged','cancelled'))`;
-          if (!eligible.length)
+        AND NOT EXISTS(SELECT 1 FROM runtime_reports WHERE activation_id=${visit.id})`;
+          if (!eligible.length || (yield* blockHasUnresolvedWork(sql, current.id, blockId)))
             return failure(
               "conflict",
               "The Run changed or has competing work. Refresh before requesting a report.",
@@ -156,8 +160,18 @@ export function openRunnerRecovery(
               block!.public_id,
             ),
           };
-          const body = JSON.stringify(payload);
-          yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id) VALUES(${intentId},${current.id},${blockId},'send',${"recovery:" + intentId},${JSON.stringify({ ...runTarget(current), blockId, threadId })},${key},${body},${fingerprint(body)},${current.context_id})`;
+          yield* createDelivery(sql, {
+            id: intentId,
+            runId: current.id,
+            blockId,
+            kind: "send",
+            cause: "recovery:" + intentId,
+            target: { ...runTarget(current), blockId, threadId },
+            requestKey: key,
+            payload,
+            contextId: current.context_id,
+            retryScope: null,
+          });
           yield* sql`INSERT INTO report_recoveries(intent_id,attention_id,run_id,block_id,source_execution_id,requested_at,thread_scope) VALUES(${intentId},${problem?.id ?? null},${current.id},${blockId},${executionId},${time},${threadId})`;
           yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${current.id},${blockId},${executionId},'report-recovery-requested',${"recovery:" + intentId},${intentId},${time})`;
           yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${current.id}`;
@@ -172,19 +186,19 @@ export function openRunnerRecovery(
   return { requestReport };
 }
 export function recoveryDispatchGeneration(
-  database: RunnerDatabase,
+  store: RunStore,
   t3: T3Adapter,
   runRow: RunRow,
-  intent: import("./runner-types.ts").IntentRow,
+  intent: Delivery,
 ) {
   return Effect.gen(function* () {
     if (!intent.cause.startsWith("recovery:") || intent.state !== "pending") return undefined;
-    const current = yield* database.row(runRow.id);
+    const current = yield* store.readRun(runRow.id);
     if (!current) return null;
     const target = JSON.parse(intent.target_json) as {
       threadId: string;
     };
-    const recovery = yield* database.run(
+    const recovery = yield* store.database.run(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         return (yield* sql<{
@@ -196,7 +210,7 @@ export function recoveryDispatchGeneration(
       !recovery ||
       !(yield* recoveryReady(t3, current, target.threadId, recovery.source_execution_id))
     ) {
-      yield* database.problem(
+      yield* store.noteUnresolved(
         intent,
         "Recovery target has new activity or pending attention; the accepted request remains unsent.",
       );
