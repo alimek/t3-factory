@@ -1,6 +1,5 @@
+import { runFactoryProcess } from "./factory-process.ts";
 import { assert, type TestContext } from "@effect/vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import type { AgentDefinition } from "@t3-factory/contracts";
 import { factoryHarness } from "./factory.ts";
@@ -37,10 +36,9 @@ export async function readAgentAfterRestart(
   harness: Awaited<ReturnType<typeof factoryHarness>>,
   agentId: string,
 ): Promise<{ ok: boolean; value: AgentDefinition }> {
-  const child = await promisify(execFile)(
-    process.execPath,
+  const child = await runFactoryProcess(
     [fileURLToPath(new URL("./agent-process.ts", import.meta.url)), harness.databasePath, agentId],
-    { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: harness.processHome } },
+    harness.processHome,
   );
   return JSON.parse(child.stdout) as { ok: boolean; value: AgentDefinition };
 }
@@ -49,14 +47,13 @@ export async function readFlowAfterRestart(
   harness: Awaited<ReturnType<typeof factoryHarness>>,
   flowId: string,
 ): Promise<unknown> {
-  const child = await promisify(execFile)(
-    process.execPath,
+  const child = await runFactoryProcess(
     [
       fileURLToPath(new URL("./operation-process.ts", import.meta.url)),
       harness.databasePath,
       flowId,
     ],
-    { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: harness.processHome } },
+    harness.processHome,
   );
   return JSON.parse(child.stdout);
 }
