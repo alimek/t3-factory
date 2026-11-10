@@ -395,12 +395,13 @@ function checkHiddenExits(hidden: unknown, path: string, issue: IssueReporter) {
     issue("invalid_hidden_exits", path, "Hide up to 100 distinct inherited exit IDs.");
 }
 
-/** The fields each block kind may carry beside its id, name, kind and position. */
-const KIND_FIELDS: Record<string, readonly string[]> = {
-  agent: ["agentId", "hiddenExitIds", "localExits"],
-  human: [],
-  continuation: ["prompt"],
-};
+/** The fields each block kind may carry beside its id, name, kind and position. A Map, so an
+ * untrusted kind such as "toString" never resolves to an Object.prototype member. */
+const KIND_FIELDS: ReadonlyMap<unknown, readonly string[]> = new Map([
+  ["agent", ["agentId", "hiddenExitIds", "localExits"]],
+  ["human", []],
+  ["continuation", ["prompt"]],
+]);
 
 /** An Agent reference or a Continuation prompt, the fields only one kind has. */
 function checkKindFields(block: Record<string, unknown>, path: string, issue: IssueReporter) {
@@ -427,7 +428,7 @@ function checkBlockFields(
   blockIds: Set<string>,
   issue: IssueReporter,
 ) {
-  const kindFields = typeof block.kind === "string" ? KIND_FIELDS[block.kind] : undefined;
+  const kindFields = KIND_FIELDS.get(block.kind);
   const allowed = ["id", "name", "kind", "position", ...(kindFields ?? [])];
   if (Object.keys(block).some((key) => !allowed.includes(key)))
     issue(
