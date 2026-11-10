@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { optionValue, type AgentDraftModel, type AgentDraftSnapshot } from "../agent-draft.ts";
 import type {
   AgentCapabilities,
   AgentExecutionSettings,
@@ -12,109 +12,11 @@ import { Label } from "@/components/ui/label";
 import { ChoiceMenu, type MenuChoice } from "@/components/choice-menu";
 import { cn } from "@/lib/utils";
 
-function optionValue(
-  options: readonly AgentModelOptionValue[],
-  descriptor: AgentModelOptionDescriptor,
-) {
-  const selected = options.find((entry) => entry.id === descriptor.id);
-  if (selected) return selected.value;
-  if (descriptor.default !== undefined) return descriptor.default;
-  if (descriptor.values) return descriptor.values[0] ?? "";
-  if (descriptor.type === "boolean") return false;
-  return descriptor.choices?.[0]?.id ?? "";
-}
-
-function buildOptions(
-  descriptors: readonly AgentModelOptionDescriptor[] | undefined,
-  current: readonly AgentModelOptionValue[],
-): AgentModelOptionValue[] {
-  if (!descriptors?.length) return [];
-  return descriptors.map((descriptor) => ({
-    id: descriptor.id,
-    value: optionValue(current, descriptor),
-  }));
-}
-
-function withOptionValue(
-  options: readonly AgentModelOptionValue[],
-  id: string,
-  value: AgentModelOptionValue["value"],
-): AgentModelOptionValue[] {
-  return options.some((entry) => entry.id === id)
-    ? options.map((entry) => (entry.id === id ? { ...entry, value } : entry))
-    : [...options, { id, value }];
-}
-
-function initialExecution(
-  saved: AgentExecutionSettings | null,
-  capabilities: AgentCapabilities | null,
-): AgentExecutionSettings {
-  if (saved) return saved;
-  // A provider without Factory reporting cannot run, so it is never preselected.
-  const provider = capabilities?.providers.find((entry) => entry.reporting.supported);
-  const model = provider?.models[0];
-  return {
-    environmentId: capabilities?.environments[0]?.environmentId ?? "",
-    providerInstanceId: provider?.providerInstanceId ?? "",
-    modelId: model?.id ?? "",
-    modelOptions: buildOptions(model?.options, []),
-  };
-}
-
-/** Execution settings chosen from live T3 capabilities, keeping saved values T3 no longer offers. */
-export function useExecutionSettings(
-  saved: AgentExecutionSettings | null,
-  capabilities: AgentCapabilities | null,
-) {
-  const [initial] = useState(() => initialExecution(saved, capabilities));
-  const [environmentId, setEnvironmentId] = useState(initial.environmentId);
-  const [providerInstanceId, setProviderInstanceId] = useState(initial.providerInstanceId);
-  const [modelId, setModelId] = useState(initial.modelId);
-  const [modelOptions, setModelOptions] = useState<AgentModelOptionValue[]>(() => [
-    ...initial.modelOptions,
-  ]);
-  const environments = capabilities?.environments ?? [];
-  const providers = environments.some((entry) => entry.environmentId === environmentId)
-    ? (capabilities?.providers ?? [])
-    : [];
-  const selectedProvider = providers.find(
-    (entry) => entry.providerInstanceId === providerInstanceId,
-  );
-  const selectedModel = selectedProvider?.models.find((entry) => entry.id === modelId);
-  const execution: AgentExecutionSettings = useMemo(
-    () => ({ environmentId, providerInstanceId, modelId, modelOptions }),
-    [environmentId, modelId, modelOptions, providerInstanceId],
-  );
-  function chooseProvider(id: string) {
-    const nextModel = providers.find((entry) => entry.providerInstanceId === id)?.models[0];
-    setProviderInstanceId(id);
-    setModelId(nextModel?.id ?? "");
-    setModelOptions(buildOptions(nextModel?.options, modelOptions));
-  }
-  function chooseModel(id: string) {
-    const nextModel = selectedProvider?.models.find((entry) => entry.id === id);
-    setModelId(id);
-    setModelOptions(buildOptions(nextModel?.options, modelOptions));
-  }
-  function setOption(id: string, value: AgentModelOptionValue["value"]) {
-    setModelOptions((current) => withOptionValue(current, id, value));
-  }
-  return {
-    execution,
-    environments,
-    providers,
-    selectedProvider,
-    selectedModel,
-    setEnvironmentId,
-    chooseProvider,
-    chooseModel,
-    setOption,
-    removeOption: (id: string) =>
-      setModelOptions((current) => current.filter((option) => option.id !== id)),
-  };
-}
-
-type ExecutionSettingsState = ReturnType<typeof useExecutionSettings>;
+type ExecutionSettingsState = AgentDraftSnapshot["choices"] &
+  Pick<
+    AgentDraftModel,
+    "setEnvironmentId" | "chooseProvider" | "chooseModel" | "setOption" | "removeOption"
+  > & { readonly execution: AgentExecutionSettings };
 
 export function ExecutionSettingsFields({
   role,

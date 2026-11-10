@@ -1,7 +1,18 @@
 import { MutationGate } from "@/client-gate";
+import { useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import type { StudioRead } from "../studio-definitions.ts";
+
+/**
+ * A Studio list read's value once a read answered after this page was entered, so entering a
+ * page never shows rows read before that visit. Later refreshes keep the shown rows.
+ */
+export function useVisitValue<V>(read: StudioRead<V>) {
+  const [entered] = useState(read.value);
+  return read.value === entered ? null : read.value;
+}
 
 export const studioRowClass =
   "flex w-full items-center gap-3 rounded-lg border bg-muted px-4 py-3 text-left text-foreground no-underline outline-none transition-colors hover:border-border-hover hover:bg-accent hover:no-underline focus-visible:ring-[3px] focus-visible:ring-ring/50";

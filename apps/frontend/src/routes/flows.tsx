@@ -1,34 +1,30 @@
 import { MutationGate } from "@/client-gate";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FlowDraft } from "@t3-factory/contracts";
 import { Plus, ChevronRight, CircleCheck, TriangleAlert, Workflow } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { api } from "../api.ts";
 import { StudioLink } from "../components/app-link.tsx";
-import { StudioListHeader, studioRowClass, editedLabel } from "../components/studio-list.tsx";
+import {
+  StudioListHeader,
+  studioRowClass,
+  editedLabel,
+  useVisitValue,
+} from "../components/studio-list.tsx";
+import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
 
-export function FlowList({ onCreate }: { onCreate: () => void }) {
-  const [items, setItems] = useState<readonly FlowDraft[] | null>(null);
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
+export function FlowList({
+  definitions,
+  onCreate,
+}: {
+  definitions: StudioDefinitions;
+  onCreate: () => void;
+}) {
+  const flows = useStudioRead(definitions, "flows");
+  const items = useVisitValue(flows);
+  const error = flows.error ? "Could not load Flows. Check that Factory is running." : "";
   const [query, setQuery] = useState("");
-  useEffect(() => {
-    let current = true;
-    setError("");
-    api
-      .listFlows()
-      .then((value) => {
-        if (current) setItems(value);
-      })
-      .catch(() => {
-        if (current) setError("Could not load Flows. Check that Factory is running.");
-      });
-    return () => {
-      current = false;
-    };
-  }, [attempt]);
   const filtered =
     items?.filter((flow) =>
       flow.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
@@ -49,7 +45,7 @@ export function FlowList({ onCreate }: { onCreate: () => void }) {
         <FlowItems
           items={filtered}
           error={error}
-          onRetry={() => setAttempt(attempt + 1)}
+          onRetry={definitions.refresh}
           onCreate={onCreate}
         />
       )}

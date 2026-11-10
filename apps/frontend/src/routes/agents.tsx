@@ -1,38 +1,63 @@
-import { useCallback, useEffect, useState } from "react";
-import type { AgentCapabilities, AgentDefinition, FlowDraft } from "@t3-factory/contracts";
+import { useEffect, useState } from "react";
+import { useDraftGuard } from "../draft-guard.ts";
+import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
 import { useStudioNavigation } from "../settings-navigation.ts";
+import {
+  createAgentDraft,
+  useAgentDraftSnapshot,
+  type AgentDraftOperations,
+} from "../agent-draft.ts";
 import { api } from "../api.ts";
+import {
+  useStudioRead,
+  type StudioDefinitions,
+  type StudioDefinitionsSnapshot,
+} from "../studio-definitions.ts";
+import { useVisitValue } from "../components/studio-list.tsx";
 import { useActiveView } from "../use-active-view.ts";
 import { AgentsListPane } from "../components/studio-agents/agents-list-pane.tsx";
 import { AgentEditorPane } from "../components/studio-agents/agent-editor-pane.tsx";
 import { flowUsageCount } from "@/lib/agent-display";
 import { useReportingState } from "../reporting-state.tsx";
 
-function useAgentsLibrary() {
+type ShownLists = {
+  readonly [K in keyof StudioDefinitionsSnapshot]: NonNullable<
+    StudioDefinitionsSnapshot[K]["value"]
+  >;
+};
+
+/**
+ * Studio's saved Agents and Flows as the Agents page shows them: entering the page waits until
+ * both were read for this visit, then later refreshes keep the shown rows. Both lists are shown
+ * together, only once both reads of a refresh have answered, so Agents never appear beside
+ * another refresh's Flow usage.
+ */
+function useShownLists(definitions: StudioDefinitions) {
+  const agentsRead = useStudioRead(definitions, "agents");
+  const flowsRead = useStudioRead(definitions, "flows");
+  const visitAgents = useVisitValue(agentsRead);
+  const visitFlows = useVisitValue(flowsRead);
+  const [shown, setShown] = useState<ShownLists | null>(null);
+  const answered = agentsRead.synchronized && flowsRead.synchronized;
+  if (
+    answered &&
+    visitAgents !== null &&
+    visitFlows !== null &&
+    (shown?.agents !== visitAgents || shown.flows !== visitFlows)
+  )
+    setShown({ agents: visitAgents, flows: visitFlows });
+  const error = agentsRead.error || flowsRead.error ? "Factory could not load Agents." : "";
+  return { shown, error };
+}
+
+/** The Agents page's saved lists and capabilities; reporting is checked on entry and after each write. */
+function useAgentsLibrary(definitions: StudioDefinitions) {
   const { refresh: refreshReporting } = useReportingState();
-  const [agents, setAgents] = useState<readonly AgentDefinition[] | null>(null);
-  const [flows, setFlows] = useState<readonly FlowDraft[] | null>(null);
+  const { shown, error } = useShownLists(definitions);
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>();
-  const [error, setError] = useState("");
-  const reload = useCallback(async () => {
-    setError("");
-    try {
-      const [nextAgents, nextFlows] = await Promise.all([
-        api.listAgents(),
-        api.listFlows(),
-        refreshReporting(),
-      ]);
-      setAgents(nextAgents);
-      setFlows(nextFlows);
-      return nextAgents;
-    } catch {
-      setError("Factory could not load Agents.");
-      return null;
-    }
-  }, [refreshReporting]);
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void refreshReporting();
+  }, [refreshReporting]);
   useEffect(() => {
     let active = true;
     void api.getAgentCapabilities().then(
@@ -47,18 +72,31 @@ function useAgentsLibrary() {
       active = false;
     };
   }, []);
-  return { agents, flows, capabilities, error, reload };
+  return {
+    agents: shown?.agents ?? null,
+    flows: shown?.flows ?? null,
+    capabilities,
+    error,
+    definitions,
+    refreshReporting,
+    retry() {
+      definitions.refresh();
+      void refreshReporting();
+    },
+  };
 }
 
 export function StudioAgentsPage({
   agentId,
+  definitions,
   reportAgentDraft,
 }: {
   agentId: string | undefined;
+  definitions: StudioDefinitions;
   reportAgentDraft: (id: string, dirty: boolean) => void;
 }) {
   const openStudio = useStudioNavigation();
-  const library = useAgentsLibrary();
+  const library = useAgentsLibrary(definitions);
   const [query, setQuery] = useState("");
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
@@ -72,7 +110,7 @@ export function StudioAgentsPage({
         onQueryChange={setQuery}
         onCreate={() => void openStudio({ tab: "agents", agentId: "new" })}
         error={library.error}
-        onRetry={() => void library.reload()}
+        onRetry={library.retry}
         loading={library.agents === null || library.flows === null}
       />
       <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -109,7 +147,7 @@ function SelectedAgentEditor({
   const creating = agentId === "new";
   const [agent, setAgent] = useState<AgentDefinition | null>(null);
   const [error, setError] = useState("");
-  const [conflict, setConflict] = useState("");
+  const [duplicateError, setDuplicateError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
   useEffect(() => {
     if (creating) return;
@@ -127,28 +165,27 @@ function SelectedAgentEditor({
     };
   }, [agentId, creating]);
   const saved = (value: AgentDefinition) => {
-    void library.reload();
+    void library.refreshReporting();
     if (!active.current) return;
-    setConflict("");
+    setDuplicateError("");
     setAgent(value);
     void openStudio({ tab: "agents", agentId: value.id });
   };
   const deleted = () => {
-    void library.reload();
+    void library.refreshReporting();
     if (!active.current) return;
-    reportDraft(agentId, false);
     void openStudio({ tab: "agents" });
   };
   async function duplicate() {
     if (duplicating) return;
     setDuplicating(true);
     try {
-      const copy = await api.duplicateAgent(agentId);
-      void library.reload();
+      const copy = await library.definitions.duplicateAgent(agentId);
+      void library.refreshReporting();
       if (active.current) void openStudio({ tab: "agents", agentId: copy.id });
     } catch (cause) {
       if (!active.current) return;
-      setConflict(
+      setDuplicateError(
         cause instanceof Error ? cause.message : "Factory could not duplicate this Agent.",
       );
     } finally {
@@ -169,24 +206,82 @@ function SelectedAgentEditor({
     );
   }
   return (
+    <OpenedAgentEditor
+      agent={agent}
+      capabilities={library.capabilities}
+      operations={library.definitions}
+      agentId={agentId}
+      flowUsage={flowUsageCount(library.flows ?? [], agentId)}
+      duplicating={duplicating}
+      duplicateError={duplicateError}
+      reportDraft={reportDraft}
+      onSaved={saved}
+      onDuplicate={creating ? undefined : () => void duplicate()}
+      onDeleted={deleted}
+    />
+  );
+}
+
+/** One loaded editor owns its draft; disposal detaches and clears only its own Studio guard. */
+function useOpenedAgentDraft(
+  agent: AgentDefinition | null,
+  capabilities: AgentCapabilities | null,
+  operations: AgentDraftOperations,
+  id: string,
+  reportDraft: (id: string, dirty: boolean) => void,
+) {
+  const [draft] = useState(() => createAgentDraft(agent, capabilities, operations));
+  useDraftGuard(draft, id, reportDraft);
+  return { draft, state: useAgentDraftSnapshot(draft) };
+}
+
+function OpenedAgentEditor({
+  agent,
+  capabilities,
+  operations,
+  agentId,
+  reportDraft,
+  onSaved,
+  duplicateError,
+  ...props
+}: {
+  agent: AgentDefinition | null;
+  capabilities: AgentCapabilities | null;
+  operations: AgentDraftOperations;
+  agentId: string;
+  reportDraft: (id: string, dirty: boolean) => void;
+  onSaved: (agent: AgentDefinition) => void;
+  duplicateError: string;
+  flowUsage: number;
+  duplicating: boolean;
+  onDuplicate: (() => void) | undefined;
+  onDeleted: () => void;
+}) {
+  const { draft, state } = useOpenedAgentDraft(
+    agent,
+    capabilities,
+    operations,
+    agentId,
+    reportDraft,
+  );
+  async function save() {
+    const saved = await draft.save();
+    if (saved) onSaved(saved);
+  }
+  const notice = state.conflict || duplicateError;
+  return (
     <>
-      {conflict && (
+      {notice && (
         <p className="shrink-0 px-6 pt-4 text-sm text-attention md:px-8" role="status">
-          {conflict}
+          {notice}
         </p>
       )}
       <AgentEditorPane
-        key={agent ? `${agent.id}:${agent.revision}` : "new"}
-        agent={agent}
-        capabilities={library.capabilities}
-        flowUsage={flowUsageCount(library.flows ?? [], agentId)}
-        creating={creating}
-        duplicating={duplicating}
-        onConflict={setConflict}
-        reportDraft={reportDraft}
-        onSaved={saved}
-        onDuplicate={creating ? undefined : () => void duplicate()}
-        onDeleted={deleted}
+        {...props}
+        draft={draft}
+        state={state}
+        capabilities={capabilities}
+        onSave={save}
       />
     </>
   );

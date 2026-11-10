@@ -1,16 +1,9 @@
 import { MutationGate } from "@/client-gate";
+import { useDraftGuard } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
-import { useCallback, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
-import type {
-  AgentDefinition,
-  FlowBlock,
-  FlowDraft,
-  FlowGraph,
-  FlowReadiness,
-  FlowWorkspace,
-  ValidationIssue,
-} from "@t3-factory/contracts";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import type { AgentDefinition, FlowBlock, FlowDraft, FlowGraph } from "@t3-factory/contracts";
 import { ArrowLeft, Check, CircleDot, ListChecks, Save, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { api, ApiError } from "../api.ts";
+import { api } from "../api.ts";
 import { StudioLink } from "../components/app-link.tsx";
 import { useStudioNavigation } from "../settings-navigation.ts";
 import { BlockConfiguration } from "../components/block-inspector.tsx";
@@ -45,183 +38,51 @@ import {
   type BlockPosition,
   type FlowWire,
 } from "../flow-graph.ts";
+import {
+  createFlowDraft,
+  useFlowDraftSnapshot,
+  type FlowContent,
+  type FlowDraftModel,
+  type FlowDraftSnapshot,
+} from "../flow-draft.ts";
+import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
 
-type FlowContent = Pick<FlowDraft, "name" | "workspace" | "graph">;
-
-/** The saved Flow, its local edits, and the save, readiness and revision-conflict operations. */
-function useFlowDraft(
+/**
+ * This editor's Flow draft, saved and removed through Studio's definitions and told when the
+ * editor is shown or hidden and when Studio's saved Agents were read again. Studio's guard learns
+ * of changes to unsaved changes from the draft's notification itself, before any render, and only
+ * when that fact changes.
+ */
+function useOpenedFlowDraft(
   id: string,
-  reportDraft: (id: string, dirty: boolean) => void,
+  definitions: StudioDefinitions,
   active: boolean,
-  agents: readonly AgentDefinition[],
+  reportDraft: (id: string, dirty: boolean) => void,
 ) {
-  const [saved, setSaved] = useState<FlowDraft | null>(null);
-  const [graph, setGraph] = useState<FlowGraph>({
-    blocks: [],
-    connections: [],
-    flowInput: { position: { x: 40, y: 50 }, targetBlockIds: [] },
-  });
-  const [name, setName] = useState("");
-  const [workspace, setWorkspace] = useState<FlowWorkspace>({ mode: "checkout" });
-  const [dirty, setDirty] = useState(false);
-  useEffect(() => reportDraft(id, dirty), [id, dirty, reportDraft]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [issues, setIssues] = useState<readonly ValidationIssue[]>([]);
-  const [readiness, setReadiness] = useState<FlowReadiness | null>(null);
-  const [latest, setLatest] = useState<FlowDraft | null>(null);
-  const [conflict, setConflict] = useState(false);
-  function load(flow: FlowDraft) {
-    setSaved(flow);
-    setGraph(flow.graph);
-    setName(flow.name);
-    setWorkspace(flow.workspace);
-    setReadiness(flow.readiness);
-    setDirty(false);
-    setLatest(null);
-    setConflict(false);
-    setError("");
-    setIssues([]);
-  }
+  const [draft] = useState(() =>
+    createFlowDraft(id, {
+      getFlow: api.getFlow,
+      validateFlow: api.validateFlow,
+      updateFlow: definitions.updateFlow,
+      removeFlow: definitions.removeFlow,
+    }),
+  );
   useEffect(() => {
-    let current = true;
-    api
-      .getFlow(id)
-      .then((v) => {
-        if (current) load(v);
-      })
-      .catch((e) => {
-        if (current) setError(e.message);
-      });
-    return () => {
-      current = false;
-    };
-  }, [id]);
-  const refreshReadiness = useEffectEvent(() => (saved && !dirty ? api.getFlow(id) : null));
+    draft.reportVisibility(active);
+    // An editor that is no longer mounted is hidden, so late answers start no readiness read.
+    return () => draft.reportVisibility(false);
+  }, [draft, active]);
   useEffect(() => {
-    setReadiness(null);
-    if (!active) return;
-    const request = refreshReadiness();
-    if (!request) return;
-    let current = true;
-    request
-      .then((value) => {
-        if (current) setReadiness(value.readiness);
-      })
-      .catch((e) => {
-        if (current) setError(e.message);
-      });
-    return () => {
-      current = false;
-    };
-    // The saved revision and dirty state retire a response requested before an edit or save.
-  }, [active, agents, saved?.revision, dirty]);
-  function change(next: FlowGraph) {
-    setGraph(next);
-    setDirty(true);
-    setReadiness(null);
-  }
-  function rename(next: string) {
-    setName(next);
-    setDirty(true);
-    setReadiness(null);
-  }
-  function changeWorkspace(next: FlowWorkspace) {
-    setWorkspace(next);
-    setDirty(true);
-    setReadiness(null);
-  }
-  /** What a save writes and a revision conflict compares. */
-  const content: FlowContent = { name, workspace, graph };
-  async function save() {
-    if (!saved) return;
-    setBusy(true);
-    setError("");
-    setIssues([]);
-    try {
-      load(await api.updateFlow(id, { ...content, expectedRevision: saved.revision }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save Flow.");
-      if (e instanceof ApiError) setIssues(e.detail.issues);
-      if (e instanceof ApiError && e.detail.code === "conflict") setConflict(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function check() {
-    if (!saved) return;
-    setBusy(true);
-    setError("");
-    setIssues([]);
-    try {
-      setReadiness(await api.validateFlow({ ...content, expectedRevision: saved.revision }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not check Flow.");
-      if (e instanceof ApiError) setIssues(e.detail.issues);
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function compareLatest() {
-    try {
-      setLatest(await api.getFlow(id));
-    } catch {
-      setError("Could not load the latest revision. Try again.");
-    }
-  }
-  function keepLocalDraft(against: FlowDraft) {
-    setSaved(against);
-    setConflict(false);
-    setLatest(null);
-    setError("");
-    setIssues([]);
-    setDirty(true);
-  }
-  return {
-    saved,
-    graph,
-    name,
-    workspace,
-    content,
-    dirty,
-    busy,
-    error,
-    issues,
-    readiness,
-    latest,
-    conflict,
-    change,
-    editBlock: (next: FlowBlock) => change(replaceBlock(graph, next)),
-    rename,
-    changeWorkspace,
-    save,
-    check,
-    compareLatest,
-    takeLatest: load,
-    keepLocalDraft,
-  };
-}
-
-function useSavedAgents(active: boolean) {
-  const [agents, setAgents] = useState<readonly AgentDefinition[]>([]);
-  const [agentError, setAgentError] = useState("");
-  useEffect(() => {
-    if (!active) return;
-    setAgentError("");
-    let current = true;
-    api
-      .listAgents()
-      .then((v) => {
-        if (current) setAgents(v);
-      })
-      .catch(() => {
-        if (current) setAgentError("Could not load saved Agents. Reopen this Flow to try again.");
-      });
-    return () => {
-      current = false;
-    };
-  }, [active]);
-  return { agents, agentError };
+    let agents = definitions.getSnapshot().agents.value;
+    return definitions.subscribe(() => {
+      const next = definitions.getSnapshot().agents.value;
+      if (next === agents) return;
+      agents = next;
+      draft.reportAgentsRefreshed();
+    });
+  }, [definitions, draft]);
+  useDraftGuard(draft, id, reportDraft);
+  return { draft, state: useFlowDraftSnapshot(draft) };
 }
 
 /** Keeps the last selected block rendered while the floating panel plays its close motion. */
@@ -294,7 +155,7 @@ function useDeleteKey(
  */
 function useCanvasSelection(
   canvas: RefObject<HTMLElement | null>,
-  draft: Pick<FlowDraftEditor, "graph" | "change" | "busy">,
+  draft: { graph: FlowGraph; busy: boolean; change: (next: FlowGraph) => void },
   active: boolean,
   registerEscape: (handler: () => void) => () => void,
 ) {
@@ -331,30 +192,46 @@ function useCanvasSelection(
   return { selected, wire, select, selectWire, deleteWire };
 }
 
+const noAgents: readonly AgentDefinition[] = [];
+
+/** Studio's saved Agents for the block library; the last read stays offered during refreshes. */
+function useLibraryAgents(definitions: StudioDefinitions) {
+  const { value, error } = useStudioRead(definitions, "agents");
+  return {
+    agents: value ?? noAgents,
+    agentError: error ? "Could not load saved Agents. Reopen this Flow to try again." : "",
+  };
+}
+
 const PANEL_WIDTH = 344;
 /** Matches `--duration-panel-out`; the reduced-motion fade is shorter and ends first. */
 const PANEL_CLOSE_MS = 140;
 
 export function FlowDetail({
   id,
+  definitions,
   active,
   registerEscape,
   reportDraft,
 }: {
   id: string;
+  definitions: StudioDefinitions;
   active: boolean;
   registerEscape: (handler: () => void) => () => void;
   reportDraft: (id: string, dirty: boolean) => void;
 }) {
   const canvas = useRef<HTMLElement>(null);
   const placement = useRef<DropAt | null>(null);
-  const { agents, agentError } = useSavedAgents(active);
-  const draft = useFlowDraft(id, reportDraft, active, agents);
+  const { draft, state } = useOpenedFlowDraft(id, definitions, active, reportDraft);
+  const { agents, agentError } = useLibraryAgents(definitions);
   const [libraryOpen, setLibraryOpen] = useState(true);
-  const { saved, graph, name, error, readiness } = draft;
+  const { saved, error, readiness } = state;
+  const { graph, name } = state.content;
+  const change = (next: FlowGraph) => draft.edit({ graph: next });
+  const editBlock = (next: FlowBlock) => change(replaceBlock(graph, next));
   const { selected, select, wire, selectWire, deleteWire } = useCanvasSelection(
     canvas,
-    draft,
+    { graph, busy: state.busy, change },
     active,
     registerEscape,
   );
@@ -363,7 +240,7 @@ export function FlowDetail({
   const reservedRight = block ? PANEL_WIDTH + 24 : 0;
   function add(kind: FlowBlock["kind"], agent?: AgentDefinition, position?: BlockPosition) {
     const next = newBlock(graph, kind, agent, position);
-    draft.change({ ...graph, blocks: [...graph.blocks, next] });
+    change({ ...graph, blocks: [...graph.blocks, next] });
     select(next.id);
   }
   const dropAt: DropAt = (x, y, grab) => placement.current?.(x, y, grab) ?? null;
@@ -378,14 +255,9 @@ export function FlowDetail({
   return (
     <CanvasLayout>
       <h1 className="sr-only">{name}</h1>
-      <EditorToolbar
-        draft={draft}
-        revision={saved.revision}
-        flowId={id}
-        onClearDirty={() => reportDraft(id, false)}
-      />
-      <DraftProblems draft={draft} onSelect={select} />
-      <div inert={draft.busy} className="flex min-h-0 flex-1">
+      <EditorToolbar draft={draft} state={state} revision={saved.revision} flowId={id} />
+      <DraftProblems draft={draft} state={state} onSelect={select} />
+      <div inert={state.busy} className="flex min-h-0 flex-1">
         <BlockLibrary
           open={libraryOpen}
           onOpenChange={setLibraryOpen}
@@ -404,13 +276,13 @@ export function FlowDetail({
             reservedRight={reservedRight}
             scope={id}
             savedGraph={saved.id === id ? saved.graph : undefined}
-            busy={draft.busy}
+            busy={state.busy}
             placementRef={placement}
             onSelect={select}
             onSelectWire={selectWire}
             onDeleteWire={deleteWire}
-            onEdit={draft.editBlock}
-            onChange={draft.change}
+            onEdit={editBlock}
+            onChange={change}
           />
           <ReadinessPanel readiness={readiness} graph={graph} onSelect={select} />
           <EditorSelectionPanel
@@ -418,7 +290,8 @@ export function FlowDetail({
             closing={closing}
             graph={graph}
             agents={agents}
-            draft={draft}
+            onEdit={editBlock}
+            onChange={change}
             select={select}
           />
         </div>
@@ -432,14 +305,16 @@ function EditorSelectionPanel({
   closing,
   graph,
   agents,
-  draft,
+  onEdit,
+  onChange,
   select,
 }: {
   block: FlowBlock | undefined;
   closing: FlowBlock | null;
   graph: FlowGraph;
   agents: readonly AgentDefinition[];
-  draft: FlowDraftEditor;
+  onEdit: (block: FlowBlock) => void;
+  onChange: (graph: FlowGraph) => void;
   select: (id: string | null) => void;
 }) {
   const displayed = block ?? closing;
@@ -451,28 +326,26 @@ function EditorSelectionPanel({
       graph={graph}
       agents={agents}
       onClose={() => select(null)}
-      onEdit={draft.editBlock}
+      onEdit={onEdit}
       onRemove={(removed) => {
-        draft.change(removeBlock(graph, removed.id));
+        onChange(removeBlock(graph, removed.id));
         select(null);
       }}
     />
   );
 }
 
-type FlowDraftEditor = ReturnType<typeof useFlowDraft>;
-
 /** Editor top row: back link, editable Flow name, save status and the explicit actions. */
 function EditorToolbar({
   draft,
+  state,
   revision,
   flowId,
-  onClearDirty,
 }: {
-  draft: FlowDraftEditor;
+  draft: FlowDraftModel;
+  state: FlowDraftSnapshot;
   revision: number;
   flowId: string;
-  onClearDirty: () => void;
 }) {
   const { openFlowComposer } = useComposerNavigation();
   return (
@@ -489,14 +362,14 @@ function EditorToolbar({
       <Input
         aria-label="Flow name"
         className="h-8 max-w-80 min-w-24 flex-1 border-transparent bg-transparent text-base font-semibold hover:border-border focus-visible:border-ring"
-        value={draft.name}
-        disabled={draft.busy}
-        onChange={(e) => draft.rename(e.target.value)}
+        value={state.content.name}
+        disabled={state.busy}
+        onChange={(e) => draft.edit({ name: e.target.value })}
       />
       <FlowWorkspaceControl
-        workspace={draft.workspace}
-        disabled={draft.busy}
-        onChange={draft.changeWorkspace}
+        workspace={state.content.workspace}
+        disabled={state.busy}
+        onChange={(workspace) => draft.edit({ workspace })}
       />
       <span className="flex-1" />
       <span
@@ -504,73 +377,41 @@ function EditorToolbar({
         aria-label="Flow save status"
         className={cn(
           "flex items-center gap-1.5 px-2 text-2xs font-medium whitespace-nowrap",
-          draft.dirty ? "text-attention" : "text-muted-foreground",
+          state.dirty ? "text-attention" : "text-muted-foreground",
         )}
       >
-        {draft.dirty ? (
+        {state.dirty ? (
           <CircleDot aria-hidden className="size-3.5" />
         ) : (
           <Check aria-hidden className="size-3.5 text-success" />
         )}
-        {draft.dirty ? "Unsaved changes" : "Saved"} · Revision {revision}
+        {state.dirty ? "Unsaved changes" : "Saved"} · Revision {revision}
       </span>
       <Separator orientation="vertical" className="h-5!" />
-      <Button variant="outline" disabled={draft.busy} onClick={() => void draft.check()}>
+      <Button variant="outline" disabled={state.busy} onClick={() => void draft.check()}>
         <ListChecks aria-hidden /> Check readiness
       </Button>
       <MutationGate>
-        <Button disabled={draft.busy || draft.conflict} onClick={() => void draft.save()}>
+        <Button disabled={!state.canSave} onClick={() => void draft.save()}>
           <Save aria-hidden /> Save Flow
         </Button>
       </MutationGate>
       <MutationGate>
-        <Button
-          disabled={draft.busy || draft.dirty || !draft.readiness?.ready}
-          onClick={() => openFlowComposer(flowId)}
-        >
+        <Button disabled={!state.canStartRun} onClick={() => openFlowComposer(flowId)}>
           Start Run
         </Button>
       </MutationGate>
-      <RemoveFlowAction
-        flowId={flowId}
-        flowName={draft.name}
-        dirty={draft.dirty}
-        busy={draft.busy}
-        onClearDirty={onClearDirty}
-      />
+      <RemoveFlowAction draft={draft} state={state} />
     </div>
   );
 }
 
-function RemoveFlowAction({
-  flowId,
-  flowName,
-  dirty,
-  busy,
-  onClearDirty,
-}: {
-  flowId: string;
-  flowName: string;
-  dirty: boolean;
-  busy: boolean;
-  onClearDirty: () => void;
-}) {
+function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: FlowDraftSnapshot }) {
   const navigate = useStudioNavigation();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState("");
-  const [removing, setRemoving] = useState(false);
+  const { removing, removalError, busy, dirty, content } = state;
   async function confirmRemove() {
-    setRemoving(true);
-    setError("");
-    try {
-      await api.removeFlow(flowId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove Flow.");
-      return;
-    } finally {
-      setRemoving(false);
-    }
-    onClearDirty();
+    if (!(await draft.remove())) return;
     setOpen(false);
     void navigate({ tab: "flows" });
   }
@@ -583,7 +424,7 @@ function RemoveFlowAction({
           disabled={busy || removing}
           className="text-destructive hover:text-destructive"
           onClick={() => {
-            setError("");
+            draft.clearRemovalError();
             setOpen(true);
           }}
         >
@@ -597,7 +438,7 @@ function RemoveFlowAction({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Remove “{flowName}”?</DialogTitle>
+            <DialogTitle>Remove “{content.name}”?</DialogTitle>
             <DialogDescription asChild>
               <div className="grid gap-2 text-sm text-muted-foreground">
                 <p>
@@ -612,9 +453,9 @@ function RemoveFlowAction({
               </div>
             </DialogDescription>
           </DialogHeader>
-          {error && (
+          {removalError && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {removalError}
             </p>
           )}
           <DialogFooter>
@@ -646,20 +487,23 @@ function RemoveFlowAction({
 /** Save/validation errors and revision-conflict reconciliation above the canvas. */
 function DraftProblems({
   draft,
+  state,
   onSelect,
 }: {
-  draft: FlowDraftEditor;
+  draft: FlowDraftModel;
+  state: FlowDraftSnapshot;
   onSelect: (blockId: string | null) => void;
 }) {
+  const { conflict } = state;
   return (
     <>
-      {draft.error && (
+      {state.error && (
         <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
-          <AlertTitle>{draft.error}</AlertTitle>
-          {draft.issues.length > 0 && (
+          <AlertTitle>{state.error}</AlertTitle>
+          {state.issues.length > 0 && (
             <AlertDescription>
-              {draft.issues.map((issue, i) => (
-                <IssueLink key={i} issue={issue} graph={draft.graph} onSelect={onSelect}>
+              {state.issues.map((issue, i) => (
+                <IssueLink key={i} issue={issue} graph={state.content.graph} onSelect={onSelect}>
                   {issue.path}: {issue.message}
                 </IssueLink>
               ))}
@@ -667,13 +511,13 @@ function DraftProblems({
           )}
         </Alert>
       )}
-      {draft.conflict && (
+      {conflict.status !== "none" && (
         <ConflictPanel
-          local={draft.content}
-          latest={draft.latest}
+          local={state.content}
+          latest={conflict.status === "compared" ? conflict.latest : null}
           onCompare={draft.compareLatest}
           onTakeLatest={draft.takeLatest}
-          onKeepLocal={draft.keepLocalDraft}
+          onKeepLocal={draft.keepLocal}
         />
       )}
     </>
@@ -761,8 +605,8 @@ function ConflictPanel({
   local: FlowContent;
   latest: FlowDraft | null;
   onCompare: () => Promise<void>;
-  onTakeLatest: (latest: FlowDraft) => void;
-  onKeepLocal: (latest: FlowDraft) => void;
+  onTakeLatest: () => void;
+  onKeepLocal: () => void;
 }) {
   return (
     <section
@@ -799,10 +643,10 @@ function ConflictPanel({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => onTakeLatest(latest)}>
+            <Button variant="outline" size="sm" onClick={onTakeLatest}>
               Use latest saved Flow
             </Button>
-            <Button variant="outline" size="sm" onClick={() => onKeepLocal(latest)}>
+            <Button variant="outline" size="sm" onClick={onKeepLocal}>
               Keep local draft against revision {latest.revision}
             </Button>
             <p className="text-xs text-muted-foreground">
