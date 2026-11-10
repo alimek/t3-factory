@@ -3,7 +3,7 @@
  * only. The sandboxed preload bundles this module, so it imports types only and declares no
  * globals; the renderer declares the bridge on `window`.
  */
-import type { ApplicationUpdate, UpdateChannel } from "./index.ts";
+import type { ApplicationUpdate, UpdateChannel } from "./update.ts";
 
 /** Same-origin window message type that carries the live relay port from preload to page. */
 export const livePortMessage = "factory:live-port";

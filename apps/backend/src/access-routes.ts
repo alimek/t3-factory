@@ -1,14 +1,17 @@
 import * as Effect from "effect/Effect";
 import { HttpServerResponse } from "effect/http";
-import type {
-  ClientAccessGrant,
-  ClientScope,
-  ProtocolDescriptor,
-  RemoteAccessStatus,
-  Result,
+import {
+  clientAccessOperations,
+  clientAccessServerOperations,
+  type ClientAccessGrant,
+  type ClientScope,
+  type ProtocolDescriptor,
+  type RemoteAccessStatus,
+  type Result,
 } from "@t3-factory/contracts";
 import { credentialCookie, requestCredential, type RequestLimiter } from "./client-transport.ts";
-import { resultResponse, standardBody, type ApiRoute } from "./http-support.ts";
+import { resultResponse, standardBody } from "./http-support.ts";
+import { operationRoutes } from "./route-table.ts";
 import type { Factory } from "./open-factory.ts";
 import type { LiveTransport } from "./live-transport.ts";
 import { failure } from "./result.ts";
@@ -58,135 +61,115 @@ export function accessRoutes(
   remote: RemoteAccessControl,
   limiter: RequestLimiter,
   live: Pick<LiveTransport, "closeClient">,
-): readonly ApiRoute[] {
+): ReturnType<typeof operationRoutes> {
   const promised =
     (operation: () => Promise<Result<unknown>>) =>
     (): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
       Effect.map(Effect.promise(operation), (result) => resultResponse(result));
-  const decision = (action: "approve" | "deny" | "revoke"): ApiRoute => ({
-    method: "POST",
-    surface: "host",
-    path: new RegExp(`^/api/host/clients/([^/]+)/${action}$`),
-    handle: ({ id }) =>
-      Effect.map(
-        Effect.promise(() =>
-          action === "approve"
-            ? factory.approveClient(id)
-            : action === "deny"
-              ? factory.denyClient(id)
-              : factory.revokeClient(id),
-        ),
-        (result) => {
-          // Revocation ends the client's open live delivery; later requests fail authentication.
-          if (result.ok && action === "revoke") live.closeClient(id);
-          return resultResponse(result);
+  return operationRoutes(
+    { ...clientAccessOperations, ...clientAccessServerOperations },
+    {
+      getProtocol: {
+        public: true,
+        handshake: true,
+        handle: () => Effect.succeed(resultResponse({ ok: true, value: protocol })),
+      },
+      getClientScope: {
+        host: {
+          handle: () =>
+            Effect.succeed(
+              resultResponse({ ok: true, value: { scope: "host" } satisfies ClientScope }),
+            ),
         },
-      ),
-  });
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/protocol$/,
-      public: true,
-      handshake: true,
-      handle: () => Effect.succeed(resultResponse({ ok: true, value: protocol })),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/client-access$/,
-      surface: "host",
-      handle: () =>
-        Effect.succeed(
-          resultResponse({ ok: true, value: { scope: "host" } satisfies ClientScope }),
-        ),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/client-access$/,
-      surface: "remote",
-      public: true,
-      handle: ({ headers }) =>
-        Effect.map(
-          Effect.promise(() => factory.getClientAccess(requestCredential(headers) ?? "")),
-          (result) =>
-            resultResponse(
-              result.ok
-                ? {
-                    ok: true,
-                    value: { scope: "remote", access: result.value } satisfies ClientScope,
-                  }
-                : result,
+        remote: {
+          public: true,
+          handle: ({ headers }) =>
+            Effect.map(
+              Effect.promise(() => factory.getClientAccess(requestCredential(headers) ?? "")),
+              (result) =>
+                resultResponse(
+                  result.ok
+                    ? {
+                        ok: true,
+                        value: { scope: "remote", access: result.value } satisfies ClientScope,
+                      }
+                    : result,
+                ),
             ),
-        ),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/client-access\/requests$/,
-      surface: "remote",
-      public: true,
-      body: standardBody,
-      handle: ({ input, peer }) =>
-        limiter.allow(peer)
-          ? Effect.map(
-              Effect.promise(() => factory.requestClientAccess(input)),
-              grantResponse,
-            )
-          : Effect.succeed(
-              resultResponse(
-                failure("conflict", "Too many access requests from this device. Wait a minute."),
+        },
+      },
+      requestClientAccess: {
+        surface: "remote",
+        public: true,
+        body: standardBody,
+        handle: ({ input, peer }) =>
+          limiter.allow(peer)
+            ? Effect.map(
+                Effect.promise(() => factory.requestClientAccess(input)),
+                grantResponse,
+              )
+            : Effect.succeed(
+                resultResponse(
+                  failure("conflict", "Too many access requests from this device. Wait a minute."),
+                ),
               ),
-            ),
-    },
-    {
-      method: "GET",
-      path: /^\/factory-ca\.pem$/,
-      surface: "remote",
-      public: true,
-      // Browser navigation precedes protocol negotiation. This is public trust material.
-      handshake: true,
-      handle: () => Effect.succeed(pemResponse(remote.trustAnchor())),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/host\/clients$/,
-      surface: "host",
-      handle: promised(() => factory.listClients()),
-    },
-    decision("approve"),
-    decision("deny"),
-    decision("revoke"),
-    {
-      method: "GET",
-      path: /^\/api\/host\/lifecycle$/,
-      surface: "host",
-      handle: promised(() => factory.getHostLifecycle()),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/host\/remote-access$/,
-      surface: "host",
-      handle: promised(async () => ({ ok: true, value: await remote.status() })),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/host\/remote-access$/,
-      surface: "host",
-      body: standardBody,
-      handle: ({ input }) => {
-        const enabled =
-          typeof input === "object" && input !== null && "enabled" in input
-            ? input.enabled
-            : undefined;
-        return typeof enabled === "boolean"
-          ? promised(() => remote.setEnabled(enabled))()
-          : Effect.succeed(resultResponse(failure("validation", "Send { enabled: boolean }.")));
+      },
+      getPublicCertificate: {
+        surface: "remote",
+        public: true,
+        // Browser navigation precedes protocol negotiation. This is public trust material.
+        handshake: true,
+        handle: () => Effect.succeed(pemResponse(remote.trustAnchor())),
+      },
+      listClients: {
+        surface: "host",
+        handle: promised(() => factory.listClients()),
+      },
+      approveClient: {
+        surface: "host",
+        handle: ({ parameters }) => promised(() => factory.approveClient(parameters.id))(),
+      },
+      denyClient: {
+        surface: "host",
+        handle: ({ parameters }) => promised(() => factory.denyClient(parameters.id))(),
+      },
+      revokeClient: {
+        surface: "host",
+        handle: ({ parameters }) =>
+          Effect.map(
+            Effect.promise(() => factory.revokeClient(parameters.id)),
+            (result) => {
+              // Revocation ends the client's open live delivery; later requests fail authentication.
+              if (result.ok) live.closeClient(parameters.id);
+              return resultResponse(result);
+            },
+          ),
+      },
+      getHostLifecycle: {
+        surface: "host",
+        handle: promised(() => factory.getHostLifecycle()),
+      },
+      getRemoteAccess: {
+        surface: "host",
+        handle: promised(async () => ({ ok: true, value: await remote.status() })),
+      },
+      setRemoteAccess: {
+        surface: "host",
+        body: standardBody,
+        handle: ({ input }) => {
+          const enabled =
+            typeof input === "object" && input !== null && "enabled" in input
+              ? input.enabled
+              : undefined;
+          return typeof enabled === "boolean"
+            ? promised(() => remote.setEnabled(enabled))()
+            : Effect.succeed(resultResponse(failure("validation", "Send { enabled: boolean }.")));
+        },
+      },
+      getRemoteAccessCertificate: {
+        surface: "host",
+        handle: () => Effect.succeed(pemResponse(remote.trustAnchor())),
       },
     },
-    {
-      method: "GET",
-      path: /^\/api\/host\/remote-access\/certificate$/,
-      surface: "host",
-      handle: () => Effect.succeed(pemResponse(remote.trustAnchor())),
-    },
-  ];
+  );
 }

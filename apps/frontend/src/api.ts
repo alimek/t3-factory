@@ -1,20 +1,14 @@
 import { OfflineError, protocolHeaders, transport, unreachableHeader } from "./transport.ts";
 import {
   agentOperations,
+  clientAccessOperations,
+  clientAccessServerOperations,
+  serverUpdateOperations,
   operationPath,
   type OperationDefinition,
   type OperationInput,
   type OperationOutput,
   type OperationParameterValues,
-  type ClientAccessGrant,
-  type ClientScope,
-  type FactoryClient,
-  type HostLifecycle,
-  type ProtocolDescriptor,
-  type RemoteAccessStatus,
-  type RequestClientAccessInput,
-  type ServerUpdate,
-  type ServerUpdateAction,
   type RunDetail,
   type RunImageInfo,
   type StartRunInput,
@@ -147,6 +141,9 @@ export const runImageUrl = (sha256: string) => `/api/run-images/${encodeURICompo
 
 export const api = {
   ...operationCalls(agentOperations),
+  ...operationCalls(clientAccessOperations),
+  ...operationCalls(clientAccessServerOperations),
+  ...operationCalls(serverUpdateOperations),
   listRunNavigation: () => request<readonly RunNavigationEntry[]>("/api/run-navigation"),
   snoozeRun: (id: string) =>
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/snooze`, { method: "POST" }),
@@ -208,20 +205,4 @@ export const api = {
   removeFlow: (id: string) =>
     request<void>(`/api/flows/${encodeURIComponent(id)}`, { method: "DELETE" }),
   validateFlow: (input: UpdateFlowInput) => post<FlowReadiness>("/api/flows/validate", input),
-  getProtocol: () => request<ProtocolDescriptor>("/api/protocol"),
-  getClientScope: () => request<ClientScope>("/api/client-access"),
-  requestClientAccess: (input: RequestClientAccessInput) =>
-    post<ClientAccessGrant>("/api/client-access/requests", input),
-  listClients: () => request<readonly FactoryClient[]>("/api/host/clients"),
-  decideClient: (id: string, decision: "approve" | "deny" | "revoke") =>
-    request<FactoryClient>(`/api/host/clients/${encodeURIComponent(id)}/${decision}`, {
-      method: "POST",
-    }),
-  getHostLifecycle: () => request<HostLifecycle>("/api/host/lifecycle"),
-  getRemoteAccess: () => request<RemoteAccessStatus>("/api/host/remote-access"),
-  setRemoteAccess: (enabled: boolean) =>
-    put<RemoteAccessStatus>("/api/host/remote-access", { enabled }),
-  getServerUpdate: () => request<ServerUpdate>("/api/server-update"),
-  runServerUpdate: (action: ServerUpdateAction) =>
-    request<ServerUpdate>(`/api/server-update/${action}`, { method: "POST" }),
 };
