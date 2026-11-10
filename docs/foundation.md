@@ -40,7 +40,8 @@ and restricted OAuth credentials live outside project repositories.
 - External delivery records retain the exact request, target, key and authorization
   context needed to resolve uncertain outcomes. An acknowledgement is not completion.
 - A handoff also records its message's origin: the worker binding (T3 thread and Run) and the
-  Block activation whose result produced it, where present. A Wait arrival keeps that origin,
+  Block activation whose result produced it, where present. Human occurrences retain their incoming
+  delivery reference and copy its origin into every answer handoff, even after clearing context. A Wait arrival keeps that origin,
   its message, its absolute deadline and its outcome, keyed by the delivery that arrived, and
   forwarding copies the origin to its handoffs unchanged; no origin is derived from the graph
   or the latest activation. Migration `076` added this origin, Wait durations on Flow revision

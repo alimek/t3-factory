@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { authoringMcpClient, mcpAgent, toolReply } from "./support/factory-mcp.ts";
 import { assertOk, sampleAgentInput } from "./support/domain-setup.ts";
 
-it("a partial-position save arranges the whole graph after creating a ready Flow at revision 1 without positions", async (c) => {
+it("MCP saves and reloads a ready Agent, Human and Wait composition while arranging partial positions", async (c) => {
   // Arrange
   const { client } = await authoringMcpClient(c);
   const { agent, provider } = await mcpAgent(client, "Coder");
@@ -17,8 +17,14 @@ it("a partial-position save arranges the whole graph after creating a ready Flow
         hiddenExitIds: [],
         localExits: [],
       },
+      { id: "review", kind: "human", name: "Review" },
+      { id: "pause", kind: "wait", name: "Pause", duration: { amount: 1, unit: "hours" } },
     ],
-    connections: [],
+    connections: [
+      { sourceBlockId: "flow-input", exitId: "done", targetBlockId: "review" },
+      { sourceBlockId: "review", exitId: "approve", targetBlockId: "pause" },
+      { sourceBlockId: "review", exitId: "request-changes", targetBlockId: "pause" },
+    ],
   };
   const workspace = { mode: "worktree", base: { kind: "ref", ref: "origin/develop" } };
 
