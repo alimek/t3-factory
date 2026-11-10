@@ -13,10 +13,9 @@ export default defineConfig(({ command }) => ({
       : {}),
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
-  // Node-based tests resolve shared packages from source, like the development UI.
-  ...(command === "serve"
-    ? { ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } } }
-    : {}),
+  // Only Node-run tests use SSR resolution; the shipped UI is a client build, so this
+  // reaches no shipping output.
+  ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } },
   test: {
     environment: "node",
     include: ["test/*.test.ts"],

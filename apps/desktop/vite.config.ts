@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { defaultServerConditions, defineConfig } from "vite-plus";
 
 export default defineConfig({
-  // Rule tests consume the shared contracts from the working tree.
+  // This config serves only the rule tests; the shipped bundle comes from
+  // scripts/bundle.mjs, which resolves compiled workspace output.
   ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } },
   test: {
     environment: "node",
