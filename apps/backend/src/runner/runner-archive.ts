@@ -20,7 +20,7 @@ export function openRunnerArchive(
       Effect.gen(function* () {
         const run = yield* store.readRun(id);
         if (!run || (yield* liveContextId()) !== run.context_id) return;
-        const threads = yield* store.boundWorkerThreads(id);
+        const threads = yield* store.boundWorkers(id);
         if (!threads.length) return;
         const support = yield* Effect.tryPromise(() => t3.inspectStopSupport(runTarget(run)));
         if (!support.supported) return;

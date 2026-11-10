@@ -258,7 +258,7 @@ type RunAction = "snooze" | "restore" | "settle";
 const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
   snooze: api.snoozeRun,
   restore: api.restoreRun,
-  settle: api.settleRun,
+  settle: (id) => api.settleRun(id, {}),
 };
 /** The group a Run moves to, whose toggle takes focus after the row leaves the open list. */
 const actionGroup = { snooze: "snoozed", settle: "settled" } as const;

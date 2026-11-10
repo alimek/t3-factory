@@ -111,7 +111,7 @@ function blockView(
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
         : null,
     },
-    allowedTransitions: current && detail.lifecycle !== "archived" ? OPEN_TRANSITIONS : [],
+    allowedTransitions: current && detail.gateOpen ? OPEN_TRANSITIONS : [],
   };
 }
 

@@ -14,6 +14,7 @@ import { resolveBlock, writeBlockState } from "./blocks.ts";
 import {
   acceptedTransition,
   RUN_ARCHIVED,
+  RUN_SETTLED,
   type RuntimeReply,
   type RuntimeReport,
 } from "../../runtime-types.ts";
@@ -125,13 +126,15 @@ function acceptFinal(
   });
 }
 
-/** One verdict for the Block's current activation, in this order: an Archived Run, a protocol
+/** One verdict for the Block's current activation, in this order: an Archived Run, a Run whose
+ * manual settlement closed its gate (a report from stopped work never revives it), a protocol
  * violation, a repeat of the current report, then exit resolution and acceptance. The latest
  * report is the activation's current state, so a newer finished report replaces the result. */
 function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeReport) {
   return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
     const { runRow, block } = target;
     if (runRow.archived_at) return RUN_ARCHIVED;
+    if (!runRow.gate_open) return RUN_SETTLED;
     const protocol = nonFinalRejection(report);
     if (protocol) return protocol;
     const content = reportFingerprint(report);
@@ -150,7 +153,8 @@ export function openRunReports(database: RunnerDatabase) {
     database.transaction((sql) => resolveBlock(sql, publicId));
 
   /** Accepts a report for the Block `publicId` names in Run `runId`. Guards: this backend owns
-   * the database (otherwise RUNNER_UNAVAILABLE); an Archived Run is acknowledged without change.
+   * the database (otherwise RUNNER_UNAVAILABLE); an Archived Run, or one whose manual settlement
+   * closed its gate, is acknowledged without change.
    * An accepted report advances the generation, and again when it returns a Settled Run to
    * Active; a newly raised rejection diagnostic advances it once. The verdict, whatever it is, is
    * published after the commit, because a rejection may record a diagnostic. */

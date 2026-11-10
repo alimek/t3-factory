@@ -29,6 +29,7 @@ export function openRunNavigation(database: RunnerDatabase) {
             creation_key: string;
             settled_at: string | null;
             archived_at: null;
+            settlement: RunNavigationEntry["settlement"];
             snoozed: number | null;
             woke: number | null;
             project_id: string;
@@ -36,12 +37,13 @@ export function openRunNavigation(database: RunnerDatabase) {
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
           }>`SELECT r.id,r.number,r.title,r.created_at,r.creation_key,r.settled_at,r.archived_at,rp.snoozed,rp.woke,
+          CASE WHEN r.settled_at IS NOT NULL OR s.run_id IS NULL THEN NULL WHEN EXISTS(SELECT 1 FROM run_settlement_workers w WHERE w.run_id=r.id AND w.attempt=s.attempt AND w.state='unresolved') THEN 'unresolved' ELSE 'stopping' END AS settlement,
           COALESCE((SELECT MAX(e.observed_at) FROM run_events e WHERE e.run_id=r.id AND e.kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','continuation-passed','run-settled','run-activated')),r.started_at) AS last_activity_at,
           f.name AS flow_name,p.project_icon_json,p.favicon_path,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
           JOIN flow_revisions f ON f.id=r.flow_revision_id
-          LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
+          LEFT JOIN run_presentation rp ON rp.run_id=r.id LEFT JOIN run_settlements s ON s.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
           const blocks = yield* sql<{
             run_id: string;
             block_id: string;
@@ -118,6 +120,7 @@ export function openRunNavigation(database: RunnerDatabase) {
                   faviconUrl: projectFaviconUrl(row.project_id, row.favicon_path),
                 },
                 lifecycle,
+                settlement: row.settlement,
                 blocks: byRun.get(row.id) ?? [],
                 presentation: {
                   snoozed: active && !!row.snoozed,

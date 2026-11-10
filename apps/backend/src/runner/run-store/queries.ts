@@ -24,6 +24,7 @@ import { currentWorkingMessages } from "./current-report.ts";
 import type { DeliveryRecord, ResultRecord } from "./records.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { runLifecycle } from "./lifecycle.ts";
+import { readRunSettlement } from "./manual-settlement.ts";
 import type {
   BlockRow,
   ExecutionRow,
@@ -299,6 +300,7 @@ export function openRunQueries(database: RunnerDatabase) {
             startedAt: runRow.started_at,
             lifecycle: runLifecycle(runRow),
             gateOpen: !!runRow.gate_open,
+            settlement: yield* readRunSettlement(sql, runRow),
             generation: runRow.generation,
             blocks: blocks.map((block) =>
               runBlock(block, intents, working.get(block.block_id) ?? null),

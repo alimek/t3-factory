@@ -52,19 +52,15 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     detached.add(fiber);
     fiber.addObserver(() => detached.delete(fiber));
   });
-  const lifecycle = { isClosed: () => closed, drive, fork, getRun };
+  const lifecycle = { isClosed: () => closed, drive, fork, getRun, serial: drives.serial };
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(store, t3);
   const { dispatchIntent } = openRunnerDispatch(store, ops, t3, checkAgent, observe, images);
   const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
-  const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
-    store,
-    t3,
-    lifecycle,
-    liveContextId,
-  );
+  const { settleRun, settleWhenDone, settleFinishedBlockThreads, advanceSettlement } =
+    openRunnerSettle(store, t3, lifecycle, liveContextId);
 
   function drive(
     id: string,
@@ -141,6 +137,10 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
             concurrency: "unbounded",
           });
           yield* Effect.forEach(ids, (run) => settleWhenDone(run.id), {
+            concurrency: "unbounded",
+          });
+          // A confirmed manual settlement holds its Run's gate closed until it settles.
+          yield* Effect.forEach(ids, (run) => advanceSettlement(run.id), {
             concurrency: "unbounded",
           });
           return { ok: true as const, value: undefined };

@@ -144,7 +144,7 @@ The Flow revision a Run started with and the Agent revision of every Agent that 
 _Avoid_: Run snapshot.
 
 **Run timeline**:
-The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
+The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, stopping workers for a manual settlement, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
 
 **Run activity**:
 A meaningful change in a Run's work, such as an accepted Agent report, an execution change, a new Needs input matter or an answer to a Human step. Viewing or renaming a Run and observing an unchanged state are not Run activity.
@@ -186,12 +186,24 @@ One T3 run of a Block's worker thread, including repeated visits, queued turns, 
 A Run lifecycle state for work that is done. A Run settles automatically when every
 visited Block has its Final result with no later working report, every Human
 occurrence is answered, nothing is owed or pending and every worker thread is
-finished; the user can also settle an Active or Snoozed Run at any time. Settling
-changes no execution. Any accepted report from one of its Blocks returns it to
-Active; chat without a report does not. Navigation groups Settled Runs together.
-On a Run, settled attention matters no longer await attention and keep their
-appearance and settlement times and reasons; settling attention does not settle the Run.
+finished; any accepted report from one of its Blocks then returns it to Active, while
+chat without a report does not. The user can also settle an Active or Snoozed Run by
+manual settlement, which ends its automatic work for good. Navigation groups Settled
+Runs together. On a Run, settled attention matters no longer await attention and keep
+their appearance and settlement times and reasons; settling attention does not settle the Run.
 _Avoid_: Finished (the retired permanent outcome).
+
+**Manual settlement**:
+The user's Settle of an Active or Snoozed Run. It settles at once when fresh T3 reads
+confirm every bound worker thread finished; otherwise the user confirms stopping every
+worker. A confirmed settlement closes the handoff gate, asks T3 to Stop each unfinished
+worker thread and settles only once fresh reads confirm every worker finished. Until
+then the Run stays Active and its settlement is **stopping**, or **unresolved** with the
+affected workers and a retry. Settling cancels owed automatic work and pending Human
+occurrences without inventing answers, settles pending attention as `manual-settlement`
+and shows unfinished Blocks as stopped. Later reports change nothing and never return the
+Run to Active.
+_Avoid_: Stop Run, Stopped, pause, Resume (none exist; an unresolved settlement is not a lifecycle state).
 
 **T3 thread settlement**:
 T3's presentation state for a conversation whose current work is complete; the

@@ -140,6 +140,8 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     images: [],
     repositories: [],
     gateOpen: lifecycle === "settled",
+    // Upgrading starts no manual settlement: a released Settled Run keeps its open gate.
+    settlement: null,
     definitions: capturedDefinitions(snapshot),
     // Released Runs worked in the project checkout.
     workspace: { mode: "checkout" },

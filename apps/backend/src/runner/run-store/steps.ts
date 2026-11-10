@@ -13,6 +13,22 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
   | { readonly kind: "run-settled"; readonly cause: "automatic" | "manual" }
   | { readonly kind: "run-activated"; readonly blockId: string; readonly reportId?: string }
   | { readonly kind: "run-archived" }
+  /** The user confirmed manual settlement (attempt 1) or retried it. */
+  | { readonly kind: "settlement-requested"; readonly attempt: number }
+  | {
+      readonly kind: "worker-stop-requested";
+      readonly blockId: string;
+      /** The run T3 last showed on the worker thread before Stop was requested. */
+      readonly executionId: string | null;
+      readonly requestKey: string;
+    }
+  /** Settlement confirmed finished a worker thread whose Stop T3 acknowledged. */
+  | {
+      readonly kind: "worker-stopped";
+      readonly blockId: string;
+      readonly executionId: string | null;
+      readonly engineStatus: string | null;
+    }
   | { readonly kind: "operation-cancelled"; readonly blockId: string; readonly intentId: string }
   | { readonly kind: "human-cancelled"; readonly blockId: string; readonly occurrenceId: string }
   | {
@@ -126,21 +142,36 @@ function storedDeliveryEvent(event: DeliveryEvent) {
   });
 }
 
-function stored(event: TimelineEvent) {
+/** Events about the Run's lifecycle: settling, returning to Active, archiving, and the
+ * confirmed manual settlement that stops its workers. */
+type LifecycleEvent = Extract<
+  TimelineEvent,
+  {
+    readonly kind:
+      | "run-settled"
+      | "run-activated"
+      | "run-archived"
+      | "settlement-requested"
+      | "worker-stop-requested"
+      | "worker-stopped";
+  }
+>;
+
+const LIFECYCLE_KINDS: ReadonlySet<TimelineEvent["kind"]> = new Set<LifecycleEvent["kind"]>([
+  "run-settled",
+  "run-activated",
+  "run-archived",
+  "settlement-requested",
+  "worker-stop-requested",
+  "worker-stopped",
+]);
+
+const isLifecycleEvent = (event: TimelineEvent): event is LifecycleEvent =>
+  LIFECYCLE_KINDS.has(event.kind);
+
+function storedLifecycleEvent(event: LifecycleEvent) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
-    if ("intentId" in event) return yield* storedDeliveryEvent(event);
     switch (event.kind) {
-      case "started":
-        return { blockId: null, executionId: null, sourceKey: "start", causeId: null };
-      case "execution-observed":
-        return {
-          blockId: event.blockId,
-          executionId: event.executionId,
-          bindingId: event.bindingId,
-          engineStatus: event.engineStatus,
-          sourceKey: yield* newId,
-          causeId: null,
-        };
       case "run-settled":
         return {
           blockId: null,
@@ -157,6 +188,48 @@ function stored(event: TimelineEvent) {
         };
       case "run-archived":
         return { blockId: null, executionId: null, sourceKey: "archived", causeId: null };
+      case "settlement-requested":
+        return {
+          blockId: null,
+          executionId: null,
+          sourceKey: `settlement-requested:${event.attempt}`,
+          causeId: String(event.attempt),
+        };
+      case "worker-stop-requested":
+        return {
+          blockId: event.blockId,
+          executionId: event.executionId,
+          sourceKey: "stop-requested:" + event.requestKey,
+          causeId: event.requestKey,
+        };
+      case "worker-stopped":
+        return {
+          blockId: event.blockId,
+          executionId: event.executionId,
+          ...(event.engineStatus === null ? {} : { engineStatus: event.engineStatus }),
+          sourceKey: "worker-stopped:" + event.blockId,
+          causeId: null,
+        };
+    }
+  });
+}
+
+function stored(event: TimelineEvent) {
+  return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
+    if ("intentId" in event) return yield* storedDeliveryEvent(event);
+    if (isLifecycleEvent(event)) return yield* storedLifecycleEvent(event);
+    switch (event.kind) {
+      case "started":
+        return { blockId: null, executionId: null, sourceKey: "start", causeId: null };
+      case "execution-observed":
+        return {
+          blockId: event.blockId,
+          executionId: event.executionId,
+          bindingId: event.bindingId,
+          engineStatus: event.engineStatus,
+          sourceKey: yield* newId,
+          causeId: null,
+        };
       case "human-cancelled":
         return {
           blockId: event.blockId,

@@ -56,6 +56,7 @@ export function runDetail(): RunDetail {
     segments: [{ type: "text", text: "Task" }],
     images: [],
     gateOpen: true,
+    settlement: null,
     generation: 1,
     definitions: {
       flow: {

@@ -33,8 +33,8 @@ and restricted OAuth credentials live outside project repositories.
   staging metadata in SQLite. Start attaches the ordered manifest to the Run; the prompt segments
   and manifest are immutable and the Run's input keeps the worker-readable text. Migration `071`
   gives every existing Run one text segment and no images.
-- Each Start creates a new Task, Run and threads. A Settled Run returns to Active when one of
-  its Blocks reports; Archived Runs are final and never reopened.
+- Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
+  Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization

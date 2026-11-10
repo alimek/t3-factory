@@ -192,12 +192,17 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
 - **Send.** Work targets an exact thread with `mode: queue`, a stable request key and fixed
   message. Returned thread/message/execution references must match. Send replay requires its
   own continuity proof; launch replay support is insufficient.
-- **Interrupt.** Archive interrupts each worker thread once with `t3_thread_interrupt`,
-  `stop: true` and a request key derived from the Run and thread, but no run ID: T3 acts on the
-  thread and its delegated work, without an exact-execution fence. Factory reads no queues,
-  cancels no queued run, records no outcome and sends no later request, so a queued run that
-  starts after the interrupt is not stopped by Factory. Acknowledgements never prove
-  termination.
+- **Stop.** Archive and [manual settlement](runner.md#manual-settlement) stop worker threads with
+  `t3_thread_interrupt`, `stop: true` and a request key, but no run ID: T3 acts on the thread and
+  its delegated work, without an exact-execution fence, so a run started between Factory's read
+  and the request can be stopped too. Factory treats Stop as supported only when the tool's schema
+  has string `threadId` and `clientRequestId` and boolean `stop`. Archive sends one request per
+  worker thread (key from the Run and thread) and records no outcome. Manual settlement sends at
+  most one per worker thread and attempt (key from the Run, attempt and thread), records it before
+  sending and settles only after fresh reads confirm the thread finished; unsupported or refused
+  Stop leaves it unresolved. Factory reads no queues and cancels no queued run: a queued run keeps
+  manual settlement unresolved, and one that starts after Archive's interrupt is not stopped.
+  Acknowledgements never prove termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without
   launching a turn. It provides neither safe replay nor an execution fence.
 

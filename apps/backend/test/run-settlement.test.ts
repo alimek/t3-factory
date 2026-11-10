@@ -3,10 +3,14 @@ import { nextSettlement, reopenDuringSettlement } from "./support/run-worker.ts"
 import {
   allTurnsEnd,
   archived,
+  fanOutFlow,
   finishedReport,
   handoffFlow,
+  humanReviewFlow,
   missingReport,
   report,
+  resultHeld,
+  resultReleasedToHumanReview,
   resultReleasedToSameWorker,
   resultReleasedToSecondWorker,
   resultReplacedBeforeRelease,
@@ -15,13 +19,14 @@ import {
   settled,
   snoozed,
   turnBegins,
+  twoWorkersStarted,
   workerAtWork,
   workerFinal,
   workerWorking,
   workingReport,
 } from "./support/scenarios.ts";
 import { prepared } from "./support/prepared-runner.ts";
-import { answerDelegatedWait } from "./support/controlled-thread.ts";
+import { answerDelegatedWait, stopsEndThreads } from "./support/controlled-thread.ts";
 
 it("a finished terminal Block settles its worker thread in T3 without waiting for Run settlement", async (c) => {
   // Arrange
@@ -65,6 +70,9 @@ it("a revisited Block settles its thread again after a new T3 run finishes", asy
   await f.f.reconcileRuns();
   expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
   assert((await report(f.world, worker, finishedReport("Second pass."))) === "ACCEPTED");
+  // The report's background dispatch shares the Run's drive lane: this pass waits for it, while
+  // the second turn still runs, so it cannot release the result after the turn ends below.
+  assert((await f.f.reconcileRuns()).ok);
   const runBeforeFinish = await f.f.getRun(f.runId);
   assert(runBeforeFinish.ok);
   const producingExecution = runBeforeFinish.value.reports.at(-1)?.executionId;
@@ -253,33 +261,278 @@ it("a failed T3 thread settlement leaves the Run Settled", async (c) => {
   expect(run.value.events.at(-1)?.kind).toBe("run-settled");
 });
 
-it("settling an Active Run leaves its running work alone and settles the worker thread in T3", async (c) => {
+it("settling a Run whose worker is still running asks for confirmation and changes nothing", async (c) => {
   // Arrange
   const setup = await prepared(c, handoffFlow);
   const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
-  const settlement = nextSettlement(f.t3);
+  const before = await f.f.getRun(f.runId);
+  assert(before.ok);
 
   // Act
-  const result = await f.f.settleRun(f.runId);
+  const result = await f.f.settleRun(f.runId, {});
 
   // Assert
   assert(result.ok);
-  expect(result.value.lifecycle).toBe("settled");
-  expect(result.value.events.at(-1)).toMatchObject({ kind: "run-settled", causeId: "manual" });
-  expect(result.value.blocks[0]?.state).toBe("working");
-  expect(result.value.gateOpen).toBe(true);
+  assert(result.value.outcome === "confirmation-required");
+  expect(result.value.workers).toMatchObject([
+    {
+      blockId: "worker",
+      threadId: "thread-1",
+      state: "executing",
+      problem: "T3 shows a run in progress.",
+    },
+  ]);
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({
+    lifecycle: "active",
+    gateOpen: true,
+    settlement: null,
+    generation: before.value.generation,
+  });
+  expect(run.value.events).toStrictEqual(before.value.events);
+  expect(f.t3.threadStops).toStrictEqual([]);
+});
+
+it("settling a Run whose worker finished cancels its held handoff without stopping anything", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
+
+  // Act
+  const result = await f.f.settleRun(f.runId, {});
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.outcome).toBe("settled");
+  expect(result.value.run).toMatchObject({
+    lifecycle: "settled",
+    gateOpen: false,
+    settlement: null,
+  });
+  expect(result.value.run.intents.filter((intent) => intent.kind === "handoff")).toMatchObject([
+    { blockId: "parallel-block", state: "cancelled", problem: "cancelled-on-Settle" },
+  ]);
+  expect(result.value.run.blocks.map((block) => block.state)).toStrictEqual([
+    "finished",
+    "not-started",
+  ]);
+  expect(result.value.run.events.at(-1)).toMatchObject({ kind: "run-settled", causeId: "manual" });
+  expect(f.t3.threadStops).toStrictEqual([]);
+});
+
+it("settling a Run with a pending Human review cancels it without an answer and settles its attention", async (c) => {
+  // Arrange
+  const setup = await prepared(c, humanReviewFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
+
+  // Act
+  const result = await f.f.settleRun(f.runId, {});
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.run.lifecycle).toBe("settled");
+  expect(result.value.run.humanOccurrences).toMatchObject([
+    { id: f.occurrence.id, state: "cancelled", exitId: null },
+  ]);
+  expect(result.value.run.attention).toMatchObject([
+    { kind: "human", settlementReason: "manual-settlement" },
+  ]);
+});
+
+it("confirming Settle stops every worker and settles the Run once fresh reads show them finished", async (c) => {
+  // Arrange
+  const setup = await prepared(c, fanOutFlow);
+  const [first, second] = await twoWorkersStarted(setup.world, setup.input);
+  const f = { ...setup, runId: first.runId };
+  stopsEndThreads(f.t3);
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({ lifecycle: "settled", gateOpen: false, settlement: null });
+  expect(f.t3.threadStops.map((stop) => stop.threadId)).toStrictEqual([
+    first.threadId,
+    second.threadId,
+  ]);
+  expect(run.value.blocks.map((block) => block.state)).toStrictEqual([
+    "stopped",
+    "stopped",
+    "not-started",
+  ]);
+  expect(
+    run.value.events
+      .filter((event) => event.kind.includes("settle") || event.kind.includes("stop"))
+      .map((event) => [event.kind, event.blockId]),
+  ).toStrictEqual([
+    ["settlement-requested", null],
+    ["worker-stop-requested", "worker"],
+    ["worker-stop-requested", "second"],
+    ["worker-stopped", "worker"],
+    ["worker-stopped", "second"],
+    ["run-settled", null],
+  ]);
+  expect(run.value.attention).toStrictEqual([]);
+});
+
+it("an acknowledged Stop does not settle the Run while T3 still shows the worker running", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({
+    lifecycle: "active",
+    gateOpen: false,
+    settlement: {
+      state: "stopping",
+      attempt: 1,
+      workers: [{ blockId: "worker", state: "stopping", problem: "T3 shows a run in progress." }],
+    },
+  });
+  expect(f.t3.threadStops).toHaveLength(1);
+});
+
+it("a Stop T3 does not support leaves the settlement unresolved and holds the Run's other work", async (c) => {
+  // Arrange
+  const setup = await prepared(c, fanOutFlow);
+  const [first] = await twoWorkersStarted(setup.world, setup.input);
+  const f = { ...setup, runId: first.runId };
+  await resultReported(f.world, first);
+  f.t3.stopSupported = false;
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("active");
+  expect(run.value.settlement).toMatchObject({
+    state: "unresolved",
+    workers: [
+      { blockId: "worker", state: "finished", problem: null },
+      {
+        blockId: "second",
+        state: "unresolved",
+        problem: "T3 cannot stop worker threads: Controlled Stop support",
+      },
+    ],
+  });
+  expect(run.value.intents.filter((intent) => intent.kind === "handoff")).toMatchObject([
+    { blockId: "follow-up", state: "pending" },
+  ]);
+  expect(f.t3.launches.size).toBe(2);
+  expect(f.t3.threadStops).toStrictEqual([]);
+});
+
+it("retrying an unresolved settlement requests Stop again and settles the Run", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  stopsEndThreads(f.t3);
+  f.t3.stopSupported = false;
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+  await f.f.reconcileRuns();
+  f.t3.stopSupported = true;
+  const settlement = nextSettlement(f.t3);
+
+  // Act
+  const result = await f.f.settleRun(f.runId, { stopWorkers: true });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject({ outcome: "stopping", run: { settlement: { attempt: 2 } } });
   await settlement;
-  expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(f.t3.threadStops.map((stop) => stop.threadId)).toStrictEqual(["thread-1"]);
+});
+
+it("repeating a confirmed Settle while its worker is stopping sends no second Stop", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+  await f.f.reconcileRuns();
+
+  // Act
+  const result = await f.f.settleRun(f.runId, { stopWorkers: true });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject({ outcome: "stopping", run: { settlement: { attempt: 1 } } });
+  expect(f.t3.threadStops).toHaveLength(1);
+});
+
+it("a late report from a stopped worker leaves the manually settled Run settled and records nothing", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  stopsEndThreads(f.t3);
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+  await f.f.reconcileRuns();
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal(f.blockId));
+
+  // Assert
+  expect(result).toMatchObject({ code: "RUN_SETTLED", next: expect.stringContaining("settled") });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(run.value.reports).toStrictEqual([]);
+  expect(run.value.intents.filter((intent) => intent.kind === "handoff")).toStrictEqual([]);
+});
+
+it("after a restart, a stopping Run keeps its held work and settles without another Stop once its worker finished", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultHeld(setup.world, atWork)) };
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+  assert((await f.f.reconcileRuns()).ok);
+  await f.f.close();
+  allTurnsEnd(f.world, f);
+
+  // Act
+  const reopened = await f.h.open({ t3: f.t3, connectionRetryMs: 60_000 });
+
+  // Assert
+  const run = await reopened.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(run.value.intents.filter((intent) => intent.kind === "handoff")).toMatchObject([
+    { blockId: "parallel-block", state: "cancelled" },
+  ]);
+  expect(f.t3.threadStops).toHaveLength(1);
+  expect(f.t3.launches.size).toBe(1);
 });
 
 it("settling a snoozed Run moves it out of Snoozed", async (c) => {
   // Arrange
   const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
-  const f = { ...setup, ...(await snoozed(setup.world, atWork)) };
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await snoozed(setup.world, reported)) };
 
   // Act
-  const result = await f.f.settleRun(f.runId);
+  const result = await f.f.settleRun(f.runId, {});
 
   // Assert
   assert(result.ok);
@@ -287,6 +540,7 @@ it("settling a snoozed Run moves it out of Snoozed", async (c) => {
   assert(navigation.ok);
   expect(navigation.value[0]).toMatchObject({
     lifecycle: "settled",
+    settlement: null,
     presentation: { snoozed: false, woke: false },
   });
 });
@@ -306,11 +560,12 @@ it("a Settled Run cannot be snoozed", async (c) => {
   expect(result.error.code).toBe("conflict");
 });
 
-it("a working report from a Block of a Settled Run returns the Run to Active", async (c) => {
+it("a working report from a Block of an automatically Settled Run returns the Run to Active", async (c) => {
   // Arrange
-  const setup = await prepared(c, handoffFlow);
-  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
-  assert((await f.f.settleRun(f.runId)).ok);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await settled(setup.world, reported)) };
 
   // Act
   const result = await f.f.runtime.submit(workerWorking(f.blockId));

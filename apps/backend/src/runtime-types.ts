@@ -65,10 +65,20 @@ const NEXT: Record<RuntimeReport["status"], string> = {
 export const SUCCESS_CODES: readonly string[] = [
   "ACCEPTED",
   "RUN_ARCHIVED",
+  "RUN_SETTLED",
   "BLOCK",
   "RUN",
   "IMAGE",
 ];
+
+/** Every report for a Run the user settled manually, including while its workers are being
+ * stopped, succeeds and changes nothing. */
+export const RUN_SETTLED: RuntimeReply = {
+  code: "RUN_SETTLED",
+  state: "settled",
+  allowedTransitions: [],
+  next: "The user settled this Run and Factory stopped its work, so Factory recorded nothing. Stop work on this Block and end the turn.",
+};
 
 /** Every report for an archived Run succeeds and changes nothing. */
 export const RUN_ARCHIVED: RuntimeReply = {
