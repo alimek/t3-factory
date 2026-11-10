@@ -4,7 +4,8 @@ import type { DeliveryKind, DeliveryState, HandoffState } from "./states.ts";
 /**
  * The one stored record behind a Handoff and the delivery it becomes. A Handoff is stored with
  * kind `handoff`; turning it into a delivery rewrites the same record's kind to `launch` or `send`,
- * and a Handoff to a Human step is acknowledged in place when its occurrence appears. `prepare` is
+ * and a Handoff to a Human step or Wait is acknowledged in place when its occurrence or arrival
+ * appears. `prepare` is
  * the retired prepared-worker kind, kept as history only.
  */
 export type DeliveryRecord = {
@@ -15,6 +16,9 @@ export type DeliveryRecord = {
   cause: string;
   report_id: string | null;
   occurrence_id: string | null;
+  wait_arrival_id: string | null;
+  /** The Block activation whose result the message is, beside `binding_id`; null when unknown. */
+  origin_activation_id: string | null;
   source_block_id: string | null;
   exit_id: string | null;
   /** The worker thread binding the message belongs to; null for launches and earlier records. */
@@ -36,7 +40,8 @@ export type DeliveryRecord = {
 type DeliveryFields = Omit<DeliveryRecord, "kind" | "state">;
 
 /** A Handoff not yet turned into a delivery. Released means a release record exists for its Final
- * result version or, for a Human source, that the occurrence is answered. */
+ * result version or, for a Human or Wait source, that the occurrence is answered or the arrival
+ * forwarded. */
 export type Handoff = DeliveryFields & { readonly kind: "handoff"; readonly state: HandoffState };
 
 /** A launch or send to a Handoff's recipient, an entry launch or a Request report send. */

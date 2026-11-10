@@ -32,7 +32,8 @@ import {
   type Placement,
 } from "./canvas-surface.tsx";
 import { DragButton } from "./drag-button.tsx";
-import { BLOCK_KINDS, blockIdentity, exitSourceLabel } from "./flow-block.tsx";
+import { BLOCK_KINDS, blockIdentity, exitDisplayName, exitSourceLabel } from "./flow-block.tsx";
+import { waitDurationText } from "../wait-display.ts";
 
 /** Places a block dragged by `grab` at viewport point x/y, or null when x/y is outside the canvas. */
 export type DropAt = (x: number, y: number, grab: GrabOffset) => Placement | null;
@@ -247,6 +248,7 @@ function blockReference(
   agents: readonly AgentDefinition[],
 ): { label: string; value: string; valueClassName?: string } {
   if (block.kind === "human") return { label: "Asks", value: "a person" };
+  if (block.kind === "wait") return { label: "Waits", value: waitDurationText(block.duration) };
   if (block.kind === "continuation") {
     const thread = continuedThread(graph, block.id);
     return thread
@@ -295,7 +297,7 @@ function AuthoringExit({
           exit.unavailable && "text-attention line-through",
         )}
       >
-        {exit.name || "Unnamed exit"}
+        {exitDisplayName(exit)}
       </span>
       <span className="sr-only">→ {recipients || "finish here"}</span>
     </>
@@ -367,7 +369,7 @@ function authoringBlock({
       exit.unavailable
         ? unavailablePort
         : connectionHandle(
-            exit.source === "continuation"
+            exit.source === "wait" || exit.source === "continuation"
               ? `Connect output of ${name}`
               : `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
             connectingExitId === exit.id,

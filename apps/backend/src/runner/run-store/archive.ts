@@ -17,9 +17,9 @@ import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 const pending: DeliveryState = "pending";
 const cancelled: DeliveryState = "cancelled";
 
-/** Nothing unsent leaves an archived Run: pending launches, handoffs and Human occurrences are
- * cancelled without inventing answers, pending attention settles and unfinished activated
- * Blocks show stopped. In-flight or uncertain operations keep their recorded state. */
+/** Nothing unsent leaves an archived Run: pending launches, handoffs, Human occurrences and Wait
+ * arrivals are cancelled without inventing answers, pending attention settles and unfinished
+ * activated Blocks show stopped. In-flight or uncertain operations keep their recorded state. */
 function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
   return Effect.gen(function* () {
     const intents =
@@ -47,6 +47,23 @@ function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
         observedAt: time,
       });
     }
+    const waits = yield* sql<{
+      id: string;
+      block_id: string;
+    }>`SELECT id,block_id FROM wait_arrivals WHERE run_id=${id} AND state='pending'`;
+    for (const arrival of waits) {
+      yield* sql`UPDATE wait_arrivals SET state='cancelled',settled_at=${time} WHERE id=${arrival.id}`;
+      yield* appendTimelineEvent(sql, {
+        kind: "wait-cancelled",
+        runId: id,
+        blockId: arrival.block_id,
+        arrivalId: arrival.id,
+        observedAt: time,
+      });
+    }
+    // Archive clears every Wait message, including those forwarded arrivals kept for their
+    // recipients; outcomes, deadlines and identities stay.
+    yield* sql`UPDATE wait_arrivals SET message=NULL WHERE run_id=${id}`;
     const attention = yield* sql<{
       id: string;
       block_id: string;

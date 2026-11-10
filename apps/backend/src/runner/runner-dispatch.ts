@@ -7,7 +7,7 @@ import { recoveryDispatchGeneration } from "./runner-recovery.ts";
 import type { FactoryOperations } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type { SendPayload, SendReference, T3Adapter } from "../adapters/t3.ts";
-import type { Delivery, Handoff, RunStore } from "./run-store/run-store.ts";
+import type { Delivery, Handoff, RunStore, ScheduledWait } from "./run-store/run-store.ts";
 import type { BlockRow, Checked, RunnerOptions, RunRow, StoredTarget } from "./runner-types.ts";
 import {
   catalogProject,
@@ -17,7 +17,11 @@ import {
   unverified,
   verified,
 } from "./runner-utils.ts";
-import { activatePendingHumanHandoff, reservePendingExplicitHandoff } from "./runner-release.ts";
+import {
+  activatePendingHumanHandoff,
+  activatePendingWaitHandoff,
+  reservePendingExplicitHandoff,
+} from "./runner-release.ts";
 import { inRunWorkspace } from "./run-workspace.ts";
 import type { RunImages } from "../run-images.ts";
 /** Uncertain work may be replayed only within the retry scope recorded at reservation. */
@@ -56,9 +60,11 @@ export function openRunnerDispatch(
   checkAgent: RunnerOptions["checkAgent"],
   observe: (run: RunRow, block: BlockRow, contextId: string | null) => Effect.Effect<void, unknown>,
   images: RunImages,
+  scheduleWait: (wait: ScheduledWait) => Effect.Effect<void, unknown>,
 ) {
   /** Agent handoffs become worker commands or revisit sends, Continuation handoffs a prompt send
-   * or a pass-through; Human handoffs become occurrences. */
+   * or a pass-through; Human handoffs become occurrences; Wait handoffs become arrivals whose
+   * wake-up is scheduled. */
   function prepareHandoff(
     runRow: RunRow,
     handoff: Handoff,
@@ -69,8 +75,13 @@ export function openRunnerDispatch(
       )?.kind;
       if (kind === "continuation")
         return yield* prepareContinuationHandoff(store, t3, runRow, handoff);
-      if (kind !== "agent") {
+      if (kind === "human") {
         yield* activatePendingHumanHandoff(store, t3, runRow, handoff);
+        return;
+      }
+      if (kind === "wait") {
+        const arrival = yield* activatePendingWaitHandoff(store, t3, runRow, handoff);
+        if (arrival) yield* scheduleWait(arrival);
         return;
       }
       return yield* prepareCoordinatorHandoff(store, t3, runRow, handoff);
@@ -148,8 +159,12 @@ export function openRunnerDispatch(
   function reserveSend(runRow: RunRow, intent: Delivery, retryScope: string | null) {
     return Effect.gen(function* () {
       const gated =
-        Boolean(intent.report_id || intent.occurrence_id || passedThrough(intent)) &&
-        intent.state === "pending";
+        Boolean(
+          intent.report_id ||
+          intent.occurrence_id ||
+          intent.wait_arrival_id ||
+          passedThrough(intent),
+        ) && intent.state === "pending";
       if (gated) return yield* reservePendingExplicitHandoff(store, t3, runRow, intent, retryScope);
       const generation = yield* recoveryDispatchGeneration(store, t3, runRow, intent);
       if (generation === null) return false;

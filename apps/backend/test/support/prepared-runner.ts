@@ -1,6 +1,8 @@
 import { singleWorkerFlow, type ReadyFlowShape, type SingleWorkerVariant } from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 import type { Factory } from "../../src/index.ts";
 import { loadConfiguration } from "../../src/config.ts";
 import { startServer } from "../../src/server.ts";
@@ -68,31 +70,61 @@ export async function prepared(c: TestContext, shape?: SingleWorkerVariant | Rea
 }
 
 /**
- * The ready Flow on backend services in the test's scope, so TestClock drives their time. Setup
- * runs through a Promise view of the same operations.
+ * The ready Flow (as `prepared` takes it) on backend services in the test's scope, so TestClock
+ * drives their time. Setup and scenario steps run through a Promise view of the same operations on
+ * the test's runtime, so they read the same clock. `connectionRetryMs` also paces the periodic
+ * reconcile, so a long one leaves only scheduled work to the clock.
  */
-export function preparedService(c: TestContext) {
+export function preparedService(
+  c: TestContext,
+  shape?: SingleWorkerVariant | ReadyFlowShape,
+  { connectionRetryMs = 60_000 }: { readonly connectionRetryMs?: number } = {},
+) {
   return Effect.gen(function* () {
     const h = yield* Effect.promise(() => factoryHarness(c));
     const { root, t3, reportingStateDirectory } = yield* Effect.promise(() =>
       preparedHomes(h.processHome),
     );
-    const factory = yield* h.service({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
-    const operations = factory as unknown as Record<
-      string,
-      (...args: unknown[]) => Effect.Effect<unknown>
-    >;
-    const promised = new Proxy(
-      {},
-      {
-        get:
-          (_, name: string) =>
-          (...args: unknown[]) =>
-            Effect.runPromise(operations[name]!(...args)),
-      },
-    ) as Factory;
-    const ready = yield* Effect.promise(() => readyFlow(promised, t3, root));
-    return { factory, t3, ...ready };
+    const testScope = yield* Effect.scope;
+    /** Opens the backend in its own scope inside the test's, so a test can close it and open the
+     * recovery owner of the same database on the same clock. */
+    const open = Effect.gen(function* () {
+      const scope = yield* Scope.fork(testScope);
+      const service = yield* h
+        .service({ t3, reportingStateDirectory, connectionRetryMs })
+        .pipe(Scope.provide(scope));
+      return { factory: service, close: Scope.close(scope, Exit.void) };
+    });
+    const { factory, close } = yield* open;
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const promisedAll = (operations: object) =>
+      new Proxy(
+        {},
+        {
+          get:
+            (_, name: string) =>
+            (...args: unknown[]) =>
+              runPromise(
+                (operations as Record<string, (...args: unknown[]) => Effect.Effect<unknown>>)[
+                  name
+                ]!(...args),
+              ),
+        },
+      );
+    const operations = promisedAll(factory) as Record<string, unknown>;
+    const runtime = promisedAll(factory.runtime);
+    const promised = new Proxy(operations, {
+      get: (target, name: string) => (name === "runtime" ? runtime : target[name]),
+    }) as unknown as Factory;
+    const ready = yield* Effect.promise(() => readyFlow(promised, t3, root, shape));
+    return {
+      h,
+      factory,
+      close,
+      reopen: Effect.map(open, (opened) => opened.factory),
+      t3,
+      ...ready,
+    };
   });
 }
 

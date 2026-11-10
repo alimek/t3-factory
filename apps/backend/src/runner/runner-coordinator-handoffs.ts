@@ -45,7 +45,7 @@ export function releasedArrival(store: RunStore, t3: T3Adapter, run: RunRow, han
   });
 }
 
-/** Human answers and passed-through messages are durable authority; Agent and Continuation
+/** Human answers, Wait forwardings and passed-through messages are durable authority; Agent and Continuation
  * reports still require their result's release. */
 function sourceReleased(store: RunStore, t3: T3Adapter, current: RunRow, handoff: Handoff) {
   return handoff.report_id

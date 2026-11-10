@@ -1,5 +1,6 @@
 import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
+import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
 import { now } from "../../time.ts";
 import type { RunRow, StoredTarget } from "../runner-types.ts";
@@ -11,6 +12,7 @@ import { asDelivery } from "./deliveries.ts";
 import { guardsHold, pendingHandoffHolds } from "./guards.ts";
 import type { DeliveryRecord, Handoff } from "./records.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
+import { clearSpentWaitMessages } from "./waits.ts";
 
 /** A Continuation's prompt visit: `sent` until its response is forwarded, then every later message
  * passes through. */
@@ -24,6 +26,23 @@ const arrivalMessage = (handoff: Handoff) => {
   if (!intactPayload(handoff)) throw Error("Invalid handoff payload");
   return (JSON.parse(handoff.payload_json) as { message: string }).message;
 };
+
+/** The block and exit that wrote a Handoff's message. A Wait forwards its arrival's message
+ * unchanged, so a message from a Wait was written by that arrival's source, through consecutive
+ * Waits. */
+const messageAuthor = (sql: SqlClient.SqlClient, handoff: Handoff) =>
+  Effect.gen(function* () {
+    const [author] = yield* sql<{
+      source_block_id: string | null;
+      exit_id: string | null;
+    }>`WITH RECURSIVE chain(source_block_id,exit_id,wait_arrival_id) AS (
+        SELECT ${handoff.source_block_id},${handoff.exit_id},${handoff.wait_arrival_id}
+        UNION ALL
+        SELECT i.source_block_id,i.exit_id,i.wait_arrival_id FROM chain c JOIN wait_arrivals a ON a.id=c.wait_arrival_id JOIN operation_intents i ON i.id=a.incoming_intent_id
+      ) SELECT source_block_id,exit_id FROM chain WHERE wait_arrival_id IS NULL`;
+    if (!author) return yield* Effect.fail(Error("A forwarded message lost its Wait arrival"));
+    return { sourceBlockId: author.source_block_id, exitId: author.exit_id };
+  });
 
 /**
  * Continuation arrivals. The first message a Continuation receives in a Run sends its prompt into
@@ -67,6 +86,7 @@ export function openRunContinuations(database: RunnerDatabase) {
           yield* writeBlockState(sql, { runId: current.id, blockId: handoff.block_id }, "error", {
             problem,
           });
+          yield* clearSpentWaitMessages(sql, current.id);
           yield* advanceGeneration(sql, current.id);
           return undefined;
         }
@@ -77,7 +97,7 @@ export function openRunContinuations(database: RunnerDatabase) {
         const message = continuationPromptMessage(
           current.definitions,
           handoff.block_id,
-          { sourceBlockId: handoff.source_block_id, exitId: handoff.exit_id },
+          yield* messageAuthor(sql, handoff),
           arrivalMessage(handoff),
         );
         const payload = workerRevisitPayload(
@@ -98,6 +118,7 @@ export function openRunContinuations(database: RunnerDatabase) {
         yield* writeBlockState(sql, { runId: current.id, blockId: handoff.block_id }, "sent", {
           problem: null,
         });
+        yield* clearSpentWaitMessages(sql, current.id);
         yield* advanceGeneration(sql, current.id);
         const [delivery] =
           yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id}`;
@@ -134,7 +155,8 @@ export function openRunContinuations(database: RunnerDatabase) {
     );
   }
 
-  /** Forwards a message unchanged to the Continuation's recipients, keeping the message's worker,
+  /** Forwards a message unchanged to the Continuation's recipients, keeping the message's worker
+   * thread and activation,
    * once the prompt's response is out. Guards: owner, not Archived, live authorization context,
    * open gate and `current`'s generation; the Handoff is still pending. Acknowledges the arrival,
    * creates released Handoffs, advances the generation and appends "passed through". */
@@ -164,8 +186,8 @@ export function openRunContinuations(database: RunnerDatabase) {
           const id = yield* newId,
             cause = `pass:${visit!.id}/recipient:${blockId}`;
           const inserted =
-            yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,source_block_id,exit_id,binding_id)
-              VALUES(${id},${current.id},${blockId},'handoff',${cause},${JSON.stringify({ ...target, blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${current.context_id},${handoff.block_id},${CONTINUATION_EXIT.id},${handoff.binding_id}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
+            yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,source_block_id,exit_id,binding_id,origin_activation_id)
+              VALUES(${id},${current.id},${blockId},'handoff',${cause},${JSON.stringify({ ...target, blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${current.context_id},${handoff.block_id},${CONTINUATION_EXIT.id},${handoff.binding_id},${handoff.origin_activation_id}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
           if (inserted.length)
             yield* appendTimelineEvent(sql, {
               kind: "handoff-created",
@@ -183,6 +205,7 @@ export function openRunContinuations(database: RunnerDatabase) {
           intentId: handoff.id,
           observedAt: time,
         });
+        yield* clearSpentWaitMessages(sql, current.id);
         yield* advanceGeneration(sql, current.id);
       }),
     );

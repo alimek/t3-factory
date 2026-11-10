@@ -1,6 +1,6 @@
 import { useId, type ComponentProps } from "react";
 import { CornerDownLeft, ExternalLink, Trash2 } from "lucide-react";
-import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import type { AgentDefinition, FlowBlock, FlowGraph, WaitUnit } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { continuedThread } from "../flow-graph.ts";
 import { BlockExitConfiguration } from "./block-exit-configuration.tsx";
 
 type AgentBlock = Extract<FlowBlock, { kind: "agent" }>;
+type WaitBlock = Extract<FlowBlock, { kind: "wait" }>;
 type ContinuationBlock = Extract<FlowBlock, { kind: "continuation" }>;
 
 /** Configuration of the selected block, shown in the editor's floating panel. */
@@ -50,6 +51,7 @@ export function BlockConfiguration({
             to Agent blocks.
           </p>
         )}
+        {block.kind === "wait" && <WaitBlockSettings block={block} onEdit={onEdit} />}
         {block.kind === "continuation" && (
           <ContinuationBlockSettings block={block} graph={graph} onEdit={onEdit} />
         )}
@@ -144,6 +146,74 @@ function AgentBlockSettings({
   );
 }
 
+const WAIT_UNITS: readonly WaitUnit[] = ["minutes", "hours", "days"];
+
+/** A fixed relative duration; an empty amount saves the draft without one. Readiness reports a
+ * missing or out-of-range duration. */
+function WaitBlockSettings({
+  block,
+  onEdit,
+}: {
+  block: WaitBlock;
+  onEdit: (block: FlowBlock) => void;
+}) {
+  const amountId = useId();
+  const unitId = useId();
+  const unit = block.duration?.unit ?? "minutes";
+  return (
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1.5">
+          <FieldLabel htmlFor={amountId}>Wait for</FieldLabel>
+          <Input
+            id={amountId}
+            type="number"
+            step="any"
+            inputMode="decimal"
+            className="font-mono"
+            value={block.duration?.amount ?? ""}
+            onChange={(e) => {
+              // Any number saves; readiness reports an amount outside 1 minute to 7 days.
+              const amount = e.target.valueAsNumber;
+              onEdit({
+                ...block,
+                duration: Number.isFinite(amount) ? { amount, unit } : null,
+              });
+            }}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <FieldLabel htmlFor={unitId}>Unit</FieldLabel>
+          <NativeSelect
+            id={unitId}
+            className="h-8.5"
+            value={unit}
+            onChange={(e) =>
+              onEdit({
+                ...block,
+                duration: block.duration && {
+                  amount: block.duration.amount,
+                  unit: e.target.value as WaitUnit,
+                },
+              })
+            }
+          >
+            {WAIT_UNITS.map((option) => (
+              <NativeSelectOption key={option} value={option}>
+                {option}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Holds each arrival for 1 minute to 7 days, then passes its message on unchanged. A Wait has
+        no Agent or worker; the Flow input connects only to Agent blocks.
+      </p>
+    </div>
+  );
+}
+
 function ContinuationBlockSettings({
   block,
   graph,
@@ -195,7 +265,7 @@ function ContinuationBlockSettings({
           <p className="text-xs text-muted-foreground">
             {thread
               ? "Same T3 conversation, model and workspace as the worker that sent the message. There is nothing to choose here."
-              : "Connect an Agent block, directly or through Human steps and Continuations, so there is a conversation to continue."}
+              : "Connect an Agent block, directly or through Human steps, Waits and Continuations, so there is a conversation to continue."}
           </p>
         </div>
       </section>

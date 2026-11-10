@@ -261,7 +261,7 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 The current protocol is **8**, and both sides require at least **8**. Protocol 8 added
 Continuation blocks with their prompts, the `sent` and `pass-through` block states and Continuation
-visits, so older clients could neither read nor save current Flows and Runs. Their approved credentials
+visits, and Wait blocks with their durations and Wait arrivals, so older clients could neither read nor save current Flows and Runs. Their approved credentials
 are kept, but every product request answers that the client must update. Older servers likewise show
 the existing update gate before product screens mount (protocol **7** replaced outcome-based block
 exits with Agent exits, protocol **6** added Run prompt segments and image manifests, protocol **5** Starts with

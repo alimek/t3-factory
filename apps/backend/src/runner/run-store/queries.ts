@@ -6,6 +6,8 @@ import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "../../thread-link.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { recoveryRows } from "./recovery-read.ts";
+import { waitArrival, type WaitArrivalRow } from "./waits.ts";
+import { workerProvenance } from "./handoffs.ts";
 import type {
   Result,
   RunAttention,
@@ -151,7 +153,10 @@ function humanOccurrence(occurrence: HumanRow): RunDetail["humanOccurrences"][nu
   };
 }
 
-function runIntent(intent: DeliveryRecord): RunDetail["intents"][number] {
+/** A delivery as Run detail reads it, with its bound worker's thread for the public origin. */
+type IntentRow = DeliveryRecord & { origin_thread_id: string | null };
+
+function runIntent(intent: IntentRow): RunDetail["intents"][number] {
   return {
     id: intent.id,
     kind: intent.kind,
@@ -160,6 +165,8 @@ function runIntent(intent: DeliveryRecord): RunDetail["intents"][number] {
     occurrenceId: intent.occurrence_id,
     sourceBlockId: intent.source_block_id,
     exitId: intent.exit_id,
+    waitArrivalId: intent.wait_arrival_id,
+    origin: workerProvenance(intent),
     payloadRetained: intent.payload_json !== null,
     reference: intent.result_json
       ? (JSON.parse(intent.result_json) as RunDetail["intents"][number]["reference"])
@@ -246,7 +253,7 @@ export function openRunQueries(database: RunnerDatabase) {
         const blocks =
           yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${id} ORDER BY rowid`;
         const intents =
-          yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE run_id=${id} ORDER BY rowid`;
+          yield* sql<IntentRow>`SELECT i.*,t.thread_id AS origin_thread_id FROM operation_intents i LEFT JOIN run_thread_bindings t ON t.id=i.binding_id WHERE i.run_id=${id} ORDER BY i.rowid`;
         const events =
           yield* sql<RunEventRow>`SELECT * FROM run_events WHERE run_id=${id} ORDER BY sequence`;
         const reports =
@@ -258,6 +265,9 @@ export function openRunQueries(database: RunnerDatabase) {
           FROM run_executions x WHERE run_id=${id} ORDER BY rowid`;
         const humans =
           yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE run_id=${id} ORDER BY rowid`;
+        const waits = yield* sql<
+          WaitArrivalRow & { origin_thread_id: string | null }
+        >`SELECT w.*,t.thread_id AS origin_thread_id FROM wait_arrivals w LEFT JOIN run_thread_bindings t ON t.id=w.binding_id WHERE w.run_id=${id} ORDER BY w.rowid`;
         const continuationVisits = yield* sql<{
           id: string;
           block_id: string;
@@ -306,6 +316,7 @@ export function openRunQueries(database: RunnerDatabase) {
             reports: reports.map(runReport),
             executions: executions.map(runExecution),
             humanOccurrences: humans.map(humanOccurrence),
+            waitArrivals: waits.map(waitArrival),
             continuationVisits: continuationVisits.map((visit) => ({
               id: visit.id,
               blockId: visit.block_id,

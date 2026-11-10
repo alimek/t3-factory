@@ -80,20 +80,13 @@ function blockView(
   const visits = detail.activations.filter((activation) => activation.blockId === blockId);
   const current = visits[visits.length - 1];
   const cause = current?.cause ?? "";
-  const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
   // A Continuation's worker answers its prompt and finishes without naming an exit.
   const continuation = graphBlock.kind === "continuation";
   return {
     code: "BLOCK",
     state: block.state,
     visit: visits.length,
-    reason: continuation
-      ? "continuation"
-      : cause.startsWith("start:")
-        ? "first"
-        : cause.startsWith("human:")
-          ? "Human answer"
-          : "feedback",
+    reason: continuation ? "continuation" : visitReason(cause),
     ...(continuation ? { prompt: graphBlock.prompt } : {}),
     exits: continuation
       ? []
@@ -107,12 +100,28 @@ function blockView(
       input: detail.input,
       images,
       results: incomingResults(detail, cause),
-      feedback: feedbackId
-        ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
-        : null,
+      feedback: visitFeedback(detail, cause),
     },
     allowedTransitions: current && detail.lifecycle !== "archived" ? OPEN_TRANSITIONS : [],
   };
+}
+
+/** Why an Agent visit started, from the cause of its activation. */
+function visitReason(cause: string) {
+  if (cause.startsWith("start:")) return "first";
+  if (cause.startsWith("human:")) return "Human answer";
+  if (cause.startsWith("wait:")) return "Wait";
+  return "feedback";
+}
+
+/** The result or answer that started this visit, or the message a Wait forwarded to it unchanged;
+ * null once Archive cleared a Wait's message. */
+function visitFeedback(detail: RunDetail, cause: string) {
+  const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
+  if (feedbackId)
+    return detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null;
+  const arrivalId = /^wait:([^/]+)/.exec(cause)?.[1];
+  return detail.waitArrivals.find((arrival) => arrival.id === arrivalId)?.message ?? null;
 }
 
 /** One arrival activates one visit; graph neighbors and later reports are not its inputs. */
