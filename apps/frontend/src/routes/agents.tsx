@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AgentCapabilities, AgentDefinition, FlowDraft } from "@t3-factory/contracts";
 import { useStudioNavigation } from "../settings-navigation.ts";
+import { createAgentDraft, useAgentDraftSnapshot } from "../agent-draft.ts";
 import { api } from "../api.ts";
 import { useActiveView } from "../use-active-view.ts";
 import { AgentsListPane } from "../components/studio-agents/agents-list-pane.tsx";
@@ -109,7 +110,7 @@ function SelectedAgentEditor({
   const creating = agentId === "new";
   const [agent, setAgent] = useState<AgentDefinition | null>(null);
   const [error, setError] = useState("");
-  const [conflict, setConflict] = useState("");
+  const [duplicateError, setDuplicateError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
   useEffect(() => {
     if (creating) return;
@@ -129,14 +130,13 @@ function SelectedAgentEditor({
   const saved = (value: AgentDefinition) => {
     void library.reload();
     if (!active.current) return;
-    setConflict("");
+    setDuplicateError("");
     setAgent(value);
     void openStudio({ tab: "agents", agentId: value.id });
   };
   const deleted = () => {
     void library.reload();
     if (!active.current) return;
-    reportDraft(agentId, false);
     void openStudio({ tab: "agents" });
   };
   async function duplicate() {
@@ -148,7 +148,7 @@ function SelectedAgentEditor({
       if (active.current) void openStudio({ tab: "agents", agentId: copy.id });
     } catch (cause) {
       if (!active.current) return;
-      setConflict(
+      setDuplicateError(
         cause instanceof Error ? cause.message : "Factory could not duplicate this Agent.",
       );
     } finally {
@@ -169,24 +169,84 @@ function SelectedAgentEditor({
     );
   }
   return (
+    <OpenedAgentEditor
+      agent={agent}
+      capabilities={library.capabilities}
+      agentId={agentId}
+      flowUsage={flowUsageCount(library.flows ?? [], agentId)}
+      duplicating={duplicating}
+      duplicateError={duplicateError}
+      reportDraft={reportDraft}
+      onSaved={saved}
+      onDuplicate={creating ? undefined : () => void duplicate()}
+      onDeleted={deleted}
+    />
+  );
+}
+
+/** One loaded editor owns its draft; disposal detaches and clears only its own Studio guard. */
+function useOpenedAgentDraft(
+  agent: AgentDefinition | null,
+  capabilities: AgentCapabilities | null,
+  id: string,
+  reportDraft: (id: string, dirty: boolean) => void,
+) {
+  const [draft] = useState(() => createAgentDraft(agent, capabilities));
+  useEffect(() => {
+    let dirty = draft.getSnapshot().dirty;
+    const unsubscribe = draft.subscribe(() => {
+      const next = draft.getSnapshot().dirty;
+      if (next === dirty) return;
+      dirty = next;
+      reportDraft(id, next);
+    });
+    return () => {
+      unsubscribe();
+      reportDraft(id, false);
+    };
+  }, [draft, id, reportDraft]);
+  return { draft, state: useAgentDraftSnapshot(draft) };
+}
+
+function OpenedAgentEditor({
+  agent,
+  capabilities,
+  agentId,
+  reportDraft,
+  onSaved,
+  duplicateError,
+  ...props
+}: {
+  agent: AgentDefinition | null;
+  capabilities: AgentCapabilities | null;
+  agentId: string;
+  reportDraft: (id: string, dirty: boolean) => void;
+  onSaved: (agent: AgentDefinition) => void;
+  duplicateError: string;
+  flowUsage: number;
+  duplicating: boolean;
+  onDuplicate: (() => void) | undefined;
+  onDeleted: () => void;
+}) {
+  const { draft, state } = useOpenedAgentDraft(agent, capabilities, agentId, reportDraft);
+  async function save() {
+    const saved = await draft.save();
+    if (saved) onSaved(saved);
+  }
+  const notice = state.conflict || duplicateError;
+  return (
     <>
-      {conflict && (
+      {notice && (
         <p className="shrink-0 px-6 pt-4 text-sm text-attention md:px-8" role="status">
-          {conflict}
+          {notice}
         </p>
       )}
       <AgentEditorPane
-        key={agent ? `${agent.id}:${agent.revision}` : "new"}
-        agent={agent}
-        capabilities={library.capabilities}
-        flowUsage={flowUsageCount(library.flows ?? [], agentId)}
-        creating={creating}
-        duplicating={duplicating}
-        onConflict={setConflict}
-        reportDraft={reportDraft}
-        onSaved={saved}
-        onDuplicate={creating ? undefined : () => void duplicate()}
-        onDeleted={deleted}
+        {...props}
+        draft={draft}
+        state={state}
+        capabilities={capabilities}
+        onSave={save}
       />
     </>
   );
