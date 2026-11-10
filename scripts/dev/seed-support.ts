@@ -29,12 +29,17 @@ export const demoPullRequest = (number: number, state: "open" | "merged" = "open
   url: `https://github.com/example/atlas/pull/${number}`,
 });
 
-/** Distinguishable demo screenshots; two share an original filename. */
+/**
+ * Distinguishable demo screenshots; two share an original filename. Only Settled or Archived Runs
+ * use `compactNavigation` and `welcomeCopy`, so Settings lists them as Run images.
+ */
 export const demoImages = {
   headerDesktop: { name: "screenshot.png", data: solidPng(220, 40, 40) },
   headerMobile: { name: "screenshot.png", data: solidPng(40, 70, 220) },
   focusRing: { name: "focus-ring.png", data: solidPng(240, 180, 30) },
   mockup: { name: "settings-mockup.png", data: solidPng(40, 180, 90) },
+  compactNavigation: { name: "compact-navigation.png", data: solidPng(150, 90, 210) },
+  welcomeCopy: { name: "welcome-copy.png", data: solidPng(30, 170, 190) },
 };
 export type DemoImage = (typeof demoImages)[keyof typeof demoImages];
 

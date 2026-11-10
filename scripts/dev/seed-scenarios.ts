@@ -67,6 +67,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
     state: "settled",
     prompt:
       "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
+    attachments: { images: [demoImages.welcomeCopy], referenced: 1 },
     repository: { branch: "copy/welcome", pullRequests: [demoPullRequest(41, "merged")] },
     result: {
       exit: "Done",
@@ -80,7 +81,12 @@ export const seedScenarioList: readonly SeedScenario[] = [
     state: "archived",
     prompt:
       "Explore a compact navigation layout for Atlas. This experiment was dropped after a design direction changed.",
-    attachments: { images: [demoImages.headerDesktop, demoImages.mockup], referenced: 1 },
+    // The header and mockup images are shared with the Active parallel-start Run, so only the
+    // compact navigation image is eligible for deletion.
+    attachments: {
+      images: [demoImages.compactNavigation, demoImages.headerDesktop, demoImages.mockup],
+      referenced: 1,
+    },
   },
   {
     key: "failed",

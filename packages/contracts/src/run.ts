@@ -27,6 +27,23 @@ export interface RunImage {
   readonly mimeType: RunImageMimeType;
   readonly sizeBytes: number;
 }
+/** A Settled or Archived Run that attached a stored image, at the image's 1-based `ordinal`. */
+export interface RunImageReference {
+  readonly id: string;
+  readonly number: number | null;
+  readonly title: string;
+  readonly lifecycle: Exclude<RunLifecycle, "active">;
+  readonly project: { readonly id: string; readonly title: string };
+  readonly ordinal: number;
+}
+/**
+ * Stored image bytes whose every referencing Run is Settled or Archived. `name` is the name the
+ * newest referencing Run gave it; `runs` lists every referencing Run, newest first.
+ */
+export interface EligibleRunImage extends RunImageInfo {
+  readonly name: string;
+  readonly runs: readonly RunImageReference[];
+}
 /** The initial prompt in order: text, and references to images of the manifest. */
 export type PromptSegment =
   | { readonly type: "text"; readonly text: string }
@@ -517,5 +534,11 @@ export const runOperations = {
     method: "GET",
     path: "/api/run-images/:sha256",
     answer: "bytes",
+  }),
+  /** Stored images no Active Run uses; a `projectId` keeps those a Run of that project uses. */
+  listEligibleRunImages: operation<never, readonly EligibleRunImage[]>()({
+    method: "GET",
+    path: "/api/run-images",
+    query: ["projectId"],
   }),
 };

@@ -196,6 +196,9 @@ function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
           runImageResponse,
         ),
     },
+    listEligibleRunImages: {
+      handle: ({ parameters }) => answer(() => factory.listEligibleRunImages(parameters.projectId)),
+    },
   };
 }
 
@@ -374,7 +377,7 @@ function dispatchApi(
 
 // Known client routes use the built entry; missing assets must stay 404.
 const clientRoutePattern =
-  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/application)?)\/?$/;
+  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/application|\/run-images)?)\/?$/;
 
 function uiFile(uiDirectory: string, pathname: string): string | undefined {
   const root = resolve(uiDirectory);

@@ -126,7 +126,11 @@ fixed Human exits their old exits were mapped to.
   for the rest. A thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
   its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
   the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the context
-  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)). Images are
+  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)).
+  **Settings → Run images** lists each stored image whose bytes are intact and whose every Run is Settled or Archived,
+  optionally for one project (a Run's project is its Task's), with each image's Runs, states and projects; an image an
+  Active Run also uses is not listed. A card opens an in-section preview with **Image N of M** within the list and every
+  Run that uses the image with **Open Run**. Images are
   read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
   **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
   retried and creates no attention or state change.

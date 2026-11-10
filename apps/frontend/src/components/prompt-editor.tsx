@@ -19,7 +19,7 @@ export interface PromptEditorHandle {
 const referenceSelector = "[data-image-id]";
 
 /** Binary units, like the 10 MiB image limit. */
-function imageSize(bytes: number) {
+export function imageSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }

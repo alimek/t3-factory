@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   AppWindow,
+  ImageIcon,
   Keyboard,
   MonitorSmartphone,
   Plug,
@@ -12,6 +13,7 @@ import {
 import { KeyboardSettings } from "./keyboard-settings.tsx";
 import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
+import { RunImageSettings } from "./run-image-settings.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
@@ -40,6 +42,8 @@ type SettingsSection = {
   tab: SettingsSelection["tab"];
   title: string;
   icon: LucideIcon;
+  /** The nav group the section is listed under. */
+  group: "SETTINGS" | "STORAGE";
   /** Extra words the nav search matches besides the title. */
   keywords: readonly string[];
 };
@@ -48,6 +52,7 @@ const connectionSection: SettingsSection = {
   tab: "connection",
   title: "T3 connection",
   icon: Plug,
+  group: "SETTINGS",
   keywords: ["connection", "address", "endpoint", "authorization", "version", "recheck"],
 };
 
@@ -56,25 +61,37 @@ const reportingSection: SettingsSection = {
   tab: "runtime",
   title: "Agent reporting",
   icon: Plug,
+  group: "SETTINGS",
   keywords: ["MCP", "Codex", "Claude", "install"],
 };
 const keyboardSection: SettingsSection = {
   tab: "keyboard",
   title: "Keyboard shortcuts",
   icon: Keyboard,
+  group: "SETTINGS",
   keywords: ["keys", "bindings", "hotkeys", "commands", "palette", "zoom"],
 };
 const accessSection: SettingsSection = {
   tab: "access",
   title: "Devices & access",
   icon: MonitorSmartphone,
+  group: "SETTINGS",
   keywords: ["remote", "clients", "approve", "revoke", "LAN", "Tailscale", "certificate"],
 };
 const applicationSection: SettingsSection = {
   tab: "application",
   title: "Application",
   icon: AppWindow,
+  group: "SETTINGS",
   keywords: ["role", "server", "client", "login", "startup", "updates", "channel", "beta"],
+};
+
+const runImagesSection: SettingsSection = {
+  tab: "run-images",
+  title: "Run images",
+  icon: ImageIcon,
+  group: "STORAGE",
+  keywords: ["storage", "disk", "space", "screenshots", "attachments", "delete", "files"],
 };
 
 /** Approvals exist only on the host panel; the Application section only in the desktop app. */
@@ -86,6 +103,7 @@ function useSections(): readonly SettingsSection[] {
     keyboardSection,
     ...(scope === "host" ? [accessSection] : []),
     ...(desktopBridge() ? [applicationSection] : []),
+    runImagesSection,
   ];
 }
 
@@ -103,6 +121,7 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   keyboard: () => <KeyboardSettings />,
   access: () => <AccessSettings />,
   application: () => <ApplicationSettings />,
+  "run-images": () => <RunImageSettings />,
 };
 
 function SectionContent({ tab }: { tab: SettingsSelection["tab"] }) {
@@ -148,7 +167,7 @@ export function SettingsModal() {
         <WorkspaceDialogHeader
           title="Settings"
           section={current.title}
-          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, updates and the desktop application."
+          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, updates, the desktop application and stored Run images."
           onClose={close}
         />
         <div className="flex min-h-0 flex-1 max-sm:flex-col">
@@ -186,18 +205,24 @@ function SettingsNav({
     <aside className="flex w-60 shrink-0 flex-col gap-0.5 border-r bg-sidebar px-2 py-3 max-sm:w-full max-sm:border-r-0 max-sm:border-b">
       <SettingsSearchField inputRef={searchRef} value={query} onChange={onQueryChange} />
       <nav aria-label="Settings sections" className="grid gap-0.5">
-        {visible.length > 0 && (
-          <p className="pt-3 pb-1 pl-2 text-2xs font-semibold tracking-section text-subtle-foreground">
-            SETTINGS
-          </p>
-        )}
-        {visible.map((section) => (
-          <SettingsNavItem
-            key={section.tab}
-            section={section}
-            active={section.tab === current.tab}
-          />
-        ))}
+        {(["SETTINGS", "STORAGE"] as const).map((group) => {
+          const grouped = visible.filter((section) => section.group === group);
+          if (grouped.length === 0) return null;
+          return (
+            <div key={group} role="group" aria-label={group} className="grid gap-0.5">
+              <p className="pt-3 pb-1 pl-2 text-2xs font-semibold tracking-section text-subtle-foreground">
+                {group}
+              </p>
+              {grouped.map((section) => (
+                <SettingsNavItem
+                  key={section.tab}
+                  section={section}
+                  active={section.tab === current.tab}
+                />
+              ))}
+            </div>
+          );
+        })}
         {visible.length === 0 && (
           <p role="status" className="px-2 pt-3 text-sm text-muted-foreground">
             No settings match “{query.trim()}”.

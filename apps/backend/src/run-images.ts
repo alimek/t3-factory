@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import type {
+  EligibleRunImage,
   PromptSegment,
   Result,
   RunImage,
@@ -58,6 +59,40 @@ function uploadIssue(sha256: string, input: StageRunImageInput): Result<never> |
 
 const missingFile = (error: unknown) =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
+
+type ReferenceRow = StagedRow & {
+  name: string;
+  ordinal: number;
+  run_id: string;
+  number: number | null;
+  title: string;
+  archived_at: string | null;
+  project_id: string;
+  project_title: string;
+};
+
+/** Every referencing Run's image row, grouped by digest in the rows' order. */
+function groupReferences(rows: readonly ReferenceRow[]): EligibleRunImage[] {
+  const images = new Map<string, EligibleRunImage>();
+  for (const row of rows) {
+    const image = images.get(row.sha256) ?? { name: row.name, ...info(row), runs: [] };
+    images.set(row.sha256, {
+      ...image,
+      runs: [
+        ...image.runs,
+        {
+          id: row.run_id,
+          number: row.number,
+          title: row.title,
+          lifecycle: row.archived_at ? "archived" : "settled",
+          project: { id: row.project_id, title: row.project_title },
+          ordinal: row.ordinal,
+        },
+      ],
+    });
+  }
+  return [...images.values()];
+}
 
 /** The file's bytes when they still hash to their name; `missing` when absent or corrupt. */
 type StoredImageBytes = { kind: "ok"; data: Uint8Array } | { kind: "missing" };
@@ -171,8 +206,42 @@ export const makeRunImages = (directory: string) =>
       });
     }
 
+    /**
+     * The deletion eligibility rule: at least one Run attached the digest, every Run that did is
+     * Settled or Archived, and its bytes are intact. With `projectId`, only images a Run of that
+     * project attached. Newest Run first, then manifest order.
+     */
+    function eligibleRunImages(projectId: string | null) {
+      return Effect.gen(function* () {
+        const rows = yield* sql<ReferenceRow>`
+          SELECT ri.sha256,ri.name,ri.mime_type,ri.size_bytes,ri.ordinal,r.id AS run_id,r.number,
+            r.title,r.archived_at,p.id AS project_id,p.title AS project_title
+          FROM run_images ri JOIN runs r ON r.id=ri.run_id JOIN tasks t ON t.id=r.task_id
+          JOIN projects p ON p.id=t.project_id
+          WHERE NOT EXISTS(SELECT 1 FROM run_images other JOIN runs active ON active.id=other.run_id
+            WHERE other.sha256=ri.sha256 AND active.settled_at IS NULL AND active.archived_at IS NULL)
+          ORDER BY r.created_at DESC,r.creation_key DESC,ri.ordinal`;
+        const referenced = groupReferences(rows).filter(
+          (image) => !projectId || image.runs.some((run) => run.project.id === projectId),
+        );
+        const intact = yield* Effect.forEach(referenced, (image) =>
+          Effect.map(storedBytes(image.sha256), (bytes) => bytes.kind === "ok"),
+        );
+        return referenced.filter((_, index) => intact[index]);
+      });
+    }
+
+    const listEligibleRunImages = (projectId: string) =>
+      Effect.map(eligibleRunImages(projectId || null), (value) => ({ ok: true as const, value }));
+
     yield* permit.withPermits(1)(sweep);
-    return { stageRunImage, getRunImageInfo, getRunImage, storedBytes };
+    return {
+      stageRunImage,
+      getRunImageInfo,
+      getRunImage,
+      listEligibleRunImages,
+      storedBytes,
+    };
   });
 
 export type RunImages = Effect.Success<ReturnType<typeof makeRunImages>>;
