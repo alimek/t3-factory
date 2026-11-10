@@ -1,7 +1,7 @@
 import { Fragment, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, Image as ImageIcon, ImageOff } from "lucide-react";
 import type { RunDetail, RunImage } from "@t3-factory/contracts";
-import { runImageUrl } from "../api.ts";
+import { operationPath, runOperations } from "@t3-factory/contracts";
 import { ImagePreviewDialog, previewImageClass } from "./prompt-images.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.tsx";
@@ -103,7 +103,7 @@ function ImageSlot({
   if (unavailable) return <ImageOff aria-hidden className="text-muted-foreground" />;
   return (
     <img
-      src={runImageUrl(image.sha256)}
+      src={operationPath(runOperations.getRunImage, image.sha256)}
       alt=""
       loading="lazy"
       className="size-full object-cover"
@@ -191,7 +191,7 @@ function RunImageGallery({
       ) : (
         <img
           key={image.sha256}
-          src={runImageUrl(image.sha256)}
+          src={operationPath(runOperations.getRunImage, image.sha256)}
           alt={label}
           className={previewImageClass}
           onError={() => onUnavailable(image.sha256)}

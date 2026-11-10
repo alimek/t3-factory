@@ -9,10 +9,10 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
 import {
   agentOperations,
+  runOperations,
   LIVE_PATH,
   type ProtocolDescriptor,
   type Result,
-  type StageRunImageInput,
 } from "@t3-factory/contracts";
 import {
   FACTORY_MINIMUM_PEER_PROTOCOL,
@@ -60,8 +60,6 @@ const contentTypes: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
 };
-
-const queryParameter = (url: URL, name: string) => url.searchParams.get(name) ?? "";
 
 const safeMethods = ["GET", "HEAD"];
 const isSafeMethod = (method: string) => safeMethods.includes(method);
@@ -137,7 +135,6 @@ const answer = (operation: () => Promise<Result<unknown>>, successStatus = 200) 
 /** Pattern routes: first match wins, so literal paths precede parameter routes within each resource. */
 function apiRoutes(factory: Factory) {
   return [
-    ...runResponseRoutes(factory),
     ...runRoutes(factory),
     ...reportingRoutes(factory),
     ...projectRoutes(factory),
@@ -147,128 +144,80 @@ function apiRoutes(factory: Factory) {
   ];
 }
 
-function runResponseRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/request-report$/,
-      body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
-      handle: fromCall((id, input: { blockId: string }) => factory.requestReport(id, input)),
+function runRoutes(factory: Factory) {
+  return operationRoutes(runOperations, {
+    listRunNavigation: {
+      handle: () => answer(() => factory.listRunNavigation()),
     },
-    {
-      method: "POST",
-      path: /^\/api\/human-occurrences\/([^/]+)\/answer$/,
-      body: { bytes: 131_072, message: "Send valid answer JSON up to 128 KiB." },
-      handle: fromCall((id, input) => factory.answerHumanOccurrence(id, input)),
-    },
-  ];
-}
-
-function runRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/run-navigation$/,
-      handle: fromResult(() => factory.listRunNavigation()),
-    },
-    {
-      method: "PATCH",
-      path: /^\/api\/runs\/([^/]+)$/,
-      body: { bytes: 16_384, message: "Send valid Run title JSON." },
-      handle: fromCall((id, input) => factory.renameRun(id, input)),
-    },
-    ...(
-      [
-        ["snooze", factory.snoozeRun],
-        ["restore", factory.restoreRun],
-        ["woke-seen", factory.markRunWokeSeen],
-        ["settle", factory.settleRun],
-        ["archive", factory.archiveRun],
-      ] as const
-    ).map(([action, operation]): ApiRoute => ({
-      method: "POST",
-      path: new RegExp(`^/api/runs/([^/]+)/${action}$`),
-      handle: fromId((id) => operation(id)),
-    })),
-    {
-      method: "GET",
-      path: /^\/api\/attention$/,
-      handle: fromResult(() => factory.listAttention()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runs$/,
+    startRun: {
       body: { bytes: 131_072, message: "Send valid Start JSON up to 128 KiB." },
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.startRun(input)),
-          (result) => resultResponse(result, 201),
-        ),
+      handle: ({ input }) => answer(() => factory.startRun(input), 201),
     },
-    ...runImageRoutes(factory),
-    {
-      method: "GET",
-      path: /^\/api\/run-creation-policy$/,
-      handle: fromResult(() => factory.getRunCreationPolicy()),
+    getRun: {
+      handle: ({ parameters }) => answer(() => factory.getRun(parameters.id)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/runs$/,
-      handle: ({ url }) =>
-        Effect.map(
-          Effect.promise(() => factory.listRuns(queryParameter(url, "projectId"))),
-          resultResponse,
-        ),
+    listRuns: {
+      handle: ({ parameters }) => answer(() => factory.listRuns(parameters.projectId)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/tasks$/,
-      handle: ({ url }) =>
-        Effect.map(
-          Effect.promise(() => factory.listTasks(queryParameter(url, "projectId"))),
-          resultResponse,
-        ),
+    renameRun: {
+      body: { bytes: 16_384, message: "Send valid Run title JSON." },
+      handle: ({ parameters, input }) => answer(() => factory.renameRun(parameters.id, input)),
     },
-    {
-      method: "PATCH",
-      path: /^\/api\/tasks\/([^/]+)$/,
+    snoozeRun: {
+      handle: ({ parameters }) => answer(() => factory.snoozeRun(parameters.id)),
+    },
+    restoreRun: {
+      handle: ({ parameters }) => answer(() => factory.restoreRun(parameters.id)),
+    },
+    markRunWokeSeen: {
+      handle: ({ parameters }) => answer(() => factory.markRunWokeSeen(parameters.id)),
+    },
+    settleRun: {
+      handle: ({ parameters }) => answer(() => factory.settleRun(parameters.id)),
+    },
+    archiveRun: {
+      handle: ({ parameters }) => answer(() => factory.archiveRun(parameters.id)),
+    },
+    requestReport: {
+      body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
+      handle: ({ parameters, input }) =>
+        answer(() => factory.requestReport(parameters.runId, input)),
+    },
+    answerHumanOccurrence: {
+      body: { bytes: 131_072, message: "Send valid answer JSON up to 128 KiB." },
+      handle: ({ parameters, input }) =>
+        answer(() => factory.answerHumanOccurrence(parameters.id, input)),
+    },
+    listAttention: {
+      handle: () => answer(() => factory.listAttention()),
+    },
+    getRunCreationPolicy: {
+      handle: () => answer(() => factory.getRunCreationPolicy()),
+    },
+    listTasks: {
+      handle: ({ parameters }) => answer(() => factory.listTasks(parameters.projectId)),
+    },
+    updateTask: {
       body: { bytes: 16_384, message: "Send valid Task JSON." },
-      handle: fromCall((id, input) => factory.updateTask(id, input)),
+      handle: ({ parameters, input }) => answer(() => factory.updateTask(parameters.id, input)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/runs\/([^/]+)$/,
-      handle: fromId((id) => factory.getRun(id)),
+    getRunImageInfo: {
+      handle: ({ parameters }) => answer(() => factory.getRunImageInfo(parameters.sha256)),
     },
-  ];
-}
-
-/** Content-addressed Run image bytes: staged before Start, then retained by the Run. */
-function runImageRoutes(factory: Factory): readonly ApiRoute[] {
-  const path = /^\/api\/run-images\/([^/]+)$/;
-  return [
-    {
-      method: "HEAD",
-      path,
-      handle: fromId((sha256) => factory.getRunImageInfo(sha256)),
+    stageRunImage: {
+      body: { bytes: RUN_IMAGE_MAX_BYTES, message: "Send one image up to 10 MiB." },
+      handle: ({ parameters, input }) =>
+        answer(() => factory.stageRunImage(parameters.sha256, input)),
     },
-    {
-      method: "PUT",
-      path,
-      rawBody: { bytes: RUN_IMAGE_MAX_BYTES, message: "Send one image up to 10 MiB." },
-      handle: fromCall((sha256, input: StageRunImageInput) => factory.stageRunImage(sha256, input)),
-    },
-    {
-      method: "GET",
-      path,
+    getRunImage: {
       protocolOptional: true,
-      handle: ({ id }) =>
+      handle: ({ parameters }) =>
         Effect.map(
-          Effect.promise(() => factory.getRunImage(id)),
+          Effect.promise(() => factory.getRunImage(parameters.sha256)),
           runImageResponse,
         ),
     },
-  ];
+  });
 }
 
 function reportingRoutes(factory: Factory): readonly ApiRoute[] {
