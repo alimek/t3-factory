@@ -1,5 +1,5 @@
 import { vi, type Mock } from "vite-plus/test";
-import type { FlowDraft, FlowReadiness, OperationError } from "@t3-factory/contracts";
+import type { FlowDraft, FlowGraph, FlowReadiness, OperationError } from "@t3-factory/contracts";
 import { ApiError } from "../../src/api.ts";
 import { createFlowDraft, type FlowDraftOperations } from "../../src/flow-draft.ts";
 
@@ -47,11 +47,12 @@ export function memoryFactory(): MemoryFactory {
     saveElsewhere: (name, readiness = ready) => append({ name, readiness }),
     getFlow: vi.fn<FlowDraftOperations["getFlow"]>(async () => latest),
     updateFlow: vi.fn<FlowDraftOperations["updateFlow"]>(
-      async (_id, { expectedRevision, ...content }) => {
+      async (_id, { expectedRevision, name, graph, workspace }) => {
         if (removed) throw rejection({ code: "not_found", message: "Flow was removed." });
         if (expectedRevision !== latest.revision)
           throw rejection({ code: "conflict", message: "Flow changed in another window." });
-        return append(content);
+        // Studio always sends a fully positioned graph, so no server layout is simulated.
+        return append({ name, graph: graph as FlowGraph, ...(workspace && { workspace }) });
       },
     ),
     removeFlow: vi.fn<FlowDraftOperations["removeFlow"]>(async () => {

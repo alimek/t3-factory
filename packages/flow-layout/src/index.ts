@@ -1,4 +1,4 @@
-import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js";
+import type { ELK, ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js";
 import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
 
 /** Exits must include unavailable wired endpoints, in the same order the canvas draws them. */
@@ -272,9 +272,12 @@ export async function arrangeFlow<B extends LayoutBlock>(
   graph: LayoutGraph<B>,
   dimensions: FlowLayoutDimensions<B>,
 ): Promise<FlowLayoutPositions> {
-  const { default: ELK } = await import("elkjs/lib/elk.bundled.js");
-  // The CommonJS constructor also exposes itself as default, matching NodeNext's declaration shape.
-  const elk = new ELK.default();
+  // The CommonJS module's default export is the constructor at runtime, but NodeNext (the
+  // package build) and Bundler (the frontend typecheck) type it differently.
+  const { default: Elk } = (await import("elkjs/lib/elk.bundled.js")) as unknown as {
+    readonly default: new () => ELK;
+  };
+  const elk = new Elk();
   return parseLayoutPositions(graph, await elk.layout(buildElkGraph(graph, dimensions)));
 }
 
