@@ -2,6 +2,7 @@ import type { TestContext } from "@effect/vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import type { Factory } from "../../src/index.ts";
 import { runtimeMcpHandler } from "../../src/runtime-mcp.ts";
+import { openFactoryWithApprovedT3 } from "./domain-setup.ts";
 
 /**
  * A worker's MCP client on the Factory MCP handler of an open backend, over Streamable HTTP
@@ -10,10 +11,10 @@ import { runtimeMcpHandler } from "../../src/runtime-mcp.ts";
  */
 export async function factoryMcpClient(
   c: TestContext,
-  factory: Pick<Factory, "runtime">,
+  factory: Factory,
   options: { loseCallResponses?: boolean } = {},
 ) {
-  const handler = runtimeMcpHandler(factory.runtime);
+  const handler = runtimeMcpHandler(factory.runtime, factory);
   const lost = (init?: RequestInit) =>
     options.loseCallResponses &&
     typeof init?.body === "string" &&
@@ -30,6 +31,12 @@ export async function factoryMcpClient(
   );
   c.onTestFinished(() => client.close());
   return client;
+}
+
+/** A session's MCP client, without a Block, on a backend connected to a ready T3. */
+export async function authoringMcpClient(c: TestContext) {
+  const { factory, t3 } = await openFactoryWithApprovedT3(c);
+  return { factory, t3, client: await factoryMcpClient(c, factory) };
 }
 
 /** `factory_get_run_image` for one image of the Block's Run. */

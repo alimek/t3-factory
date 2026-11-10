@@ -16,7 +16,12 @@ import {
   validateUpdateAgent,
   validateUpdateFlow,
 } from "@t3-factory/domain-validation";
-import { agentSettingsStatus, emptyCapabilities, readyCapabilities } from "./agents.ts";
+import {
+  agentSettingsStatus,
+  emptyCapabilities,
+  readyCapabilities,
+  unsupportedReportingFailure,
+} from "./agents.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import type { EffectOperations } from "./effect-operations.ts";
 import type { LiveChanges } from "./live-changes.ts";
@@ -271,8 +276,13 @@ export const makeDefinitions = (
       createAgent(input) {
         const validated = validateCreateAgent(input);
         if (!validated.ok) return Effect.succeed(validated);
-        return agentOperation((sql, capabilities) =>
+        return agentOperation<AgentDefinition>((sql, capabilities) =>
           Effect.gen(function* () {
+            const unsupported = unsupportedReportingFailure(
+              validated.value.execution,
+              capabilities,
+            );
+            if (unsupported) return unsupported;
             const now = yield* currentTime;
             const agent: AgentRevision = {
               id: yield* newId,
@@ -308,6 +318,11 @@ export const makeDefinitions = (
                   },
                 ],
               );
+            const unsupported = unsupportedReportingFailure(
+              validated.value.execution,
+              capabilities,
+            );
+            if (unsupported) return unsupported;
             const agent: AgentRevision = {
               ...saved,
               name: validated.value.name,
