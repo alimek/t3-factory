@@ -197,6 +197,7 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
       try {
         await operations.removeFlow(id);
         dirty = false;
+        readiness = null;
         ++readinessRequest;
         return true;
       } catch (cause) {
