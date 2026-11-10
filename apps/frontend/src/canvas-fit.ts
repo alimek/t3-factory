@@ -24,7 +24,6 @@ export function fitGraphView(
   width: number,
   height: number,
   padding: { x: number; top: number; bottom: number },
-  contentInsetY: number,
 ): CanvasView {
   const available = height - padding.top - padding.bottom;
   const scale = clampCanvasScale(
@@ -37,7 +36,6 @@ export function fitGraphView(
   return {
     scale,
     x: (width - bounds.width * scale) / 2 - bounds.minX * scale,
-    y:
-      padding.top + (available - bounds.height * scale) / 2 - (contentInsetY + bounds.minY) * scale,
+    y: padding.top + (available - bounds.height * scale) / 2 - bounds.minY * scale,
   };
 }

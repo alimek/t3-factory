@@ -204,13 +204,7 @@ function useCanvasFit(
       setView(
         entry && current.getFocusView
           ? current.getFocusView(size.width, size.height)
-          : fitGraphView(
-              bounds ?? current.getBounds(),
-              size.width,
-              size.height,
-              current.padding,
-              0,
-            ),
+          : fitGraphView(bounds ?? current.getBounds(), size.width, size.height, current.padding),
       );
       const rect = size.element.getBoundingClientRect();
       lastFit.current = { scope: current.scope, width: rect.width, height: rect.height };

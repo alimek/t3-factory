@@ -472,7 +472,7 @@ type CanvasSurfaceProps = {
 
 /**
  * The graph as the surface draws it: each block's content, the arrangement, the gesture in
- * progress and the geometry of each. A move gesture abandons an arrangement in flight.
+ * progress and the geometry of each. Any gesture abandons an arrangement in flight.
  */
 function useSurfaceGraph({
   scope,
@@ -521,11 +521,11 @@ function useSurfaceGraph({
   });
   const arranged = canvasGraph(layout.graph, agents);
   const shown = gestureGraph(arranged, gesture);
-  const moving = gesture?.kind === "move";
+  const gesturing = gesture !== null;
   const { cancel } = layout;
   useLayoutEffect(() => {
-    if (moving) cancel();
-  }, [moving, cancel]);
+    if (gesturing) cancel();
+  }, [gesturing, cancel]);
   return {
     layout,
     content,
@@ -536,7 +536,7 @@ function useSurfaceGraph({
     drawn: createCanvasGeometry(shown.graph, dimensions, facts),
     pending: shown.pending,
     /** Arranged routes are drawn only while no gesture changes the graph. */
-    routes: moving || shown.pending ? null : layout.wireRoutes,
+    routes: gesture?.kind === "move" || shown.pending ? null : layout.wireRoutes,
   };
 }
 
@@ -679,8 +679,7 @@ export function CanvasSurface(props: CanvasSurfaceProps) {
     getBounds: geometry.bounds,
     getFocusView:
       focusTargets &&
-      ((width, height) =>
-        fitGraphView(geometry.focusBounds(focusTargets), width, height, padding, 0)),
+      ((width, height) => fitGraphView(geometry.focusBounds(focusTargets), width, height, padding)),
     focusTargets,
     padding,
     reservedRight: covered.right,

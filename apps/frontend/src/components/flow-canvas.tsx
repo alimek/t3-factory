@@ -519,17 +519,28 @@ export function FlowCanvas({
       note="Global Flow · shared by all projects"
       hint="Pan empty canvas · zoom · fit · auto-arrange. Graph coordinates stay saved."
     >
-      {graph.blocks.length === 0 && <FirstBlockHint />}
+      {graph.blocks.length === 0 && (
+        <FirstBlockHint flowInputs={flowInputPositions(graph, gestures.move.drag)} />
+      )}
     </CanvasSurface>
   );
 }
 
-/** Shown beside a new Flow's input, in canvas units, until its first block is added. */
-function FirstBlockHint() {
+/** The Flow input as drafted and as dragged now, which the first-block hint follows. */
+function flowInputPositions(graph: FlowGraph, drag: MoveDrag | null) {
+  const dragged = drag?.node.kind === "flow-input" ? [drag.position] : [];
+  return [graph.flowInput.position, ...dragged];
+}
+
+/**
+ * Shown beside a new Flow's input, in canvas units, until its first block is added. It is
+ * centred in the 900-unit authoring area, which widens with the Flow input dragged right.
+ */
+function FirstBlockHint({ flowInputs }: { flowInputs: readonly BlockPosition[] }) {
   return (
     <div
       className="pointer-events-none absolute top-40 w-80 -translate-x-1/2 text-center"
-      style={{ left: 450 }}
+      style={{ left: Math.max(900, ...flowInputs.map((position) => position.x + 300)) / 2 }}
     >
       <h2 className="text-lg font-semibold">Add your first block</h2>
       <p className="mt-1 text-sm text-muted-foreground">
