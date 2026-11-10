@@ -1,10 +1,10 @@
+import { buildElkGraph } from "@t3-factory/flow-layout";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentDefinition, FlowGraph } from "@t3-factory/contracts";
 import ELK from "elkjs/lib/elk-api.js";
 import ElkWorker from "elkjs/lib/elk-worker.min.js?worker";
 import {
   applyLayoutPositions,
-  buildElkGraph,
   parseElkLayout,
   type FlowLayoutDimensions,
   type FlowLayoutResult,
