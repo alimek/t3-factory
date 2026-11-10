@@ -111,21 +111,27 @@ export const makeDefinitions = (
           return { ok: true as const, value: graph };
         const resolved = canvasGraph(graph, yield* readinessAgents);
         return yield* Effect.tryPromise({
-          try: () =>
-            arrangeFlow(resolved, createFlowLayoutDimensions(resolved, AUTHORING_DIMENSIONS)),
+          try: async (): Promise<Result<FlowGraph>> => {
+            const positions = await arrangeFlow(
+              resolved,
+              createFlowLayoutDimensions(resolved, AUTHORING_DIMENSIONS),
+            );
+            const blocks = graph.blocks.map((block) => {
+              const position = positions.blocks.get(block.id);
+              if (!position) throw new Error("Auto-arrange returned no position for a block.");
+              return { ...block, position };
+            });
+            return {
+              ok: true,
+              value: {
+                ...graph,
+                flowInput: { ...graph.flowInput, position: positions.flowInput },
+                blocks,
+              },
+            };
+          },
           catch: (cause) => cause,
         }).pipe(
-          Effect.map((positions): Result<FlowGraph> => ({
-            ok: true,
-            value: {
-              ...graph,
-              flowInput: { ...graph.flowInput, position: positions.flowInput },
-              blocks: graph.blocks.map((block) => ({
-                ...block,
-                position: positions.blocks.get(block.id)!,
-              })),
-            },
-          })),
           // Only the canvas-limit outcome is the caller's to fix; any other layout failure is a
           // defect and surfaces as an internal error rather than a misleading validation issue.
           Effect.catch((error) =>
