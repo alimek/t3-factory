@@ -1,8 +1,8 @@
 import type { TestContext } from "@effect/vitest";
 import { workerActivity } from "../fixtures/t3-worker-activity.ts";
 import { authorizedLiveOAuth } from "./boundaries-setup.ts";
-import { workerStart } from "./run-worker.ts";
-import { workerAtWork } from "./scenarios.ts";
+import { prepared } from "./prepared-runner.ts";
+import { handoffFlow, workerAtWork } from "./scenarios.ts";
 
 /** Serve the reduced capture unchanged. */
 export function capturedWorker(c: TestContext) {
@@ -39,7 +39,7 @@ export const settledAnswer = (runId: string): Record<string, unknown> => ({
 /** The worker's thread reads and delegated waits cross the live HTTP adapter using captured
  * thread metadata; launches, sends and engine progress stay controlled. */
 export async function wireWorker(c: TestContext, wait: (runId: string) => Record<string, unknown>) {
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker, worker };
   const threadId = "thread-1";

@@ -1,17 +1,19 @@
 import { assert, expect, it } from "@effect/vitest";
-import {
-  boundWorktreeReview,
-  preparedWorktreeFlow,
-  preparedWorktreeReviewFlow,
-} from "./support/prepared-runner.ts";
+import { prepared } from "./support/prepared-runner.ts";
 import { imageStart, screenshots, stageImages } from "./support/run-images.ts";
-import { answeredReview, finishedParallelWork } from "./support/run-worker.ts";
-import { finishedReport, report } from "./support/scenarios.ts";
-import { answerDelegatedWait } from "./support/controlled-thread.ts";
+import {
+  laterResultReturning,
+  resultReleasedToHumanReview,
+  resultReported,
+  reviewApproved,
+  worktreeBound,
+  worktreeFanOutFlow,
+  worktreeReviewFlow,
+} from "./support/scenarios.ts";
 
 it("a worktree Start launches exactly one worktree-creating worker from the resolved base ref", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.worktreeMetadataPending = true;
   assert((await f.startRun(input)).ok);
 
@@ -30,7 +32,7 @@ it("a worktree Start launches exactly one worktree-creating worker from the reso
 
 it("once T3 shows the worktree path and branch, the other Flow-input worker launches once on that worktree", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.worktreeMetadataPending = true;
   assert((await f.startRun(input)).ok);
   await f.reconcileRuns();
@@ -52,7 +54,7 @@ it("once T3 shows the worktree path and branch, the other Flow-input worker laun
 
 it("the Flow-input worker joining a bound worktree receives the Run images too", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeFanOutFlow);
   await stageImages(f, Object.values(screenshots));
   t3.worktreeMetadataPending = true;
   assert((await f.startRun(imageStart(input))).ok);
@@ -72,7 +74,7 @@ it("the Flow-input worker joining a bound worktree receives the Run images too",
 
 it("a creator thread that shows its worktree path before its branch is observed without a scope change", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.worktreeBranchPending = true;
   const started = await f.startRun(input);
   assert(started.ok);
@@ -90,7 +92,7 @@ it("a creator thread that shows its worktree path before its branch is observed 
 
 it("a lost creator reply is recovered by search without a second worktree, and the other worker waits for it", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.loseLaunchReply = true;
   t3.discoverAvailable = false;
   const started = await f.startRun(input);
@@ -118,7 +120,7 @@ it("a lost creator reply is recovered by search without a second worktree, and t
 
 it("restart before the worktree is bound binds it and launches the other worker once", async (c) => {
   // Arrange
-  const { h, f, t3, input } = await preparedWorktreeFlow(c);
+  const { h, f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.worktreeMetadataPending = true;
   const started = await f.startRun(input);
   assert(started.ok);
@@ -143,7 +145,7 @@ it("restart before the worktree is bound binds it and launches the other worker 
 
 it("restart with a joining launch unresolved recovers it by search without another launch", async (c) => {
   // Arrange
-  const { h, f, t3, input } = await preparedWorktreeFlow(c);
+  const { h, f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.worktreeMetadataPending = true;
   const started = await f.startRun(input);
   assert(started.ok);
@@ -169,7 +171,7 @@ it("restart with a joining launch unresolved recovers it by search without anoth
 
 it("a worker thread that reports a worktree other than the Run's is a scope change", async (c) => {
   // Arrange
-  const { f, t3, input, project } = await preparedWorktreeFlow(c);
+  const { f, t3, input, project } = await prepared(c, worktreeFanOutFlow);
   const started = await f.startRun(input);
   assert(started.ok);
   await f.reconcileRuns();
@@ -190,7 +192,7 @@ it("a worker thread that reports a worktree other than the Run's is a scope chan
 
 it("a rejected worktree-creating launch is a Block error and launches no other worker into the project root", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeFanOutFlow);
   t3.rejectLaunch = true;
   const started = await f.startRun(input);
   assert(started.ok);
@@ -220,7 +222,7 @@ it("a rejected worktree-creating launch is a Block error and launches no other w
 
 it("binding the worktree launches no worker for a Block whose turn has not come", async (c) => {
   // Arrange
-  const { f, t3, input } = await preparedWorktreeReviewFlow(c);
+  const { f, t3, input } = await prepared(c, worktreeReviewFlow);
   t3.worktreeMetadataPending = true;
   const started = await f.startRun(input);
   assert(started.ok);
@@ -247,7 +249,11 @@ it("binding the worktree launches no worker for a Block whose turn has not come"
 
 it("after a Human step, the first arrival at a later Block launches its worker with its task in the Run worktree", async (c) => {
   // Arrange
-  const { f, t3, runId } = await answeredReview(c);
+  const setup = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(setup.world, setup.input);
+  const reported = await resultReported(setup.world, entry);
+  const review = await resultReleasedToHumanReview(setup.world, reported);
+  const { f, t3, runId } = { ...setup, ...(await reviewApproved(setup.world, review)) };
 
   // Act
   await f.reconcileRuns();
@@ -278,7 +284,15 @@ it("after a Human step, the first arrival at a later Block launches its worker w
 
 it("a Flow that returns to an earlier Block revisits its thread in the same worktree and launches nothing", async (c) => {
   // Arrange
-  const { f, t3, runId } = await finishedParallelWork(c);
+  const setup = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(setup.world, setup.input);
+  const reported = await resultReported(setup.world, entry);
+  const review = await resultReleasedToHumanReview(setup.world, reported);
+  const approved = await reviewApproved(setup.world, review);
+  const { f, t3, runId } = {
+    ...setup,
+    ...(await laterResultReturning(setup.world, approved, entry)),
+  };
 
   // Act
   await f.reconcileRuns();
@@ -303,11 +317,18 @@ it("a Flow that returns to an earlier Block revisits its thread in the same work
 
 it("a send that fails while the worker's worktree is missing stays unresolved and is delivered once T3 accepts it", async (c) => {
   // Arrange
-  const { f, t3, runId } = await finishedParallelWork(c);
-  const startTurn = t3.beforeSend!;
+  const setup = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(setup.world, setup.input);
+  const reported = await resultReported(setup.world, entry);
+  const review = await resultReleasedToHumanReview(setup.world, reported);
+  const approved = await reviewApproved(setup.world, review);
+  const { f, t3, runId } = {
+    ...setup,
+    ...(await laterResultReturning(setup.world, approved, entry)),
+  };
   t3.beforeSend = () => Promise.reject(Error("Worktree directory does not exist"));
   await f.reconcileRuns();
-  t3.beforeSend = startTurn;
+  delete t3.beforeSend;
 
   // Act
   await f.reconcileRuns();
@@ -321,10 +342,10 @@ it("a send that fails while the worker's worktree is missing stays unresolved an
 
 it("a worktree Run settles once its visited Block finishes, with no worker for its unvisited Blocks", async (c) => {
   // Arrange
-  const { f, t3, runId, world, entryWorker } = await boundWorktreeReview(c);
-  assert((await report(world, entryWorker, finishedReport("Shipped.", "ship"))) === "ACCEPTED");
-  t3.engineStatus = "completed";
-  answerDelegatedWait(t3, "thread-1", "execution-1", "settled", "completed");
+  const setup = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(setup.world, setup.input);
+  const shipped = await resultReported(setup.world, entry, { message: "Shipped.", exit: "ship" });
+  const { f, t3, runId } = { ...setup, ...shipped };
 
   // Act
   await f.reconcileRuns();
@@ -338,7 +359,11 @@ it("a worktree Run settles once its visited Block finishes, with no worker for i
 
 it("a rejected launch for a later Block keeps the worktree Run from settling without that Block's result", async (c) => {
   // Arrange
-  const { f, t3, runId } = await answeredReview(c);
+  const setup = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(setup.world, setup.input);
+  const reported = await resultReported(setup.world, entry);
+  const review = await resultReleasedToHumanReview(setup.world, reported);
+  const { f, t3, runId } = { ...setup, ...(await reviewApproved(setup.world, review)) };
   t3.rejectLaunch = true;
 
   // Act

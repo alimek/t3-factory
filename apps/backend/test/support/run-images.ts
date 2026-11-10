@@ -1,7 +1,5 @@
 import { solidPng, sha256Hex } from "./scenarios.ts";
-import { assert, type TestContext } from "@effect/vitest";
-import type { ControlledT3 } from "./controlled-t3.ts";
-import { preparedFanOutFlow } from "./prepared-runner.ts";
+import { assert } from "@effect/vitest";
 import type { Factory, FactoryService } from "../../src/index.ts";
 import * as Effect from "effect/Effect";
 import type { PromptSegment, RunImage, StartRunInput } from "@t3-factory/contracts";
@@ -95,28 +93,4 @@ export async function imageRequest(setup: {
 }) {
   await stageImages(setup.f, Object.values(screenshots));
   return imageStart(setup.input);
-}
-
-/**
- * Holds the Runner's first image dispatch at its attachment check until released; Start's own
- * preflight check passes. Lets a test change Factory storage or T3 support after Start.
- */
-function holdImageDispatch(t3: ControlledT3) {
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let inspections = 0;
-  t3.beforeAttachmentInspection = () => (++inspections > 1 ? released : Promise.resolve());
-  return release;
-}
-
-/** The two-entry checkout Flow started with the image fixture's prompt, before any dispatch. */
-export async function startedImageFanOut(c: TestContext, hold = false) {
-  const fixture = await preparedFanOutFlow(c);
-  await stageImages(fixture.f, Object.values(screenshots));
-  const release = hold ? holdImageDispatch(fixture.t3) : () => {};
-  const started = await fixture.f.startRun(imageStart(fixture.input));
-  assert(started.ok, JSON.stringify(started));
-  return { ...fixture, runId: started.value.id, release };
 }

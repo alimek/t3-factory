@@ -1,13 +1,15 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { launchedBlockId, workerStart } from "./support/run-worker.ts";
+import { launchedBlockId } from "./support/run-worker.ts";
 import {
   blockExit,
   finishedReport,
+  handoffFlow,
   launchUncertain,
   replyTurnRunning,
   report,
   resultReleasedToSameWorker,
+  resultReleasedToSecondWorker,
   resultReported,
   sentTurnBegins,
   workerAtWork,
@@ -152,7 +154,7 @@ it("a worker reads its Block while Factory is still confirming its launch", asyn
 
 it("a worker resumed by the user's reply reads its Block and may report again", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const idle = await workingReportedIdle(setup.world, atWork);
   const fixture = { ...setup, ...(await replyTurnRunning(setup.world, idle)) };
@@ -170,10 +172,11 @@ it("a worker resumed by the user's reply reads its Block and may report again", 
 
 it("a downstream worker retrieves its incoming result and the Block that produced it", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
-  const fixture = { ...setup, ...(await resultReported(setup.world, atWork)) };
-  assert((await fixture.f.reconcileRuns()).ok);
+  const reported = await resultReported(setup.world, atWork);
+  await resultReleasedToSecondWorker(setup.world, reported);
+  const fixture = { ...setup, ...reported };
 
   // Act
   const result = await fixture.f.runtime.block({

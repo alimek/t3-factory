@@ -1,9 +1,16 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { assert, expect, it } from "@effect/vitest";
-import { workerStart } from "./support/run-worker.ts";
-import { imageRequest, screenshots, startedImageFanOut } from "./support/run-images.ts";
-import { resultReported, sha256Hex, workerAtWork } from "./support/scenarios.ts";
+import { imageRequest, screenshots } from "./support/run-images.ts";
+import { prepared } from "./support/prepared-runner.ts";
+import {
+  fanOutFlow,
+  handoffFlow,
+  imageDispatchHeld,
+  resultReported,
+  sha256Hex,
+  workerAtWork,
+} from "./support/scenarios.ts";
 
 const attachmentNames = ["image-1-screenshot.png", "image-2-screenshot.png", "image-3-mockup.png"];
 const digests = [screenshots.red, screenshots.blue, screenshots.green].map((image) =>
@@ -12,7 +19,8 @@ const digests = [screenshots.red, screenshots.blue, screenshots.green].map((imag
 
 it("every Flow-input worker receives the same original images, uploaded anew for its launch", async (c) => {
   // Arrange
-  const f = await startedImageFanOut(c);
+  const f = await prepared(c, fanOutFlow);
+  assert((await f.f.startRun(await imageRequest(f))).ok);
 
   // Act
   assert((await f.f.reconcileRuns()).ok);
@@ -39,7 +47,8 @@ it("every Flow-input worker receives the same original images, uploaded anew for
 
 it("a failed image upload leaves the launch pending with the upload problem and launches nothing", async (c) => {
   // Arrange
-  const f = await startedImageFanOut(c, true);
+  const setup = await prepared(c, fanOutFlow);
+  const f = { ...setup, ...(await imageDispatchHeld(setup.world, await imageRequest(setup))) };
   f.t3.failUploads = true;
   f.release();
 
@@ -64,7 +73,8 @@ it("a failed image upload leaves the launch pending with the upload problem and 
 
 it("a pending image launch uploads its images again after restart once T3 accepts attachments", async (c) => {
   // Arrange
-  const f = await startedImageFanOut(c, true);
+  const setup = await prepared(c, fanOutFlow);
+  const f = { ...setup, ...(await imageDispatchHeld(setup.world, await imageRequest(setup))) };
   f.t3.attachmentsSupported = false;
   f.release();
   assert((await f.f.reconcileRuns()).ok);
@@ -86,7 +96,8 @@ it("a pending image launch uploads its images again after restart once T3 accept
 
 it("Run image bytes missing from Factory storage cancel the launch with a Block error", async (c) => {
   // Arrange
-  const f = await startedImageFanOut(c, true);
+  const setup = await prepared(c, fanOutFlow);
+  const f = { ...setup, ...(await imageDispatchHeld(setup.world, await imageRequest(setup))) };
   await rm(join(f.h.processHome, "images", digests[1]!));
   f.release();
 
@@ -106,7 +117,8 @@ it("Run image bytes missing from Factory storage cancel the launch with a Block 
 
 it("an image launch with a lost acknowledgement is searched for, never uploaded or launched again", async (c) => {
   // Arrange
-  const f = await startedImageFanOut(c, true);
+  const setup = await prepared(c, fanOutFlow);
+  const f = { ...setup, ...(await imageDispatchHeld(setup.world, await imageRequest(setup))) };
   f.t3.loseLaunchReply = true;
   f.release();
   assert((await f.f.reconcileRuns()).ok);
@@ -128,7 +140,7 @@ it("an image launch with a lost acknowledgement is searched for, never uploaded 
 
 it("a downstream worker launches with a text-only message and no attachments", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, await imageRequest(setup));
   const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 

@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { workerMessage, workerStart } from "./support/run-worker.ts";
-import { resultReported, workerAtWork } from "./support/scenarios.ts";
+import { workerMessage } from "./support/run-worker.ts";
+import { handoffFlow, resultReported, workerAtWork } from "./support/scenarios.ts";
 
 it("each Start of the same Flow revision shows the Agent revision, with its exits, current when it started", async (c) => {
   // Arrange
@@ -40,7 +40,7 @@ it("each Start of the same Flow revision shows the Agent revision, with its exit
 
 it("a block first activated after its Agent was edited and removed and the backend restarted runs the captured Agent revision", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   const edited = await f.f.updateAgent(f.agent.id, {

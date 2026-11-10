@@ -1,14 +1,11 @@
 import { assert, expect, it } from "@effect/vitest";
-import {
-  workerStart,
-  launchedBlockId,
-  pendingReview,
-  workerMessage,
-} from "./support/run-worker.ts";
+import { launchedBlockId, workerMessage } from "./support/run-worker.ts";
 import {
   allTurnsEnd,
   executionFailed,
   followUpReplyRunning,
+  handoffFlow,
+  humanReviewFlow,
   missingReport,
   replyTurnRunning,
   report,
@@ -16,6 +13,7 @@ import {
   reportRecoveryLeftUnfinished,
   reportRecoveryRequested,
   resultHeld,
+  resultReleasedToHumanReview,
   resultReleasedToSameWorker,
   resultReported,
   turnBegins,
@@ -142,7 +140,7 @@ it("two Blocks that share one Agent still launch separate workers", async (c) =>
 
 it("normal Start launches the entry worker with its own Agent settings and no Run conversation", async (c) => {
   // Arrange
-  const f = await workerStart(c);
+  const f = await prepared(c, handoffFlow);
 
   const started = await f.f.startRun(f.input);
   assert(started.ok);
@@ -164,7 +162,7 @@ it("normal Start launches the entry worker with its own Agent settings and no Ru
 });
 it("a completed reporting worker releases downstream work without a Run conversation", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
@@ -180,7 +178,7 @@ it("a completed reporting worker releases downstream work without a Run conversa
 });
 it("a worker that fails after reporting cannot release downstream work", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork, { status: "failed" })) };
 
@@ -195,7 +193,7 @@ it("a worker that fails after reporting cannot release downstream work", async (
 });
 it("an accepted result stays held while T3 has not settled the worker's delegated work", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "running");
@@ -213,7 +211,7 @@ it("an accepted result stays held while T3 has not settled the worker's delegate
 
 it("a worker rolled back after reporting shows a Problem and holds its prior result", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork, { status: "rolled_back" })) };
 
@@ -234,7 +232,7 @@ it("a worker rolled back after reporting shows a Problem and holds its prior res
 });
 it("an accepted result stays held while the worker thread has a pending native request", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   const thread = f.t3.executionObservations.get("thread-1")!;
@@ -251,7 +249,7 @@ it("an accepted result stays held while the worker thread has a pending native r
 });
 it("an accepted result stays held while the worker thread still has an active run", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultHeld(setup.world, atWork)) };
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "settled", "completed");
@@ -267,7 +265,7 @@ it("an accepted result stays held while the worker thread still has an active ru
 });
 it("a worker waiting on unsettled background work stays working without a missing-report Problem", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
   allTurnsEnd(f.world, worker);
@@ -284,7 +282,7 @@ it("a worker waiting on unsettled background work stays working without a missin
 });
 it("a worker idle after reporting working shows its message without a missing-report Problem", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
   assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
@@ -306,7 +304,7 @@ it("a worker idle after reporting working shows its message without a missing-re
 });
 it("a reportless turn resumed by a notification shows a missing report once T3 settles the thread", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
   allTurnsEnd(f.world, worker);
@@ -328,7 +326,7 @@ it("a reportless turn resumed by a notification shows a missing report once T3 s
 });
 it("a failed worker run shows an execution-failed Problem that settles when a later run of the thread completes", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const worker = await executionFailed(setup.world, atWork);
   const f = { ...setup, ...worker };
@@ -349,7 +347,7 @@ it("a failed worker run shows an execution-failed Problem that settles when a la
 });
 it("a failed worker run's Problem settles when the Block reports", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
   allTurnsEnd(f.world, worker, "interrupted");
@@ -370,7 +368,7 @@ it("a failed worker run's Problem settles when the Block reports", async (c) => 
 });
 it("an execution failure settled by a report is not raised again while that run is still the thread's latest", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const worker = await executionFailed(setup.world, atWork);
   const f = { ...setup, ...worker };
@@ -389,7 +387,7 @@ it("an execution failure settled by a report is not raised again while that run 
 });
 it("a new failed run after a settled execution failure shows a new Problem", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const worker = await executionFailed(setup.world, atWork);
   const f = { ...setup, ...worker };
@@ -410,7 +408,7 @@ it("a new failed run after a settled execution failure shows a new Problem", asy
 });
 it("repeating the current working report after a failed run settles the execution failure", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
   assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
@@ -436,7 +434,7 @@ it("repeating the current working report after a failed run settles the executio
 });
 it("missing-report recovery targets the original worker and retains its activation", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await missingReport(setup.world, atWork)) };
 
@@ -456,7 +454,7 @@ it("missing-report recovery targets the original worker and retains its activati
 });
 it("Request report on a worker idle in working queues an assessment turn on its thread", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await workingReportedIdle(setup.world, atWork)) };
 
@@ -521,7 +519,7 @@ it("a prepared revisit is not sent while its worker thread has started another r
 });
 it("restart preserves the worker binding without replaying accepted work", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   await f.f.close();
 
@@ -538,7 +536,7 @@ it("restart preserves the worker binding without replaying accepted work", async
 });
 it("a worker resumed by the user's reply finishes the same activation without another working report", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const idle = await workingReportedIdle(setup.world, atWork);
   const f = { ...setup, ...(await replyTurnRunning(setup.world, idle)) };
@@ -557,7 +555,7 @@ it("a worker resumed by the user's reply finishes the same activation without an
 });
 it("a later user reply can finish the activation after a reportless reply and backend restart", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const idle = await workingReportedIdle(setup.world, atWork);
   const replying = await replyTurnRunning(setup.world, idle);
@@ -580,7 +578,7 @@ it("a later user reply can finish the activation after a reportless reply and ba
 });
 it("reply turns without reports keep the Block working with its message and no Problem or Needs input", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const idle = await workingReportedIdle(setup.world, atWork);
   const worker = await replyTurnRunning(setup.world, idle);
@@ -606,7 +604,7 @@ it("reply turns without reports keep the Block working with its message and no P
 
 it("completed direct worker recovery settles the original missing report only after source release", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const missing = await missingReport(setup.world, atWork);
   const recovering = await reportRecoveryRequested(setup.world, missing);
@@ -625,7 +623,7 @@ it("completed direct worker recovery settles the original missing report only af
 
 it("Request report on a worker idle in working settles once the assessment turn's result is released", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const idle = await workingReportedIdle(setup.world, atWork);
   const recovering = await reportRecoveryRequested(setup.world, idle);
@@ -644,7 +642,7 @@ it("Request report on a worker idle in working settles once the assessment turn'
 
 it("a Request report turn that finds unfinished work keeps the Block working and its recovery open", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const missing = await missingReport(setup.world, atWork);
   const recovering = await reportRecoveryRequested(setup.world, missing);
@@ -664,7 +662,9 @@ it("a Request report turn that finds unfinished work keeps the Block working and
 
 it("a Human answer releases its outgoing handoff without waiting for worker evidence", async (c) => {
   // Arrange
-  const f = await pendingReview(c);
+  const setup = await prepared(c, humanReviewFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
 
   // Act
   const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "approve" });
@@ -681,7 +681,9 @@ it("a Human answer releases its outgoing handoff without waiting for worker evid
 
 it("competing Human answers settle the occurrence once and the other answer is refused as a conflict", async (c) => {
   // Arrange
-  const f = await pendingReview(c);
+  const setup = await prepared(c, humanReviewFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
 
   // Act
   const results = await Promise.all([
@@ -710,7 +712,9 @@ it("competing Human answers settle the occurrence once and the other answer is r
 
 it("a Request changes answer without a message is rejected and the review stays pending", async (c) => {
   // Arrange
-  const f = await pendingReview(c);
+  const setup = await prepared(c, humanReviewFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
 
   // Act
   const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "request-changes" });
@@ -728,7 +732,9 @@ it("a Request changes answer without a message is rejected and the review stays 
 
 it("a Human answer naming an exit other than Approve or Request changes is rejected", async (c) => {
   // Arrange
-  const f = await pendingReview(c);
+  const setup = await prepared(c, humanReviewFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
 
   // Act
   const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "done" });
@@ -740,7 +746,7 @@ it("a Human answer naming an exit other than Approve or Request changes is rejec
 
 it("a held worker handoff launches exactly one next worker after a backend restart", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   await f.f.close();

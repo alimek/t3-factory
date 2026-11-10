@@ -1,9 +1,9 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { workerStart } from "./support/run-worker.ts";
 import {
   allTurnsEnd,
   finishedReport,
+  handoffFlow,
   missingReport,
   report,
   reportRecoveryRequested,
@@ -15,7 +15,7 @@ import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a rejected worker report explains the rejection without changing execution state or retaining its message", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
@@ -106,7 +106,7 @@ it("a rejected report remains explained after completion and backend restart", a
 
 it("Request report refuses a stale missing-report Problem while delegated work is unsettled", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...(await missingReport(setup.world, atWork)) };
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "completed");
@@ -125,7 +125,7 @@ it("Request report refuses a stale missing-report Problem while delegated work i
 
 it("repeated rejected reports keep one pending diagnostic without launching work", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const invalid = { arguments: { blockId: f.blockId, to: "finished", exit: "unknown" } };
   assert((await f.f.runtime.submit(invalid)).code === "INVALID_EXIT");

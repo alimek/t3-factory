@@ -1,27 +1,27 @@
 import { assert, expect, it } from "@effect/vitest";
-import {
-  launchedBlockId,
-  releasedTwoExitWorker,
-  replacedBeforeRelease,
-  workerStart,
-} from "./support/run-worker.ts";
+import { launchedBlockId } from "./support/run-worker.ts";
 import {
   allTurnsEnd,
   finishedReport,
+  handoffFlow,
+  laterTurnAfterRelease,
   report,
+  resultReleasedToSecondWorker,
+  resultReplacedBeforeRelease,
   resultReported,
   turnBegins,
+  twoExitFlow,
   workerAtWork,
   workerFinal,
-  workerHandle,
   workingReport,
 } from "./support/scenarios.ts";
 import { prepared } from "./support/prepared-runner.ts";
-import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a newer finished report before release replaces the held result and only it is handed off", async (c) => {
   // Arrange
-  const f = await replacedBeforeRelease(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReplacedBeforeRelease(setup.world, atWork)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -44,14 +44,11 @@ it("a newer finished report before release replaces the held result and only it 
 
 it("a Run whose result was replaced before handoff settles once every worker is done", async (c) => {
   // Arrange
-  const f = await replacedBeforeRelease(c);
-  assert((await f.f.reconcileRuns()).ok);
-  const released = await f.f.getRun(f.runId);
-  assert(released.ok);
-  const next = workerHandle(f.world, released.value, "parallel-block");
-  assert((await report(f.world, next, finishedReport())) === "ACCEPTED");
-  f.t3.engineStatus = "completed";
-  answerDelegatedWait(f.t3, "thread-2", "execution-2", "settled", "completed");
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const replaced = await resultReplacedBeforeRelease(setup.world, atWork);
+  const next = await resultReleasedToSecondWorker(setup.world, replaced);
+  const f = { ...setup, ...(await resultReported(setup.world, next)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -64,12 +61,10 @@ it("a Run whose result was replaced before handoff settles once every worker is 
 
 it("after release a same-exit finished report updates the result without relaunching the next Block", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
-  const worker = await resultReported(setup.world, atWork);
-  const f = { ...setup, ...worker };
-  assert((await f.f.reconcileRuns()).ok);
-  turnBegins(f.world, worker, "followup-execution");
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await laterTurnAfterRelease(setup.world, reported)) };
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId, "Updated result."));
@@ -90,7 +85,10 @@ it("after release a same-exit finished report updates the result without relaunc
 
 it("after release a different-exit finished report hands off to that exit's Block while the earlier one keeps running", async (c) => {
   // Arrange
-  const f = await releasedTwoExitWorker(c);
+  const setup = await prepared(c, twoExitFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const worker = await laterTurnAfterRelease(setup.world, reported);
+  const f = { ...setup, ...worker, worker };
   const revised = finishedReport("Needs another pass.", "Revise");
   assert((await report(f.world, f.worker, revised)) === "ACCEPTED");
   allTurnsEnd(f.world, f.worker);
@@ -119,7 +117,10 @@ it("after release a different-exit finished report hands off to that exit's Bloc
 
 it("a different-exit result after release stays held while the worker thread is still running", async (c) => {
   // Arrange
-  const f = await releasedTwoExitWorker(c);
+  const setup = await prepared(c, twoExitFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const worker = await laterTurnAfterRelease(setup.world, reported);
+  const f = { ...setup, ...worker, worker };
   const revised = finishedReport("Needs another pass.", "Revise");
   assert((await report(f.world, f.worker, revised)) === "ACCEPTED");
 
@@ -135,7 +136,7 @@ it("a different-exit result after release stays held while the worker thread is 
 
 it("repeating the result from a later turn settles an execution failure recorded after it", async (c) => {
   // Arrange
-  const setup = await workerStart(c);
+  const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const worker = await resultReported(setup.world, atWork, {
     status: "failed",

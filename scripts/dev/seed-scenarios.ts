@@ -1,89 +1,58 @@
-import type { RunDetail } from "../../packages/contracts/src/index.ts";
 import {
   archived,
+  changesRequested,
   executionFailed,
   idleWorking,
   missingReport,
   observe,
   repositoryFactsObserved,
-  reportAccepted,
   reportRejected,
+  resultReleasedToHumanReview,
+  resultReleasedToSecondWorker,
+  resultReleasedToTwoWorkers,
+  resultReplacedBeforeRelease,
   resultReported,
   settled,
   snoozed,
-  startRun,
-  turnEnds,
+  twoWorkersStarted,
   woke,
   workerAtWork,
-  workerHandle,
   workingReportedIdle,
+  worktreeBound,
 } from "../../apps/backend/test/support/scenarios.ts";
-import {
-  demoImages,
-  demoPullRequest,
-  demoStart,
-  requireSuccess,
-  startDemoRun,
-  type SeedContext,
-} from "./seed-support.ts";
+import { demoImages, demoPullRequest, demoStart, type SeedContext } from "./seed-support.ts";
 
 async function waitingForReview(context: SeedContext, flowId: string, correction = false) {
   const key = correction ? "correction" : "human-review";
-  let run = await startDemoRun(
+  const worker = await workerAtWork(
     context,
-    flowId,
-    key,
-    correction ? "Applying your requested changes" : "Waiting for your review",
-    "Improve Atlas search when there are no results. Keep the search query visible and offer a clear action to reset filters.",
+    await demoStart(
+      context,
+      flowId,
+      key,
+      correction ? "Applying your requested changes" : "Waiting for your review",
+      "Improve Atlas search when there are no results. Keep the search query visible and offer a clear action to reset filters.",
+    ),
   );
-  run = await reportAccepted(context, workerHandle(context, run, "worker"), {
-    to: "finished",
+  const implemented = await resultReported(context, worker, {
     exit: "Ready for review",
     message:
       "The empty state now preserves the query and offers Reset filters. Ready for a review.",
   });
-  turnEnds(context, workerHandle(context, run, "worker"));
-  run = await observe(context, run.id, (detail) =>
-    detail.blocks.some((block) => block.blockId === "reviewer" && block.threadId !== null),
-  );
-  run = await reportAccepted(context, workerHandle(context, run, "reviewer"), {
-    to: "finished",
+  const reviewer = await resultReleasedToSecondWorker(context, implemented);
+  const reviewed = await resultReported(context, reviewer, {
     exit: "Ready for your decision",
     message:
       "The search behavior looks good. Please review the empty-state wording and decide whether the reset action is clear enough.",
   });
-  turnEnds(context, workerHandle(context, run, "reviewer"));
-  run = await observe(context, run.id, (detail) =>
-    detail.humanOccurrences.some((occurrence) => occurrence.state === "pending"),
-  );
-  if (correction) await applyCorrection(context, run);
-}
-
-async function applyCorrection(context: SeedContext, run: RunDetail) {
-  const occurrence = run.humanOccurrences.find((item) => item.state === "pending");
-  if (!occurrence) throw Error("Development seed: review occurrence missing.");
-  requireSuccess(
-    await context.factory.answerHumanOccurrence(occurrence.id, {
-      exitId: "request-changes",
-      message: "Rename Reset filters to Clear filters and keep keyboard focus in the search field.",
-    }),
-  );
-  const worker = workerHandle(context, run, "worker");
-  await observe(context, run.id, (detail) =>
-    detail.intents.some(
-      (intent) => intent.occurrenceId === occurrence.id && intent.state === "acknowledged",
-    ),
-  );
-  await observe(
-    context,
-    run.id,
-    (detail) =>
-      detail.activations.filter((activation) => activation.blockId === worker.flowBlockId)
-        .length === 2 &&
-      detail.blocks.some(
-        (item) => item.blockId === worker.flowBlockId && item.executionId !== worker.executionId,
-      ),
-  );
+  const review = await resultReleasedToHumanReview(context, reviewed);
+  if (correction)
+    await changesRequested(
+      context,
+      review,
+      worker,
+      "Rename Reset filters to Clear filters and keep keyboard focus in the search field.",
+    );
 }
 
 async function settledAndArchivedScenarios(context: SeedContext, flowId: string) {
@@ -181,40 +150,32 @@ async function rejectedReportScenario(context: SeedContext, flowId: string) {
   await missingReport(context, rejected);
 }
 
-const bothReviewersWorking = (context: SeedContext, runId: string) =>
-  observe(
-    context,
-    runId,
-    (detail) => detail.blocks.filter((block) => block.state === "working").length === 2,
-  );
-
 async function parallelScenario(context: SeedContext, flowId: string) {
-  let run = await startDemoRun(
+  const worker = await workerAtWork(
     context,
-    flowId,
-    "parallel",
-    "Two reviewers working in parallel",
-    "Review the new project picker for code quality and keyboard accessibility. Each reviewer should report independently.",
+    await demoStart(
+      context,
+      flowId,
+      "parallel",
+      "Two reviewers working in parallel",
+      "Review the new project picker for code quality and keyboard accessibility. Each reviewer should report independently.",
+    ),
   );
   // The implementer replaces its first result before handoff; reviewers receive only the newer one.
-  run = await reportAccepted(context, workerHandle(context, run, "worker"), {
-    to: "finished",
-    exit: "Ready for review",
-    message: "The picker is ready for a code review.",
+  const replaced = await resultReplacedBeforeRelease(context, worker, {
+    first: { exit: "Ready for review", message: "The picker is ready for a code review." },
+    final: {
+      exit: "Ready for review",
+      message:
+        "The picker is ready. Please review both implementation quality and keyboard navigation.",
+    },
   });
-  run = await reportAccepted(context, workerHandle(context, run, "worker"), {
-    to: "finished",
-    exit: "Ready for review",
-    message:
-      "The picker is ready. Please review both implementation quality and keyboard navigation.",
-  });
-  turnEnds(context, workerHandle(context, run, "worker"));
-  await bothReviewersWorking(context, run.id);
+  await resultReleasedToTwoWorkers(context, replaced);
 }
 
 /** Both Agents connected to the Flow input start from the same prompt, independently. */
 async function parallelStartScenario(context: SeedContext, flowId: string) {
-  const { run } = await startRun(
+  const [reviewer, accessibility] = await twoWorkersStarted(
     context,
     await demoStart(
       context,
@@ -233,15 +194,11 @@ async function parallelStartScenario(context: SeedContext, flowId: string) {
       },
     ),
   );
-  await observe(context, run.id, (detail) =>
-    detail.blocks.some((block) => block.threadId !== null && block.freshness === "fresh"),
-  );
-  const working = await bothReviewersWorking(context, run.id);
-  await repositoryFactsObserved(context, workerHandle(context, working, "reviewer"), {
+  await repositoryFactsObserved(context, reviewer, {
     branch: "review/project-picker",
     pullRequests: [demoPullRequest(42)],
   });
-  await repositoryFactsObserved(context, workerHandle(context, working, "accessibility"), {
+  await repositoryFactsObserved(context, accessibility, {
     branch: "review/keyboard-accessibility",
     pullRequests: [demoPullRequest(42), demoPullRequest(43)],
   });
@@ -249,17 +206,15 @@ async function parallelStartScenario(context: SeedContext, flowId: string) {
 
 /** The worker creates the Run worktree; the reviewer stays unvisited, with no worker yet. */
 async function worktreeScenario(context: SeedContext, flowId: string) {
-  const run = await startDemoRun(
+  await worktreeBound(
     context,
-    flowId,
-    "worktree",
-    "Worktree · Search fix on its own branch",
-    "Fix the search highlighting in a separate worktree so the project checkout stays untouched, then hand off for review.",
-  );
-  await observe(
-    context,
-    run.id,
-    (detail) => detail.workspace.mode === "worktree" && detail.workspace.state === "bound",
+    await demoStart(
+      context,
+      flowId,
+      "worktree",
+      "Worktree · Search fix on its own branch",
+      "Fix the search highlighting in a separate worktree so the project checkout stays untouched, then hand off for review.",
+    ),
   );
 }
 

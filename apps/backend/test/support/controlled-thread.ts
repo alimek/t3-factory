@@ -90,3 +90,27 @@ export function endThreadRun(
   for (const send of t3.sends.values())
     if (send.reference.runId === runId) send.reference = { ...send.reference, status };
 }
+
+/** Whenever T3 accepts a send to the thread, it shows the thread busy again: its latest turn
+ * runs, with the send queued behind it. This is ControlledT3's own read of a launched thread whose
+ * engine runs again once a send arrives, which the worktree review tests were written against. */
+export function busyAgainOnSend(t3: ControlledT3, threadId: string) {
+  const send = t3.sendMessage.bind(t3);
+  t3.sendMessage = async (target, payload) => {
+    const reference = await send(target, payload);
+    if (payload.threadId !== threadId) return reference;
+    const thread = statedThread(t3, threadId, "busy again on send");
+    const latest = thread.latestRunId;
+    const runs = thread.recentRuns.map(({ completedAt: _completedAt, ...run }, index) =>
+      run.runId === latest ? { ...run, status: "running" } : thread.recentRuns[index]!,
+    );
+    t3.executionObservations.set(threadId, {
+      ...thread,
+      activeRunId: latest ?? null,
+      recentRuns: runs.some((run) => run.runId === reference.runId)
+        ? runs
+        : [...runs, { runId: reference.runId, status: reference.status, ordinal: runs.length + 1 }],
+    });
+    return reference;
+  };
+}
