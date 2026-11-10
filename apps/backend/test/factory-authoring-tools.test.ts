@@ -211,3 +211,47 @@ it("a stale Flow save whose graph is too large to arrange is refused as a confli
     name: "Studio's edit",
   });
 });
+
+it("an MCP-created Flow with an eight-day Wait saves with Studio's readiness gap and arranged positions", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const agent = assertOk(await factory.createAgent(sampleAgentInput("Coder")));
+  const graph = {
+    flowInput: { targetBlockIds: ["coder"] },
+    blocks: [
+      {
+        id: "coder",
+        kind: "agent",
+        name: "Coder",
+        agentId: agent.id,
+        hiddenExitIds: [],
+        localExits: [],
+      },
+      { id: "pause", kind: "wait", name: "Cool down", duration: { amount: 8, unit: "days" } },
+    ],
+    connections: [{ sourceBlockId: "coder", exitId: "done", targetBlockId: "pause" }],
+  };
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_create_flow",
+    arguments: { name: "Delayed review", graph },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const flow = toolReply(result);
+  expect(flow.readiness.issues).toStrictEqual([
+    {
+      code: "wait_duration_range",
+      path: "graph.blocks.1.duration",
+      message: "Cool down must wait from 1 minute to 7 days.",
+    },
+  ]);
+  expect(flow.graph.blocks[1]).toMatchObject({
+    kind: "wait",
+    duration: { amount: 8, unit: "days" },
+    position: { x: expect.any(Number), y: expect.any(Number) },
+  });
+  expect(assertOk(await factory.getFlow(flow.id))).toStrictEqual(flow);
+});

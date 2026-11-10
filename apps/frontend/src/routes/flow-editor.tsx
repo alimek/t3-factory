@@ -527,6 +527,7 @@ function DraftProblems({
 const PANEL_BADGES: Record<FlowBlock["kind"], string> = {
   agent: "AGENT BLOCK",
   human: "HUMAN STEP",
+  wait: "WAIT",
   continuation: "CONTINUATION BLOCK",
 };
 

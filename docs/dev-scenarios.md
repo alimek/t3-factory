@@ -36,6 +36,10 @@ of the [quality gate](quality-gates.md), rejects stale rows and missing or malfo
 - `correction`: Demo · Applying your requested changes
 - `parallel`: Demo · Two reviewers working in parallel
 - `parallel-start`: Demo · Parallel review from one prompt
+- `wait-pending`: Demo · Waiting · Release notes settle before review
+- `approved-wait`: Demo · Waiting · Approved release held for the window
+- `wait-continued`: Demo · Working · Hotfix notes reviewed without waiting for CI
+- `wait-arrivals`: Demo · Waiting · Two reviews held for the morning sync
 - `worktree`: Demo · Worktree · Search fix on its own branch
 - `working-report`: Demo · Monitoring · Agent is watching CI for the search fix
 - `continuation-sent`: Demo · Continuation · Spec prompt sent to the planning thread

@@ -99,7 +99,8 @@ export function workerRevisitPayload(
 /**
  * A Continuation's prompt, queued as the next turn of the worker thread it continues. A Human
  * step's reply follows it, labelled, because that worker has not seen it; a message from an Agent
- * or Continuation was written in this same thread and is not repeated.
+ * or Continuation was written in this same thread and is not repeated. `arrival` names the block
+ * that wrote the message, which for a message a Wait forwarded is that Wait's own source.
  */
 export function continuationPromptMessage(
   definitions: RunDefinitions,

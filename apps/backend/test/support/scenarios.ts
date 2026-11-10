@@ -24,6 +24,8 @@ type AgentShape = Extract<FlowBlock, { kind: "agent" }>;
 export type ScenarioAgentBlock = { [Key in keyof AgentShape]: AgentShape[Key] };
 type HumanShape = Extract<FlowBlock, { kind: "human" }>;
 export type ScenarioHumanStep = { [Key in keyof HumanShape]: HumanShape[Key] };
+type WaitShape = Extract<FlowBlock, { kind: "wait" }>;
+export type ScenarioWait = { [Key in keyof WaitShape]: WaitShape[Key] };
 type ContinuationShape = Extract<FlowBlock, { kind: "continuation" }>;
 export type ScenarioContinuation = { [Key in keyof ContinuationShape]: ContinuationShape[Key] };
 type Position = FlowBlock["position"];
@@ -84,6 +86,14 @@ export const humanStep = (
   name: string,
   position: Position = { x: 0, y: 0 },
 ): ScenarioHumanStep => ({ id, name, kind: "human", position });
+export const waitBlock = (
+  id: string,
+  name: string,
+  duration: WaitShape["duration"],
+  position: Position = { x: 0, y: 0 },
+): ScenarioWait => ({ id, name, kind: "wait", duration, position });
+/** The single unnamed output every Wait leaves by. */
+export const WAIT_OUTPUT = "output";
 export const continuationStep = (
   id: string,
   name: string,
@@ -132,6 +142,7 @@ export interface ScenarioWorld {
     | "settleRun"
     | "snoozeRun"
     | "answerHumanOccurrence"
+    | "continueWaitArrival"
   > & {
     readonly runtime: { submit(input: unknown): Promise<{ readonly code: string }> };
   };
@@ -256,6 +267,12 @@ async function submitReport(
  * report can be the intended result. */
 export const report = (world: ScenarioWorld, worker: WorkerHandle, fields: ReportFields) =>
   submitReport("report", world, worker, fields);
+
+/** Resolves with the next worker launch T3 records, also one background work issues. */
+export const nextLaunch = (world: ScenarioWorld) => world.t3.nextLaunch();
+
+/** Resolves with the next send T3 records, also one background work issues. */
+export const nextSend = (world: ScenarioWorld) => world.t3.nextSend();
 
 /** The worker's next T3 turn begins as run `runId`; the returned handle is on that run. */
 export function turnBegins(world: ScenarioWorld, worker: WorkerHandle, runId: string) {
@@ -466,6 +483,176 @@ export const twoExitFlow: ReadyFlowShape = (world) =>
     connections: [
       connection("worker", "done", "parallel-block"),
       connection("worker", "revise", "follow-up"),
+    ],
+  }));
+
+/** Ten minutes, the duration of every Wait in the Wait Flow shapes. */
+export const WAIT_MINUTES = 10;
+const coolDown = (id = "cool-down", name = "Cool down") =>
+  waitBlock(id, name, { amount: WAIT_MINUTES, unit: "minutes" }, { x: 400, y: 0 });
+
+/** Entry worker's "Done" waits in Cool down, which forwards to Follow-up. */
+export const waitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown(), followUp(agentId)],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which forwards to both Follow-up and Notify. */
+export const fanOutWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait fan-out", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      coolDown(),
+      followUp(agentId),
+      agentBlock("notify", "Notify", agentId),
+    ],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "follow-up"),
+      connection("cool-down", WAIT_OUTPUT, "notify"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which forwards to the Continuation Spec. */
+export const waitContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait before continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown(), specStep],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "spec"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes to a Human Review whose Approve waits in Cool down, which forwards to
+ * the Continuation Spec. */
+export const reviewWaitContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Review and wait before continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, coolDown(), specStep],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("review", "approve", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "spec"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, whose output ends the branch. */
+export const terminalWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Terminal wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown()],
+    connections: [connection("worker", "done", "cool-down")],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, then in Settle in, which forwards to Follow-up. */
+export const consecutiveWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Consecutive waits", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      coolDown(),
+      coolDown("settle-in", "Settle in"),
+      followUp(agentId),
+    ],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "settle-in"),
+      connection("settle-in", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which returns it to Entry worker. */
+export const loopWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait loop", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown()],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "worker"),
+    ],
+  }));
+
+/** Entry worker and Second entry both start from the Flow input and hand "Done" to Cool down,
+ * whose output ends the branch. */
+export const parallelWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Parallel wait", (agentId) => ({
+    flowInput: flowInput("worker", "second"),
+    blocks: [entryWorker(agentId), agentBlock("second", "Second entry", agentId), coolDown()],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("second", "done", "cool-down"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes to a Human Review whose Approve waits in Cool down, which forwards
+ * to Follow-up. */
+export const humanThenWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Review then wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, coolDown(), followUp(agentId)],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("review", "approve", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which forwards to a Human Review whose Approve waits
+ * in Settle in, which forwards to Follow-up. */
+export const waitHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait, review, wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      coolDown(),
+      reviewStep,
+      coolDown("settle-in", "Settle in"),
+      followUp(agentId),
+    ],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "review"),
+      connection("review", "approve", "settle-in"),
+      connection("settle-in", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker and Second entry both start from the Flow input and hand "Done" to a Human
+ * Review whose Approve waits in Cool down, whose output ends the branch. */
+export const parallelHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Parallel review then wait", (agentId) => ({
+    flowInput: flowInput("worker", "second"),
+    blocks: [
+      entryWorker(agentId),
+      agentBlock("second", "Second entry", agentId),
+      reviewStep,
+      coolDown(),
+    ],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("second", "done", "review"),
+      connection("review", "approve", "cool-down"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes both to a Human Review, whose Approve waits in Settle in with no
+ * further recipient, and to Cool down, which returns it to Entry worker. */
+export const reviewedLoopWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Reviewed wait loop", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, coolDown(), coolDown("settle-in", "Settle in")],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "worker"),
+      connection("review", "approve", "settle-in"),
     ],
   }));
 
@@ -979,12 +1166,68 @@ export function resultReleasedToHumanReview(world: ScenarioWorld, worker: Worker
 
 type HumanReview = Awaited<ReturnType<typeof resultReleasedToHumanReview>>;
 
-/** The user approved the pending review; Factory has not yet observed the answer's handoff. */
-export function reviewApproved(world: ScenarioWorld, review: HumanReview) {
+/** Each worker reported `results[i]` and ended its turn; Factory observed every end and released
+ * each result to a Wait as its own pending arrival. */
+export function resultsReleasedToWait(
+  world: ScenarioWorld,
+  workers: readonly WorkerHandle[],
+  results: readonly { readonly message?: string; readonly exit?: string }[],
+) {
+  return reach("results released to a Wait", async () => {
+    for (const [index, worker] of workers.entries())
+      await resultReported(world, worker, results[index]);
+    await observeFor(
+      "observe the arrivals",
+      world,
+      workers[0]!.runId,
+      (run) =>
+        run.waitArrivals.filter((arrival) => arrival.state === "pending").length === workers.length,
+    );
+    return workers;
+  });
+}
+
+/** Factory observed the worker's end and released its result to a Wait, whose pending arrival the
+ * returned handle carries beside the worker's. */
+export function resultReleasedToWait(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("result released to a Wait", async () => {
+    const run = await observeFor("observe the arrival", world, worker.runId, (detail) =>
+      detail.waitArrivals.some((arrival) => arrival.state === "pending"),
+    );
+    return { ...worker, arrival: run.waitArrivals.find((item) => item.state === "pending")! };
+  });
+}
+
+/** The user continued the Wait's pending arrival early with Continue now, and Factory launched the
+ * Wait's recipient with the arrival's message. */
+export function waitContinuedNow(
+  world: ScenarioWorld,
+  waiting: Awaited<ReturnType<typeof resultReleasedToWait>>,
+) {
+  return reach("Wait continued now", async () => {
+    stepResult(
+      "continue the Wait now",
+      await world.factory.continueWaitArrival(waiting.arrival.id),
+    );
+    await observeFor("observe the recipient's launch", world, waiting.runId, (run) =>
+      run.intents.some(
+        (intent) => intent.waitArrivalId === waiting.arrival.id && intent.state === "acknowledged",
+      ),
+    );
+    return waiting;
+  });
+}
+
+/** The user approved the pending review, with `message` when given; Factory has not yet observed
+ * the answer's handoff. */
+export function reviewApproved(world: ScenarioWorld, review: HumanReview, message?: string) {
   return reach("review approved", async () => {
     stepResult(
       "approve the review",
-      await world.factory.answerHumanOccurrence(review.occurrence.id, { exitId: "approve" }),
+      await world.factory.answerHumanOccurrence(review.occurrence.id, {
+        exitId: "approve",
+        ...(message === undefined ? {} : { message }),
+      }),
     );
     return review;
   });

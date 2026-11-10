@@ -18,10 +18,12 @@ import {
   type CanvasFlowInputContent,
   type CanvasPort,
 } from "./canvas-surface.tsx";
-import { BLOCK_KINDS, exitSourceLabel } from "./flow-block.tsx";
+import { BLOCK_KINDS, exitDisplayName, exitSourceLabel } from "./flow-block.tsx";
+import { pendingArrivals, waitDurationText } from "../wait-display.ts";
 import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
-import { clockTime, executionStateLabel, StatePill } from "./execution-state.tsx";
+import { ContinueNow } from "./wait-arrivals.tsx";
+import { clockTime, dayAndTime, executionStateLabel, StatePill } from "./execution-state.tsx";
 
 function blockAttention(run: RunDetail, blockId: string) {
   const pending = run.attention.filter((item) => item.blockId === blockId && !item.settledAt);
@@ -41,6 +43,7 @@ function blockObservation(block: RunBlock, unavailable: boolean) {
 
 function agentLabel(run: RunDetail, block: Exclude<FlowBlock, { kind: "continuation" }>) {
   if (block.kind === "human") return "asks you";
+  if (block.kind === "wait") return `waits ${waitDurationText(block.duration)}`;
   if (!block.agentId) return "not chosen";
   return (
     run.definitions.agents.find((agent) => agent.id === block.agentId)?.name ?? "Unavailable Agent"
@@ -51,7 +54,7 @@ function agentLabel(run: RunDetail, block: Exclude<FlowBlock, { kind: "continuat
 function referenceLine(run: RunDetail, block: FlowBlock) {
   if (block.kind !== "continuation")
     return {
-      text: `${block.kind === "human" ? "Human step" : "Agent"} · ${agentLabel(run, block)}`,
+      text: `${BLOCK_KINDS[block.kind].name} · ${agentLabel(run, block)}`,
       color: "text-subtle-foreground",
     };
   const thread = continuedThread(run.definitions.flow.graph, block.id);
@@ -100,8 +103,18 @@ type BlockVisit = {
   readonly status: string;
 };
 
-/** Recorded visits: Block worker activations, Human occurrences or messages reaching a Continuation. */
+/** Recorded visits: Block worker activations, Human occurrences, Wait arrivals or messages reaching a
+ * Continuation. */
 export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVisit[] {
+  if (block.kind === "wait")
+    return run.waitArrivals
+      .filter((arrival) => arrival.blockId === block.id)
+      .map((arrival) => ({
+        id: arrival.id,
+        start: arrival.startedAt,
+        end: arrival.settledAt,
+        status: arrival.state,
+      }));
   if (block.kind === "continuation") {
     return run.continuationVisits
       .filter((visit) => visit.blockId === block.id)
@@ -132,6 +145,15 @@ export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVis
           ?.completionEligibleAt ?? null,
       status: activation.phase,
     }));
+}
+
+/** A waiting Wait shows when it next continues: the nearest deadline, and how many arrivals wait. */
+export function waitingText(run: RunDetail, blockId: string) {
+  const pending = pendingArrivals(run, blockId);
+  const next = pending[0];
+  if (!next) return null;
+  const until = `until ${dayAndTime(next.deadlineAt)}`;
+  return pending.length > 1 ? `${pending.length} waiting · next ${until}` : until;
 }
 
 /** A Continuation's activity: when its prompt went out, and where its work shows meanwhile. */
@@ -184,7 +206,7 @@ function ExecutionExit({
       </span>
       <span className="flex-1" />
       <span className="truncate text-xs font-medium text-foreground">
-        {continuation ? "response" : exit.name || "Unnamed exit"}
+        {continuation ? "response" : exitDisplayName(exit)}
       </span>
       <span className="sr-only">configured → {recipients || "finish here"}</span>
     </>
@@ -201,6 +223,7 @@ type BlockObservation = ReturnType<typeof blockObservation>;
 const EXECUTION_KIND_LABELS: Record<FlowBlock["kind"], string> = {
   agent: "AGENT",
   human: "HUMAN",
+  wait: "WAIT",
   continuation: "CONTINUATION",
 };
 
@@ -241,6 +264,8 @@ function activityLine(
   }
   if (state === "working" && recorded?.workingMessage)
     return { text: recorded.workingMessage, color: activityColor.working };
+  const waiting = state === "waiting" && block.kind === "wait" && waitingText(run, block.id);
+  if (waiting) return { text: waiting, color: activityColor.waiting };
   return {
     text: activityText(run, block, recorded),
     color: activityColor[state] ?? "text-muted-foreground",
@@ -287,11 +312,20 @@ function ExecutionBlockTitle({
   );
 }
 
-/** A block draws at most an attention footer and an observation footer. */
+/** A block draws at most an attention footer (a Wait: its Continue now footer instead) and an
+ * observation footer. */
 const MAX_FOOTERS = 2;
 
 const footerClass =
   "flex min-w-0 flex-1 items-center gap-1.5 rounded-b-lg border-t px-2.5 py-1.5 text-2xs tracking-label";
+
+/** A Wait with exactly one pending arrival offers Continue now for it on the block while the
+ * Run's gate is open. */
+function continuableArrival(run: RunDetail, block: FlowBlock) {
+  if (block.kind !== "wait" || !run.gateOpen) return undefined;
+  const [only, ...others] = pendingArrivals(run, block.id);
+  return others.length ? undefined : only;
+}
 
 /** Independent footers: attention chips and observation strips never encode the state. */
 function executionFooters(
@@ -302,6 +336,13 @@ function executionFooters(
 ) {
   const attention = blockAttention(run, block.id);
   const footers: ReactNode[] = [];
+  const continuable = continuableArrival(run, block);
+  if (continuable)
+    footers.push(
+      <span className={cn(footerClass, "bg-muted [&>p]:truncate")}>
+        <ContinueNow arrival={continuable} label={`Continue ${block.name || "Wait"} now`} />
+      </span>,
+    );
   if (attention.needsInput || attention.problem)
     footers.push(
       <span className={cn(footerClass, "bg-muted")}>
@@ -387,7 +428,8 @@ function executionBlock(
     className: cn(frameColor[state], selected && "border-primary ring-1 ring-primary"),
     selected,
     press: {
-      covers: "block",
+      // Continue now is its own control, so it sits outside the press target.
+      covers: continuableArrival(run, block) ? "identity" : "block",
       render: (rows) => (
         <button
           type="button"

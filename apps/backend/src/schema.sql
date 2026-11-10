@@ -105,11 +105,11 @@ CREATE TABLE "effect_sql_migrations" (
   name VARCHAR(255) NOT NULL
 );
 
-CREATE TABLE flow_revision_blocks (
+CREATE TABLE "flow_revision_blocks" (
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id),
   block_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-  kind TEXT NOT NULL CHECK (kind IN ('agent', 'human', 'continuation')),
+  kind TEXT NOT NULL CHECK (kind IN ('agent', 'human', 'continuation', 'wait')),
   name TEXT NOT NULL,
   -- Unresolved by design: drafts may name a missing Agent, and history outlives the Agent.
   agent_id TEXT CHECK (kind = 'agent' OR agent_id IS NULL),
@@ -117,6 +117,12 @@ CREATE TABLE flow_revision_blocks (
   prompt TEXT CHECK ((kind = 'continuation') = (prompt IS NOT NULL)),
   x REAL NOT NULL,
   y REAL NOT NULL,
+  -- A Wait's duration; both are null while the draft has none. Any finite amount saves:
+  -- readiness owns the range, judged on the normalized duration.
+  wait_amount REAL,
+  wait_unit TEXT CHECK (wait_unit IS NULL OR wait_unit IN ('minutes', 'hours', 'days')),
+  CHECK ((wait_amount IS NULL) = (wait_unit IS NULL)),
+  CHECK (kind = 'wait' OR wait_amount IS NULL),
   PRIMARY KEY (flow_revision_id, block_id),
   UNIQUE (flow_revision_id, ordinal)
 );
@@ -244,7 +250,7 @@ CREATE TABLE operation_intents (
   reserved_at TEXT,
   result_json TEXT,
   problem TEXT,
-  reconciled_at TEXT, report_id TEXT REFERENCES runtime_reports(id), source_block_id TEXT, exit_id TEXT, occurrence_id TEXT REFERENCES human_occurrences(id), recovery_attempt INTEGER NOT NULL DEFAULT 0, recovery_not_before TEXT, binding_id TEXT REFERENCES run_thread_bindings(id),
+  reconciled_at TEXT, report_id TEXT REFERENCES runtime_reports(id), source_block_id TEXT, exit_id TEXT, occurrence_id TEXT REFERENCES human_occurrences(id), recovery_attempt INTEGER NOT NULL DEFAULT 0, recovery_not_before TEXT, binding_id TEXT REFERENCES run_thread_bindings(id), wait_arrival_id TEXT REFERENCES wait_arrivals(id), origin_activation_id TEXT REFERENCES run_activations(id),
   UNIQUE(run_id,cause),
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
@@ -676,6 +682,28 @@ CREATE TABLE tasks (
   title TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE wait_arrivals (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  block_id TEXT NOT NULL,
+  incoming_intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),
+  state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'forwarded', 'cancelled')),
+  forwarded_by TEXT CHECK (forwarded_by IN ('timer', 'user')),
+  message TEXT,
+  binding_id TEXT REFERENCES run_thread_bindings(id),
+  origin_activation_id TEXT REFERENCES run_activations(id),
+  started_at TEXT NOT NULL,
+  deadline_at TEXT NOT NULL,
+  settled_at TEXT,
+  CHECK ((state = 'forwarded') = (forwarded_by IS NOT NULL)),
+  CHECK ((state = 'pending') = (settled_at IS NULL)),
+  CHECK (origin_activation_id IS NULL OR binding_id IS NOT NULL),
+  FOREIGN KEY (run_id, block_id) REFERENCES run_blocks(run_id, block_id)
+);
+
+CREATE INDEX wait_arrivals_pending ON wait_arrivals(deadline_at) WHERE state = 'pending'
+;
 
 CREATE TABLE worker_pull_requests (
   binding_id TEXT NOT NULL REFERENCES worker_repositories(binding_id),

@@ -102,6 +102,13 @@ export function BlockLibrary({
         onAdd={(position) => onAdd("human", undefined, position)}
       />
       <LibraryItem
+        name="Wait"
+        detail="Pauses, then continues"
+        kind="wait"
+        dropAt={dropAt}
+        onAdd={(position) => onAdd("wait", undefined, position)}
+      />
+      <LibraryItem
         name="Continuation"
         detail="Same thread, new prompt"
         kind="continuation"
@@ -224,6 +231,7 @@ function LibraryItem({
 const LIBRARY_ICON_TILES: Record<FlowBlock["kind"], string> = {
   agent: "bg-brand-soft text-link",
   human: "border border-dashed bg-muted text-muted-foreground",
+  wait: "border border-dashed bg-muted text-muted-foreground",
   continuation: "border bg-muted text-brand-cyan",
 };
 
@@ -231,6 +239,7 @@ const LIBRARY_ICON_TILES: Record<FlowBlock["kind"], string> = {
 const GHOST_REFERENCES: Record<FlowBlock["kind"], (name: string) => [string, string]> = {
   agent: (name) => ["Agent", name],
   human: () => ["Asks", "a person"],
+  wait: () => ["Waits", "no duration"],
   continuation: () => ["", "no Agent before it"],
 };
 

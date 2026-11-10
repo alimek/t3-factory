@@ -47,8 +47,11 @@ import {
   continuationPromptVisit,
   ExecutionCanvas,
   threadOwnerName,
+  waitingText,
 } from "../components/execution-canvas.tsx";
-import { BLOCK_KINDS } from "../components/flow-block.tsx";
+import { BLOCK_KINDS, exitDisplayName } from "../components/flow-block.tsx";
+import { WaitArrivals } from "../components/wait-arrivals.tsx";
+import { waitDurationText } from "../wait-display.ts";
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
 import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { sectionLabelClass } from "../components/page.tsx";
@@ -618,6 +621,7 @@ function blockAttentionLabel(run: RunDetail, blockId: string) {
 
 function blockKindLine(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "Human step · asks you";
+  if (block.kind === "wait") return `Wait · ${waitDurationText(block.duration)} · no worker`;
   if (block.kind === "continuation") {
     const thread = continuedThread(run.definitions.flow.graph, block.id);
     return `Continuation · ${thread ? `continues ${thread}` : "no Agent before it"}`;
@@ -629,7 +633,7 @@ function blockKindLine(run: RunDetail, block: FlowBlock) {
   return `Agent · ${agent ?? "not chosen"}${input}`;
 }
 
-/** Execution, visits and exits of an Agent block or Human step. */
+/** Execution, visits and exits of an Agent block, Human step or Wait; a Wait lists its arrivals. */
 function BlockHistory({
   run,
   block,
@@ -642,17 +646,12 @@ function BlockHistory({
   observationUnavailable: boolean;
 }) {
   const visits = blockVisits(run, block);
-  const latest = visits[visits.length - 1];
   return (
     <>
       <DetailSection title="Execution">
         <dl className="flex flex-col gap-2">
           <DetailRow label="Visits">{visits.length}</DetailRow>
-          <DetailRow label="Current">
-            {latest
-              ? `visit ${visits.length}${latest.start ? ` · since ${clockTime(latest.start)}` : ""}`
-              : "Not visited"}
-          </DetailRow>
+          <DetailRow label="Current">{currentVisitText(run, block, visits)}</DetailRow>
           <DetailRow label="Attention">{blockAttentionLabel(run, block.id)}</DetailRow>
           <DetailRow label="Observation">
             {observationUnavailable ? "stale" : recorded.freshness}
@@ -660,7 +659,8 @@ function BlockHistory({
           </DetailRow>
         </dl>
       </DetailSection>
-      {visits.length > 0 && (
+      {block.kind === "wait" && <WaitArrivals run={run} blockId={block.id} />}
+      {block.kind !== "wait" && visits.length > 0 && (
         <DetailSection title={`Visits · ${visits.length}`}>
           <ul className="flex flex-col gap-1.5">
             {visits
@@ -695,7 +695,7 @@ function BlockHistory({
             const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
             return (
               <li key={exit.id} className="flex items-baseline gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate">{exit.name || "Unnamed exit"}</span>
+                <span className="min-w-0 flex-1 truncate">{exitDisplayName(exit, "Output")}</span>
                 <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
                   {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
                 </span>
@@ -727,6 +727,19 @@ function WorkingReport({ run, recorded }: { run: RunDetail; recorded: RunBlock }
       </div>
     </DetailSection>
   );
+}
+
+/** The current visit, or a waiting Wait's nearest deadline. */
+function currentVisitText(
+  run: RunDetail,
+  block: FlowBlock,
+  visits: ReturnType<typeof blockVisits>,
+) {
+  const waiting = block.kind === "wait" && waitingText(run, block.id);
+  if (waiting) return waiting;
+  const latest = visits[visits.length - 1];
+  if (!latest) return "Not visited";
+  return `visit ${visits.length}${latest.start ? ` · since ${clockTime(latest.start)}` : ""}`;
 }
 
 type ContinuationBlock = Extract<FlowBlock, { kind: "continuation" }>;
@@ -985,13 +998,15 @@ function BlockDetails({
             observationUnavailable={observationUnavailable}
           />
         )}
-        <DetailSection title="T3 references">
-          <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
-            Thread: {threadId ?? "unresolved"}
-            <br />
-            Exact execution: {recorded.executionId ?? "unresolved"}
-          </p>
-        </DetailSection>
+        {block.kind !== "wait" && (
+          <DetailSection title="T3 references">
+            <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
+              Thread: {threadId ?? "unresolved"}
+              <br />
+              Exact execution: {recorded.executionId ?? "unresolved"}
+            </p>
+          </DetailSection>
+        )}
       </div>
       <footer className="mx-4 flex items-center gap-3 border-t py-4">
         {link ? (
@@ -1005,7 +1020,7 @@ function BlockDetails({
           </a>
         ) : (
           <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
-            No T3 thread yet
+            {block.kind === "wait" ? "A Wait has no T3 thread" : "No T3 thread yet"}
           </span>
         )}
         <p className="text-2xs tracking-label text-subtle-foreground">

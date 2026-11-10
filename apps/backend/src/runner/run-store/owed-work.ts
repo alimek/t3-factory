@@ -6,6 +6,7 @@ import { writeBlockState } from "./blocks.ts";
 import type { DeliveryRecord } from "./records.ts";
 import type { DeliveryState } from "./states.ts";
 import { appendTimelineEvent } from "./steps.ts";
+import { clearSpentWaitMessages } from "./waits.ts";
 
 const pending: DeliveryState = "pending";
 const cancelled: DeliveryState = "cancelled";
@@ -17,9 +18,10 @@ const CUTOFFS = {
 } as const;
 
 /** Nothing unsent leaves the Run any more: pending launches, sends and handoffs are cancelled,
- * pending Human occurrences too without inventing answers, pending attention settles with the
- * cutoff's reason, waiting Continuation arrivals are cancelled and activated Blocks that had not
- * finished show stopped. In-flight or uncertain operations keep their recorded state. */
+ * pending Human occurrences and Wait arrivals too without inventing answers, pending attention
+ * settles with the cutoff's reason, waiting Continuation arrivals are cancelled and activated
+ * Blocks that had not finished show stopped. In-flight or uncertain operations keep their
+ * recorded state. */
 export function cancelOwedWork(
   sql: SqlClient.SqlClient,
   id: string,
@@ -53,6 +55,20 @@ export function cancelOwedWork(
         observedAt: time,
       });
     }
+    const waits = yield* sql<{
+      id: string;
+      block_id: string;
+    }>`SELECT id,block_id FROM wait_arrivals WHERE run_id=${id} AND state='pending'`;
+    for (const arrival of waits) {
+      yield* sql`UPDATE wait_arrivals SET state='cancelled',message=NULL,settled_at=${time} WHERE id=${arrival.id}`;
+      yield* appendTimelineEvent(sql, {
+        kind: "wait-cancelled",
+        runId: id,
+        blockId: arrival.block_id,
+        arrivalId: arrival.id,
+        observedAt: time,
+      });
+    }
     const attention = yield* sql<{
       id: string;
       block_id: string;
@@ -76,5 +92,10 @@ export function cancelOwedWork(
       { keep: ["not-started", "finished", "pass-through"], otherwise: "stopped" },
       { problem: null },
     );
+    // Archive clears every Wait message, including those forwarded arrivals kept for their
+    // recipients; manual settlement keeps the ones a recipient's visit still reads. Outcomes,
+    // deadlines and identities stay.
+    if (cutoff === "archive") yield* sql`UPDATE wait_arrivals SET message=NULL WHERE run_id=${id}`;
+    else yield* clearSpentWaitMessages(sql, id);
   });
 }

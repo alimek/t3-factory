@@ -358,12 +358,20 @@ acknowledged; keys, fingerprints, targets and references remain afterwards. Init
 and captured prompts are retained intentionally. Payload clearing is logical deletion,
 not secure erasure.
 
-### Continuations
+### Worker provenance
 
-Every handoff records its [worker provenance](../GLOSSARY.md#worker-provenance): an Agent result carries its
-worker's binding, a Human answer the binding of the delivery it answered, a Continuation's result the thread
-its prompt ran on and a pass-through the arrival's own binding. Handoffs recorded before Continuations existed
-carry none; no Continuation can receive them.
+Every Handoff, and the launch or send it becomes, records the [worker provenance](../GLOSSARY.md#worker-provenance)
+of the message it carries: the worker's thread binding and, when known, the Block activation whose result the message
+is, within the Handoff's Run. An accepted Final result sets both: its activation, and the Block's bound worker or, for a
+Continuation's result, the thread its prompt ran on. A Human occurrence reads both from the incoming delivery it was
+recorded from, which keeps them after acknowledgement, and its answer's Handoffs repeat them with the person's message. A
+Wait arrival keeps what its Handoff carried and its forwarded Handoffs repeat it unchanged, as a pass-through does; neither
+a Wait nor a Human step acquires a worker. Provenance survives queued delivery, restart, fan-out and loop visits and is
+never reconstructed from the graph or the latest activation, so parallel occurrences and a review answered after a later
+visit of its worker keep their own. A Continuation continues the thread its arriving message is bound to, also after a
+Human step or Wait. Run detail shows the provenance as the delivery's `origin` when both thread and activation are known.
+
+### Continuations
 
 The first released handoff to a Continuation becomes its prompt visit: an activation, attributed to the
 worker's captured Agent revision, delivered by a send queued on the handoff's thread by its T3 id. A Factory
@@ -392,10 +400,39 @@ Approve accepts an optional one. An exact retry of an answer accepted before the
 names the new exit and so conflicts instead of repeating.
 
 Answering atomically records the answer, settles only that occurrence and creates every
-outgoing handoff. Identical retries return current detail; changed or competing answers
+outgoing handoff, which carries the answer and the [worker provenance](#worker-provenance) of the occurrence's own incoming
+delivery. Identical retries return current detail; changed or competing answers
 conflict. Pending context is cleared after settlement. A Human Block stays waiting while
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
+
+### Wait arrivals
+
+A Handoff to a Wait becomes one durable arrival when its source is released: a Final result's release, or the Human answer
+or forwarding that created it. The arrival keeps the message and the Handoff's [worker provenance](#worker-provenance), and its absolute
+deadline is the release time plus the captured Wait's duration; editing the saved Flow never changes it. The Handoff is
+acknowledged in place under the owner, open gate, live authorization context and release generation, so a repeated delivery
+attempt finds it no longer pending and records nothing. Parallel and repeated arrivals are independent; nothing joins.
+
+Forwarding is one guarded Run-store transition, shared by the timer and **Continue now**, the arrival-addressed public
+operation that forwards one arrival early. Under this owner and the open gate it claims a still-pending arrival, records who forwarded it and creates every
+outgoing Handoff to the Wait output's recipients in the same transaction. Those Handoffs are released from creation and carry
+the arrival's message and worker provenance; dispatch then uses the ordinary delivery and replay rules. A competing forward finds the
+arrival settled and changes nothing, so a race or a crash after commit never produces a second set of Handoffs, and a crash
+before commit leaves the arrival pending with its message. Forwarding needs no T3 request or live authorization context.
+Continue now skips only the deadline check: it answers the Run detail after forwarding, a conflict without change for an
+arrival already forwarded (by the timer or an earlier Continue now) or cancelled, or for a closed gate (Archive or a confirmed
+[manual settlement](#manual-settlement)) or lost ownership, and works on an automatically Settled Run without reactivating it. Its
+timeline event is distinct from the timer's.
+
+The Runner schedules one wake-up per pending arrival on its Effect clock, at startup for every pending arrival of a Run that
+is not Archived and whenever an arrival is recorded. A wake-up only drives its Run; every dispatch pass first forwards each
+pending arrival whose deadline has passed, oldest first, so a lost wake-up is caught by the next reconcile sweep and an extra
+one changes nothing. Restart before a deadline keeps it; after it, the next pass forwards the arrival once without moving
+the deadline or repeating missed time. Timing is best effort and system clock changes get no correction. Continue now
+disables its arrival's wake-up; a stale one, one scheduled again at restart, or one for an arrival cancelled by Archive or manual
+settlement finds nothing due. Shutdown stops the
+wake-ups; the deadlines stay in the store.
 
 ## Settled Runs
 
@@ -405,6 +442,7 @@ settle an Active Run with an open gate automatically. That requires all of the f
 - Every visited Block's current activation has its worker's accepted final result with no
   later `working` report, and no attention is pending; every Human occurrence is answered.
   Unvisited branches need not run.
+- No Wait arrival is pending.
 - Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
   cancelled because their result was replaced, and idle-worker preparations of
   [earlier Runs](#run-workspace), owe no delivery; a rejected launch still holds settlement.
@@ -419,12 +457,12 @@ not result quality or a common repository revision. Automatic settlement records
 Blocks' report-rejection diagnostics.
 
 An automatically Settled Run is reconciled only while it owes an operation in pending, reserved
-or uncertain state, so owed handoffs are still released and delivered. Otherwise Factory does
+or uncertain state or a pending Wait arrival, so owed handoffs are still released and delivered. Otherwise Factory does
 not read its worker threads: later turns without a report record no work periods or attention
 and leave the Run Settled. Reports, Human answers and Request report are accepted as for an
 Active Run; only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
 Runs settled manually before [manual settlement](#manual-settlement) stopped workers kept their
-gate open; migration `076` leaves them so, and they behave the same way.
+gate open; migration `077` leaves them so, and they behave the same way.
 
 ### Manual settlement
 
@@ -437,8 +475,10 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
 - **Acceptance.** One transaction in the Run's mutation lane closes the handoff gate, records the
   settlement with attempt 1 and this backend as the attempt's owner, lists the bound workers as
   stopping, records `settlement-requested` and advances the generation, before any Stop. The
-  closed gate is the cutoff: no launch, send, release, Continuation forwarding, Human answer or
-  Request report crosses it, and observation, recovery settlement and automatic settlement stop.
+  closed gate is the cutoff: no launch, send, release, Continuation forwarding, Wait forwarding
+  (by its timer or **Continue now**), Human answer or Request report crosses it, and observation,
+  recovery settlement and automatic settlement stop. A Wait deadline that passes while stopping
+  forwards nothing.
   A reserved or uncertain launch is still searched for and blocks settlement: the settlement
   shows it unresolved, without a thread, until the search binds its worker, which then joins
   the attempt.
@@ -462,13 +502,15 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   unresolved, a transaction guarded by owner, generation, live authorization context and the
   absence of a reserved or uncertain launch closes the gate, marks Blocks with a current Final
   result finished, cancels pending launches, sends and handoffs (`cancelled-on-Settle`), pending
-  Human occurrences and waiting Continuation arrivals, settles pending attention as
+  Human occurrences, pending Wait arrivals (`wait-cancelled`, clearing their messages) and
+  waiting Continuation arrivals, settles pending attention as
   `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
   worker whose Stop was acknowledged and `run-settled` (`manual`), and clears Snooze and Woke.
   Uncertain sends keep their state. Native thread settlement follows in the background.
 
 A manually settled Run is never reconciled again: its closed gate ends its work, also after
-restart, and reports for it are `RUN_SETTLED`. T3 Stop is thread-scoped with no exact-run fence,
+restart, and reports for it are `RUN_SETTLED`. A Wait timer that wakes after settlement finds
+its arrival cancelled and forwards nothing. T3 Stop is thread-scoped with no exact-run fence,
 and reads across threads are not an atomic cutoff, so direct T3 activity can start just before
 or after the Run settles; Factory settles only on fresh reads and never deletes T3-held queued
 work to succeed. Archive stays available during a settlement and its semantics are unchanged.
@@ -476,8 +518,8 @@ work to succeed. Archive stays available during a settlement and its semantics a
 ## Archive
 
 Archive is final and completes in one transaction in the Run's lane: it closes the handoff
-gate, records the Run Archived, cancels pending launches, handoffs and Human occurrences,
-clears pending delivery text, settles pending attention as `archived`, marks activated Blocks
+gate, records the Run Archived, cancels pending launches, handoffs, Human occurrences and Wait
+arrivals, clears pending delivery text and every Wait arrival's message (keeping its outcome, deadline and identity), settles pending attention as `archived`, marks activated Blocks
 that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
 replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
 uncertain operations keep their recorded state.

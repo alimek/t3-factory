@@ -84,6 +84,7 @@ export function runDetail(): RunDetail {
     reports: [],
     recoveries: [],
     humanOccurrences: [],
+    waitArrivals: [],
     continuationVisits: [],
     attention: [],
     intents: [],

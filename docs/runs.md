@@ -136,6 +136,9 @@ fixed Human exits their old exits were mapped to.
   timeline and executions keep the sequence. Connections use one neutral style, including never-run branches.
 - A working block whose Agent reported `working` shows that message in place of its visit time; its details show the full
   message and offer **Request report** once the worker is idle.
+- A [Wait](#waits) is not started before its first arrival, waiting while any arrival is pending, with **until** and the
+  nearest deadline (and the count of waiting arrivals when there are several), and finished once every arrival has
+  continued. It has no worker, thread or attention.
 - **Needs input** and **Problem** use the same labels as the Run sidebar, are independent of execution state and are not
   cleared by selecting a block. Stale observations say **Not live** and **Last known**; an unknown observation on a started
   block differs from stale; a block that never ran says **Not visited**.
@@ -292,13 +295,37 @@ describing the changes. Submission settles only that
 occurrence and atomically saves all outgoing handoffs: double submission cannot send twice and a competing answer conflicts. Agent
 recipients get independent deliveries on the existing thread/queue rules; a Human recipient gets a new occurrence. The block stays
 waiting until its last occurrence is answered. Context and delivery text survive restart, are cleared after settlement and
-acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
+acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread; an answer carries on the originating
+worker of the message it answered.
+
+## Waits
+
+Each delivery released to a Wait becomes its own arrival: Factory keeps its message and the
+[worker provenance](../GLOSSARY.md#worker-provenance) it carries (the T3 thread and, when known, the Block activation that produced it) and fixes an absolute deadline, counted from the
+moment the incoming handoff was released, after the source worker's thread finished, not from the report. Parallel arrivals
+and repeated visits keep their own messages and deadlines and never join. At its deadline Factory forwards the arrival on its
+own, with no open window and no worker: every recipient of the Wait's output gets the unchanged message, and an unconnected
+output ends the branch. Timing is best effort; the [Runner](runner.md#wait-arrivals) defines how deadlines survive restart and
+downtime and how repeated deliveries and competing forwards resolve.
+
+**Continue now** forwards one selected pending arrival immediately, without confirmation, exactly as its deadline would, and
+disables its timer; other arrivals keep waiting. The Wait's details offer it beside each pending arrival, and the canvas block
+offers it only while exactly one arrival is pending; like other Run actions it is unavailable while offline or synchronizing.
+An arrival the timer already forwarded, or one cancelled by Archive or manual settlement, cannot be continued, nor can any arrival
+while a confirmed **Settle** is stopping the Run's workers; an automatically Settled Run stays Settled.
+
+The Wait's details list each arrival with its start, deadline, retained message and outcome, and say when you forwarded one
+early. A forwarded arrival keeps its message only while its recipients still need it
+([retention](foundation.md#persistence-model)); once it is cleared, or Archive or a cancellation clears it, the details say why. The timeline records **wait started · until …**, **wait elapsed → forwarded**,
+**forwarded early by you** and **wait cancelled** with the Wait icon. A pending Wait is visible work, never
+Needs input or a Problem, and does not wake a Snoozed Run. A Continuation after a Wait continues the thread of the worker
+whose message waited.
 
 ## Continuations
 
 A Continuation continues the conversation of the worker whose message reaches it. The first message in a Run queues its prompt on that
-worker's T3 thread, stating the Continuation's own Block id; after a Human step, the person's reply follows the prompt, labelled, because
-the worker has not seen it. The Continuation shows **sent**, and the worker's own Agent block shows **working** while the thread works on
+worker's T3 thread, stating the Continuation's own Block id; after a Human step, also one whose answer first waited in a Wait, the
+person's reply follows the prompt, labelled, because the worker has not seen it. The Continuation shows **sent**, and the worker's own Agent block shows **working** while the thread works on
 it, without a new visit and without changing that block's result or firing its connections again. When the worker reports `finished` for
 the Continuation and its thread is finished, the response leaves the single output and the Continuation shows **pass-through**. Messages that
 arrive while the prompt is pending wait (**Queued** in its details) and go out after the response, in arrival order. From then on every
@@ -312,7 +339,7 @@ Continuation and cancels waiting messages; its worker thread is interrupted with
 ## Settled Runs
 
 A Run **settles** automatically when every visited Block's current visit has its worker's accepted final result and no later
-working report, every Human step is answered, no delivery, launch, handoff or send is outstanding, no attention is pending, and
+working report, every Human step is answered, no Wait arrival is pending, no delivery, launch, handoff or send is outstanding, no attention is pending, and
 a fresh read finds every worker thread finished in T3. Never-visited branches need not run. A report or T3 completion alone keeps
 the Run Active. T3 reads are not an atomic cutoff, so direct T3 activity can arrive just before the Run settles; settling does not
 certify result quality or one reviewed revision.
@@ -323,8 +350,8 @@ once. Otherwise nothing changes until you confirm stopping every worker and endi
 confirmation changes nothing and sends no Stop. An ordinary Settle request never interrupts a worker: the server answers that
 confirmation is needed.
 
-Confirming holds the Run at once: nothing new is launched, sent, released or delivered, and Human answers and **Request report**
-are refused. Factory then asks T3 to Stop each worker thread that is still unfinished, with its delegated and background work,
+Confirming holds the Run at once: nothing new is launched, sent, released or delivered, no Wait forwards (at its deadline or
+through **Continue now**), and Human answers and **Request report** are refused. Factory then asks T3 to Stop each worker thread that is still unfinished, with its delegated and background work,
 and settles only once fresh reads confirm every worker finished; a Stop acknowledgement is not enough. Until then the Run stays
 Active and its settlement shows **stopping**, with each worker's progress. A worker becomes **unresolved** when T3 does not
 support or accept Stop, cannot show the thread in the Run's project, workspace and authorization, or still shows it unfinished
@@ -337,7 +364,8 @@ settlement is not a lifecycle state: there is no Resume, and **Archive** remains
 thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing.
 
 Settling cancels unsent launches, sends and handoffs (held or released), unsent Request report turns, pending Human occurrences
-without inventing answers and messages waiting at a Continuation. Pending attention settles as `manual-settlement`, activated
+without inventing answers, pending Wait arrivals and messages waiting at a Continuation; a cancelled Wait never forwards, also
+after restart. Pending attention settles as `manual-settlement`, activated
 Blocks without a Final result show stopped, and uncertain sends keep their recorded state. The Run moves to
 **Settled**, Snooze and Woke clear, and Factory best-effort settles the worker threads in T3. The timeline records the
 confirmation and each retry, each Stop request, each worker found stopped and the settlement. Stopping raises no
@@ -348,8 +376,8 @@ A manually settled Run's work stays ended: a later report from one of its Blocks
 acknowledged as a success that changes nothing and tells the Agent to stop, and Factory no longer observes or drives the Run.
 An automatically Settled Run differs: any accepted report from one of its Blocks (`working` or `finished`, including a repeat
 of the current result) returns it to **Active**, and the timeline names the Block that reported. Chat in a worker thread without
-a report leaves it Settled: Factory observes it only while it still owes a launch, handoff, send or Request report, so later
-turns add no work periods or Problems. Human answers and Request report on it are accepted and dispatched without returning it
+a report leaves it Settled: Factory observes it only while it still owes a launch, handoff, send, Request report or Wait
+forwarding, so later turns add no work periods or Problems. Human answers and Request report on it are accepted and dispatched without returning it
 to Active. Runs settled before manual settlement stopped workers keep their open gate and behave like automatically Settled
 Runs. History, input, captured definitions and events remain; no transcript or response-body archive exists.
 
@@ -357,7 +385,8 @@ Runs. History, input, captured definitions and events remain; no transcript or r
 
 **Archive…** in the row menu and **Archive Run** in the Run's top bar both ask for confirmation, then end the Run for good.
 Archiving closes the handoff gate, cancels unsent launches and handoffs, cancels pending Human steps without inventing answers,
-settles pending attention as `archived` and shows activated blocks that had not finished as stopped. Factory then asks T3 once to
+cancels pending Wait arrivals so no deadline forwards afterwards and clears every arrival's message, settles pending attention
+as `archived` and shows activated blocks that had not finished, including waiting Waits, as stopped. Factory then asks T3 once to
 interrupt every worker thread, which also stops its delegated work, and does not wait for or confirm termination; in-flight or
 uncertain deliveries keep their recorded state and are not retried.
 

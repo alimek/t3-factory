@@ -14,6 +14,7 @@ import type { RunnerOptions, RunRow } from "./runner-types.ts";
 import { openRunStore } from "./run-store/run-store.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
+import { openRunnerWaits } from "./runner-waits.ts";
 import { openRunnerObservation } from "./runner-observation.ts";
 import { openRunnerQueries } from "./runner-queries.ts";
 import { openRunnerReports } from "./runner-reports.ts";
@@ -22,6 +23,7 @@ import { openRunnerArchive } from "./runner-archive.ts";
 import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
+import { makeWaitTimers } from "./runner-wait-timers.ts";
 import type { LiveChanges } from "../live-changes.ts";
 import type { RunImages } from "../run-images.ts";
 
@@ -53,11 +55,21 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     fiber.addObserver(() => detached.delete(fiber));
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun, serial: drives.serial };
+  const waitTimers = makeWaitTimers(scope, (runId) => fork(drive(runId, "dispatch")));
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(store, t3);
-  const { dispatchIntent } = openRunnerDispatch(store, ops, t3, checkAgent, observe, images);
+  const { dispatchIntent } = openRunnerDispatch(
+    store,
+    ops,
+    t3,
+    checkAgent,
+    observe,
+    images,
+    waitTimers.schedule,
+  );
   const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
+  const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone, settleFinishedBlockThreads, advanceSettlement } =
     openRunnerSettle(store, t3, lifecycle, liveContextId);
@@ -96,6 +108,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
       yield* settleRecoveries(store, lifecycle, t3, id);
       if (phase === "observe") return;
+      yield* forwardDueWaits(id);
       yield* releaseContinuationResults(store, t3, (yield* row(id)) ?? runRow);
       const observed = (yield* row(id)) ?? runRow;
       yield* dispatchIntents(observed, contextId);
@@ -103,6 +116,13 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       const current = yield* row(id);
       if (preparing(observed) && current && !preparing(current))
         yield* dispatchIntents(current, contextId);
+    });
+  }
+  /** Forwards every arrival whose deadline passed, before the pass dispatches its Handoffs. */
+  function forwardDueWaits(runId: string) {
+    return Effect.gen(function* () {
+      for (const arrival of yield* store.dueWaitArrivals(runId))
+        yield* store.forwardWaitArrival(runId, arrival.id, "timer");
     });
   }
   function dispatchIntents(runRow: RunRow, contextId: string | null) {
@@ -155,6 +175,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           if (closed) return;
           closed = true;
           if (timer) yield* Fiber.interrupt(timer);
+          yield* waitTimers.close();
           yield* starts.withPermit(Effect.void);
           yield* sweeps.withPermit(Effect.void);
           yield* Fiber.awaitAll(detached);
@@ -168,6 +189,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     ...openRunnerRecovery(store, lifecycle, t3, liveContextId),
     readFactoryTool: openBlockTools(store, getRun, images),
     answerHumanOccurrence,
+    continueWaitArrival,
     archiveRun,
     settleRun,
     ...openRunNavigation(store),
@@ -205,6 +227,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       Effect.gen(function* () {
         yield* store.takeOwnership();
         yield* reconcileRuns();
+        yield* Effect.forEach(yield* store.pendingWaits(), waitTimers.schedule, { discard: true });
         timer = yield* Effect.forkIn(
           Effect.forever(
             Effect.gen(function* () {

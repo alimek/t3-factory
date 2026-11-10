@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { expect, type Screen } from "e2e";
-import type { FlowDraft, FlowWorkspace, Result } from "../../packages/contracts/src/index.ts";
+import type {
+  AgentDefinition,
+  FlowDraft,
+  FlowWorkspace,
+  Result,
+} from "../../packages/contracts/src/index.ts";
 
 const mutation = { "content-type": "application/json", "X-Factory-Request": "1" };
 
@@ -30,6 +35,42 @@ export async function saveFlowCopy(
     headers: mutation,
     body: JSON.stringify({ name, expectedRevision: 1, workspace, graph: seeded.graph }),
   });
+  return created.id;
+}
+
+/** Saves a new checkout Flow whose input starts one block of the named saved Agent. */
+export async function saveSingleAgentFlow(
+  baseUrl: string | undefined,
+  name: string,
+  agentName: string,
+  block: { readonly id: string; readonly name: string; readonly x: number; readonly y: number },
+) {
+  const agents = (await flowRequest(baseUrl, "/api/agents")) as AgentDefinition[];
+  const agent = agents.find((item) => item.name === agentName);
+  assert(agent);
+  const created = (await flowRequest(baseUrl, "/api/flows", {
+    method: "POST",
+    headers: mutation,
+    body: JSON.stringify({
+      name,
+      workspace: { mode: "checkout" },
+      graph: {
+        flowInput: { position: { x: 40, y: 60 }, targetBlockIds: [block.id] },
+        blocks: [
+          {
+            id: block.id,
+            kind: "agent",
+            name: block.name,
+            agentId: agent.id,
+            hiddenExitIds: [],
+            localExits: [],
+            position: { x: block.x, y: block.y },
+          },
+        ],
+        connections: [],
+      },
+    }),
+  })) as FlowDraft;
   return created.id;
 }
 

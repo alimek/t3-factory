@@ -12,11 +12,15 @@ import {
   resultReleasedToHumanReview,
   resultReleasedToSecondWorker,
   resultReleasedToTwoWorkers,
+  resultReleasedToWait,
+  resultsReleasedToWait,
   resultReplacedBeforeRelease,
   resultReported,
+  reviewApproved,
   settled,
   snoozed,
   twoWorkersStarted,
+  waitContinuedNow,
   woke,
   workerAtWork,
   workingReportedIdle,
@@ -188,19 +192,48 @@ async function seedScenario(
       await repositoryFactsObserved(context, workers[index]!, repository);
     return workers[0].runId;
   }
+  if (scenario.state === "results released to a Wait") {
+    const workers = await twoWorkersStarted(context, start);
+    await resultsReleasedToWait(context, workers, scenario.results);
+    return workers[0].runId;
+  }
   if (scenario.state === "Run worktree bound") return (await worktreeBound(context, start)).runId;
   const worker = await workerAtWork(context, start);
-  await finishScenario(context, worker, scenario);
+  if (scenario.state === "settlement unresolved") await settlementUnresolved(context, worker);
+  else await finishScenario(context, worker, scenario);
   return worker.runId;
 }
 
 type Worker = Awaited<ReturnType<typeof workerAtWork>>;
+
+/** The user confirmed Settle while T3 cannot stop the worker, so the settlement stays unresolved. */
+async function settlementUnresolved(context: SeedContext, worker: Worker) {
+  context.t3.stopSupported = false;
+  try {
+    requireSuccess(await context.factory.settleRun(worker.runId, { stopWorkers: true }));
+    await observeFor(
+      "Stop unavailable",
+      context,
+      worker.runId,
+      (run) => run.settlement?.state === "unresolved",
+    );
+  } finally {
+    context.t3.stopSupported = true;
+  }
+}
+
 async function finishScenario(
   context: SeedContext,
   worker: Worker,
   scenario: Exclude<
     SeedScenario,
-    { state: "two workers started from one prompt" | "Run worktree bound" }
+    {
+      state:
+        | "two workers started from one prompt"
+        | "Run worktree bound"
+        | "results released to a Wait"
+        | "settlement unresolved";
+    }
   >,
 ) {
   switch (scenario.state) {
@@ -208,21 +241,6 @@ async function finishScenario(
       await repositoryFactsObserved(context, worker, scenario.repository);
       await settled(context, await resultReported(context, worker, scenario.result));
       break;
-    case "settlement unresolved": {
-      context.t3.stopSupported = false;
-      try {
-        requireSuccess(await context.factory.settleRun(worker.runId, { stopWorkers: true }));
-        await observeFor(
-          "Stop unavailable",
-          context,
-          worker.runId,
-          (run) => run.settlement?.state === "unresolved",
-        );
-      } finally {
-        context.t3.stopSupported = true;
-      }
-      break;
-    }
     case "archived":
       await archived(context, worker);
       break;
@@ -260,6 +278,23 @@ async function finishScenario(
       await resultReleasedToTwoWorkers(
         context,
         await resultReplacedBeforeRelease(context, worker, scenario),
+      );
+      break;
+    case "result released to a Wait":
+      await resultReleasedToWait(context, await resultReported(context, worker, scenario.result));
+      break;
+    case "review approved into a Wait": {
+      const review = await resultReleasedToHumanReview(
+        context,
+        await resultReported(context, worker, scenario.result),
+      );
+      await resultReleasedToWait(context, await reviewApproved(context, review, scenario.approval));
+      break;
+    }
+    case "Wait continued now":
+      await waitContinuedNow(
+        context,
+        await resultReleasedToWait(context, await resultReported(context, worker, scenario.result)),
       );
       break;
     case "delegated work pending":

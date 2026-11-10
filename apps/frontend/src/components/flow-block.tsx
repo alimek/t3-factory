@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, CornerDownLeft, TextCursorInput, User } from "lucide-react";
+import { Bot, CornerDownLeft, Hourglass, TextCursorInput, User } from "lucide-react";
 import type { FlowBlock } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ const EXIT_SOURCE_LABELS: Record<EffectiveExit["source"], string> = {
   agent: "Agent",
   local: "local",
   human: "fixed",
+  wait: "after the wait",
   continuation: "output",
 };
 
@@ -18,14 +19,27 @@ export const BLOCK_KINDS: Record<
 > = {
   agent: { Icon: Bot, label: "AGENT", name: "Agent" },
   human: { Icon: User, label: "HUMAN STEP", name: "Human step" },
+  wait: { Icon: Hourglass, label: "WAIT", name: "Wait" },
   continuation: { Icon: CornerDownLeft, label: "CONTINUATION", name: "Continuation" },
 };
 
 const KIND_ICON_COLORS: Record<FlowBlock["kind"], string> = {
   agent: "text-link",
   human: "text-muted-foreground",
+  wait: "text-muted-foreground",
   continuation: "text-brand-cyan",
 };
+
+/** An exit's name as rows show it; a Wait's or Continuation's single output has none, so it shows
+ * `singleOutputLabel`. */
+export function exitDisplayName(
+  exit: Pick<EffectiveExit, "name" | "source">,
+  singleOutputLabel = "",
+) {
+  return exit.source === "wait" || exit.source === "continuation"
+    ? singleOutputLabel
+    : exit.name || "Unnamed exit";
+}
 
 /** Where an exit comes from, and whether finishing on it needs a message. */
 export function exitSourceLabel(exit: EffectiveExit) {

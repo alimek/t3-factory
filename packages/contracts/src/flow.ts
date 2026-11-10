@@ -23,11 +23,20 @@ interface BlockBase {
   readonly name: string;
   readonly position: { readonly x: number; readonly y: number };
 }
+/** The units a Wait duration is entered in. */
+export type WaitUnit = "minutes" | "hours" | "days";
+/** A fixed relative delay of any finite amount; readiness requires 1 minute to 7 days inclusive
+ * after converting the unit, so 1.5 hours is ready. */
+export interface WaitDuration {
+  readonly amount: number;
+  readonly unit: WaitUnit;
+}
 /**
  * An Agent block exposes its Agent's exits, minus those this Flow hides, plus its Flow-local
- * exits. A Human block has the fixed Approve and Request changes exits. A Continuation sends its
- * prompt once per Run into the worker thread of the message that reaches it and has one fixed,
- * unnamed output.
+ * exits. A Human block has the fixed Approve and Request changes exits. A Wait block has one
+ * unnamed output; `duration` is null while the draft has none. A Continuation sends its prompt
+ * once per Run into the worker thread of the message that reaches it and has one fixed, unnamed
+ * output.
  */
 export type FlowBlock = BlockBase &
   (
@@ -40,6 +49,7 @@ export type FlowBlock = BlockBase &
         readonly localExits: readonly BlockExit[];
       }
     | { readonly kind: "human" }
+    | { readonly kind: "wait"; readonly duration: WaitDuration | null }
     | {
         readonly kind: "continuation";
         /** Stored trimmed; empty only in a draft, where readiness reports it. */
@@ -54,7 +64,8 @@ export interface FlowConnection {
 /** The single, always-present source of a Flow; its targets start a Run in parallel. */
 export interface FlowInputBlock {
   readonly position: { readonly x: number; readonly y: number };
-  /** Agent blocks that each receive the Flow input in their own session at Start. */
+  /** Agent blocks that each receive the Flow input in their own session at Start. A Wait target
+   * saves but is a readiness gap. */
   readonly targetBlockIds: readonly string[];
 }
 export interface FlowGraph {

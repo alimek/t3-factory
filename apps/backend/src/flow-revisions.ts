@@ -1,6 +1,12 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { FlowBlock, FlowGraph, FlowWorkspace, RunDefinitions } from "@t3-factory/contracts";
+import type {
+  FlowBlock,
+  FlowGraph,
+  FlowWorkspace,
+  RunDefinitions,
+  WaitUnit,
+} from "@t3-factory/contracts";
 import { newId } from "./ids.ts";
 
 /** A saved Flow revision as Studio and Start read it; readiness is derived separately. */
@@ -27,6 +33,8 @@ type BlockRow = {
   prompt: string | null;
   x: number;
   y: number;
+  wait_amount: number | null;
+  wait_unit: WaitUnit | null;
 };
 /** A Flow-local exit of an Agent block. */
 type ExitRow = {
@@ -84,10 +92,12 @@ export const appendFlowRevision = Effect.fnUntraced(function* (
     graph.blocks,
     (block, ordinal) =>
       Effect.gen(function* () {
-        yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, x, y)
+        const duration = block.kind === "wait" ? block.duration : null;
+        yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, x, y, wait_amount, wait_unit)
         VALUES (${revisionId}, ${block.id}, ${ordinal}, ${block.kind}, ${block.name},
           ${block.kind === "agent" ? block.agentId : null},
-          ${block.kind === "continuation" ? block.prompt : null}, ${block.position.x}, ${block.position.y})`;
+          ${block.kind === "continuation" ? block.prompt : null}, ${block.position.x}, ${block.position.y},
+          ${duration?.amount ?? null}, ${duration?.unit ?? null})`;
         if (block.kind !== "agent") return;
         yield* Effect.forEach(
           block.localExits,
@@ -141,6 +151,15 @@ const toBlock = (
 ): FlowBlock => {
   const base = { id: row.block_id, name: row.name, position: { x: row.x, y: row.y } };
   if (row.kind === "human") return { ...base, kind: "human" };
+  if (row.kind === "wait")
+    return {
+      ...base,
+      kind: "wait",
+      duration:
+        row.wait_amount === null || row.wait_unit === null
+          ? null
+          : { amount: row.wait_amount, unit: row.wait_unit },
+    };
   if (row.kind === "continuation")
     return { ...base, kind: "continuation", prompt: row.prompt ?? "" };
   return {

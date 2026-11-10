@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { flowExitsUpgradeData, upgradedGraph } from "./support/flow-exits-upgrade.ts";
 
-it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Human exits to Approve and Request changes with merged wires, and keeps in-progress and finished Runs with their history", async (c) => {
+it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Human exits to Approve and Request changes with merged wires, and keeps in-progress and finished Runs with their history and result origins, including a pending review's and those of its answers", async (c) => {
   // Arrange
   const fixture = await flowExitsUpgradeData(c);
   const graph = upgradedGraph(fixture.agent.id, fixture.flow.graph.flowInput);
@@ -26,11 +26,16 @@ it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Hu
   expect(finished.value.definitions.agents).toMatchObject([{ id: fixture.agent.id, exits: [] }]);
   expect(finished.value.reports).toStrictEqual(fixture.finished.reports);
   expect(finished.value.humanOccurrences).toMatchObject([{ state: "answered", exitId: "approve" }]);
+  const reviewed = {
+    runId: fixture.finished.id,
+    activationId: fixture.finished.reports[0]!.activationId,
+    threadId: "thread-3",
+  };
   expect(finished.value.intents).toMatchObject([
-    { blockId: "worker", kind: "launch", exitId: null },
-    { blockId: "review", kind: "handoff", exitId: "done" },
-    { blockId: "deploy", kind: "launch", exitId: "approve" },
-    { blockId: "notify", kind: "launch", exitId: "approve" },
+    { blockId: "worker", kind: "launch", exitId: null, origin: null },
+    { blockId: "review", kind: "handoff", exitId: "done", origin: reviewed },
+    { blockId: "deploy", kind: "launch", exitId: "approve", origin: reviewed },
+    { blockId: "notify", kind: "launch", exitId: "approve", origin: reviewed },
   ]);
   const answered = await factory.getRun(fixture.answered.id);
   assert(answered.ok);
@@ -51,5 +56,13 @@ it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Hu
     lifecycle: "active",
     humanOccurrences: [{ id: fixture.pending.humanOccurrences[0]!.id, state: "pending" }],
     attention: [{ kind: "human", settledAt: null }],
+  });
+  expect(
+    pending.value.intents.find(
+      (intent) => intent.id === fixture.pending.humanOccurrences[0]!.incomingIntentId,
+    )?.origin,
+  ).toMatchObject({
+    runId: fixture.pending.id,
+    activationId: fixture.pending.reports[0]!.activationId,
   });
 });
