@@ -24,6 +24,8 @@ type AgentShape = Extract<FlowBlock, { kind: "agent" }>;
 export type ScenarioAgentBlock = { [Key in keyof AgentShape]: AgentShape[Key] };
 type HumanShape = Extract<FlowBlock, { kind: "human" }>;
 export type ScenarioHumanStep = { [Key in keyof HumanShape]: HumanShape[Key] };
+type WaitShape = Extract<FlowBlock, { kind: "wait" }>;
+export type ScenarioWait = { [Key in keyof WaitShape]: WaitShape[Key] };
 type Position = FlowBlock["position"];
 export const blockExit = (
   id: string,
@@ -82,6 +84,14 @@ export const humanStep = (
   name: string,
   position: Position = { x: 0, y: 0 },
 ): ScenarioHumanStep => ({ id, name, kind: "human", position });
+export const waitBlock = (
+  id: string,
+  name: string,
+  duration: WaitShape["duration"],
+  position: Position = { x: 0, y: 0 },
+): ScenarioWait => ({ id, name, kind: "wait", duration, position });
+/** The single unnamed output every Wait leaves by. */
+export const WAIT_OUTPUT = "output";
 export const connection = (
   sourceBlockId: string,
   exitId: string,

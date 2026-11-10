@@ -29,8 +29,17 @@ export const HUMAN_EXITS: readonly BlockExit[] = [
   },
 ];
 
-/** Where a block's exit comes from: its Agent, this Flow only, or the fixed Human step. */
-export type ExitSource = "agent" | "local" | "human";
+/** The single unnamed output every Wait forwards by; stored connections leave by this ID. */
+export const WAIT_OUTPUT: BlockExit = {
+  id: "output",
+  name: "",
+  description: "",
+  messageRequired: false,
+};
+
+/** Where a block's exit comes from: its Agent, this Flow only, the fixed Human step or a Wait's
+ * output. */
+export type ExitSource = "agent" | "local" | "human" | "wait";
 export interface EffectiveExit extends BlockExit {
   readonly source: ExitSource;
 }
@@ -46,7 +55,7 @@ export function inheritedExits(
 
 /**
  * The exits a block offers: an Agent block's Agent exits minus those hidden in this Flow, then its
- * Flow-local exits; a Human block's fixed exits. Pass the Agents the reader resolves against: the
+ * Flow-local exits; a Human block's fixed exits; a Wait's one output. Pass the Agents the reader resolves against: the
  * current saved ones for authoring, the captured revisions for a Run.
  */
 export function effectiveExits(
@@ -54,6 +63,7 @@ export function effectiveExits(
   agents: readonly Pick<AgentDefinition, "id" | "exits">[],
 ): EffectiveExit[] {
   if (block.kind === "human") return HUMAN_EXITS.map((exit) => ({ ...exit, source: "human" }));
+  if (block.kind === "wait") return [{ ...WAIT_OUTPUT, source: "wait" }];
   const hidden = new Set(block.hiddenExitIds);
   return [
     ...inheritedExits(block, agents)
