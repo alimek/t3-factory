@@ -39,18 +39,17 @@ UI or a user journey; see [testing policy](testing.md#behavior-tests-vs-e2e-jour
 
 `pnpm check` is the working-tree gate command, used by the pre-push hook and
 `.github/workflows/quality.yml`. The **Quality gate** check runs full code checks
-on PR open, reopen and synchronization, base-branch retargets (`edited` events
-with a base change), and pushes to `main`, with the repository's pinned Node and
-pnpm versions and a frozen lockfile. Requiring that check before merge is a
-GitHub ruleset setting; adding a workflow alone does not enable that requirement.
+on PR open, edit, reopen and synchronization, and pushes to `main`, with the
+repository's pinned Node and pnpm versions and a frozen lockfile. Edits include
+title/body changes and base-branch retargets. Requiring that check before merge
+is a GitHub ruleset setting; adding a workflow alone does not enable that requirement.
 
-Title/body-only edits rerun **PR title**, **Git attribution** and, for frontend
-PRs, **UI evidence attachments**. They do not run or cancel the code gate and
-leave the existing **Quality gate** result for that revision in place: failed or
-missing results stay blocking. GitHub treats a skipped job as passing, so the
-Quality job's name is an expression that is **Quality gate** only when the job
-runs; GitHub lists the skipped metadata-edit job under that unevaluated
-expression, never as **Quality gate**.
+Every Quality run reports the same **Quality gate** job name and runs the full
+code gate. Skipping and renaming the job on metadata edits can leave the latest
+run without the required check and block merging even after an earlier run passed.
+Runs share a concurrency group per ref; a newer event cancels an unfinished run
+and starts fresh validation. Title/body edits also rerun **PR title**, **Git
+attribution** and, for frontend PRs, **UI evidence attachments**.
 
 Run `pnpm check` from the repository root for the same sequence locally.
 

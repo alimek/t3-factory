@@ -10,14 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.ref }}-${{ (github.event.action == 'edited' && !github.event.changes.base) && 'metadata' || 'code' }}
+  group: quality-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
-    # Keep edited for base retargets; rename metadata skips so skipped success cannot mask Quality gate.
-    if: github.event.action != 'edited' || github.event.changes.base
-    name: ${{ (github.event.action == 'edited' && !github.event.changes.base) && 'Quality gate not rerun for PR metadata edit' || 'Quality gate' }}
+    name: Quality gate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
