@@ -995,6 +995,27 @@ export function resultReleasedToHumanReview(world: ScenarioWorld, worker: Worker
 
 type HumanReview = Awaited<ReturnType<typeof resultReleasedToHumanReview>>;
 
+/** Each worker reported `results[i]` and ended its turn; Factory observed every end and released
+ * each result to a Wait as its own pending arrival. */
+export function resultsReleasedToWait(
+  world: ScenarioWorld,
+  workers: readonly WorkerHandle[],
+  results: readonly { readonly message?: string; readonly exit?: string }[],
+) {
+  return reach("results released to a Wait", async () => {
+    for (const [index, worker] of workers.entries())
+      await resultReported(world, worker, results[index]);
+    await observeFor(
+      "observe the arrivals",
+      world,
+      workers[0]!.runId,
+      (run) =>
+        run.waitArrivals.filter((arrival) => arrival.state === "pending").length === workers.length,
+    );
+    return workers;
+  });
+}
+
 /** Factory observed the worker's end and released its result to a Wait, whose pending arrival the
  * returned handle carries beside the worker's. */
 export function resultReleasedToWait(world: ScenarioWorld, worker: WorkerHandle) {

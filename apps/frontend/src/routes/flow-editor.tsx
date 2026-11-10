@@ -558,7 +558,7 @@ function BlockPanel({
     >
       <div className="flex items-center gap-2 px-4">
         <Badge variant="default" className="rounded-md px-2 py-1 font-medium">
-          {block.kind === "agent" ? "AGENT BLOCK" : "HUMAN STEP"}
+          {{ agent: "AGENT BLOCK", human: "HUMAN STEP", wait: "WAIT" }[block.kind]}
         </Badge>
         <span className="flex-1" />
         <kbd className="rounded-sm border border-border-strong bg-accent px-1.25 font-mono text-2xs text-muted-foreground">

@@ -11,6 +11,8 @@ import {
   resultReleasedToHumanReview,
   resultReleasedToSecondWorker,
   resultReleasedToTwoWorkers,
+  resultReleasedToWait,
+  resultsReleasedToWait,
   resultReplacedBeforeRelease,
   resultReported,
   settled,
@@ -186,6 +188,11 @@ async function seedScenario(
       await repositoryFactsObserved(context, workers[index]!, repository);
     return workers[0].runId;
   }
+  if (scenario.state === "results released to a Wait") {
+    const workers = await twoWorkersStarted(context, start);
+    await resultsReleasedToWait(context, workers, scenario.results);
+    return workers[0].runId;
+  }
   if (scenario.state === "Run worktree bound") return (await worktreeBound(context, start)).runId;
   const worker = await workerAtWork(context, start);
   await finishScenario(context, worker, scenario);
@@ -198,7 +205,12 @@ async function finishScenario(
   worker: Worker,
   scenario: Exclude<
     SeedScenario,
-    { state: "two workers started from one prompt" | "Run worktree bound" }
+    {
+      state:
+        | "two workers started from one prompt"
+        | "Run worktree bound"
+        | "results released to a Wait";
+    }
   >,
 ) {
   switch (scenario.state) {
@@ -244,6 +256,9 @@ async function finishScenario(
         context,
         await resultReplacedBeforeRelease(context, worker, scenario),
       );
+      break;
+    case "result released to a Wait":
+      await resultReleasedToWait(context, await resultReported(context, worker, scenario.result));
       break;
     case "delegated work pending":
       await repositoryFactsObserved(context, worker, scenario.repository);
