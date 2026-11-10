@@ -3,6 +3,7 @@ import { nextSettlement, reopenDuringSettlement } from "./support/run-worker.ts"
 import {
   allTurnsEnd,
   archived,
+  blockExit,
   finishedReport,
   handoffFlow,
   missingReport,
@@ -56,7 +57,12 @@ it("a replaced finished report in the same T3 run is not settled again", async (
 
 it("a revisited Block settles its thread again after a new T3 run finishes", async (c) => {
   // Arrange
-  const setup = await prepared(c, { revisit: true });
+  // The second result leaves on Ship, which has no recipient, so no later visit can race the
+  // settlement sweep for the thread.
+  const setup = await prepared(c, {
+    revisit: true,
+    exits: [blockExit("done", "Done", "Completed"), blockExit("ship", "Ship")],
+  });
   const atWork = await workerAtWork(setup.world, setup.input);
   const reported = await resultReported(setup.world, atWork);
   const released = await resultReleasedToSameWorker(setup.world, reported);
@@ -64,7 +70,7 @@ it("a revisited Block settles its thread again after a new T3 run finishes", asy
   const f = { ...setup, ...worker };
   await f.f.reconcileRuns();
   expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
-  assert((await report(f.world, worker, finishedReport("Second pass."))) === "ACCEPTED");
+  assert((await report(f.world, worker, finishedReport("Second pass.", "ship"))) === "ACCEPTED");
   const runBeforeFinish = await f.f.getRun(f.runId);
   assert(runBeforeFinish.ok);
   const producingExecution = runBeforeFinish.value.reports.at(-1)?.executionId;

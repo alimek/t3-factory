@@ -127,7 +127,11 @@ it("an unchanged worker observation sends only its observation times", async (c)
   const delivered = await run.until((messages) =>
     isDeepStrictEqual(withoutGeneration(appliedRun(messages)), withoutGeneration(current.value)),
   );
-  expect(delivered.map((message) => message._tag)).toStrictEqual(["snapshot", "observed"]);
+  // The drive Start forked may observe the worker once more meanwhile; that sends only times too.
+  expect(delivered[0]?._tag).toBe("snapshot");
+  expect(new Set(delivered.slice(1).map((message) => message._tag))).toStrictEqual(
+    new Set(["observed"]),
+  );
 });
 
 it("the first Run snapshot includes a report committed during its read", async (c) => {
