@@ -18,10 +18,10 @@ The hook first checks attribution in the commits being pushed, then runs
 | ---- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | `pnpm format:check` | Files not formatted by the Vite+ formatter (`vite.config.ts` `fmt`)                                                                     |
 | 2    | `pnpm fallow`       | [fallow](https://fallow.tools) findings across the whole repository: unused code and dependencies, duplication, complexity, circular dependencies |
-| 3    | `pnpm build`        | Compile errors; produces the `dist/` output that workspace packages export and later steps read                                         |
-| 4    | `pnpm lint`         | Vite+ lint rule violations (`vite.config.ts` `lint`, type-aware, warnings fail)                                                         |
-| 5    | `pnpm typecheck`    | Type errors in every workspace package, backend test code and `tests/*.e2e.ts`                                                          |
-| 6    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
+| 3    | `pnpm lint`         | Vite+ lint rule violations (`vite.config.ts` `lint`, type-aware, warnings fail)                                                         |
+| 4    | `pnpm typecheck`    | Type errors in every workspace package, backend test code and `tests/*.e2e.ts`                                                          |
+| 5    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
+| 6    | `pnpm build`        | Compile, declaration and bundling errors in the shippable output; runs last so no earlier step can depend on build output |
 
 During implementation, run the cheap static steps (`pnpm format:check`,
 `pnpm fallow` and `pnpm lint`) and the affected package's tests before handing
@@ -56,10 +56,10 @@ follow the [verification evidence requirements](../.agents/skills/verify-t3-fact
 `tsconfig.json` that imports a workspace package, which editors and the
 type-aware lint also use, enables the `factory-source` export condition, so
 workspace packages resolve to their TypeScript source and a shared-package
-change is visible to every type-check at once. The emitting configurations `pnpm build` uses (`tsconfig.build.json` where a
-package needs both) keep default resolution and compile against the built
-declarations of their dependencies; the desktop bundle likewise consumes compiled
-backend output.
+change is visible to every type-check at once. The emitting configurations
+`pnpm build` uses (`tsconfig.build.json` where a package needs both) keep default
+resolution and compile against the built declarations of their dependencies; the
+desktop bundle likewise consumes compiled backend output.
 
 `pnpm fallow` scans the repository and fails on any finding (including warnings)
 or source parse failure. There is no baseline: every change must preserve zero
