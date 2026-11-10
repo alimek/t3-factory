@@ -44,19 +44,38 @@ import {
   type FlowDraftModel,
   type FlowDraftSnapshot,
 } from "../flow-draft.ts";
+import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
 
 /**
- * This editor's Flow draft, told when the editor is shown or hidden. Studio's guard learns of
- * changes to unsaved changes from the draft's notification itself, before any render, and only
+ * This editor's Flow draft, saved and removed through Studio's definitions and told when the
+ * editor is shown or hidden and when Studio's saved Agents were read again. Studio's guard learns
+ * of changes to unsaved changes from the draft's notification itself, before any render, and only
  * when that fact changes.
  */
 function useOpenedFlowDraft(
   id: string,
+  definitions: StudioDefinitions,
   active: boolean,
   reportDraft: (id: string, dirty: boolean) => void,
 ) {
-  const [draft] = useState(() => createFlowDraft(id));
+  const [draft] = useState(() =>
+    createFlowDraft(id, {
+      getFlow: api.getFlow,
+      validateFlow: api.validateFlow,
+      updateFlow: definitions.updateFlow,
+      removeFlow: definitions.removeFlow,
+    }),
+  );
   useEffect(() => draft.reportVisibility(active), [draft, active]);
+  useEffect(() => {
+    let agents = definitions.getSnapshot().agents.value;
+    return definitions.subscribe(() => {
+      const next = definitions.getSnapshot().agents.value;
+      if (next === agents) return;
+      agents = next;
+      draft.reportAgentsRefreshed();
+    });
+  }, [definitions, draft]);
   useEffect(() => {
     let dirty = draft.getSnapshot().dirty;
     return draft.subscribe(() => {
@@ -67,30 +86,6 @@ function useOpenedFlowDraft(
     });
   }, [draft, id, reportDraft]);
   return { draft, state: useFlowDraftSnapshot(draft) };
-}
-
-function useSavedAgents(active: boolean, onRefreshed: () => void) {
-  const [agents, setAgents] = useState<readonly AgentDefinition[]>([]);
-  const [agentError, setAgentError] = useState("");
-  useEffect(() => {
-    if (!active) return;
-    setAgentError("");
-    let current = true;
-    api
-      .listAgents()
-      .then((v) => {
-        if (!current) return;
-        setAgents(v);
-        onRefreshed();
-      })
-      .catch(() => {
-        if (current) setAgentError("Could not load saved Agents. Reopen this Flow to try again.");
-      });
-    return () => {
-      current = false;
-    };
-  }, [active, onRefreshed]);
-  return { agents, agentError };
 }
 
 /** Keeps the last selected block rendered while the floating panel plays its close motion. */
@@ -200,25 +195,38 @@ function useCanvasSelection(
   return { selected, wire, select, selectWire, deleteWire };
 }
 
+const noAgents: readonly AgentDefinition[] = [];
+
+/** Studio's saved Agents for the block library; the last read stays offered during refreshes. */
+function useLibraryAgents(definitions: StudioDefinitions) {
+  const { value, error } = useStudioRead(definitions, "agents");
+  return {
+    agents: value ?? noAgents,
+    agentError: error ? "Could not load saved Agents. Reopen this Flow to try again." : "",
+  };
+}
+
 const PANEL_WIDTH = 344;
 /** Matches `--duration-panel-out`; the reduced-motion fade is shorter and ends first. */
 const PANEL_CLOSE_MS = 140;
 
 export function FlowDetail({
   id,
+  definitions,
   active,
   registerEscape,
   reportDraft,
 }: {
   id: string;
+  definitions: StudioDefinitions;
   active: boolean;
   registerEscape: (handler: () => void) => () => void;
   reportDraft: (id: string, dirty: boolean) => void;
 }) {
   const canvas = useRef<HTMLElement>(null);
   const placement = useRef<DropAt | null>(null);
-  const { draft, state } = useOpenedFlowDraft(id, active, reportDraft);
-  const { agents, agentError } = useSavedAgents(active, draft.reportAgentsRefreshed);
+  const { draft, state } = useOpenedFlowDraft(id, definitions, active, reportDraft);
+  const { agents, agentError } = useLibraryAgents(definitions);
   const [libraryOpen, setLibraryOpen] = useState(true);
   const { saved, error, readiness } = state;
   const { graph, name } = state.content;
