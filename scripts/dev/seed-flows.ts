@@ -4,6 +4,7 @@ import {
   flowInput,
   humanStep,
   connection,
+  continuationStep,
 } from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { FlowGraph, FlowWorkspace } from "../../packages/contracts/src/index.ts";
@@ -104,8 +105,32 @@ export async function createDemoFlows(
     },
     { mode: "worktree", base: { kind: "default" } },
   );
+  const continuation = await saveFlow(factory, "Demo · Grill, spec and tickets", {
+    flowInput: flowInput(["worker"], { x: 40, y: 180 }),
+    blocks: [
+      agentBlock("worker", "Grill the change", agents.worker, { x: 320, y: 180 }),
+      humanStep("scope", "Approve scope", { x: 700, y: 180 }),
+      continuationStep(
+        "spec",
+        "Spec",
+        "Using everything we agreed in this conversation, write the implementation spec as Markdown. List open questions last.",
+        { x: 1080, y: 180 },
+      ),
+      continuationStep(
+        "tickets",
+        "Tickets",
+        "Split the spec into small tickets, each with acceptance checks.",
+        { x: 1460, y: 180 },
+      ),
+    ],
+    connections: [
+      connection("worker", "review", "scope"),
+      connection("scope", "approve", "spec"),
+      connection("spec", "output", "tickets"),
+    ],
+  });
   await createExitReadinessScenarios(factory, agents.reviewer, agents.worker);
-  return { simple, review, parallel, parallelStart, worktree };
+  return { simple, review, parallel, parallelStart, worktree, continuation };
 }
 
 /** Ready wiring followed by an Agent edit exposes saved, repairable exit-contract issues. */

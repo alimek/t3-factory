@@ -2,7 +2,7 @@ import { demoImages, demoPullRequest, type DemoImage } from "./seed-support.ts";
 import type { ThreadFacts } from "../../apps/backend/test/support/controlled-thread.ts";
 
 export type DemoFlows = Record<
-  "simple" | "review" | "parallel" | "parallelStart" | "worktree",
+  "simple" | "review" | "parallel" | "parallelStart" | "worktree" | "continuation",
   string
 >;
 type Repository = NonNullable<ThreadFacts["repository"]>;
@@ -26,6 +26,10 @@ export type SeedScenario = {
   | { state: "result released to two workers"; first: Report; final: Report }
   | { state: "two workers started from one prompt"; repositories: readonly Repository[] }
   | { state: "delegated work pending"; repository: Repository; delegations: number }
+  | ({ grill: Report; approval: string } & (
+      | { state: "continuation prompt sent" }
+      | { state: "continuation response forwarded"; spec: string }
+    ))
 );
 
 const reviewContent = {
@@ -41,6 +45,16 @@ const reviewContent = {
     message:
       "The search behavior looks good. Please review the empty-state wording and decide whether the reset action is clear enough.",
   },
+};
+
+const continuationContent = {
+  prompt:
+    "Plan saved searches for Atlas. Interview me about scope first, then write the spec and the tickets in the same conversation.",
+  grill: {
+    exit: "Ready for review",
+    message: "We agreed on saved searches per project, shareable links and no email alerts yet.",
+  },
+  approval: "Approved. Leave email alerts out of the first version.",
 };
 
 /** Stable keys, titles and creation order are shared with journeys and the scenario catalog.
@@ -184,6 +198,21 @@ export const seedScenarioList: readonly SeedScenario[] = [
     message:
       "Opened pull request #42 with the ranking fix. CI checks are still running; I will report when they finish.",
     repository: { branch: null, pullRequests: [demoPullRequest(42)] },
+  },
+  {
+    key: "continuation-sent",
+    title: "Continuation · Spec prompt sent to the planning thread",
+    flow: "continuation",
+    state: "continuation prompt sent",
+    ...continuationContent,
+  },
+  {
+    key: "continuation-forwarded",
+    title: "Continuation · Spec passed on to Tickets",
+    flow: "continuation",
+    state: "continuation response forwarded",
+    ...continuationContent,
+    spec: "Spec written to docs/saved-searches.md with four open questions.",
   },
   {
     key: "working",

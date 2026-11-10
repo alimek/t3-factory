@@ -6,6 +6,7 @@ import { now } from "../../time.ts";
 import { settleForReport } from "./current-report.ts";
 import type { ReportTarget, WorkingReportRecord } from "./records.ts";
 import { writeBlockState } from "./blocks.ts";
+import { reportedState } from "../report-rules.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 /** A working report becomes the activation's current report, shown with its message. */
@@ -46,10 +47,15 @@ export function acceptWorking(
       reportId: id,
       observedAt: time,
     });
-    yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, "working", {
-      report_status: "working",
-      problem: null,
-    });
+    yield* writeBlockState(
+      sql,
+      { runId: runRow.id, blockId: block.block_id },
+      reportedState(runRow.definitions, block.block_id, "working"),
+      {
+        report_status: "working",
+        problem: null,
+      },
+    );
     yield* advanceGeneration(sql, runRow.id);
     return reply;
   });

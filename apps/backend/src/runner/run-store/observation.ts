@@ -120,6 +120,71 @@ function recordActivation(
   });
 }
 
+/**
+ * The Continuations whose prompt runs on this worker thread and is not yet forwarded: a missing
+ * report after their run, attention and their `sent` or `error` state. The worker's own Block
+ * shows the thread working meanwhile.
+ */
+function recordContinuations(
+  sql: SqlClient.SqlClient,
+  run: RunRow,
+  bindingId: string,
+  worker: WorkerThread,
+  latestOwner: string,
+  time: string,
+) {
+  return Effect.gen(function* () {
+    const visits = yield* sql<{
+      block_id: string;
+      activation_id: string;
+    }>`SELECT block_id,activation_id FROM continuation_visits WHERE run_id=${run.id} AND binding_id=${bindingId} AND kind='prompt' AND state='sent'`;
+    if (!visits.length) return;
+    const reports = yield* currentReports(sql, run.id);
+    const { latest } = worker;
+    for (const visit of visits) {
+      const current = reports.find((entry) => entry.activationId === visit.activation_id)?.report
+        ?.status;
+      const owned = latest && latestOwner === visit.block_id;
+      if (owned) {
+        const missing = missingReport(worker, current);
+        yield* observeAttention(
+          sql,
+          run.id,
+          { block_id: visit.block_id },
+          latest.runId,
+          "missing-report",
+          missing,
+          time,
+        );
+        if (missing)
+          yield* sql`UPDATE run_executions SET problem='missing-report' WHERE run_id=${run.id} AND thread_id=${worker.thread.threadId} AND execution_id=${latest.runId}`;
+      }
+      const [pending] = yield* sql<{
+        kind: RunAttention["kind"];
+      }>`SELECT kind FROM run_attention WHERE run_id=${run.id} AND block_id=${visit.block_id} AND kind IN ('execution-failed','missing-report') AND settled_at IS NULL ORDER BY kind LIMIT 1`;
+      const problem = pending?.kind ?? null;
+      yield* recordActivationPhase(
+        sql,
+        visit.activation_id,
+        current === "finished" ? "reported" : "assessing",
+        problem,
+      );
+      yield* writeBlockState(
+        sql,
+        { runId: run.id, blockId: visit.block_id },
+        problem ? "error" : "sent",
+        {
+          ...(owned ? { execution_id: latest.runId, engine_status: latest.status } : {}),
+          freshness: "fresh",
+          observed_at: time,
+          pending_request_count: worker.thread.pendingRequestCount,
+          problem,
+        },
+      );
+    }
+  });
+}
+
 function recordWorkerThread(
   sql: SqlClient.SqlClient,
   run: RunRow,
@@ -146,19 +211,36 @@ function recordWorkerThread(
       time,
     );
     yield* recordExecutions(sql, run, block, binding.id, worker, time);
+    // A run queued for a Continuation's prompt belongs to that Continuation, not to the worker's
+    // Block: its failure is the Continuation's.
+    const [owner] = latest
+      ? yield* sql<{
+          block_id: string;
+        }>`SELECT block_id FROM run_executions WHERE run_id=${run.id} AND thread_id=${thread.threadId} AND execution_id=${latest.runId}`
+      : [];
+    const ownerScope = { block_id: owner?.block_id ?? block.block_id };
     if (latest && failedRun(latest.status))
-      yield* observeAttention(sql, run.id, block, latest.runId, "execution-failed", true, time);
+      yield* observeAttention(
+        sql,
+        run.id,
+        ownerScope,
+        latest.runId,
+        "execution-failed",
+        true,
+        time,
+      );
     // A later run of the thread that completes recovers earlier execution failures.
     if (latest?.status === "completed")
       yield* settlePendingAttention(
         sql,
         run.id,
-        block.block_id,
+        ownerScope.block_id,
         "execution-failed",
         "completed",
         time,
       );
     yield* recordActivation(sql, run, block, worker, time);
+    yield* recordContinuations(sql, run, binding.id, worker, ownerScope.block_id, time);
     yield* advanceGeneration(sql, run.id);
   });
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, GripVertical, PanelLeftClose, PanelLeftOpen, Plus, Search, User } from "lucide-react";
+import { GripVertical, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import type { AgentDefinition, FlowBlock } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import type { BlockPosition } from "../flow-graph.ts";
 import type { GrabOffset } from "./canvas-surface.tsx";
 import { DragButton } from "./drag-button.tsx";
 import { BlockPreview, type DropAt } from "./flow-canvas.tsx";
+import { BLOCK_KINDS } from "./flow-block.tsx";
 import { SectionLabel } from "./page.tsx";
 
 function agentDetail(agent: AgentDefinition) {
@@ -96,9 +97,16 @@ export function BlockLibrary({
       <LibraryItem
         name="Human step"
         detail="Asks a person"
-        human
+        kind="human"
         dropAt={dropAt}
         onAdd={(position) => onAdd("human", undefined, position)}
+      />
+      <LibraryItem
+        name="Continuation"
+        detail="Same thread, new prompt"
+        kind="continuation"
+        dropAt={dropAt}
+        onAdd={(position) => onAdd("continuation", undefined, position)}
       />
       <div className="flex items-center">
         <SectionLabel>Saved Agents</SectionLabel>
@@ -124,6 +132,7 @@ export function BlockLibrary({
           key={agent.id}
           name={agent.name}
           detail={agentDetail(agent)}
+          kind="agent"
           dropAt={dropAt}
           onAdd={(position) => onAdd("agent", agent, position)}
         />
@@ -152,20 +161,21 @@ type Ghost = { left: number; top: number; overCanvas: boolean };
 function LibraryItem({
   name,
   detail,
-  human = false,
+  kind,
   dropAt,
   onAdd,
 }: {
   name: string;
   detail: string;
-  human?: boolean;
+  kind: FlowBlock["kind"];
   dropAt: DropAt;
   onAdd: (position?: BlockPosition) => void;
 }) {
   const [ghost, setGhost] = useState<Ghost | null>(null);
+  const { Icon } = BLOCK_KINDS[kind];
   return (
     <>
-      {ghost && <BlockGhost ghost={ghost} human={human} name={name} />}
+      {ghost && <BlockGhost ghost={ghost} kind={kind} name={name} />}
       <DragButton
         aria-label={`Add ${name}`}
         className="group flex h-13 w-full shrink-0 cursor-grab items-center gap-2 rounded-lg pr-2 pl-1.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing"
@@ -191,12 +201,10 @@ function LibraryItem({
           aria-hidden
           className={cn(
             "grid size-7 shrink-0 place-items-center rounded-md",
-            human
-              ? "border border-dashed bg-muted text-muted-foreground"
-              : "bg-brand-soft text-link",
+            LIBRARY_ICON_TILES[kind],
           )}
         >
-          {human ? <User className="size-3.5" /> : <Bot className="size-3.5" />}
+          <Icon className="size-3.5" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-sm font-medium text-foreground">{name}</span>
@@ -213,14 +221,36 @@ function LibraryItem({
   );
 }
 
+const LIBRARY_ICON_TILES: Record<FlowBlock["kind"], string> = {
+  agent: "bg-brand-soft text-link",
+  human: "border border-dashed bg-muted text-muted-foreground",
+  continuation: "border bg-muted text-brand-cyan",
+};
+
+/** What a new block of each kind shows on its reference line before it is connected. */
+const GHOST_REFERENCES: Record<FlowBlock["kind"], (name: string) => [string, string]> = {
+  agent: (name) => ["Agent", name],
+  human: () => ["Asks", "a person"],
+  continuation: () => ["", "no Agent before it"],
+};
+
 /** A compact, non-interactive preview of the block a library drag would add. */
-function BlockGhost({ ghost, human, name }: { ghost: Ghost; human: boolean; name: string }) {
+function BlockGhost({
+  ghost,
+  kind,
+  name,
+}: {
+  ghost: Ghost;
+  kind: FlowBlock["kind"];
+  name: string;
+}) {
+  const [label, value] = GHOST_REFERENCES[kind](name);
   return createPortal(
     <BlockPreview
-      human={human}
+      kind={kind}
       name={name}
-      label={human ? "Asks" : "Agent"}
-      value={human ? "a person" : name}
+      label={label}
+      value={value}
       className={cn(
         "pointer-events-none fixed z-50 pb-1.5 shadow-lift",
         ghost.overCanvas ? "opacity-90" : "opacity-50",

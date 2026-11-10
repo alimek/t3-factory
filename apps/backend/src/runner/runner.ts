@@ -1,6 +1,7 @@
 import { openBlockTools } from "./runner-block-tools.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
+import { releaseContinuationResults } from "./runner-continuations.ts";
 import { openRunNavigation } from "./run-navigation.ts";
 import type { FactoryOperations, Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
@@ -99,6 +100,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
       yield* settleRecoveries(store, lifecycle, t3, id);
       if (phase === "observe") return;
+      yield* releaseContinuationResults(store, t3, (yield* row(id)) ?? runRow);
       const observed = (yield* row(id)) ?? runRow;
       yield* dispatchIntents(observed, contextId);
       // Binding the Run worktree during dispatch records the launches that join it.

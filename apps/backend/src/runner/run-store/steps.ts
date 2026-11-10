@@ -50,7 +50,14 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
       readonly intentId: string;
     }
   | {
-      readonly kind: "send-acknowledged" | "launch-acknowledged";
+      /** About the delivery that reached a Continuation: it waits behind the prompt, the prompt
+       * visit's response went out, or it passed through unchanged. */
+      readonly kind: "continuation-queued" | "continuation-forwarded" | "continuation-passed";
+      readonly blockId: string;
+      readonly intentId: string;
+    }
+  | {
+      readonly kind: "send-acknowledged" | "launch-acknowledged" | "continuation-prompt-sent";
       readonly blockId: string;
       readonly executionId: string;
       readonly intentId: string;
@@ -102,8 +109,13 @@ function storedDeliveryEvent(event: DeliveryEvent) {
           executionId: event.executionId,
           sourceKey: "recovery:" + event.intentId,
         };
+      case "continuation-queued":
+      case "continuation-forwarded":
+      case "continuation-passed":
+        return { ...about, sourceKey: `${event.kind}:${event.intentId}` };
       case "send-acknowledged":
       case "launch-acknowledged":
+      case "continuation-prompt-sent":
         return {
           ...about,
           executionId: event.executionId,

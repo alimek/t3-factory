@@ -1,6 +1,9 @@
 import type { RunBlock } from "@t3-factory/contracts";
 
-/** Empty targets mean a whole-graph overview. Active work takes precedence over failure. */
+/**
+ * Empty targets mean a whole-graph overview. Active work takes precedence over failure. A `sent`
+ * Continuation is not a target itself: its work shows on the owning Agent, which is `working`.
+ */
 export function selectExecutionTargets(
   blocks: readonly Pick<RunBlock, "blockId" | "state">[],
 ): string[] {

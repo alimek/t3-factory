@@ -177,16 +177,29 @@ export function openRunDeliveries(database: RunnerDatabase) {
         const time = yield* now;
         yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${delivery.id}`;
         yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,engine_status,binding_id,activation_id) VALUES(${runRow.id},${delivery.block_id},${reference.threadId},${reference.runId},${reference.status},COALESCE((SELECT binding_id FROM coordinator_question_replies WHERE intent_id=${delivery.id}),(SELECT id FROM run_thread_bindings WHERE run_id=${runRow.id} AND thread_id=${reference.threadId})),COALESCE((SELECT activation_id FROM coordinator_question_replies WHERE intent_id=${delivery.id}),(SELECT id FROM run_activations WHERE run_id=${runRow.id} AND block_id=${delivery.block_id} ORDER BY rowid DESC LIMIT 1))) ON CONFLICT DO NOTHING`;
-        yield* writeBlockState(sql, { runId: runRow.id, blockId: delivery.block_id }, "working", {
-          execution_id: reference.runId,
-          engine_status: reference.status,
-          report_status: null,
-          problem: UNOBSERVED_WORKER_HOLD,
-          freshness: "unknown",
-        });
+        // A Continuation's prompt runs on another Block's worker, which shows the work; the
+        // Continuation shows that its prompt is sent.
+        const [prompt] = yield* sql<{
+          incoming_intent_id: string;
+        }>`SELECT incoming_intent_id FROM continuation_visits WHERE run_id=${runRow.id} AND block_id=${delivery.block_id} AND kind='prompt'`;
+        yield* writeBlockState(
+          sql,
+          { runId: runRow.id, blockId: delivery.block_id },
+          prompt ? "sent" : "working",
+          {
+            execution_id: reference.runId,
+            engine_status: reference.status,
+            report_status: null,
+            problem: prompt ? null : UNOBSERVED_WORKER_HOLD,
+            freshness: "unknown",
+          },
+        );
         yield* advanceGeneration(sql, runRow.id);
         yield* appendTimelineEvent(sql, {
-          kind: "send-acknowledged",
+          kind:
+            prompt?.incoming_intent_id === delivery.id
+              ? "continuation-prompt-sent"
+              : "send-acknowledged",
           runId: runRow.id,
           blockId: delivery.block_id,
           executionId: reference.runId,

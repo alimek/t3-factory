@@ -71,10 +71,10 @@ export function openRunRequestReport(database: RunnerDatabase) {
           id: string;
         }>`SELECT id FROM run_attention WHERE run_id=${current.id} AND block_id=${blockId} AND kind='missing-report' AND execution_id=${executionId} AND settled_at IS NULL`;
         const { definitions } = current;
-        const exits = effectiveExits(
-          definitions.flow.graph.blocks.find((block) => block.id === blockId)!,
-          definitions.agents,
-        );
+        const graphBlock = definitions.flow.graph.blocks.find((block) => block.id === blockId)!;
+        // A Continuation's worker finishes without naming an exit.
+        const exits =
+          graphBlock.kind === "continuation" ? [] : effectiveExits(graphBlock, definitions.agents);
         yield* createDelivery(sql, {
           id: intentId,
           runId: current.id,

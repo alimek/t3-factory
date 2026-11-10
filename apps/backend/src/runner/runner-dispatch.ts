@@ -1,5 +1,6 @@
 import { dispatchBlockLaunch } from "./runner-block-workers.ts";
 import { prepareCoordinatorHandoff } from "./runner-coordinator-handoffs.ts";
+import { prepareContinuationHandoff } from "./runner-continuations.ts";
 import type { EffectOperations } from "../effect-operations.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { recoveryDispatchGeneration } from "./runner-recovery.ts";
@@ -8,7 +9,14 @@ import * as Effect from "effect/Effect";
 import type { SendPayload, SendReference, T3Adapter } from "../adapters/t3.ts";
 import type { Delivery, Handoff, RunStore } from "./run-store/run-store.ts";
 import type { BlockRow, Checked, RunnerOptions, RunRow, StoredTarget } from "./runner-types.ts";
-import { catalogProject, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
+import {
+  catalogProject,
+  intactPayload,
+  passedThrough,
+  runTarget,
+  unverified,
+  verified,
+} from "./runner-utils.ts";
 import { activatePendingHumanHandoff, reservePendingExplicitHandoff } from "./runner-release.ts";
 import { inRunWorkspace } from "./run-workspace.ts";
 import type { RunImages } from "../run-images.ts";
@@ -49,17 +57,19 @@ export function openRunnerDispatch(
   observe: (run: RunRow, block: BlockRow, contextId: string | null) => Effect.Effect<void, unknown>,
   images: RunImages,
 ) {
-  /** Agent handoffs become worker commands or revisit sends; Human handoffs become occurrences. */
+  /** Agent handoffs become worker commands or revisit sends, Continuation handoffs a prompt send
+   * or a pass-through; Human handoffs become occurrences. */
   function prepareHandoff(
     runRow: RunRow,
     handoff: Handoff,
   ): Effect.Effect<Delivery | undefined, unknown> {
     return Effect.gen(function* () {
-      const { definitions } = runRow;
-      if (
-        definitions.flow.graph.blocks.find((block) => block.id === handoff.block_id)?.kind !==
-        "agent"
-      ) {
+      const kind = runRow.definitions.flow.graph.blocks.find(
+        (block) => block.id === handoff.block_id,
+      )?.kind;
+      if (kind === "continuation")
+        return yield* prepareContinuationHandoff(store, t3, runRow, handoff);
+      if (kind !== "agent") {
         yield* activatePendingHumanHandoff(store, t3, runRow, handoff);
         return;
       }
@@ -137,7 +147,9 @@ export function openRunnerDispatch(
   }
   function reserveSend(runRow: RunRow, intent: Delivery, retryScope: string | null) {
     return Effect.gen(function* () {
-      const gated = Boolean(intent.report_id || intent.occurrence_id) && intent.state === "pending";
+      const gated =
+        Boolean(intent.report_id || intent.occurrence_id || passedThrough(intent)) &&
+        intent.state === "pending";
       if (gated) return yield* reservePendingExplicitHandoff(store, t3, runRow, intent, retryScope);
       const generation = yield* recoveryDispatchGeneration(store, t3, runRow, intent);
       if (generation === null) return false;

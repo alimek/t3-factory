@@ -30,3 +30,8 @@ export function runTarget(
     workspaceRoot: runRow.workspace_root,
   };
 }
+
+/** A Continuation forwards a passed-through message as it arrived: its Handoffs (cause `pass:`)
+ * are released. */
+export const passedThrough = (source: { readonly cause: string }) =>
+  source.cause.startsWith("pass:");

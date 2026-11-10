@@ -27,6 +27,8 @@ export type RuntimeReply = {
   readonly allowedExits?: readonly string[];
   readonly visit?: number;
   readonly reason?: string;
+  /** A Continuation's prompt, the task its worker answers. */
+  readonly prompt?: string;
   readonly exits?: readonly BlockExit[];
   readonly inputs?: {
     readonly input: string;

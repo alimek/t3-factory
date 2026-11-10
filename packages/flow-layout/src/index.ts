@@ -175,16 +175,18 @@ function blockNode<B extends LayoutBlock>(
   return node;
 }
 
-function edgeLabel<B extends LayoutBlock>(
+/** A Continuation's single output is unnamed, so its wires carry no label to reserve room for. */
+function edgeLabels<B extends LayoutBlock>(
   graph: LayoutGraph<B>,
   connection: FlowGraph["connections"][number],
   dims: FlowLayoutDimensions<B>,
 ) {
   const source = graph.blocks.find((block) => block.id === connection.sourceBlockId);
+  if (!dims.labels || source?.kind === "continuation") return [];
   const target = graph.blocks.find((block) => block.id === connection.targetBlockId);
   const exit = source?.exits.find((item) => item.id === connection.exitId)?.name || "exit";
   const text = `${exit} → ${target?.name || "Unnamed block"}`;
-  return { text, ...dims.labelSize(text) };
+  return [{ text, ...dims.labelSize(text) }];
 }
 
 function buildEdges<B extends LayoutBlock>(
@@ -213,7 +215,7 @@ function buildEdges<B extends LayoutBlock>(
       id,
       sources: [exitPortId(connection.sourceBlockId, connection.exitId)],
       targets: [elkInputPortId(connection.targetBlockId, index)],
-      labels: dims.labels ? [edgeLabel(graph, connection, dims)] : [],
+      labels: edgeLabels(graph, connection, dims),
     });
   }
   return edges;

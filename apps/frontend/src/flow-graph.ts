@@ -6,7 +6,11 @@ import type {
   FlowGraph,
   RunDefinitions,
 } from "@t3-factory/contracts";
-import { effectiveExits, type EffectiveExit } from "@t3-factory/domain-validation";
+import {
+  continuationSources,
+  effectiveExits,
+  type EffectiveExit,
+} from "@t3-factory/domain-validation";
 import { randomId } from "@/lib/ids";
 
 export type BlockPosition = FlowBlock["position"];
@@ -23,6 +27,12 @@ export function capturedExits(
   return block ? effectiveExits(block, definitions.agents) : [];
 }
 
+const DEFAULT_BLOCK_NAMES: Record<FlowBlock["kind"], string> = {
+  agent: "Agent block",
+  human: "Human step",
+  continuation: "Continuation",
+};
+
 /** Without a drop position, new blocks fill a three-column grid right of the Flow input. */
 export function newBlock(
   graph: FlowGraph,
@@ -32,15 +42,15 @@ export function newBlock(
 ): FlowBlock {
   const base = {
     id: uid(),
-    name: agent?.name ?? (kind === "human" ? "Human step" : "Agent block"),
+    name: agent?.name ?? DEFAULT_BLOCK_NAMES[kind],
     position: position ?? {
       x: 320 + (graph.blocks.length % 3) * 300,
       y: Math.min(10000, 50 + Math.floor(graph.blocks.length / 3) * 220),
     },
   };
-  return kind === "agent"
-    ? { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] }
-    : { ...base, kind };
+  if (kind === "agent")
+    return { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] };
+  return kind === "continuation" ? { ...base, kind, prompt: "" } : { ...base, kind };
 }
 
 export function replaceBlock(graph: FlowGraph, next: FlowBlock): FlowGraph {
@@ -86,7 +96,8 @@ export function hasWire(graph: FlowGraph, wire: FlowWire) {
 
 /**
  * Whether `source` may gain a wire to the block: any block for an exit, only Agent blocks
- * for the Flow input, and never a target the source already reaches.
+ * for the Flow input (never a Human step or a Continuation), and never a target the source
+ * already reaches.
  */
 export function canConnect(graph: FlowGraph, source: WireSource, targetBlockId: string) {
   const target = graph.blocks.find((b) => b.id === targetBlockId);
@@ -140,6 +151,17 @@ export function removeBlock(graph: FlowGraph, blockId: string): FlowGraph {
       targetBlockIds: graph.flowInput.targetBlockIds.filter((id) => id !== blockId),
     },
   };
+}
+
+/**
+ * The thread a Continuation continues, as its block and details name it: the one Agent before
+ * it, or the incoming Agent's when several can reach it; null when no Agent precedes it.
+ */
+export function continuedThread(graph: FlowGraph, blockId: string): string | null {
+  const sources = continuationSources(graph, blockId);
+  if (sources.length > 1) return "the incoming Agent's thread";
+  const agent = graph.blocks.find((block) => block.id === sources[0]);
+  return agent ? `${agent.name || "Unnamed block"}'s thread` : null;
 }
 
 export function exitRecipients(graph: FlowGraph, blockId: string, exitId: string) {
