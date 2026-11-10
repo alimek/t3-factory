@@ -6,9 +6,9 @@ import {
   applyLayoutPositions,
   buildElkGraph,
   parseElkLayout,
+  type FlowLayoutDimensions,
   type FlowLayoutResult,
 } from "./flow-layout-elk.ts";
-import { layoutDimensions, type FlowLayoutProfile } from "./flow-layout-profile.ts";
 import { canvasGraph } from "./flow-graph.ts";
 
 /** The Agents a layout resolves block exits against, which place each block's exit ports. */
@@ -19,15 +19,15 @@ type PendingRequest = {
   readonly resolve: (result: FlowLayoutResult | null) => void;
 };
 
-function useFlowLayoutWorker(profile: FlowLayoutProfile) {
+function useFlowLayoutWorker(dimensions: FlowLayoutDimensions) {
   const worker = useRef<Worker | null>(null);
   const generation = useRef(0);
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRequest = useRef<PendingRequest | null>(null);
-  const profileRef = useRef(profile);
+  const dimensionsRef = useRef(dimensions);
   useLayoutEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
+    dimensionsRef.current = dimensions;
+  }, [dimensions]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,7 +81,7 @@ function useFlowLayoutWorker(profile: FlowLayoutProfile) {
           instance.onerror = (event) => fail(event.message || "Auto-arrange failed. Try again.");
           instance.onmessageerror = () => fail("Could not read the arranged Flow. Try again.");
           void elk
-            .layout(buildElkGraph(canvasGraph(graph, agents), layoutDimensions(profileRef.current)))
+            .layout(buildElkGraph(canvasGraph(graph, agents), dimensionsRef.current))
             .then((laidOut) => {
               if (pendingRequest.current?.generation !== id) return;
               const result = parseElkLayout(graph, laidOut);
@@ -108,24 +108,26 @@ type AuthoringPolicy = {
   readonly busy: boolean;
   readonly savedGraph: FlowGraph | undefined;
   readonly change: (graph: FlowGraph) => void;
-  readonly onAccepted: (graph: FlowGraph) => void;
 };
 
 type FlowLayoutSessionOptions = {
-  readonly scope: string;
+  readonly scope: string | null;
   readonly graph: FlowGraph;
   readonly agents: LayoutAgents;
-  readonly profile: FlowLayoutProfile;
+  /** The block geometry of the graph's blocks, as the canvas draws them. */
+  readonly dimensions: FlowLayoutDimensions;
   /** Omit for local, read-only Run presentation. */
-  readonly authoring?: AuthoringPolicy;
+  readonly authoring?: AuthoringPolicy | undefined;
 };
 
 type AcceptedLayout = {
-  readonly scope: string;
+  readonly scope: string | null;
   readonly basisKey: string;
   readonly graphKey: string;
   readonly graph: FlowGraph;
   readonly routes: FlowLayoutResult["routes"];
+  /** Saved routes rebuilt without moving a node, rather than an explicit arrangement. */
+  readonly restored: boolean;
 };
 
 type LayoutBasis = { readonly options: FlowLayoutSessionOptions; readonly basisKey: string };
@@ -146,13 +148,17 @@ function acceptedForGraph(accepted: AcceptedLayout | null, current: LayoutBasis)
   return matches ? accepted : null;
 }
 
-/** Owns request validity and commits positions/routes together, before notifying the caller. */
+function explicitGraph(layout: AcceptedLayout | null) {
+  return layout && !layout.restored ? layout.graph : null;
+}
+
+/** Owns request validity and commits positions and routes together, then the arranged positions. */
 export function useFlowLayoutSession(options: FlowLayoutSessionOptions) {
-  const { scope, graph, agents, profile, authoring } = options;
+  const { scope, graph, agents, dimensions, authoring } = options;
   const basisKey = useMemo(() => JSON.stringify(graph), [graph]);
   // Authoring edits invalidate even equal-content graph replacements. Run polls do not.
   const basis = authoring ? graph : basisKey;
-  const worker = useFlowLayoutWorker(profile);
+  const worker = useFlowLayoutWorker(dimensions);
   const { arrange: compute, cancel: cancelWorker } = worker;
   const generation = useRef(0);
   const live = useRef({ options, basisKey });
@@ -198,11 +204,9 @@ export function useFlowLayoutSession(options: FlowLayoutSessionOptions) {
         graphKey: JSON.stringify(acceptedGraph),
         graph: acceptedGraph,
         routes: result.routes,
+        restored: restoreOnly,
       });
-      if (!restoreOnly && current.options.authoring) {
-        current.options.authoring.change(acceptedGraph);
-        current.options.authoring.onAccepted(acceptedGraph);
-      }
+      if (!restoreOnly) current.options.authoring?.change(acceptedGraph);
     },
     [compute],
   );
@@ -221,7 +225,8 @@ export function useFlowLayoutSession(options: FlowLayoutSessionOptions) {
   return {
     graph: valid?.graph ?? graph,
     wireRoutes: valid?.routes ?? null,
-    accepted: valid?.graph ?? null,
+    /** The explicitly arranged graph while it is still shown; a new one refits the view. */
+    arranged: explicitGraph(valid),
     pending: worker.pending,
     error: worker.error,
     dismissError: worker.dismissError,

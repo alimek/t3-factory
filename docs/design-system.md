@@ -38,10 +38,13 @@ Settings and Studio use the same dialog conventions. The Run shell stays mounted
 them, while hidden content is inert. Unsaved-change guards and keyboard behavior are
 specified in [Studio](studio.md) and [Keyboard shortcuts](keyboard-shortcuts.md).
 
-Canvas blocks, ports and wires use the same tokens as the rest of the UI. State indicators
-and attention remain distinct. The execution canvas is read-only; its local arrangement
-and viewport never mutate the Run's captured Flow revision. Product behavior is defined in
-[Flow authoring](studio.md#canvas-and-block-configuration) and [Runs](runs.md#execution-canvas).
+Canvas blocks, ports and wires use the same tokens as the rest of the UI. Block rows and
+ports are sized from the canvas surface's block dimensions, not with height, size or offset
+utilities in block markup, so drawn blocks, wires, fit and Auto-arrange share one geometry.
+State indicators and attention remain distinct. The execution canvas is read-only; its local
+arrangement and viewport never mutate the Run's captured Flow revision. Product behavior is
+defined in [Flow authoring](studio.md#canvas-and-block-configuration) and
+[Runs](runs.md#execution-canvas).
 
 ## Changing the design system
 

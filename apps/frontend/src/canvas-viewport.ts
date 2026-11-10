@@ -92,15 +92,11 @@ export function clientToGraphPoint(
   view: CanvasView,
   clientX: number,
   clientY: number,
-  contentInsetY = 0,
 ) {
   const bounds = surface.getBoundingClientRect();
   const localX = clientX - bounds.left + surface.scrollLeft;
   const localY = clientY - bounds.top + surface.scrollTop;
-  return {
-    x: (localX - view.x) / view.scale,
-    y: (localY - view.y) / view.scale - contentInsetY,
-  };
+  return { x: (localX - view.x) / view.scale, y: (localY - view.y) / view.scale };
 }
 
 const CANVAS_COORD_MIN = -10000;

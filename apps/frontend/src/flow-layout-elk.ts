@@ -1,30 +1,20 @@
 import type { ElkExtendedEdge, ElkNode, ElkPoint } from "elkjs/lib/elk-api.js";
 import type { FlowGraph } from "@t3-factory/contracts";
 import { wireRouteKey, type CanvasBlock, type CanvasGraph } from "./flow-graph.ts";
+import { PORT_RIM, roundedPolyline, type BlockPorts } from "./flow-geometry.ts";
 import {
-  AUTHORING_FLOW_INPUT_HEIGHT,
-  AUTHORING_PORTS,
-  authoringBlockHeight,
-  BLOCK_WIDTH,
-  FLOW_INPUT_WIDTH,
-  FLOW_INPUT_OUTPUT_Y,
-  PORT_RIM,
-  roundedPolyline,
-  type BlockPorts,
-} from "./flow-geometry.ts";
-import {
-  blockHeightForIncomingFanIn,
   elkInputPortId,
-  incomingFanIn,
   incomingPortIndexForSource,
   incomingPortY,
   incomingWiresForBlock,
-} from "./flow-incoming-ports.ts";
+} from "./flow-geometry.ts";
 
 const FLOW_INPUT_NODE_ID = "__flow_input__";
 
+/** The canvas's block geometry as a layout reserves it; `labels` reserves room for exit labels. */
 export type FlowLayoutDimensions = {
-  readonly flowInputHeight: number;
+  readonly flowInput: { readonly width: number; readonly height: number; readonly outputY: number };
+  readonly blockWidth: number;
   readonly blockHeight: (block: CanvasBlock) => number;
   readonly ports: BlockPorts;
   readonly labels: boolean;
@@ -89,7 +79,7 @@ function blockPorts(block: CanvasBlock, graph: CanvasGraph, dims: FlowLayoutDime
       id: exitPortId(block.id, exit.id),
       width: 0,
       height: 0,
-      x: BLOCK_WIDTH,
+      x: dims.blockWidth,
       y: ports.firstExitY + index * ports.exitRow,
       layoutOptions: { "org.eclipse.elk.port.side": "EAST" },
     })),
@@ -133,10 +123,10 @@ function orderedBlocks(graph: CanvasGraph): CanvasBlock[] {
 }
 
 function flowInputNode(dims: FlowLayoutDimensions): ElkNode {
-  const height = dims.flowInputHeight;
+  const { width, height, outputY } = dims.flowInput;
   const node: ElkNode = {
     id: FLOW_INPUT_NODE_ID,
-    width: FLOW_INPUT_WIDTH,
+    width,
     height,
     layoutOptions: {
       "org.eclipse.elk.portConstraints": "FIXED_POS",
@@ -147,8 +137,8 @@ function flowInputNode(dims: FlowLayoutDimensions): ElkNode {
         id: flowInputPortId(),
         width: 0,
         height: 0,
-        x: FLOW_INPUT_WIDTH,
-        y: FLOW_INPUT_OUTPUT_Y,
+        x: width,
+        y: outputY,
         layoutOptions: { "org.eclipse.elk.port.side": "EAST" },
       },
     ],
@@ -156,16 +146,11 @@ function flowInputNode(dims: FlowLayoutDimensions): ElkNode {
   return node;
 }
 
-function layoutBlockHeight(block: CanvasBlock, graph: CanvasGraph, dims: FlowLayoutDimensions) {
-  const base = dims.blockHeight(block);
-  return blockHeightForIncomingFanIn(incomingFanIn(graph, block.id), dims.ports, base);
-}
-
 function blockNode(block: CanvasBlock, graph: CanvasGraph, dims: FlowLayoutDimensions): ElkNode {
   const node: ElkNode = {
     id: block.id,
-    width: BLOCK_WIDTH,
-    height: layoutBlockHeight(block, graph, dims),
+    width: dims.blockWidth,
+    height: dims.blockHeight(block),
     layoutOptions: { "org.eclipse.elk.portConstraints": "FIXED_POS" },
     ports: blockPorts(block, graph, dims),
   };
@@ -310,10 +295,3 @@ export function applyLayoutPositions(graph: FlowGraph, layout: FlowLayoutResult)
     }),
   };
 }
-
-export const AUTHORING_LAYOUT_DIMENSIONS: FlowLayoutDimensions = {
-  flowInputHeight: AUTHORING_FLOW_INPUT_HEIGHT,
-  blockHeight: authoringBlockHeight,
-  ports: AUTHORING_PORTS,
-  labels: true,
-};
