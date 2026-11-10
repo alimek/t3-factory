@@ -387,8 +387,10 @@ settled natively while a Continuation is sent or a message waits.
 
 A released handoff to a Wait becomes one durable arrival in the same transition that acknowledges it: the
 arrival takes the message, the handoff's provenance and, for an Agent result (directly or through earlier
-Waits), the result version whose message it is. Its start is that release, read from the Runner's clock, and its
-deadline is the start plus the captured Wait duration, stored as an absolute time. The handoff's identity is the
+Waits), the result version whose message it is. Its start is the time recorded when the handoff was released (the
+result's release record, the Human answer, the Continuation pass-through or the earlier Wait's forwarding), so a
+restart or dispatch delay before the arrival is created does not move it, and its deadline is the start plus the
+captured Wait duration, stored as an absolute time. The handoff's identity is the
 arrival's deduplication key: a repeated preparation after a crash or retry finds the handoff acknowledged and
 records nothing. Parallel arrivals and later visits are separate rows with separate deadlines; nothing joins.
 

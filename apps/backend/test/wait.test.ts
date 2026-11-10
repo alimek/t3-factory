@@ -516,6 +516,44 @@ it.effect(
     }),
 );
 
+it.effect(
+  "a release committed before Factory closed counts from the release, not from the reopening",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* reviewPendingOnTestClock(c, humanWaitFlow);
+      f.t3.available = false;
+      assert(
+        (yield* f.factory.answerHumanOccurrence(f.review.occurrence.id, {
+          exitId: "approve",
+          message: "Ship it after the cool-down.",
+        })).ok,
+      );
+      yield* f.close;
+      yield* TestClock.adjust(minutes(120));
+      f.t3.available = true;
+
+      // Act
+      const reopened = yield* openOnTestClock(f);
+
+      // Assert
+      const run = yield* runAfterWake(reopened.factory, f.worker.runId, launchedBlock("spec"));
+      expect(run.waitArrivals).toMatchObject([
+        {
+          state: "forwarded",
+          forwardReason: "elapsed",
+          startedAt: at("09:00"),
+          deadlineAt: at("09:30"),
+          settledAt: at("11:00"),
+        },
+      ]);
+      expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(2);
+      expect(
+        run.events.map((event) => event.kind).filter((kind) => kind.startsWith("wait-")),
+      ).toStrictEqual(["wait-started", "wait-elapsed"]);
+    }),
+);
+
 it.effect("a Wait forwards at its deadline while T3 is unavailable", (c) =>
   Effect.gen(function* () {
     // Arrange

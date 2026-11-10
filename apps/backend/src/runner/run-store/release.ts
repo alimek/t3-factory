@@ -45,6 +45,21 @@ export function handoffReleased(
     : humanAnswered(sql, run.id, source);
 }
 
+/** When a released Handoff's source was durably released: its Final result version's release
+ * record, its Human answer, its Continuation's pass-through or its earlier Wait's forwarding;
+ * undefined while the source is not released. */
+export function handoffReleasedAt(sql: SqlClient.SqlClient, source: HandoffSource) {
+  const [, forwarder, forwardId] = /^(pass|wait):([^/]+)/.exec(source.cause) ?? [];
+  const query = source.report_id
+    ? sql`SELECT released_at AS at FROM result_releases WHERE report_id=${source.report_id}`
+    : source.occurrence_id
+      ? sql`SELECT settled_at AS at FROM human_occurrences WHERE id=${source.occurrence_id} AND state='answered'`
+      : forwarder === "pass"
+        ? sql`SELECT forwarded_at AS at FROM continuation_visits WHERE id=${forwardId} AND state='forwarded'`
+        : sql`SELECT settled_at AS at FROM wait_arrivals WHERE id=${forwardId ?? null} AND state='forwarded'`;
+  return Effect.map(query, ([row]) => row?.at as string | undefined);
+}
+
 /** A Final result version's worker thread (for a Continuation, the thread its prompt ran on), and
  * whether the version is still its activation's newest Final result; undefined when the version
  * does not exist. */

@@ -10,6 +10,7 @@ import type { RunnerDatabase } from "./database.ts";
 import { readRunRow } from "./database.ts";
 import { guardsHold, pendingHandoffHolds } from "./guards.ts";
 import type { Handoff } from "./records.ts";
+import { handoffReleasedAt } from "./release.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 /** Why a pending arrival is forwarded: elapsed deadline or an early user action. */
@@ -99,12 +100,12 @@ function forwardToRecipients(
 export function openRunWaits(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
 
-  /** Turns a released Handoff to a Wait into a pending arrival due after the Wait's captured
-   * duration. `current` is the snapshot the caller read the release at. Guards: owner, not
-   * Archived, live authorization context, open gate and `current`'s generation; the Handoff is
-   * still pending, so a repeated attempt records nothing. Acknowledges the Handoff, moving its
-   * message to the arrival, sets the Wait waiting, appends "wait started" and advances the
-   * generation. Answers the arrival recorded, if any. */
+  /** Turns a released Handoff to a Wait into a pending arrival due the Wait's captured duration
+   * after the Handoff's release. `current` is the snapshot the caller read the release at.
+   * Guards: owner, not Archived, live authorization context, open gate and `current`'s
+   * generation; the Handoff is still pending, so a repeated attempt records nothing.
+   * Acknowledges the Handoff, moving its message to the arrival, sets the Wait waiting, appends
+   * "wait started" and advances the generation. Answers the arrival recorded, if any. */
   function handoffToWaitArrival(current: RunRow, handoff: Handoff) {
     return database.mutate(current.id, (sql) =>
       Effect.gen(function* (): Effect.fn.Return<PendingWait | undefined, unknown> {
@@ -117,11 +118,15 @@ export function openRunWaits(database: RunnerDatabase) {
         const duration = block?.kind === "wait" ? waitDurationMinutes(block.duration) : null;
         if (duration === null) throw Error("Arrival target is not a ready Wait");
         const message = (JSON.parse(handoff.payload_json) as { message: string }).message;
+        // Counting starts at the durable release, so a restart or a slow dispatch between release
+        // and this arrival does not shift the deadline.
+        const startedAt = yield* handoffReleasedAt(sql, handoff);
+        if (!startedAt) throw Error("Arrival Handoff is not released");
         const id = yield* newId,
           time = yield* now;
-        const deadline = new Date(Date.parse(time) + duration * 60_000).toISOString();
+        const deadline = new Date(Date.parse(startedAt) + duration * 60_000).toISOString();
         yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,source_block_id,report_id,binding_id,origin_activation_id,message,state,started_at,deadline_at)
-          VALUES(${id},${current.id},${handoff.block_id},${handoff.id},${handoff.source_block_id},${yield* arrivalReport(sql, handoff)},${handoff.binding_id},${handoff.origin_activation_id},${message},'pending',${time},${deadline})`;
+          VALUES(${id},${current.id},${handoff.block_id},${handoff.id},${handoff.source_block_id},${yield* arrivalReport(sql, handoff)},${handoff.binding_id},${handoff.origin_activation_id},${message},'pending',${startedAt},${deadline})`;
         yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
         yield* writeBlockState(sql, { runId: current.id, blockId: handoff.block_id }, "waiting", {
           freshness: "fresh",
