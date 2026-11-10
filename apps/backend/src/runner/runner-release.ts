@@ -1,8 +1,8 @@
 import { releaseResult } from "./result-release.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import * as Effect from "effect/Effect";
-import type { ExecutionObservation, T3Adapter } from "./adapters/t3.ts";
-import type { Delivery, Handoff, RunStore } from "./runner/run-store/run-store.ts";
+import type { ExecutionObservation, T3Adapter } from "../adapters/t3.ts";
+import type { Delivery, Handoff, RunStore } from "./run-store/run-store.ts";
 import type { RunRow } from "./runner-types.ts";
 
 /** A thread T3 shows with no run and no native request has no earlier turn to wait for, as an idle

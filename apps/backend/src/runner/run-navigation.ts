@@ -7,11 +7,11 @@ import {
 } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
-import { currentWorkingMessages, type RunnerDatabase } from "./runner/run-store/run-store.ts";
-import { failure } from "./result.ts";
-import { readWorkerRepositories } from "./worker-repositories.ts";
-import { storedProjectIcon } from "./projects.ts";
-import { projectFaviconUrl } from "./project-favicon.ts";
+import { currentWorkingMessages, type RunnerDatabase } from "./run-store/run-store.ts";
+import { failure } from "../result.ts";
+import { readWorkerRepositories } from "./run-store/worker-repositories.ts";
+import { storedProjectIcon } from "../projects.ts";
+import { projectFaviconUrl } from "../project-favicon.ts";
 export function openRunNavigation(
   database: RunnerDatabase,
   getRun: (id: string) => Effect.Effect<Result<RunDetail>, unknown>,

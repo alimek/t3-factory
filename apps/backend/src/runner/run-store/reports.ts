@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
-import { nonFinalRejection, reportFingerprint, reportRoute } from "../../report-rules.ts";
-import { readRunDefinitions } from "../../run-definitions.ts";
-import type { ReportRunRow } from "../../runner-types.ts";
-import { rejected } from "../../runner-utils.ts";
+import { nonFinalRejection, reportFingerprint, reportRoute } from "../report-rules.ts";
+import { readRunDefinitions } from "./run-definitions.ts";
+import type { ReportRunRow } from "../runner-types.ts";
+import { rejected } from "../runner-utils.ts";
 import { resolveBlock } from "../../runtime-block-id.ts";
 import {
   acceptedTransition,
@@ -17,7 +17,7 @@ import { repeatedReport, settleForReport } from "./current-report.ts";
 import { createHeldHandoffs } from "./handoffs.ts";
 import type { ReportTarget } from "./records.ts";
 import { recordReportVerdict } from "./report-diagnostics.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import { returnToActive } from "./settlement.ts";
 import type { BlockState } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";

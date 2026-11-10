@@ -1,4 +1,4 @@
-import { threadHref } from "./thread-link.ts";
+import { threadHref } from "../../thread-link.ts";
 import type { RunAttention } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";

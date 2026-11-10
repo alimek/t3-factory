@@ -2,16 +2,16 @@ import type { RunAttention, RunPullRequest } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import type * as SqlClient from "effect/sql/SqlClient";
-import { blockState, failedRun, missingReport } from "../../observation-rules.ts";
-import type { BlockRow, RunRow } from "../../runner-types.ts";
+import { blockState, failedRun, missingReport } from "../observation-rules.ts";
+import type { BlockRow, RunRow } from "../runner-types.ts";
 import { now } from "../../time.ts";
-import type { WorkerThread } from "../../worker-thread.ts";
+import type { WorkerThread } from "../worker-thread.ts";
 import { recordActivationPhase } from "./activations.ts";
 import { observeAttention, settlePendingAttention } from "./attention.ts";
 import { currentReports } from "./current-report.ts";
 import { refreshWorkerLink } from "./deliveries.ts";
 import { guardsHold } from "./guards.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 const comparePullRequests = (a: RunPullRequest, b: RunPullRequest) =>

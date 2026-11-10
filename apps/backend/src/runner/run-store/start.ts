@@ -7,9 +7,9 @@ import { currentAgentRevisionNumber } from "../../agent-revisions.ts";
 import { currentFlowRevisionNumber } from "../../flow-revisions.ts";
 import { failure } from "../../result.ts";
 import { attachRunImages, stagedManifestProblem, workerPromptText } from "../../run-images.ts";
-import { worktreeBranch, type RunWorkspace } from "../../run-workspace.ts";
+import { worktreeBranch, type RunWorkspace } from "../run-workspace.ts";
 import { createEntryLaunches } from "./activations.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
 /** The workspace a Start accepts: worktree Runs carry the base ref resolved before acceptance. */

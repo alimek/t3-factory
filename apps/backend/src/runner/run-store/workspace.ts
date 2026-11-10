@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
-import type { RunRow } from "../../runner-types.ts";
-import { runTarget } from "../../runner-utils.ts";
-import type { RunWorkspace } from "../../run-workspace.ts";
+import type { RunRow } from "../runner-types.ts";
+import { runTarget } from "../runner-utils.ts";
+import type { RunWorkspace } from "../run-workspace.ts";
 import { now } from "../../time.ts";
 import { createEntryLaunches } from "./activations.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import { advanceGeneration } from "./steps.ts";
 
 /** The worktree T3 showed on the creator's worker thread. */

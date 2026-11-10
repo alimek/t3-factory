@@ -1,7 +1,7 @@
 import { releaseResult } from "./result-release.ts";
-import type { T3Adapter } from "./adapters/t3.ts";
+import type { T3Adapter } from "../adapters/t3.ts";
 import * as Effect from "effect/Effect";
-import type { Handoff, RunStore } from "./runner/run-store/run-store.ts";
+import type { Handoff, RunStore } from "./run-store/run-store.ts";
 import type { RunRow } from "./runner-types.ts";
 import { launchStrategy } from "./run-workspace.ts";
 

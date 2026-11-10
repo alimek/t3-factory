@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { ExecutionObservation, LaunchCandidate, LaunchPayload } from "./adapters/t3.ts";
+import type { ExecutionObservation, LaunchCandidate, LaunchPayload } from "../adapters/t3.ts";
 
 /**
  * The workspace a Run's workers share. A checkout Run works in its project root. A worktree Run's

@@ -1,7 +1,7 @@
 import type { RunDefinitions } from "@t3-factory/contracts";
 import { effectiveExits } from "@t3-factory/domain-validation";
 import { fingerprint, rejected } from "./runner-utils.ts";
-import type { RuntimeReport } from "./runtime-types.ts";
+import type { RuntimeReport } from "../runtime-types.ts";
 
 /** Exact exit names and identities resolve against the Run's captured definitions, never a later
  * edit. */

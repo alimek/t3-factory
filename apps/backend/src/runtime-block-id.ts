@@ -1,6 +1,6 @@
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as Effect from "effect/Effect";
-import type { BlockRow } from "./runner-types.ts";
+import type { BlockRow } from "./runner/runner-types.ts";
 import type { RuntimeReply } from "./runtime-types.ts";
 
 /** The Block id from a Factory MCP call; `fields` are the other arguments the tool accepts. */

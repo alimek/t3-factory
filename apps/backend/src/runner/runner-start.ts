@@ -1,6 +1,6 @@
 import { entryMessagesTooLong } from "./runner-block-workers.ts";
-import type { EffectOperations } from "./effect-operations.ts";
-import { newId } from "./ids.ts";
+import type { EffectOperations } from "../effect-operations.ts";
+import { newId } from "../ids.ts";
 import type {
   FactoryOperations,
   FactoryProject,
@@ -23,13 +23,13 @@ import {
 } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { T3Adapter } from "./adapters/t3.ts";
-import { failure } from "./result.ts";
-import type { RunStore, StartPlan, StartWorkspace } from "./runner/run-store/run-store.ts";
+import type { T3Adapter } from "../adapters/t3.ts";
+import { failure } from "../result.ts";
+import type { RunStore, StartPlan, StartWorkspace } from "./run-store/run-store.ts";
 import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
-import { isLocalEndpoint } from "./endpoint-local.ts";
-import { now } from "./time.ts";
+import { isLocalEndpoint } from "../endpoint-local.ts";
+import { now } from "../time.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;

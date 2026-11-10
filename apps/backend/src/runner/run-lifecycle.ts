@@ -1,6 +1,6 @@
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import { failure } from "./result.ts";
+import { failure } from "../result.ts";
 import type { RunnerLifecycle } from "./runner-types.ts";
 
 /**

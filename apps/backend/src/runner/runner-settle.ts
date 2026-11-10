@@ -1,7 +1,7 @@
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import type { T3Adapter } from "./adapters/t3.ts";
-import type { RunStore } from "./runner/run-store/run-store.ts";
+import type { T3Adapter } from "../adapters/t3.ts";
+import type { RunStore } from "./run-store/run-store.ts";
 import { changeLifecycle } from "./run-lifecycle.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
 import { recoverOperation } from "./runner-effects.ts";

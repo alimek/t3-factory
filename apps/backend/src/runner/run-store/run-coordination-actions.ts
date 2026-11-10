@@ -1,7 +1,7 @@
 import type { RunCoordinationActions } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { RunRow } from "./runner-types.ts";
+import type { RunRow } from "../runner-types.ts";
 
 export function readCoordinationActions(sql: SqlClient.SqlClient, run: RunRow) {
   return Effect.gen(function* () {

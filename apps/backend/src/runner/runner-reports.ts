@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import type { RunnerLifecycle } from "./runner-types.ts";
-import type { RuntimeReply, RuntimeReport } from "./runtime-types.ts";
-import type { RunStore } from "./runner/run-store/run-store.ts";
+import type { RuntimeReply, RuntimeReport } from "../runtime-types.ts";
+import type { RunStore } from "./run-store/run-store.ts";
 
 export function openRunnerReports(store: RunStore, lifecycle: RunnerLifecycle) {
   function consumeBlockUpdate(publicId: string, report: RuntimeReport) {

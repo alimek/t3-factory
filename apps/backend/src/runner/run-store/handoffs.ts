@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
-import type { RunRow } from "../../runner-types.ts";
-import { fingerprint, runTarget } from "../../runner-utils.ts";
+import type { RunRow } from "../runner-types.ts";
+import { fingerprint, runTarget } from "../runner-utils.ts";
 import type { ResultRecord } from "./records.ts";
 import { appendTimelineEvent } from "./steps.ts";
 

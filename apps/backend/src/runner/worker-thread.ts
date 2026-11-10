@@ -1,4 +1,4 @@
-import type { ExecutionObservation, T3Adapter } from "./adapters/t3.ts";
+import type { ExecutionObservation, T3Adapter } from "../adapters/t3.ts";
 import type { RunRow } from "./runner-types.ts";
 import { inRunWorkspace } from "./run-workspace.ts";
 import { runTarget } from "./runner-utils.ts";

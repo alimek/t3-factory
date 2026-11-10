@@ -1,6 +1,6 @@
 import type { ProjectCatalog, Result } from "@t3-factory/contracts";
 import { createHash } from "node:crypto";
-import type { T3Target } from "./adapters/t3.ts";
+import type { T3Target } from "../adapters/t3.ts";
 import type { Checked, RunRow } from "./runner-types.ts";
 export const fingerprint = (content: string) => createHash("sha256").update(content).digest("hex");
 export const verified = <A>(value: A): Checked<A> => ({ ok: true, value });

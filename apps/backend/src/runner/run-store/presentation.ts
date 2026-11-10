@@ -1,6 +1,6 @@
 import type { Result, RunPresentation } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import { withLifecycle } from "./lifecycle.ts";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";

@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
-import type { T3Adapter } from "./adapters/t3.ts";
-import type { RunStore } from "./runner/run-store/run-store.ts";
+import type { T3Adapter } from "../adapters/t3.ts";
+import type { RunStore } from "./run-store/run-store.ts";
 import type { BlockRow, RunRow } from "./runner-types.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { bindRunWorkspace } from "./run-workspace-binding.ts";

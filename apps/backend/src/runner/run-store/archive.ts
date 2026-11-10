@@ -2,14 +2,14 @@ import type { Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";
-import type { HumanRow } from "../../runner-types.ts";
+import type { HumanRow } from "../runner-types.ts";
 import { now } from "../../time.ts";
 import { settleAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
 import { withLifecycle } from "./lifecycle.ts";
 import { clearSnooze } from "./presentation.ts";
 import type { DeliveryRecord } from "./records.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import type { BlockState, DeliveryState } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 

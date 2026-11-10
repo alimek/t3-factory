@@ -1,11 +1,11 @@
 import * as Effect from "effect/Effect";
 import type { RunDetail, RunImageMimeType } from "@t3-factory/contracts";
 import { effectiveExits } from "@t3-factory/domain-validation";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
-import { OPEN_TRANSITIONS, type RuntimeReply } from "./runtime-types.ts";
-import { reportDiagnostic } from "./runtime-report-diagnostic.ts";
-import { blockIdArgument, resolveBlock } from "./runtime-block-id.ts";
-import type { RunImages } from "./run-images.ts";
+import type { RunnerDatabase } from "./run-store/run-store.ts";
+import { OPEN_TRANSITIONS, type RuntimeReply } from "../runtime-types.ts";
+import { reportDiagnostic } from "../runtime-report-diagnostic.ts";
+import { blockIdArgument, resolveBlock } from "../runtime-block-id.ts";
+import type { RunImages } from "../run-images.ts";
 
 type ImageRow = {
   image_id: string;

@@ -1,4 +1,4 @@
-import type { BlockRow, ReportRunRow } from "../../runner-types.ts";
+import type { BlockRow, ReportRunRow } from "../runner-types.ts";
 import type { DeliveryKind, DeliveryState, HandoffState } from "./states.ts";
 
 /**

@@ -1,7 +1,7 @@
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import { failure } from "./result.ts";
-import type { RunStore } from "./runner/run-store/run-store.ts";
+import { failure } from "../result.ts";
+import type { RunStore } from "./run-store/run-store.ts";
 import type { RunnerLifecycle } from "./runner-types.ts";
 export function openRunnerHuman(store: RunStore, lifecycle: RunnerLifecycle) {
   const { isClosed, drive, getRun } = lifecycle;

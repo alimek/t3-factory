@@ -1,18 +1,18 @@
 import { dispatchBlockLaunch } from "./runner-block-workers.ts";
 import { prepareCoordinatorHandoff } from "./runner-coordinator-handoffs.ts";
-import type { EffectOperations } from "./effect-operations.ts";
+import type { EffectOperations } from "../effect-operations.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { recoveryDispatchGeneration } from "./runner-recovery.ts";
 import type { FactoryOperations } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { SendPayload, SendReference, T3Adapter } from "./adapters/t3.ts";
-import type { Delivery, Handoff, RunStore } from "./runner/run-store/run-store.ts";
+import type { SendPayload, SendReference, T3Adapter } from "../adapters/t3.ts";
+import type { Delivery, Handoff, RunStore } from "./run-store/run-store.ts";
 import type { BlockRow, Checked, RunnerOptions, RunRow, StoredTarget } from "./runner-types.ts";
 import { catalogProject, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
 import { activatePendingHumanHandoff, reservePendingExplicitHandoff } from "./runner-release.ts";
 import { inRunWorkspace } from "./run-workspace.ts";
-import type { RunImages } from "./run-images.ts";
+import type { RunImages } from "../run-images.ts";
 /** Uncertain work may be replayed only within the retry scope recorded at reservation. */
 const replayUnproven = (delivery: Delivery, retryScope: string | null) =>
   delivery.state !== "pending" && (!delivery.retry_scope || delivery.retry_scope !== retryScope);

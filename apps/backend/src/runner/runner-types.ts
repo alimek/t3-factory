@@ -7,7 +7,7 @@ import type {
   RunDefinitions,
   RuntimeReadiness,
 } from "@t3-factory/contracts";
-import type { T3Target } from "./adapters/t3.ts";
+import type { T3Target } from "../adapters/t3.ts";
 import type { RunWorkspace } from "./run-workspace.ts";
 
 /** A Run's row with the definitions it captured at Start. */

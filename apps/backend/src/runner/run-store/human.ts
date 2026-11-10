@@ -2,13 +2,13 @@ import type { Result } from "@t3-factory/contracts";
 import { HUMAN_EXITS } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import { failure } from "../../result.ts";
-import type { HumanRow } from "../../runner-types.ts";
-import { fingerprint } from "../../runner-utils.ts";
+import type { HumanRow } from "../runner-types.ts";
+import { fingerprint } from "../runner-utils.ts";
 import { now } from "../../time.ts";
 import { settleHumanAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
 import { createHeldHandoffs } from "./handoffs.ts";
-import { readRunRow, type RunnerDatabase } from "./runner-database.ts";
+import { readRunRow, type RunnerDatabase } from "./database.ts";
 import type { BlockState } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 

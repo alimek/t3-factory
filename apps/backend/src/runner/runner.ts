@@ -7,11 +7,11 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { EffectOperations } from "./effect-operations.ts";
-import type { T3Adapter } from "./adapters/t3.ts";
-import { failure } from "./result.ts";
+import type { EffectOperations } from "../effect-operations.ts";
+import type { T3Adapter } from "../adapters/t3.ts";
+import { failure } from "../result.ts";
 import type { BlockRow, RunnerOptions, RunRow } from "./runner-types.ts";
-import { openRunStore } from "./runner/run-store/run-store.ts";
+import { openRunStore } from "./run-store/run-store.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
 import { openRunnerObservation } from "./runner-observation.ts";
@@ -22,8 +22,8 @@ import { openRunnerArchive } from "./runner-archive.ts";
 import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
-import type { LiveChanges } from "./live-changes.ts";
-import type { RunImages } from "./run-images.ts";
+import type { LiveChanges } from "../live-changes.ts";
+import type { RunImages } from "../run-images.ts";
 
 /** One scoped Runner owner. Accepted work drains before SQL and ownership are released. */
 export const makeRunner = Effect.fn("Runner.make")(function* (

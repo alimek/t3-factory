@@ -1,9 +1,9 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { RunRow } from "../../runner-types.ts";
+import type { RunRow } from "../runner-types.ts";
 import { now } from "../../time.ts";
 import { guardsHold } from "./guards.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
 /** Where a Handoff comes from: a Final result version, or else a Human occurrence's answer. */

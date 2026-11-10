@@ -2,7 +2,7 @@ import type { Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./database.ts";
 
 type Lifecycle = { readonly archived_at: string | null; readonly settled_at: string | null };
 

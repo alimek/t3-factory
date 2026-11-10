@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { RunRow } from "../../runner-types.ts";
-import { readRunDefinitions } from "../../run-definitions.ts";
-import { readRunWorkspace } from "../../run-workspace.ts";
+import type { RunRow } from "../runner-types.ts";
+import { readRunDefinitions } from "./run-definitions.ts";
+import { readRunWorkspace } from "../run-workspace.ts";
 import type { LiveChanges } from "../../live-changes.ts";
 import { guardsHold } from "./guards.ts";
 
