@@ -45,6 +45,21 @@ GitHub ruleset setting; adding a workflow alone does not enable that requirement
 
 Run `pnpm check` from the repository root for the same sequence locally.
 
+The separate **Git attribution** status runs the same validator on PR open,
+edit, reopen and synchronization events with checkout history and pinned Node,
+without installing dependencies, building or running behavior tests. Its
+concurrency group is separate from Quality's. During this deployment overlap,
+**Quality gate** still runs the validator on PR events, including edits. The owner
+must require **Git attribution** in the `main` ruleset through
+[#203](https://github.com/alimek/t3-factory/issues/203) before
+[#204](https://github.com/alimek/t3-factory/issues/204) removes the duplicate PR
+invocation and code runs for metadata-only edits.
+
+**Controlled UI journeys** is a separate PR check that runs the complete
+controlled Chromium suite, or reports an explicit not-applicable success for
+documentation/review-only changes; see [PR journey check](testing.md#pr-journey-check).
+Release/beta journeys and the local pre-push gate are unchanged.
+
 For frontend changes, **UI evidence attachments** runs
 `scripts/check-ui-evidence.mjs --pr <number>` to check the PR body's Before and
 After image links. Run the same check locally with

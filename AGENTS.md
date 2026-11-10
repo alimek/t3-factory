@@ -1,5 +1,7 @@
 ## Agent instructions
 
+**Commit with the configured Git identity. Contributor commits and PR squash input carry no agent attribution, agent identities or `Co-Authored-By` trailers.** The full rule and its narrow Release automation exception are in [Git identity and squash input](docs/quality-gates.md#git-identity-and-squash-input).
+
 ### Implementation
 
 - Implement the current request in the module that owns the behavior. Keep refactors local to what the change needs; leave unrelated cleanup out of the diff.

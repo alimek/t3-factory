@@ -134,6 +134,30 @@ their cause; do not add retries or larger per-test timeouts.
   Use AAA when adding or changing E2E tests; the current behavior-test cleanup does
   not require migrating untouched E2E journeys.
 
+### PR journey check
+
+The **Controlled UI journeys** PR check runs the complete existing suite with one
+worker after a frozen install, build and Chromium installation. Browser installation
+and journey execution are separate Actions steps so their durations are distinguishable.
+It runs on PR open, reopen, synchronization and becoming ready for review, including
+drafts and forks, without model or production credentials.
+
+Selection compares the head commit with its merge base on the event's base commit, including deleted paths and
+both sides of renames. Only an entirely documentation/review-only diff skips:
+indexed prose under `docs/`, root prose documents, the PR description template and
+reviewer configuration and rules; `scripts/select-ui-journeys.mjs` holds the exact
+allowlist. Every other path, including verification skills, landing source and
+unknown paths, runs the suite; an empty diff also runs.
+Failed file enumeration fails selection. The final check succeeds only for an
+explicit skip or a successful full run, never a failed selection or unexpected skip.
+
+Failures upload available reports and traces from `.e2e/ci/` and fixture logs from
+`.e2e/logs/` as `ui-journeys-<run_id>-<run_attempt>`, including hidden files, for
+seven days. Setup failures may occur before those files exist. Download them from
+the Actions run. CI does not replace Before/After UI evidence or prove live provider,
+native desktop or remote-device compatibility. Requiring the check is an owner
+ruleset step tracked in [#203](https://github.com/alimek/t3-factory/issues/203).
+
 ## Database upgrade baseline
 
 Keep one representative captured database from the supported released

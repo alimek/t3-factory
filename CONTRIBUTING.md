@@ -71,6 +71,9 @@ pnpm build
 pnpm test:e2e
 ```
 
+PRs also receive the **Controlled UI journeys** check; see
+[PR journey check](docs/testing.md#pr-journey-check) for what it selects and proves.
+
 Browser installation may be needed on first use; see [UI verification](docs/testing.md#ui-verification).
 Controlled tests do not certify live provider compatibility. Do not run paid
 workloads or change real harness configuration as part of routine verification.

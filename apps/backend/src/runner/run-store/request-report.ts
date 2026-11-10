@@ -13,15 +13,14 @@ import { settleReportRejections } from "./report-diagnostics.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
-/** A Request report the caller checked against Run detail read at `generation` and T3. */
+/** A Request report the caller checked against Run detail and T3. */
 type RequestReport = {
   readonly blockId: string;
   readonly threadId: string;
   /** The completed run of the worker thread the report is requested for. */
   readonly executionId: string;
-  /** The Block's current activation, which must still have no result. */
+  /** The Block's current activation, which must still be its latest and have no result. */
   readonly activationId: string;
-  readonly generation: number;
 };
 
 /** A Request report link whose recovery chain ended in `executionId`'s report. */
@@ -38,9 +37,11 @@ export function openRunRequestReport(database: RunnerDatabase) {
   /** Accepts a Request report: a send delivery to the Block's idle worker thread, linked to the
    * requested run and to its pending missing-report Problem. A link already recorded for that run
    * answers accepted. Guards: owner, not Archived, `current`'s authorization context is live and
-   * the gate is open; then the request's generation holds, the Block's run is still the completed
-   * one on that thread, its activation has no result and no Handoff or delivery is unresolved on
-   * the Block. Appends "report recovery requested" and advances the generation. */
+   * the gate is open; then the Block's run is still the completed one on that thread, its
+   * activation is still its latest and has no result, and no Handoff or delivery is unresolved on
+   * the Block. These facts, not the Run generation, guard the request: a periodic observation that
+   * found the worker unchanged advances the generation during the caller's T3 check. Appends
+   * "report recovery requested" and advances the generation. */
   function acceptRequestReport(current: RunRow, request: RequestReport) {
     const { blockId, threadId, executionId } = request;
     return database.mutate(current.id, (sql) =>
@@ -52,7 +53,8 @@ export function openRunRequestReport(database: RunnerDatabase) {
           return failure("conflict", "The Run is stopped, closed, or its authorization changed.");
         const eligible =
           yield* sql`SELECT r.id FROM runs r JOIN run_blocks b ON b.run_id=r.id JOIN run_executions e ON e.run_id=r.id AND e.block_id=b.block_id AND e.execution_id=b.execution_id
-        WHERE r.id=${current.id} AND r.generation=${request.generation} AND b.block_id=${blockId} AND b.execution_id=${executionId} AND e.engine_status='completed' AND e.thread_id=${threadId}
+        WHERE r.id=${current.id} AND b.block_id=${blockId} AND b.execution_id=${executionId} AND e.engine_status='completed' AND e.thread_id=${threadId}
+        AND ${request.activationId}=(SELECT id FROM run_activations WHERE run_id=r.id AND block_id=b.block_id ORDER BY rowid DESC LIMIT 1)
         AND NOT EXISTS(SELECT 1 FROM runtime_reports WHERE activation_id=${request.activationId})`;
         if (!eligible.length || (yield* blockHasUnresolvedWork(sql, current.id, blockId)))
           return failure(
