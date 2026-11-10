@@ -40,8 +40,10 @@ can interact with live T3; ordinary `pnpm dev` is the default contribution envir
   Keep one authoritative description per topic and repair relative links.
 - Follow [persistence rules](docs/foundation.md#sql-migrations) for stored-data changes,
   including a migration and upgrade evidence for changed stored shapes.
-- When changing user-visible states or demo data, follow the
-  [development-scenario workflow](docs/dev-scenarios.md).
+- When the demo needs a new or changed user-visible state, maintain its seed scenario
+  through the [development-scenario workflow](docs/dev-scenarios.md). Run
+  `pnpm scenarios:catalog` when the seed list changes instead of editing the generated
+  Run catalog.
 - Keep credentials, user data, raw logs, screenshots and machine-specific execution
   reports out of Git. Use ignored `.e2e/` storage and summarize verification in the PR.
 
@@ -53,8 +55,8 @@ Run the same command used by CI and the pre-push hook:
 pnpm check
 ```
 
-It checks formatting, fallow findings, the workspace build, lint, types and behavior
-tests. Fix failures at their cause; do not suppress findings, introduce baselines or
+It checks formatting, the generated scenario catalog, fallow findings, the workspace
+build, lint, types and behavior tests. Fix failures at their cause; do not suppress findings, introduce baselines or
 bypass hooks. Use `pnpm format` for formatter changes and review its diff.
 See [quality gates](docs/quality-gates.md) for troubleshooting.
 

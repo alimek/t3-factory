@@ -103,7 +103,7 @@ connection selected, Delete/Backspace (outside form controls) or the **Delete co
 
 **Exits.** An Agent block offers its Agent's exits, minus those hidden in this Flow, followed by its Flow-local exits; inherited exits cannot be edited in a Flow. Hiding exits and adding
 Flow-local exits are stored with the Flow revision. **Exits from Agent** shows read-only names, descriptions and message requirements, with **Hide in this Flow** / **Show in this Flow**.
-Hidden rows remain visible in the panel but are absent from worker choices and cannot start new connections. Hiding a wired exit preserves its connection and reports a readiness issue until the exit is shown or the wire removed.
+Hidden rows remain visible in the panel but are absent from worker choices and cannot start new connections; they still reserve their names and IDs against local exits. Hiding a wired exit preserves its connection and reports a readiness issue until the exit is shown or the wire removed.
 Wired hidden or removed exits keep a separate, unavailable canvas endpoint marked **Agent · hidden** or **Agent · removed**, so their wires never appear to leave a usable exit.
 **Local exits · only in this Flow** offers editable name, description and message-required cards and **Add local exit**. Removing a local exit removes its connections.
 Changes to the saved Agent appear on the next Flow read; Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked

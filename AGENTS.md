@@ -27,10 +27,13 @@ Write repository documentation in English and safe for public distribution. Keep
 
 ### Development scenarios
 
-When changing user-visible states, Run transitions, readiness, or demo data, follow
-[the development-seed workflow](docs/dev-scenarios.md) and update its
-scenario catalog in the same change. Keep verification artifacts in ignored
-`.e2e/` storage and summarize results in the PR.
+When the persistent demo needs a new or changed user-visible state, Run
+transition, readiness case or demo data, maintain its seed scenario through
+[the development-seed workflow](docs/dev-scenarios.md). Regenerate the Run
+catalog with `pnpm scenarios:catalog` only when the seed list changes; never
+hand-edit its generated rows. A UI change the existing seed already exposes
+needs no scenario edit. Keep verification artifacts in ignored `.e2e/` storage
+and summarize results in the PR.
 
 ### UI verification
 
