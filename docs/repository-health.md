@@ -120,7 +120,9 @@ The initial assessment, dated **2026-11-10**, uses source commit
 `48e21876d059c226933685dc22b3025ca20b63f2` and rubric v1. Each session performs
 a representative source review of all seven KPIs. The coordinator runs the
 quality gate separately; evaluators do not execute duplicate checks or live
-workloads. This is not a full security audit or live qualification.
+workloads. Opus and Sonnet additionally consulted that shared gate log; Sol,
+Grok and Astra used source evidence only. This method difference limits direct
+comparison. This is not a full security audit or live qualification.
 
 | Evaluator | Model identifier | Harness | Reasoning / effort |
 | --- | --- | --- | --- |
@@ -133,23 +135,24 @@ workloads. This is not a full security audit or live qualification.
 These configurations were requested and accepted by the dispatcher. Completed
 sessions reported the selected model and harness as their runtime identity;
 underlying provider deployments and application of effort settings were not
-independently attested. Opus and Sonnet both failed before returning an assessment
-with **Claude API rate limit reached**. They were not replaced or assigned scores.
+independently attested. Opus and Sonnet initially failed with **Claude API rate
+limit reached**; later attempts returned assessments using the same selected
+models and settings. All five configurations therefore have results below.
 
 ### Original scores
 
 | KPI | Sol | Opus | Sonnet | Grok | Astra |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| K1 Architecture and ease of change | 9 | N/A | N/A | 10 | 9 |
-| K2 Simplicity and readability | 9 | N/A | N/A | 9 | 9 |
-| K3 Test quality | 9 | N/A | N/A | 10 | 9 |
-| K4 Reliability and data preservation | 8 | N/A | N/A | 10 | 8 |
-| K5 Security | 10 | N/A | N/A | 10 | 10 |
-| K6 Developer workflow | 10 | N/A | N/A | 9 | 10 |
-| K7 Documentation and terminology | 8 | N/A | N/A | 9 | 9 |
+| K1 Architecture and ease of change | 9 | 8 | 8 | 10 | 9 |
+| K2 Simplicity and readability | 9 | 8 | 7 | 9 | 9 |
+| K3 Test quality | 9 | 9 | 8 | 10 | 9 |
+| K4 Reliability and data preservation | 8 | 9 | 9 | 10 | 8 |
+| K5 Security | 10 | 9 | 8 | 10 | 10 |
+| K6 Developer workflow | 10 | 8 | 8 | 9 | 10 |
+| K7 Documentation and terminology | 8 | 8 | 9 | 9 | 9 |
 
 Confidence is **medium** for every completed score except Grok's K1, which is
-**high**. N/A means the session was unavailable. These are the original judgments,
+**high**. These are the original judgments,
 preserved after factual review; differences in sampled scope explain some of the
 disagreement. In particular, Grok did not identify the draft-image hypothesis
 behind Sol's and Astra's K1, K3 and K4 deductions.
@@ -158,13 +161,13 @@ behind Sol's and Astra's K1, K3 and K4 deductions.
 
 | KPI | Strengths and remaining blockers to 10 |
 | --- | --- |
-| K1 | Contracts, authoritative backend operations, Run-store transitions and T3 orchestration have distinct owners. Sol and Astra identified a local metadata/byte-cleanup ownership weakness in draft deletion (F1); Grok found no blocker in its sampled interfaces. |
-| K2 | Sampled transitions express domain decisions directly. All three noted retired coordinator terminology on current paths (F2); Grok also proposed simplifying historical SQL, which factual review did not establish as a defect. |
-| K3 | Sampled public-operation tests protect recovery, replacement, races and retained history. Sol and Astra identified missing image-byte assertions for stale whole-draft discard (F1); Grok found no blocker in the suites it sampled. |
-| K4 | Durable reservations, restart recovery, captured definitions and Archive guards support the documented contract. F1 is a source-supported client-draft preservation hypothesis, not reproduced loss of accepted Run data. Grok found no blocker in its sampled recovery paths. |
-| K5 | Sampled host/remote admission, credential, MCP, Origin and desktop TLS/IPC controls enforce their declared trust boundaries. No evaluator identified an unresolved violation within its inspected scope. Dependency advisories and live security remain unassessed. |
-| K6 | Pinned tooling, disposable fixtures and the ordered gate support reproducible verification. Sol and Astra found no blocker; Grok deducted for the documented temporary duplicate CI work on PR metadata edits (F4). |
-| K7 | The glossary and topic contracts largely match implementation. Current operator guidance contains concrete retired-contract contradictions and a protocol-exception omission (F3). Evaluators differed on which discrepancies they sampled and their impact. |
+| K1 | Contracts, authoritative backend operations, Run-store transitions and T3 orchestration have distinct owners. Sol and Astra identified local draft-deletion coordination weakness (F1). Opus and Sonnet questioned local Git ownership in the T3 adapter and retained interfaces; Grok found no blocker in its sample. |
+| K2 | Sampled transitions express domain decisions directly. All five noted retired coordinator terminology on current paths (F2). Opus and Sonnet also noted a misplaced composition-root comment and proposed separating adapter or Run-detail responsibilities. Size-based deductions alone were not accepted. |
+| K3 | Public-operation tests protect recovery, replacement, races and retained history. Sol and Astra found missing byte-preservation assertions (F1); Opus and Sonnet noted a real-time test wait (F5). Sonnet's broader test-policy objections were not all supported; Grok found no blocker in its sample. |
+| K4 | Durable reservations, restart recovery, captured definitions and Archive guards support the contract. F1 is a client-draft preservation hypothesis, not reproduced loss of accepted Run data. Opus noted an availability hypothesis; Sonnet's live-evidence gap limits confidence rather than demonstrating a defect. |
+| K5 | Sampled admission, credentials, MCP, Origin and desktop TLS/IPC controls showed no confirmed violated trust boundary. Opus and Sonnet raised security hypotheses and repository advisory-monitoring concerns (F5); these do not establish vulnerabilities. Dependency advisories and live security remain unassessed. |
+| K6 | Pinned tooling, disposable fixtures and the ordered gate support reproducible verification. Sol and Astra found no blocker; Grok noted duplicate CI work (F4). Opus and Sonnet deducted for gate cost and recurring build warnings (F5), without showing a broken verification path. |
+| K7 | The glossary and topic contracts largely match implementation. Operator guidance has retired-contract contradictions, protocol/host-only omissions and a stale creation-policy prerequisite (F3). Evaluators sampled different discrepancies and weighted them differently. |
 
 The coordinator checked the material deductions against the assessed source:
 
@@ -191,21 +194,39 @@ The coordinator checked the material deductions against the assessed source:
   Stop and describes only a project checkout rather than the current workspace
   choices. The [protocol exceptions](desktop-and-clients.md#protocol-compatibility)
   omit the Run-image read exception implemented by the server. These observations
-  do not establish an authorization bypass.
+  do not establish an authorization bypass. The [Runner contract](runner.md)
+  also requires a creation-policy read the frontend no longer makes, and the
+  host-only route list omits runtime recheck. Opus identified these additional
+  mismatches; the corresponding routes still exist.
 - **F4 — confirmed configuration, conditional follow-up.** The quality workflow
   runs the full gate on PR `edited` events. The
   [quality-gate contract](quality-gates.md#ci-and-manual-checks) already explains
   the temporary overlap and its ruleset prerequisite. This is current workflow
   cost, not evidence that removing the check immediately is safe.
+- **F5 — additional observations and unresolved deductions.** A real 5 ms wait
+  exists in the launch-choice test; no flaky failure was observed. The shared
+  gate log confirms recurring IIFE-name and chunk-size warnings while the build
+  succeeds. Gate serialization and full pre-push checking are intentional current
+  policy; changing them needs its own justification. Advisory monitoring is
+  absent from repository npm workflow configuration, but external alert settings
+  were not inspected. Security and credential-file recovery hypotheses remain
+  unverified; no vulnerability, severity or public reproduction is established.
 
-The proposed historical SQL rewrite and CONTRIBUTING's prose enumeration of
-checks were not established as functional or contract defects; they do not form
-an agreed improvement requirement. Original model scores remain unchanged.
+Historical reads are required for retained closed Runs; their existence alone
+is not dead code. Lack of an in-tree frontend caller for a public HTTP operation
+does not prove that no supported external caller exists or authorize its removal.
+File/line/test counts, historical SQL formatting and CONTRIBUTING's enumeration
+of checks did not establish defects. Arrange may perform and check prerequisite
+operations under the testing policy; callback logic alone did not demonstrate a
+missing regression. These deductions do not form agreed improvement requirements.
+Original model scores remain unchanged, including deductions whose justification
+does not meet the rubric or still needs validation.
 No product, test or existing policy fixes were made as part of this baseline.
 
-All evaluator evidence was source-only. Independently, the coordinator ran
+Evaluators ran no checks themselves. Independently, the coordinator ran
 `pnpm check` successfully on the same product source with only this documentation
 change pending, and checked local documentation links and diff whitespace.
-Those results were not supplied to the independent evaluators or used to rewrite
-their scores. E2E journeys, rendered UI, native packaging, live T3, cross-device
+Opus and Sonnet read the shared log without its own revision stamp; the coordinator
+records its source revision here. No scores were rewritten using those results.
+E2E journeys, rendered UI, native packaging, live T3, cross-device
 operation and dependency advisories were not executed or qualified by this round.
