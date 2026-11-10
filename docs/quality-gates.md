@@ -46,8 +46,10 @@ GitHub ruleset setting; adding a workflow alone does not enable that requirement
 Title/body-only edits rerun **PR title**, **Git attribution** and, for frontend
 PRs, **UI evidence attachments**. They do not run or cancel the code gate and
 leave the existing **Quality gate** result for that revision in place: failed or
-missing results stay blocking. The skipped metadata-edit job uses a different
-check name so its skipped success cannot replace the required code result.
+missing results stay blocking. GitHub treats a skipped job as passing, so the
+Quality job's name is an expression that is **Quality gate** only when the job
+runs; GitHub lists the skipped metadata-edit job under that unevaluated
+expression, never as **Quality gate**.
 
 Run `pnpm check` from the repository root for the same sequence locally.
 
