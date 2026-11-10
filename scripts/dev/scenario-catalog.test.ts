@@ -35,7 +35,7 @@ function command(doc: string, ...args: string[]) {
 
 await test("adding an entry adds only its catalog row", async (context) => {
   // Arrange
-  const original = replaceCatalog(before + after, renderCatalog([one], ""));
+  const original = replaceCatalog("scenarios.md", before + after, renderCatalog([one], ""));
   const doc = await documentFixture(context, original);
 
   // Act
@@ -50,7 +50,7 @@ await test("adding an entry adds only its catalog row", async (context) => {
 
 await test("renaming an entry changes only its catalog row", async (context) => {
   // Arrange
-  const original = replaceCatalog(before + after, renderCatalog([one, two], ""));
+  const original = replaceCatalog("scenarios.md", before + after, renderCatalog([one, two], ""));
   const doc = await documentFixture(context, original);
 
   // Act
@@ -62,7 +62,7 @@ await test("renaming an entry changes only its catalog row", async (context) => 
 
 await test("removing an entry removes only its catalog row", async (context) => {
   // Arrange
-  const original = replaceCatalog(before + after, renderCatalog([one, two], ""));
+  const original = replaceCatalog("scenarios.md", before + after, renderCatalog([one, two], ""));
   const doc = await documentFixture(context, original);
 
   // Act
@@ -121,13 +121,13 @@ await test("duplicate markers fail generation without modifying the document", a
 
   // Assert
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /pnpm scenarios:catalog/);
+  assert.match(result.stderr, /Invalid scenario catalog markers.*Fix the marker lines by hand/);
   assert.equal(await readFile(doc, "utf8"), original);
 });
 
 await test("a marker split across lines fails check without modifying the document", async (context) => {
   // Arrange
-  const valid = replaceCatalog(before + after, renderCatalog([one], ""));
+  const valid = replaceCatalog("scenarios.md", before + after, renderCatalog([one], ""));
   const original = valid + "<!--\nscenario-catalog:start -->\n";
   const doc = await documentFixture(context, original);
 
@@ -136,7 +136,7 @@ await test("a marker split across lines fails check without modifying the docume
 
   // Assert
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /pnpm scenarios:catalog/);
+  assert.match(result.stderr, /Invalid scenario catalog markers.*Fix the marker lines by hand/);
   assert.equal(await readFile(doc, "utf8"), original);
 });
 
@@ -150,6 +150,6 @@ await test("malformed marker lines fail generation without modifying the documen
 
   // Assert
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /pnpm scenarios:catalog/);
+  assert.match(result.stderr, /Invalid scenario catalog markers.*Fix the marker lines by hand/);
   assert.equal(await readFile(doc, "utf8"), original);
 });

@@ -33,7 +33,7 @@ export function renderCatalog(entries: readonly Entry[], prefix: string): string
     .join("\n");
 }
 
-export function replaceCatalog(document: string, catalog: string): string {
+export function replaceCatalog(doc: string, document: string, catalog: string): string {
   // Any other mention of the marker name, including a comment split across lines, is malformed:
   // it must never be overwritten or silently dropped.
   const mentions = document.split(markerName).length - 1;
@@ -42,7 +42,7 @@ export function replaceCatalog(document: string, catalog: string): string {
   const end = lines.indexOf(endMarker);
   if (mentions !== 2 || start === -1 || end < start) {
     throw new Error(
-      `Expected one "${startMarker}" line followed by one "${endMarker}" line. ${regenerate}`,
+      `Invalid scenario catalog markers in ${doc}: expected one "${startMarker}" line followed by one "${endMarker}" line and no other mention of "${markerName}". Fix the marker lines by hand; only the rows between them are generated.`,
     );
   }
   return [...lines.slice(0, start + 1), "", catalog, "", ...lines.slice(end)].join("\n");
@@ -50,7 +50,7 @@ export function replaceCatalog(document: string, catalog: string): string {
 
 export async function updateCatalog(doc: string, catalog: string, check: boolean): Promise<void> {
   const original = await readFile(doc, "utf8");
-  const updated = replaceCatalog(original, catalog);
+  const updated = replaceCatalog(doc, original, catalog);
   if (original === updated) return;
   if (check) throw new Error(`Stale scenario catalog in ${doc}. ${regenerate}`);
   await writeFile(doc, updated);
