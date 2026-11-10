@@ -1,0 +1,87 @@
+name: UI journeys
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-journeys-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Select controlled UI journeys
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/select-ui-journeys.mjs "$BASE_SHA" "$HEAD_SHA"
+
+  journeys:
+    needs: select
+    if: needs.select.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install Chromium
+        run: pnpm exec e2e-web install chromium
+      - name: Check controlled UI journeys
+        run: pnpm exec e2e run --retries 0 --trace on --output .e2e/ci/journeys
+      - name: Keep failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-journeys-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .e2e/ci/
+            .e2e/logs/
+          include-hidden-files: true
+          retention-days: 7
+
+  result:
+    name: Controlled UI journeys
+    needs: [select, journeys]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require a successful journey run or explicit no-run decision
+        env:
+          SELECT_RESULT: ${{ needs.select.result }}
+          RUN_JOURNEYS: ${{ needs.select.outputs.run }}
+          JOURNEYS_RESULT: ${{ needs.journeys.result }}
+        run: |
+          if [[ "$SELECT_RESULT" == success ]] && {
+            [[ "$RUN_JOURNEYS" == false && "$JOURNEYS_RESULT" == skipped ]] ||
+            [[ "$RUN_JOURNEYS" == true && "$JOURNEYS_RESULT" == success ]]
+          }; then
+            echo "Controlled UI journeys: run=$RUN_JOURNEYS, result=$JOURNEYS_RESULT"
+          else
+            echo "::error::Controlled UI journeys did not pass: selection=$SELECT_RESULT, run=$RUN_JOURNEYS, journeys=$JOURNEYS_RESULT"
+            exit 1
+          fi

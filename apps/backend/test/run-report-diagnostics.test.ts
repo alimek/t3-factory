@@ -12,6 +12,7 @@ import {
   workerFinal,
 } from "./support/scenarios.ts";
 import { answerDelegatedWait } from "./support/controlled-thread.ts";
+import { sweepDuringNextThreadRead } from "./support/run-worker.ts";
 
 it("a rejected worker report explains the rejection without changing execution state or retaining its message", async (c) => {
   // Arrange
@@ -121,6 +122,24 @@ it("Request report refuses a stale missing-report Problem while delegated work i
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
   expect(run.value.recoveries).toStrictEqual([]);
+});
+
+it("Request report is accepted when a background sweep observes the unchanged worker during its check", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await missingReport(setup.world, atWork)) };
+  sweepDuringNextThreadRead(f.world);
+
+  // Act
+  const result = await f.f.requestReport(f.runId, { blockId: f.missing.blockId });
+
+  // Assert
+  assert(result.ok, JSON.stringify(result));
+  expect(result.value.recoveries).toMatchObject([
+    { blockId: f.missing.blockId, sourceExecutionId: "execution-1" },
+  ]);
+  expect(f.t3.sends.size).toBe(1);
 });
 
 it("repeated rejected reports keep one pending diagnostic without launching work", async (c) => {

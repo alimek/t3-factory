@@ -30,6 +30,8 @@ export type Result<A> =
 
 export interface CreateFlowInput {
   readonly name: string;
+  readonly graph?: FlowGraphInput;
+  readonly workspace?: FlowWorkspace;
 }
 
 /** A named result a Block finishes with. Wires leave by `id`, so renaming keeps them. */
@@ -78,6 +80,16 @@ export interface FlowGraph {
   readonly connections: readonly FlowConnection[];
   readonly flowInput: FlowInputBlock;
 }
+type OptionalPosition<B extends { readonly position: FlowBlock["position"] }> = B extends unknown
+  ? Omit<B, "position"> & { readonly position?: B["position"] }
+  : never;
+export type FlowBlockInput = OptionalPosition<FlowBlock>;
+/** Save/create input only: if any position is omitted, the server arranges the whole graph. */
+export interface FlowGraphInput {
+  readonly blocks: readonly FlowBlockInput[];
+  readonly connections: readonly FlowConnection[];
+  readonly flowInput: OptionalPosition<FlowInputBlock>;
+}
 /** Where a new worktree starts: the Project repository's default branch or a named Git ref. */
 export type FlowWorkspaceBase =
   | { readonly kind: "default" }
@@ -89,7 +101,7 @@ export type FlowWorkspace =
 export interface UpdateFlowInput {
   readonly name: string;
   readonly expectedRevision: number;
-  readonly graph: FlowGraph;
+  readonly graph: FlowGraphInput;
   /** Protocol 1–3 clients cannot see it and omit it; such a save keeps the saved setting. */
   readonly workspace?: FlowWorkspace;
 }

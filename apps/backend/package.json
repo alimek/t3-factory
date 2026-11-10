@@ -36,6 +36,7 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@t3-factory/contracts": "workspace:*",
     "@t3-factory/domain-validation": "workspace:*",
+    "@t3-factory/flow-layout": "workspace:*",
     "effect": "4.1.2",
     "fs-ext": "2.1.1",
     "smol-toml": "1.9.1"

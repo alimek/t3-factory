@@ -1,7 +1,7 @@
 import type {
   AgentDefinition,
   BlockExit,
-  FlowBlock,
+  FlowBlockInput,
   Result,
   ValidationIssue,
 } from "@t3-factory/contracts";
@@ -37,7 +37,7 @@ export interface EffectiveExit extends BlockExit {
 
 /** The exits of `block`'s Agent among `agents`; none when the reference is unset or unknown. */
 export function inheritedExits(
-  block: FlowBlock,
+  block: FlowBlockInput,
   agents: readonly Pick<AgentDefinition, "id" | "exits">[],
 ): readonly BlockExit[] {
   if (block.kind !== "agent") return [];
@@ -50,7 +50,7 @@ export function inheritedExits(
  * current saved ones for authoring, the captured revisions for a Run.
  */
 export function effectiveExits(
-  block: FlowBlock,
+  block: FlowBlockInput,
   agents: readonly Pick<AgentDefinition, "id" | "exits">[],
 ): EffectiveExit[] {
   if (block.kind === "human") return HUMAN_EXITS.map((exit) => ({ ...exit, source: "human" }));

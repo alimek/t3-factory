@@ -47,6 +47,18 @@ export function nextThreadInterrupt(t3: ControlledT3) {
   });
 }
 
+/** The next worker thread read, such as Request report's preflight, waits for a complete
+ * background sweep that observes the unchanged worker; reads during that sweep pass through. */
+export function sweepDuringNextThreadRead({ factory, t3 }: ScenarioWorld) {
+  const read = t3.readExecution.bind(t3);
+  let sweep: Promise<unknown> | undefined;
+  t3.readExecution = (...args) => {
+    if (sweep) return read(...args);
+    sweep = factory.reconcileRuns();
+    return sweep.then(() => read(...args));
+  };
+}
+
 /** A new working report arrives during the per-Block sweep's external completion read. */
 export function reopenDuringSettlement(world: ScenarioWorld, worker: WorkerHandle) {
   const { t3 } = world;

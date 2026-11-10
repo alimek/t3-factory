@@ -1,0 +1,22 @@
+{
+  "name": "@t3-factory/flow-layout",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "factory-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@t3-factory/contracts": "workspace:*",
+    "@t3-factory/domain-validation": "workspace:*",
+    "elkjs": "0.10.0"
+  }
+}

@@ -1,13 +1,37 @@
 import { resolveAgentModel } from "@t3-factory/domain-validation";
 import type { T3ProviderCapability } from "./adapters/t3.ts";
 import { providerReporting } from "./reporting-drivers.ts";
+import { failure } from "./result.ts";
 import type {
   AgentCapabilities,
   AgentExecutionSettingsStatus,
   AgentExecutionSettings,
   AgentSettingAvailability,
   AgentSettingStatus,
+  Result,
 } from "@t3-factory/contracts";
+
+/**
+ * A save may not choose a provider T3 offers but Factory cannot take reports from, as Studio's
+ * menu prevents. Providers T3 does not list right now are an availability matter for settings
+ * status, not a save error.
+ */
+export function unsupportedReportingFailure(
+  execution: AgentExecutionSettings,
+  capabilities: AgentCapabilities,
+): Result<never> | undefined {
+  const provider = capabilities.providers.find(
+    (entry) => entry.providerInstanceId === execution.providerInstanceId,
+  );
+  if (!provider || provider.reporting.supported) return undefined;
+  return failure("validation", provider.reporting.explanation, [
+    {
+      code: "harness_unsupported",
+      path: "execution.providerInstanceId",
+      message: "Choose a provider whose reporting is supported in Agent capabilities.",
+    },
+  ]);
+}
 
 export function agentSettingsStatus(
   execution: AgentExecutionSettings,
