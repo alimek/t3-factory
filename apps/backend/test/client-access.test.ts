@@ -1,7 +1,8 @@
 import { assert, expect, it } from "@effect/vitest";
 import type { FactoryClient, FlowDraft, RunDetail } from "@t3-factory/contracts";
 import { remotePrepared, remoteServer } from "./support/remote-clients.ts";
-import { imageStart, screenshots, sha256Hex, stageImages } from "./support/run-images.ts";
+import { imageStart, screenshots, stageImages } from "./support/run-images.ts";
+import { sha256Hex } from "./support/scenarios.ts";
 
 it("a remote read without an approved credential is refused before any operation", async (c) => {
   // Arrange

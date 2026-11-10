@@ -61,8 +61,10 @@ Rules:
   `if (!result.ok) throw`. Write a separate test per input case instead of
   looping over inputs.
 - **Shared setup lives in `test/support/` factories** (`factoryHarness`,
-  `prepared`, controlled T3). Extend a factory rather than copying setup between
-  tests; keep test bodies limited to what distinguishes the case.
+  `prepared`, controlled T3), with definition and report builders in
+  `test/support/scenarios.ts`. Extend a factory rather than copying setup between
+  tests; keep test bodies limited to what distinguishes the case. A named state serves
+  Arrange and is never a test's Act.
 
 ```ts
 import { assert, expect, it } from "@effect/vitest";

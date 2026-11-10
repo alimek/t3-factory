@@ -3,7 +3,7 @@ import { expect } from "e2e";
 import {
   browserRequests,
   delayLiveSnapshots,
-  liveReport,
+  liveStates,
   liveRun,
   openLiveSockets,
   resetBrowserRequests,
@@ -45,7 +45,7 @@ test("an Agent's MCP report updates the open Run and the sidebar without polling
   await resetBrowserRequests(app);
 
   // Act
-  await liveReport(app, "report");
+  await liveStates(app, "report", ["result reported", "settled"], "Picker spacing tidied.");
 
   // Assert
   await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
@@ -72,7 +72,7 @@ test("a lost live connection keeps the last Run read-only, then resynchronizes w
   await remoteFixture(app, "offline");
   await expect(screen.getByRole("status", "Offline")).toBeVisible({ timeout: 10_000 });
   await expect(actions).toBeDisabled();
-  await liveReport(app, "recovery", "Checked the picker on narrow screens.");
+  await liveStates(app, "recovery", ["working reported"], "Checked the picker on narrow screens.");
   await expect(screen.getByText("Checked the picker on narrow screens.")).toHaveCount(0);
   await expect(
     screen.getByRole("heading", /Live recovery · Tidy the project picker/),
@@ -116,7 +116,7 @@ test("a hidden window detaches live delivery and catches up when shown, keeping 
   await expect.poll(async () => (await openLiveSockets(app)).host).toBe(1);
   await browser.evaluate(setVisibility("hidden"));
   await expect.poll(async () => (await openLiveSockets(app)).host).toBe(0);
-  await liveReport(app, "visibility", "Reviewed the picker in dark mode.");
+  await liveStates(app, "visibility", ["working reported"], "Reviewed the picker in dark mode.");
   await expect(screen.getByText("Reviewed the picker in dark mode.")).toHaveCount(0);
 
   // Act

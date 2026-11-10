@@ -2,12 +2,8 @@ import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
-import {
-  flowInput,
-  flowWithAgent,
-  readFlowAfterRestart,
-  validationFlow,
-} from "./support/domain-setup.ts";
+import { flowWithAgent, readFlowAfterRestart, validationFlow } from "./support/domain-setup.ts";
+import { flowInput, humanStep } from "./support/scenarios.ts";
 
 it("an incomplete graph draft saves with the Flow input connection outstanding", async (context) => {
   // Arrange
@@ -295,7 +291,7 @@ it("updateFlow rejects a Flow input target that is not in the graph", async (con
 it("updateFlow rejects a Human step as a Flow input target", async (context) => {
   // Arrange
   const { factory, created, block } = await validationFlow(context);
-  const human = { id: "review", kind: "human" as const, name: "Review", position: block.position };
+  const human = humanStep("review", "Review", block.position);
   const graph = { flowInput: flowInput("review"), blocks: [block, human], connections: [] };
 
   // Act

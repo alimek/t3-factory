@@ -1,3 +1,4 @@
+import { controlledExecution } from "./scenarios.ts";
 import { assert, expect, type TestContext } from "@effect/vitest";
 import { request as httpRequest } from "node:http";
 import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
@@ -168,12 +169,10 @@ async function legacyRuntimeRepository(c: TestContext, directoryName: string, cl
   const input = {
     name: "Worker",
     prompt: "Work",
-    execution: {
-      environmentId: t3.environmentId,
+    execution: controlledExecution(t3.environmentId, {
       providerInstanceId: claude ? "claude-local" : "codex-main",
-      modelId: "gpt-6.1-sol",
       modelOptions: [],
-    },
+    }),
     exits: [],
   };
   const a = await f.createAgent(input);
@@ -196,12 +195,7 @@ export async function runtimeReadinessFixture(c: TestContext) {
   const a = await f.createAgent({
     name: "Worker",
     prompt: "Work",
-    execution: {
-      environmentId: t3.environmentId,
-      providerInstanceId: "codex-main",
-      modelId: "gpt-6.1-sol",
-      modelOptions: [],
-    },
+    execution: controlledExecution(t3.environmentId, { modelOptions: [] }),
     exits: [],
   });
   assert(p.ok && a.ok);

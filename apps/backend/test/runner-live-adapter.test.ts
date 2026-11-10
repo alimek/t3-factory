@@ -45,7 +45,7 @@ it("a worker PR cannot supply an executable link to Factory clients", async (c) 
   // Assert
   await expect(observation).rejects.toThrow("Invalid worker pull request URL.");
 });
-import { finishWorker, startWorkerTurn, workerFinal } from "./support/run-worker.ts";
+import { allTurnsEnd, finishedReport, report, turnBegins } from "./support/scenarios.ts";
 
 it("a captured checkout worker retains exact execution identity from its nested thread read", async (c) => {
   // Arrange
@@ -81,8 +81,8 @@ it("a worker resumed by a notification shows a missing report when T3 settles it
     ...settledAnswer(runId),
     resultRun: { runId: "execution-1", status: "completed" },
   }));
-  startWorkerTurn(f, "notification-execution", 2);
-  finishWorker(f);
+  turnBegins(f.world, f.worker, "notification-execution");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -99,8 +99,8 @@ it("a worker resumed by a notification shows a missing report when T3 settles it
 it("a reported worker's result stays held while T3's delegated wait times out", async (c) => {
   // Arrange
   const f = await wireWorker(c, (runId) => ({ ...settledAnswer(runId), timedOut: true }));
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -116,8 +116,8 @@ it("a reported worker's result stays held while T3's delegated wait times out", 
 it("a delegated wait answered for another run keeps a reported result held", async (c) => {
   // Arrange
   const f = await wireWorker(c, () => settledAnswer("another-run"));
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -132,8 +132,8 @@ it("a delegated wait answered for another run keeps a reported result held", asy
 it("a reported worker's result is released when the live thread read and delegated wait show it finished", async (c) => {
   // Arrange
   const f = await wireWorker(c, settledAnswer);
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();

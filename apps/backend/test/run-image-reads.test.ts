@@ -3,21 +3,24 @@ import { join } from "node:path";
 import { assert, expect, it } from "@effect/vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { base64, factoryMcpClient, readRunImage, toolReply } from "./support/factory-mcp.ts";
-import { preparedServer } from "./support/prepared-runner.ts";
+import { prepared, preparedServer } from "./support/prepared-runner.ts";
+import { imageRequest, imageStart, manifestEntry, screenshots } from "./support/run-images.ts";
 import {
-  imageRequest,
-  imageStart,
-  manifestEntry,
-  screenshots,
+  fanOutFlow,
+  handoffFlow,
+  laterResultReturning,
+  resultReleasedToHumanReview,
+  resultReleasedToSecondWorker,
+  resultReported,
+  reviewApproved,
   sha256Hex,
-} from "./support/run-images.ts";
-import {
-  answeredReview,
-  finishedParallelWork,
-  launchedBlockId,
-  launchedImageFanOut,
-  reportedImageWorker,
-} from "./support/run-worker.ts";
+  twoWorkersStarted,
+  workerAtWork,
+  workerLaunched,
+  worktreeBound,
+  worktreeReviewFlow,
+} from "./support/scenarios.ts";
+import { launchedBlockId } from "./support/run-worker.ts";
 
 const identity = (imageId: string, ordinal: number, image: { name: string; data: Uint8Array }) => ({
   imageId,
@@ -32,7 +35,9 @@ const storedImage = (processHome: string, image: { data: Uint8Array }) =>
 
 it("a Block read lists the Run images in label order, duplicate names by id, without their bytes", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   const client = await factoryMcpClient(c, f.f);
 
   // Act
@@ -57,9 +62,8 @@ it("a Block read lists the Run images in label order, duplicate names by id, wit
 
 it("a Block read of a Run without images lists no images over the listening Factory MCP endpoint", async (c) => {
   // Arrange
-  const { f, t3, mcp, input } = await preparedServer(c);
-  assert((await f.startRun(input)).ok);
-  assert((await f.reconcileRuns()).ok);
+  const { t3, mcp, world, input } = await preparedServer(c);
+  await workerLaunched(world, input);
   const client = new Client({ name: "worker", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(mcp));
   c.onTestFinished(() => client.close());
@@ -77,7 +81,9 @@ it("a Block read of a Run without images lists no images over the listening Fact
 
 it("an image read returns the image's identity and exactly one image content item with its original bytes", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   const client = await factoryMcpClient(c, f.f);
 
   // Act
@@ -97,8 +103,11 @@ it("an image read returns the image's identity and exactly one image content ite
 
 it("a checkout downstream worker launched without attachments reads an original Run image", async (c) => {
   // Arrange
-  const f = await reportedImageWorker(c);
-  assert((await f.f.reconcileRuns()).ok);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, await imageRequest(setup));
+  const reported = await resultReported(setup.world, atWork);
+  await resultReleasedToSecondWorker(setup.world, reported);
+  const f = { ...setup, ...reported };
   const downstream = [...f.t3.launches.values()][1]!.payload;
   expect(downstream.attachments).toBeUndefined();
   const client = await factoryMcpClient(c, f.f);
@@ -116,8 +125,11 @@ it("a checkout downstream worker launched without attachments reads an original 
 
 it("a worktree Block's worker launched at its first arrival after a Human step reads an original Run image", async (c) => {
   // Arrange
-  const setup = await answeredReview(c, imageRequest);
-  assert((await setup.f.reconcileRuns()).ok);
+  const setup = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(setup.world, await imageRequest(setup));
+  const reported = await resultReported(setup.world, entry);
+  const review = await resultReleasedToHumanReview(setup.world, reported);
+  await resultReleasedToSecondWorker(setup.world, await reviewApproved(setup.world, review));
   const parallel = [...setup.t3.launches.values()][1]!.payload;
   expect(parallel.attachments).toBeUndefined();
   const client = await factoryMcpClient(c, setup.f);
@@ -135,7 +147,12 @@ it("a worktree Block's worker launched at its first arrival after a Human step r
 
 it("a revisited worker reads an original Run image during its queued later visit", async (c) => {
   // Arrange
-  const setup = await finishedParallelWork(c, imageRequest);
+  const ready = await prepared(c, worktreeReviewFlow);
+  const entry = await worktreeBound(ready.world, await imageRequest(ready));
+  const reported = await resultReported(ready.world, entry);
+  const review = await resultReleasedToHumanReview(ready.world, reported);
+  await laterResultReturning(ready.world, await reviewApproved(ready.world, review), entry);
+  const setup = { ...ready, entryBlockId: entry.blockId };
   assert((await setup.f.reconcileRuns()).ok);
   const [revisit] = [...setup.t3.sends.values()].map(({ payload }) => payload);
   expect(revisit?.threadId).toBe("thread-1");
@@ -154,7 +171,9 @@ it("a revisited worker reads an original Run image during its queued later visit
 
 it("another Run's image id is unknown to this Block and returns no image", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   const other = await f.f.startRun({
     ...imageStart({ ...f.input, requestId: "start-other" }),
     segments: [{ type: "text", text: "Another task." }],
@@ -177,7 +196,9 @@ it("another Run's image id is unknown to this Block and returns no image", async
 
 it("an image read without an image id is refused with guidance", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   const client = await factoryMcpClient(c, f.f);
 
   // Act
@@ -196,7 +217,9 @@ it("an image read without an image id is refused with guidance", async (c) => {
 
 it("an image read with a non-string image id is refused as an invalid argument", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   const client = await factoryMcpClient(c, f.f);
 
   // Act
@@ -213,7 +236,9 @@ it("an image read with a non-string image id is refused as an invalid argument",
 
 it("stored image bytes that no longer match their digest are reported unavailable for that image", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   await writeFile(storedImage(f.h.processHome, screenshots.blue), screenshots.green.data);
   const client = await factoryMcpClient(c, f.f);
 
@@ -231,7 +256,9 @@ it("stored image bytes that no longer match their digest are reported unavailabl
 
 it("stored image bytes missing from Factory storage are reported unavailable for that image", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   await rm(storedImage(f.h.processHome, screenshots.green));
   const client = await factoryMcpClient(c, f.f);
 
@@ -249,7 +276,9 @@ it("stored image bytes missing from Factory storage are reported unavailable for
 
 it("a storage read failure is reported as a retryable failure for that image", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   const stored = storedImage(f.h.processHome, screenshots.red);
   await rm(stored);
   await mkdir(stored);
@@ -270,7 +299,9 @@ it("a storage read failure is reported as a retryable failure for that image", a
 
 it("repeated, lost-response and failed image reads change neither the Run nor anything in T3", async (c) => {
   // Arrange
-  const f = await launchedImageFanOut(c);
+  const setup = await prepared(c, fanOutFlow);
+  const [entry] = await twoWorkersStarted(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...entry };
   await rm(storedImage(f.h.processHome, screenshots.green));
   const blue = storedImage(f.h.processHome, screenshots.blue);
   await rm(blue);

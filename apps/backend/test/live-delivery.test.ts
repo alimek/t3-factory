@@ -9,6 +9,7 @@ import type {
 } from "@t3-factory/contracts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
+import { prepared } from "./support/prepared-runner.ts";
 import {
   appliedRun,
   liveReads,
@@ -19,12 +20,15 @@ import {
   withoutGeneration,
 } from "./support/live.ts";
 import {
-  directWorker,
-  finishWorker,
-  startWorkerTurn,
+  allTurnsEnd,
+  handoffFlow,
+  report,
+  turnBegins,
+  workerAtWork,
   workerFinal,
   workerWorking,
-} from "./support/run-worker.ts";
+  workingReport,
+} from "./support/scenarios.ts";
 
 import { makeLiveChanges } from "../src/live-changes.ts";
 import { makeLiveStreams } from "../src/live-streams.ts";
@@ -36,7 +40,8 @@ const showsWorking = (messages: readonly RunLiveMessage[]) =>
 
 it("an accepted Block report reaches open Run and navigation subscribers without another read", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const run = subscribe(c, watchRun(f.f.live, f.runId));
   const navigation = subscribe(c, watchNavigation(f.f.live));
   await run.until((messages) => messages.length > 0);
@@ -61,10 +66,12 @@ it("an accepted Block report reaches open Run and navigation subscribers without
 
 it("a later turn preserves both executions of the same worker binding", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
   const run = subscribe(c, watchRun(f.f.live, f.runId));
   await run.until((messages) => messages.length > 0);
-  startWorkerTurn(f, "reply-execution", 2);
+  turnBegins(f.world, worker, "reply-execution");
 
   // Act
   const reconciled = await f.f.reconcileRuns();
@@ -85,7 +92,8 @@ it("a later turn preserves both executions of the same worker binding", async (c
 
 it("a report on another Run sends nothing to an open Run's subscriber", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const other = await f.f.startRun({ ...f.input, requestId: "start-two", title: "Other work" });
   assert(other.ok);
   assert((await f.f.reconcileRuns()).ok);
@@ -104,7 +112,8 @@ it("a report on another Run sends nothing to an open Run's subscriber", async (c
 
 it("an unchanged worker observation sends only its observation times", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const run = subscribe(c, watchRun(f.f.live, f.runId));
   await run.until((messages) => messages.length > 0);
 
@@ -123,14 +132,16 @@ it("an unchanged worker observation sends only its observation times", async (c)
 
 it("the first Run snapshot includes a report committed during its read", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
 
   const changes = makeLiveChanges();
   // Built once: the first execution of this read commits a report while it runs.
   const racedRead = raceFirstRead(
     Effect.promise(() => f.f.getRun(f.runId)),
     async () => {
-      expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+      expect(await report(f.world, worker, workingReport())).toBe("ACCEPTED");
       changes.runChanged(f.runId);
     },
   );
@@ -160,7 +171,8 @@ it("the first Run snapshot includes a report committed during its read", async (
 
 it("a snapshot raced on every read is not current until its catch-up is delivered", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const changes = makeLiveChanges();
   let racedReads = 0;
   const live = makeLiveStreams(
@@ -215,7 +227,8 @@ it("a Run that does not exist is reported missing while the rest of its view sta
 
 it("one commit's Run and navigation changes arrive in the same envelope", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const view = subscribe(c, f.f.live.watchRunView({ navigation: true, runIds: [f.runId] }));
   await view.until((messages) => messages.length > 0);
 
@@ -237,7 +250,8 @@ it("one commit's Run and navigation changes arrive in the same envelope", async 
 
 it("a re-read raced by another commit is not current until its catch-up arrives", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const changes = makeLiveChanges();
   let reads = 0;
   const live = makeLiveStreams(
@@ -272,7 +286,8 @@ it("a re-read raced by another commit is not current until its catch-up arrives"
 
 it("a failed re-read marks the view not current until a later read succeeds", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const changes = makeLiveChanges();
   let reads = 0;
   const live = makeLiveStreams(
@@ -326,7 +341,9 @@ it("a T3 connection change reaches connection subscribers without another read",
 it.effect("live subscribers neither multiply Runner observations nor own handoff progress", (c) =>
   Effect.gen(function* () {
     // Arrange
-    const f = yield* Effect.promise(() => directWorker(c));
+    const setup = yield* Effect.promise(() => prepared(c, handoffFlow));
+    const worker = yield* Effect.promise(() => workerAtWork(setup.world, setup.input));
+    const f = { ...setup, ...worker };
     yield* Effect.promise(() => f.f.close());
     const factory = yield* f.h.service({ t3: f.t3, connectionRetryMs: 1000 });
     const beforeZero = f.t3.executionReads;
@@ -343,7 +360,7 @@ it.effect("live subscribers neither multiply Runner observations nor own handoff
     yield* Effect.promise(() => second.stop());
     const report = yield* factory.runtime.submit(workerFinal(f.blockId));
     assert(report.code === "ACCEPTED");
-    finishWorker(f);
+    allTurnsEnd(f.world, worker);
     const beforeHandoff = yield* factory.getRun(f.runId);
     assert(beforeHandoff.ok);
     expect(beforeHandoff.value.reports[0]?.completionEligibleAt).toBeNull();

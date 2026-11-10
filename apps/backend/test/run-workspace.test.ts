@@ -1,11 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
-import { preparedWorkspaceFlow } from "./support/prepared-runner.ts";
+import { prepared } from "./support/prepared-runner.ts";
 
 it("a worktree Start from a missing custom ref is rejected with a Flow workspace issue and launches nothing", async (c) => {
   // Arrange
-  const { f, t3, input, project } = await preparedWorkspaceFlow(c, {
-    mode: "worktree",
-    base: { kind: "ref", ref: "release/missing" },
+  const { f, t3, input, project } = await prepared(c, {
+    workspace: { mode: "worktree", base: { kind: "ref", ref: "release/missing" } },
   });
 
   // Act
@@ -23,9 +22,8 @@ it("a worktree Start from a missing custom ref is rejected with a Flow workspace
 
 it("a worktree Start without a resolvable default branch is rejected with a Flow workspace issue and launches nothing", async (c) => {
   // Arrange
-  const { f, t3, input, project } = await preparedWorkspaceFlow(c, {
-    mode: "worktree",
-    base: { kind: "default" },
+  const { f, t3, input, project } = await prepared(c, {
+    workspace: { mode: "worktree", base: { kind: "default" } },
   });
   t3.defaultBranch = null;
 
@@ -44,7 +42,7 @@ it("a worktree Start without a resolvable default branch is rejected with a Flow
 
 it("saving a different workspace after Start leaves the Run's captured project checkout", async (c) => {
   // Arrange
-  const { f, input, flow } = await preparedWorkspaceFlow(c, { mode: "checkout" });
+  const { f, input, flow } = await prepared(c, { workspace: { mode: "checkout" } });
   const started = await f.startRun(input);
   assert(started.ok);
 
@@ -64,9 +62,8 @@ it("saving a different workspace after Start leaves the Run's captured project c
 
 it("a worktree Start is rejected before any Run when T3 cannot launch into worktrees", async (c) => {
   // Arrange
-  const { f, t3, input, project } = await preparedWorkspaceFlow(c, {
-    mode: "worktree",
-    base: { kind: "default" },
+  const { f, t3, input, project } = await prepared(c, {
+    workspace: { mode: "worktree", base: { kind: "default" } },
   });
   t3.worktreeLaunchSupported = false;
 

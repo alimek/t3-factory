@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { advanceNative, answerWait, finishNativeTurn, recordThread } from "./native-simulation.ts";
 import { readFileSync } from "node:fs";
 import { writeState } from "./write-state.ts";
 import { join } from "node:path";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
+import {
+  answerDelegatedWait,
+  endThreadRun,
+  recordLaunchedThread,
+  startQueuedSend,
+} from "../../apps/backend/test/support/controlled-thread.ts";
 import type {
   LaunchPayload,
   SendPayload,
@@ -109,9 +114,9 @@ export class PersistentT3 extends ControlledT3 {
       pendingRequestCount: 0,
       recentRuns: [{ runId, status: "running", ordinal: 1 }],
     });
-    answerWait(this, threadId, runId, "pending", "running");
+    answerDelegatedWait(this, threadId, runId, "pending", "running");
     this.subagents.set(parentThreadId, [...(this.subagents.get(parentThreadId) ?? []), threadId]);
-    finishNativeTurn(this, parentThreadId, parentRunId);
+    endThreadRun(this, parentThreadId, parentRunId);
     this.save();
   }
 
@@ -123,7 +128,8 @@ export class PersistentT3 extends ControlledT3 {
   }
 
   async advance() {
-    advanceNative(this);
+    for (const { payload, reference } of this.sends.values())
+      startQueuedSend(this, payload.threadId, reference.runId);
     this.save();
   }
 
@@ -138,7 +144,7 @@ export class PersistentT3 extends ControlledT3 {
         if (
           !["completed", "failed", "interrupted", "cancelled", "rolled_back"].includes(run.status)
         )
-          finishNativeTurn(this, threadId, run.runId, "interrupted");
+          endThreadRun(this, threadId, run.runId, "interrupted");
       }
       for (const child of this.subagents.get(threadId) ?? []) stop(child);
     };
@@ -148,7 +154,7 @@ export class PersistentT3 extends ControlledT3 {
 
   override async launchThread(target: T3Endpoint, payload: LaunchPayload) {
     const reference = await super.launchThread(target, payload);
-    await recordThread(this, reference.threadId);
+    await recordLaunchedThread(this, reference.threadId);
     this.save();
     return reference;
   }

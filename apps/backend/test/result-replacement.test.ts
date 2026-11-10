@@ -1,20 +1,27 @@
 import { assert, expect, it } from "@effect/vitest";
+import { launchedBlockId } from "./support/run-worker.ts";
 import {
-  directWorker,
-  finishWorker,
-  launchedBlockId,
-  releasedTwoExitWorker,
-  replacedBeforeRelease,
-  reportedWorker,
-  settleThread,
-  startWorkerTurn,
+  allTurnsEnd,
+  finishedReport,
+  handoffFlow,
+  laterTurnAfterRelease,
+  report,
+  resultReleasedToSecondWorker,
+  resultReplacedBeforeRelease,
+  resultReported,
+  turnBegins,
+  twoExitFlow,
+  workerAtWork,
   workerFinal,
-  workerWorking,
-} from "./support/run-worker.ts";
+  workingReport,
+} from "./support/scenarios.ts";
+import { prepared } from "./support/prepared-runner.ts";
 
 it("a newer finished report before release replaces the held result and only it is handed off", async (c) => {
   // Arrange
-  const f = await replacedBeforeRelease(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReplacedBeforeRelease(setup.world, atWork)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -37,12 +44,11 @@ it("a newer finished report before release replaces the held result and only it 
 
 it("a Run whose result was replaced before handoff settles once every worker is done", async (c) => {
   // Arrange
-  const f = await replacedBeforeRelease(c);
-  assert((await f.f.reconcileRuns()).ok);
-  const next = workerFinal(launchedBlockId(f.t3, "Parallel work"));
-  assert((await f.f.runtime.submit(next)).code === "ACCEPTED");
-  f.t3.engineStatus = "completed";
-  settleThread(f.t3, "execution-2", "completed", "settled", "thread-2");
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const replaced = await resultReplacedBeforeRelease(setup.world, atWork);
+  const next = await resultReleasedToSecondWorker(setup.world, replaced);
+  const f = { ...setup, ...(await resultReported(setup.world, next)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -55,9 +61,10 @@ it("a Run whose result was replaced before handoff settles once every worker is 
 
 it("after release a same-exit finished report updates the result without relaunching the next Block", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
-  assert((await f.f.reconcileRuns()).ok);
-  startWorkerTurn(f, "followup-execution", 2);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await laterTurnAfterRelease(setup.world, reported)) };
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId, "Updated result."));
@@ -78,10 +85,13 @@ it("after release a same-exit finished report updates the result without relaunc
 
 it("after release a different-exit finished report hands off to that exit's Block while the earlier one keeps running", async (c) => {
   // Arrange
-  const f = await releasedTwoExitWorker(c);
-  const revised = workerFinal(f.blockId, "Needs another pass.", "Revise");
-  assert((await f.f.runtime.submit(revised)).code === "ACCEPTED");
-  finishWorker(f);
+  const setup = await prepared(c, twoExitFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const worker = await laterTurnAfterRelease(setup.world, reported);
+  const f = { ...setup, ...worker, worker };
+  const revised = finishedReport("Needs another pass.", "Revise");
+  assert((await report(f.world, f.worker, revised)) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -107,9 +117,12 @@ it("after release a different-exit finished report hands off to that exit's Bloc
 
 it("a different-exit result after release stays held while the worker thread is still running", async (c) => {
   // Arrange
-  const f = await releasedTwoExitWorker(c);
-  const revised = workerFinal(f.blockId, "Needs another pass.", "Revise");
-  assert((await f.f.runtime.submit(revised)).code === "ACCEPTED");
+  const setup = await prepared(c, twoExitFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const worker = await laterTurnAfterRelease(setup.world, reported);
+  const f = { ...setup, ...worker, worker };
+  const revised = finishedReport("Needs another pass.", "Revise");
+  assert((await report(f.world, f.worker, revised)) === "ACCEPTED");
 
   // Act
   await f.f.reconcileRuns();
@@ -123,9 +136,14 @@ it("a different-exit result after release stays held while the worker thread is 
 
 it("repeating the result from a later turn settles an execution failure recorded after it", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "failed");
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork, {
+    status: "failed",
+  });
+  const f = { ...setup, ...worker };
   assert((await f.f.reconcileRuns()).ok);
-  startWorkerTurn(f, "retry-execution", 2);
+  turnBegins(f.world, worker, "retry-execution");
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId));
@@ -143,10 +161,12 @@ it("repeating the result from a later turn settles an execution failure recorded
 
 it("a working report after a result keeps the Block working and its Run Active once its worker thread is finished", async (c) => {
   // Arrange
-  const f = await directWorker(c, true, "");
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  const setup = await prepared(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, finishedReport())) === "ACCEPTED");
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();

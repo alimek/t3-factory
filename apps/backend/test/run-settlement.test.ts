@@ -1,25 +1,33 @@
 import { assert, expect, it } from "@effect/vitest";
+import { nextSettlement, reopenDuringSettlement } from "./support/run-worker.ts";
 import {
-  archivedWorker,
-  directWorker,
-  finishWorker,
-  finishedWorker,
-  missingWorkerReport,
-  nextSettlement,
-  reportedWorker,
-  reopenDuringSettlement,
-  replacedBeforeRelease,
-  revisitReportingWorker,
-  settleThread,
-  settledWorker,
-  startWorkerTurn,
+  allTurnsEnd,
+  archived,
+  finishedReport,
+  handoffFlow,
+  missingReport,
+  report,
+  resultReleasedToSameWorker,
+  resultReleasedToSecondWorker,
+  resultReplacedBeforeRelease,
+  resultReported,
+  sentTurnBegins,
+  settled,
+  snoozed,
+  turnBegins,
+  workerAtWork,
   workerFinal,
   workerWorking,
-} from "./support/run-worker.ts";
+  workingReport,
+} from "./support/scenarios.ts";
+import { prepared } from "./support/prepared-runner.ts";
+import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a finished terminal Block settles its worker thread in T3 without waiting for Run settlement", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "completed", "");
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -30,11 +38,14 @@ it("a finished terminal Block settles its worker thread in T3 without waiting fo
 
 it("a replaced finished report in the same T3 run is not settled again", async (c) => {
   // Arrange
-  const f = await replacedBeforeRelease(c);
-  assert((await f.f.reconcileRuns()).ok);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const replaced = await resultReplacedBeforeRelease(setup.world, atWork);
+  await resultReleasedToSecondWorker(setup.world, replaced);
+  const f = { ...setup, ...replaced, worker: replaced };
 
-  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Another pass."))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, finishedReport("Another pass."))) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -45,17 +56,22 @@ it("a replaced finished report in the same T3 run is not settled again", async (
 
 it("a revisited Block settles its thread again after a new T3 run finishes", async (c) => {
   // Arrange
-  const f = await revisitReportingWorker(c);
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const released = await resultReleasedToSameWorker(setup.world, reported);
+  const worker = sentTurnBegins(setup.world, released);
+  const f = { ...setup, ...worker };
   await f.f.reconcileRuns();
   expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
-  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Second pass."))).code === "ACCEPTED");
+  assert((await report(f.world, worker, finishedReport("Second pass."))) === "ACCEPTED");
   const runBeforeFinish = await f.f.getRun(f.runId);
   assert(runBeforeFinish.ok);
   const producingExecution = runBeforeFinish.value.reports.at(-1)?.executionId;
   assert(producingExecution);
-  expect(producingExecution).toBe(f.workerExecutionId);
-  finishWorker(f);
-  settleThread(f.t3, f.workerExecutionId);
+  expect(producingExecution).toBe(worker.executionId);
+  allTurnsEnd(f.world, worker);
+  answerDelegatedWait(f.t3, "thread-1", worker.executionId, "settled", "completed");
 
   // Act
   await f.f.reconcileRuns();
@@ -66,8 +82,10 @@ it("a revisited Block settles its thread again after a new T3 run finishes", asy
 
 it("a finished Block on a snoozed Run still settles its worker thread", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
-  assert((await f.f.snoozeRun(f.runId)).ok);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await snoozed(setup.world, reported)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -78,7 +96,9 @@ it("a finished Block on a snoozed Run still settles its worker thread", async (c
 
 it("an open missing-report Problem leaves the worker thread unsettled", async (c) => {
   // Arrange
-  const f = await missingWorkerReport(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await missingReport(setup.world, atWork)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -89,9 +109,11 @@ it("an open missing-report Problem leaves the worker thread unsettled", async (c
 
 it("a Block whose latest report is working leaves its worker thread unsettled", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -102,7 +124,9 @@ it("a Block whose latest report is working leaves its worker thread unsettled", 
 
 it("Run settlement does not request a thread the per-Block pass already settled", async (c) => {
   // Arrange
-  const f = await finishedWorker(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   assert((await f.f.reconcileRuns()).ok);
 
@@ -115,7 +139,10 @@ it("Run settlement does not request a thread the per-Block pass already settled"
 
 it("an archived Run receives no per-Block thread settlement", async (c) => {
   // Arrange
-  const f = await archivedWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await archived(setup.world, reported)) };
   f.t3.settlements.length = 0;
 
   // Act
@@ -127,7 +154,9 @@ it("an archived Run receives no per-Block thread settlement", async (c) => {
 
 it("per-Block settlement is a no-op when T3 lacks native settle support", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   f.t3.settleSupported = false;
 
   // Act
@@ -139,7 +168,9 @@ it("per-Block settlement is a no-op when T3 lacks native settle support", async 
 
 it("a failed per-Block T3 thread settlement leaves the Run unchanged", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   f.t3.settleThread = () => Promise.reject(Error("T3 could not settle the thread"));
 
   // Act
@@ -153,7 +184,9 @@ it("a failed per-Block T3 thread settlement leaves the Run unchanged", async (c)
 
 it("a finished handoff Block settles its worker thread in T3 while the Run stays Active", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -167,7 +200,9 @@ it("a finished handoff Block settles its worker thread in T3 while the Run stays
 
 it("a Run settles automatically once its reported worker's thread is finished", async (c) => {
   // Arrange
-  const f = await finishedWorker(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -185,7 +220,9 @@ it("a Run settles automatically once its reported worker's thread is finished", 
 
 it("a Run stays Active while T3 has not answered that its worker's delegated work settled", async (c) => {
   // Arrange
-  const f = await finishedWorker(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   f.t3.delegatedSettlements.delete(JSON.stringify(["thread-1", "execution-1"]));
 
   // Act
@@ -200,7 +237,9 @@ it("a Run stays Active while T3 has not answered that its worker's delegated wor
 
 it("a failed T3 thread settlement leaves the Run Settled", async (c) => {
   // Arrange
-  const f = await finishedWorker(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   f.t3.settleThread = () => Promise.reject(Error("T3 could not settle the thread"));
 
   // Act
@@ -216,7 +255,8 @@ it("a failed T3 thread settlement leaves the Run Settled", async (c) => {
 
 it("settling an Active Run leaves its running work alone and settles the worker thread in T3", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const settlement = nextSettlement(f.t3);
 
   // Act
@@ -234,8 +274,9 @@ it("settling an Active Run leaves its running work alone and settles the worker 
 
 it("settling a snoozed Run moves it out of Snoozed", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  assert((await f.f.snoozeRun(f.runId)).ok);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await snoozed(setup.world, atWork)) };
 
   // Act
   const result = await f.f.settleRun(f.runId);
@@ -252,7 +293,10 @@ it("settling a snoozed Run moves it out of Snoozed", async (c) => {
 
 it("a Settled Run cannot be snoozed", async (c) => {
   // Arrange
-  const f = await settledWorker(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await settled(setup.world, reported)) };
 
   // Act
   const result = await f.f.snoozeRun(f.runId);
@@ -264,7 +308,8 @@ it("a Settled Run cannot be snoozed", async (c) => {
 
 it("a working report from a Block of a Settled Run returns the Run to Active", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   assert((await f.f.settleRun(f.runId)).ok);
 
   // Act
@@ -280,7 +325,10 @@ it("a working report from a Block of a Settled Run returns the Run to Active", a
 
 it("repeating the current result on a Settled Run returns the Run to Active", async (c) => {
   // Arrange
-  const f = await settledWorker(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await settled(setup.world, reported)) };
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId));
@@ -295,11 +343,13 @@ it("repeating the current result on a Settled Run returns the Run to Active", as
 
 it("repeating the earlier result after a working report makes it current, so the Run settles once its worker thread is finished", async (c) => {
   // Arrange
-  const f = await directWorker(c, true, "");
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  const setup = await prepared(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, finishedReport())) === "ACCEPTED");
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  assert((await report(f.world, worker, finishedReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -313,9 +363,13 @@ it("repeating the earlier result after a working report makes it current, so the
 
 it("a reply turn in a worker thread without a report leaves the Settled Run Settled", async (c) => {
   // Arrange
-  const f = await settledWorker(c);
-  startWorkerTurn(f, "chat-execution", 2);
-  finishWorker(f);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const worker = await settled(setup.world, reported);
+  const f = { ...setup, ...worker };
+  turnBegins(f.world, worker, "chat-execution");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -330,7 +384,9 @@ it("a reply turn in a worker thread without a report leaves the Settled Run Sett
 
 it("an execution-failed Problem prevents settling a Block with a finished report", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "failed");
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork, { status: "failed" })) };
 
   // Act
   await f.f.reconcileRuns();
@@ -346,8 +402,11 @@ it("an execution-failed Problem prevents settling a Block with a finished report
 
 it("a working report accepted during the completion read prevents stale settlement", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
-  reopenDuringSettlement(f);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  reopenDuringSettlement(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -361,8 +420,11 @@ it("a working report accepted during the completion read prevents stale settleme
 
 it("a newer active turn prevents settlement for an older finished result", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
-  startWorkerTurn(f, "newer-execution", 2);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  turnBegins(f.world, worker, "newer-execution");
 
   // Act
   await f.f.reconcileRuns();
@@ -373,10 +435,13 @@ it("a newer active turn prevents settlement for an older finished result", async
 
 it("a newer idle turn with pending delegated work prevents settlement for an older result", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
-  startWorkerTurn(f, "newer-execution", 2);
-  finishWorker(f);
-  settleThread(f.t3, "newer-execution", "completed", "pending");
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  turnBegins(f.world, worker, "newer-execution");
+  allTurnsEnd(f.world, worker);
+  answerDelegatedWait(f.t3, "thread-1", "newer-execution", "pending", "completed");
 
   // Act
   await f.f.reconcileRuns();
@@ -387,9 +452,12 @@ it("a newer idle turn with pending delegated work prevents settlement for an old
 
 it("a newer completed turn is settled once by the Run fallback rather than an older Block result", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "completed", "");
-  startWorkerTurn(f, "newer-execution", 2);
-  finishWorker(f);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  turnBegins(f.world, worker, "newer-execution");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();

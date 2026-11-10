@@ -1,20 +1,37 @@
 import { assert, expect, it } from "@effect/vitest";
-import { uncertainLaunch } from "./support/lost-launch.ts";
+import { prepared } from "./support/prepared-runner.ts";
+import { launchedBlockId } from "./support/run-worker.ts";
 import {
-  directWorker,
-  exitVariantWorker,
-  launchedBlockId,
-  repliedWorker,
-  reportedWorker,
-  revisitReportingWorker,
+  blockExit,
+  finishedReport,
+  handoffFlow,
+  launchUncertain,
+  replyTurnRunning,
+  report,
+  resultReleasedToSameWorker,
+  resultReleasedToSecondWorker,
+  resultReported,
+  sentTurnBegins,
+  workerAtWork,
   workerFinal,
-  workerStart,
-  workerWorking,
-} from "./support/run-worker.ts";
+  workingReport,
+  workingReportedIdle,
+} from "./support/scenarios.ts";
+
+/** Entry worker's Agent has Done and Blocked; the Flow hides Blocked and adds a local Escalate. */
+const exitVariant = {
+  exits: [
+    blockExit("done", "Done", "Completed"),
+    blockExit("blocked", "Blocked", "Explain the blocker.", true),
+  ],
+  hiddenExitIds: ["blocked"],
+  localExits: [blockExit("escalate", "Escalate", "", true)],
+};
 
 it("factory_get_block reads the Block named by the id in its launch message", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
@@ -37,7 +54,8 @@ it("factory_get_block reads the Block named by the id in its launch message", as
 
 it("factory_get_block lists the Agent's visible exits, then the Flow's local exits, with description and message requirement", async (c) => {
   // Arrange
-  const fixture = await exitVariantWorker(c);
+  const setup = await prepared(c, exitVariant);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
@@ -51,7 +69,8 @@ it("factory_get_block lists the Agent's visible exits, then the Flow's local exi
 
 it("a finished report on an exit hidden in the Run's Flow is refused with the Block's exits", async (c) => {
   // Arrange
-  const fixture = await exitVariantWorker(c);
+  const setup = await prepared(c, exitVariant);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -69,7 +88,7 @@ it("a finished report on an exit hidden in the Run's Flow is refused with the Bl
 
 it("the launch message states the Block id and issues no tool ref", async (c) => {
   // Arrange
-  const fixture = await workerStart(c, "");
+  const fixture = await prepared(c);
   assert((await fixture.f.startRun(fixture.input)).ok);
 
   // Act
@@ -83,7 +102,8 @@ it("the launch message states the Block id and issues no tool ref", async (c) =>
 
 it("a call without a Block id is refused with repair guidance", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.block({ arguments: {} });
@@ -97,7 +117,8 @@ it("a call without a Block id is refused with repair guidance", async (c) => {
 
 it("an unknown Block id is refused with repair guidance", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -118,7 +139,9 @@ it("an unknown Block id is refused with repair guidance", async (c) => {
 
 it("a worker reads its Block while Factory is still confirming its launch", async (c) => {
   // Arrange
-  const fixture = await uncertainLaunch(c, false);
+  const setup = await prepared(c);
+  setup.t3.discoverAvailable = false;
+  const fixture = { ...setup, ...(await launchUncertain(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.block({
@@ -131,7 +154,10 @@ it("a worker reads its Block while Factory is still confirming its launch", asyn
 
 it("a worker resumed by the user's reply reads its Block and may report again", async (c) => {
   // Arrange
-  const fixture = await repliedWorker(c);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const idle = await workingReportedIdle(setup.world, atWork);
+  const fixture = { ...setup, ...(await replyTurnRunning(setup.world, idle)) };
 
   // Act
   const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
@@ -146,8 +172,11 @@ it("a worker resumed by the user's reply reads its Block and may report again", 
 
 it("a downstream worker retrieves its incoming result and the Block that produced it", async (c) => {
   // Arrange
-  const fixture = await reportedWorker(c);
-  assert((await fixture.f.reconcileRuns()).ok);
+  const setup = await prepared(c, handoffFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  await resultReleasedToSecondWorker(setup.world, reported);
+  const fixture = { ...setup, ...reported };
 
   // Act
   const result = await fixture.f.runtime.block({
@@ -174,7 +203,9 @@ it("a downstream worker retrieves its incoming result and the Block that produce
 
 it("a revisit message states the same Block id as the launch", async (c) => {
   // Arrange
-  const fixture = await reportedWorker(c, "completed", "worker");
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const fixture = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   assert((await fixture.f.reconcileRuns()).ok);
@@ -187,7 +218,12 @@ it("a revisit message states the same Block id as the launch", async (c) => {
 
 it("a revisit's report applies to the Block's current activation", async (c) => {
   // Arrange
-  const fixture = await revisitReportingWorker(c);
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const released = await resultReleasedToSameWorker(setup.world, reported);
+  const worker = sentTurnBegins(setup.world, released);
+  const fixture = { ...setup, ...worker };
 
   // Act
   const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
@@ -204,8 +240,13 @@ it("a revisit's report applies to the Block's current activation", async (c) => 
 
 it("a revisit reads only the result that activated it rather than its own newer result", async (c) => {
   // Arrange
-  const fixture = await revisitReportingWorker(c);
-  assert((await fixture.f.runtime.submit(workerFinal(fixture.blockId))).code === "ACCEPTED");
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const released = await resultReleasedToSameWorker(setup.world, reported);
+  const worker = sentTurnBegins(setup.world, released);
+  const fixture = { ...setup, ...worker };
+  assert((await report(fixture.world, worker, finishedReport())) === "ACCEPTED");
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);
 
@@ -220,7 +261,8 @@ it("a revisit reads only the result that activated it rather than its own newer 
 
 it("factory_get_run returns the Run of the named Block and each Block's state", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.run({ arguments: { blockId: fixture.blockId } });
@@ -238,7 +280,8 @@ it("factory_get_run returns the Run of the named Block and each Block's state", 
 
 it("a worker reports its result by naming its Block id", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
@@ -259,7 +302,8 @@ it("a worker reports its result by naming its Block id", async (c) => {
 
 it("an identical repeated final succeeds again without a second result", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const first = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
   assert(first.code === "ACCEPTED");
 
@@ -275,8 +319,10 @@ it("an identical repeated final succeeds again without a second result", async (
 
 it("a retired waiting report is refused with guidance and leaves the Block's working report current", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
-  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+  const setup = await prepared(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const fixture = { ...setup, ...worker };
+  assert((await report(fixture.world, worker, workingReport())) === "ACCEPTED");
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -301,7 +347,8 @@ it("a retired waiting report is refused with guidance and leaves the Block's wor
 
 it("a working Block update is accepted with its message and selects no result", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -334,8 +381,10 @@ it("a working Block update is accepted with its message and selects no result", 
 
 it("a later finished report replaces the Block's working report", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
-  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+  const setup = await prepared(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const fixture = { ...setup, ...worker };
+  assert((await report(fixture.world, worker, workingReport())) === "ACCEPTED");
 
   // Act
   const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));
@@ -350,7 +399,8 @@ it("a later finished report replaces the Block's working report", async (c) => {
 
 it("a working report without a message is refused with repair guidance", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -370,7 +420,8 @@ it("a working report without a message is refused with repair guidance", async (
 
 it("a working report that selects an exit is refused with repair guidance", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -395,7 +446,8 @@ it("a working report that selects an exit is refused with repair guidance", asyn
 
 it("an unknown exit names the exits captured for that Block", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -413,7 +465,8 @@ it("an unknown exit names the exits captured for that Block", async (c) => {
 
 it("a finished report without a message is accepted when that exit does not require a message", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "");
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -426,7 +479,8 @@ it("a finished report without a message is accepted when that exit does not requ
 
 it("a finished report without a message is refused when that exit requires a message", async (c) => {
   // Arrange
-  const fixture = await directWorker(c, true, "", true);
+  const setup = await prepared(c, { exits: [blockExit("done", "Done", "Completed", true)] });
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await fixture.f.runtime.submit({

@@ -5,7 +5,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { restoreLaunches } from "./support/lifecycle-setup.ts";
 import { dirname, join } from "node:path";
-import { prepared, preparedBlockedFlow } from "./support/prepared-runner.ts";
+import { prepared } from "./support/prepared-runner.ts";
+import { blockedLaterFlow } from "./support/scenarios.ts";
 
 it("Start atomically deduplicates concurrent requests for the same Run", async (c) => {
   // Arrange
@@ -248,7 +249,7 @@ it("reusing a Start request key with a different draft title is a conflict", asy
 
 it("Start reports all blocked later Agents while the entry Agent is ready and creates no Run", async (c) => {
   // Arrange
-  const { f, t3, input, agent, project } = await preparedBlockedFlow(c);
+  const { f, t3, input, agent, project } = await prepared(c, blockedLaterFlow);
   const entry = await f.recheckRuntime({ projectId: project.id, agentId: agent.id });
   assert(entry.ok && entry.value.ready);
 

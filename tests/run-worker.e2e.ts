@@ -3,7 +3,7 @@ import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
-import { workerEvent } from "./support/worker.ts";
+import { prepareScenarios, applyRunState } from "./support/scenarios.ts";
 import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
 import {
   fillHumanReviewChanges,
@@ -12,7 +12,7 @@ import {
 } from "./support/keyboard-shortcuts.ts";
 
 beforeEach(async ({ app }) => {
-  await workerEvent(app.baseUrl, "prepare");
+  await prepareScenarios(app.baseUrl);
 });
 
 beforeEach(async ({ browser }) => {
@@ -337,7 +337,14 @@ test("a native worker reply completes the same activation without another workin
   await app.open(`/runs/${found.id}`);
 
   // Act — simulate the ordinary reply in the exact native worker conversation.
-  await workerEvent(app.baseUrl, "answer");
+  await applyRunState(app.baseUrl, found.id, "reply turn observed");
+  await applyRunState(
+    app.baseUrl,
+    found.id,
+    "result reported",
+    "Used the requested concise wording and Clear filters label.",
+  );
+  await applyRunState(app.baseUrl, found.id, "settled");
 
   // Assert
   await expect
@@ -365,7 +372,19 @@ test("a worker's replaced report releases only its newest result to review work"
   await app.open(`/runs/${found.id}`);
 
   // Act — the external worker reports a draft, then replaces it, through Factory's public runtime boundary.
-  await workerEvent(app.baseUrl, "report");
+  await applyRunState(
+    app.baseUrl,
+    found.id,
+    "result held",
+    "A first draft of the project picker change.",
+  );
+  await applyRunState(
+    app.baseUrl,
+    found.id,
+    "result reported",
+    "The project picker change is ready for review.",
+  );
+  await applyRunState(app.baseUrl, found.id, "result released to a second worker");
 
   // Assert
   await expect
@@ -492,7 +511,12 @@ test("a report from the Agent of a Settled Run returns it to the open Runs", asy
   await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
 
   // Act
-  await workerEvent(app.baseUrl, "working");
+  await applyRunState(
+    app.baseUrl,
+    found.id,
+    "working reported",
+    "Two subagents are still checking the empty state.",
+  );
   await screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title)).hover();
 
   // Assert
