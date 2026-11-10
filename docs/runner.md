@@ -364,6 +364,37 @@ conflict. Pending context is cleared after settlement. A Human Block stays waiti
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
 
+### Wait arrivals
+
+A Handoff to a Wait becomes one durable arrival when its source is released: a Final result's release, or the Human answer
+or forwarding that created it. The arrival keeps the message and the Handoff's [origin](#delivery-origin), and its absolute
+deadline is the release time plus the captured Wait's duration; editing the saved Flow never changes it. The Handoff is
+acknowledged in place under the owner, open gate, live authorization context and release generation, so a repeated delivery
+attempt finds it no longer pending and records nothing. Parallel and repeated arrivals are independent; nothing joins.
+
+Forwarding is one guarded Run-store transition, shared by the timer and any later user action that forwards an arrival
+early. Under this owner and the open gate it claims a still-pending arrival, records who forwarded it and creates every
+outgoing Handoff to the Wait output's recipients in the same transaction. Those Handoffs are released from creation and carry
+the arrival's message and origin; dispatch then uses the ordinary delivery and replay rules. A competing forward finds the
+arrival settled and changes nothing, so a race or a crash after commit never produces a second set of Handoffs, and a crash
+before commit leaves the arrival pending with its message. Forwarding needs no T3 request or live authorization context.
+
+The Runner schedules one wake-up per pending arrival on its Effect clock, at startup for every pending arrival of a Run that
+is not Archived and whenever an arrival is recorded. A wake-up only drives its Run; every dispatch pass first forwards each
+pending arrival whose deadline has passed, oldest first, so a lost wake-up is caught by the next reconcile sweep and an extra
+one changes nothing. Restart before a deadline keeps it; after it, the next pass forwards the arrival once without moving
+the deadline or repeating missed time. Timing is best effort and system clock changes get no correction. Shutdown stops the
+wake-ups; the deadlines stay in the store.
+
+### Delivery origin
+
+Every Handoff, and the launch or send it becomes, records the originating worker of the message it carries: the Block
+activation and its bound T3 thread, within the Handoff's Run. An accepted Final result sets it to its activation and the
+Block's worker thread when bound; a Wait arrival keeps it and its forwarded Handoffs repeat it unchanged, through queued
+delivery, restart, fan-out and loop visits. It is never reconstructed from the graph or the latest activation. A message
+without a known worker has no origin: Human answers carry none yet. Migration `075` derived the origin of existing
+deliveries from their recorded Final result and its Block's bound thread, and left the others without one.
+
 ## Settled Runs
 
 A Run is Active, Settled or [Archived](#archive). Each reconciliation pass tries to
@@ -372,6 +403,7 @@ settle an Active Run with an open gate automatically. That requires all of the f
 - Every visited Block's current activation has its worker's accepted final result with no
   later `working` report, and no attention is pending; every Human occurrence is answered.
   Unvisited branches need not run.
+- No Wait arrival is pending.
 - Every delivery is acknowledged, with no outstanding launch, handoff or send. Handoffs
   cancelled because their result was replaced, and idle-worker preparations of
   [earlier Runs](#run-workspace), owe no delivery; a rejected launch still holds settlement.
@@ -386,11 +418,11 @@ not result quality or a common repository revision. Automatic settlement records
 Blocks' report-rejection diagnostics.
 
 The user can settle an Active or Snoozed Run at any time (`run-settled`, `manual`). Settling
-changes no execution: the gate stays open, owed operations continue and attention stays
-pending. Both ways clear Snooze and Woke.
+changes no execution: the gate stays open, owed operations continue, pending Wait arrivals still
+forward and attention stays pending. Both ways clear Snooze and Woke.
 
 A Settled Run is reconciled only while it owes an operation in pending, reserved or uncertain
-state, so owed handoffs are still released and delivered. Otherwise Factory does not read its
+state or a pending Wait arrival, so owed handoffs are still released and delivered. Otherwise Factory does not read its
 worker threads: later turns without a report record no work periods or attention and leave
 the Run Settled. Reports, Human answers and Request report are accepted as for an Active Run;
 only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
@@ -398,8 +430,8 @@ only an accepted report returns it to Active ([report acceptance](#report-accept
 ## Archive
 
 Archive is final and completes in one transaction in the Run's lane: it closes the handoff
-gate, records the Run Archived, cancels pending launches, handoffs and Human occurrences,
-clears pending delivery text, settles pending attention as `archived`, marks activated Blocks
+gate, records the Run Archived, cancels pending launches, handoffs, Human occurrences and Wait
+arrivals, clears pending delivery text and every Wait arrival's message (keeping its outcome, deadline and identity), settles pending attention as `archived`, marks activated Blocks
 that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
 replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
 uncertain operations keep their recorded state.

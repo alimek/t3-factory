@@ -39,6 +39,8 @@ and restricted OAuth credentials live outside project repositories.
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
   context needed to resolve uncertain outcomes. An acknowledgement is not completion.
+  Each delivery also records the [originating worker](runner.md#delivery-origin) of its message,
+  and each Wait arrival is a durable obligation with an absolute deadline.
 - Reports name their Block by the Block id Factory issued; Run and Block identity never come
   from other model-supplied references.
   Attention settlement and the Run's Settled and Archived states remain separate, with cancelled Human work never
@@ -52,7 +54,8 @@ new attempts, and failed Agent work is never retried automatically; see
 [ownership and recovery](runner.md#ownership-and-restart).
 
 **Retention.** History, input, revisions, events, deduplication metadata and closure evidence
-are kept indefinitely. Message payloads persist only while needed for pending Human context,
+are kept indefinitely. A Wait arrival keeps its message as the input its recipients read until
+Archive clears it; its deadline and outcome stay. Other message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
 remain. Initial input, including its images, and revision prompts are intentional exceptions;
 staged images no Run references are deleted after 24 hours. There is no

@@ -31,8 +31,8 @@ data ([testing policy](testing.md)). Native T3 links in simulated Runs are fixtu
 
 ## Scenario catalog
 
-The Atlas demo repository has four saved Agents (product engineer, code reviewer, accessibility reviewer and exit contract reviewer), five ready Flows (focused change, build/review/decision, parallel review, parallel review from
-one prompt, build and review in a worktree) and three incomplete Flows (release checklist, exit configuration repair and a hidden exit connection). Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
+The Atlas demo repository has four saved Agents (product engineer, code reviewer, accessibility reviewer and exit contract reviewer), seven ready Flows (focused change, build/review/decision, parallel review, parallel review from
+one prompt, build and review in a worktree, build/cool down/review with a two-day Wait, and parallel review held for the sync with a one-day Wait before your decision) and four incomplete Flows (release checklist, exit configuration repair, a hidden exit connection and a Wait without a duration). Flows do not save a Run coordinator. Seeded Run titles start with `Demo ·`.
 The Agents carry their exits: the product engineer **Ready for review**, the code and accessibility reviewers **Approved**. Most blocks offer those inherited exits;
 **Focused change** hides the engineer's exit and adds the Flow-local **Done**, and **Build, review and decide** hides the code reviewer's
 **Approved** and adds the local **Ready for your decision**. Open a block's configuration to see the **Exits from Agent** rows with **Hide in this Flow** / **Show in this Flow**, editable **Local exits · only in this Flow**
@@ -44,7 +44,10 @@ Choose **Show in this Flow** to repair it, or remove the connection. It can be s
 In Studio → Agents, the exits table edits the same inherited definitions. Rename the code reviewer’s **Approved** exit and its wires remain connected; remove it and **Parallel review** shows a readiness issue with **Start Run** disabled. Save each Agent edit before returning to the open Flow: readiness and **Start Run** refresh without reloading, while local Flow edits remain. Hidden Agent exits still reserve their names and IDs, so a local exit sharing either remains a readiness issue. These authoring checks use the existing scenario; no Run needs to be launched.
 The worktree Flow is saved with **New worktree · default branch** (the simulator resolves it to `origin/main`); every other
 ready Flow is saved with the **Project checkout** workspace, and the unsaved release-checklist Flow
-shows a new Flow's default, **New worktree · default branch**. Choose a missing **Custom ref** on a ready Flow and Start it to
+shows a new Flow's default, **New worktree · default branch**.
+**Wait needs a duration (draft)** saves its **Let CI settle** Wait without a duration: readiness reads **Enter how long Let CI
+settle waits.** and **Start Run** is disabled. Enter a duration from 1 minute to 7 days in its panel and save to restore readiness;
+an amount above 7 days is saved but stays a readiness issue. Choose a missing **Custom ref** on a ready Flow and Start it to
 see the `workspace.*` blocker with **Open Studio → Flows**; no Run is created.
 
 The Atlas project has an explicit monogram. Open the Run composer and its project picker
@@ -67,6 +70,8 @@ are covered by controlled fixtures rather than this seed.
 | Settled · Clearer onboarding copy | Settled automatically after its worker's result and finished thread; recorded welcome-copy branch and merged PR | Inspect its compact single-line project-icon/title row, full side preview, history and **Settled** canvas badge; a report from its worker would return it to Active. Use any open row's right-click menu and **Settle** to settle a Run by hand |
 | Archived · Earlier navigation experiment | Archived right after its worker launched with two prompt images, which stay retained; hidden from navigation | Check it is absent from the sidebar; open `/runs/<id>` (id from `/api/runs?projectId=<Atlas id>`) to read its history with the **Archived** badge and a stopped Block; inspect Flow input thumbnails, references and gallery, then reload to verify the Archived Run keeps its images/gallery; no relaunch action |
 | Snoozed · Navigation research | Open, snoozed | Restore to active navigation |
+| Waiting · Release notes settle before review | The implementer's result is held in **Let CI settle** for two days; the reviewer is not started | Read **until** and the deadline on the waiting Wait, then its details: one arrival with its retained message and deadline, and **A Wait has no T3 thread**; no Needs input or Problem. A retained home forwards it once the real deadline passes, also across restarts |
+| Waiting · Two reviews held for the morning sync | Both reviewers started from the prompt reported; each result waits independently in **Hold for the morning sync** for one day before **Your decision** | Read **2 waiting · next until** on the Wait and both arrivals with their own messages and deadlines in its details; Archive cancels both, clears their messages and shows the Wait stopped |
 | Woke · A question about keyboard shortcuts | Native attention woke a snoozed Run | Inspect Woke/Needs input; opening acknowledges Woke |
 | Discussing · Agent asked about empty-state wording | Open, one Agent that reported `working` and ended its turn with questions in T3; its worker thread is finished | Read the working message with no Needs input or missing-report Problem and the accepted working report in Work periods; controlled backend fixtures cover several reply turns without reports, a final after restart, and a Request report that finds the discussion unfinished |
 

@@ -28,7 +28,7 @@ Where all workers of one Run work, fixed at Start: the project checkout, or for 
 _Avoid_: A worktree per worker.
 
 **Flow block**:
-A constituent element of a flow: the Flow input block, an agent block or a human step.
+A constituent element of a flow: the Flow input block, an agent block, a human step or a Wait.
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
 
 **Agent**:
@@ -50,6 +50,16 @@ _Avoid_: user or account (there are no team accounts); session (approval outlive
 
 **Human step**:
 A flow block awaiting a person's decision in Factory before the flow continues. Its exits are fixed: **Approve** (message optional) and **Request changes** (a message describing the changes is required). No Flow or Agent configures them.
+
+**Wait**:
+A flow block that holds each arrival for a fixed duration from 1 minute to 7 days, then forwards its message unchanged through its one unnamed output. It has no Agent, worker, reports or exits to choose from, raises no attention, and cannot be a Flow input target.
+_Avoid_: Timer or delay as the block name; manual resume (not a Wait mode).
+
+**Wait arrival**:
+One accepted delivery to a Wait within a Run, with its retained message, originating worker, absolute deadline counted from the delivery's release, and outcome: pending, forwarded or cancelled by Archive. Arrivals never join or reset one another.
+
+**Delivery origin**:
+The worker whose result a delivery carries: its Run, Block activation and T3 worker thread. An Agent result sets it and a Wait forwards it unchanged; a message without a known worker has none.
 
 **Block exit**:
 A named result a block finishes with, whose connections determine which blocks run next. An exit has a stable ID, a name, an optional description and a "message required" flag; there is no other classification. An agent block's exits are its Agent's current exits minus those hidden in this Flow, plus its Flow-local exits; a Run uses the Agent revisions it captured. Wires leave by exit ID, so renaming an exit keeps them.
@@ -160,7 +170,7 @@ endpoints or environments create another context. A matching reference is a
 necessary recovery check, not proof of execution readiness or retry retention.
 
 **Archived**:
-The final Run lifecycle state, set when the user archives a Run after confirming. Archiving closes the handoff gate, cancels unsent launches, handoffs and Human occurrences and asks T3 once to interrupt each worker thread, without waiting for confirmation. An Archived Run leaves navigation for good and keeps all its data; reports for it are acknowledged as a success that changes nothing. Archive does not undo repository changes.
+The final Run lifecycle state, set when the user archives a Run after confirming. Archiving closes the handoff gate, cancels unsent launches, handoffs, Human occurrences and Wait arrivals and asks T3 once to interrupt each worker thread, without waiting for confirmation. An Archived Run leaves navigation for good and keeps all its data; reports for it are acknowledged as a success that changes nothing. Archive does not undo repository changes.
 _Avoid_: Stop and Stopped (the retired confirmed-termination outcome).
 
 **Handoff**:
@@ -178,7 +188,7 @@ One T3 run of a Block's worker thread, including repeated visits, queued turns, 
 **Settled**:
 A Run lifecycle state for work that is done. A Run settles automatically when every
 visited Block has its Final result with no later working report, every Human
-occurrence is answered, nothing is owed or pending and every worker thread is
+occurrence is answered, no Wait arrival is pending, nothing is owed or pending and every worker thread is
 finished; the user can also settle an Active or Snoozed Run at any time. Settling
 changes no execution. Any accepted report from one of its Blocks returns it to
 Active; chat without a report does not. Navigation groups Settled Runs together.
