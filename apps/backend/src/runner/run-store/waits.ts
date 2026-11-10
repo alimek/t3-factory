@@ -7,7 +7,7 @@ import type { RunRow } from "../runner-types.ts";
 import { writeBlockState } from "./blocks.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
 import { guardsHold } from "./guards.ts";
-import { arrivingHandoff, createHeldHandoffs, type DeliveryOrigin } from "./handoffs.ts";
+import { arrivingHandoff, createHeldHandoffs, storedOrigin } from "./handoffs.ts";
 import type { Handoff } from "./records.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
@@ -48,11 +48,6 @@ type WaitForwarding =
   | "not-due"
   | "closed"
   | "not-found";
-
-const origin = (row: Pick<WaitArrivalRow, "binding_id" | "origin_activation_id">) =>
-  row.binding_id
-    ? ({ bindingId: row.binding_id, activationId: row.origin_activation_id } as DeliveryOrigin)
-    : null;
 
 /** The public arrival; `origin_thread_id` is its bound worker's thread. */
 export function waitArrival(
@@ -175,7 +170,7 @@ export function openRunWaits(database: RunnerDatabase) {
             recipients,
             message: arrival.message ?? "",
             at: time,
-            origin: origin(arrival),
+            origin: storedOrigin(arrival),
           });
           yield* writeBlockState(
             sql,

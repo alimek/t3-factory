@@ -9,7 +9,8 @@ export type DemoFlows = Record<
   | "worktree"
   | "continuation"
   | "wait"
-  | "parallelWait",
+  | "parallelWait"
+  | "humanWait",
   string
 >;
 type Repository = NonNullable<ThreadFacts["repository"]>;
@@ -34,6 +35,7 @@ export type SeedScenario = {
   | { state: "two workers started from one prompt"; repositories: readonly Repository[] }
   | { state: "result released to a Wait"; result: Report }
   | { state: "results released to a Wait"; results: readonly [Report, Report] }
+  | { state: "review approved into a Wait"; result: Report; approval: string }
   | { state: "delegated work pending"; repository: Repository; delegations: number }
   | ({ grill: Report; approval: string } & (
       | { state: "continuation prompt sent" }
@@ -201,6 +203,18 @@ export const seedScenarioList: readonly SeedScenario[] = [
       message:
         "Release notes drafted from the merged search changes. Ready for review once CI settles.",
     },
+  },
+  {
+    key: "approved-wait",
+    title: "Waiting · Approved release held for the window",
+    flow: "humanWait",
+    state: "review approved into a Wait",
+    prompt: "Prepare the Atlas 2.4 release branch; I approve it before the release window opens.",
+    result: {
+      exit: "Ready for review",
+      message: "Release branch prepared with the changelog and version bump. Ready for approval.",
+    },
+    approval: "Approved. Announce it once the release window opens.",
   },
   {
     key: "wait-arrivals",

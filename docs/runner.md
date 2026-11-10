@@ -357,11 +357,13 @@ not secure erasure.
 Every Handoff, and the launch or send it becomes, records the [worker provenance](../GLOSSARY.md#worker-provenance)
 of the message it carries: the worker's thread binding and, when known, the Block activation whose result the message
 is, within the Handoff's Run. An accepted Final result sets both: its activation, and the Block's bound worker or, for a
-Continuation's result, the thread its prompt ran on. A Human answer keeps the binding of the delivery it answered but
-carries no activation yet. A Wait arrival keeps what its Handoff carried and its forwarded Handoffs repeat it unchanged,
-as a pass-through does, through queued delivery, restart, fan-out and loop visits; it is never reconstructed from the graph
-or the latest activation. A Continuation continues the thread its arriving message is bound to, also after a Wait. Run
-detail shows the provenance as the delivery's `origin` when both thread and activation are known.
+Continuation's result, the thread its prompt ran on. A Human occurrence reads both from the incoming delivery it was
+recorded from, which keeps them after acknowledgement, and its answer's Handoffs repeat them with the person's message. A
+Wait arrival keeps what its Handoff carried and its forwarded Handoffs repeat it unchanged, as a pass-through does; neither
+a Wait nor a Human step acquires a worker. Provenance survives queued delivery, restart, fan-out and loop visits and is
+never reconstructed from the graph or the latest activation, so parallel occurrences and a review answered after a later
+visit of its worker keep their own. A Continuation continues the thread its arriving message is bound to, also after a
+Human step or Wait. Run detail shows the provenance as the delivery's `origin` when both thread and activation are known.
 
 Migration `075` added the binding without deriving it for earlier handoffs. Migration `076` derived the binding and
 activation of existing deliveries from their recorded Final result (the Continuation's prompt thread, else its Block's
@@ -396,7 +398,8 @@ Approve accepts an optional one. An exact retry of an answer accepted before the
 names the new exit and so conflicts instead of repeating.
 
 Answering atomically records the answer, settles only that occurrence and creates every
-outgoing handoff. Identical retries return current detail; changed or competing answers
+outgoing handoff, which carries the answer and the [worker provenance](#worker-provenance) of the occurrence's own incoming
+delivery. Identical retries return current detail; changed or competing answers
 conflict. Pending context is cleared after settlement. A Human Block stays waiting while
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.

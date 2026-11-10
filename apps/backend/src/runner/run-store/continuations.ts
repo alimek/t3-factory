@@ -1,5 +1,6 @@
 import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
+import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
 import { now } from "../../time.ts";
 import type { RunRow, StoredTarget } from "../runner-types.ts";
@@ -24,6 +25,22 @@ const arrivalMessage = (handoff: Handoff) => {
   if (!intactPayload(handoff)) throw Error("Invalid handoff payload");
   return (JSON.parse(handoff.payload_json) as { message: string }).message;
 };
+
+/** The block and exit that wrote a Handoff's message. A Wait forwards its arrival's message
+ * unchanged, so a message from a Wait was written by that arrival's source, through consecutive
+ * Waits. */
+const messageAuthor = (sql: SqlClient.SqlClient, handoff: Handoff) =>
+  Effect.gen(function* () {
+    let author: Pick<DeliveryRecord, "source_block_id" | "exit_id" | "wait_arrival_id"> = handoff;
+    while (author.wait_arrival_id) {
+      const [incoming] = yield* sql<
+        Pick<DeliveryRecord, "source_block_id" | "exit_id" | "wait_arrival_id">
+      >`SELECT i.source_block_id,i.exit_id,i.wait_arrival_id FROM wait_arrivals a JOIN operation_intents i ON i.id=a.incoming_intent_id WHERE a.id=${author.wait_arrival_id}`;
+      if (!incoming) break;
+      author = incoming;
+    }
+    return { sourceBlockId: author.source_block_id, exitId: author.exit_id };
+  });
 
 /**
  * Continuation arrivals. The first message a Continuation receives in a Run sends its prompt into
@@ -77,7 +94,7 @@ export function openRunContinuations(database: RunnerDatabase) {
         const message = continuationPromptMessage(
           current.definitions,
           handoff.block_id,
-          { sourceBlockId: handoff.source_block_id, exitId: handoff.exit_id },
+          yield* messageAuthor(sql, handoff),
           arrivalMessage(handoff),
         );
         const payload = workerRevisitPayload(

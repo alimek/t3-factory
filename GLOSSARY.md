@@ -63,7 +63,7 @@ A flow block with a name, a prompt and one unnamed output, and no Agent or exits
 _Avoid_: continuity, follow-up block, reusing a worker by copying its conversation.
 
 **Worker provenance**:
-The worker thread a delivered message belongs to, recorded by its durable T3 thread id, and, when known, the Block activation whose result the message is: an Agent's result carries its worker and activation, a human step's answer the worker of the message it answered (without an activation), a Continuation's response the thread its prompt ran on, and a Wait or pass-through forwards what it received unchanged. A Continuation reads the thread from the message it receives; titles never select a thread. Run detail shows a delivery's provenance as its `origin` when both thread and activation are known.
+The worker thread a delivered message belongs to, recorded by its durable T3 thread id, and, when known, the Block activation whose result the message is: an Agent's result carries its worker and activation, a human step's answer the worker and activation of the message it answered, a Continuation's response the thread its prompt ran on, and a Wait or pass-through forwards what it received unchanged. A Continuation reads the thread from the message it receives; titles never select a thread. Run detail shows a delivery's provenance as its `origin` when both thread and activation are known.
 _Avoid_: delivery origin as a separate term.
 
 **Block exit**:

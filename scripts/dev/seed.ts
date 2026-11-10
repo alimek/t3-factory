@@ -15,6 +15,7 @@ import {
   resultsReleasedToWait,
   resultReplacedBeforeRelease,
   resultReported,
+  reviewApproved,
   settled,
   snoozed,
   twoWorkersStarted,
@@ -261,6 +262,14 @@ async function finishScenario(
     case "result released to a Wait":
       await resultReleasedToWait(context, await resultReported(context, worker, scenario.result));
       break;
+    case "review approved into a Wait": {
+      const review = await resultReleasedToHumanReview(
+        context,
+        await resultReported(context, worker, scenario.result),
+      );
+      await resultReleasedToWait(context, await reviewApproved(context, review, scenario.approval));
+      break;
+    }
     case "delegated work pending":
       await repositoryFactsObserved(context, worker, scenario.repository);
       await delegatedWorkPending(context, worker, scenario.delegations);

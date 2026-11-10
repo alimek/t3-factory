@@ -123,6 +123,7 @@ async function prepareWorkerRuns() {
       wait: flow("Demo · Build, cool down and review"),
       parallelWait: flow("Demo · Parallel review held for the sync"),
       continuation: flow("Demo · Grill, spec and tickets"),
+      humanWait: flow("Demo · Approve, then hold for release"),
     },
     { titlePrefix: "UI worker · ", keyNamespace: "ui-worker:development-v1:" },
   );

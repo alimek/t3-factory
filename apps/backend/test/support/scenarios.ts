@@ -500,13 +500,15 @@ export const waitFlow: ReadyFlowShape = (world) =>
     ],
   }));
 
-/** Entry worker's "Done" waits in Cool down, which forwards to the Continuation Spec. */
-export const waitContinuationFlow: ReadyFlowShape = (world) =>
-  workerShape(world, "Wait before continuation", (agentId) => ({
+/** Entry worker's "Done" goes to a Human Review whose Approve waits in Cool down, which forwards to
+ * the Continuation Spec. */
+export const reviewWaitContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Review and wait before continuation", (agentId) => ({
     flowInput: flowInput("worker"),
-    blocks: [entryWorker(agentId), coolDown(), specStep],
+    blocks: [entryWorker(agentId), reviewStep, coolDown(), specStep],
     connections: [
-      connection("worker", "done", "cool-down"),
+      connection("worker", "done", "review"),
+      connection("review", "approve", "cool-down"),
       connection("cool-down", WAIT_OUTPUT, "spec"),
     ],
   }));
@@ -556,6 +558,71 @@ export const parallelWaitFlow: ReadyFlowShape = (world) =>
     connections: [
       connection("worker", "done", "cool-down"),
       connection("second", "done", "cool-down"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes to a Human Review whose Approve waits in Cool down, which forwards
+ * to Follow-up. */
+export const humanThenWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Review then wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, coolDown(), followUp(agentId)],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("review", "approve", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which forwards to a Human Review whose Approve waits
+ * in Settle in, which forwards to Follow-up. */
+export const waitHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait, review, wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      coolDown(),
+      reviewStep,
+      coolDown("settle-in", "Settle in"),
+      followUp(agentId),
+    ],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "review"),
+      connection("review", "approve", "settle-in"),
+      connection("settle-in", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker and Second entry both start from the Flow input and hand "Done" to a Human
+ * Review whose Approve waits in Cool down, whose output ends the branch. */
+export const parallelHumanWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Parallel review then wait", (agentId) => ({
+    flowInput: flowInput("worker", "second"),
+    blocks: [
+      entryWorker(agentId),
+      agentBlock("second", "Second entry", agentId),
+      reviewStep,
+      coolDown(),
+    ],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("second", "done", "review"),
+      connection("review", "approve", "cool-down"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes both to a Human Review, whose Approve waits in Settle in with no
+ * further recipient, and to Cool down, which returns it to Entry worker. */
+export const reviewedLoopWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Reviewed wait loop", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, coolDown(), coolDown("settle-in", "Settle in")],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "worker"),
+      connection("review", "approve", "settle-in"),
     ],
   }));
 
@@ -1101,12 +1168,16 @@ export function resultReleasedToWait(world: ScenarioWorld, worker: WorkerHandle)
   });
 }
 
-/** The user approved the pending review; Factory has not yet observed the answer's handoff. */
-export function reviewApproved(world: ScenarioWorld, review: HumanReview) {
+/** The user approved the pending review, with `message` when given; Factory has not yet observed
+ * the answer's handoff. */
+export function reviewApproved(world: ScenarioWorld, review: HumanReview, message?: string) {
   return reach("review approved", async () => {
     stepResult(
       "approve the review",
-      await world.factory.answerHumanOccurrence(review.occurrence.id, { exitId: "approve" }),
+      await world.factory.answerHumanOccurrence(review.occurrence.id, {
+        exitId: "approve",
+        ...(message === undefined ? {} : { message }),
+      }),
     );
     return review;
   });

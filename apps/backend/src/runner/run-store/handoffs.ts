@@ -8,12 +8,19 @@ import type { DeliveryRecord, Handoff } from "./records.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
 /**
-/**
  * The worker a delivery's message belongs to: the thread binding a Continuation continues and, when
  * known, the Block activation whose result the message is. It is stored on every Handoff and kept
- * when the Handoff becomes a delivery, reaches a Wait or passes through.
+ * when the Handoff becomes a delivery, reaches a Wait, passes through or reaches a Human step,
+ * whose answer forwards it.
  */
 export type DeliveryOrigin = { readonly bindingId: string; readonly activationId: string | null };
+
+/** The origin a stored delivery or Wait arrival carries, if any. */
+export const storedOrigin = (row: {
+  readonly binding_id: string | null;
+  readonly origin_activation_id: string | null;
+}): DeliveryOrigin | null =>
+  row.binding_id ? { bindingId: row.binding_id, activationId: row.origin_activation_id } : null;
 
 /**
  * What creates Handoffs: a Final result version, a Human answer or a Wait arrival's forwarding,
