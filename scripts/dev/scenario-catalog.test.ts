@@ -83,6 +83,18 @@ await test("catalog rows keep keys literal and escape inline markup in titles", 
   assert.equal(result, "- ``a`b``: Demo · A\\\\\\`\\*\\_\\[x\\]\\~\\~&lt;tag&gt;&amp; next");
 });
 
+await test("generated rows may mention the marker name", () => {
+  // Arrange
+  const catalog = renderCatalog([{ key: "scenario-catalog", title: "First" }], "");
+  const original = replaceCatalog("scenarios.md", before + after, catalog);
+
+  // Act
+  const result = replaceCatalog("scenarios.md", original, catalog);
+
+  // Assert
+  assert.equal(result, original);
+});
+
 await test("a stale catalog fails check without writing the document", async (context) => {
   // Arrange
   const original = before + "stale rows\n" + after;

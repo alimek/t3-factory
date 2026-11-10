@@ -34,13 +34,14 @@ export function renderCatalog(entries: readonly Entry[], prefix: string): string
 }
 
 export function replaceCatalog(doc: string, document: string, catalog: string): string {
-  // Any other mention of the marker name, including a comment split across lines, is malformed:
-  // it must never be overwritten or silently dropped.
-  const mentions = document.split(markerName).length - 1;
+  // Outside the generated section, any other mention of the marker name (such as a comment split
+  // across lines) is malformed and must not be overwritten. Inside it, everything is generated.
   const lines = document.split("\n");
   const start = lines.indexOf(startMarker);
   const end = lines.indexOf(endMarker);
-  if (mentions !== 2 || start === -1 || end < start) {
+  const outside = [...lines.slice(0, start), ...lines.slice(end + 1)].join("\n");
+  const once = (marker: string) => lines.filter((line) => line === marker).length === 1;
+  if (!once(startMarker) || !once(endMarker) || end < start || outside.includes(markerName)) {
     throw new Error(
       `Invalid scenario catalog markers in ${doc}: expected one "${startMarker}" line followed by one "${endMarker}" line and no other mention of "${markerName}". Fix the marker lines by hand; only the rows between them are generated.`,
     );
