@@ -3,7 +3,7 @@ import { sameWire, type WireSource, type CanvasBlock, type CanvasGraph } from ".
 import { EXECUTION_DIMENSIONS } from "./components/canvas-dimensions.ts";
 import { mergeGraphBounds } from "./canvas-fit.ts";
 
-export type BlockPorts = { inputY: number; firstExitY: number; exitRow: number };
+type BlockPorts = { inputY: number; firstExitY: number; exitRow: number };
 type Point = { x: number; y: number };
 export type CanvasDimensions = {
   readonly block: {
@@ -231,7 +231,7 @@ export function orthogonalWirePath(exit: Point, input: Point, below: number, app
 }
 
 /** Minimum vertical gap between incoming port anchors on the same block (world px). */
-const INCOMING_PORT_SPACING = 18;
+export const INCOMING_PORT_SPACING = 18;
 
 function incomingFanIn(graph: FlowGraph, targetBlockId: string) {
   let count = graph.flowInput.targetBlockIds.includes(targetBlockId) ? 1 : 0;
@@ -242,10 +242,7 @@ function incomingFanIn(graph: FlowGraph, targetBlockId: string) {
 }
 
 /** Flow input first, then configured connections in graph order. */
-export function incomingWiresForBlock(
-  graph: FlowGraph,
-  targetBlockId: string,
-): readonly WireSource[] {
+function incomingWiresForBlock(graph: FlowGraph, targetBlockId: string): readonly WireSource[] {
   const wires: WireSource[] = [];
   if (graph.flowInput.targetBlockIds.includes(targetBlockId)) {
     wires.push({ kind: "flow-input" });
@@ -274,12 +271,8 @@ export function incomingPortIndexForSource(
   return index >= 0 ? index : 0;
 }
 
-export function incomingPortY(index: number, ports: BlockPorts) {
+function incomingPortY(index: number, ports: BlockPorts) {
   return ports.inputY + index * INCOMING_PORT_SPACING;
-}
-
-export function elkInputPortId(targetBlockId: string, index: number) {
-  return `in:${targetBlockId}:${index}`;
 }
 
 /** Horizontal lane offset for backward manual routes so returns do not share one vertical. */

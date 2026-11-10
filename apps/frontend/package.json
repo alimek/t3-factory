@@ -15,6 +15,7 @@
     "@noble/hashes": "1.8.0",
     "@t3-factory/contracts": "workspace:*",
     "@t3-factory/domain-validation": "workspace:*",
+    "@t3-factory/flow-layout": "workspace:*",
     "@tanstack/react-router": "1.170.46",
     "@tanstack/react-router-devtools": "1.167.2",
     "class-variance-authority": "0.7.1",

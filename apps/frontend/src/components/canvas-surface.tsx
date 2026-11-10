@@ -13,6 +13,7 @@ import { fitGraphView } from "../canvas-fit.ts";
 import { clampGraphPosition, clientToGraphPoint, type CanvasView } from "../canvas-viewport.ts";
 import {
   createCanvasGeometry,
+  INCOMING_PORT_SPACING,
   incomingPortIndexForSource,
   type CanvasDimensions,
 } from "../flow-geometry.ts";
@@ -510,8 +511,10 @@ function useSurfaceGraph({
       },
       blockWidth: dimensions.block.width,
       blockHeight: sourceGeometry.reservedHeight,
-      ports: sourceGeometry.ports,
+      ports: { ...sourceGeometry.ports, inputSpacing: INCOMING_PORT_SPACING },
       labels: wires.kind === "curved",
+      // Conservative width for the 10 px label, including padding and arrow gaps.
+      labelSize: (text) => ({ width: text.length * 7 + 24, height: 22 }),
     },
     authoring: arrangement && {
       busy: arrangement.busy,
