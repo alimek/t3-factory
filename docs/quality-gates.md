@@ -37,23 +37,25 @@ UI or a user journey; see [testing policy](testing.md#behavior-tests-vs-e2e-jour
 ## CI and manual checks
 
 `pnpm check` is the working-tree gate command, used by the pre-push hook and
-`.github/workflows/quality.yml`. CI also checks commit attribution and PR squash
-input. It runs on pull requests (including title/body edits) and pushes to `main`,
-with the repository's pinned Node and pnpm versions and a frozen lockfile.
-The job's check name is **Quality gate**. Requiring that check before merge is a
+`.github/workflows/quality.yml`. The **Quality gate** check runs full code checks
+on PR open, reopen and synchronization, base-branch retargets (`edited` events
+with a base change), and pushes to `main`, with the repository's pinned Node and
+pnpm versions and a frozen lockfile. Requiring that check before merge is a
 GitHub ruleset setting; adding a workflow alone does not enable that requirement.
+
+Title/body-only edits rerun **PR title**, **Git attribution** and, for frontend
+PRs, **UI evidence attachments**. They do not run or cancel the code gate and
+leave the existing **Quality gate** result for that revision in place: failed or
+missing results stay blocking. The skipped metadata-edit job uses a different
+check name so its skipped success cannot replace the required code result.
 
 Run `pnpm check` from the repository root for the same sequence locally.
 
-The separate **Git attribution** status runs the same validator on PR open,
-edit, reopen and synchronization events with checkout history and pinned Node,
-without installing dependencies, building or running behavior tests. Its
-concurrency group is separate from Quality's. During this deployment overlap,
-**Quality gate** still runs the validator on PR events, including edits. The owner
-must require **Git attribution** in the `main` ruleset through
-[#203](https://github.com/alimek/t3-factory/issues/203) before
-[#204](https://github.com/alimek/t3-factory/issues/204) removes the duplicate PR
-invocation and code runs for metadata-only edits.
+The separate **Git attribution** check owns PR squash-input and introduced-commit
+validation on PR open, edit, reopen and synchronization events with checkout
+history and pinned Node, without installing dependencies, building or running
+behavior tests. Its concurrency group is separate from Quality's. Attribution
+validation for pushes to `main` runs inside the Quality workflow.
 
 **Controlled UI journeys** is a separate PR check that runs the complete
 controlled Chromium suite, or reports an explicit not-applicable success for
@@ -88,15 +90,16 @@ rule exit codes in these formats. Health recommendations are advisory, not rule 
 
 Use the configured Git identity. `pnpm check:git-attribution --range <base-sha>
 <head-sha>` checks a specific range without changing commits or Git configuration.
-The pre-push hook checks every ref update, including new branches, excluding
-commits already reachable from that remote's `main` or the ref's previous tip.
+The pre-push hook uses the same validator for every ref update, including new
+branches, excluding commits already reachable from that remote's `main` or the ref's previous tip.
 Fetch the remote's `main` before pushing; a missing remote-tracking `main` fails
 the check rather than scanning all history.
 
-CI checks PR head commits not reachable from its base, plus the PR title and body
-as possible squash input. A push to `main` checks only commits introduced since
-the event's previous tip, including the final squash message. Existing history
-is outside these ranges; there is no findings baseline or suppression for new
+**Git attribution** checks PR head commits not reachable from its base, plus the
+PR title and body as possible squash input, on PR open, edit, reopen and
+synchronization. The Quality workflow checks pushes to `main` for only commits
+introduced since the event's previous tip, including the final squash message.
+Existing history is outside these ranges; there is no findings baseline or suppression for new
 commits. A push event without a previous main tip fails because it cannot establish
 that range.
 
@@ -114,14 +117,14 @@ there. Release Please's own generated PR footer is allowed.
 GitHub's default squash title/body settings and manual merge-message overrides
 are outside repository code. Keep the final message free of attribution too:
 CI can validate PR fields before merge and the actual message after a main push,
-but cannot inspect an unsaved override in the merge dialog. Require **Quality
-gate** in branch protection for the CI check to block merges.
+but cannot inspect an unsaved override in the merge dialog. Require **Git
+attribution** in the `main` ruleset for PR attribution failures to block merges.
 
 ### Pull request review loop
 
-The `main` ruleset requires **Quality gate** and **PR title**, squash merges and
-resolved review threads. It does not require the branch to be up to date with
-`main`: merge `main` into a PR only to resolve a conflict, because every update
+The `main` ruleset requires **Quality gate**, **PR title**, **Controlled UI
+journeys** and **Git attribution**, squash merges and resolved review threads.
+It does not require the branch to be up to date with `main`: merge `main` into a PR only to resolve a conflict, because every update
 reruns CI and the Sentinel review. A combination the checks exercise fails the
 quality gate on the push to `main`; one they do not exercise can still pass.
 
