@@ -1,4 +1,4 @@
-import { sha256Hex, solidPng, workerAtWork } from "../../apps/backend/test/support/scenarios.ts";
+import { sha256Hex, solidPng } from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import type { PromptSegment, Result } from "../../packages/contracts/src/index.ts";
@@ -29,7 +29,7 @@ export const demoImages = {
   focusRing: { name: "focus-ring.png", data: solidPng(240, 180, 30) },
   mockup: { name: "settings-mockup.png", data: solidPng(40, 180, 90) },
 };
-type DemoImage = (typeof demoImages)[keyof typeof demoImages];
+export type DemoImage = (typeof demoImages)[keyof typeof demoImages];
 
 /**
  * The Start prompt with its images staged first, as the composer does. The first `referenced`
@@ -63,6 +63,16 @@ async function scenarioPrompt(
   return { segments, images };
 }
 
+export interface ScenarioNamespace {
+  titlePrefix: string;
+  keyNamespace: string;
+}
+
+export const demoNamespace: ScenarioNamespace = {
+  titlePrefix: "Demo · ",
+  keyNamespace: "development-v1:",
+};
+
 /** A demo Run's Start: its stable logical key, title and prompt, with its images staged. */
 export async function demoStart(
   context: SeedContext,
@@ -71,20 +81,18 @@ export async function demoStart(
   title: string,
   prompt: string,
   attachments: { images: readonly DemoImage[]; referenced: number } = { images: [], referenced: 0 },
+  namespace: ScenarioNamespace = demoNamespace,
 ) {
   return {
-    requestId: `development-v1:${key}`,
+    requestId: `${namespace.keyNamespace}${key}`,
     projectId: context.projectId,
     flowId,
-    ...(await scenarioPrompt(context, `Demo · ${title}\n\n${prompt}`, attachments)),
-    title: `Demo · ${title}`,
+    ...(await scenarioPrompt(
+      context,
+      `${namespace.titlePrefix}${title}\n\n${prompt}`,
+      attachments,
+    )),
+    title: `${namespace.titlePrefix}${title}`,
     createdAt: new Date().toISOString(),
   };
-}
-
-/** The Run read of a demo Run started with one worker at work. */
-export async function startDemoRun(...start: Parameters<typeof demoStart>) {
-  const [context] = start;
-  const worker = await workerAtWork(context, await demoStart(...start));
-  return requireSuccess(await context.factory.getRun(worker.runId));
 }

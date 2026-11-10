@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { scenarioFixture } from "./scenarios.ts";
+import type { FixtureState } from "./server.ts";
 
 type FixtureApp = { baseUrl: string | undefined };
 
@@ -10,16 +12,26 @@ async function liveFixture<A>(app: FixtureApp, action: string, query: Record<str
   return (response.status === 204 ? undefined : await response.json()) as A;
 }
 
-/** A Run of `flow` (default: the focused-change Flow) the fixture starts once per `key`, under the current T3 context. */
-export const liveRun = async (app: FixtureApp, key: string, flow?: string) =>
-  (await liveFixture<{ id: string }>(app, "run", flow ? { key, flow } : { key })).id;
+/** Starts this key once, in the named Flow and current authorization context. */
+export const liveRun = async (app: FixtureApp, key: string, flow = "Demo · Focused change") => {
+  const response = await scenarioFixture(app.baseUrl, "ensure", { key, flow });
+  return ((await response.json()) as { id: string }).id;
+};
 
-/** The Run's worker reports through Factory MCP: `working` with `message`, else finished and settled. */
-export const liveReport = (app: FixtureApp, key: string, message?: string) =>
-  liveFixture(app, "report", message ? { key, message } : { key });
-
-/** On a build-and-review Run, the implementing Agent finishes and the reviewer becomes active. */
-export const liveHandoff = (app: FixtureApp, key: string) => liveFixture(app, "handoff", { key });
+/** A journey supplies module state names, optionally with its own report content. */
+export async function liveStates(
+  app: FixtureApp,
+  key: string,
+  states: readonly FixtureState[],
+  message?: string,
+) {
+  for (const state of states)
+    await scenarioFixture(app.baseUrl, "transition", {
+      key,
+      state,
+      ...(message === undefined ? {} : { message }),
+    });
+}
 
 export const resetBrowserRequests = (app: FixtureApp) => liveFixture(app, "requests/reset");
 

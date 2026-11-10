@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
-import { workerEvent } from "./support/worker.ts";
+import { prepareScenarios } from "./support/scenarios.ts";
 
 beforeEach(async ({ app }) => {
-  await workerEvent(app.baseUrl, "prepare");
+  await prepareScenarios(app.baseUrl);
 });
 
 test("long native identities remain readable in the selected Block's Needs input after reload", async ({

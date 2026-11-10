@@ -13,8 +13,8 @@ behavior they expose.
 
 1. **Choose the observable case.** Read the relevant product contract and existing scenarios. State the screen, precondition, user action and expected result, and reuse a current case if it already
    reaches that state.
-2. **Create through public operations.** Extend the seed helpers using Factory operations and drive external execution and report evidence through the controlled adapter, with stable logical
-   request keys and descriptive demo content. Check every `Result`. A fresh seed must reach the intended state without direct SQL edits, network access or model workloads.
+2. **Create through public operations.** Add a new named state in `apps/backend/test/support/scenarios.ts` and a new scenario as one entry in the exported
+   list in `scripts/dev/seed-scenarios.ts`. Use Factory operations and drive external execution and report evidence through the controlled adapter, with stable logical request keys and descriptive demo content. Check every `Result`. A fresh seed must reach the intended state without direct SQL edits, network access or model workloads.
 3. **Preserve lifecycle.** Seed only a fresh demo database; keep user edits on ordinary startup and restore simulator state before reconciling retained Runs. Keep saved simulator state compatible with its restoration; incompatible changes need an explicit version change and reset or migration policy. A second startup must preserve identifiers, counts and Run states without duplicating or overwriting seed records.
 4. **Prove the scenario.** Use an absolute, disposable `FACTORY_DEV_HOME` outside the checkout: reset it, launch dev, inspect public API results, exercise the user action and reload. For UI evidence
    use the [verification skill](../.agents/skills/verify-t3-factory/SKILL.md) with an ad hoc e2e config under `.e2e/proof/<case>/` (`web()` and `app: { url: "<Vite URL>" }`, no command), run with

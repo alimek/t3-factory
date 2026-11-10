@@ -1,5 +1,28 @@
-import { seedScenarios } from "./seed-scenarios.ts";
-import { blockExit, controlledAgent } from "../../apps/backend/test/support/scenarios.ts";
+import { seedScenarioList, type DemoFlows, type SeedScenario } from "./seed-scenarios.ts";
+import {
+  blockExit,
+  controlledAgent,
+  archived,
+  changesRequested,
+  executionFailed,
+  idleWorking,
+  missingReport,
+  observe,
+  repositoryFactsObserved,
+  reportRejected,
+  resultReleasedToHumanReview,
+  resultReleasedToSecondWorker,
+  resultReleasedToTwoWorkers,
+  resultReplacedBeforeRelease,
+  resultReported,
+  settled,
+  snoozed,
+  twoWorkersStarted,
+  woke,
+  workerAtWork,
+  workingReportedIdle,
+  worktreeBound,
+} from "../../apps/backend/test/support/scenarios.ts";
 import { execFile } from "node:child_process";
 import { access, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,7 +30,13 @@ import { promisify } from "node:util";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { createDemoFlows } from "./seed-flows.ts";
-import { requireSuccess } from "./seed-support.ts";
+import {
+  requireSuccess,
+  demoStart,
+  demoNamespace,
+  type SeedContext,
+  type ScenarioNamespace,
+} from "./seed-support.ts";
 
 async function createDemoProject(factory: Factory, t3: PersistentT3, home: string) {
   const root = join(home, "demo-repositories", "atlas");
@@ -135,4 +164,106 @@ export async function seedDevelopment(
   const flows = await createDemoFlows(factory, agents);
   await createDemoClients(factory);
   await seedScenarios({ factory, t3, projectId: project.id }, flows);
+}
+
+async function seedScenario(
+  context: SeedContext,
+  flowId: string,
+  scenario: SeedScenario,
+  namespace: ScenarioNamespace,
+) {
+  const start = await demoStart(
+    context,
+    flowId,
+    scenario.key,
+    scenario.title,
+    scenario.prompt,
+    scenario.attachments,
+    namespace,
+  );
+  if (scenario.state === "two workers started from one prompt") {
+    const workers = await twoWorkersStarted(context, start);
+    for (const [index, repository] of scenario.repositories.entries())
+      await repositoryFactsObserved(context, workers[index]!, repository);
+    return workers[0].runId;
+  }
+  if (scenario.state === "Run worktree bound") return (await worktreeBound(context, start)).runId;
+  const worker = await workerAtWork(context, start);
+  await finishScenario(context, worker, scenario);
+  return worker.runId;
+}
+
+type Worker = Awaited<ReturnType<typeof workerAtWork>>;
+async function finishScenario(
+  context: SeedContext,
+  worker: Worker,
+  scenario: Exclude<
+    SeedScenario,
+    { state: "two workers started from one prompt" | "Run worktree bound" }
+  >,
+) {
+  switch (scenario.state) {
+    case "settled":
+      await repositoryFactsObserved(context, worker, scenario.repository);
+      await settled(context, await resultReported(context, worker, scenario.result));
+      break;
+    case "archived":
+      await archived(context, worker);
+      break;
+    case "execution failed":
+      await executionFailed(context, worker);
+      break;
+    case "snoozed":
+      await snoozed(context, worker);
+      break;
+    case "woke":
+      await woke(context, worker);
+      break;
+    case "working reported and idle":
+      if (scenario.repository) await repositoryFactsObserved(context, worker, scenario.repository);
+      await workingReportedIdle(context, worker, scenario.message);
+      break;
+    case "missing report":
+      await missingReport(context, await reportRejected(context, worker, scenario.rejected));
+      break;
+    case "result released to a Human review":
+    case "changes requested": {
+      const reviewer = await resultReleasedToSecondWorker(
+        context,
+        await resultReported(context, worker, scenario.implementation),
+      );
+      const review = await resultReleasedToHumanReview(
+        context,
+        await resultReported(context, reviewer, scenario.review),
+      );
+      if (scenario.state === "changes requested")
+        await changesRequested(context, review, worker, scenario.correction);
+      break;
+    }
+    case "result released to two workers":
+      await resultReleasedToTwoWorkers(
+        context,
+        await resultReplacedBeforeRelease(context, worker, scenario),
+      );
+      break;
+    case "worker at work":
+      await repositoryFactsObserved(context, worker, scenario.repository);
+      // Only the persistent simulator has subagents: they keep its delegated wait pending
+      // after the worker's turn ends, without inventing a missing report.
+      for (let index = 0; index < scenario.delegations; index++)
+        context.t3.delegate(worker.threadId, worker.executionId);
+      await observe(context, worker.runId, idleWorking(worker));
+      break;
+  }
+}
+
+export async function seedScenarios(
+  context: SeedContext,
+  flows: DemoFlows,
+  namespace: ScenarioNamespace = demoNamespace,
+) {
+  const runs = new Map<string, string>();
+  for (const scenario of seedScenarioList)
+    runs.set(scenario.key, await seedScenario(context, flows[scenario.flow], scenario, namespace));
+  return runs;
 }

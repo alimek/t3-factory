@@ -8,7 +8,8 @@ import {
   humanReviewFlow,
   missingReport,
   replyTurnRunning,
-  report,
+  replyTurnObserved,
+  workingReported,
   reportRecoveryCompleted,
   reportRecoveryLeftUnfinished,
   reportRecoveryRequested,
@@ -20,7 +21,6 @@ import {
   workerAtWork,
   workerFinal,
   workerWorking,
-  workingReport,
   workingReportedIdle,
 } from "./support/scenarios.ts";
 import { answerDelegatedWait } from "./support/controlled-thread.ts";
@@ -285,7 +285,7 @@ it("a worker idle after reporting working shows its message without a missing-re
   const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
-  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  await workingReported(f.world, worker);
   allTurnsEnd(f.world, worker);
 
   // Act
@@ -372,7 +372,7 @@ it("an execution failure settled by a report is not raised again while that run 
   const atWork = await workerAtWork(setup.world, setup.input);
   const worker = await executionFailed(setup.world, atWork);
   const f = { ...setup, ...worker };
-  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  await workingReported(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -391,7 +391,7 @@ it("a new failed run after a settled execution failure shows a new Problem", asy
   const atWork = await workerAtWork(setup.world, setup.input);
   const worker = await executionFailed(setup.world, atWork);
   const f = { ...setup, ...worker };
-  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  await workingReported(f.world, worker);
   turnBegins(f.world, worker, "retry-execution");
   allTurnsEnd(f.world, worker, "failed");
 
@@ -411,7 +411,7 @@ it("repeating the current working report after a failed run settles the executio
   const setup = await prepared(c, handoffFlow);
   const worker = await workerAtWork(setup.world, setup.input);
   const f = { ...setup, ...worker };
-  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  await workingReported(f.world, worker);
   allTurnsEnd(f.world, worker, "failed");
   assert((await f.f.reconcileRuns()).ok);
 
@@ -581,9 +581,8 @@ it("reply turns without reports keep the Block working with its message and no P
   const setup = await prepared(c, handoffFlow);
   const atWork = await workerAtWork(setup.world, setup.input);
   const idle = await workingReportedIdle(setup.world, atWork);
-  const worker = await replyTurnRunning(setup.world, idle);
+  const worker = await replyTurnObserved(setup.world, idle);
   const f = { ...setup, ...worker };
-  assert((await f.f.reconcileRuns()).ok);
   allTurnsEnd(f.world, worker);
 
   // Act

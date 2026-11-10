@@ -228,26 +228,6 @@ export async function report(world: ScenarioWorld, worker: WorkerHandle, fields:
     .code;
 }
 
-/** The worker's report is accepted and Factory observes it on the public Run read. */
-export async function reportAccepted(
-  world: ScenarioWorld,
-  worker: WorkerHandle,
-  fields: ReportFields,
-) {
-  const code = await report(world, worker, fields);
-  if (code !== "ACCEPTED") stepFailed("report accepted", `${worker.flowBlockId} answered ${code}.`);
-  return observeFor("report accepted", world, worker.runId, (run) =>
-    fields.to === "working"
-      ? run.blocks.some(
-          (block) =>
-            block.blockId === worker.flowBlockId && block.workingMessage === fields.message,
-        )
-      : run.reports.some(
-          (item) => item.blockId === worker.flowBlockId && item.status === fields.to,
-        ),
-  );
-}
-
 /** The worker's next T3 turn begins as run `runId`; the returned handle is on that run. */
 export function turnBegins(world: ScenarioWorld, worker: WorkerHandle, runId: string) {
   beginThreadRun(world.t3, worker.threadId, runId);
@@ -265,7 +245,7 @@ export function sentTurnBegins(world: ScenarioWorld, worker: WorkerHandle) {
 }
 
 /** The worker's current turn ends with `status` and T3 answers its delegated wait as settled. */
-export function turnEnds(world: ScenarioWorld, worker: WorkerHandle, status = "completed") {
+function turnEnds(world: ScenarioWorld, worker: WorkerHandle, status = "completed") {
   endThreadRun(world.t3, worker.threadId, worker.executionId, status);
 }
 
@@ -675,11 +655,19 @@ export function repositoryFactsObserved(
   });
 }
 
+/** Factory accepted a working report; the worker's turn and Factory's observations stay as they were. */
+export function workingReported(world: ScenarioWorld, worker: WorkerHandle, message?: string) {
+  return reach("working reported", async () => {
+    await reportedAs("report working", world, worker, workingReport(message));
+    return worker;
+  });
+}
+
 /** The worker reported working and its turn completed, as while CI runs or after asking the user
  * questions; Factory observed it idle in working, without a missing report. */
 export function workingReportedIdle(world: ScenarioWorld, worker: WorkerHandle, message?: string) {
   return reach("working reported and idle", async () => {
-    await reportedAs("report working", world, worker, workingReport(message));
+    await workingReported(world, worker, message);
     turnEnds(world, worker);
     await observeFor("observe the idle worker", world, worker.runId, idleWorking(worker));
     return worker;
@@ -688,8 +676,25 @@ export function workingReportedIdle(world: ScenarioWorld, worker: WorkerHandle, 
 
 /** The user replied in the idle worker's thread: a new turn runs, which the handle is on; Factory
  * has not yet observed it. */
-export function replyTurnRunning(world: ScenarioWorld, worker: WorkerHandle) {
-  return reach("reply turn running", async () => turnBegins(world, worker, "answer-execution"));
+export function replyTurnRunning(
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  executionId = "answer-execution",
+) {
+  return reach("reply turn running", async () => turnBegins(world, worker, executionId));
+}
+
+/** The user's reply runs on the same worker, and Factory observed that new turn. */
+export function replyTurnObserved(
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  executionId?: string,
+) {
+  return reach("reply turn observed", async () => {
+    const replying = await replyTurnRunning(world, worker, executionId);
+    await observeFor("observe the reply", world, worker.runId, turnObserved(replying, "running"));
+    return replying;
+  });
 }
 
 /** From a reply turn running: Factory observed it, it ended without a report and Factory observed

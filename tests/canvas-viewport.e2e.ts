@@ -7,7 +7,7 @@ import {
   runCanvasCenterOffset,
   runCanvasHorizontalOffset,
 } from "./support/canvas.ts";
-import { liveHandoff, liveReport, liveRun } from "./support/live.ts";
+import { liveStates, liveRun } from "./support/live.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
   // Arrange
@@ -47,7 +47,7 @@ test("a fitted Run preserves manual pan and zoom through resize and live updates
 
   // Act
   await browser.setViewport({ width: 1800, height: 1000 });
-  await liveReport(app, "canvas", "Still aligning the picker spacing.");
+  await liveStates(app, "canvas", ["working reported"], "Still aligning the picker spacing.");
 
   // Assert
   await expect(
@@ -90,7 +90,12 @@ test("a followed Run moves the view to the newly active Block", async ({
   await openFollowedReviewRun(app, screen, browser, "follow");
 
   // Act
-  await liveHandoff(app, "follow");
+  await liveStates(
+    app,
+    "follow",
+    ["result reported", "result released to a second worker"],
+    "Ready for review.",
+  );
 
   // Assert
   await expectFollowingReview(screen);
@@ -109,7 +114,12 @@ test("after a pan, a newly active Block marks Follow active instead of moving th
   const panned = await layer.getAttribute("style");
 
   // Act
-  await liveHandoff(app, "follow-off");
+  await liveStates(
+    app,
+    "follow-off",
+    ["result reported", "result released to a second worker"],
+    "Ready for review.",
+  );
 
   // Assert
   await expect(
@@ -128,7 +138,12 @@ test("Follow active resumes following on the newly active Block", async ({
   // Arrange
   const canvas = await openFollowedReviewRun(app, screen, browser, "follow-resume");
   await canvas.press("ArrowRight");
-  await liveHandoff(app, "follow-resume");
+  await liveStates(
+    app,
+    "follow-resume",
+    ["result reported", "result released to a second worker"],
+    "Ready for review.",
+  );
   const marked = screen.getByRole("button", "Follow active, active Blocks changed", {
     exact: true,
   });
@@ -150,7 +165,12 @@ test("period recenters the focused Run canvas and resumes following after a pan"
   // Arrange
   const canvas = await openFollowedReviewRun(app, screen, browser, "follow-shortcut");
   await canvas.press("ArrowRight");
-  await liveHandoff(app, "follow-shortcut");
+  await liveStates(
+    app,
+    "follow-shortcut",
+    ["result reported", "result released to a second worker"],
+    "Ready for review.",
+  );
   await expect(canvas).toHaveAttribute("data-following", "false");
   await expect(
     screen.getByRole("button", "Follow active, active Blocks changed", { exact: true }),

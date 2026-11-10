@@ -1,3 +1,4 @@
+import { applyRunState } from "./support/scenarios.ts";
 import { repairCodexReporting } from "./support/agents.ts";
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "@e2e-dev/web";
@@ -60,9 +61,8 @@ test("Start names every blocked Agent including later branches and succeeds afte
     .poll(async () => (await readHistoryRun(app.baseUrl, created.id)).activations.length)
     .toBe(1);
   await app.screenshot("whole-flow-start-accepted");
-  const finished = await fetch(new URL("/__fixture/readiness/report", app.baseUrl), {
-    method: "POST",
-  });
+  await applyRunState(app.baseUrl, created.id, "result reported", "Ready for parallel review.");
+  const finished = await applyRunState(app.baseUrl, created.id, "result released to two workers");
   assert(finished.ok);
   await browser.reload();
   await expect(screen.getByRole("region", "Block activations")).toContainText("Report accepted");

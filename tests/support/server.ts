@@ -1,14 +1,17 @@
-import { seedScenarios } from "../../scripts/dev/seed-scenarios.ts";
 import {
   blockExit,
   flowInput,
   controlledExecution,
   agentBlock,
-  observe,
-  reportAccepted,
+  resultHeld,
+  resultReported,
+  resultReleasedToSecondWorker,
+  resultReleasedToTwoWorkers,
+  workingReported,
+  replyTurnObserved,
+  settled,
+  workerAtWork,
   sha256Hex,
-  turnBegins,
-  turnEnds,
   workerHandle,
 } from "../../apps/backend/test/support/scenarios.ts";
 import assert from "node:assert/strict";
@@ -23,15 +26,16 @@ import type {
   FactoryClient,
   Result,
   ServerUpdateAction,
-  StartRunInput,
+  RunDetail,
 } from "../../packages/contracts/src/index.ts";
+import { effectiveExits } from "../../packages/domain-validation/src/index.ts";
 import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-access.ts";
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
-import { seedDevelopment } from "../../scripts/dev/seed.ts";
-import { requireSuccess, startDemoRun } from "../../scripts/dev/seed-support.ts";
+import { seedDevelopment, seedScenarios } from "../../scripts/dev/seed.ts";
+import { requireSuccess, demoStart } from "../../scripts/dev/seed-support.ts";
 import { proxyFixture, proxyFixtureUpgrade } from "./proxy.ts";
 
 const home = await mkdtemp(join(tmpdir(), "factory-e2e-"));
@@ -81,49 +85,31 @@ const project = requireSuccess(await factory.listProjects()).projects[0]!;
 const context = { factory, t3, projectId: project.id };
 const flows = requireSuccess(await factory.listFlows());
 const review = flows.find((f) => f.name === "Demo · Build, review and decide")!;
-let workerRuns: Promise<void> | undefined;
-let releasing: { id: string };
-let conversing: { id: string };
+let workerRuns: Promise<Map<string, string>> | undefined;
 async function prepareWorkerRuns() {
-  // The connection journey retires authorization. Create this suite's own Runs
-  // against the current context instead of modifying or resetting the demo Runs.
-  const workerContext = {
-    ...context,
-    factory: {
-      ...factory,
-      startRun(input: unknown) {
-        const seed = input as StartRunInput;
-        return factory.startRun({
-          ...seed,
-          requestId: `ui-worker:${seed.requestId}`,
-          segments: seed.segments.map((segment, index) =>
-            index === 0 && segment.type === "text"
-              ? { ...segment, text: segment.text.replace(/^Demo · /, "UI worker · ") }
-              : segment,
-          ),
-          title: seed.title.replace(/^Demo · /, "UI worker · "),
-        });
-      },
-    },
-  };
+  // Authorization journeys retire earlier contexts; this suite owns a fresh scenario copy.
   const flow = (name: string) => flows.find((item) => item.name === name)!.id;
-  await seedScenarios(workerContext, {
-    simple: flow("Demo · Focused change"),
-    review: review.id,
-    parallel: flow("Demo · Parallel review"),
-    parallelStart: flow("Demo · Parallel review from one prompt"),
-    worktree: flow("Demo · Build and review in a worktree"),
-  });
-  releasing = await startDemoRun(
-    workerContext,
-    review.id,
-    "ui-report-release",
-    "UI worker report release",
-    "Implement the project picker change.",
+  const runs = await seedScenarios(
+    context,
+    {
+      simple: flow("Demo · Focused change"),
+      review: review.id,
+      parallel: flow("Demo · Parallel review"),
+      parallelStart: flow("Demo · Parallel review from one prompt"),
+      worktree: flow("Demo · Build and review in a worktree"),
+    },
+    { titlePrefix: "UI worker · ", keyNamespace: "ui-worker:development-v1:" },
   );
-  conversing = requireSuccess(await factory.listRunNavigation()).find(
-    (run) => run.title === "UI worker · Discussing · Agent asked about empty-state wording",
-  )!;
+  runs.set(
+    "report-release",
+    await ensureRun(
+      "report-release",
+      review.name,
+      "UI worker · UI worker report release",
+      "Implement the project picker change.",
+    ),
+  );
+  return runs;
 }
 
 // Exercise published defaults and mixed value domains through the Agent editor.
@@ -316,21 +302,65 @@ async function approvedBrowserCookie() {
   return `factory_client=${requested.value.credential}; Path=/; HttpOnly; Secure; SameSite=Strict`;
 }
 
-/** Runs a live journey started on demand, under whichever T3 context is current. */
-const liveRuns = new Map<string, string>();
-async function liveRun(key: string, flowName = "Demo · Focused change") {
-  const known = liveRuns.get(key);
-  if (known) return requireSuccess(await factory.getRun(known));
-  const started = await startDemoRun(
+/** Journey keys are scoped to this fixture; the Flow is fixed when the key is first used. */
+const journeyRuns = new Map<string, { id: string; flow: string }>();
+async function ensureRun(
+  key: string,
+  flowName: string,
+  title = `Demo · Live ${key} · Tidy the project picker`,
+  prompt = "Tidy the spacing of the Atlas project picker.",
+) {
+  const known = journeyRuns.get(key);
+  if (known) {
+    assert.equal(known.flow, flowName, `Journey ${key} already uses another Flow`);
+    return known.id;
+  }
+  const flow = flows.find((item) => item.name === flowName);
+  assert(flow, `Unknown journey Flow ${flowName}`);
+  const worker = await workerAtWork(
     context,
-    flows.find((flow) => flow.name === flowName)!.id,
-    `ui-live-${key}`,
-    `Live ${key} · Tidy the project picker`,
-    "Tidy the spacing of the Atlas project picker.",
+    await demoStart(context, flow.id, key, title, prompt, undefined, {
+      titlePrefix: "",
+      keyNamespace: "ui-live:",
+    }),
   );
-  liveRuns.set(key, started.id);
-  return started;
+  journeyRuns.set(key, { id: worker.runId, flow: flowName });
+  return worker.runId;
 }
+
+const workerOf = (run: RunDetail) => workerHandle(context, run, "worker");
+const exitOf = (run: RunDetail) => {
+  const block = run.definitions.flow.graph.blocks.find((item) => item.id === "worker");
+  assert(block);
+  const exits = effectiveExits(block, run.definitions.agents);
+  assert.equal(exits.length, 1, "Journey worker must have one exit");
+  return exits[0]!.id;
+};
+
+// Only the named module states current journeys use are exposed.
+const transitions = {
+  "result held": (run: RunDetail, message?: string) =>
+    resultHeld(context, workerOf(run), {
+      exit: exitOf(run),
+      ...(message === undefined ? {} : { message }),
+    }),
+  "result reported": (run: RunDetail, message?: string) =>
+    resultReported(context, workerOf(run), {
+      exit: exitOf(run),
+      ...(message === undefined ? {} : { message }),
+    }),
+  "result released to a second worker": (run: RunDetail) =>
+    resultReleasedToSecondWorker(context, workerOf(run)),
+  "result released to two workers": (run: RunDetail) =>
+    resultReleasedToTwoWorkers(context, workerOf(run)),
+  "working reported": (run: RunDetail, message?: string) =>
+    workingReported(context, workerOf(run), message),
+  "reply turn observed": (run: RunDetail) =>
+    replyTurnObserved(context, workerOf(run), "ui-worker-reply"),
+  settled: (run: RunDetail) => settled(context, workerOf(run)),
+};
+
+export type FixtureState = keyof typeof transitions;
 
 /** HTTP requests the browser sent through the fixture since the last reset, as `METHOD /path`. */
 let browserRequests: string[] = [];
@@ -350,112 +380,28 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     assert(codex);
     requireSuccess(await factory.installReporting({ targetId: codex.id }));
   },
-  async "/__fixture/readiness/report"() {
-    const summary = requireSuccess(await factory.listRunNavigation()).find(
-      (run) => run.title === "UI whole Flow readiness",
-    );
-    assert(summary);
-    const current = requireSuccess(await factory.getRun(summary.id));
-    const accepted = await reportAccepted(context, workerHandle(context, current, "worker"), {
-      to: "finished",
-      exit: "review",
-      message: "Ready for parallel review.",
-    });
-    turnEnds(context, workerHandle(context, accepted, "worker"));
-    await observe(context, current.id, (run) => run.activations.length === 3);
-    return { ok: true };
-  },
   async "/__fixture/reporting/remove-registration"() {
     await rm(join(home, "reporting-codex", "config.toml"));
   },
   async "/__fixture/reporting/break"() {
     await rm(join(home, "reporting-codex", "skills", "factory-block", "SKILL.md"));
   },
-  async "/__fixture/worker/prepare"() {
-    await (workerRuns ??= prepareWorkerRuns());
-    return { ok: true };
+  async "/__fixture/scenarios/prepare"() {
+    return Object.fromEntries(await (workerRuns ??= prepareWorkerRuns()));
   },
-  async "/__fixture/worker/report"() {
-    const current = requireSuccess(await factory.getRun(releasing.id));
-    const worker = workerHandle(context, current, "worker");
-    await reportAccepted(context, worker, {
-      to: "finished",
-      exit: "review",
-      message: "A first draft of the project picker change.",
-    });
-    const accepted = await reportAccepted(context, worker, {
-      to: "finished",
-      exit: "review",
-      message: "The project picker change is ready for review.",
-    });
-    turnEnds(context, workerHandle(context, accepted, "worker"));
-    await observe(context, releasing.id, (run) =>
-      run.blocks.some((b) => b.blockId === "reviewer" && b.threadId !== null),
-    );
-    return { ok: true };
+  async "/__fixture/scenarios/ensure"(query) {
+    const key = query.get("key");
+    const flow = query.get("flow");
+    assert(key && flow, "Journey key and Flow are required");
+    return { id: await ensureRun(key, flow) };
   },
-  // The Working scenario's Agent reports that it is still on its task, as after a user's settle.
-  async "/__fixture/worker/working"() {
-    const summary = requireSuccess(await factory.listRunNavigation()).find(
-      (run) => run.title === "UI worker · Working · Improve the project picker",
-    );
-    assert(summary);
-    const run = requireSuccess(await factory.getRun(summary.id));
-    await reportAccepted(context, workerHandle(context, run, "worker"), {
-      to: "working",
-      message: "Two subagents are still checking the empty state.",
-    });
-    return { ok: true };
-  },
-  async "/__fixture/worker/answer"() {
-    const current = requireSuccess(await factory.getRun(conversing.id));
-    turnBegins(context, workerHandle(context, current, "worker"), "ui-worker-reply");
-    requireSuccess(await factory.reconcileRuns());
-    const replying = requireSuccess(await factory.getRun(conversing.id));
-    const accepted = await reportAccepted(context, workerHandle(context, replying, "worker"), {
-      to: "finished",
-      exit: "done",
-      message: "Used the requested concise wording and Clear filters label.",
-    });
-    turnEnds(context, workerHandle(context, accepted, "worker"));
-    const settled = await observe(context, current.id, (run) => run.lifecycle === "settled");
-    assert.equal(settled.activations.length, 1);
-    return { ok: true };
-  },
-
-  async "/__fixture/live/run"(query) {
-    return { id: (await liveRun(query.get("key")!, query.get("flow") ?? undefined)).id };
-  },
-  // The implementing Agent hands off to the reviewer, which becomes the active Block.
-  async "/__fixture/live/handoff"(query) {
-    const run = await liveRun(query.get("key")!);
-    const accepted = await reportAccepted(context, workerHandle(context, run, "worker"), {
-      to: "finished",
-      exit: "review",
-      message: "Ready for review.",
-    });
-    turnEnds(context, workerHandle(context, accepted, "worker"));
-    await observe(context, run.id, (detail) =>
-      detail.blocks.some((block) => block.blockId === "reviewer" && block.state === "working"),
-    );
-    return { ok: true };
-  },
-  // An Agent's Factory MCP report on the live journey's Run.
-  async "/__fixture/live/report"(query) {
-    const run = await liveRun(query.get("key")!);
-    const message = query.get("message");
-    const worker = workerHandle(context, run, "worker");
-    if (message) {
-      await reportAccepted(context, worker, { to: "working", message });
-      return { ok: true };
-    }
-    const accepted = await reportAccepted(context, worker, {
-      to: "finished",
-      exit: "done",
-      message: "Picker spacing tidied.",
-    });
-    turnEnds(context, workerHandle(context, accepted, "worker"));
-    await observe(context, run.id, (detail) => detail.lifecycle === "settled");
+  async "/__fixture/scenarios/transition"(query) {
+    const state = query.get("state");
+    assert(state && Object.hasOwn(transitions, state), `Unknown Run state ${state}`);
+    const id = query.get("id") ?? journeyRuns.get(query.get("key") ?? "")?.id;
+    assert(id, "An existing Run id or journey key is required");
+    const run = requireSuccess(await factory.getRun(id));
+    await transitions[state as keyof typeof transitions](run, query.get("message") ?? undefined);
     return { ok: true };
   },
   "/__fixture/live/requests/reset": () => {
