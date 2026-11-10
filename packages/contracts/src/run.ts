@@ -470,6 +470,7 @@ export const runOperations = {
   getRunImageInfo: operation<never, RunImageInfo>()({
     method: "HEAD",
     path: "/api/run-images/:sha256",
+    // A HEAD answer has no body, so clients read only its status; not a JSON `Result` call.
     answer: "bytes",
   }),
   /** Stages raw image bytes under their digest for a later Start; an existing digest succeeds. */
