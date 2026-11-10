@@ -243,12 +243,13 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
     /** Loads the latest saved Flow beside the local draft, which stays as it is. */
     async compareLatest() {
       if (!unresolved() || busy) return;
+      const comparing = conflict;
       try {
         const latest = await operations.getFlow(id);
-        // The conflict may have been resolved with an earlier comparison meanwhile.
-        if (unresolved()) conflict = { status: "compared", latest };
+        // Another comparison, resolution or later conflict may have replaced this one meanwhile.
+        if (conflict === comparing) conflict = { status: "compared", latest };
       } catch {
-        error = "Could not load the latest revision. Try again.";
+        if (conflict === comparing) error = "Could not load the latest revision. Try again.";
       }
       publish();
     },
