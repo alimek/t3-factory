@@ -180,7 +180,7 @@ function SelectedAgentEditor({
     if (duplicating) return;
     setDuplicating(true);
     try {
-      const copy = await library.definitions.duplicateAgent(agentId);
+      const copy = await library.definitions.duplicateAgent(agentId, {});
       void library.refreshReporting();
       if (active.current) void openStudio({ tab: "agents", agentId: copy.id });
     } catch (cause) {

@@ -484,7 +484,7 @@ export function RequestReport({
     setBusy(true);
     setError("");
     try {
-      await api.requestReport(run.id, blockId);
+      await api.requestReport(run.id, { blockId });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not request report.");
     } finally {

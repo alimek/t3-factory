@@ -1,3 +1,4 @@
+import { clientAccessOperations, operationPath } from "@t3-factory/contracts";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import type { ApprovedConnection } from "./approved-client.ts";
@@ -106,8 +107,8 @@ async function forward(request: Request, path: string, options: ProtocolOptions)
     let payload = reply.body;
     if (
       target.kind === "remote" &&
-      request.method === "POST" &&
-      path === "/api/client-access/requests" &&
+      request.method === clientAccessOperations.requestClientAccess.method &&
+      path === operationPath(clientAccessOperations.requestClientAccess) &&
       reply.status === 201
     ) {
       const granted = JSON.parse(payload.toString("utf8")) as {

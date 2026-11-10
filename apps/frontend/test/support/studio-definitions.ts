@@ -49,7 +49,7 @@ export function studioFactory() {
       agents = [...agents, agent];
       return agent;
     }),
-    deleteAgent: vi.fn<StudioDefinitionsOperations["deleteAgent"]>(async () => {
+    removeAgent: vi.fn<StudioDefinitionsOperations["removeAgent"]>(async () => {
       agents = [];
     }),
   };

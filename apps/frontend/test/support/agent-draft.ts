@@ -118,7 +118,7 @@ function memoryAgents() {
         return latest;
       },
     ),
-    deleteAgent: vi.fn<AgentDraftOperations["deleteAgent"]>(async () => undefined),
+    removeAgent: vi.fn<AgentDraftOperations["removeAgent"]>(async () => undefined),
   };
 }
 
@@ -140,7 +140,7 @@ export async function failedDelete() {
   const setup = editedAgent();
   setup.factory.updateAgent.mockRejectedValueOnce(new Error("Save unavailable."));
   await setup.draft.save();
-  setup.factory.deleteAgent.mockRejectedValueOnce(new Error("Agent is still used by a Flow."));
+  setup.factory.removeAgent.mockRejectedValueOnce(new Error("Agent is still used by a Flow."));
   await setup.draft.delete();
   return setup;
 }

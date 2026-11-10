@@ -138,8 +138,6 @@ export function runImageResponse(
 }
 
 export interface OperationCall {
-  /** First path parameter; empty for routes without one. */
-  readonly id: string;
   /** Parsed JSON body; undefined for routes that take none. */
   readonly input: unknown;
   readonly url: URL;
@@ -149,12 +147,8 @@ export interface OperationCall {
   readonly peer: string;
 }
 
-export interface ApiRoute {
-  readonly method: string;
-  readonly path: RegExp;
-  readonly body?: JsonBodyLimit;
-  /** Raw bytes instead of JSON; the input is `{ mimeType, data }`. */
-  readonly rawBody?: JsonBodyLimit;
+/** Who may call a route: admission decisions the server alone enforces. */
+export interface RouteTrust {
   /** Route exists only on that listener; the other answers 404. */
   readonly surface?: "host" | "remote";
   /** The protocol handshake itself: answered before a client declares its protocol. */
@@ -165,5 +159,4 @@ export interface ApiRoute {
   readonly public?: true;
   /** Host setup that changes the host's T3 or reporting state; remote clients get `host_only`. */
   readonly hostOnly?: true;
-  readonly handle: (call: OperationCall) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }

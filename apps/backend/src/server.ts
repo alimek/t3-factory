@@ -8,10 +8,15 @@ import * as Effect from "effect/Effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
 import {
+  agentOperations,
+  flowOperations,
+  projectOperations,
+  projectServerOperations,
+  connectionOperations,
+  runOperations,
   LIVE_PATH,
   type ProtocolDescriptor,
   type Result,
-  type StageRunImageInput,
 } from "@t3-factory/contracts";
 import {
   FACTORY_MINIMUM_PEER_PROTOCOL,
@@ -37,14 +42,14 @@ import {
   sendFaviconResponse,
   standardBody,
   writeJsonResponse,
-  type ApiRoute,
-  type OperationCall,
+  type RouteTrust,
 } from "./http-support.ts";
 import { listen, type Surface } from "./listener.ts";
 import { runtimeMcpHandler } from "./runtime-mcp.ts";
 import { remoteAccessController } from "./remote-listener.ts";
 import { serverUpdateRoutes, type ApplicationUpdates } from "./server-update-routes.ts";
 import { startLiveTransport, type LiveTransport } from "./live-transport.ts";
+import { routeTable, type RouteEntries, type RouteTable } from "./route-table.ts";
 
 export type { ApplicationUpdates } from "./server-update-routes.ts";
 
@@ -57,8 +62,6 @@ const contentTypes: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
 };
-
-const queryParameter = (url: URL, name: string) => url.searchParams.get(name) ?? "";
 
 const safeMethods = ["GET", "HEAD"];
 const isSafeMethod = (method: string) => safeMethods.includes(method);
@@ -106,407 +109,211 @@ function requestTarget(request: HttpServerRequestType): { url: URL; pathname: st
   }
 }
 
-const fromResult =
-  (operation: () => Promise<Result<unknown>>, successStatus = 200) =>
-  (): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-    Effect.map(Effect.promise(operation), (result) => resultResponse(result, successStatus));
+/** Answers a facade operation's Result with the operation's success status. */
+const answer = (operation: () => Promise<Result<unknown>>, successStatus = 200) =>
+  Effect.map(Effect.promise(operation), (result) => resultResponse(result, successStatus));
 
-const fromCall =
-  <I>(operation: (id: string, input: I) => Promise<Result<unknown>>, successStatus = 200) =>
-  ({ id, input }: OperationCall): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-    Effect.map(
-      Effect.promise(() => operation(id, input as I)),
-      (result) => resultResponse(result, successStatus),
-    );
-
-const fromId =
-  (operation: (id: string) => Promise<Result<unknown>>) =>
-  ({ id }: OperationCall): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
-    Effect.map(
-      Effect.promise(() => operation(id)),
-      resultResponse,
-    );
-
-/** First match wins, so literal paths precede parameter routes within each resource. */
-function apiRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    ...runResponseRoutes(factory),
+function apiRoutes(factory: Factory) {
+  return {
     ...runRoutes(factory),
-    ...reportingRoutes(factory),
-    ...projectRoutes(factory),
     ...connectionRoutes(factory),
+    ...projectRoutes(factory),
     ...flowRoutes(factory),
     ...agentRoutes(factory),
-  ];
+  };
 }
 
-function runResponseRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "POST",
-      path: /^\/api\/runs\/([^/]+)\/request-report$/,
-      body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
-      handle: fromCall((id, input: { blockId: string }) => factory.requestReport(id, input)),
+function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
+  return {
+    listRunNavigation: {
+      handle: () => answer(() => factory.listRunNavigation()),
     },
-    {
-      method: "POST",
-      path: /^\/api\/human-occurrences\/([^/]+)\/answer$/,
-      body: { bytes: 131_072, message: "Send valid answer JSON up to 128 KiB." },
-      handle: fromCall((id, input) => factory.answerHumanOccurrence(id, input)),
-    },
-  ];
-}
-
-function runRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/run-navigation$/,
-      handle: fromResult(() => factory.listRunNavigation()),
-    },
-    {
-      method: "PATCH",
-      path: /^\/api\/runs\/([^/]+)$/,
-      body: { bytes: 16_384, message: "Send valid Run title JSON." },
-      handle: fromCall((id, input) => factory.renameRun(id, input)),
-    },
-    ...(
-      [
-        ["snooze", factory.snoozeRun],
-        ["restore", factory.restoreRun],
-        ["woke-seen", factory.markRunWokeSeen],
-        ["settle", factory.settleRun],
-        ["archive", factory.archiveRun],
-      ] as const
-    ).map(([action, operation]): ApiRoute => ({
-      method: "POST",
-      path: new RegExp(`^/api/runs/([^/]+)/${action}$`),
-      handle: fromId((id) => operation(id)),
-    })),
-    {
-      method: "GET",
-      path: /^\/api\/attention$/,
-      handle: fromResult(() => factory.listAttention()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/runs$/,
+    startRun: {
       body: { bytes: 131_072, message: "Send valid Start JSON up to 128 KiB." },
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.startRun(input)),
-          (result) => resultResponse(result, 201),
-        ),
+      handle: ({ input }) => answer(() => factory.startRun(input), 201),
     },
-    ...runImageRoutes(factory),
-    {
-      method: "GET",
-      path: /^\/api\/run-creation-policy$/,
-      handle: fromResult(() => factory.getRunCreationPolicy()),
+    getRun: {
+      handle: ({ parameters }) => answer(() => factory.getRun(parameters.id)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/runs$/,
-      handle: ({ url }) =>
-        Effect.map(
-          Effect.promise(() => factory.listRuns(queryParameter(url, "projectId"))),
-          resultResponse,
-        ),
+    listRuns: {
+      handle: ({ parameters }) => answer(() => factory.listRuns(parameters.projectId)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/tasks$/,
-      handle: ({ url }) =>
-        Effect.map(
-          Effect.promise(() => factory.listTasks(queryParameter(url, "projectId"))),
-          resultResponse,
-        ),
+    renameRun: {
+      body: { bytes: 16_384, message: "Send valid Run title JSON." },
+      handle: ({ parameters, input }) => answer(() => factory.renameRun(parameters.id, input)),
     },
-    {
-      method: "PATCH",
-      path: /^\/api\/tasks\/([^/]+)$/,
+    snoozeRun: {
+      handle: ({ parameters }) => answer(() => factory.snoozeRun(parameters.id)),
+    },
+    restoreRun: {
+      handle: ({ parameters }) => answer(() => factory.restoreRun(parameters.id)),
+    },
+    markRunWokeSeen: {
+      handle: ({ parameters }) => answer(() => factory.markRunWokeSeen(parameters.id)),
+    },
+    settleRun: {
+      handle: ({ parameters }) => answer(() => factory.settleRun(parameters.id)),
+    },
+    archiveRun: {
+      handle: ({ parameters }) => answer(() => factory.archiveRun(parameters.id)),
+    },
+    requestReport: {
+      body: { bytes: 4096, message: "Send the Block id as JSON up to 4 KiB." },
+      handle: ({ parameters, input }) =>
+        answer(() => factory.requestReport(parameters.runId, input)),
+    },
+    answerHumanOccurrence: {
+      body: { bytes: 131_072, message: "Send valid answer JSON up to 128 KiB." },
+      handle: ({ parameters, input }) =>
+        answer(() => factory.answerHumanOccurrence(parameters.id, input)),
+    },
+    listAttention: {
+      handle: () => answer(() => factory.listAttention()),
+    },
+    getRunCreationPolicy: {
+      handle: () => answer(() => factory.getRunCreationPolicy()),
+    },
+    listTasks: {
+      handle: ({ parameters }) => answer(() => factory.listTasks(parameters.projectId)),
+    },
+    updateTask: {
       body: { bytes: 16_384, message: "Send valid Task JSON." },
-      handle: fromCall((id, input) => factory.updateTask(id, input)),
+      handle: ({ parameters, input }) => answer(() => factory.updateTask(parameters.id, input)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/runs\/([^/]+)$/,
-      handle: fromId((id) => factory.getRun(id)),
+    getRunImageInfo: {
+      handle: ({ parameters }) => answer(() => factory.getRunImageInfo(parameters.sha256)),
     },
-  ];
-}
-
-/** Content-addressed Run image bytes: staged before Start, then retained by the Run. */
-function runImageRoutes(factory: Factory): readonly ApiRoute[] {
-  const path = /^\/api\/run-images\/([^/]+)$/;
-  return [
-    {
-      method: "HEAD",
-      path,
-      handle: fromId((sha256) => factory.getRunImageInfo(sha256)),
+    stageRunImage: {
+      body: { bytes: RUN_IMAGE_MAX_BYTES, message: "Send one image up to 10 MiB." },
+      handle: ({ parameters, input }) =>
+        answer(() => factory.stageRunImage(parameters.sha256, input)),
     },
-    {
-      method: "PUT",
-      path,
-      rawBody: { bytes: RUN_IMAGE_MAX_BYTES, message: "Send one image up to 10 MiB." },
-      handle: fromCall((sha256, input: StageRunImageInput) => factory.stageRunImage(sha256, input)),
-    },
-    {
-      method: "GET",
-      path,
+    getRunImage: {
       protocolOptional: true,
-      handle: ({ id }) =>
+      handle: ({ parameters }) =>
         Effect.map(
-          Effect.promise(() => factory.getRunImage(id)),
+          Effect.promise(() => factory.getRunImage(parameters.sha256)),
           runImageResponse,
         ),
     },
-  ];
+  };
 }
 
-function reportingRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/reporting$/,
-      handle: fromResult(() => factory.getReportingInstallations()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/reporting\/install$/,
+function connectionRoutes(factory: Factory): RouteEntries<typeof connectionOperations> {
+  return {
+    getReportingInstallations: { handle: () => answer(() => factory.getReportingInstallations()) },
+    installReporting: {
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.installReporting(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.installReporting(input)),
     },
-    {
-      method: "POST",
-      path: /^\/api\/runtime\/recheck$/,
+    recheckRuntime: {
       hostOnly: true,
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.recheckRuntime(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.recheckRuntime(input)),
     },
-  ];
-}
-
-function projectRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/projects$/,
-      handle: fromResult(() => factory.listProjects()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/projects\/recheck$/,
-      handle: fromResult(() => factory.recheckProjects()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/projects$/,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.addRepository(input)),
-          resultResponse,
-        ),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/projects\/selection$/,
-      body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.selectProject(input)),
-          resultResponse,
-        ),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/projects\/([^/]+)\/favicon$/,
-      protocolOptional: true,
-      handle: ({ id }) =>
-        Effect.map(
-          Effect.promise(() => factory.getProjectFavicon(id)),
-          sendFaviconResponse,
-        ),
-    },
-    {
-      method: "HEAD",
-      path: /^\/api\/projects\/([^/]+)\/favicon$/,
-      protocolOptional: true,
-      handle: ({ id }) =>
-        Effect.map(
-          Effect.promise(() => factory.getProjectFavicon(id)),
-          sendFaviconResponse,
-        ),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/projects\/([^/]+)\/readiness$/,
-      handle: fromId((id) => factory.getProjectReadiness(id)),
-    },
-  ];
-}
-
-function connectionRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/connection$/,
-      handle: fromResult(() => factory.getConnection()),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/connection$/,
+    getConnection: { handle: () => answer(() => factory.getConnection()) },
+    configureConnection: {
       hostOnly: true,
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.configureConnection(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.configureConnection(input)),
     },
-    {
-      method: "POST",
-      path: /^\/api\/connection\/recheck$/,
-      handle: fromResult(() => factory.recheckConnection()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/connection\/authorize$/,
+    recheckConnection: { handle: () => answer(() => factory.recheckConnection()) },
+    authorizeConnection: {
       hostOnly: true,
-      handle: fromResult(() => factory.authorizeConnection()),
+      handle: () => answer(() => factory.authorizeConnection()),
     },
-    {
+    openConnectionAuthorization: {
       // Approved clients may ask the host to show T3 consent for the saved endpoint;
       // the consent page, state and tokens stay on the host.
-      method: "POST",
-      path: /^\/api\/connection\/authorization\/open$/,
-      handle: fromResult(() => factory.openConnectionAuthorization()),
+      handle: () => answer(() => factory.openConnectionAuthorization()),
     },
-  ];
+  };
 }
 
-function flowRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/flows$/,
-      handle: fromResult(() => factory.listFlows()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/flows$/,
+function projectRoutes(
+  factory: Factory,
+): RouteEntries<typeof projectOperations & typeof projectServerOperations> {
+  return {
+    listProjects: { handle: () => answer(() => factory.listProjects()) },
+    recheckProjects: { handle: () => answer(() => factory.recheckProjects()) },
+    addRepository: {
       body: standardBody,
-      handle: ({ input }) =>
+      handle: ({ input }) => answer(() => factory.addRepository(input)),
+    },
+    selectProject: {
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.selectProject(input)),
+    },
+    getProjectFavicon: {
+      protocolOptional: true,
+      handle: ({ parameters }) =>
         Effect.map(
-          Effect.promise(() => factory.createFlow(input)),
-          (result) => resultResponse(result, 201),
+          Effect.promise(() => factory.getProjectFavicon(parameters.id)),
+          sendFaviconResponse,
         ),
     },
-    {
-      method: "POST",
-      path: /^\/api\/flows\/validate$/,
+    getProjectReadiness: {
+      handle: ({ parameters }) => answer(() => factory.getProjectReadiness(parameters.id)),
+    },
+    headProjectFavicon: {
+      protocolOptional: true,
+      handle: ({ parameters }) =>
+        Effect.map(
+          Effect.promise(() => factory.getProjectFavicon(parameters.id)),
+          sendFaviconResponse,
+        ),
+    },
+  };
+}
+
+function flowRoutes(factory: Factory): RouteEntries<typeof flowOperations> {
+  return {
+    listFlows: { handle: () => answer(() => factory.listFlows()) },
+    createFlow: {
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.createFlow(input), 201),
+    },
+    validateFlow: {
       body: flowDocumentBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.validateFlow(input)),
-          resultResponse,
-        ),
+      handle: ({ input }) => answer(() => factory.validateFlow(input)),
     },
-    {
-      method: "GET",
-      path: /^\/api\/flows\/([^/]+)$/,
-      handle: fromId((id) => factory.getFlow(id)),
-    },
-    {
-      method: "DELETE",
-      path: /^\/api\/flows\/([^/]+)$/,
-      handle: fromId((id) => factory.removeFlow(id)),
-    },
-    {
-      method: "PUT",
-      path: /^\/api\/flows\/([^/]+)$/,
+    getFlow: { handle: ({ parameters }) => answer(() => factory.getFlow(parameters.id)) },
+    removeFlow: { handle: ({ parameters }) => answer(() => factory.removeFlow(parameters.id)) },
+    updateFlow: {
       body: flowDocumentBody,
-      handle: fromCall((id, input) => factory.updateFlow(id, input)),
+      handle: ({ parameters, input }) => answer(() => factory.updateFlow(parameters.id, input)),
     },
-  ];
+  };
 }
 
-function agentRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/agents\/capabilities$/,
-      handle: fromResult(() => factory.getAgentCapabilities()),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/agents$/,
-      handle: fromResult(() => factory.listAgents()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/agents$/,
+function agentRoutes(factory: Factory): RouteEntries<typeof agentOperations> {
+  return {
+    getAgentCapabilities: { handle: () => answer(() => factory.getAgentCapabilities()) },
+    listAgents: { handle: () => answer(() => factory.listAgents()) },
+    createAgent: {
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.createAgent(input)),
-          (result) => resultResponse(result, 201),
-        ),
+      handle: ({ input }) => answer(() => factory.createAgent(input), 201),
     },
-    {
-      method: "GET",
-      path: /^\/api\/agents\/([^/]+)$/,
-      handle: fromId((id) => factory.getAgent(id)),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/agents\/([^/]+)\/duplicate$/,
+    getAgent: { handle: ({ parameters }) => answer(() => factory.getAgent(parameters.id)) },
+    duplicateAgent: {
       body: standardBody,
-      handle: fromCall((id, input) => factory.duplicateAgent(id, input), 201),
+      handle: ({ parameters, input }) =>
+        answer(() => factory.duplicateAgent(parameters.id, input), 201),
     },
-    {
-      method: "PUT",
-      path: /^\/api\/agents\/([^/]+)$/,
+    updateAgent: {
       body: standardBody,
-      handle: fromCall((id, input) => factory.updateAgent(id, input)),
+      handle: ({ parameters, input }) => answer(() => factory.updateAgent(parameters.id, input)),
     },
-    {
-      method: "DELETE",
-      path: /^\/api\/agents\/([^/]+)$/,
-      handle: fromId((id) => factory.removeAgent(id)),
-    },
-  ];
+    removeAgent: { handle: ({ parameters }) => answer(() => factory.removeAgent(parameters.id)) },
+  };
 }
-
-/** The listener's routes in order; a route for the other surface does not exist here. */
-const findRoute = (
-  routes: readonly ApiRoute[],
-  surface: Surface,
-  method: string,
-  pathname: string,
-) =>
-  routes.find(
-    (candidate) =>
-      candidate.method === method &&
-      (candidate.surface === undefined || candidate.surface === surface) &&
-      candidate.path.test(pathname),
-  );
 
 /**
  * Before any operation: a declared protocol must be compatible, and a remote client
  * must declare one, hold an approved credential, and not call host setup.
  */
 function admission(
-  route: ApiRoute,
+  route: RouteTrust,
   request: HttpServerRequestType,
   binding: HttpBinding,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse | undefined> {
@@ -533,7 +340,7 @@ function admission(
   });
 }
 
-/** Runs the first matching API route; undefined when no route claims the request. */
+/** Runs the API route that claims the request; undefined when none does. */
 function dispatchApi(
   request: HttpServerRequestType,
   target: { url: URL; pathname: string },
@@ -541,21 +348,21 @@ function dispatchApi(
   peer: string,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse | undefined> {
   return Effect.gen(function* () {
-    const route = findRoute(binding.routes, binding.surface, request.method, target.pathname);
-    if (!route) return undefined;
+    const matched = binding.routes(binding.surface, request.method, target.pathname);
+    if (!matched) return undefined;
+    const { route, parameters } = matched;
     const rejected = yield* admission(route, request, binding);
     if (rejected) return rejected;
-    const id = route.path.exec(target.pathname)?.[1] ?? "";
     let input: unknown;
-    if (route.body || route.rawBody) {
-      const body = route.body
-        ? yield* readJsonBody(request, route.body)
-        : yield* readRawBody(request, route.rawBody!);
+    if (route.body) {
+      const body =
+        route.body.kind === "json"
+          ? yield* readJsonBody(request, route.body.limit)
+          : yield* readRawBody(request, route.body.limit);
       if (body.kind === "invalid") return body.response;
       input = body.value;
     }
-    return yield* route.handle({
-      id,
+    return yield* route.handle(parameters, {
       input,
       url: target.url,
       method: request.method,
@@ -607,7 +414,7 @@ interface HttpBinding {
   readonly nodeServer: Server;
   readonly surface: Surface;
   readonly allowedHosts: readonly string[];
-  readonly routes: readonly ApiRoute[];
+  readonly routes: RouteTable;
   readonly uiDirectory: string | null;
   readonly protocol: ProtocolDescriptor;
   readonly factory: Factory;
@@ -804,7 +611,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
   const limiter = new RequestLimiter(accessRequestsPerMinute, 60_000);
   const mcp = runtimeMcpHandler(factory.runtime, factory);
   const live = await startLiveTransport(factory.live);
-  let routes: readonly ApiRoute[] = [];
+  let routes: RouteTable = () => undefined;
   const handlerFor =
     (surface: Surface, allowedHosts: readonly string[]) => (nodeServer: Server) => {
       const binding: HttpBinding = {
@@ -823,14 +630,15 @@ export async function startServer(config: Configuration, options: ServerOptions 
       return (request: HttpServerRequestType) => handleHttpRequest(request, binding);
     };
   const remote = remoteAccessController(config, handlerFor("remote", config.allowedHosts ?? []));
-  routes = [
-    ...accessRoutes(factory, protocol, remote, limiter, live),
-    ...apiRoutes(factory),
-    ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
-  ];
   const nodeServer = createServer();
   let host: Awaited<ReturnType<typeof listen>>;
   try {
+    // Refuses conflicting entries before the server binds.
+    routes = routeTable({
+      ...accessRoutes(factory, protocol, remote, limiter, live),
+      ...apiRoutes(factory),
+      ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
+    });
     host = await listen(
       nodeServer,
       config.host,
