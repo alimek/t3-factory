@@ -9,4 +9,7 @@ user_settings:
 
   # One deeper review per push instead of findings trickling in over several pushes.
   max_rounds: 2
+  # The deployment plans 600s per review: max_rounds × (timeout_ms + closing_ms) must fit.
+  timeout_ms: 240000
+  closing_ms: 60000
   default_thinking_level: medium
