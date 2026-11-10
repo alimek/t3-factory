@@ -1,4 +1,10 @@
 import {
+  createFlowLayoutDimensions,
+  incomingPortIndex,
+  type CanvasDimensions,
+  type WireSource,
+} from "@t3-factory/flow-layout";
+import {
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -11,11 +17,7 @@ import type { AgentDefinition, FlowGraph } from "@t3-factory/contracts";
 import { cn } from "@/lib/utils";
 import { fitGraphView } from "../canvas-fit.ts";
 import { clampGraphPosition, clientToGraphPoint, type CanvasView } from "../canvas-viewport.ts";
-import {
-  createCanvasGeometry,
-  incomingPortIndexForSource,
-  type CanvasDimensions,
-} from "../flow-geometry.ts";
+import { createCanvasGeometry } from "../flow-geometry.ts";
 import {
   addWire,
   canvasGraph,
@@ -23,7 +25,6 @@ import {
   type CanvasBlock,
   type CanvasGraph,
   type FlowWire,
-  type WireSource,
 } from "../flow-graph.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { useFlowLayoutSession } from "../use-flow-layout.ts";
@@ -366,7 +367,7 @@ function GesturePreview({
   if (!from) return null;
   const target = graph.blocks.find((b) => b.id === targetBlockId);
   const to = target
-    ? geometry.inputPoint(target, incomingPortIndexForSource(graph, target.id, source))
+    ? geometry.inputPoint(target, incomingPortIndex(graph, target.id, source))
     : gesture.pointer;
   return <ConnectionPreview from={from} to={to} />;
 }
@@ -497,22 +498,11 @@ function useSurfaceGraph({
     reservedFooterCount: reservedFooters,
     emptyGraphSize,
   };
-  const sourceGeometry = createCanvasGeometry(source, dimensions, facts);
   const layout = useFlowLayoutSession({
     scope,
     graph: sourceGraph,
     agents,
-    dimensions: {
-      flowInput: {
-        width: dimensions.flowInput.width,
-        height: sourceGeometry.flowInputBox.height,
-        outputY: dimensions.flowInput.outputY,
-      },
-      blockWidth: dimensions.block.width,
-      blockHeight: sourceGeometry.reservedHeight,
-      ports: sourceGeometry.ports,
-      labels: wires.kind === "curved",
-    },
+    dimensions: createFlowLayoutDimensions(source, dimensions, facts, wires.kind === "curved"),
     authoring: arrangement && {
       busy: arrangement.busy,
       savedGraph: arrangement.saved,
@@ -602,7 +592,7 @@ function SurfaceLayer({
           content={content(item)}
           pendingInput={
             pending?.targetBlockId === item.id
-              ? incomingPortIndexForSource(graph, item.id, pending.source)
+              ? incomingPortIndex(graph, item.id, pending.source)
               : null
           }
         />
