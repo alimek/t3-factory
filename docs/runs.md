@@ -116,6 +116,7 @@ The [foundation contract](foundation.md#live-delivery) describes consistency and
 Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow revision**). Positions, exits,
 connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
 project is unavailable; a later edit or removal is labelled (**Flow edited since**, **Flow removed since**), never substituted.
+Only a read that finds the Flow gone shows **Flow removed since**; any other failed read shows no comparison label.
 A block's exits are its captured Agent revision's exits minus those the Flow hid, plus its Flow-local exits. Reports and handoffs
 keep the exit they recorded; Human steps upgraded from earlier releases show their exits as **Approve** and **Request changes**, the
 fixed Human exits their old exits were mapped to.

@@ -14,17 +14,18 @@ clone or worktree does not trigger the hook.
 The hook first checks attribution in the commits being pushed, then runs
 `pnpm check`. It stops at the first failure (cheap static checks first):
 
-| Step | Command             | Catches                                                                                                                                 |
-| ---- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `pnpm format:check` | Files not formatted by the Vite+ formatter (`vite.config.ts` `fmt`)                                                                     |
-| 2    | `pnpm fallow`       | [fallow](https://fallow.tools) findings across the whole repository: unused code and dependencies, duplication, complexity, circular dependencies |
-| 3    | `pnpm lint`         | Vite+ lint rule violations (`vite.config.ts` `lint`, type-aware, warnings fail)                                                         |
-| 4    | `pnpm typecheck`    | Type errors in every workspace package, backend test code and `tests/*.e2e.ts`                                                          |
-| 5    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
-| 6    | `pnpm build`        | Compile, declaration and bundling errors in the shippable output; runs last so no earlier step can depend on build output |
+| Step | Command | Catches |
+| ---- | --- | --- |
+| 1 | `pnpm format:check` | Files not formatted by the Vite+ formatter (`vite.config.ts` `fmt`) |
+| 2 | `pnpm check:scenarios` | A stale, missing or malformed generated Run catalog in [development scenarios](dev-scenarios.md#run-catalog) |
+| 3 | `pnpm fallow` | [fallow](https://fallow.tools) findings across the whole repository: unused code and dependencies, duplication, complexity, circular dependencies |
+| 4 | `pnpm lint` | Vite+ lint rule violations (`vite.config.ts` `lint`, type-aware, warnings fail) |
+| 5 | `pnpm typecheck` | Type errors in every workspace package, backend test code and `tests/*.e2e.ts` |
+| 6 | `pnpm test` | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
+| 7 | `pnpm build` | Compile, declaration and bundling errors in the shippable output; runs last so no earlier step can depend on build output |
 
 During implementation, run the cheap static steps (`pnpm format:check`,
-`pnpm fallow` and `pnpm lint`) and the affected package's tests before handing
+`pnpm check:scenarios`, `pnpm fallow` and `pnpm lint`) and the affected package's tests before handing
 work back; the full `pnpm check` remains required before push.
 
 The hook checks the working tree, including uncommitted changes, not only the
@@ -221,6 +222,7 @@ impact. The PR template points here rather than maintaining a second checklist.
 ## Fixing failures
 
 - **Format**: run `pnpm format` and commit the result. Do not hand-format.
+- **Scenario catalog**: run `pnpm scenarios:catalog` to regenerate the Run catalog from the seed list and commit the result. Do not edit generated rows by hand.
 - **Lint**: fix the code. Disabling a rule inline or in config to pass the gate is
   not a fix.
 - **Typecheck**: fix the types. Do not add `any`, `@ts-ignore` or

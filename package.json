@@ -8,10 +8,12 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
     "test": "pnpm --filter @t3-factory/backend --filter @t3-factory/desktop --filter @t3-factory/frontend test && pnpm test:scripts",
-    "test:scripts": "node --test scripts/*.test.mjs",
+    "test:scripts": "node --conditions=factory-source --test scripts/*.test.mjs scripts/dev/scenario-catalog.test.ts",
     "start": "pnpm --filter @t3-factory/backend start",
     "dev": "node scripts/dev.mjs",
     "dev:prod": "node scripts/dev.mjs --production-data",
+    "scenarios:catalog": "node --conditions=factory-source scripts/dev/scenario-catalog.ts",
+    "check:scenarios": "node --conditions=factory-source scripts/dev/scenario-catalog.ts --check",
     "db:reset": "node --conditions=factory-source scripts/dev/server.ts --reset",
     "test:e2e": "e2e run",
     "desktop:package": "pnpm build && pnpm --filter @t3-factory/desktop package",
@@ -27,7 +29,7 @@
     "check:git-attribution": "node scripts/check-git-attribution.mjs",
     "check:ui-evidence": "node scripts/check-ui-evidence.mjs",
     "prepare": "vp config --no-agent",
-    "check": "pnpm format:check && pnpm fallow && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm format:check && pnpm check:scenarios && pnpm fallow && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@e2e-dev/web": "0.15.4",
