@@ -258,6 +258,12 @@ async function submitReport(
 export const report = (world: ScenarioWorld, worker: WorkerHandle, fields: ReportFields) =>
   submitReport("report", world, worker, fields);
 
+/** Resolves with the next worker launch T3 records, also one background work issues. */
+export const nextLaunch = (world: ScenarioWorld) => world.t3.nextLaunch();
+
+/** Resolves with the next send T3 records, also one background work issues. */
+export const nextSend = (world: ScenarioWorld) => world.t3.nextSend();
+
 /** The worker's next T3 turn begins as run `runId`; the returned handle is on that run. */
 export function turnBegins(world: ScenarioWorld, worker: WorkerHandle, runId: string) {
   beginThreadRun(world.t3, worker.threadId, runId);

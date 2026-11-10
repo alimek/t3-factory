@@ -4,12 +4,11 @@ import * as Effect from "effect/Effect";
 import { newId } from "../../ids.ts";
 import { now } from "../../time.ts";
 import type { RunRow } from "../runner-types.ts";
-import { intactPayload } from "../runner-utils.ts";
 import { writeBlockState } from "./blocks.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
 import { guardsHold } from "./guards.ts";
-import { createHeldHandoffs, type DeliveryOrigin } from "./handoffs.ts";
-import type { DeliveryRecord, Handoff } from "./records.ts";
+import { arrivingHandoff, createHeldHandoffs, type DeliveryOrigin } from "./handoffs.ts";
+import type { Handoff } from "./records.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 export type WaitArrivalRow = {
@@ -35,14 +34,14 @@ export type ScheduledWait = {
 };
 
 /** Who forwards an arrival: its elapsed deadline. */
-export type WaitForwarder = NonNullable<WaitArrival["forwardedBy"]>;
+type WaitForwarder = NonNullable<WaitArrival["forwardedBy"]>;
 
 /**
  * What a forwarding attempt found. Only `forwarded` changed the Run; the others leave the arrival
  * as it was: forwarded or cancelled already, not yet due for the timer, or a Run that no longer
  * accepts forwarding (closed gate or another owner).
  */
-export type WaitForwarding =
+type WaitForwarding =
   | "forwarded"
   | "already-forwarded"
   | "cancelled"
@@ -90,16 +89,9 @@ export function openRunWaits(database: RunnerDatabase) {
       runRow.id,
       (sql) =>
         Effect.gen(function* (): Effect.fn.Return<ScheduledWait | undefined, unknown> {
-          const held = yield* guardsHold(sql, ownerToken, runRow.id, {
-            owner: true,
-            gateOpen: true,
-            liveContext: handoff.context_id,
-            ...(generation === undefined ? {} : { generation }),
-          });
-          const [pending] =
-            yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id} AND state='pending'`;
-          if (!held || !pending) return undefined;
-          if (!intactPayload(pending)) return yield* Effect.fail(Error("Invalid Wait message"));
+          const arriving = yield* arrivingHandoff(sql, ownerToken, runRow.id, handoff, generation);
+          if (!arriving) return undefined;
+          const pending = arriving.record;
           const block = runRow.definitions.flow.graph.blocks.find(
             (entry) => entry.id === handoff.block_id,
           );
@@ -112,8 +104,7 @@ export function openRunWaits(database: RunnerDatabase) {
           const startedAt = released?.at ?? time;
           const id = yield* newId;
           const deadlineAt = addMilliseconds(startedAt, waitDurationMs(block.duration));
-          const message = (JSON.parse(pending.payload_json) as { message: string }).message;
-          yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,origin_activation_id,origin_thread_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${message},${pending.origin_activation_id},${pending.origin_thread_id},${startedAt},${deadlineAt})`;
+          yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,origin_activation_id,origin_thread_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${arriving.message},${pending.origin_activation_id},${pending.origin_thread_id},${startedAt},${deadlineAt})`;
           yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
           yield* writeBlockState(sql, { runId: runRow.id, blockId: handoff.block_id }, "waiting", {
             freshness: "fresh",

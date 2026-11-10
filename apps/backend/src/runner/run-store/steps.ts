@@ -119,7 +119,17 @@ function storedDeliveryEvent(event: DeliveryEvent) {
   });
 }
 
-function stored(event: TimelineEvent) {
+/** Events about one Wait arrival, keyed by it. */
+type WaitEvent = Extract<TimelineEvent, { readonly arrivalId: string }>;
+
+const storedWaitEvent = (event: WaitEvent): StoredEvent => ({
+  blockId: event.blockId,
+  executionId: null,
+  sourceKey: `${event.kind}:${event.arrivalId}`,
+  causeId: event.arrivalId,
+});
+
+function stored(event: Exclude<TimelineEvent, WaitEvent>) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
     if ("intentId" in event) return yield* storedDeliveryEvent(event);
     switch (event.kind) {
@@ -194,15 +204,6 @@ function stored(event: TimelineEvent) {
           sourceKey: (event.kind === "report-accepted" ? "report:" : "working:") + event.reportId,
           causeId: event.reportId,
         };
-      case "wait-started":
-      case "wait-forwarded":
-      case "wait-cancelled":
-        return {
-          blockId: event.blockId,
-          executionId: null,
-          sourceKey: `${event.kind}:${event.arrivalId}`,
-          causeId: event.arrivalId,
-        };
       case "human-answered":
       case "human-waiting":
         return {
@@ -221,7 +222,7 @@ function stored(event: TimelineEvent) {
 export function appendTimelineEvent(sql: SqlClient.SqlClient, event: TimelineEvent) {
   return Effect.gen(function* () {
     const { blockId, executionId, bindingId, engineStatus, sourceKey, causeId } =
-      yield* stored(event);
+      "arrivalId" in event ? storedWaitEvent(event) : yield* stored(event);
     yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${event.runId},${blockId},${executionId},${bindingId ?? null},${event.kind},${sourceKey},${causeId},${event.observedAt},${engineStatus ?? null}) ${event.kind === "handoff-released" ? sql`ON CONFLICT DO NOTHING` : sql``}`;
   });
 }

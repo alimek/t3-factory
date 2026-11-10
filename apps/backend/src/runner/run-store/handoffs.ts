@@ -2,7 +2,9 @@ import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
 import type { RunRow } from "../runner-types.ts";
-import { fingerprint, runTarget } from "../runner-utils.ts";
+import { fingerprint, intactPayload, runTarget } from "../runner-utils.ts";
+import { guardsHold } from "./guards.ts";
+import type { DeliveryRecord, Handoff } from "./records.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
 /**
@@ -58,5 +60,34 @@ export function createHeldHandoffs(
     }
     if (source.kind === "report")
       yield* sql`UPDATE runtime_reports SET pending_message=NULL WHERE id=${source.id}`;
+  });
+}
+
+/** The pending Handoff a Human occurrence or Wait arrival is recorded from, with its stored
+ * message, once the guards hold: owner, open gate, the Handoff's authorization context is live and
+ * `generation` (a source release the caller read), when given, holds. Undefined when a guard fails
+ * or the Handoff is no longer pending; a message that cannot be verified fails. */
+export function arrivingHandoff(
+  sql: SqlClient.SqlClient,
+  ownerToken: string,
+  runId: string,
+  handoff: Handoff,
+  generation: number | undefined,
+) {
+  return Effect.gen(function* () {
+    const held = yield* guardsHold(sql, ownerToken, runId, {
+      owner: true,
+      gateOpen: true,
+      liveContext: handoff.context_id,
+      ...(generation === undefined ? {} : { generation }),
+    });
+    const [pending] =
+      yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id} AND state='pending'`;
+    if (!held || !pending) return undefined;
+    if (!intactPayload(pending)) return yield* Effect.fail(Error("Invalid arrival message"));
+    return {
+      record: pending,
+      message: (JSON.parse(pending.payload_json) as { message: string }).message,
+    };
   });
 }

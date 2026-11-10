@@ -14,6 +14,7 @@ import {
 } from "../worker-payloads.ts";
 import { raiseHumanAttention } from "./attention.ts";
 import { asDelivery, createDelivery } from "./deliveries.ts";
+import { arrivingHandoff } from "./handoffs.ts";
 import { guardsHold } from "./guards.ts";
 import type { DeliveryRecord, Handoff } from "./records.ts";
 import type { RunnerDatabase } from "./database.ts";
@@ -224,19 +225,11 @@ export function openRunActivations(database: RunnerDatabase) {
   ) {
     return database.mutate(runRow.id, (sql) =>
       Effect.gen(function* () {
-        const held = yield* guardsHold(sql, ownerToken, runRow.id, {
-          owner: true,
-          gateOpen: true,
-          liveContext: handoff.context_id,
-          ...(generation === undefined ? {} : { generation }),
-        });
-        const [pending] =
-          yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id} AND state='pending'`;
-        if (!held || !pending) return;
-        if (!intactPayload(pending)) return yield* Effect.fail(Error("Invalid Human context"));
+        const arriving = yield* arrivingHandoff(sql, ownerToken, runRow.id, handoff, generation);
+        if (!arriving) return;
         const id = yield* newId,
           time = yield* now;
-        const context = (JSON.parse(pending.payload_json) as { message: string }).message;
+        const context = arriving.message;
         yield* sql`INSERT INTO human_occurrences(id,run_id,block_id,incoming_intent_id,pending_context,appeared_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${context},${time})`;
         yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
         yield* writeBlockState(sql, { runId: runRow.id, blockId: handoff.block_id }, "waiting", {

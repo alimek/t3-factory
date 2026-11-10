@@ -7,6 +7,8 @@ import {
   consecutiveWaitFlow,
   launchBlockId,
   loopWaitFlow,
+  nextLaunch,
+  nextSend,
   observeFor,
   parallelWaitFlow,
   resultHeld,
@@ -37,7 +39,7 @@ it.effect(
         resultReported(f.world, worker, { message: "Ready for the follow-up." }),
       );
       const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
-      const followUpLaunch = f.t3.nextLaunch();
+      const followUpLaunch = nextLaunch(f.world);
 
       // Act
       yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
@@ -154,7 +156,7 @@ it.effect(
       yield* TestClock.adjust(4 * MINUTE);
       yield* f.close;
       const recovered = yield* f.reopen;
-      const followUpLaunch = f.t3.nextLaunch();
+      const followUpLaunch = nextLaunch(f.world);
 
       // Act
       yield* TestClock.adjust((WAIT_MINUTES - 4) * MINUTE);
@@ -185,7 +187,7 @@ it.effect(
       const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
       yield* f.close;
       yield* TestClock.adjust(6 * WAIT_MINUTES * MINUTE);
-      const followUpLaunch = f.t3.nextLaunch();
+      const followUpLaunch = nextLaunch(f.world);
 
       // Act
       const recovered = yield* f.reopen;
@@ -228,7 +230,7 @@ it.effect(
       expect(forwarded.value.waitArrivals[0]?.state).toBe("forwarded");
       yield* f.close;
       f.t3.available = true;
-      const followUpLaunch = f.t3.nextLaunch();
+      const followUpLaunch = nextLaunch(f.world);
 
       // Act
       const recovered = yield* f.reopen;
@@ -273,7 +275,7 @@ it.effect("a manually Settled Run keeps its Wait, which still forwards to the ne
     yield* Effect.promise(() => resultReported(f.world, worker));
     yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
     assert((yield* f.factory.settleRun(worker.runId)).ok);
-    const followUpLaunch = f.t3.nextLaunch();
+    const followUpLaunch = nextLaunch(f.world);
 
     // Act
     yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
@@ -397,7 +399,7 @@ it.effect(
           run.waitArrivals.some((arrival) => arrival.blockId === "settle-in"),
         ),
       );
-      const followUpLaunch = f.t3.nextLaunch();
+      const followUpLaunch = nextLaunch(f.world);
 
       // Act
       yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
@@ -430,7 +432,7 @@ it.effect("a loop back through a Wait records each revisit as its own arrival", 
     const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
     yield* Effect.promise(() => resultReported(f.world, worker, { message: "First pass." }));
     const first = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
-    const revisitSent = f.t3.nextSend();
+    const revisitSent = nextSend(f.world);
     yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
     const revisit = yield* Effect.promise(() => revisitSent);
     const again = sentTurnBegins(f.world, worker);
