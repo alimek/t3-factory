@@ -2,17 +2,9 @@ import { RetainedResult, resultVersion } from "./run-coordination.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import { capturedExits } from "../flow-graph.ts";
-import {
-  ArrowRight,
-  Bot,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Flag,
-  History,
-  User,
-} from "lucide-react";
-import { clockTime } from "./execution-state.tsx";
+import { ArrowRight, Bot, ChevronDown, ChevronUp, ExternalLink, Flag, History } from "lucide-react";
+import { clockTime, dayAndTime } from "./execution-state.tsx";
+import { BLOCK_KINDS } from "./flow-block.tsx";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +92,14 @@ function answered(run: RunDetail, event: RunEvent): EventPhrase {
   return { actorId: event.blockId, text: `you answered${exit}` };
 }
 
+function waitStarted(run: RunDetail, event: RunEvent): EventPhrase {
+  const arrival = run.waitArrivals.find((item) => item.id === event.causeId);
+  return {
+    actorId: event.blockId,
+    text: arrival ? `wait started · until ${dayAndTime(arrival.deadlineAt)}` : "wait started",
+  };
+}
+
 const attentionWords: Record<RunAttention["kind"], string> = {
   human: "needs input · your answer",
   "native-request": "needs input · T3 question or permission",
@@ -179,6 +179,9 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "attention-settled": attentionSettled,
   "operation-cancelled": operationCancelled,
   "human-cancelled": said("question cancelled by Archive"),
+  "wait-started": waitStarted,
+  "wait-forwarded": said("wait elapsed → forwarded"),
+  "wait-cancelled": said("wait cancelled by Archive"),
   "operation-unresolved": operationUnresolved,
   "run-settled": (_run, event) => ({
     actorId: null,
@@ -201,7 +204,7 @@ function phrase(run: RunDetail, event: RunEvent): EventPhrase {
 
 function ActorIcon({ run, actorId }: { run: RunDetail; actorId: string | null }) {
   const kind = run.definitions.flow.graph.blocks.find((block) => block.id === actorId)?.kind;
-  const Icon = !actorId ? Flag : kind === "human" ? User : Bot;
+  const Icon = !actorId ? Flag : kind ? BLOCK_KINDS[kind].icon : Bot;
   return <Icon aria-hidden className="size-3 shrink-0 text-link" strokeWidth={1.75} />;
 }
 

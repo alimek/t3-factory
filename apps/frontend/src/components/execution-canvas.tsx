@@ -7,7 +7,7 @@ import {
   type RunDetail,
 } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
-import { Bot, CircleHelp, Clock, User } from "lucide-react";
+import { CircleHelp, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { selectExecutionTargets } from "../execution-focus.ts";
 import { exitRecipients, type CanvasBlock } from "../flow-graph.ts";
@@ -18,10 +18,11 @@ import {
   type CanvasFlowInputContent,
   type CanvasPort,
 } from "./canvas-surface.tsx";
-import { exitSourceLabel } from "./flow-block.tsx";
+import { BLOCK_KINDS, exitDisplayName, exitSourceLabel } from "./flow-block.tsx";
+import { pendingArrivals, waitDurationText } from "../wait-display.ts";
 import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
-import { clockTime, executionStateLabel, StatePill } from "./execution-state.tsx";
+import { clockTime, dayAndTime, executionStateLabel, StatePill } from "./execution-state.tsx";
 
 function blockAttention(run: RunDetail, blockId: string) {
   const pending = run.attention.filter((item) => item.blockId === blockId && !item.settledAt);
@@ -41,6 +42,7 @@ function blockObservation(block: RunBlock, unavailable: boolean) {
 
 function agentLabel(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "asks you";
+  if (block.kind === "wait") return `waits ${waitDurationText(block.duration)}`;
   if (!block.agentId) return "not chosen";
   return (
     run.definitions.agents.find((agent) => agent.id === block.agentId)?.name ?? "Unavailable Agent"
@@ -70,8 +72,17 @@ type BlockVisit = {
   readonly status: string;
 };
 
-/** Recorded visits: Block worker activations or Human occurrences. */
+/** Recorded visits: Block worker activations, Human occurrences or Wait arrivals. */
 export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVisit[] {
+  if (block.kind === "wait")
+    return run.waitArrivals
+      .filter((arrival) => arrival.blockId === block.id)
+      .map((arrival) => ({
+        id: arrival.id,
+        start: arrival.startedAt,
+        end: arrival.settledAt,
+        status: arrival.state,
+      }));
   if (block.kind === "human") {
     return run.humanOccurrences
       .filter((occurrence) => occurrence.blockId === block.id)
@@ -92,6 +103,15 @@ export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVis
           ?.completionEligibleAt ?? null,
       status: activation.phase,
     }));
+}
+
+/** A waiting Wait shows when it next continues: the nearest deadline, and how many arrivals wait. */
+export function waitingText(run: RunDetail, blockId: string) {
+  const pending = pendingArrivals(run, blockId);
+  const next = pending[0];
+  if (!next) return null;
+  const until = `until ${dayAndTime(next.deadlineAt)}`;
+  return pending.length > 1 ? `${pending.length} waiting · next ${until}` : until;
 }
 
 /** Recorded visit times for the activity line; no progress is inferred. */
@@ -123,9 +143,7 @@ function ExecutionExit({
         {exitSourceLabel(exit)}
       </span>
       <span className="flex-1" />
-      <span className="truncate text-xs font-medium text-foreground">
-        {exit.name || "Unnamed exit"}
-      </span>
+      <span className="truncate text-xs font-medium text-foreground">{exitDisplayName(exit)}</span>
       <span className="sr-only">configured → {recipients || "finish here"}</span>
     </>
   );
@@ -138,8 +156,14 @@ function attentionFooterText(human: boolean, needsInput: boolean) {
 
 type BlockObservation = ReturnType<typeof blockObservation>;
 
-function ExecutionBlockHeader({ human, state }: { human: boolean; state: RunBlock["state"] }) {
-  const KindIcon = human ? User : Bot;
+function ExecutionBlockHeader({
+  kind,
+  state,
+}: {
+  kind: FlowBlock["kind"];
+  state: RunBlock["state"];
+}) {
+  const KindIcon = BLOCK_KINDS[kind].icon;
   return (
     <span className="flex flex-1 items-center gap-1.5 pt-2 pr-2.5 pl-3">
       <KindIcon
@@ -148,7 +172,7 @@ function ExecutionBlockHeader({ human, state }: { human: boolean; state: RunBloc
         strokeWidth={1.75}
       />
       <span className="text-2xs leading-3 font-semibold tracking-section text-subtle-foreground">
-        {human ? "HUMAN" : "AGENT"}
+        {kind === "human" ? "HUMAN" : BLOCK_KINDS[kind].header}
       </span>
     </span>
   );
@@ -169,6 +193,8 @@ function activityLine(
   }
   if (state === "working" && recorded?.workingMessage)
     return { text: recorded.workingMessage, color: activityColor.working };
+  const waiting = state === "waiting" && block.kind === "wait" && waitingText(run, block.id);
+  if (waiting) return { text: waiting, color: activityColor.waiting };
   return {
     text: activityText(run, block, recorded),
     color: activityColor[state] ?? "text-muted-foreground",
@@ -202,7 +228,7 @@ function ExecutionBlockTitle({
         <StatePill state={state} />
       </span>
       <span className="truncate text-2xs leading-3 tracking-label text-subtle-foreground">
-        {block.kind === "human" ? "Human step" : "Agent"} · {agentLabel(run, block)}
+        {BLOCK_KINDS[block.kind].name} · {agentLabel(run, block)}
       </span>
       <span
         className={cn("truncate text-2xs leading-3 font-medium", activity.color)}
@@ -310,7 +336,6 @@ function executionBlock(
   const state = recorded?.state ?? "not-started";
   const workingMessage = state === "working" ? recorded?.workingMessage : null;
   const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
-  const human = block.kind === "human";
   return {
     className: cn(frameColor[state], selected && "border-primary ring-1 ring-primary"),
     selected,
@@ -320,7 +345,7 @@ function executionBlock(
         <button
           type="button"
           className={pressClass}
-          aria-label={`${human ? "Human step" : "Agent"} ${block.name || "Unnamed block"}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`}
+          aria-label={`${BLOCK_KINDS[block.kind].name} ${block.name || "Unnamed block"}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`}
           aria-pressed={selected}
           onClick={onSelect}
         >
@@ -328,7 +353,7 @@ function executionBlock(
         </button>
       ),
     },
-    header: <ExecutionBlockHeader human={human} state={state} />,
+    header: <ExecutionBlockHeader kind={block.kind} state={state} />,
     title: (
       <ExecutionBlockTitle run={run} block={block} recorded={recorded} observation={observation} />
     ),

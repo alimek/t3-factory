@@ -31,7 +31,8 @@ import {
   type Placement,
 } from "./canvas-surface.tsx";
 import { DragButton } from "./drag-button.tsx";
-import { blockIdentity, exitSourceLabel } from "./flow-block.tsx";
+import { BLOCK_KINDS, blockIdentity, exitDisplayName, exitSourceLabel } from "./flow-block.tsx";
+import { waitDurationText } from "../wait-display.ts";
 
 /** Places a block dragged by `grab` at viewport point x/y, or null when x/y is outside the canvas. */
 export type DropAt = (x: number, y: number, grab: GrabOffset) => Placement | null;
@@ -242,6 +243,7 @@ function authoringFlowInput({
 
 function blockReference(block: FlowBlock, agents: readonly AgentDefinition[]) {
   if (block.kind === "human") return { label: "Asks", value: "a person" };
+  if (block.kind === "wait") return { label: "Waits", value: waitDurationText(block.duration) };
   if (!block.agentId) return { label: "Agent", value: "not chosen" };
   return {
     label: "Agent",
@@ -275,7 +277,7 @@ function AuthoringExit({
           exit.unavailable && "text-attention line-through",
         )}
       >
-        {exit.name || "Unnamed exit"}
+        {exitDisplayName(exit)}
       </span>
       <span className="sr-only">→ {recipients || "finish here"}</span>
     </>
@@ -312,7 +314,7 @@ function authoringBlock({
   const human = block.kind === "human";
   const name = block.name || "Unnamed block";
   const identity = blockIdentity({
-    human,
+    kind: block.kind,
     name,
     ...blockReference(block, agents),
     trailing: grip(selected),
@@ -331,7 +333,7 @@ function authoringBlock({
       render: (rows) => (
         <DragButton
           className={cn(dragPressClass, "rounded-t-lg")}
-          aria-label={`${human ? "Human step" : "Agent"} ${name}`}
+          aria-label={`${BLOCK_KINDS[block.kind].name} ${name}`}
           aria-pressed={selected}
           {...drag}
           onClick={onSelect}
@@ -347,7 +349,9 @@ function authoringBlock({
       exit.unavailable
         ? unavailablePort
         : connectionHandle(
-            `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
+            exit.source === "wait"
+              ? `Connect output of ${name}`
+              : `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
             connectingExitId === exit.id,
             connectFrom(exit),
           ),
@@ -358,14 +362,14 @@ function authoringBlock({
 
 /** The identity rows of a new block as this canvas draws them, for the block library's drag ghost. */
 export function BlockPreview({
-  human,
+  kind,
   name,
   label,
   value,
   className,
   style,
 }: {
-  human: boolean;
+  kind: FlowBlock["kind"];
   name: string;
   label: string;
   value: string;
@@ -373,11 +377,15 @@ export function BlockPreview({
   style?: CSSProperties;
 }) {
   const rows = AUTHORING_DIMENSIONS.block;
-  const identity = blockIdentity({ human, name, label, value });
+  const identity = blockIdentity({ kind, name, label, value });
   return (
     <div
       aria-hidden
-      className={cn("rounded-lg bg-card", human && "border-dashed border-border-strong", className)}
+      className={cn(
+        "rounded-lg bg-card",
+        kind === "human" && "border-dashed border-border-strong",
+        className,
+      )}
       style={{ ...style, width: rows.width, borderWidth: rows.border }}
     >
       <IdentityRows rows={rows} header={identity.header} title={identity.title} />

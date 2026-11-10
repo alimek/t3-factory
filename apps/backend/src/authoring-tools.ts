@@ -76,7 +76,7 @@ const flowFields = {
   graph: {
     type: "object",
     description:
-      "The whole Flow graph; a save replaces the saved one. Positions are optional: if any Block or Flow input position is omitted, the server auto-arranges the whole graph; fully positioned graphs are kept as given. Agent blocks {id, kind: agent, name, agentId, position, hiddenExitIds, localExits}, Human blocks {id, kind: human, name, position}, connections {sourceBlockId, exitId, targetBlockId}, and flowInput {position, targetBlockIds}.",
+      "The whole Flow graph; a save replaces the saved one. Positions are optional: if any Block or Flow input position is omitted, the server auto-arranges the whole graph; fully positioned graphs are kept as given. Agent blocks {id, kind: agent, name, agentId, position, hiddenExitIds, localExits}, Human blocks {id, kind: human, name, position}, Wait blocks {id, kind: wait, name, position, duration: {amount: whole number, unit: minutes | hours | days} or null} that hold each arrival for 1 minute to 7 days and leave by exitId output, connections {sourceBlockId, exitId, targetBlockId}, and flowInput {position, targetBlockIds} naming Agent blocks.",
     properties: {
       blocks: { type: "array", items: { type: "object" } },
       connections: { type: "array", items: { type: "object" } },

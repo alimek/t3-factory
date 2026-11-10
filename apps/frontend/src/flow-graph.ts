@@ -32,15 +32,15 @@ export function newBlock(
 ): FlowBlock {
   const base = {
     id: uid(),
-    name: agent?.name ?? (kind === "human" ? "Human step" : "Agent block"),
+    name: agent?.name ?? { agent: "Agent block", human: "Human step", wait: "Wait" }[kind],
     position: position ?? {
       x: 320 + (graph.blocks.length % 3) * 300,
       y: Math.min(10000, 50 + Math.floor(graph.blocks.length / 3) * 220),
     },
   };
-  return kind === "agent"
-    ? { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] }
-    : { ...base, kind };
+  if (kind === "agent")
+    return { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] };
+  return kind === "wait" ? { ...base, kind, duration: null } : { ...base, kind };
 }
 
 export function replaceBlock(graph: FlowGraph, next: FlowBlock): FlowGraph {

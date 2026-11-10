@@ -15,11 +15,11 @@ import {
   attentionPresentation,
   type FactoryProject,
   type FlowBlock,
+  type RunBlock,
   type RunDetail,
 } from "@t3-factory/contracts";
 import {
   Archive,
-  Bot,
   CircleCheck,
   CircleHelp,
   Ellipsis,
@@ -27,7 +27,6 @@ import {
   Lock,
   TriangleAlert,
   Unplug,
-  User,
   Workflow,
   X,
 } from "lucide-react";
@@ -39,7 +38,10 @@ import {
 import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
 import { RunNumber } from "../components/run-number.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
-import { blockVisits, ExecutionCanvas } from "../components/execution-canvas.tsx";
+import { blockVisits, ExecutionCanvas, waitingText } from "../components/execution-canvas.tsx";
+import { BLOCK_KINDS, exitDisplayName } from "../components/flow-block.tsx";
+import { WaitArrivals } from "../components/wait-arrivals.tsx";
+import { waitDurationText } from "../wait-display.ts";
 import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
 import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { sectionLabelClass } from "../components/page.tsx";
@@ -585,11 +587,64 @@ function blockAttentionLabel(run: RunDetail, blockId: string) {
 
 function blockKindLine(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "Human step · asks you";
+  if (block.kind === "wait") return `Wait · ${waitDurationText(block.duration)} · no worker`;
   const agent = run.definitions.agents.find((item) => item.id === block.agentId)?.name;
   const input = run.definitions.flow.graph.flowInput.targetBlockIds.includes(block.id)
     ? " · receives the Flow input"
     : "";
   return `Agent · ${agent ?? "not chosen"}${input}`;
+}
+
+/** A block's recorded history: a Wait's arrivals, or each visit of another block. */
+function BlockHistory({
+  run,
+  block,
+  recorded,
+}: {
+  run: RunDetail;
+  block: FlowBlock;
+  recorded: RunBlock;
+}) {
+  if (block.kind === "wait") return <WaitArrivals run={run} blockId={block.id} />;
+  const visits = blockVisits(run, block);
+  if (!visits.length) return null;
+  return (
+    <DetailSection title={`Visits · ${visits.length}`}>
+      <ul className="flex flex-col gap-1.5">
+        {visits
+          .map((visit, index) => ({ visit, number: index + 1 }))
+          .reverse()
+          .map(({ visit, number }) => (
+            <li
+              key={visit.id}
+              className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Visit {number}</p>
+                <p className="truncate text-2xs tracking-label text-subtle-foreground">
+                  {visitSpan(visit)} · {visit.id}
+                </p>
+              </div>
+              <StatePill
+                state={
+                  block.kind === "agent" && number === visits.length ? recorded.state : visit.status
+                }
+              />
+            </li>
+          ))}
+      </ul>
+    </DetailSection>
+  );
+}
+
+/** The current visit, or a waiting Wait's nearest deadline. */
+function currentVisitText(run: RunDetail, block: FlowBlock) {
+  const waiting = block.kind === "wait" && waitingText(run, block.id);
+  if (waiting) return waiting;
+  const visits = blockVisits(run, block);
+  const latest = visits[visits.length - 1];
+  if (!latest) return "Not visited";
+  return `visit ${visits.length}${latest.start ? ` · since ${clockTime(latest.start)}` : ""}`;
 }
 
 /** Figma RD01b: block details float over the canvas; selection never answers or settles attention. */
@@ -611,8 +666,8 @@ function BlockDetails({
   }, [block.id]);
   if (!recorded) return null;
   const visits = blockVisits(run, block);
-  const latest = visits[visits.length - 1];
-  const KindIcon = block.kind === "human" ? User : Bot;
+  const KindIcon = BLOCK_KINDS[block.kind].icon;
+  const wait = block.kind === "wait";
   return (
     <aside
       ref={panel}
@@ -664,11 +719,7 @@ function BlockDetails({
         <DetailSection title="Execution">
           <dl className="flex flex-col gap-2">
             <DetailRow label="Visits">{visits.length}</DetailRow>
-            <DetailRow label="Current">
-              {latest
-                ? `visit ${visits.length}${latest.start ? ` · since ${clockTime(latest.start)}` : ""}`
-                : "Not visited"}
-            </DetailRow>
+            <DetailRow label="Current">{currentVisitText(run, block)}</DetailRow>
             <DetailRow label="Attention">{blockAttentionLabel(run, block.id)}</DetailRow>
             <DetailRow label="Observation">
               {observationUnavailable ? "stale" : recorded.freshness}
@@ -676,42 +727,16 @@ function BlockDetails({
             </DetailRow>
           </dl>
         </DetailSection>
-        {visits.length > 0 && (
-          <DetailSection title={`Visits · ${visits.length}`}>
-            <ul className="flex flex-col gap-1.5">
-              {visits
-                .map((visit, index) => ({ visit, number: index + 1 }))
-                .reverse()
-                .map(({ visit, number }) => (
-                  <li
-                    key={visit.id}
-                    className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">Visit {number}</p>
-                      <p className="truncate text-2xs tracking-label text-subtle-foreground">
-                        {visitSpan(visit)} · {visit.id}
-                      </p>
-                    </div>
-                    <StatePill
-                      state={
-                        block.kind === "agent" && number === visits.length
-                          ? recorded.state
-                          : visit.status
-                      }
-                    />
-                  </li>
-                ))}
-            </ul>
-          </DetailSection>
-        )}
+        <BlockHistory run={run} block={block} recorded={recorded} />
         <DetailSection title="Exits in captured revision">
           <ul className="flex flex-col gap-1.5 px-2">
             {capturedExits(run.definitions, block.id).map((exit) => {
               const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
               return (
                 <li key={exit.id} className="flex items-baseline gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{exit.name || "Unnamed exit"}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {exitDisplayName(exit) || "Output"}
+                  </span>
                   <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
                     {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
                   </span>
@@ -720,13 +745,15 @@ function BlockDetails({
             })}
           </ul>
         </DetailSection>
-        <DetailSection title="T3 references">
-          <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
-            Thread: {recorded.threadId ?? "unresolved"}
-            <br />
-            Exact execution: {recorded.executionId ?? "unresolved"}
-          </p>
-        </DetailSection>
+        {!wait && (
+          <DetailSection title="T3 references">
+            <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
+              Thread: {recorded.threadId ?? "unresolved"}
+              <br />
+              Exact execution: {recorded.executionId ?? "unresolved"}
+            </p>
+          </DetailSection>
+        )}
       </div>
       <footer className="mx-4 flex items-center gap-3 border-t py-4">
         {recorded.link ? (
@@ -740,7 +767,7 @@ function BlockDetails({
           </a>
         ) : (
           <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
-            No T3 thread yet
+            {wait ? "A Wait has no T3 thread" : "No T3 thread yet"}
           </span>
         )}
         <p className="text-2xs tracking-label text-subtle-foreground">

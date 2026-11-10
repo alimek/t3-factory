@@ -1,6 +1,6 @@
 import { useId, type ComponentProps } from "react";
 import { ExternalLink, Trash2 } from "lucide-react";
-import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import type { AgentDefinition, FlowBlock, FlowGraph, WaitUnit } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { StudioLink } from "../components/app-link.tsx";
 import { BlockExitConfiguration } from "./block-exit-configuration.tsx";
 
 type AgentBlock = Extract<FlowBlock, { kind: "agent" }>;
+type WaitBlock = Extract<FlowBlock, { kind: "wait" }>;
 
 /** Configuration of the selected block, shown in the editor's floating panel. */
 export function BlockConfiguration({
@@ -38,14 +39,16 @@ export function BlockConfiguration({
             onChange={(e) => onEdit({ ...block, name: e.target.value })}
           />
         </div>
-        {block.kind === "agent" ? (
+        {block.kind === "agent" && (
           <AgentBlockSettings block={block} graph={graph} agents={agents} onEdit={onEdit} />
-        ) : (
+        )}
+        {block.kind === "human" && (
           <p className="text-xs text-muted-foreground">
             A Human step asks a person to Approve or Request changes. The Flow input connects only
             to Agent blocks.
           </p>
         )}
+        {block.kind === "wait" && <WaitBlockSettings block={block} onEdit={onEdit} />}
         <BlockExitConfiguration block={block} graph={graph} agents={agents} onEdit={onEdit} />
         <PositionControls block={block} onEdit={onEdit} />
       </div>
@@ -133,6 +136,77 @@ function AgentBlockSettings({
         </div>
       )}
     </>
+  );
+}
+
+const WAIT_UNITS: readonly WaitUnit[] = ["minutes", "hours", "days"];
+
+/** A fixed relative duration; an empty amount saves the draft without one. Readiness reports a
+ * missing or out-of-range duration. */
+function WaitBlockSettings({
+  block,
+  onEdit,
+}: {
+  block: WaitBlock;
+  onEdit: (block: FlowBlock) => void;
+}) {
+  const amountId = useId();
+  const unitId = useId();
+  const unit = block.duration?.unit ?? "minutes";
+  return (
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1.5">
+          <FieldLabel htmlFor={amountId}>Wait for</FieldLabel>
+          <Input
+            id={amountId}
+            type="number"
+            min="1"
+            step="1"
+            inputMode="numeric"
+            className="font-mono"
+            value={block.duration?.amount ?? ""}
+            onChange={(e) => {
+              const amount = e.target.valueAsNumber;
+              onEdit({
+                ...block,
+                duration:
+                  e.target.value === "" || !Number.isSafeInteger(amount) || amount < 0
+                    ? null
+                    : { amount, unit },
+              });
+            }}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <FieldLabel htmlFor={unitId}>Unit</FieldLabel>
+          <NativeSelect
+            id={unitId}
+            className="h-8.5"
+            value={unit}
+            onChange={(e) =>
+              onEdit({
+                ...block,
+                duration: block.duration && {
+                  amount: block.duration.amount,
+                  unit: e.target.value as WaitUnit,
+                },
+              })
+            }
+          >
+            {WAIT_UNITS.map((option) => (
+              <NativeSelectOption key={option} value={option}>
+                {option}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Holds each arrival for 1 minute to 7 days, then passes its message on unchanged. A Wait has
+        no Agent or worker; the Flow input connects only to Agent blocks.
+      </p>
+    </div>
   );
 }
 

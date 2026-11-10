@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, GripVertical, PanelLeftClose, PanelLeftOpen, Plus, Search, User } from "lucide-react";
+import { GripVertical, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import type { AgentDefinition, FlowBlock } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import type { GrabOffset } from "./canvas-surface.tsx";
 import { DragButton } from "./drag-button.tsx";
 import { BlockPreview, type DropAt } from "./flow-canvas.tsx";
 import { SectionLabel } from "./page.tsx";
+import { BLOCK_KINDS } from "./flow-block.tsx";
 
 function agentDetail(agent: AgentDefinition) {
   return `${agent.execution.providerInstanceId} · ${agent.execution.modelId}`;
@@ -96,9 +97,16 @@ export function BlockLibrary({
       <LibraryItem
         name="Human step"
         detail="Asks a person"
-        human
+        kind="human"
         dropAt={dropAt}
         onAdd={(position) => onAdd("human", undefined, position)}
+      />
+      <LibraryItem
+        name="Wait"
+        detail="Pauses, then continues"
+        kind="wait"
+        dropAt={dropAt}
+        onAdd={(position) => onAdd("wait", undefined, position)}
       />
       <div className="flex items-center">
         <SectionLabel>Saved Agents</SectionLabel>
@@ -152,20 +160,21 @@ type Ghost = { left: number; top: number; overCanvas: boolean };
 function LibraryItem({
   name,
   detail,
-  human = false,
+  kind = "agent",
   dropAt,
   onAdd,
 }: {
   name: string;
   detail: string;
-  human?: boolean;
+  kind?: FlowBlock["kind"];
   dropAt: DropAt;
   onAdd: (position?: BlockPosition) => void;
 }) {
   const [ghost, setGhost] = useState<Ghost | null>(null);
+  const Icon = BLOCK_KINDS[kind].icon;
   return (
     <>
-      {ghost && <BlockGhost ghost={ghost} human={human} name={name} />}
+      {ghost && <BlockGhost ghost={ghost} kind={kind} name={name} />}
       <DragButton
         aria-label={`Add ${name}`}
         className="group flex h-13 w-full shrink-0 cursor-grab items-center gap-2 rounded-lg pr-2 pl-1.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing"
@@ -191,12 +200,12 @@ function LibraryItem({
           aria-hidden
           className={cn(
             "grid size-7 shrink-0 place-items-center rounded-md",
-            human
-              ? "border border-dashed bg-muted text-muted-foreground"
-              : "bg-brand-soft text-link",
+            kind === "agent"
+              ? "bg-brand-soft text-link"
+              : "border border-dashed bg-muted text-muted-foreground",
           )}
         >
-          {human ? <User className="size-3.5" /> : <Bot className="size-3.5" />}
+          <Icon className="size-3.5" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-sm font-medium text-foreground">{name}</span>
@@ -214,13 +223,28 @@ function LibraryItem({
 }
 
 /** A compact, non-interactive preview of the block a library drag would add. */
-function BlockGhost({ ghost, human, name }: { ghost: Ghost; human: boolean; name: string }) {
+const GHOST_REFERENCE: Record<FlowBlock["kind"], { label: string; value?: string }> = {
+  agent: { label: "Agent" },
+  human: { label: "Asks", value: "a person" },
+  wait: { label: "Waits", value: "no duration" },
+};
+
+function BlockGhost({
+  ghost,
+  kind,
+  name,
+}: {
+  ghost: Ghost;
+  kind: FlowBlock["kind"];
+  name: string;
+}) {
+  const reference = GHOST_REFERENCE[kind];
   return createPortal(
     <BlockPreview
-      human={human}
+      kind={kind}
       name={name}
-      label={human ? "Asks" : "Agent"}
-      value={human ? "a person" : name}
+      label={reference.label}
+      value={reference.value ?? name}
       className={cn(
         "pointer-events-none fixed z-50 pb-1.5 shadow-lift",
         ghost.overCanvas ? "opacity-90" : "opacity-50",
