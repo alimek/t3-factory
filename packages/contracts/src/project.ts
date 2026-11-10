@@ -1,3 +1,4 @@
+/** Project identities and display metadata shared by Runs and the catalog. */
 import type { FlowReadiness } from "./flow.ts";
 import { operation } from "./operation.ts";
 

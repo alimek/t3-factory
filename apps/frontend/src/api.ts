@@ -4,6 +4,7 @@ import {
   flowOperations,
   projectOperations,
   connectionOperations,
+  runOperations,
   operationPath,
   type OperationDefinition,
   type OperationInput,
@@ -18,13 +19,6 @@ import {
   type RequestClientAccessInput,
   type ServerUpdate,
   type ServerUpdateAction,
-  type RunDetail,
-  type RunImageInfo,
-  type StartRunInput,
-  type RunPresentation,
-  type RunNavigationEntry,
-  type RunSummary,
-  type TaskSummary,
   type OperationError,
   type Result,
 } from "@t3-factory/contracts";
@@ -85,7 +79,6 @@ function jsonRequest<A>(method: "POST" | "PUT" | "PATCH", path: string, body: un
 }
 const post = <A>(path: string, body: unknown) => jsonRequest<A>("POST", path, body);
 const put = <A>(path: string, body: unknown) => jsonRequest<A>("PUT", path, body);
-const patch = <A>(path: string, body: unknown) => jsonRequest<A>("PATCH", path, body);
 
 /** What a client sends for a definition's body: its input as JSON, or a Blob with its media type. */
 type ClientInput<D extends OperationDefinition> = D["body"] extends "json"
@@ -132,54 +125,21 @@ function operationCalls<Definitions extends Record<string, OperationDefinition>>
   return calls as OperationCalls<Definitions>;
 }
 
-/**
- * Retained Run image bytes on the selected server, for `<img src>`: an authenticated GET that
- * needs no protocol header and is cached as immutable.
- */
-export const runImageUrl = (sha256: string) => `/api/run-images/${encodeURIComponent(sha256)}`;
-
 export const api = {
   ...operationCalls(agentOperations),
   ...operationCalls(flowOperations),
   ...operationCalls(projectOperations),
   ...operationCalls(connectionOperations),
-  listRunNavigation: () => request<readonly RunNavigationEntry[]>("/api/run-navigation"),
-  snoozeRun: (id: string) =>
-    request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/snooze`, { method: "POST" }),
-  restoreRun: (id: string) =>
-    request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/restore`, { method: "POST" }),
-  markRunWokeSeen: (id: string) =>
-    request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/woke-seen`, { method: "POST" }),
-  settleRun: (id: string) =>
-    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/settle`, { method: "POST" }),
-  renameRun: (id: string, input: { title: string }) =>
-    patch<RunDetail>(`/api/runs/${encodeURIComponent(id)}`, input),
-  requestReport: (runId: string, blockId: string) =>
-    post<RunDetail>(`/api/runs/${encodeURIComponent(runId)}/request-report`, { blockId }),
-  answerHumanOccurrence: (id: string, input: { exitId?: string; message?: string }) =>
-    post<RunDetail>(`/api/human-occurrences/${encodeURIComponent(id)}/answer`, input),
-  startRun: (input: StartRunInput) => post<RunDetail>("/api/runs", input),
+  ...operationCalls(runOperations),
   /** Whether Factory already holds this image; any answer but held or absent is a failure. */
   async hasRunImage(sha256: string) {
-    const response = await factoryRequest(runImageUrl(sha256), {
+    const response = await factoryRequest(operationPath(runOperations.getRunImageInfo, sha256), {
       method: "HEAD",
     });
     if (response.status === 404) return false;
     if (response.ok) return true;
     throw new Error("Factory could not check the image.");
   },
-  stageRunImage: (sha256: string, data: Blob) =>
-    request<RunImageInfo>(runImageUrl(sha256), {
-      method: "PUT",
-      headers: { "content-type": data.type },
-      body: data,
-    }),
-  archiveRun: (id: string) =>
-    request<RunDetail>(`/api/runs/${encodeURIComponent(id)}/archive`, { method: "POST" }),
-  listRuns: (projectId: string) =>
-    request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),
-  updateTask: (id: string, input: { title: string }) =>
-    patch<TaskSummary>(`/api/tasks/${encodeURIComponent(id)}`, input),
   getProtocol: () => request<ProtocolDescriptor>("/api/protocol"),
   getClientScope: () => request<ClientScope>("/api/client-access"),
   requestClientAccess: (input: RequestClientAccessInput) =>

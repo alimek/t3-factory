@@ -23,13 +23,16 @@ export function openRunnerRecovery(
   t3: T3Adapter,
   liveContextId: () => Effect.Effect<string | null, unknown>,
 ) {
-  function requestReport(
-    runId: string,
-    input: { blockId: string },
-  ): Effect.Effect<Result<RunDetail>, unknown> {
+  function requestReport(runId: string, input: unknown): Effect.Effect<Result<RunDetail>, unknown> {
     return Effect.gen(function* () {
       if (lifecycle.isClosed()) return failure("conflict", "Factory is shutting down.");
-      if (typeof input?.blockId !== "string" || !input.blockId)
+      if (
+        typeof input !== "object" ||
+        input === null ||
+        !("blockId" in input) ||
+        typeof input.blockId !== "string" ||
+        !input.blockId
+      )
         return failure("validation", "Choose the Block to request a report from.");
       const blockId = input.blockId;
       const detail = yield* lifecycle.getRun(runId);
