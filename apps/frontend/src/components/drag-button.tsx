@@ -15,6 +15,7 @@ export function DragButton({
   onDragMove,
   onDrop,
   onDragCancel,
+  style,
   ...props
 }: Omit<ComponentProps<"button">, "onClick" | "onDrop" | "onDragStart"> & {
   /** A press that did not become a drag. */
@@ -62,7 +63,7 @@ export function DragButton({
     <button
       type="button"
       {...props}
-      style={{ touchAction: "none" }}
+      style={{ ...style, touchAction: "none" }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         press.current = { x: e.clientX, y: e.clientY, dragging: false };

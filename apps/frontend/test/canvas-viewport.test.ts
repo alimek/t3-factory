@@ -112,7 +112,7 @@ it("entry framing never enlarges a small target above 100 percent", () => {
   const target = { minX: 0, minY: 0, width: 200, height: 100 };
 
   // Act
-  const view = fitGraphView(target, 1200, 800, { x: 0, top: 0, bottom: 0 }, 0);
+  const view = fitGraphView(target, 1200, 800, { x: 0, top: 0, bottom: 0 });
 
   // Assert
   expect(view).toStrictEqual({ x: 500, y: 350, scale: 1 });
@@ -123,7 +123,7 @@ it("an off-origin target is centered at full scale", () => {
   const target = { minX: 500, minY: 100, width: 200, height: 100 };
 
   // Act
-  const view = fitGraphView(target, 1200, 800, { x: 0, top: 0, bottom: 0 }, 0);
+  const view = fitGraphView(target, 1200, 800, { x: 0, top: 0, bottom: 0 });
 
   // Assert
   expect(view).toStrictEqual({ x: 0, y: 250, scale: 1 });
@@ -136,7 +136,7 @@ it("a target at the graph edge stays centered", () => {
   const target = { minX: -1000, minY: 0, width: 200, height: 100 };
 
   // Act
-  const view = fitGraphView(target, 1000, 600, { x: 0, top: 0, bottom: 0 }, 0);
+  const view = fitGraphView(target, 1000, 600, { x: 0, top: 0, bottom: 0 });
 
   // Assert
   expect(view).toStrictEqual({ x: 1400, y: 250, scale: 1 });
@@ -147,7 +147,7 @@ it("parallel target bounds fit together inside the padded viewport", () => {
   const targets = { minX: 200, minY: 100, width: 200, height: 1000 };
 
   // Act
-  const view = fitGraphView(targets, 1200, 800, { x: 48, top: 64, bottom: 80 }, 0);
+  const view = fitGraphView(targets, 1200, 800, { x: 48, top: 64, bottom: 80 });
 
   // Assert
   expect(view.scale).toBeCloseTo(0.656);
