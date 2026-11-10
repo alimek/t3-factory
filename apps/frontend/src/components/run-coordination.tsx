@@ -108,7 +108,11 @@ export function RetainedResult({
   return (
     <div className="flex min-w-0 flex-col gap-1 text-xs">
       <p className="font-medium">
-        Report accepted · exit {exit?.name ?? report.exitId ?? "unspecified"}
+        {/* A Continuation's single output has no name to show. */}
+        Report accepted
+        {exit?.source === "continuation"
+          ? ""
+          : ` · exit ${exit?.name ?? report.exitId ?? "unspecified"}`}
         {version > 1 && ` · version ${version}`}
       </p>
       <p className="text-muted-foreground">

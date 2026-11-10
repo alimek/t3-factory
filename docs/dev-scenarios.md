@@ -37,6 +37,8 @@ of the [quality gate](quality-gates.md), rejects stale rows and missing or malfo
 - `parallel-start`: Demo · Parallel review from one prompt
 - `worktree`: Demo · Worktree · Search fix on its own branch
 - `working-report`: Demo · Monitoring · Agent is watching CI for the search fix
+- `continuation-sent`: Demo · Continuation · Spec prompt sent to the planning thread
+- `continuation-forwarded`: Demo · Continuation · Spec passed on to Tickets
 - `working`: Demo · Working · Improve the project picker
 
 <!-- scenario-catalog:end -->

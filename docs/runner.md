@@ -52,7 +52,7 @@ reporting protocol.
 - The saved launch title is `Factory #<number> · <block position> <Block name>`, sliced to
   200 characters. The number is a durable Run sequence. The position is the 1-based index
   in the captured block list. Later renames do not change the title recovery searches for.
-- Start mints a **Block id** for each Agent Block. The first message starts with
+- Start mints a **Block id** for each Agent Block and Continuation. The first message starts with
   `$factory-block`, then a `Factory Block id: <id>.` line; every later visit and Request
   report message repeats the same id. The worker passes it to `factory_get_block`, then
   `factory_update_block`. `factory_get_run` is read-only and grants no routing authority.
@@ -62,6 +62,8 @@ reporting protocol.
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
   Conversation with the user stays in that worker thread; Factory does not track it.
+- A [Continuation](#continuations) has no worker of its own: its prompt is a later task in the worker
+  thread its first message belongs to, with the Continuation's own Block id.
 
 ### Run workspace
 
@@ -349,6 +351,31 @@ Partial fan-out survives restart. Each pending delivery retains its own body unt
 acknowledged; keys, fingerprints, targets and references remain afterwards. Initial input
 and captured prompts are retained intentionally. Payload clearing is logical deletion,
 not secure erasure.
+
+### Continuations
+
+Every handoff records its [worker provenance](../GLOSSARY.md#worker-provenance): an Agent result carries its
+worker's binding, a Human answer the binding of the delivery it answered, a Continuation's result the thread
+its prompt ran on and a pass-through the arrival's own binding. Handoffs recorded before Continuations existed
+carry none; no Continuation can receive them.
+
+The first released handoff to a Continuation becomes its prompt visit: an activation, attributed to the
+worker's captured Agent revision, delivered by a send queued on the handoff's thread by its T3 id. A Factory
+send into an existing thread (revisit, Continuation prompt or Request report) waits until the thread is
+finished and no other Block's delivered activation on that thread still lacks its `finished` result, so work
+sharing a thread is serialized. Unknown send acceptance follows the ordinary recovery rules and is never
+resent blindly.
+
+Reports naming the Continuation's Block id apply to its prompt activation; `finished` takes no exit (or its
+`output`) and requires a message. The result is held until the thread its prompt ran on is finished and no
+execution failure is pending on the Continuation; Factory also attempts that release on every drive, so a
+Continuation without recipients forwards too. Release records the response's handoffs and makes the
+Continuation pass-through. Later handoffs to it are acknowledged and forwarded with their own binding as
+released handoffs (cause `pass:`), each recorded as a pass-through visit; handoffs arriving while the prompt
+is pending are recorded as queued and wait. A run of the thread that Factory queued for the prompt belongs to
+the Continuation: its failure and a missing report after it are the Continuation's attention, while the
+worker's Agent block shows the thread's activity. A Run neither settles automatically nor has that thread
+settled natively while a Continuation is sent or a message waits.
 
 ### Human occurrences
 

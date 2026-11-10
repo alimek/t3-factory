@@ -2,17 +2,9 @@ import { RetainedResult, resultVersion } from "./run-coordination.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import { capturedExits } from "../flow-graph.ts";
-import {
-  ArrowRight,
-  Bot,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Flag,
-  History,
-  User,
-} from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ExternalLink, Flag, History } from "lucide-react";
 import { clockTime } from "./execution-state.tsx";
+import { BLOCK_KINDS } from "./flow-block.tsx";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +17,8 @@ interface EventPhrase {
   readonly route?: { readonly exit: string; readonly recipients: string };
   /** Arrival rows link to the block's T3 thread (Figma "T3 thread"). */
   readonly thread?: boolean;
+  /** A Continuation row links to the thread its message belongs to instead. */
+  readonly threadLink?: string | null;
 }
 
 function nameOf(run: RunDetail, blockId: string | null) {
@@ -109,6 +103,37 @@ const attentionWords: Record<RunAttention["kind"], string> = {
   "execution-failed": "problem · T3 execution failed",
 };
 
+/** The message a Continuation event is about, named by the delivery that arrived. */
+function continuationVisitOf(run: RunDetail, event: RunEvent) {
+  return run.continuationVisits.find((visit) => visit.incomingIntentId === event.causeId);
+}
+
+function continuationThread(run: RunDetail, event: RunEvent) {
+  const bindingId = continuationVisitOf(run, event)?.bindingId;
+  const binding = run.threadBindings.find((item) => item.id === bindingId);
+  return { owner: binding ? nameOf(run, binding.blockId) : null, link: binding?.link ?? null };
+}
+
+function continuationPromptSent(run: RunDetail, event: RunEvent): EventPhrase {
+  const { owner, link } = continuationThread(run, event);
+  return {
+    actorId: event.blockId,
+    text: `prompt sent to ${owner ? `${owner}'s` : "the incoming"} T3 thread`,
+    thread: true,
+    threadLink: link,
+  };
+}
+
+function continuationPassed(run: RunDetail, event: RunEvent): EventPhrase {
+  const source = continuationVisitOf(run, event)?.sourceBlockId;
+  return {
+    actorId: event.blockId,
+    text: `passed ${source ? `${nameOf(run, source)}'s message` : "a message"} through · no prompt`,
+    thread: true,
+    threadLink: continuationThread(run, event).link,
+  };
+}
+
 function attentionOf(run: RunDetail, event: RunEvent) {
   return run.attention.find((item) => item.id === event.causeId);
 }
@@ -179,6 +204,10 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "attention-settled": attentionSettled,
   "operation-cancelled": operationCancelled,
   "human-cancelled": said("question cancelled by Archive"),
+  "continuation-queued": said("waits behind the prompt"),
+  "continuation-prompt-sent": continuationPromptSent,
+  "continuation-forwarded": said("response forwarded"),
+  "continuation-passed": continuationPassed,
   "operation-unresolved": operationUnresolved,
   "run-settled": (_run, event) => ({
     actorId: null,
@@ -201,7 +230,7 @@ function phrase(run: RunDetail, event: RunEvent): EventPhrase {
 
 function ActorIcon({ run, actorId }: { run: RunDetail; actorId: string | null }) {
   const kind = run.definitions.flow.graph.blocks.find((block) => block.id === actorId)?.kind;
-  const Icon = !actorId ? Flag : kind === "human" ? User : Bot;
+  const Icon = actorId ? BLOCK_KINDS[kind ?? "agent"].Icon : Flag;
   return <Icon aria-hidden className="size-3 shrink-0 text-link" strokeWidth={1.75} />;
 }
 
@@ -306,8 +335,9 @@ function TimelineEvent({
   event: RunEvent;
   selectedBlockId: string | null;
 }) {
-  const { actorId, text, route, thread } = phrase(run, event);
-  const link = thread && run.blocks.find((block) => block.blockId === actorId)?.link;
+  const { actorId, text, route, thread, threadLink } = phrase(run, event);
+  const link =
+    thread && (threadLink ?? run.blocks.find((block) => block.blockId === actorId)?.link);
   const report =
     event.kind === "report-accepted"
       ? run.reports.find((r) => r.id === event.causeId && r.activationId)

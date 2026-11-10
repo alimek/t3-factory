@@ -7,10 +7,10 @@ import {
   type RunDetail,
 } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
-import { Bot, CircleHelp, Clock, User } from "lucide-react";
+import { CircleHelp, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { selectExecutionTargets } from "../execution-focus.ts";
-import { exitRecipients, type CanvasBlock } from "../flow-graph.ts";
+import { continuedThread, exitRecipients, type CanvasBlock } from "../flow-graph.ts";
 import { EXECUTION_DIMENSIONS } from "./canvas-dimensions.ts";
 import {
   CanvasSurface,
@@ -18,7 +18,7 @@ import {
   type CanvasFlowInputContent,
   type CanvasPort,
 } from "./canvas-surface.tsx";
-import { exitSourceLabel } from "./flow-block.tsx";
+import { BLOCK_KINDS, exitSourceLabel } from "./flow-block.tsx";
 import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
 import { clockTime, executionStateLabel, StatePill } from "./execution-state.tsx";
@@ -39,12 +39,39 @@ function blockObservation(block: RunBlock, unavailable: boolean) {
   return "live" as const;
 }
 
-function agentLabel(run: RunDetail, block: FlowBlock) {
+function agentLabel(run: RunDetail, block: Exclude<FlowBlock, { kind: "continuation" }>) {
   if (block.kind === "human") return "asks you";
   if (!block.agentId) return "not chosen";
   return (
     run.definitions.agents.find((agent) => agent.id === block.agentId)?.name ?? "Unavailable Agent"
   );
+}
+
+/** The reference line under a block's name: what it runs, or whose thread a Continuation continues. */
+function referenceLine(run: RunDetail, block: FlowBlock) {
+  if (block.kind !== "continuation")
+    return {
+      text: `${block.kind === "human" ? "Human step" : "Agent"} · ${agentLabel(run, block)}`,
+      color: "text-subtle-foreground",
+    };
+  const thread = continuedThread(run.definitions.flow.graph, block.id);
+  return thread
+    ? { text: `continues ${thread}`, color: "text-brand-cyan" }
+    : { text: "no Agent before it", color: "text-subtle-foreground" };
+}
+
+/** The Continuation's prompt visit: the one message that sent its prompt in this Run. */
+export function continuationPromptVisit(run: RunDetail, blockId: string) {
+  return run.continuationVisits.find(
+    (visit) => visit.blockId === blockId && visit.kind === "prompt",
+  );
+}
+
+/** The block whose worker thread a visit's message belongs to, by its thread binding. */
+export function threadOwnerName(run: RunDetail, bindingId: string | null) {
+  const owner = run.threadBindings.find((binding) => binding.id === bindingId)?.blockId;
+  if (!owner) return null;
+  return run.definitions.flow.graph.blocks.find((block) => block.id === owner)?.name || owner;
 }
 
 /** Figma Run/ExecBlock frames: active states use a 75 % state line, settled ones a quieter one. */
@@ -55,11 +82,14 @@ const frameColor: Record<RunBlock["state"], string> = {
   finished: "border-success/50 bg-card",
   error: "border-destructive/75 bg-card",
   stopped: "border-status-stopped/50 bg-card",
+  sent: "border-primary/75 bg-card",
+  "pass-through": "border-success/50 bg-card",
 };
 
 const activityColor: Partial<Record<RunBlock["state"], string>> = {
   working: "text-status-working",
   waiting: "text-status-waiting",
+  sent: "text-link",
   error: "text-destructive",
 };
 
@@ -70,8 +100,18 @@ type BlockVisit = {
   readonly status: string;
 };
 
-/** Recorded visits: Block worker activations or Human occurrences. */
+/** Recorded visits: Block worker activations, Human occurrences or messages reaching a Continuation. */
 export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVisit[] {
+  if (block.kind === "continuation") {
+    return run.continuationVisits
+      .filter((visit) => visit.blockId === block.id)
+      .map((visit) => ({
+        id: visit.id,
+        start: visit.arrivedAt,
+        end: visit.forwardedAt,
+        status: visit.state,
+      }));
+  }
   if (block.kind === "human") {
     return run.humanOccurrences
       .filter((occurrence) => occurrence.blockId === block.id)
@@ -94,11 +134,30 @@ export function blockVisits(run: RunDetail, block: FlowBlock): readonly BlockVis
     }));
 }
 
+/** A Continuation's activity: when its prompt went out, and where its work shows meanwhile. */
+function continuationActivity(run: RunDetail, blockId: string, state: RunBlock["state"]) {
+  const prompt = continuationPromptVisit(run, blockId);
+  if (!prompt) return null;
+  const sent = clockTime(prompt.arrivedAt);
+  if (state === "sent") {
+    const owner = threadOwnerName(run, prompt.bindingId);
+    return `prompt sent ${sent}${owner ? ` · work shows on ${owner}` : ""}`;
+  }
+  if (state !== "pass-through") return null;
+  const passed = run.continuationVisits.filter(
+    (visit) => visit.blockId === blockId && visit.kind === "pass-through",
+  ).length;
+  return `pass-through · prompt used ${sent}${passed ? ` · ${passed} passed through` : ""}`;
+}
+
 /** Recorded visit times for the activity line; no progress is inferred. */
 function activityText(run: RunDetail, block: FlowBlock, recorded: RunBlock | undefined) {
   const visits = blockVisits(run, block);
   const latest = visits[visits.length - 1];
   if (!recorded || recorded.state === "not-started" || !latest) return "Not visited";
+  const continuation =
+    block.kind === "continuation" && continuationActivity(run, block.id, recorded.state);
+  if (continuation) return continuation;
   const start = latest.start ?? recorded.observedAt;
   const end = latest.end;
   const active = recorded.state === "working" || recorded.state === "waiting";
@@ -117,14 +176,15 @@ function ExecutionExit({
   exit: EffectiveExit;
 }) {
   const recipients = exitRecipients(graph, block.id, exit.id).join(", ");
+  const continuation = exit.source === "continuation";
   return (
     <>
       <span className="truncate text-2xs tracking-label text-subtle-foreground">
-        {exitSourceLabel(exit)}
+        {continuation ? "output" : exitSourceLabel(exit)}
       </span>
       <span className="flex-1" />
       <span className="truncate text-xs font-medium text-foreground">
-        {exit.name || "Unnamed exit"}
+        {continuation ? "response" : exit.name || "Unnamed exit"}
       </span>
       <span className="sr-only">configured → {recipients || "finish here"}</span>
     </>
@@ -138,8 +198,20 @@ function attentionFooterText(human: boolean, needsInput: boolean) {
 
 type BlockObservation = ReturnType<typeof blockObservation>;
 
-function ExecutionBlockHeader({ human, state }: { human: boolean; state: RunBlock["state"] }) {
-  const KindIcon = human ? User : Bot;
+const EXECUTION_KIND_LABELS: Record<FlowBlock["kind"], string> = {
+  agent: "AGENT",
+  human: "HUMAN",
+  continuation: "CONTINUATION",
+};
+
+function ExecutionBlockHeader({
+  kind,
+  state,
+}: {
+  kind: FlowBlock["kind"];
+  state: RunBlock["state"];
+}) {
+  const KindIcon = BLOCK_KINDS[kind].Icon;
   return (
     <span className="flex flex-1 items-center gap-1.5 pt-2 pr-2.5 pl-3">
       <KindIcon
@@ -148,7 +220,7 @@ function ExecutionBlockHeader({ human, state }: { human: boolean; state: RunBloc
         strokeWidth={1.75}
       />
       <span className="text-2xs leading-3 font-semibold tracking-section text-subtle-foreground">
-        {human ? "HUMAN" : "AGENT"}
+        {EXECUTION_KIND_LABELS[kind]}
       </span>
     </span>
   );
@@ -188,6 +260,7 @@ function ExecutionBlockTitle({
 }) {
   const state = recorded?.state ?? "not-started";
   const activity = activityLine(run, block, recorded, observation);
+  const reference = referenceLine(run, block);
   return (
     <span className="flex flex-1 flex-col gap-0.75 pt-1 pr-2.5 pb-2 pl-3">
       <span className="flex h-5 min-w-0 items-center gap-1.5">
@@ -201,8 +274,8 @@ function ExecutionBlockTitle({
         </span>
         <StatePill state={state} />
       </span>
-      <span className="truncate text-2xs leading-3 tracking-label text-subtle-foreground">
-        {block.kind === "human" ? "Human step" : "Agent"} · {agentLabel(run, block)}
+      <span className={cn("truncate text-2xs leading-3 tracking-label", reference.color)}>
+        {reference.text}
       </span>
       <span
         className={cn("truncate text-2xs leading-3 font-medium", activity.color)}
@@ -310,7 +383,6 @@ function executionBlock(
   const state = recorded?.state ?? "not-started";
   const workingMessage = state === "working" ? recorded?.workingMessage : null;
   const observation = recorded ? blockObservation(recorded, unavailable) : "unvisited";
-  const human = block.kind === "human";
   return {
     className: cn(frameColor[state], selected && "border-primary ring-1 ring-primary"),
     selected,
@@ -320,7 +392,7 @@ function executionBlock(
         <button
           type="button"
           className={pressClass}
-          aria-label={`${human ? "Human step" : "Agent"} ${block.name || "Unnamed block"}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`}
+          aria-label={`${BLOCK_KINDS[block.kind].name} ${block.name || "Unnamed block"}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`}
           aria-pressed={selected}
           onClick={onSelect}
         >
@@ -328,7 +400,7 @@ function executionBlock(
         </button>
       ),
     },
-    header: <ExecutionBlockHeader human={human} state={state} />,
+    header: <ExecutionBlockHeader kind={block.kind} state={state} />,
     title: (
       <ExecutionBlockTitle run={run} block={block} recorded={recorded} observation={observation} />
     ),

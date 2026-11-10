@@ -29,8 +29,19 @@ export const HUMAN_EXITS: readonly BlockExit[] = [
   },
 ];
 
-/** Where a block's exit comes from: its Agent, this Flow only, or the fixed Human step. */
-export type ExitSource = "agent" | "local" | "human";
+/**
+ * A Continuation's single output. It has no name: wires from it carry no label, and a worker may
+ * finish the Continuation without naming an exit. Its message is the forwarded response.
+ */
+export const CONTINUATION_EXIT: BlockExit = {
+  id: "output",
+  name: "",
+  description: "The worker's response to the prompt, then every later message unchanged.",
+  messageRequired: true,
+};
+
+/** Where a block's exit comes from: its Agent, this Flow only, a Human step or a Continuation. */
+export type ExitSource = "agent" | "local" | "human" | "continuation";
 export interface EffectiveExit extends BlockExit {
   readonly source: ExitSource;
 }
@@ -46,7 +57,7 @@ export function inheritedExits(
 
 /**
  * The exits a block offers: an Agent block's Agent exits minus those hidden in this Flow, then its
- * Flow-local exits; a Human block's fixed exits. Pass the Agents the reader resolves against: the
+ * Flow-local exits; a Human block's fixed exits; a Continuation's single output. Pass the Agents the reader resolves against: the
  * current saved ones for authoring, the captured revisions for a Run.
  */
 export function effectiveExits(
@@ -54,6 +65,7 @@ export function effectiveExits(
   agents: readonly Pick<AgentDefinition, "id" | "exits">[],
 ): EffectiveExit[] {
   if (block.kind === "human") return HUMAN_EXITS.map((exit) => ({ ...exit, source: "human" }));
+  if (block.kind === "continuation") return [{ ...CONTINUATION_EXIT, source: "continuation" }];
   const hidden = new Set(block.hiddenExitIds);
   return [
     ...inheritedExits(block, agents)

@@ -20,7 +20,8 @@ workflow, routes work and records its history.
 ## What you can do
 
 - **Design Flows visually.** Connect Agent and Human blocks with named exits,
-  correction loops and independent parallel branches. Save unfinished drafts and check readiness.
+  correction loops and independent parallel branches, and add Continuations that prompt an
+  earlier Agent again in its own conversation. Save unfinished drafts and check readiness.
 - **Reuse Agents across projects.** Save prompts and worker settings once. Factory launches
   each Block with that Agent's provider and model.
 - **Keep decisions with people.** Answer Human steps in Factory and open T3 for native

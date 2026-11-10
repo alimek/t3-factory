@@ -44,3 +44,27 @@ export function guardsHold(
     ([held]) => !!held && declared.every((fact) => checks[fact](held)),
   );
 }
+
+/** A transition that turns a released Handoff into work: owner, not Archived, live authorization
+ * context, open gate and the generation the caller read the release at all hold, and the Handoff
+ * is still pending. */
+export function pendingHandoffHolds(
+  sql: SqlClient.SqlClient,
+  ownerToken: string,
+  current: { readonly id: string; readonly context_id: string; readonly generation: number },
+  handoffId: string,
+) {
+  return Effect.gen(function* () {
+    const held = yield* guardsHold(sql, ownerToken, current.id, {
+      owner: true,
+      notArchived: true,
+      liveContext: current.context_id,
+      gateOpen: true,
+      generation: current.generation,
+    });
+    if (!held) return false;
+    const pending =
+      yield* sql`SELECT id FROM operation_intents WHERE id=${handoffId} AND kind='handoff' AND state='pending'`;
+    return pending.length > 0;
+  });
+}

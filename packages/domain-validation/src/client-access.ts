@@ -11,11 +11,11 @@ import type {
  * peer must understand; raise the minimum only when older peers can no longer
  * interoperate safely. Application release numbers never decide compatibility.
  */
-export const FACTORY_PROTOCOL = 7;
-/** Protocol 7 replaced outcome-based block exits with Agent exits; older clients cannot read it. */
-export const FACTORY_MINIMUM_PEER_PROTOCOL = 7;
-/** The current UI reads Agent exits and Flow-local exits (protocol 7). */
-export const FACTORY_MINIMUM_SERVER_PROTOCOL = 7;
+export const FACTORY_PROTOCOL = 8;
+/** Protocol 8 added Continuation blocks and their Run states; older clients cannot read them. */
+export const FACTORY_MINIMUM_PEER_PROTOCOL = 8;
+/** The current UI reads Continuation blocks, their visits and states (protocol 8). */
+export const FACTORY_MINIMUM_SERVER_PROTOCOL = 8;
 
 export const CLIENT_LABEL_LIMIT = 80;
 

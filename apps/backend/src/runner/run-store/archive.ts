@@ -63,10 +63,11 @@ function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
       "archived",
       time,
     );
+    yield* sql`UPDATE continuation_visits SET state='cancelled' WHERE run_id=${id} AND state IN ('queued','sent')`;
     yield* writeBlockState(
       sql,
       { runId: id },
-      { keep: ["not-started", "finished"], otherwise: "stopped" },
+      { keep: ["not-started", "finished", "pass-through"], otherwise: "stopped" },
       { problem: null },
     );
   });

@@ -24,6 +24,8 @@ type AgentShape = Extract<FlowBlock, { kind: "agent" }>;
 export type ScenarioAgentBlock = { [Key in keyof AgentShape]: AgentShape[Key] };
 type HumanShape = Extract<FlowBlock, { kind: "human" }>;
 export type ScenarioHumanStep = { [Key in keyof HumanShape]: HumanShape[Key] };
+type ContinuationShape = Extract<FlowBlock, { kind: "continuation" }>;
+export type ScenarioContinuation = { [Key in keyof ContinuationShape]: ContinuationShape[Key] };
 type Position = FlowBlock["position"];
 export const blockExit = (
   id: string,
@@ -82,6 +84,12 @@ export const humanStep = (
   name: string,
   position: Position = { x: 0, y: 0 },
 ): ScenarioHumanStep => ({ id, name, kind: "human", position });
+export const continuationStep = (
+  id: string,
+  name: string,
+  prompt: string,
+  position: Position = { x: 0, y: 0 },
+): ScenarioContinuation => ({ id, name, kind: "continuation", prompt, position });
 export const connection = (
   sourceBlockId: string,
   exitId: string,
@@ -370,6 +378,61 @@ const entryWorker = (agentId: string, localExits?: readonly BlockExit[]) =>
 const parallelWork = (agentId: string) => agentBlock("parallel-block", "Parallel work", agentId);
 const followUp = (agentId: string) => agentBlock("follow-up", "Follow-up", agentId);
 const reviewStep = humanStep("review", "Review", { x: 400, y: 0 });
+
+const specStep = continuationStep("spec", "Spec", "Write the spec from what we agreed.");
+
+/** Entry worker's "Done" goes to the Continuation Spec, whose output hands to Follow-up. */
+export const continuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), specStep, followUp(agentId)],
+    connections: [connection("worker", "done", "spec"), connection("spec", "output", "follow-up")],
+  }));
+
+/** As `continuationFlow`, and Follow-up's "Done" returns to Spec, which by then passes through. */
+export const continuationLoopFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Continuation loop", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), specStep, followUp(agentId)],
+    connections: [
+      connection("worker", "done", "spec"),
+      connection("spec", "output", "follow-up"),
+      connection("follow-up", "done", "spec"),
+    ],
+  }));
+
+/** Entry worker's "Done" goes to Spec, then to the Continuation Tickets; both continue its thread. */
+export const chainedContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Chained continuations", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      specStep,
+      continuationStep("tickets", "Tickets", "Split the spec into tickets."),
+    ],
+    connections: [connection("worker", "done", "spec"), connection("spec", "output", "tickets")],
+  }));
+
+/** Entry worker's "Done" goes to a Human Review whose Approve hands to Spec. */
+export const humanContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Human before continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), reviewStep, specStep],
+    connections: [connection("worker", "done", "review"), connection("review", "approve", "spec")],
+  }));
+
+/** Entry worker's "Done" goes to Spec and to Parallel work, whose "Done" also reaches Spec. */
+export const queuedContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Queued continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), specStep, parallelWork(agentId), followUp(agentId)],
+    connections: [
+      connection("worker", "done", "spec"),
+      connection("worker", "done", "parallel-block"),
+      connection("parallel-block", "done", "spec"),
+      connection("spec", "output", "follow-up"),
+    ],
+  }));
 
 /** Entry worker's "Done" hands its result to Parallel work. */
 export const handoffFlow: ReadyFlowShape = (world) =>

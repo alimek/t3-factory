@@ -307,6 +307,30 @@ it("updateFlow rejects a Human step as a Flow input target", async (context) => 
   expect(result.error.issues[0]?.code).toBe("invalid_flow_input_target");
 });
 
+it("updateFlow reports a block kind named after an object member as invalid instead of failing", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [block, { id: "odd", name: "Odd", kind: "toString", position: block.position }],
+    connections: [],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph: graph as never,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["invalid_block_kind", "graph.blocks.1.kind"],
+  ]);
+});
+
 it("concurrent Flow edits allow exactly one successful revision advance", async (context) => {
   // Arrange
   const { factory, created, block } = await validationFlow(context);

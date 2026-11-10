@@ -258,6 +258,18 @@ export function openRunQueries(database: RunnerDatabase) {
           FROM run_executions x WHERE run_id=${id} ORDER BY rowid`;
         const humans =
           yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE run_id=${id} ORDER BY rowid`;
+        const continuationVisits = yield* sql<{
+          id: string;
+          block_id: string;
+          incoming_intent_id: string;
+          kind: RunDetail["continuationVisits"][number]["kind"];
+          source_block_id: string | null;
+          binding_id: string | null;
+          activation_id: string | null;
+          state: RunDetail["continuationVisits"][number]["state"];
+          arrived_at: string;
+          forwarded_at: string | null;
+        }>`SELECT * FROM continuation_visits WHERE run_id=${id} ORDER BY rowid`;
         const attention = yield* attentionRows(sql, id);
         const working = new Map(
           (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
@@ -294,6 +306,18 @@ export function openRunQueries(database: RunnerDatabase) {
             reports: reports.map(runReport),
             executions: executions.map(runExecution),
             humanOccurrences: humans.map(humanOccurrence),
+            continuationVisits: continuationVisits.map((visit) => ({
+              id: visit.id,
+              blockId: visit.block_id,
+              incomingIntentId: visit.incoming_intent_id,
+              kind: visit.kind,
+              sourceBlockId: visit.source_block_id,
+              bindingId: visit.binding_id,
+              activationId: visit.activation_id,
+              state: visit.state,
+              arrivedAt: visit.arrived_at,
+              forwardedAt: visit.forwarded_at,
+            })),
             recoveries: yield* recoveryRows(sql, id),
             attention,
             intents: intents.map(runIntent),

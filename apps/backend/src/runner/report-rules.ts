@@ -1,22 +1,31 @@
-import type { RunDefinitions } from "@t3-factory/contracts";
+import type { RunBlock, RunDefinitions } from "@t3-factory/contracts";
 import { effectiveExits } from "@t3-factory/domain-validation";
 import { fingerprint, rejected } from "./runner-utils.ts";
 import type { RuntimeReport } from "../runtime-types.ts";
+
+type BlockState = RunBlock["state"];
 
 /** Exact exit names and identities resolve against the Run's captured definitions, never a later
  * edit. */
 export function reportRoute(definitions: RunDefinitions, blockId: string, report: RuntimeReport) {
   const block = definitions.flow.graph.blocks.find((block) => block.id === blockId);
-  if (!block || block.kind !== "agent") return rejected("UNKNOWN_BLOCK");
+  if (!block || block.kind === "human") return rejected("UNKNOWN_BLOCK");
   const exits = effectiveExits(block, definitions.agents);
+  // A Continuation has one unnamed output: its worker finishes without naming it.
   const matches = exits.filter(
-    (candidate) => candidate.name === report.exit || candidate.id === report.exit,
+    (candidate) =>
+      (block.kind === "continuation" && report.exit === undefined) ||
+      candidate.name === report.exit ||
+      candidate.id === report.exit,
   );
   const exit = matches[0];
   if (report.status === "finished" && matches.length !== 1)
     return {
       ok: false as const,
-      reply: { code: "INVALID_EXIT", allowedExits: exits.map((exit) => exit.name) },
+      reply: {
+        code: "INVALID_EXIT",
+        allowedExits: exits.map((exit) => exit.name || exit.id),
+      },
     };
   if (exit?.messageRequired && !report.message?.trim()) return rejected("FEEDBACK_REQUIRED");
   const recipients = exit
@@ -43,4 +52,15 @@ export function reportFingerprint(report: RuntimeReport) {
       message: report.message ?? null,
     }),
   );
+}
+
+/** The state a report writes: a Continuation stays `sent` until its response is forwarded, while
+ * its worker's own Block shows the work; an Agent Block shows `agent`. */
+export function reportedState(
+  definitions: RunDefinitions,
+  blockId: string,
+  agent: BlockState,
+): BlockState | { readonly keep: readonly BlockState[]; readonly otherwise: BlockState } {
+  const block = definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
+  return block?.kind === "continuation" ? { keep: ["pass-through"], otherwise: "sent" } : agent;
 }

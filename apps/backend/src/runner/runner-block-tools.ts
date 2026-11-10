@@ -81,21 +81,28 @@ function blockView(
   const current = visits[visits.length - 1];
   const cause = current?.cause ?? "";
   const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
+  // A Continuation's worker answers its prompt and finishes without naming an exit.
+  const continuation = graphBlock.kind === "continuation";
   return {
     code: "BLOCK",
     state: block.state,
     visit: visits.length,
-    reason: cause.startsWith("start:")
-      ? "first"
-      : cause.startsWith("human:")
-        ? "Human answer"
-        : "feedback",
-    exits: effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({
-      id: exit.id,
-      name: exit.name,
-      description: exit.description,
-      messageRequired: exit.messageRequired,
-    })),
+    reason: continuation
+      ? "continuation"
+      : cause.startsWith("start:")
+        ? "first"
+        : cause.startsWith("human:")
+          ? "Human answer"
+          : "feedback",
+    ...(continuation ? { prompt: graphBlock.prompt } : {}),
+    exits: continuation
+      ? []
+      : effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({
+          id: exit.id,
+          name: exit.name,
+          description: exit.description,
+          messageRequired: exit.messageRequired,
+        })),
     inputs: {
       input: detail.input,
       images,
