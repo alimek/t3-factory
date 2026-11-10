@@ -10,17 +10,18 @@ import { openRunHuman } from "./human.ts";
 import { openRunPresentation } from "./presentation.ts";
 import { openRunRelease } from "./release.ts";
 import { openRunReports } from "./reports.ts";
+import { openRunObservation } from "./observation.ts";
+import { openRunRequestReport } from "./request-report.ts";
 import { openRunnerDatabase } from "./runner-database.ts";
 import { openRunSettlement } from "./settlement.ts";
+import { openRunStart } from "./start.ts";
+import { openRunWorkspace } from "./workspace.ts";
 
 export type { RunnerDatabase } from "./runner-database.ts";
 export type { Delivery, DeliveryRecord, Handoff, ResultRecord } from "./records.ts";
-export { currentReports, currentWorkingMessages, type CurrentReport } from "./current-report.ts";
-// Shared steps that Runner families not yet moved here call with their raw transaction.
-export { observeAttention, settleAttention, settlePendingAttention } from "./attention.ts";
-export { settleReportRejections } from "./report-diagnostics.ts";
-export { createEntryLaunches, recordActivationPhase } from "./activations.ts";
-export { blockHasUnresolvedWork, createDelivery, refreshWorkerLink } from "./deliveries.ts";
+export type { StartPlan, StartWorkspace } from "./start.ts";
+export type { RequestReportSettlement } from "./request-report.ts";
+export { currentWorkingMessages } from "./current-report.ts";
 
 /**
  * The Run store owns a Run's execution records. Each transition is one SQL transaction in the
@@ -50,8 +51,8 @@ export function openRunStore(
     );
 
   return {
-    /** The raw transaction handle for Runner families whose transitions have not moved here yet.
-     * Its `mutate` enters the same mutation lane as the transitions. */
+    /** The raw transaction handle, left for the Runner's reads and the Run and Task renames. Its
+     * `mutate` enters the same mutation lane as the transitions. */
     database,
     readRun: database.row,
     takeOwnership,
@@ -63,6 +64,10 @@ export function openRunStore(
     ...openRunRelease(database),
     ...openRunActivations(database),
     ...openRunDeliveries(database),
+    ...openRunStart(database),
+    ...openRunWorkspace(database),
+    ...openRunObservation(database),
+    ...openRunRequestReport(database),
     /** Waits for every queued transition to leave its lane. */
     drain: lanes.drain,
   };

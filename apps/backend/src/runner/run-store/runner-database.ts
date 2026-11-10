@@ -25,9 +25,9 @@ export function readRunRow(sql: SqlClient.SqlClient, id: string) {
 }
 
 /**
- * The raw transaction handle of the Run store, kept for Runner families whose transitions have
- * not moved into the store yet. `mutate` enters the store's one mutation lane per Run. Writers
- * outside `mutate` publish their committed Run changes through `changes` themselves.
+ * The raw transaction handle of the Run store, kept for the Runner's reads and the Run and Task
+ * renames. `mutate` enters the store's one mutation lane per Run. Writers outside `mutate` publish
+ * their committed Run changes through `changes` themselves.
  */
 export function openRunnerDatabase(
   sqlClient: SqlClient.SqlClient,

@@ -56,9 +56,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
-  const { observe } = openRunnerObservation(database, t3);
+  const { observe } = openRunnerObservation(store, t3);
   const { dispatchIntent } = openRunnerDispatch(store, ops, t3, checkAgent, observe, images);
-  const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
+  const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
@@ -101,7 +101,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${id} AND thread_id IS NOT NULL`;
       if (runRow.gate_open && phase !== "dispatch")
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
-      yield* settleRecoveries(database, lifecycle, t3, id);
+      yield* settleRecoveries(store, lifecycle, t3, id);
       if (phase === "observe") return;
       const observed = (yield* row(id)) ?? runRow;
       yield* dispatchIntents(observed, contextId);

@@ -19,7 +19,6 @@ import {
   sameStrategy,
   WORKTREE_REJECTED,
 } from "./run-workspace.ts";
-import type { RunWorkspace } from "./run-workspace.ts";
 import { now } from "./time.ts";
 import { attachmentName, RUN_IMAGE_MISSING, type RunImages } from "./run-images.ts";
 import { workerTurn, type LaunchImage, type StoredLaunchPayload } from "./worker-payloads.ts";
@@ -34,11 +33,6 @@ const LAUNCH_RECOVERY =
   "Launch acknowledgement is uncertain. Factory will search for the worker and will not launch another.";
 
 /** Flow-input targets that launch with the accepted Start; a worktree Run starts only its creator. */
-export function startLaunchTargets(definitions: RunDefinitions, workspace: RunWorkspace) {
-  const targets = definitions.flow.graph.flowInput.targetBlockIds;
-  return workspace.mode === "checkout" ? targets : [workspace.creatorBlockId];
-}
-
 export function entryMessagesTooLong(definitions: RunDefinitions, images: readonly RunImage[]) {
   const launched = images.map((image, index) => ({ ...image, ordinal: index + 1 }));
   return definitions.flow.graph.flowInput.targetBlockIds.some((blockId) => {

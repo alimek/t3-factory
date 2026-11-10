@@ -1,6 +1,7 @@
-import type { RunDefinitions } from "@t3-factory/contracts";
+import type { BlockExit, RunDefinitions } from "@t3-factory/contracts";
 import type { LaunchPayload, SendPayload, T3Target } from "./adapters/t3.ts";
 import { attachmentName } from "./run-images.ts";
+import { conversationReportInstructions } from "./runner-handoffs.ts";
 
 /* Worker messages and launch payloads, pure so the Run store can persist them inside its
  * transactions and orchestration can verify them before a T3 call. */
@@ -92,4 +93,23 @@ export function workerRevisitPayload(
     clientRequestId: key,
     message: workerTurn(message, publicId),
   };
+}
+
+/** Request report: a turn queued on a finished worker thread asking it to assess its existing work
+ * and report. */
+export function requestReportPayload(
+  target: Pick<T3Target, "environmentId">,
+  threadId: string,
+  key: string,
+  exits: readonly BlockExit[],
+  publicId: string,
+): SendPayload {
+  return workerRevisitPayload(
+    target,
+    threadId,
+    key,
+    "Factory Request report: assess the existing work without repeating the task. If questions you asked the user are still unanswered, or CI, review, delegated or background work is still running, report working with what remains open instead of forcing completion; report finished only when the task, including its discussion, is actually complete.\n\n" +
+      conversationReportInstructions(exits),
+    publicId,
+  );
 }

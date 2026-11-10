@@ -9,6 +9,7 @@ export function advanceGeneration(sql: SqlClient.SqlClient, runId: string) {
 
 /** A Run timeline event by kind; its stored source key (the idempotency key) is derived here. */
 export type TimelineEvent = { readonly runId: string; readonly observedAt: string } & (
+  | { readonly kind: "started" }
   | { readonly kind: "run-settled"; readonly cause: "automatic" | "manual" }
   | { readonly kind: "run-activated"; readonly blockId: string; readonly reportId?: string }
   | { readonly kind: "run-archived" }
@@ -55,6 +56,19 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
       readonly intentId: string;
       readonly engineStatus: string;
     }
+  | {
+      readonly kind: "report-recovery-requested";
+      readonly blockId: string;
+      readonly executionId: string;
+      readonly intentId: string;
+    }
+  | {
+      readonly kind: "execution-observed";
+      readonly blockId: string;
+      readonly executionId: string;
+      readonly bindingId: string;
+      readonly engineStatus: string;
+    }
 );
 
 type StoredEvent = {
@@ -82,6 +96,12 @@ function storedDeliveryEvent(event: DeliveryEvent) {
         return { ...about, sourceKey: "release:" + event.intentId };
       case "operation-unresolved":
         return { ...about, sourceKey: yield* newId };
+      case "report-recovery-requested":
+        return {
+          ...about,
+          executionId: event.executionId,
+          sourceKey: "recovery:" + event.intentId,
+        };
       case "send-acknowledged":
       case "launch-acknowledged":
         return {
@@ -98,6 +118,17 @@ function stored(event: TimelineEvent) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
     if ("intentId" in event) return yield* storedDeliveryEvent(event);
     switch (event.kind) {
+      case "started":
+        return { blockId: null, executionId: null, sourceKey: "start", causeId: null };
+      case "execution-observed":
+        return {
+          blockId: event.blockId,
+          executionId: event.executionId,
+          bindingId: event.bindingId,
+          engineStatus: event.engineStatus,
+          sourceKey: yield* newId,
+          causeId: null,
+        };
       case "run-settled":
         return {
           blockId: null,

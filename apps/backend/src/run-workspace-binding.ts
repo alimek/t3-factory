@@ -1,9 +1,8 @@
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
-import { createEntryLaunches, type RunnerDatabase } from "./runner/run-store/run-store.ts";
+import type { RunStore } from "./runner/run-store/run-store.ts";
 import type { RunRow } from "./runner-types.ts";
 import { runTarget } from "./runner-utils.ts";
-import { now } from "./time.ts";
 
 /**
  * Binds a worktree Run's worktree once its creator's thread shows both a path and a branch, and in
@@ -12,11 +11,11 @@ import { now } from "./time.ts";
  * queues each launched worker's own setup behind its workspace preparation.
  * Returns whether this call bound the worktree.
  */
-export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: RunRow) {
+export function bindRunWorkspace(store: RunStore, t3: T3Adapter, run: RunRow) {
   return Effect.gen(function* () {
     const { workspace } = run;
     if (workspace.mode !== "worktree" || workspace.state !== "preparing") return false;
-    const [creator] = yield* database.transaction(
+    const [creator] = yield* store.database.transaction(
       (sql) =>
         sql<{
           thread_id: string | null;
@@ -34,33 +33,6 @@ export function bindRunWorkspace(database: RunnerDatabase, t3: T3Adapter, run: R
       !branch
     )
       return false;
-    return yield* database.mutate(run.id, (sql) =>
-      Effect.gen(function* () {
-        if (!(yield* database.runHeldUnderContext(sql, run))) return false;
-        const time = yield* now;
-        const bound =
-          yield* sql`UPDATE run_workspaces SET state='bound',worktree_path=${worktreePath},branch=${branch},bound_at=${time} WHERE run_id=${run.id} AND state='preparing' RETURNING run_id`;
-        if (!bound.length) return false;
-        yield* createEntryLaunches(
-          sql,
-          {
-            runId: run.id,
-            number: run.number,
-            definitions: run.definitions,
-            workspace: { ...workspace, state: "bound", worktreePath, branch },
-            project: runTarget(run),
-            contextId: run.context_id,
-            // Reservation records the retry scope T3 offers when each launch is sent.
-            retryScope: null,
-            time,
-          },
-          run.definitions.flow.graph.flowInput.targetBlockIds.filter(
-            (blockId) => blockId !== workspace.creatorBlockId,
-          ),
-        );
-        yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
-        return true;
-      }),
-    );
+    return yield* store.bindRunWorkspace(run, workspace, { worktreePath, branch });
   });
 }

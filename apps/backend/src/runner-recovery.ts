@@ -1,23 +1,12 @@
 import { recoverOperation } from "./runner-effects.ts";
-import { newId } from "./ids.ts";
-import { conversationReportInstructions } from "./runner-handoffs.ts";
-import { effectiveExits } from "@t3-factory/domain-validation";
-import { workerTurn } from "./worker-payloads.ts";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { T3Adapter, SendPayload } from "./adapters/t3.ts";
-import {
-  blockHasUnresolvedWork,
-  createDelivery,
-  type Delivery,
-  type RunStore,
-} from "./runner/run-store/run-store.ts";
+import type { T3Adapter } from "./adapters/t3.ts";
+import type { Delivery, RunStore } from "./runner/run-store/run-store.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
-import { runTarget } from "./runner-utils.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import { failure } from "./result.ts";
-import { now } from "./time.ts";
 export function recoveryRows(sql: SqlClient.SqlClient, id: string) {
   return Effect.gen(function* () {
     const rows = yield* sql<{
@@ -63,7 +52,6 @@ export function openRunnerRecovery(
   t3: T3Adapter,
   liveContextId: () => Effect.Effect<string | null, unknown>,
 ) {
-  const { row, mutate, runHeldUnderContext } = store.database;
   function requestReport(
     runId: string,
     input: { blockId: string },
@@ -84,7 +72,7 @@ export function openRunnerRecovery(
       )
         return detail;
       const visit = detail.value.activations.filter((a) => a.blockId === blockId).at(-1);
-      const current = yield* row(runId);
+      const current = yield* store.readRun(runId);
       if (
         !current ||
         !b.threadId ||
@@ -119,65 +107,13 @@ export function openRunnerRecovery(
           ),
       );
       if (!preflight.ok) return preflight;
-      const accepted = yield* mutate(current.id, (sql) =>
-        Effect.gen(function* () {
-          const existing =
-            yield* sql`SELECT intent_id FROM report_recoveries WHERE run_id=${current.id} AND block_id=${blockId} AND source_execution_id=${executionId}`;
-          if (existing.length) return { ok: true as const, value: undefined };
-          if (!(yield* runHeldUnderContext(sql, current, true)))
-            return failure("conflict", "The Run is stopped, closed, or its authorization changed.");
-          const eligible =
-            yield* sql`SELECT r.id FROM runs r JOIN run_blocks b ON b.run_id=r.id JOIN run_executions e ON e.run_id=r.id AND e.block_id=b.block_id AND e.execution_id=b.execution_id
-        WHERE r.id=${current.id} AND r.generation=${detail.value.generation} AND b.block_id=${blockId} AND b.execution_id=${executionId} AND e.engine_status='completed' AND e.thread_id=${threadId}
-        AND NOT EXISTS(SELECT 1 FROM runtime_reports WHERE activation_id=${visit.id})`;
-          if (!eligible.length || (yield* blockHasUnresolvedWork(sql, current.id, blockId)))
-            return failure(
-              "conflict",
-              "The Run changed or has competing work. Refresh before requesting a report.",
-            );
-          const intentId = yield* newId,
-            key = yield* newId,
-            time = yield* now;
-          const [block] = yield* sql<{
-            public_id: string;
-          }>`SELECT public_id FROM run_blocks WHERE run_id=${current.id} AND block_id=${blockId}`;
-          const [problem] = yield* sql<{
-            id: string;
-          }>`SELECT id FROM run_attention WHERE run_id=${current.id} AND block_id=${blockId} AND kind='missing-report' AND execution_id=${executionId} AND settled_at IS NULL`;
-          const { definitions } = current;
-          const exits = effectiveExits(
-            definitions.flow.graph.blocks.find((block) => block.id === blockId)!,
-            definitions.agents,
-          );
-          const payload: SendPayload = {
-            environmentId: current.environment_id,
-            threadId,
-            mode: "queue",
-            clientRequestId: key,
-            message: workerTurn(
-              "Factory Request report: assess the existing work without repeating the task. If questions you asked the user are still unanswered, or CI, review, delegated or background work is still running, report working with what remains open instead of forcing completion; report finished only when the task, including its discussion, is actually complete.\n\n" +
-                conversationReportInstructions(exits),
-              block!.public_id,
-            ),
-          };
-          yield* createDelivery(sql, {
-            id: intentId,
-            runId: current.id,
-            blockId,
-            kind: "send",
-            cause: "recovery:" + intentId,
-            target: { ...runTarget(current), blockId, threadId },
-            requestKey: key,
-            payload,
-            contextId: current.context_id,
-            retryScope: null,
-          });
-          yield* sql`INSERT INTO report_recoveries(intent_id,attention_id,run_id,block_id,source_execution_id,requested_at,thread_scope) VALUES(${intentId},${problem?.id ?? null},${current.id},${blockId},${executionId},${time},${threadId})`;
-          yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${current.id},${blockId},${executionId},'report-recovery-requested',${"recovery:" + intentId},${intentId},${time})`;
-          yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${current.id}`;
-          return { ok: true as const, value: undefined };
-        }),
-      );
+      const accepted = yield* store.acceptRequestReport(current, {
+        blockId,
+        threadId,
+        executionId,
+        activationId: visit.id,
+        generation: detail.value.generation,
+      });
       if (!accepted.ok) return accepted;
       yield* lifecycle.drive(current.id, "dispatch");
       return yield* lifecycle.getRun(current.id);

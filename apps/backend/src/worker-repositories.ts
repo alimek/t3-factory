@@ -1,42 +1,6 @@
 import type { RunPullRequest, RunWorkerRepository } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { ExecutionObservation } from "./adapters/t3.ts";
-
-const comparePullRequests = (a: RunPullRequest, b: RunPullRequest) =>
-  a.host.localeCompare(b.host) || a.repository.localeCompare(b.repository) || a.number - b.number;
-
-export function recordWorkerRepository(
-  sql: SqlClient.SqlClient,
-  bindingId: string,
-  repository: ExecutionObservation["repository"],
-  time: string,
-) {
-  return Effect.gen(function* () {
-    if (!repository) return;
-    const [prior] = yield* sql<{
-      branch: string | null;
-    }>`SELECT branch FROM worker_repositories WHERE binding_id=${bindingId}`;
-    const previous =
-      yield* sql<RunPullRequest>`SELECT host,repository,number,url,state FROM worker_pull_requests WHERE binding_id=${bindingId} ORDER BY host,repository,number`;
-    const current = [
-      ...new Map(
-        repository.pullRequests.map((pr) => [`${pr.host}/${pr.repository}/${pr.number}`, pr]),
-      ).values(),
-    ].sort(comparePullRequests);
-    // Unchanged reads must not create navigation changes or replace the Run header.
-    if (
-      prior?.branch === repository.branch &&
-      Equal.equals([...previous].sort(comparePullRequests), current)
-    )
-      return;
-    yield* sql`INSERT INTO worker_repositories(binding_id,branch,updated_at) VALUES(${bindingId},${repository.branch},${time}) ON CONFLICT(binding_id) DO UPDATE SET branch=excluded.branch,updated_at=excluded.updated_at`;
-    yield* sql`DELETE FROM worker_pull_requests WHERE binding_id=${bindingId}`;
-    for (const pr of current)
-      yield* sql`INSERT INTO worker_pull_requests(binding_id,host,repository,number,url,state) VALUES(${bindingId},${pr.host},${pr.repository},${pr.number},${pr.url},${pr.state}) ON CONFLICT(binding_id,host,repository,number) DO UPDATE SET url=excluded.url,state=excluded.state`;
-  });
-}
 
 /** Navigation and Run detail read the same per-worker observations in their snapshot transaction. */
 export function readWorkerRepositories(sql: SqlClient.SqlClient, runId?: string) {
