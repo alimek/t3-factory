@@ -7,12 +7,12 @@ import { fieldLabelClass } from "@/components/page";
 import { useDesktopState } from "./desktop-state.ts";
 import { GateScreen } from "@/components/gate-screen";
 import { runDraft } from "./run-draft.ts";
-import {
-  desktopBridge,
-  type DesktopState,
-  type FactoryDesktop,
-  type ServerProbe,
-} from "./desktop-bridge.ts";
+import type {
+  DesktopState,
+  FactoryDesktop,
+  ServerProbe,
+} from "@t3-factory/contracts/desktop-bridge";
+import { desktopBridge } from "./desktop-bridge.ts";
 
 /**
  * Desktop installations first choose one role. A server shows its own backend's

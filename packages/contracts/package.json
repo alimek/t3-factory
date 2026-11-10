@@ -13,6 +13,11 @@
       "factory-source": "./src/live-rpc.ts",
       "types": "./dist/live-rpc.d.ts",
       "default": "./dist/live-rpc.js"
+    },
+    "./desktop-bridge": {
+      "factory-source": "./src/desktop-bridge.ts",
+      "types": "./dist/desktop-bridge.d.ts",
+      "default": "./dist/desktop-bridge.js"
     }
   },
   "scripts": {

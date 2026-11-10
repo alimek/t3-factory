@@ -4,7 +4,8 @@
 
 Factory separates the browser UI, authoritative backend and desktop shell. Shared contracts
 and validation have no application or I/O dependencies; clients may validate early, but the
-backend remains authoritative. The desktop shell owns host lifecycle and client transport,
+backend remains authoritative. Shared contracts also declare the desktop bridge between the
+renderer and the desktop shell. The desktop shell owns host lifecycle and client transport,
 not business rules. T3 owns external execution; Factory owns Flow routing and Run state.
 
 ## Persistence model

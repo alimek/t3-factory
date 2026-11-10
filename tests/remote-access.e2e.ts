@@ -1,6 +1,6 @@
 import { beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { desktopBridgeScript } from "./support/desktop-bridge.ts";
+import { desktopBridgeOptions, desktopBridgeScript } from "./support/desktop-bridge.ts";
 import {
   approvedBrowser,
   expectServerInstallRequested,
@@ -148,7 +148,7 @@ test("an incompatible desktop client can upgrade itself from local application s
   browser,
 }) => {
   // Arrange
-  await browser.addInitScript(desktopBridgeScript("client"));
+  await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client"));
   await remoteFixture(app, "incompatible");
   await app.open("/");
   await expect(
@@ -185,7 +185,7 @@ test("a desktop client upgrades its server first and waits for it before restart
   browser,
 }) => {
   // Arrange
-  await browser.addInitScript(desktopBridgeScript("client"));
+  await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client"));
   const before = (await serverUpdateActions(app)).length;
   await openUpgradeReview(app, screen, "client + server");
   await expect(screen.getByRole("region", "Client · This device")).toContainText("0.2.0");
@@ -218,7 +218,10 @@ test("an available update previews its changes as short lines in the footer tool
   ].join(
     "",
   )}</ul><p><strong>Full Changelog</strong>: https://github.com/alimek/t3-factory/compare/v0.1.0...v0.2.0</p>`;
-  await browser.addInitScript(desktopBridgeScript("client", "available", notes));
+  await browser.addInitScript(
+    desktopBridgeScript,
+    desktopBridgeOptions("client", "available", notes),
+  );
   await openApproved(app, "/runs/new");
 
   // Act
