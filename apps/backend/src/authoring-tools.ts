@@ -64,7 +64,10 @@ const agentFields = {
 };
 const position = {
   type: "object",
-  properties: { x: { type: "number" }, y: { type: "number" } },
+  properties: {
+    x: { type: "number", minimum: -10000, maximum: 10000 },
+    y: { type: "number", minimum: -10000, maximum: 10000 },
+  },
   required: ["x", "y"],
 };
 const flowFields = {
@@ -72,14 +75,14 @@ const flowFields = {
   graph: {
     type: "object",
     description:
-      "The whole Flow graph; it replaces the saved one. Agent blocks {id, kind: agent, name, agentId, position, hiddenExitIds, localExits}, Human blocks {id, kind: human, name, position}, connections {sourceBlockId, exitId, targetBlockId}, and flowInput {position, targetBlockIds}.",
+      "The whole Flow graph; a save replaces the saved one. Positions are optional: if any Block or Flow input position is omitted, the server auto-arranges the whole graph; fully positioned graphs are kept as given. Agent blocks {id, kind: agent, name, agentId, position, hiddenExitIds, localExits}, Human blocks {id, kind: human, name, position}, connections {sourceBlockId, exitId, targetBlockId}, and flowInput {position, targetBlockIds}.",
     properties: {
       blocks: { type: "array", items: { type: "object" } },
       connections: { type: "array", items: { type: "object" } },
       flowInput: {
         type: "object",
         properties: { position, targetBlockIds: { type: "array", items: { type: "string" } } },
-        required: ["position", "targetBlockIds"],
+        required: ["targetBlockIds"],
       },
     },
     required: ["blocks", "connections", "flowInput"],
@@ -87,7 +90,7 @@ const flowFields = {
   workspace: {
     type: "object",
     description:
-      'Optional: {mode: "checkout"} or {mode: "worktree", base: {kind: "default"} | {kind: "ref", ref}}. Omitted keeps the saved workspace.',
+      'Optional: {mode: "checkout"} or {mode: "worktree", base: {kind: "default"} | {kind: "ref", ref}}. Omitted keeps the saved workspace, or defaults to a new worktree from the default branch on create.',
   },
 };
 
@@ -153,10 +156,11 @@ export const authoringTools: Tool[] = [
   },
   {
     name: "factory_create_flow",
-    description: "Create an empty Flow as revision 1. Add its graph with factory_save_flow.",
+    description:
+      "Create a Flow as revision 1 atomically, optionally with its whole graph and workspace. Omit positions to auto-arrange the whole graph. A name alone creates an empty Flow.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string" } },
+      properties: flowFields,
       required: ["name"],
       additionalProperties: false,
     },
@@ -164,7 +168,7 @@ export const authoringTools: Tool[] = [
   {
     name: "factory_save_flow",
     description:
-      "Save a Flow's name, whole graph and workspace as its next immutable revision, exactly as a Studio save. The reply includes readiness.",
+      "Save a Flow's name, whole graph and workspace as its next immutable revision, exactly as a Studio save. If any position is omitted the server auto-arranges the whole graph; otherwise positions are kept. The reply includes readiness.",
     inputSchema: {
       type: "object",
       properties: { flowId, expectedRevision, ...flowFields },

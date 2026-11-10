@@ -18,7 +18,7 @@ import {
   type FlowWire,
   type WireSource,
 } from "../flow-graph.ts";
-import { AUTHORING_DIMENSIONS } from "./canvas-dimensions.ts";
+import { AUTHORING_DIMENSIONS } from "@t3-factory/flow-layout";
 import {
   CanvasSurface,
   IdentityRows,
