@@ -144,11 +144,10 @@ drafts and forks, without model or production credentials.
 
 Selection compares the event's base and head commits, including deleted paths and
 both sides of renames. Only an entirely documentation/review-only diff skips:
-`docs/**/*.md`, root `README.md`, `CONTRIBUTING.md`, `GLOSSARY.md`, `AGENTS.md`,
-`CLAUDE.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`,
-`LICENSE`, `.github/pull_request_template.md`, `sentinel.config.yaml` and
-`.agents/rules/*.md`. Other paths, including scripts under docs, verification skills,
-landing source and unknown paths, run the suite; an empty diff also runs.
+indexed prose under `docs/`, root prose documents, the PR description template and
+reviewer configuration and rules; `scripts/select-ui-journeys.mjs` holds the exact
+allowlist. Every other path, including verification skills, landing source and
+unknown paths, runs the suite; an empty diff also runs.
 Failed file enumeration fails selection. The final check succeeds only for an
 explicit skip or a successful full run, never a failed selection or unexpected skip.
 

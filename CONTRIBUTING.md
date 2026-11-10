@@ -71,13 +71,8 @@ pnpm build
 pnpm test:e2e
 ```
 
-PRs also receive **Controlled UI journeys**: the full suite runs unless every changed
-path is in the explicit documentation/review-only allowlist. Unknown paths and empty
-diffs run; selection failures fail the check. Failed runs retain available reports,
-traces and fixture logs for seven days. See [PR journey selection and diagnostics](docs/testing.md#pr-journey-check).
-This check does not replace Before/After UI evidence or establish live provider,
-native desktop or remote-device compatibility. Making it required is an owner
-ruleset step ([#203](https://github.com/alimek/t3-factory/issues/203)).
+PRs also receive the **Controlled UI journeys** check; see
+[PR journey check](docs/testing.md#pr-journey-check) for what it selects and proves.
 
 Browser installation may be needed on first use; see [UI verification](docs/testing.md#ui-verification).
 Controlled tests do not certify live provider compatibility. Do not run paid
