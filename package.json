@@ -27,7 +27,7 @@
     "check:git-attribution": "node scripts/check-git-attribution.mjs",
     "check:ui-evidence": "node scripts/check-ui-evidence.mjs",
     "prepare": "vp config --no-agent",
-    "check": "pnpm format:check && pnpm fallow && pnpm build && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm fallow && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@e2e-dev/web": "0.15.4",

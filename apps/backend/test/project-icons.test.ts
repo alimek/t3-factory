@@ -1,6 +1,5 @@
+import { runFactoryProcess } from "./support/factory-process.ts";
 import { assert, expect, it } from "@effect/vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import type { ProjectCatalog, Result } from "@t3-factory/contracts";
 import { iconProject, liveIconProjects } from "./support/project-icons.ts";
@@ -17,13 +16,12 @@ it("the last known project icon survives a fresh backend process without its con
   await factory.close();
 
   // Act
-  const child = await promisify(execFile)(
-    process.execPath,
+  const child = await runFactoryProcess(
     [
       fileURLToPath(new URL("./support/projects-process.ts", import.meta.url)),
       harness.databasePath,
     ],
-    { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: harness.processHome } },
+    harness.processHome,
   );
 
   // Assert

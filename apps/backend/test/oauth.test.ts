@@ -1,9 +1,8 @@
+import { runFactoryProcess } from "./support/factory-process.ts";
 import { assert, expect, it, type TestContext } from "@effect/vitest";
 import { readdir, stat, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { LiveT3Adapter } from "../src/index.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { oauthT3 } from "./support/oauth-t3.ts";
@@ -132,19 +131,14 @@ it("expired access with unavailable refresh surfaces unavailable without logging
   await factory.close();
   external.expireAccess();
   external.refreshUnavailable(true);
-  const childEnv = {
-    PATH: process.env.PATH ?? "/usr/bin:/bin",
-    HOME: dirname(harness.databasePath),
-  };
 
   // Act
-  const outageChild = await promisify(execFile)(
-    process.execPath,
+  const outageChild = await runFactoryProcess(
     [
       fileURLToPath(new URL("./support/connection-process.ts", import.meta.url)),
       harness.databasePath,
     ],
-    { env: childEnv },
+    dirname(harness.databasePath),
   );
 
   // Assert

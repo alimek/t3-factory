@@ -1,6 +1,5 @@
+import { runFactoryProcess } from "./support/factory-process.ts";
 import { assert, expect, it } from "@effect/vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { factoryHarness } from "./support/factory.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
@@ -27,13 +26,12 @@ it("project selection and catalog survive restart while connection is unavailabl
   await factory.close();
 
   // Act
-  const child = await promisify(execFile)(
-    process.execPath,
+  const child = await runFactoryProcess(
     [
       fileURLToPath(new URL("./support/projects-process.ts", import.meta.url)),
       harness.databasePath,
     ],
-    { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: harness.processHome } },
+    harness.processHome,
   );
 
   // Assert

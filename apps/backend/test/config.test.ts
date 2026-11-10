@@ -1,6 +1,5 @@
+import { runFactoryProcess } from "./support/factory-process.ts";
 import { expect, it } from "@effect/vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -53,17 +52,17 @@ it("configuration rejects a default HOME inside the source checkout", async (c) 
   c.onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
   // Act
-  const result = promisify(execFile)(
-    process.execPath,
+  const result = runFactoryProcess(
     [
       "--input-type=module",
       "--eval",
       `
-    import { loadConfiguration } from ${JSON.stringify(new URL("../dist/config.js", import.meta.url).href)};
+    import { loadConfiguration } from ${JSON.stringify(new URL("../src/config.ts", import.meta.url).href)};
     await loadConfiguration();
   `,
     ],
-    { cwd: directory, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: source } },
+    source,
+    directory,
   );
 
   // Assert

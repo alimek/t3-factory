@@ -11,7 +11,7 @@ pnpm test
 pnpm start
 ```
 
-`pnpm install` also installs the pre-push hook; `pnpm check` runs the same [quality gate](quality-gates.md) manually. Build before starting or testing a fresh checkout; see the [testing policy](testing.md).
+`pnpm install` also installs the pre-push hook; `pnpm check` runs the same [quality gate](quality-gates.md) manually. Build before `pnpm start`; testing needs no build output; see the [testing policy](testing.md).
 
 `pnpm start` runs one foreground Node backend serving the API and built UI at <http://127.0.0.1:4310>. Stop it with Ctrl+C or SIGTERM; closing a tab leaves it running, and backend exit is not
 Archive: the Runner reconciles on restart because T3 work may continue, and uncertain work keeps its Run open. T3 starts separately.
