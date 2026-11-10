@@ -255,3 +255,4 @@ Use charters from the feature map. Findings are hypotheses with screenshots; con
 
 The project's MCP registration starts the pinned `pnpm exec e2e mcp` server (build first and reload the client after registering). Open a `web` session, observe, locate controls, act and capture screenshots or
 video, then close it. There is no application sign-in or project-specific tool catalog, and sessions share fixture data, so use one writer at a time. For the runner's own reference, run `pnpm exec e2e guide mcp`.
+
