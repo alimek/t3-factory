@@ -22,10 +22,12 @@ import {
   type IpcMainInvokeEvent,
   type WebFrameMain,
 } from "electron";
-import type {
-  Result as OperationResult,
-  ServerUpdateAction,
-  UpdateChannel,
+import {
+  clientAccessOperations,
+  operationPath,
+  type Result as OperationResult,
+  type ServerUpdateAction,
+  type UpdateChannel,
 } from "@t3-factory/contracts";
 import type {
   DesktopMenuState,
@@ -113,9 +115,13 @@ function apiTarget(): ApiTarget {
 async function openRunCount(): Promise<number | null> {
   if (backend.port === null) return 0;
   try {
-    const response = await fetch(`http://127.0.0.1:${backend.port}/api/host/lifecycle`, {
-      signal: AbortSignal.timeout(5000),
-    });
+    const response = await fetch(
+      `http://127.0.0.1:${backend.port}${operationPath(clientAccessOperations.getHostLifecycle)}`,
+      {
+        method: clientAccessOperations.getHostLifecycle.method,
+        signal: AbortSignal.timeout(5000),
+      },
+    );
     const body = (await response.json()) as { ok: boolean; value?: { openRunCount: number } };
     return body.ok && body.value ? body.value.openRunCount : null;
   } catch {

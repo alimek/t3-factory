@@ -1,3 +1,4 @@
+import { clientAccessServerOperations, operationPath } from "@t3-factory/contracts";
 import { MutationGate } from "@/client-gate";
 import { useCallback, useState } from "react";
 import type { FactoryClient, RemoteAccessStatus } from "@t3-factory/contracts";
@@ -65,12 +66,22 @@ export function AccessSettings() {
       <RemoteAccessSection
         remote={remote}
         busy={busy}
-        onToggle={(enabled) => void act(() => api.setRemoteAccess(enabled))}
+        onToggle={(enabled) => void act(() => api.setRemoteAccess({ enabled }))}
       />
       <ClientList
         clients={clients}
         busy={busy}
-        onDecide={(id, decision) => void act(() => api.decideClient(id, decision))}
+        onDecide={(id, decision) =>
+          void act(() =>
+            api[
+              decision === "approve"
+                ? "approveClient"
+                : decision === "deny"
+                  ? "denyClient"
+                  : "revokeClient"
+            ](id),
+          )
+        }
       />
     </div>
   );
@@ -140,7 +151,7 @@ function RemoteAccessSection({
           </p>
           <a
             className="text-xs font-medium text-link underline-offset-4 hover:underline"
-            href="/api/host/remote-access/certificate"
+            href={operationPath(clientAccessServerOperations.getRemoteAccessCertificate)}
             download="t3-factory-host.pem"
           >
             Download certificate

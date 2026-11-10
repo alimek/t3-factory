@@ -5,20 +5,14 @@ import {
   projectOperations,
   connectionOperations,
   runOperations,
+  clientAccessOperations,
+  clientAccessServerOperations,
+  serverUpdateOperations,
   operationPath,
   type OperationDefinition,
   type OperationInput,
   type OperationOutput,
   type OperationParameterValues,
-  type ClientAccessGrant,
-  type ClientScope,
-  type FactoryClient,
-  type HostLifecycle,
-  type ProtocolDescriptor,
-  type RemoteAccessStatus,
-  type RequestClientAccessInput,
-  type ServerUpdate,
-  type ServerUpdateAction,
   type OperationError,
   type Result,
 } from "@t3-factory/contracts";
@@ -69,16 +63,6 @@ async function request<A>(path: string, init?: RequestInit): Promise<A> {
   if (!response.ok) throw new Error("Factory could not complete the request.");
   return result.value;
 }
-
-function jsonRequest<A>(method: "POST" | "PUT" | "PATCH", path: string, body: unknown): Promise<A> {
-  return request<A>(path, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-const post = <A>(path: string, body: unknown) => jsonRequest<A>("POST", path, body);
-const put = <A>(path: string, body: unknown) => jsonRequest<A>("PUT", path, body);
 
 /** What a client sends for a definition's body: its input as JSON, or a Blob with its media type. */
 type ClientInput<D extends OperationDefinition> = D["body"] extends "json"
@@ -131,6 +115,9 @@ export const api = {
   ...operationCalls(projectOperations),
   ...operationCalls(connectionOperations),
   ...operationCalls(runOperations),
+  ...operationCalls(clientAccessOperations),
+  ...operationCalls(clientAccessServerOperations),
+  ...operationCalls(serverUpdateOperations),
   /** Whether Factory already holds this image; any answer but held or absent is a failure. */
   async hasRunImage(sha256: string) {
     const response = await factoryRequest(operationPath(runOperations.getRunImageInfo, sha256), {
@@ -140,20 +127,4 @@ export const api = {
     if (response.ok) return true;
     throw new Error("Factory could not check the image.");
   },
-  getProtocol: () => request<ProtocolDescriptor>("/api/protocol"),
-  getClientScope: () => request<ClientScope>("/api/client-access"),
-  requestClientAccess: (input: RequestClientAccessInput) =>
-    post<ClientAccessGrant>("/api/client-access/requests", input),
-  listClients: () => request<readonly FactoryClient[]>("/api/host/clients"),
-  decideClient: (id: string, decision: "approve" | "deny" | "revoke") =>
-    request<FactoryClient>(`/api/host/clients/${encodeURIComponent(id)}/${decision}`, {
-      method: "POST",
-    }),
-  getHostLifecycle: () => request<HostLifecycle>("/api/host/lifecycle"),
-  getRemoteAccess: () => request<RemoteAccessStatus>("/api/host/remote-access"),
-  setRemoteAccess: (enabled: boolean) =>
-    put<RemoteAccessStatus>("/api/host/remote-access", { enabled }),
-  getServerUpdate: () => request<ServerUpdate>("/api/server-update"),
-  runServerUpdate: (action: ServerUpdateAction) =>
-    request<ServerUpdate>(`/api/server-update/${action}`, { method: "POST" }),
 };

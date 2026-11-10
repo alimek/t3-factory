@@ -156,7 +156,7 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
     setFailure(null);
     const [, server] = await Promise.allSettled([
       app && desktop?.checkForUpdates(),
-      remote && api.runServerUpdate("check").then(setServer),
+      remote && api.checkServerUpdate().then(setServer),
     ]);
     if (server.status === "rejected")
       setFailure({ title: "Server update check failed", message: describe(server.reason) });
@@ -169,7 +169,7 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
         void desktop?.downloadUpdate().then((result) => {
           if (!result.ok) setFailure({ title: "Download failed", message: result.message });
         });
-      if (remote?.update.state === "available") setServer(await api.runServerUpdate("download"));
+      if (remote?.update.state === "available") setServer(await api.downloadServerUpdate());
     } catch (cause) {
       setFailure({ title: "Server download failed", message: describe(cause) });
     }
@@ -182,7 +182,7 @@ export function useUpgrade({ includeServer = true }: { includeServer?: boolean }
     setUpgrading(true);
     try {
       if (serverReady) {
-        await api.runServerUpdate("install").catch((cause: unknown) => {
+        await api.installServerUpdate().catch((cause: unknown) => {
           // A lost reply may follow an accepted install: the restart itself answers.
           if (!(cause instanceof OfflineError && cause.delivery === "unknown")) throw cause;
         });

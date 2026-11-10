@@ -1,6 +1,12 @@
 import * as Effect from "effect/Effect";
-import type { Result, ServerUpdate, ServerUpdateAction } from "@t3-factory/contracts";
-import { resultResponse, type ApiRoute } from "./http-support.ts";
+import {
+  serverUpdateOperations,
+  type Result,
+  type ServerUpdate,
+  type ServerUpdateAction,
+} from "@t3-factory/contracts";
+import { resultResponse } from "./http-support.ts";
+import { operationRoutes } from "./route-table.ts";
 import type { Factory } from "./open-factory.ts";
 import { failure } from "./result.ts";
 
@@ -37,7 +43,7 @@ export function serverUpdateRoutes(
   factory: Factory,
   application: string,
   updates: ApplicationUpdates = sourceUpdates,
-): readonly ApiRoute[] {
+): ReturnType<typeof operationRoutes> {
   const read = async (): Promise<Result<ServerUpdate>> => {
     const lifecycle = await factory.getHostLifecycle();
     if (!lifecycle.ok) return lifecycle;
@@ -57,9 +63,7 @@ export function serverUpdateRoutes(
         ).unref(),
       ),
     ]);
-  const action = (name: ServerUpdateAction): ApiRoute => ({
-    method: "POST",
-    path: new RegExp(`^/api/server-update/${name}$`),
+  const action = (name: ServerUpdateAction) => ({
     handle: () =>
       Effect.map(
         Effect.promise(async () => {
@@ -69,14 +73,12 @@ export function serverUpdateRoutes(
         (result) => resultResponse(result),
       ),
   });
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/server-update$/,
+  return operationRoutes(serverUpdateOperations, {
+    getServerUpdate: {
       handle: () => Effect.map(Effect.promise(read), (result) => resultResponse(result)),
     },
-    action("check"),
-    action("download"),
-    action("install"),
-  ];
+    checkServerUpdate: action("check"),
+    downloadServerUpdate: action("download"),
+    installServerUpdate: action("install"),
+  });
 }
