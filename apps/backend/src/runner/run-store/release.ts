@@ -40,6 +40,18 @@ export function handoffReleased(
     : humanAnswered(sql, run.id, source);
 }
 
+/** A Final result version's Block worker thread, and whether the version is still its
+ * activation's newest Final result; undefined when the version does not exist. */
+function releaseSource(sql: SqlClient.SqlClient, reportId: string) {
+  return Effect.map(
+    sql<{
+      current: number;
+      thread_id: string | null;
+    }>`SELECT r.id=(SELECT n.id FROM runtime_reports n WHERE n.activation_id=r.activation_id AND n.status='finished' ORDER BY n.rowid DESC LIMIT 1) AS current,b.thread_id FROM runtime_reports r JOIN run_blocks b ON b.run_id=r.run_id AND b.block_id=r.block_id WHERE r.id=${reportId}`,
+    ([source]) => source,
+  );
+}
+
 /** What releasing a Final result version still waits for. */
 type ReleaseWait =
   | { readonly released: true }
@@ -59,10 +71,7 @@ export function openRunRelease(database: RunnerDatabase) {
   const releaseWait = (run: RunRow, reportId: string) =>
     database.transaction((sql) =>
       Effect.gen(function* (): Effect.fn.Return<ReleaseWait, unknown> {
-        const [source] = yield* sql<{
-          current: number;
-          thread_id: string | null;
-        }>`SELECT r.id=(SELECT n.id FROM runtime_reports n WHERE n.activation_id=r.activation_id AND n.status='finished' ORDER BY n.rowid DESC LIMIT 1) AS current,b.thread_id FROM runtime_reports r JOIN run_blocks b ON b.run_id=r.run_id AND b.block_id=r.block_id WHERE r.id=${reportId}`;
+        const source = yield* releaseSource(sql, reportId);
         if (!source?.thread_id) return { released: false, sourceThreadId: null };
         if (yield* resultReleased(sql, run.context_id, reportId)) return { released: true };
         return { released: false, sourceThreadId: source.current ? source.thread_id : null };
@@ -72,9 +81,10 @@ export function openRunRelease(database: RunnerDatabase) {
   /** Releases Final result version `reportId` once; the caller read its source worker thread
    * finished at `run`, the snapshot the release is stamped with. Guards: owner, not Archived, live
    * authorization context, open gate and `run`'s generation (a report accepted since may have
-   * replaced the version); no execution failure may be pending on the Block. It records the
-   * release, marks the version completion-eligible and appends "Handoff released" for each of its
-   * Handoffs, and does not advance the generation. Answers whether this call released it. */
+   * replaced the version); the version is still its activation's newest Final result and no
+   * execution failure is pending on the Block. It records the release, marks the version
+   * completion-eligible and appends "Handoff released" for each of its Handoffs, and does not
+   * advance the generation. Answers whether this call released it. */
   function releaseFinalResult(run: RunRow, reportId: string) {
     return database.mutate(run.id, (sql) =>
       Effect.gen(function* () {
@@ -86,6 +96,7 @@ export function openRunRelease(database: RunnerDatabase) {
           generation: run.generation,
         });
         if (!held) return false;
+        if (!(yield* releaseSource(sql, reportId))?.current) return false;
         const failed =
           yield* sql`SELECT a.id FROM run_attention a JOIN runtime_reports r ON r.run_id=a.run_id AND r.block_id=a.block_id WHERE r.id=${reportId} AND a.kind='execution-failed' AND a.settled_at IS NULL`;
         if (failed.length) return false;

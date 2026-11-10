@@ -5,7 +5,7 @@ import { nonFinalRejection, reportFingerprint, reportRoute } from "../report-rul
 import { readRunDefinitions } from "./run-definitions.ts";
 import type { ReportRunRow } from "../runner-types.ts";
 import { rejected } from "../runner-utils.ts";
-import { resolveBlock } from "./blocks.ts";
+import { resolveBlock, writeBlockState } from "./blocks.ts";
 import {
   acceptedTransition,
   RUN_ARCHIVED,
@@ -106,7 +106,10 @@ function acceptFinal(
         pending_message: report.message ?? "",
         accepted_at: time,
       });
-    yield* sql`UPDATE run_blocks SET report_status=${report.status},state=${state},problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
+    yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, state, {
+      report_status: report.status,
+      problem: null,
+    });
     yield* advanceGeneration(sql, runRow.id);
     return reply;
   });

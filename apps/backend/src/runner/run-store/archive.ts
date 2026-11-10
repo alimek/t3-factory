@@ -10,14 +10,12 @@ import { withLifecycle } from "./lifecycle.ts";
 import { clearSnooze } from "./presentation.ts";
 import type { DeliveryRecord } from "./records.ts";
 import type { RunnerDatabase } from "./database.ts";
-import type { BlockState, DeliveryState } from "./states.ts";
+import { writeBlockState } from "./blocks.ts";
+import type { DeliveryState } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 const pending: DeliveryState = "pending";
 const cancelled: DeliveryState = "cancelled";
-const notStarted: BlockState = "not-started";
-const finished: BlockState = "finished";
-const stopped: BlockState = "stopped";
 
 /** Nothing unsent leaves an archived Run: pending launches, handoffs and Human occurrences are
  * cancelled without inventing answers, pending attention settles and unfinished activated
@@ -65,7 +63,12 @@ function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
       "archived",
       time,
     );
-    yield* sql`UPDATE run_blocks SET state=CASE WHEN state IN (${notStarted},${finished}) THEN state ELSE ${stopped} END,problem=NULL WHERE run_id=${id}`;
+    yield* writeBlockState(
+      sql,
+      { runId: id },
+      { keep: ["not-started", "finished"], otherwise: "stopped" },
+      { problem: null },
+    );
   });
 }
 

@@ -9,11 +9,8 @@ import { settleHumanAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
 import { createHeldHandoffs } from "./handoffs.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
-import type { BlockState } from "./states.ts";
+import { writeBlockState } from "./blocks.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
-
-const waiting: BlockState = "waiting";
-const finished: BlockState = "finished";
 
 /** An answer as the public operation validated its shape. */
 type HumanAnswer = { readonly exitId: string | undefined; readonly message: string | undefined };
@@ -85,7 +82,11 @@ export function openRunHuman(database: RunnerDatabase) {
               },
               id,
             );
-            yield* sql`UPDATE run_blocks SET state=CASE WHEN EXISTS(SELECT 1 FROM human_occurrences WHERE run_id=${runId} AND block_id=${occurrence.block_id} AND state='pending') THEN ${waiting} ELSE ${finished} END WHERE run_id=${runId} AND block_id=${occurrence.block_id}`;
+            yield* writeBlockState(
+              sql,
+              { runId, blockId: occurrence.block_id },
+              { whileHumanPending: "waiting", otherwise: "finished" },
+            );
             yield* appendTimelineEvent(sql, {
               kind: "human-answered",
               runId,

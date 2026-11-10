@@ -9,11 +9,9 @@ import { guardsHold } from "./guards.ts";
 import type { Delivery, DeliveryRecord, Handoff } from "./records.ts";
 import { handoffReleased } from "./release.ts";
 import type { RunnerDatabase } from "./database.ts";
-import type { BlockState, DeliveryKind } from "./states.ts";
+import { writeBlockState } from "./blocks.ts";
+import type { DeliveryKind } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
-
-const working: BlockState = "working";
-const error: BlockState = "error";
 
 /** A send's worker turn holds its Block until an observation sees the turn's run. */
 const UNOBSERVED_WORKER_HOLD = "Worker thread not observed yet.";
@@ -179,7 +177,13 @@ export function openRunDeliveries(database: RunnerDatabase) {
         const time = yield* now;
         yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${delivery.id}`;
         yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,engine_status,binding_id,activation_id) VALUES(${runRow.id},${delivery.block_id},${reference.threadId},${reference.runId},${reference.status},COALESCE((SELECT binding_id FROM coordinator_question_replies WHERE intent_id=${delivery.id}),(SELECT id FROM run_thread_bindings WHERE run_id=${runRow.id} AND thread_id=${reference.threadId})),COALESCE((SELECT activation_id FROM coordinator_question_replies WHERE intent_id=${delivery.id}),(SELECT id FROM run_activations WHERE run_id=${runRow.id} AND block_id=${delivery.block_id} ORDER BY rowid DESC LIMIT 1))) ON CONFLICT DO NOTHING`;
-        yield* sql`UPDATE run_blocks SET state=${working},execution_id=${reference.runId},engine_status=${reference.status},report_status=NULL,problem=${UNOBSERVED_WORKER_HOLD},freshness='unknown' WHERE run_id=${runRow.id} AND block_id=${delivery.block_id}`;
+        yield* writeBlockState(sql, { runId: runRow.id, blockId: delivery.block_id }, "working", {
+          execution_id: reference.runId,
+          engine_status: reference.status,
+          report_status: null,
+          problem: UNOBSERVED_WORKER_HOLD,
+          freshness: "unknown",
+        });
         yield* advanceGeneration(sql, runRow.id);
         yield* appendTimelineEvent(sql, {
           kind: "send-acknowledged",
@@ -227,7 +231,18 @@ export function openRunDeliveries(database: RunnerDatabase) {
         if (!binding || !activation)
           return yield* Effect.fail(Error("Worker binding is incomplete"));
         yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,binding_id,activation_id,engine_status) VALUES(${runRow.id},${delivery.block_id},${reference.threadId},${reference.runId},${binding.id},${activation.id},${reference.status}) ON CONFLICT DO NOTHING`;
-        yield* sql`UPDATE run_blocks SET thread_id=${reference.threadId},execution_id=COALESCE(execution_id,${reference.runId}),state=${working},link=${link},engine_status=${reference.status},problem=NULL WHERE run_id=${runRow.id} AND block_id=${delivery.block_id} AND thread_id IS NULL`;
+        yield* writeBlockState(
+          sql,
+          { runId: runRow.id, blockId: delivery.block_id, threadless: true },
+          "working",
+          {
+            thread_id: reference.threadId,
+            execution_id: sql`COALESCE(execution_id,${reference.runId})`,
+            link,
+            engine_status: reference.status,
+            problem: null,
+          },
+        );
         yield* sql`UPDATE operation_intents SET state='acknowledged',result_json=${JSON.stringify(reference)},payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${delivery.id} AND state IN ('reserved','uncertain')`;
         yield* advanceGeneration(sql, runRow.id);
         yield* appendTimelineEvent(sql, {
@@ -263,12 +278,25 @@ export function openRunDeliveries(database: RunnerDatabase) {
         const cancelled =
           yield* sql`UPDATE operation_intents SET state='cancelled',payload_json=NULL,problem=${problem.block},reconciled_at=${time} WHERE id=${delivery.id} AND state IN ('pending','reserved','uncertain') RETURNING id`;
         if (!cancelled.length) return;
-        yield* sql`UPDATE run_blocks SET state=${error},problem=${problem.block} WHERE run_id=${runRow.id} AND block_id=${delivery.block_id} AND thread_id IS NULL`;
+        yield* writeBlockState(
+          sql,
+          { runId: runRow.id, blockId: delivery.block_id, threadless: true },
+          "error",
+          { problem: problem.block },
+        );
         const failed =
           yield* sql`UPDATE run_workspaces SET state='failed' WHERE run_id=${runRow.id} AND creator_block_id=${delivery.block_id} AND state='preparing' RETURNING run_id`;
         if (failed.length)
           for (const blockId of runRow.definitions.flow.graph.flowInput.targetBlockIds)
-            yield* sql`UPDATE run_blocks SET state=${error},problem=${`${problem.worktree} This worker was not launched.`} WHERE run_id=${runRow.id} AND block_id=${blockId} AND block_id!=${delivery.block_id} AND thread_id IS NULL`;
+            if (blockId !== delivery.block_id)
+              yield* writeBlockState(
+                sql,
+                { runId: runRow.id, blockId, threadless: true },
+                "error",
+                {
+                  problem: `${problem.worktree} This worker was not launched.`,
+                },
+              );
         yield* advanceGeneration(sql, runRow.id);
       }),
     );

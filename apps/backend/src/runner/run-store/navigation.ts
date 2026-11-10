@@ -7,6 +7,7 @@ import {
 import * as Effect from "effect/Effect";
 import { currentWorkingMessages } from "./current-report.ts";
 import type { RunnerDatabase } from "./database.ts";
+import { runLifecycle } from "./lifecycle.ts";
 import { failure } from "../../result.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { storedProjectIcon } from "../../projects.ts";
@@ -27,13 +28,14 @@ export function openRunNavigation(database: RunnerDatabase) {
             favicon_path: string | null;
             creation_key: string;
             settled_at: string | null;
+            archived_at: null;
             snoozed: number | null;
             woke: number | null;
             project_id: string;
             project_title: string;
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
-          }>`SELECT r.id,r.number,r.title,r.created_at,r.creation_key,r.settled_at,rp.snoozed,rp.woke,
+          }>`SELECT r.id,r.number,r.title,r.created_at,r.creation_key,r.settled_at,r.archived_at,rp.snoozed,rp.woke,
           COALESCE((SELECT MAX(e.observed_at) FROM run_events e WHERE e.run_id=r.id AND e.kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','run-settled','run-activated')),r.started_at) AS last_activity_at,
           f.name AS flow_name,p.project_icon_json,p.favicon_path,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
@@ -96,7 +98,8 @@ export function openRunNavigation(database: RunnerDatabase) {
             ok: true as const,
             value: rows.map((row) => {
               const matters = mattersByRun.get(row.id) ?? [];
-              const active = !row.settled_at;
+              const lifecycle = runLifecycle(row);
+              const active = lifecycle === "active";
               return {
                 id: row.id,
                 number: row.number,
@@ -114,7 +117,7 @@ export function openRunNavigation(database: RunnerDatabase) {
                   projectIcon: storedProjectIcon(row.project_icon_json),
                   faviconUrl: projectFaviconUrl(row.project_id, row.favicon_path),
                 },
-                lifecycle: row.settled_at ? ("settled" as const) : ("active" as const),
+                lifecycle,
                 blocks: byRun.get(row.id) ?? [],
                 presentation: {
                   snoozed: active && !!row.snoozed,

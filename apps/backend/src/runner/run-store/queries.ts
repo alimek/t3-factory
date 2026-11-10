@@ -10,7 +10,6 @@ import type {
   Result,
   RunAttention,
   RunDetail,
-  RunLifecycle,
   RunWorkspaceDetail,
   TaskSummary,
 } from "@t3-factory/contracts";
@@ -24,6 +23,7 @@ import { attentionRows } from "./runner-attention.ts";
 import { currentWorkingMessages } from "./current-report.ts";
 import type { DeliveryRecord, ResultRecord } from "./records.ts";
 import type { RunnerDatabase } from "./database.ts";
+import { runLifecycle } from "./lifecycle.ts";
 import type {
   BlockRow,
   ExecutionRow,
@@ -186,15 +186,10 @@ function runEvent(event: RunEventRow): RunDetail["events"][number] {
   };
 }
 
-function lifecycle(run: Pick<RunRow, "settled_at" | "archived_at">): RunLifecycle {
-  if (run.archived_at) return "archived";
-  return run.settled_at ? "settled" : "active";
-}
-
 function runEntry(row: TaskRunRow): TaskSummary["runs"][number] {
   return {
     id: row.id,
-    lifecycle: lifecycle(row),
+    lifecycle: runLifecycle(row),
     flowId: row.flow_id,
     flowName: row.flow_name,
     input: row.input,
@@ -290,7 +285,7 @@ export function openRunQueries(database: RunnerDatabase) {
             rootWork: yield* readRootWork(sql, id),
             ...(yield* coordinationRead(sql, id)),
             startedAt: runRow.started_at,
-            lifecycle: lifecycle(runRow),
+            lifecycle: runLifecycle(runRow),
             gateOpen: !!runRow.gate_open,
             generation: runRow.generation,
             blocks: blocks.map((block) =>

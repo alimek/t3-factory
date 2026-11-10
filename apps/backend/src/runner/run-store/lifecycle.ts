@@ -1,10 +1,20 @@
-import type { Result } from "@t3-factory/contracts";
+import type { Result, RunLifecycle } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";
 import type { RunnerDatabase } from "./database.ts";
 
 type Lifecycle = { readonly archived_at: string | null; readonly settled_at: string | null };
+
+/** The Run lifecycle its timestamps record: Archived over Settled over Active. */
+export function runLifecycle(
+  run: Lifecycle & { readonly archived_at: null },
+): Exclude<RunLifecycle, "archived">;
+export function runLifecycle(run: Lifecycle): RunLifecycle;
+export function runLifecycle(run: Lifecycle): RunLifecycle {
+  if (run.archived_at) return "archived";
+  return run.settled_at ? "settled" : "active";
+}
 
 /** Whether a Run is Settled or Archived, read inside its mutation lane. */
 function readLifecycle(sql: SqlClient.SqlClient, id: string) {

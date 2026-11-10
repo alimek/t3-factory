@@ -17,10 +17,9 @@ import { asDelivery, createDelivery } from "./deliveries.ts";
 import { guardsHold } from "./guards.ts";
 import type { DeliveryRecord, Handoff } from "./records.ts";
 import type { RunnerDatabase } from "./database.ts";
-import type { BlockState, DeliveryKind } from "./states.ts";
+import { writeBlockState } from "./blocks.ts";
+import type { DeliveryKind } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
-
-const waiting: BlockState = "waiting";
 
 /** A Block activation and its first message's identity; it is delivered by a launch or a send. */
 function createActivation(
@@ -240,7 +239,10 @@ export function openRunActivations(database: RunnerDatabase) {
         const context = (JSON.parse(pending.payload_json) as { message: string }).message;
         yield* sql`INSERT INTO human_occurrences(id,run_id,block_id,incoming_intent_id,pending_context,appeared_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${context},${time})`;
         yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
-        yield* sql`UPDATE run_blocks SET state=${waiting},freshness='fresh',observed_at=${time} WHERE run_id=${runRow.id} AND block_id=${handoff.block_id}`;
+        yield* writeBlockState(sql, { runId: runRow.id, blockId: handoff.block_id }, "waiting", {
+          freshness: "fresh",
+          observed_at: time,
+        });
         yield* appendTimelineEvent(sql, {
           kind: "human-waiting",
           runId: runRow.id,

@@ -13,6 +13,7 @@ import { refreshWorkerLink } from "./deliveries.ts";
 import { guardsHold } from "./guards.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
+import { writeBlockState } from "./blocks.ts";
 
 const comparePullRequests = (a: RunPullRequest, b: RunPullRequest) =>
   a.host.localeCompare(b.host) || a.repository.localeCompare(b.repository) || a.number - b.number;
@@ -103,7 +104,19 @@ function recordActivation(
     const problem = pending?.kind ?? null;
     const phase = current === "finished" ? "reported" : "assessing";
     yield* recordActivationPhase(sql, activation.activationId, phase, problem);
-    yield* sql`UPDATE run_blocks SET execution_id=${latest?.runId ?? block.execution_id},engine_status=${latest?.status ?? null},freshness='fresh',observed_at=${time},pending_request_count=${worker.thread.pendingRequestCount},problem=${problem},state=${blockState(problem, worker, current)} WHERE run_id=${run.id} AND block_id=${block.block_id}`;
+    yield* writeBlockState(
+      sql,
+      { runId: run.id, blockId: block.block_id },
+      blockState(problem, worker, current),
+      {
+        execution_id: latest?.runId ?? block.execution_id,
+        engine_status: latest?.status ?? null,
+        freshness: "fresh",
+        observed_at: time,
+        pending_request_count: worker.thread.pendingRequestCount,
+        problem,
+      },
+    );
   });
 }
 

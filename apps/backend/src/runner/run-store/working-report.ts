@@ -5,10 +5,8 @@ import { acceptedTransition, type RuntimeReport } from "../../runtime-types.ts";
 import { now } from "../../time.ts";
 import { settleForReport } from "./current-report.ts";
 import type { ReportTarget, WorkingReportRecord } from "./records.ts";
-import type { BlockState } from "./states.ts";
+import { writeBlockState } from "./blocks.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
-
-const working: BlockState = "working";
 
 /** A working report becomes the activation's current report, shown with its message. */
 export function acceptWorking(
@@ -48,7 +46,10 @@ export function acceptWorking(
       reportId: id,
       observedAt: time,
     });
-    yield* sql`UPDATE run_blocks SET state=${working},report_status='working',problem=NULL WHERE run_id=${runRow.id} AND block_id=${block.block_id}`;
+    yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, "working", {
+      report_status: "working",
+      problem: null,
+    });
     yield* advanceGeneration(sql, runRow.id);
     return reply;
   });
