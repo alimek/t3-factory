@@ -1,3 +1,5 @@
+import { failure } from "../result.ts";
+import type { RunnerLifecycle } from "./runner-types.ts";
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "../adapters/t3.ts";
 import { now } from "../time.ts";
@@ -24,4 +26,28 @@ export function forwardDueWaits(store: RunStore, runId: string) {
       yield* store.forwardWaitArrival(wait.id, "elapsed");
     }
   });
+}
+
+/** Manual forwarding shares the timer's durable claim; delivery retains its own authorization. */
+export function openRunnerWaits(
+  store: RunStore,
+  lifecycle: RunnerLifecycle,
+  disableTimer: (id: string) => Effect.Effect<void>,
+) {
+  const continueWaitArrival = (id: string) =>
+    Effect.gen(function* () {
+      if (lifecycle.isClosed()) return failure("conflict", "Factory is shutting down.");
+      if (typeof id !== "string" || !id.trim() || id.length > 256)
+        return failure("validation", "Choose a valid Wait arrival id.");
+      const result = yield* store.forwardWaitArrival(id, "early");
+      if (result.outcome === "already-forwarded")
+        return failure("conflict", "This Wait arrival was already forwarded.");
+      if (result.outcome !== "forwarded" || !result.runId)
+        return failure("conflict", "This Wait arrival cannot be forwarded.");
+      yield* disableTimer(id);
+      const detail = yield* lifecycle.getRun(result.runId);
+      yield* lifecycle.fork(lifecycle.drive(result.runId, "dispatch"));
+      return detail;
+    }).pipe(Effect.uninterruptible);
+  return { continueWaitArrival };
 }

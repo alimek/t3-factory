@@ -452,8 +452,8 @@ export interface WaitArrival {
   readonly reportId: string | null;
   /** `cancelled`: Archive cancelled the arrival before its deadline; nothing was forwarded. */
   readonly state: "pending" | "forwarded" | "cancelled";
-  /** Why a forwarded arrival left: its deadline elapsed. */
-  readonly forwardReason: "elapsed" | null;
+  /** Why a forwarded arrival left: its deadline elapsed or the user continued it early. */
+  readonly forwardReason: "elapsed" | "early" | null;
   /** The waiting message, retained while pending; null once forwarded or cancelled. */
   readonly message: string | null;
   /** When counting started: the incoming handoff's release. */
@@ -518,6 +518,10 @@ export const runOperations = {
     method: "POST",
     path: "/api/runs/:runId/request-report",
     body: "json",
+  }),
+  continueWaitArrival: operation<never, RunDetail>()({
+    method: "POST",
+    path: "/api/wait-arrivals/:id/continue",
   }),
   answerHumanOccurrence: operation<{ exitId?: string; message?: string }, RunDetail>()({
     method: "POST",

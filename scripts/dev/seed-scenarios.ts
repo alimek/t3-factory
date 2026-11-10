@@ -31,7 +31,10 @@ export type SeedScenario = {
       | { state: "continuation response forwarded"; spec: string }
     ))
   | {
-      state: "reviews waiting at a Wait" | "reviews awaiting Human approval";
+      state:
+        | "reviews waiting at a Wait"
+        | "reviews awaiting Human approval"
+        | "Wait continued early";
       implementation: Report;
       reviews: readonly Report[];
     }
@@ -275,5 +278,14 @@ export const seedScenarioList: readonly SeedScenario[] = [
       pullRequests: [],
     },
     delegations: 2,
+  },
+  {
+    key: "wait-early",
+    title: "Wait · Code review continued early",
+    flow: "soak",
+    state: "Wait continued early",
+    prompt: soakContent.prompt,
+    implementation: soakContent.implementation,
+    reviews: [soakContent.codeReview, soakContent.accessibilityReview],
   },
 ];

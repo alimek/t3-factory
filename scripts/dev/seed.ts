@@ -14,6 +14,7 @@ import {
   resultReplacedBeforeRelease,
   resultReported,
   humanAnswerWaitingAtWait,
+  waitContinuedEarly,
   settled,
   snoozed,
   twoWorkersStarted,
@@ -203,6 +204,12 @@ async function finishScenario(
     { state: "two workers started from one prompt" | "Run worktree bound" }
   >,
 ) {
+  if (
+    scenario.state === "reviews waiting at a Wait" ||
+    scenario.state === "reviews awaiting Human approval" ||
+    scenario.state === "Wait continued early"
+  )
+    return releaseReviews(context, worker, scenario);
   switch (scenario.state) {
     case "settled":
       await repositoryFactsObserved(context, worker, scenario.repository);
@@ -270,11 +277,6 @@ async function finishScenario(
       }
       break;
     }
-    case "reviews awaiting Human approval":
-    case "reviews waiting at a Wait": {
-      await releaseReviews(context, worker, scenario);
-      break;
-    }
   }
 }
 
@@ -284,7 +286,12 @@ async function releaseReviews(
   worker: Worker,
   scenario: Extract<
     SeedScenario,
-    { state: "reviews waiting at a Wait" | "reviews awaiting Human approval" }
+    {
+      state:
+        | "reviews waiting at a Wait"
+        | "reviews awaiting Human approval"
+        | "Wait continued early";
+    }
   >,
 ) {
   const reviewers = await resultReleasedToTwoWorkers(
@@ -296,14 +303,16 @@ async function releaseReviews(
       context,
       await resultReported(context, reviewers[index]!, review),
     );
-    if (scenario.state === "reviews waiting at a Wait") {
+    if (scenario.state !== "reviews awaiting Human approval") {
       requireSuccess(
         await context.factory.answerHumanOccurrence(pending.occurrence.id, {
           exitId: "approve",
           message: `Release approved: ${review.message}`,
         }),
       );
-      await humanAnswerWaitingAtWait(context, pending);
+      const arrival = await humanAnswerWaitingAtWait(context, pending);
+      if (scenario.state === "Wait continued early" && index === 0)
+        await waitContinuedEarly(context, arrival);
     }
   }
 }

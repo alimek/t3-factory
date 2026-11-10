@@ -393,7 +393,7 @@ arrival's deduplication key: a repeated preparation after a crash or retry finds
 records nothing. Parallel arrivals and later visits are separate rows with separate deadlines; nothing joins.
 
 Forwarding is one guarded Run store transition, addressed by the arrival and given the reason it forwards;
-today the only reason is an elapsed deadline (`elapsed`). In one transaction under the Run's lane it requires the backend owner, a Run that is not
+the reasons are an elapsed deadline (`elapsed`) or Continue now by the user (`early`). In one transaction under the Run's lane it requires the backend owner, a Run that is not
 Archived, an open gate and a pending arrival (for `elapsed`, a deadline not after now), then creates a released
 handoff with the arrival's message and provenance for every recipient of the Wait's output (cause `wait:`),
 records the outcome and clears the arrival's message. It needs no live authorization context and no T3 call; the
@@ -406,7 +406,10 @@ until the stored deadline, then forwards due arrivals, drives the Run and tries 
 recreated from the stored deadlines whenever a pass finds a pending arrival without one, so startup reschedules
 them without shifting a deadline. Every dispatch pass also forwards arrivals that are overdue, which covers
 downtime and computer sleep with exactly one forwarding and no catch-up repetitions. Closing the Runner stops the
-sleeping wake-ups; the deadlines stay in SQLite.
+sleeping wake-ups; the deadlines stay in SQLite. Continue now disables the selected arrival's wake-up
+and forwards through that same transaction. A stale wake-up ignores forwarded arrivals, including after restart.
+Retries return an already-forwarded conflict without another outcome or delivery. Other arrivals keep their deadlines.
+Continue now does not change manual settlement or bypass downstream authorization guards.
 
 A visit a Wait's forwarding causes reads the result whose message waited as its incoming result in
 `factory_get_block`, as a visit caused directly by that result does. Pending arrivals keep automatic settlement

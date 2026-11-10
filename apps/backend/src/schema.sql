@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: wait_blocks
+-- Newest applied migration: wait_continue_activity
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -456,7 +456,7 @@ CREATE TABLE run_events (
 );
 
 CREATE INDEX run_activity_by_run ON run_events(run_id, observed_at DESC)
-WHERE kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','continuation-passed','wait-elapsed','run-settled','run-activated')
+WHERE kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','continuation-passed','wait-elapsed','wait-continued','run-settled','run-activated')
 ;
 
 CREATE TABLE "run_executions" (

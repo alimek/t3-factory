@@ -1,3 +1,4 @@
+import { ContinueWait } from "../components/continue-wait.tsx";
 import { MutationGate } from "@/client-gate";
 import { RootWork } from "../components/run-coordination-controls.tsx";
 import { RunRepositories } from "../components/run-repositories.tsx";
@@ -955,7 +956,7 @@ function arrivalOutcome(arrival: WaitArrival) {
   const settled = arrival.settledAt ? ` ${clockTime(arrival.settledAt)}` : "";
   if (arrival.state === "pending") return `waiting until ${clockTime(arrival.deadlineAt)}`;
   if (arrival.state === "cancelled") return `cancelled by Archive${settled} · nothing forwarded`;
-  return `elapsed → forwarded${settled}`;
+  return `${arrival.forwardReason === "early" ? "forwarded early by user" : "elapsed → forwarded"}${settled}`;
 }
 
 const ARRIVAL_PILLS: Record<WaitArrival["state"], string> = {
@@ -997,6 +998,9 @@ function WaitArrivalItem({
         <StatePill state={ARRIVAL_PILLS[arrival.state]} />
       </div>
       <ArrivalMessage run={run} arrival={arrival} />
+      {arrival.state === "pending" && run.lifecycle !== "archived" && (
+        <ContinueWait arrivalId={arrival.id} />
+      )}
     </li>
   );
 }

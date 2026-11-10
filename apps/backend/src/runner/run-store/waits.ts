@@ -12,8 +12,8 @@ import { guardsHold, pendingHandoffHolds } from "./guards.ts";
 import type { Handoff } from "./records.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
-/** Why a pending arrival is forwarded: its deadline elapsed. */
-type WaitForwardReason = "elapsed";
+/** Why a pending arrival is forwarded: elapsed deadline or an early user action. */
+type WaitForwardReason = "elapsed" | "early";
 
 /**
  * What a forwarding attempt found: it forwarded the arrival now; another attempt already forwarded
@@ -151,26 +151,35 @@ export function openRunWaits(database: RunnerDatabase) {
    * is published.
    */
   function forwardWaitArrival(arrivalId: string, reason: WaitForwardReason) {
-    return Effect.gen(function* (): Effect.fn.Return<WaitForwarding, unknown> {
+    return Effect.gen(function* (): Effect.fn.Return<
+      { outcome: WaitForwarding; runId: string | null },
+      unknown
+    > {
       const [found] = yield* database.transaction(
         (sql) => sql<{ run_id: string }>`SELECT run_id FROM wait_arrivals WHERE id=${arrivalId}`,
       );
-      if (!found) return "refused";
+      if (!found) return { outcome: "refused", runId: null };
       return yield* database.mutate(
         found.run_id,
         (sql) =>
-          Effect.gen(function* (): Effect.fn.Return<WaitForwarding, unknown> {
+          Effect.gen(function* (): Effect.fn.Return<
+            { outcome: WaitForwarding; runId: string | null },
+            unknown
+          > {
             const [arrival] =
               yield* sql<ArrivalRow>`SELECT * FROM wait_arrivals WHERE id=${arrivalId}`;
-            if (arrival?.state === "forwarded") return "already-forwarded";
+            if (arrival?.state === "forwarded")
+              return { outcome: "already-forwarded", runId: found.run_id };
             const held = yield* guardsHold(sql, ownerToken, found.run_id, {
               owner: true,
               notArchived: true,
               gateOpen: true,
             });
-            if (!held || arrival?.state !== "pending") return "refused";
+            if (!held || arrival?.state !== "pending")
+              return { outcome: "refused", runId: found.run_id };
             const time = yield* now;
-            if (reason === "elapsed" && arrival.deadline_at > time) return "not-due";
+            if (reason === "elapsed" && arrival.deadline_at > time)
+              return { outcome: "not-due", runId: found.run_id };
             const run = (yield* readRunRow(sql, found.run_id))!;
             const [incoming] = yield* sql<{
               target_json: string;
@@ -189,16 +198,16 @@ export function openRunWaits(database: RunnerDatabase) {
               { whilePending: "waiting", otherwise: "finished" },
             );
             yield* appendTimelineEvent(sql, {
-              kind: "wait-elapsed",
+              kind: reason === "early" ? "wait-continued" : "wait-elapsed",
               runId: run.id,
               blockId: arrival.block_id,
               arrivalId,
               observedAt: time,
             });
             yield* advanceGeneration(sql, run.id);
-            return "forwarded";
+            return { outcome: "forwarded", runId: found.run_id };
           }),
-        (outcome) => outcome === "forwarded",
+        (result) => result.outcome === "forwarded",
       );
     });
   }

@@ -140,6 +140,7 @@ export interface ScenarioWorld {
     | "archiveRun"
     | "snoozeRun"
     | "answerHumanOccurrence"
+    | "continueWaitArrival"
   > & {
     readonly runtime: { submit(input: unknown): Promise<{ readonly code: string }> };
   };
@@ -1120,11 +1121,22 @@ export function resultReleasedToHumanReview(world: ScenarioWorld, worker: Worker
 
 type HumanReview = Awaited<ReturnType<typeof resultReleasedToHumanReview>>;
 
+/** The selected pending Wait arrival was forwarded early through the public operation. */
+export function waitContinuedEarly(
+  world: ScenarioWorld,
+  arrival: RunDetail["waitArrivals"][number],
+) {
+  return reach("Wait continued early", async () => {
+    stepResult("continue Wait", await world.factory.continueWaitArrival(arrival.id));
+    return arrival;
+  });
+}
+
 /** This occurrence's answer reached a Wait, independently of earlier answers at the same step. */
 export function humanAnswerWaitingAtWait(world: ScenarioWorld, review: HumanReview) {
   return reach("Human answer waiting at a Wait", async () => {
-    await observeFor("observe the answer's arrival", world, review.runId, (run) =>
-      run.waitArrivals.some(
+    const pending = (run: RunDetail) =>
+      run.waitArrivals.find(
         (arrival) =>
           arrival.state === "pending" &&
           run.intents.some(
@@ -1132,9 +1144,11 @@ export function humanAnswerWaitingAtWait(world: ScenarioWorld, review: HumanRevi
               intent.id === arrival.incomingIntentId &&
               intent.occurrenceId === review.occurrence.id,
           ),
-      ),
+      );
+    const run = await observeFor("observe the answer's arrival", world, review.runId, (detail) =>
+      Boolean(pending(detail)),
     );
-    return review;
+    return pending(run)!;
   });
 }
 

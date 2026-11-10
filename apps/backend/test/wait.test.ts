@@ -692,3 +692,262 @@ it.effect("a pending Wait raises no attention and leaves a snoozed Run snoozed",
     });
   }),
 );
+
+it.effect("Continue now forwards one arrival early with its message and origin", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+    const before = yield* runOn(f.factory, f.worker.runId);
+
+    // Act
+    const result = yield* f.factory.continueWaitArrival(before.waitArrivals[0]!.id);
+
+    // Assert
+    assert(result.ok);
+    expect(result.value.waitArrivals[0]).toMatchObject({
+      state: "forwarded",
+      forwardReason: "early",
+      settledAt: at("09:00"),
+      deadlineAt: at("09:30"),
+      origin: before.waitArrivals[0]!.origin,
+    });
+    const run = yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("follow-up"));
+    expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(2);
+    expect(run.events.map((event) => event.kind)).toContain("wait-continued");
+    const followUp = run.blocks.find((block) => block.blockId === "follow-up")!;
+    const launch = [...f.t3.launches.values()].find(
+      (entry) => entry.reference.threadId === followUp.threadId,
+    )!;
+    const block = yield* f.factory.runtime.block({
+      arguments: { blockId: launchBlockId(launch.payload.message) },
+    });
+    expect(block.inputs?.results).toMatchObject([{ blockId: "worker", message: RESULT }]);
+    expect(f.t3.launches.size).toBe(3);
+  }),
+);
+
+it.effect("repeated Continue now reports already forwarded without another delivery", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+    const before = yield* runOn(f.factory, f.worker.runId);
+    const id = before.waitArrivals[0]!.id;
+    assert((yield* f.factory.continueWaitArrival(id)).ok);
+    yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("follow-up"));
+
+    // Act
+    const result = yield* f.factory.continueWaitArrival(id);
+
+    // Assert
+    assert(!result.ok);
+    expect(result.error.message).toContain("already forwarded");
+    const run = yield* runOn(f.factory, f.worker.runId);
+    expect(run.events.filter((event) => event.kind === "wait-continued")).toHaveLength(1);
+    expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(2);
+    expect(f.t3.launches.size).toBe(3);
+  }),
+);
+
+it.effect("a stale deadline after early forwarding and restart delivers nothing again", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+    const before = yield* runOn(f.factory, f.worker.runId);
+    expect(yield* f.factory.continueWaitArrival(before.waitArrivals[0]!.id)).toMatchObject({
+      ok: true,
+    });
+    yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("follow-up"));
+    yield* TestClock.adjust(minutes(30));
+    yield* f.close;
+
+    // Act
+    const reopened = yield* openOnTestClock(f);
+
+    // Assert
+    const run = yield* runOn(reopened.factory, f.worker.runId);
+    expect(run.waitArrivals[0]).toMatchObject({ forwardReason: "early", settledAt: at("09:00") });
+    expect(
+      run.events.filter((event) => event.kind.startsWith("wait-")).map((event) => event.kind),
+    ).toStrictEqual(["wait-started", "wait-continued"]);
+    expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(2);
+    expect(f.t3.launches.size).toBe(3);
+  }),
+);
+
+it.effect("Continue now refuses an arrival cancelled by Archive", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+    const before = yield* runOn(f.factory, f.worker.runId);
+    assert((yield* f.factory.archiveRun(f.worker.runId)).ok);
+
+    // Act
+    const result = yield* f.factory.continueWaitArrival(before.waitArrivals[0]!.id);
+
+    // Assert
+    assert(!result.ok);
+    expect(result.error.code).toBe("conflict");
+    const run = yield* runOn(f.factory, f.worker.runId);
+    expect(arrivalStates(run)).toStrictEqual(["cancelled"]);
+    expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(0);
+    expect(f.t3.launches.size).toBe(1);
+  }),
+);
+
+it.effect("Continue now validates the arrival identity", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+
+    // Act
+    const result = yield* f.factory.continueWaitArrival("   ");
+
+    // Assert
+    assert(!result.ok);
+    expect(result.error.code).toBe("validation");
+    expect(f.t3.launches.size).toBe(1);
+  }),
+);
+
+it.effect(
+  "expiry competing with Continue now produces one forwarding and one set of deliveries",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* resultWaiting(c, waitFlow);
+      const before = yield* runOn(f.factory, f.worker.runId);
+
+      // Act
+      yield* Effect.all(
+        [
+          TestClock.adjust(minutes(30)),
+          f.factory.continueWaitArrival(before.waitArrivals[0]!.id),
+          f.factory.continueWaitArrival(before.waitArrivals[0]!.id),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      // Assert
+      const run = yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("follow-up"));
+      expect(arrivalStates(run)).toStrictEqual(["forwarded"]);
+      expect(
+        run.events.filter(
+          (event) => event.kind === "wait-continued" || event.kind === "wait-elapsed",
+        ),
+      ).toHaveLength(1);
+      expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(2);
+      expect(f.t3.launches.size).toBe(3);
+    }),
+);
+
+it.effect("Continue now racing Archive cannot deliver through the closed gate", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+    const before = yield* runOn(f.factory, f.worker.runId);
+    f.t3.available = false;
+
+    // Act
+    yield* Effect.all(
+      [
+        f.factory.archiveRun(f.worker.runId),
+        f.factory.continueWaitArrival(before.waitArrivals[0]!.id),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    // Assert
+    const run = yield* runOn(f.factory, f.worker.runId);
+    expect(run.lifecycle).toBe("archived");
+    expect(run.waitArrivals[0]?.state).not.toBe("pending");
+    expect(f.t3.launches.size).toBe(1);
+  }),
+);
+
+it.effect(
+  "Continue now on a manually Settled Run keeps settlement while delivering the message",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* resultWaiting(c, waitFlow);
+      const before = yield* runOn(f.factory, f.worker.runId);
+      assert((yield* f.factory.settleRun(f.worker.runId)).ok);
+
+      // Act
+      const result = yield* f.factory.continueWaitArrival(before.waitArrivals[0]!.id);
+
+      // Assert
+      assert(result.ok);
+      const run = yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("follow-up"));
+      expect(run.lifecycle).toBe("settled");
+      expect(run.waitArrivals[0]?.forwardReason).toBe("early");
+      expect(f.t3.launches.size).toBe(3);
+    }),
+);
+
+it.effect(
+  "Continue now advances only the selected parallel arrival and retains the other's deadline",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* resultWaiting(c, parallelWaitFlow);
+      const parallel = yield* launchedWorker(
+        f,
+        yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("parallel-block")),
+        "parallel-block",
+      );
+      yield* TestClock.adjust(minutes(10));
+      assert(
+        (yield* reportOn(f.factory, parallel, {
+          to: "finished",
+          exit: "done",
+          message: "Security notes ready.",
+        })) === "ACCEPTED",
+      );
+      allTurnsEnd(f.world, parallel);
+      assert((yield* f.factory.reconcileRuns()).ok);
+      const before = yield* runOn(f.factory, f.worker.runId);
+
+      // Act
+      const result = yield* f.factory.continueWaitArrival(before.waitArrivals[0]!.id);
+
+      // Assert
+      assert(result.ok);
+      expect(result.value.waitArrivals[0]).toMatchObject({
+        state: "forwarded",
+        forwardReason: "early",
+        settledAt: at("09:10"),
+      });
+      expect(result.value.waitArrivals[1]).toStrictEqual(before.waitArrivals[1]);
+      expect(blockState(result.value, "cool-down")).toBe("waiting");
+      const run = yield* runAfterWake(f.factory, f.worker.runId, launchedBlock("follow-up"));
+      expect(
+        run.activations.filter((activation) => activation.blockId === "follow-up"),
+      ).toHaveLength(1);
+      expect(run.intents.filter((intent) => intent.sourceBlockId === "cool-down")).toHaveLength(1);
+    }),
+);
+
+it.effect("Continue now cannot deliver under a changed authorization context", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* resultWaiting(c, waitFlow);
+    const before = yield* runOn(f.factory, f.worker.runId);
+    f.t3.approve("different-grant");
+    assert((yield* f.factory.recheckConnection()).ok);
+
+    // Act
+    const result = yield* f.factory.continueWaitArrival(before.waitArrivals[0]!.id);
+
+    // Assert
+    assert(result.ok);
+    const run = yield* runAfterWake(f.factory, f.worker.runId, () => false);
+    expect(run.waitArrivals[0]?.forwardReason).toBe("early");
+    expect(
+      run.intents
+        .filter((intent) => intent.sourceBlockId === "cool-down")
+        .map((intent) => intent.state),
+    ).toStrictEqual(["pending", "pending"]);
+    expect(f.t3.launches.size).toBe(1);
+  }),
+);

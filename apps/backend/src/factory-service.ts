@@ -127,6 +127,7 @@ export const makeFactoryService = (
       removeAgent: definitions.removeAgent,
       getReportingInstallations: () => reporting.getReportingInstallations(),
       installReporting: (input) => reporting.installReporting(input),
+      continueWaitArrival: (id) => runner.continueWaitArrival(id),
       answerHumanOccurrence: (id, input) => runner.answerHumanOccurrence(id, input),
       listAttention: () => runner.listAttention(),
       requestReport: (id, input) => runner.requestReport(id, input),

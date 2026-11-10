@@ -162,6 +162,9 @@ function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
       handle: ({ parameters, input }) =>
         answer(() => factory.requestReport(parameters.runId, input)),
     },
+    continueWaitArrival: {
+      handle: ({ parameters }) => answer(() => factory.continueWaitArrival(parameters.id)),
+    },
     answerHumanOccurrence: {
       body: { bytes: 131_072, message: "Send valid answer JSON up to 128 KiB." },
       handle: ({ parameters, input }) =>

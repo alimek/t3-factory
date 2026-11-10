@@ -223,6 +223,7 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "continuation-passed": continuationPassed,
   "wait-started": waitStarted,
   "wait-elapsed": said("elapsed → forwarded"),
+  "wait-continued": said("forwarded early by user"),
   "wait-cancelled": said("wait cancelled by Archive · nothing forwarded"),
   "operation-unresolved": operationUnresolved,
   "run-settled": (_run, event) => ({

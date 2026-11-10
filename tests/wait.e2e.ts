@@ -1,3 +1,4 @@
+import { openPendingReviewWait } from "./support/waits.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { createStudioFlow, expectFlowBlocked } from "./support/flows.ts";
@@ -168,12 +169,55 @@ test("a Human approval waits with its reviewer, and parallel approvals keep sepa
   await app.screenshot("human-answer-waiting");
   const run = await findRun(app.baseUrl, "Demo · Wait · Both reviews soaking before release");
   await app.open(`/runs/${run.id}`);
-  const soak = screen.getByRole("article", "Block Soak before release");
-  await expect(soak).toContainText("2 pending");
-  await expect(soak).not.toContainText("Needs input");
-  await soak.getByRole("button", "Wait Soak before release", { exact: false }).tap();
-  const details = screen.getByRole("complementary", "Block details");
-  await expect(details.getByRole("listitem", "Arrival 1")).toContainText("waiting until");
-  await expect(details.getByRole("listitem", "Arrival 2")).toContainText("waiting until");
+  await openPendingReviewWait(screen);
   await app.screenshot("wait-two-pending");
+});
+
+test("Continue now advances a selected review while the other keeps waiting", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const run = await findRun(app.baseUrl, "Demo · Wait · Both reviews soaking before release");
+
+  const approved = await readHistoryRun(app.baseUrl, run.id);
+  expect(approved.humanOccurrences).toHaveLength(2);
+  expect(approved.humanOccurrences[0]?.state).toBe("answered");
+  expect(approved.humanOccurrences[1]?.state).toBe("answered");
+  expect(approved.waitArrivals[0]?.sourceBlockId).toBe(approved.humanOccurrences[0]?.blockId);
+  expect(approved.waitArrivals[1]?.sourceBlockId).toBe(approved.humanOccurrences[1]?.blockId);
+
+  await app.open(`/runs/${run.id}`);
+
+  const { soak, details } = await openPendingReviewWait(screen);
+  await expect(soak.getByRole("button", "Continue now")).toHaveCount(0);
+  await app.screenshot("wait-two-pending");
+  // Act
+  await details.getByRole("listitem", "Arrival 1").getByRole("button", "Continue now").tap();
+
+  // Assert
+  await expect(details.getByRole("listitem", "Arrival 1")).toContainText("forwarded early by user");
+  await expect(
+    details.getByRole("listitem", "Arrival 1").getByRole("button", "Continue now"),
+  ).toHaveCount(0);
+  await expect(details.getByRole("listitem", "Arrival 2")).toContainText("waiting until");
+  await expect(soak).not.toContainText("2 pending");
+  await expect(soak.getByRole("button", "Continue now")).toBeVisible();
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText("forwarded early by user");
+  await screen
+    .getByRole("region", "Timeline")
+    .getByText("forwarded early by user", { exact: false })
+    .scrollIntoView();
+  await app.screenshot("wait-selected-continued");
+  await soak.getByRole("button", "Continue now").tap();
+  await expect(soak).toContainText("finished");
+  await expect(details.getByRole("listitem", "Arrival 2")).toContainText("forwarded early by user");
+  await expect(soak.getByRole("button", "Continue now")).toHaveCount(0);
+  await app.screenshot("wait-all-continued");
+  await browser.reload();
+  await soak.getByRole("button", "Wait Soak before release", { exact: false }).tap();
+  await expect(details.getByRole("listitem", "Arrival 1")).toContainText("forwarded early by user");
 });
