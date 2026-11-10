@@ -35,6 +35,12 @@ function exitLabel(run: RunDetail, blockId: string, exitId: string | null) {
   return exit?.name ?? exitId ?? "an exit";
 }
 
+/** Wait and Continuation outputs are deliberately unnamed, so their routes read without "via". */
+function viaExit(run: RunDetail, blockId: string, exitId: string | null) {
+  const label = exitLabel(run, blockId, exitId);
+  return label ? ` via ${label}` : "";
+}
+
 function intentOf(run: RunDetail, event: RunEvent) {
   return run.intents.find((intent) => intent.id === event.causeId);
 }
@@ -51,7 +57,7 @@ function entered(run: RunDetail, event: RunEvent, kind: keyof typeof threadWords
   const intent = intentOf(run, event);
   const { again, thread } = threadWords[kind];
   const from = intent?.sourceBlockId
-    ? ` from ${nameOf(run, intent.sourceBlockId)} via ${exitLabel(run, intent.sourceBlockId, intent.exitId)}`
+    ? ` from ${nameOf(run, intent.sourceBlockId)}${viaExit(run, intent.sourceBlockId, intent.exitId)}`
     : "";
   const status = event.engineStatus ? ` · ${event.engineStatus}` : "";
   return {
@@ -65,10 +71,9 @@ function entered(run: RunDetail, event: RunEvent, kind: keyof typeof threadWords
 function handedOff(run: RunDetail, event: RunEvent): EventPhrase {
   const intent = intentOf(run, event);
   if (!intent?.sourceBlockId) return { actorId: event.blockId, text: "received a handoff" };
-  const exit = exitLabel(run, intent.sourceBlockId, intent.exitId);
   return {
     actorId: intent.sourceBlockId,
-    text: `handed off to ${nameOf(run, event.blockId)} via ${exit}`,
+    text: `handed off to ${nameOf(run, event.blockId)}${viaExit(run, intent.sourceBlockId, intent.exitId)}`,
   };
 }
 
