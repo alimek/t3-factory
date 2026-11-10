@@ -1,7 +1,7 @@
 import "vite-plus/test/config";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite-plus";
+import { defaultServerConditions, defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -12,6 +12,15 @@ export default defineConfig(({ command }) => ({
       ? { conditions: ["factory-source", "module", "browser", "development"] }
       : {}),
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
+  // Node-based tests resolve shared packages from source, like the development UI.
+  ssr: {
+    resolve: {
+      conditions:
+        command === "serve"
+          ? ["factory-source", ...defaultServerConditions]
+          : [...defaultServerConditions],
+    },
   },
   test: {
     environment: "node",

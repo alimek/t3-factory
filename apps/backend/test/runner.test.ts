@@ -1,6 +1,5 @@
+import { runFactoryProcess, spawnFactoryProcess } from "./support/factory-process.ts";
 import { assert, expect, it } from "@effect/vitest";
-import { promisify } from "node:util";
-import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -108,15 +107,14 @@ it("a fresh process cannot displace a live database owner", async (c) => {
   const fixturePath = join(dirname(h.databasePath), "external-engine.json");
   await writeFile(fixturePath, JSON.stringify({ input, projects: t3.projects, launches: [] }));
   // Act
-  const child = promisify(execFile)(
-    process.execPath,
+  const child = runFactoryProcess(
     [
       fileURLToPath(new URL("./support/runner-process.ts", import.meta.url)),
       h.databasePath,
       fixturePath,
       "read",
     ],
-    { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dirname(h.databasePath) } },
+    dirname(h.databasePath),
   );
 
   // Assert
@@ -132,18 +130,14 @@ it("SIGKILL of the live owner allows recovery of an uncertain Run conversation l
   const fixturePath = join(dirname(h.databasePath), "external-engine.json");
   await writeFile(fixturePath, JSON.stringify({ input, projects: t3.projects, launches: [] }));
   function spawnChild(mode: string) {
-    return spawn(
-      process.execPath,
+    return spawnFactoryProcess(
       [
         fileURLToPath(new URL("./support/runner-process.ts", import.meta.url)),
         h.databasePath,
         fixturePath,
         mode,
       ],
-      {
-        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dirname(h.databasePath) },
-        stdio: ["pipe", "pipe", "pipe"],
-      },
+      dirname(h.databasePath),
     );
   }
   await f.close();

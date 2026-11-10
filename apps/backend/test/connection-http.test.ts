@@ -12,7 +12,7 @@ async function startConnectionServer(c: TestContext, t3: ControlledT3) {
   c.onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const server = await startServer(
     await loadConfiguration({ FACTORY_HOME: directory, FACTORY_PORT: "0" }),
-    { t3 },
+    { t3, uiDirectory: null },
   );
   c.onTestFinished(() => server.close());
   return { server, base: `http://127.0.0.1:${server.address.port}` };
@@ -140,10 +140,10 @@ it("non-loopback binding accepts a configured tailnet DNS host", async (c) => {
       FACTORY_PORT: "0",
       FACTORY_ALLOWED_HOSTS: "factory.tail.example, factory.lan",
     }),
-    { t3: new ControlledT3() },
+    { t3: new ControlledT3(), uiDirectory: null },
   );
   c.onTestFinished(() => server.close());
-  const base = `http://127.0.0.1:${server.address.port}`;
+  const base = `http://127.0.0.1:${server.address.port}/api/connection`;
 
   // Act
   const tailStatus = await hostStatus(base, `factory.tail.example:${server.address.port}`);
@@ -163,10 +163,10 @@ it("non-loopback binding rejects unconfigured DNS hosts", async (c) => {
       FACTORY_PORT: "0",
       FACTORY_ALLOWED_HOSTS: "factory.tail.example, factory.lan",
     }),
-    { t3: new ControlledT3() },
+    { t3: new ControlledT3(), uiDirectory: null },
   );
   c.onTestFinished(() => server.close());
-  const base = `http://127.0.0.1:${server.address.port}`;
+  const base = `http://127.0.0.1:${server.address.port}/api/connection`;
 
   // Act
   const attackerStatus = await hostStatus(base, `attacker.example:${server.address.port}`);
