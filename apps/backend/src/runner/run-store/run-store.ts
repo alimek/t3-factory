@@ -1,5 +1,8 @@
+import { openRunReads } from "./reads.ts";
+import { openRunQueries } from "./queries.ts";
+import { openRunNavigation } from "./navigation.ts";
 import * as Effect from "effect/Effect";
-import type * as SqlClient from "effect/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import type { LiveChanges } from "../../live-changes.ts";
 import { makeRunLanes } from "../runner-lanes.ts";
 import { now } from "../../time.ts";
@@ -17,24 +20,21 @@ import { openRunSettlement } from "./settlement.ts";
 import { openRunStart } from "./start.ts";
 import { openRunWorkspace } from "./workspace.ts";
 
-export type { RunnerDatabase } from "./database.ts";
-export type { Delivery, DeliveryRecord, Handoff, ResultRecord } from "./records.ts";
+export type { Delivery, Handoff } from "./records.ts";
 export type { StartPlan, StartWorkspace } from "./start.ts";
 export type { RequestReportSettlement } from "./request-report.ts";
-export { currentWorkingMessages } from "./current-report.ts";
 
 /**
- * The Run store owns a Run's execution records. Each transition is one SQL transaction in the
- * Run's mutation lane, applies the guard facts it declares, advances the generation and appends
- * Run timeline events itself, and publishes the Run's live change after the commit. It never
- * calls T3.
+ * The Run store owns a Run's execution records and reads. Transitions own their guards,
+ * generation advances, timeline events and publication after commit. The mutation lane stays
+ * private, with the existing Start, startup ownership and rename exceptions. It never calls T3.
  */
-export function openRunStore(
-  sqlClient: SqlClient.SqlClient,
+export const openRunStore = Effect.fn("RunStore.open")(function* (
   owner: { token: string },
   changes: LiveChanges,
 ) {
-  // The one mutation lane per Run. Only transitions and the raw handle below enter it.
+  const sqlClient = yield* SqlClient.SqlClient;
+  // The one mutation lane per Run. Only store transitions enter it.
   const lanes = makeRunLanes();
   const database = openRunnerDatabase(sqlClient, owner, changes, lanes.serial);
 
@@ -51,11 +51,11 @@ export function openRunStore(
     );
 
   return {
-    /** The raw transaction handle, left for the Runner's reads and the Run and Task renames. Its
-     * `mutate` enters the same mutation lane as the transitions. */
-    database,
     readRun: database.row,
     takeOwnership,
+    ...openRunReads(database),
+    ...openRunQueries(database),
+    ...openRunNavigation(database),
     ...openRunSettlement(database),
     ...openRunArchive(database),
     ...openRunPresentation(database),
@@ -71,5 +71,5 @@ export function openRunStore(
     /** Waits for every queued transition to leave its lane. */
     drain: lanes.drain,
   };
-}
-export type RunStore = ReturnType<typeof openRunStore>;
+});
+export type RunStore = Effect.Success<ReturnType<typeof openRunStore>>;

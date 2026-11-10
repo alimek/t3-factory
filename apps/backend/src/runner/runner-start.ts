@@ -22,7 +22,6 @@ import {
   type StartPrompt,
 } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter } from "../adapters/t3.ts";
 import { failure } from "../result.ts";
 import type { RunStore, StartPlan, StartWorkspace } from "./run-store/run-store.ts";
@@ -186,7 +185,6 @@ export function openRunnerStart(
   lifecycle: RunnerLifecycle,
   checkAgent: RunnerOptions["checkAgent"],
 ) {
-  const { run } = store.database;
   const { isClosed, drive, getRun } = lifecycle;
   function start(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
     return Effect.gen(function* () {
@@ -214,15 +212,7 @@ export function openRunnerStart(
           presentationIssues,
         );
       const content = startFingerprint(input, prompt.value);
-      const existing = yield* run(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return (yield* sql<{
-            id: string;
-            request_fingerprint: string;
-          }>`SELECT id,request_fingerprint FROM runs WHERE request_id=${input.requestId}`)[0];
-        }),
-      );
+      const existing = yield* store.acceptedStart(input.requestId);
       if (existing)
         return existing.request_fingerprint === content
           ? yield* getRun(existing.id)

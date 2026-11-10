@@ -1,40 +1,11 @@
 import { recoverOperation } from "./runner-effects.ts";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter } from "../adapters/t3.ts";
 import type { Delivery, RunStore } from "./run-store/run-store.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import { failure } from "../result.ts";
-export function recoveryRows(sql: SqlClient.SqlClient, id: string) {
-  return Effect.gen(function* () {
-    const rows = yield* sql<{
-      attention_id: string | null;
-      block_id: string;
-      source_execution_id: string;
-      intent_id: string;
-      requested_at: string;
-      settled_at: string | null;
-      result_json: string | null;
-    }>`SELECT r.*,i.result_json FROM report_recoveries r JOIN operation_intents i ON i.id=r.intent_id WHERE r.run_id=${id}`;
-    return rows.map((r) => ({
-      attentionId: r.attention_id,
-      blockId: r.block_id,
-      sourceExecutionId: r.source_execution_id,
-      intentId: r.intent_id,
-      requestedAt: r.requested_at,
-      settledAt: r.settled_at,
-      executionId: r.result_json
-        ? (
-            JSON.parse(r.result_json) as {
-              runId: string;
-            }
-          ).runId
-        : null,
-    }));
-  });
-}
 /** Request report assesses a finished worker thread whose latest run is the one it was asked for. */
 function recoveryReady(t3: T3Adapter, run: RunRow, threadId: string, executionId: string) {
   return Effect.tryPromise(async () => {
@@ -134,14 +105,7 @@ export function recoveryDispatchGeneration(
     const target = JSON.parse(intent.target_json) as {
       threadId: string;
     };
-    const recovery = yield* store.database.run(
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        return (yield* sql<{
-          source_execution_id: string;
-        }>`SELECT source_execution_id FROM report_recoveries WHERE intent_id=${intent.id}`)[0];
-      }),
-    );
+    const recovery = yield* store.recoverySource(intent.id);
     if (
       !recovery ||
       !(yield* recoveryReady(t3, current, target.threadId, recovery.source_execution_id))

@@ -15,12 +15,7 @@ export function bindRunWorkspace(store: RunStore, t3: T3Adapter, run: RunRow) {
   return Effect.gen(function* () {
     const { workspace } = run;
     if (workspace.mode !== "worktree" || workspace.state !== "preparing") return false;
-    const [creator] = yield* store.database.transaction(
-      (sql) =>
-        sql<{
-          thread_id: string | null;
-        }>`SELECT thread_id FROM run_blocks WHERE run_id=${run.id} AND block_id=${workspace.creatorBlockId}`,
-    );
+    const creator = yield* store.readBlock(run.id, workspace.creatorBlockId);
     const threadId = creator?.thread_id;
     if (!threadId) return false;
     const thread = yield* Effect.tryPromise(() => t3.readExecution(runTarget(run), threadId));

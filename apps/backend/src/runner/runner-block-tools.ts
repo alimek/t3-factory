@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import type { RunDetail, RunImageMimeType } from "@t3-factory/contracts";
 import { effectiveExits } from "@t3-factory/domain-validation";
-import type { RunnerDatabase } from "./run-store/run-store.ts";
+import type { RunStore } from "./run-store/run-store.ts";
 import { OPEN_TRANSITIONS, type RuntimeReply } from "../runtime-types.ts";
 import { reportDiagnostic } from "../runtime-report-diagnostic.ts";
-import { blockIdArgument, resolveBlock } from "../runtime-block-id.ts";
+import { blockIdArgument } from "../runtime-block-id.ts";
 import type { RunImages } from "../run-images.ts";
 
 type ImageRow = {
@@ -25,7 +25,7 @@ const imageIdentity = (row: ImageRow): NonNullable<RuntimeReply["image"]> => ({
 
 /** Block, Run and image reads addressed by the Block id from the worker's message. */
 export function openBlockTools(
-  database: RunnerDatabase,
+  store: RunStore,
   getRun: (id: string) => Effect.Effect<{ ok: true; value: RunDetail } | { ok: false }, unknown>,
   images: RunImages,
 ) {
@@ -39,29 +39,21 @@ export function openBlockTools(
         if (typeof fields.imageId !== "string" || !fields.imageId)
           return reportDiagnostic({ code: "INVALID_ARGUMENT" });
       }
-      const block = yield* database.transaction((sql) => resolveBlock(sql, publicId));
+      const block = yield* store.locateBlock(publicId);
       if (!block) return reportDiagnostic({ code: "UNKNOWN_BLOCK" });
       if (kind === "image")
-        return yield* readImage(database, images, block.run_id, fields.imageId as string);
+        return yield* readImage(store, images, block.run_id, fields.imageId as string);
       const detail = yield* getRun(block.run_id);
       if (!detail.ok) return { code: "RUNTIME_UNAVAILABLE" };
       if (kind === "run") return runView(detail.value);
-      const manifest = yield* database.transaction(
-        (sql) =>
-          sql<ImageRow>`SELECT image_id, ordinal, name, mime_type, size_bytes FROM run_images WHERE run_id=${block.run_id} ORDER BY ordinal`,
-      );
+      const manifest = yield* store.blockImages(block.run_id);
       return blockView(detail.value, block.block_id, manifest.map(imageIdentity));
     }).pipe(Effect.catchCause(() => Effect.succeed<RuntimeReply>({ code: "RUNTIME_UNAVAILABLE" })));
 }
 
-function readImage(database: RunnerDatabase, images: RunImages, runId: string, imageId: string) {
+function readImage(store: RunStore, images: RunImages, runId: string, imageId: string) {
   return Effect.gen(function* () {
-    const [row] = yield* database.transaction(
-      (sql) =>
-        sql<
-          ImageRow & { sha256: string }
-        >`SELECT image_id, ordinal, name, mime_type, size_bytes, sha256 FROM run_images WHERE run_id=${runId} AND image_id=${imageId}`,
-    );
+    const row = yield* store.blockImage(runId, imageId);
     if (!row) return reportDiagnostic({ code: "UNKNOWN_IMAGE" });
     const image = imageIdentity(row);
     return yield* Effect.suspend(() => images.storedBytes(row.sha256)).pipe(

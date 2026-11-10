@@ -124,6 +124,30 @@ export default defineConfig({
         },
       },
       {
+        files: ["apps/backend/src/runner/**"],
+        excludeFiles: ["apps/backend/src/runner/run-store/**"],
+        rules: {
+          "no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                ...backendImportRestrictions,
+                {
+                  regex: "^effect/sql(/|$)|^@effect/sql",
+                  message:
+                    "Runner orchestration uses Run store transitions and reads, never the SQL client.",
+                },
+                {
+                  group: ["**/run-store/**", "!**/run-store/run-store.ts"],
+                  message:
+                    "Runner orchestration imports only the Run store entry, never its internals.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
         files: ["apps/backend/src/runner/run-store/**"],
         rules: {
           "no-restricted-imports": [

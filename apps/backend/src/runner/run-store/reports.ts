@@ -5,7 +5,7 @@ import { nonFinalRejection, reportFingerprint, reportRoute } from "../report-rul
 import { readRunDefinitions } from "./run-definitions.ts";
 import type { ReportRunRow } from "../runner-types.ts";
 import { rejected } from "../runner-utils.ts";
-import { resolveBlock } from "../../runtime-block-id.ts";
+import { resolveBlock } from "./blocks.ts";
 import {
   acceptedTransition,
   RUN_ARCHIVED,

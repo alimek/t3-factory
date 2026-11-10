@@ -5,7 +5,6 @@ import { recoverOperation } from "./runner-effects.ts";
 import { recoveryDispatchGeneration } from "./runner-recovery.ts";
 import type { FactoryOperations } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/sql/SqlClient";
 import type { SendPayload, SendReference, T3Adapter } from "../adapters/t3.ts";
 import type { Delivery, Handoff, RunStore } from "./run-store/run-store.ts";
 import type { BlockRow, Checked, RunnerOptions, RunRow, StoredTarget } from "./runner-types.ts";
@@ -50,7 +49,6 @@ export function openRunnerDispatch(
   observe: (run: RunRow, block: BlockRow, contextId: string | null) => Effect.Effect<void, unknown>,
   images: RunImages,
 ) {
-  const { run } = store.database;
   /** Agent handoffs become worker commands or revisit sends; Human handoffs become occurrences. */
   function prepareHandoff(
     runRow: RunRow,
@@ -94,12 +92,7 @@ export function openRunnerDispatch(
       }
       if (saved.kind === "launch") {
         yield* dispatchBlockLaunch(store, t3, images, runRow, saved);
-        const [block] = yield* run(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            return yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${saved.block_id}`;
-          }),
-        );
+        const block = yield* store.readBlock(runRow.id, saved.block_id);
         if (block?.thread_id && (yield* store.readRun(runRow.id))?.gate_open)
           yield* observe(runRow, block, contextId);
         return;
@@ -128,12 +121,7 @@ export function openRunnerDispatch(
             catch: (error) => error,
           });
           yield* acknowledgeSend(runRow, intent, reference, payload);
-          const [block] = yield* run(
-            Effect.gen(function* () {
-              const sql = yield* SqlClient.SqlClient;
-              return yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${intent.block_id}`;
-            }),
-          );
+          const block = yield* store.readBlock(runRow.id, intent.block_id);
           if (block && (yield* store.readRun(runRow.id))?.gate_open)
             yield* observe(runRow, block, contextId);
         }),

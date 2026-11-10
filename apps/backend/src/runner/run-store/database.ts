@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { RunRow } from "../runner-types.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
-import { readRunWorkspace } from "../run-workspace.ts";
+import { readRunWorkspace } from "./workspace-read.ts";
 import type { LiveChanges } from "../../live-changes.ts";
 import { guardsHold } from "./guards.ts";
 
@@ -24,11 +24,7 @@ export function readRunRow(sql: SqlClient.SqlClient, id: string) {
   });
 }
 
-/**
- * The raw transaction handle of the Run store, kept for the Runner's reads and the Run and Task
- * renames. `mutate` enters the store's one mutation lane per Run. Writers outside `mutate` publish
- * their committed Run changes through `changes` themselves.
- */
+/** Private transaction and publication machinery shared by the store operations. */
 export function openRunnerDatabase(
   sqlClient: SqlClient.SqlClient,
   owner: { token: string },

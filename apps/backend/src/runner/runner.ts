@@ -6,11 +6,10 @@ import type { FactoryOperations, Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Semaphore from "effect/Semaphore";
-import * as SqlClient from "effect/sql/SqlClient";
 import type { EffectOperations } from "../effect-operations.ts";
 import type { T3Adapter } from "../adapters/t3.ts";
 import { failure } from "../result.ts";
-import type { BlockRow, RunnerOptions, RunRow } from "./runner-types.ts";
+import type { RunnerOptions, RunRow } from "./runner-types.ts";
 import { openRunStore } from "./run-store/run-store.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
@@ -35,12 +34,10 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   changes: LiveChanges,
   images: RunImages,
 ) {
-  const sql = yield* SqlClient.SqlClient;
   const scope = yield* Effect.scope;
-  const store = openRunStore(sql, owner, changes);
-  const { database } = store;
-  const { row } = database;
-  const { getRun, listTasks, updateTask, listAttention } = openRunnerQueries(database);
+  const store = yield* openRunStore(owner, changes);
+  const { readRun: row, getRun, listAttention } = store;
+  const { listTasks, updateTask } = openRunnerQueries(store);
   let closed = false;
   const starts = Semaphore.makeUnsafe(1);
   const sweeps = Semaphore.makeUnsafe(1);
@@ -97,8 +94,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   ) {
     return Effect.gen(function* () {
       const id = runRow.id;
-      const blocks =
-        yield* sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${id} AND thread_id IS NOT NULL`;
+      const blocks = yield* store.blocksWithWorkers(id);
       if (runRow.gate_open && phase !== "dispatch")
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
       yield* settleRecoveries(store, lifecycle, t3, id);
@@ -168,11 +164,12 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   yield* Effect.addFinalizer(close);
   return {
     ...openRunnerRecovery(store, lifecycle, t3, liveContextId),
-    readFactoryTool: openBlockTools(database, getRun, images),
+    readFactoryTool: openBlockTools(store, getRun, images),
     answerHumanOccurrence,
     archiveRun,
     settleRun,
-    ...openRunNavigation(database, getRun),
+    ...openRunNavigation(store),
+    listRunNavigation: store.listRunNavigation,
     snoozeRun: store.snoozeRun,
     restoreRun: store.restoreRun,
     markRunWokeSeen: store.markRunWokeSeen,

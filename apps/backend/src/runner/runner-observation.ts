@@ -16,10 +16,7 @@ export function openRunnerObservation(store: RunStore, t3: T3Adapter) {
         const before = yield* store.readRun(runRow.id);
         const bound = !!before && (yield* bindRunWorkspace(store, t3, before));
         const run = bound ? yield* store.readRun(runRow.id) : before;
-        const [current] = yield* store.database.transaction(
-          (sql) =>
-            sql<BlockRow>`SELECT * FROM run_blocks WHERE run_id=${runRow.id} AND block_id=${block.block_id}`,
-        );
+        const current = yield* store.readBlock(runRow.id, block.block_id);
         if (!run || !current?.thread_id) return;
         const worker = yield* Effect.tryPromise(() =>
           readWorkerThread(t3, run, current.thread_id!),
