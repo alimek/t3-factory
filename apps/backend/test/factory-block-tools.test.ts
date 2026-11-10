@@ -9,7 +9,7 @@ import {
   revisitReportingWorker,
   workerStart,
 } from "./support/run-worker.ts";
-import { workerFinal, workerWorking } from "./support/scenarios.ts";
+import { finishedReport, report, workerFinal, workingReport } from "./support/scenarios.ts";
 
 it("factory_get_block reads the Block named by the id in its launch message", async (c) => {
   // Arrange
@@ -204,7 +204,7 @@ it("a revisit's report applies to the Block's current activation", async (c) => 
 it("a revisit reads only the result that activated it rather than its own newer result", async (c) => {
   // Arrange
   const fixture = await revisitReportingWorker(c);
-  assert((await fixture.f.runtime.submit(workerFinal(fixture.blockId))).code === "ACCEPTED");
+  assert((await report(fixture.world, fixture.worker, finishedReport())) === "ACCEPTED");
   const run = await fixture.f.getRun(fixture.runId);
   assert(run.ok);
 
@@ -275,7 +275,7 @@ it("an identical repeated final succeeds again without a second result", async (
 it("a retired waiting report is refused with guidance and leaves the Block's working report current", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
-  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+  assert((await report(fixture.world, fixture.worker, workingReport())) === "ACCEPTED");
 
   // Act
   const result = await fixture.f.runtime.submit({
@@ -334,7 +334,7 @@ it("a working Block update is accepted with its message and selects no result", 
 it("a later finished report replaces the Block's working report", async (c) => {
   // Arrange
   const fixture = await directWorker(c, true, "");
-  assert((await fixture.f.runtime.submit(workerWorking(fixture.blockId))).code === "ACCEPTED");
+  assert((await report(fixture.world, fixture.worker, workingReport())) === "ACCEPTED");
 
   // Act
   const result = await fixture.f.runtime.submit(workerFinal(fixture.blockId));

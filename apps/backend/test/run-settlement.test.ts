@@ -2,7 +2,6 @@ import { assert, expect, it } from "@effect/vitest";
 import {
   archivedWorker,
   directWorker,
-  finishWorker,
   finishedWorker,
   missingWorkerReport,
   nextSettlement,
@@ -10,11 +9,18 @@ import {
   reopenDuringSettlement,
   replacedBeforeRelease,
   revisitReportingWorker,
-  settleThread,
   settledWorker,
-  startWorkerTurn,
 } from "./support/run-worker.ts";
-import { workerFinal, workerWorking } from "./support/scenarios.ts";
+import {
+  allTurnsEnd,
+  finishedReport,
+  report,
+  turnBegins,
+  workerFinal,
+  workerWorking,
+  workingReport,
+} from "./support/scenarios.ts";
+import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a finished terminal Block settles its worker thread in T3 without waiting for Run settlement", async (c) => {
   // Arrange
@@ -32,8 +38,8 @@ it("a replaced finished report in the same T3 run is not settled again", async (
   const f = await replacedBeforeRelease(c);
   assert((await f.f.reconcileRuns()).ok);
 
-  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Another pass."))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, finishedReport("Another pass."))) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -47,14 +53,14 @@ it("a revisited Block settles its thread again after a new T3 run finishes", asy
   const f = await revisitReportingWorker(c);
   await f.f.reconcileRuns();
   expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
-  assert((await f.f.runtime.submit(workerFinal(f.blockId, "Second pass."))).code === "ACCEPTED");
+  assert((await report(f.world, f.worker, finishedReport("Second pass."))) === "ACCEPTED");
   const runBeforeFinish = await f.f.getRun(f.runId);
   assert(runBeforeFinish.ok);
   const producingExecution = runBeforeFinish.value.reports.at(-1)?.executionId;
   assert(producingExecution);
   expect(producingExecution).toBe(f.workerExecutionId);
-  finishWorker(f);
-  settleThread(f.t3, f.workerExecutionId);
+  allTurnsEnd(f.world, f.worker);
+  answerDelegatedWait(f.t3, "thread-1", f.workerExecutionId, "settled", "completed");
 
   // Act
   await f.f.reconcileRuns();
@@ -89,8 +95,8 @@ it("an open missing-report Problem leaves the worker thread unsettled", async (c
 it("a Block whose latest report is working leaves its worker thread unsettled", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -295,10 +301,10 @@ it("repeating the current result on a Settled Run returns the Run to Active", as
 it("repeating the earlier result after a working report makes it current, so the Run settles once its worker thread is finished", async (c) => {
   // Arrange
   const f = await directWorker(c, true, "");
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
+  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -313,8 +319,8 @@ it("repeating the earlier result after a working report makes it current, so the
 it("a reply turn in a worker thread without a report leaves the Settled Run Settled", async (c) => {
   // Arrange
   const f = await settledWorker(c);
-  startWorkerTurn(f, "chat-execution", 2);
-  finishWorker(f);
+  turnBegins(f.world, f.worker, "chat-execution");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -361,7 +367,7 @@ it("a working report accepted during the completion read prevents stale settleme
 it("a newer active turn prevents settlement for an older finished result", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
-  startWorkerTurn(f, "newer-execution", 2);
+  turnBegins(f.world, f.worker, "newer-execution");
 
   // Act
   await f.f.reconcileRuns();
@@ -373,9 +379,9 @@ it("a newer active turn prevents settlement for an older finished result", async
 it("a newer idle turn with pending delegated work prevents settlement for an older result", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
-  startWorkerTurn(f, "newer-execution", 2);
-  finishWorker(f);
-  settleThread(f.t3, "newer-execution", "completed", "pending");
+  turnBegins(f.world, f.worker, "newer-execution");
+  allTurnsEnd(f.world, f.worker);
+  answerDelegatedWait(f.t3, "thread-1", "newer-execution", "pending", "completed");
 
   // Act
   await f.f.reconcileRuns();
@@ -387,8 +393,8 @@ it("a newer idle turn with pending delegated work prevents settlement for an old
 it("a newer completed turn is settled once by the Run fallback rather than an older Block result", async (c) => {
   // Arrange
   const f = await reportedWorker(c, "completed", "");
-  startWorkerTurn(f, "newer-execution", 2);
-  finishWorker(f);
+  turnBegins(f.world, f.worker, "newer-execution");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();

@@ -17,11 +17,17 @@ import {
   pendingReview,
   reportedAfterFailure,
   workerMessage,
-  finishWorker,
-  settleThread,
-  startWorkerTurn,
 } from "./support/run-worker.ts";
-import { workerFinal, workerWorking } from "./support/scenarios.ts";
+import {
+  allTurnsEnd,
+  finishedReport,
+  report,
+  turnBegins,
+  workerFinal,
+  workerWorking,
+  workingReport,
+} from "./support/scenarios.ts";
+import { answerDelegatedWait } from "./support/controlled-thread.ts";
 import { prepared } from "./support/prepared-runner.ts";
 
 it("a Flow with two entry Agents launches an independent top-level worker for each", async (c) => {
@@ -188,7 +194,7 @@ it("a worker that fails after reporting cannot release downstream work", async (
 it("an accepted result stays held while T3 has not settled the worker's delegated work", async (c) => {
   // Arrange
   const f = await reportedWorker(c);
-  settleThread(f.t3, "execution-1", "running", "pending");
+  answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "running");
 
   // Act
   await f.f.reconcileRuns();
@@ -238,8 +244,8 @@ it("an accepted result stays held while the worker thread has a pending native r
 it("an accepted result stays held while the worker thread still has an active run", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerFinal(f.blockId))).code === "ACCEPTED");
-  settleThread(f.t3, "execution-1");
+  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  answerDelegatedWait(f.t3, "thread-1", "execution-1", "settled", "completed");
 
   // Act
   await f.f.reconcileRuns();
@@ -253,8 +259,8 @@ it("an accepted result stays held while the worker thread still has an active ru
 it("a worker waiting on unsettled background work stays working without a missing-report Problem", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  finishWorker(f);
-  settleThread(f.t3, "execution-1", "completed", "pending");
+  allTurnsEnd(f.world, f.worker);
+  answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "completed");
 
   // Act
   await f.f.reconcileRuns();
@@ -268,8 +274,8 @@ it("a worker waiting on unsettled background work stays working without a missin
 it("a worker idle after reporting working shows its message without a missing-report Problem", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -288,11 +294,11 @@ it("a worker idle after reporting working shows its message without a missing-re
 it("a reportless turn resumed by a notification shows a missing report once T3 settles the thread", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  finishWorker(f);
-  settleThread(f.t3, "execution-1", "completed", "pending");
+  allTurnsEnd(f.world, f.worker);
+  answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "completed");
   assert((await f.f.reconcileRuns()).ok);
-  startWorkerTurn(f, "notification-execution", 2);
-  finishWorker(f);
+  turnBegins(f.world, f.worker, "notification-execution");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -308,10 +314,10 @@ it("a reportless turn resumed by a notification shows a missing report once T3 s
 it("a failed worker run shows an execution-failed Problem that settles when a later run of the thread completes", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  finishWorker(f, "failed");
+  allTurnsEnd(f.world, f.worker, "failed");
   assert((await f.f.reconcileRuns()).ok);
-  startWorkerTurn(f, "retry-execution", 2);
-  finishWorker(f);
+  turnBegins(f.world, f.worker, "retry-execution");
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -328,7 +334,7 @@ it("a failed worker run shows an execution-failed Problem that settles when a la
 it("a failed worker run's Problem settles when the Block reports", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  finishWorker(f, "interrupted");
+  allTurnsEnd(f.world, f.worker, "interrupted");
   assert((await f.f.reconcileRuns()).ok);
 
   // Act
@@ -362,8 +368,8 @@ it("an execution failure settled by a report is not raised again while that run 
 it("a new failed run after a settled execution failure shows a new Problem", async (c) => {
   // Arrange
   const f = await reportedAfterFailure(c);
-  startWorkerTurn(f, "retry-execution", 2);
-  finishWorker(f, "failed");
+  turnBegins(f.world, f.worker, "retry-execution");
+  allTurnsEnd(f.world, f.worker, "failed");
 
   // Act
   await f.f.reconcileRuns();
@@ -379,8 +385,8 @@ it("a new failed run after a settled execution failure shows a new Problem", asy
 it("repeating the current working report after a failed run settles the execution failure", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f, "failed");
+  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker, "failed");
   assert((await f.f.reconcileRuns()).ok);
 
   // Act
@@ -421,8 +427,8 @@ it("missing-report recovery targets the original worker and retains its activati
 it("Request report on a worker idle in working queues an assessment turn on its thread", async (c) => {
   // Arrange
   const f = await directWorker(c);
-  assert((await f.f.runtime.submit(workerWorking(f.blockId))).code === "ACCEPTED");
-  finishWorker(f);
+  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, f.worker);
   assert((await f.f.reconcileRuns()).ok);
 
   // Act
@@ -464,7 +470,7 @@ it("a revisit reuses the direct worker with distinct activation ownership", asyn
 it("a prepared revisit is not sent while its worker thread has started another run", async (c) => {
   // Arrange
   const f = await unsentRevisit(c);
-  startWorkerTurn(f, "reply-execution", 2);
+  turnBegins(f.world, f.worker, "reply-execution");
 
   // Act
   await f.f.reconcileRuns();
@@ -530,7 +536,7 @@ it("reply turns without reports keep the Block working with its message and no P
   // Arrange
   const f = await repliedWorker(c);
   assert((await f.f.reconcileRuns()).ok);
-  finishWorker(f);
+  allTurnsEnd(f.world, f.worker);
 
   // Act
   await f.f.reconcileRuns();

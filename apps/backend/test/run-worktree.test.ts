@@ -5,8 +5,9 @@ import {
   preparedWorktreeReviewFlow,
 } from "./support/prepared-runner.ts";
 import { imageStart, screenshots, stageImages } from "./support/run-images.ts";
-import { answeredReview, finishedParallelWork, settleThread } from "./support/run-worker.ts";
-import { workerFinal } from "./support/scenarios.ts";
+import { answeredReview, finishedParallelWork } from "./support/run-worker.ts";
+import { finishedReport, report } from "./support/scenarios.ts";
+import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a worktree Start launches exactly one worktree-creating worker from the resolved base ref", async (c) => {
   // Arrange
@@ -320,12 +321,10 @@ it("a send that fails while the worker's worktree is missing stays unresolved an
 
 it("a worktree Run settles once its visited Block finishes, with no worker for its unvisited Blocks", async (c) => {
   // Arrange
-  const { f, t3, runId, entryBlockId } = await boundWorktreeReview(c);
-  assert(
-    (await f.runtime.submit(workerFinal(entryBlockId, "Shipped.", "ship"))).code === "ACCEPTED",
-  );
+  const { f, t3, runId, world, entryWorker } = await boundWorktreeReview(c);
+  assert((await report(world, entryWorker, finishedReport("Shipped.", "ship"))) === "ACCEPTED");
   t3.engineStatus = "completed";
-  settleThread(t3, "execution-1", "completed", "settled", "thread-1");
+  answerDelegatedWait(t3, "thread-1", "execution-1", "settled", "completed");
 
   // Act
   await f.reconcileRuns();

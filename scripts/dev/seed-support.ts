@@ -1,37 +1,19 @@
 import {
-  launchBlockId,
-  workerFinal,
-  workerWorking,
+  observe,
   sha256Hex,
   solidPng,
+  startRun,
+  workerHandle,
+  workerObserved,
 } from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
-import { finishNativeTurn } from "./native-simulation.ts";
-import type {
-  PromptSegment,
-  Result,
-  RunBlock,
-  RunDetail,
-} from "../../packages/contracts/src/index.ts";
+import type { PromptSegment, Result, RunDetail } from "../../packages/contracts/src/index.ts";
 import type { ExecutionObservation } from "../../apps/backend/src/adapters/t3.ts";
 
 export function requireSuccess<A>(result: Result<A>): A {
   if (!result.ok) throw Error(`Development seed: ${result.error.message}`);
   return result.value;
-}
-
-export function executionBlock(run: RunDetail, blockId = "worker") {
-  const block = run.blocks.find((item) => item.blockId === blockId);
-  if (!block?.threadId || !block.executionId)
-    throw Error(`Development seed: ${run.title} has no ${blockId} execution.`);
-  return { ...block, threadId: block.threadId, executionId: block.executionId };
-}
-
-/** The Block id Factory stated in the worker's launch message, as its Agent reads it. */
-export function launchedBlockId(t3: PersistentT3, threadId: string) {
-  const launch = [...t3.launches.values()].find((entry) => entry.reference.threadId === threadId);
-  return launchBlockId(launch?.payload.message ?? "");
 }
 
 export interface SeedContext {
@@ -47,11 +29,11 @@ export async function scenarioRepository(
   blockId: string,
   repository: NonNullable<ExecutionObservation["repository"]>,
 ) {
-  const worker = executionBlock(run, blockId);
+  const worker = workerHandle(context, run, blockId);
   const observation = await context.t3.readExecution({ endpoint: "" }, worker.threadId);
   context.t3.executionObservations.set(worker.threadId, { ...observation, repository });
   context.t3.save();
-  return reconcileUntil(context, run.id, (detail) =>
+  return observe(context, run.id, (detail) =>
     detail.repositories.some(
       (item) =>
         item.threadId === worker.threadId &&
@@ -68,21 +50,6 @@ export const demoPullRequest = (number: number, state: "open" | "merged" = "open
   state,
   url: `https://github.com/example/atlas/pull/${number}`,
 });
-
-/** Bounded reconciliation, with an observable condition rather than elapsed time. */
-export async function reconcileUntil(
-  context: SeedContext,
-  runId: string,
-  ready: (run: RunDetail) => boolean,
-): Promise<RunDetail> {
-  for (let pass = 0; pass < 12; pass++) {
-    requireSuccess(await context.factory.reconcileRuns());
-    await context.t3.advance();
-    const run = requireSuccess(await context.factory.getRun(runId));
-    if (ready(run)) return run;
-  }
-  throw Error(`Development seed did not settle Run ${runId}.`);
-}
 
 /** Distinguishable demo screenshots; two share an original filename. */
 export const demoImages = {
@@ -125,7 +92,9 @@ async function scenarioPrompt(
   return { segments, images };
 }
 
-export async function startScenario(
+/** Starts a demo Run under its stable logical key and title; Factory then observes its first
+ * worker. */
+export async function startDemoRun(
   context: SeedContext,
   flowId: string,
   key: string,
@@ -133,68 +102,27 @@ export async function startScenario(
   prompt: string,
   attachments: { images: readonly DemoImage[]; referenced: number } = { images: [], referenced: 0 },
 ) {
-  const run = requireSuccess(
-    await context.factory.startRun({
-      requestId: `development-v1:${key}`,
-      projectId: context.projectId,
-      flowId,
-      ...(await scenarioPrompt(context, `Demo · ${title}\n\n${prompt}`, attachments)),
-      title: `Demo · ${title}`,
-      createdAt: new Date().toISOString(),
-    }),
-  );
-  return reconcileUntil(context, run.id, (detail) =>
-    detail.blocks.some((block) => block.threadId !== null && block.freshness === "fresh"),
-  );
-}
-
-/** Simulated Agent reports enter the public runtime boundary with the Block id. */
-export async function report(
-  context: SeedContext,
-  run: RunDetail,
-  blockId: string,
-  value: { to: "finished" | "working"; exit?: string; message?: string },
-) {
-  const block = executionBlock(run, blockId);
-  const reply = await context.factory.runtime.submit({
-    ...(value.to === "working"
-      ? workerWorking(launchedBlockId(context.t3, block.threadId), value.message)
-      : workerFinal(launchedBlockId(context.t3, block.threadId), value.message, value.exit)),
+  const { run } = await startRun(context, {
+    requestId: `development-v1:${key}`,
+    projectId: context.projectId,
+    flowId,
+    ...(await scenarioPrompt(context, `Demo · ${title}\n\n${prompt}`, attachments)),
+    title: `Demo · ${title}`,
+    createdAt: new Date().toISOString(),
   });
-  if (reply.code !== "ACCEPTED") throw Error(`Development report: ${reply.code}`);
-  return reconcileUntil(context, run.id, (detail) => {
-    if (value.to === "working")
-      return detail.blocks.some(
-        (item) => item.blockId === blockId && item.workingMessage === value.message,
-      );
-    return detail.reports.some((item) => item.blockId === blockId && item.status === value.to);
-  });
-}
-
-export async function observeTerminal(
-  t3: PersistentT3,
-  block: RunBlock,
-  status: "completed" | "failed" | "interrupted",
-) {
-  if (!block.threadId || !block.executionId) throw Error("Development seed execution missing.");
-  finishNativeTurn(t3, block.threadId, block.executionId, status);
-  t3.save();
+  return observe(context, run.id, workerObserved);
 }
 
 export async function nativeAttention(context: SeedContext, run: RunDetail) {
-  const block = executionBlock(run);
-  const observation = await context.t3.readExecution({ endpoint: "" }, block.threadId);
-  context.t3.executionObservations.set(block.threadId, {
+  const worker = workerHandle(context, run, "worker");
+  const observation = await context.t3.readExecution({ endpoint: "" }, worker.threadId);
+  context.t3.executionObservations.set(worker.threadId, {
     ...observation,
     pendingRequestCount: 1,
   });
-  return reconcileUntil(context, run.id, (detail) =>
+  return observe(context, run.id, (detail) =>
     detail.attention.some(
       (matter) => matter.kind === "native-request" && matter.settledAt === null,
     ),
   );
-}
-
-export async function failScenarioExecution(context: SeedContext, run: RunDetail) {
-  await observeTerminal(context.t3, executionBlock(run), "failed");
 }

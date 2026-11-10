@@ -18,8 +18,15 @@ import {
   watchRun,
   withoutGeneration,
 } from "./support/live.ts";
-import { directWorker, finishWorker, startWorkerTurn } from "./support/run-worker.ts";
-import { workerFinal, workerWorking } from "./support/scenarios.ts";
+import { directWorker } from "./support/run-worker.ts";
+import {
+  allTurnsEnd,
+  report,
+  turnBegins,
+  workerFinal,
+  workerWorking,
+  workingReport,
+} from "./support/scenarios.ts";
 
 import { makeLiveChanges } from "../src/live-changes.ts";
 import { makeLiveStreams } from "../src/live-streams.ts";
@@ -59,7 +66,7 @@ it("a later turn preserves both executions of the same worker binding", async (c
   const f = await directWorker(c);
   const run = subscribe(c, watchRun(f.f.live, f.runId));
   await run.until((messages) => messages.length > 0);
-  startWorkerTurn(f, "reply-execution", 2);
+  turnBegins(f.world, f.worker, "reply-execution");
 
   // Act
   const reconciled = await f.f.reconcileRuns();
@@ -125,7 +132,7 @@ it("the first Run snapshot includes a report committed during its read", async (
   const racedRead = raceFirstRead(
     Effect.promise(() => f.f.getRun(f.runId)),
     async () => {
-      expect((await f.f.runtime.submit(workerWorking(f.blockId))).code).toBe("ACCEPTED");
+      expect(await report(f.world, f.worker, workingReport())).toBe("ACCEPTED");
       changes.runChanged(f.runId);
     },
   );
@@ -338,7 +345,7 @@ it.effect("live subscribers neither multiply Runner observations nor own handoff
     yield* Effect.promise(() => second.stop());
     const report = yield* factory.runtime.submit(workerFinal(f.blockId));
     assert(report.code === "ACCEPTED");
-    finishWorker(f);
+    allTurnsEnd(f.world, f.worker);
     const beforeHandoff = yield* factory.getRun(f.runId);
     assert(beforeHandoff.ok);
     expect(beforeHandoff.value.reports[0]?.completionEligibleAt).toBeNull();

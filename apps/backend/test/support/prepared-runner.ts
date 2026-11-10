@@ -1,11 +1,11 @@
 import {
   blockExit,
-  launchBlockId,
   controlledExecution,
   flowInput,
   agentBlock,
   connection,
   humanStep,
+  workerHandle,
 } from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -272,7 +272,13 @@ export async function boundWorktreeReview(
   assert(
     run.ok && run.value.workspace.mode === "worktree" && run.value.workspace.state === "bound",
   );
-  const launch = [...setup.t3.launches.values()][0]!;
-  const entryBlockId = launchBlockId(launch.payload.message);
-  return { ...setup, runId: started.value.id, entryBlockId };
+  const world = { factory: setup.f, t3: setup.t3 };
+  const entryWorker = workerHandle(world, run.value, "worker");
+  return {
+    ...setup,
+    world,
+    runId: started.value.id,
+    entryWorker,
+    entryBlockId: entryWorker.blockId,
+  };
 }

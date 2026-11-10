@@ -4,7 +4,12 @@ import {
   flowInput,
   controlledExecution,
   agentBlock,
+  observe,
+  reportAccepted,
   sha256Hex,
+  turnBegins,
+  turnEnds,
+  workerHandle,
 } from "../../apps/backend/test/support/scenarios.ts";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage } from "node:http";
@@ -26,15 +31,7 @@ import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
 import { seedDevelopment } from "../../scripts/dev/seed.ts";
-import { beginNativeTurn } from "../../scripts/dev/native-simulation.ts";
-import {
-  executionBlock,
-  observeTerminal,
-  reconcileUntil,
-  report,
-  requireSuccess,
-  startScenario,
-} from "../../scripts/dev/seed-support.ts";
+import { requireSuccess, startDemoRun } from "../../scripts/dev/seed-support.ts";
 import { proxyFixture, proxyFixtureUpgrade } from "./proxy.ts";
 
 const home = await mkdtemp(join(tmpdir(), "factory-e2e-"));
@@ -117,7 +114,7 @@ async function prepareWorkerRuns() {
     parallelStart: flow("Demo · Parallel review from one prompt"),
     worktree: flow("Demo · Build and review in a worktree"),
   });
-  releasing = await startScenario(
+  releasing = await startDemoRun(
     workerContext,
     review.id,
     "ui-report-release",
@@ -324,7 +321,7 @@ const liveRuns = new Map<string, string>();
 async function liveRun(key: string, flowName = "Demo · Focused change") {
   const known = liveRuns.get(key);
   if (known) return requireSuccess(await factory.getRun(known));
-  const started = await startScenario(
+  const started = await startDemoRun(
     context,
     flows.find((flow) => flow.name === flowName)!.id,
     `ui-live-${key}`,
@@ -359,13 +356,13 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     );
     assert(summary);
     const current = requireSuccess(await factory.getRun(summary.id));
-    const accepted = await report(context, current, "worker", {
+    const accepted = await reportAccepted(context, workerHandle(context, current, "worker"), {
       to: "finished",
       exit: "review",
       message: "Ready for parallel review.",
     });
-    await observeTerminal(t3, executionBlock(accepted), "completed");
-    await reconcileUntil(context, current.id, (run) => run.activations.length === 3);
+    turnEnds(context, workerHandle(context, accepted, "worker"));
+    await observe(context, current.id, (run) => run.activations.length === 3);
     return { ok: true };
   },
   async "/__fixture/reporting/remove-registration"() {
@@ -380,18 +377,19 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   },
   async "/__fixture/worker/report"() {
     const current = requireSuccess(await factory.getRun(releasing.id));
-    await report(context, current, "worker", {
+    const worker = workerHandle(context, current, "worker");
+    await reportAccepted(context, worker, {
       to: "finished",
       exit: "review",
       message: "A first draft of the project picker change.",
     });
-    const accepted = await report(context, current, "worker", {
+    const accepted = await reportAccepted(context, worker, {
       to: "finished",
       exit: "review",
       message: "The project picker change is ready for review.",
     });
-    await observeTerminal(t3, executionBlock(accepted), "completed");
-    await reconcileUntil(context, releasing.id, (run) =>
+    turnEnds(context, workerHandle(context, accepted, "worker"));
+    await observe(context, releasing.id, (run) =>
       run.blocks.some((b) => b.blockId === "reviewer" && b.threadId !== null),
     );
     return { ok: true };
@@ -402,7 +400,8 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
       (run) => run.title === "UI worker · Working · Improve the project picker",
     );
     assert(summary);
-    await report(context, requireSuccess(await factory.getRun(summary.id)), "worker", {
+    const run = requireSuccess(await factory.getRun(summary.id));
+    await reportAccepted(context, workerHandle(context, run, "worker"), {
       to: "working",
       message: "Two subagents are still checking the empty state.",
     });
@@ -410,17 +409,16 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   },
   async "/__fixture/worker/answer"() {
     const current = requireSuccess(await factory.getRun(conversing.id));
-    const block = executionBlock(current);
-    beginNativeTurn(t3, block.threadId, "ui-worker-reply");
+    turnBegins(context, workerHandle(context, current, "worker"), "ui-worker-reply");
     requireSuccess(await factory.reconcileRuns());
     const replying = requireSuccess(await factory.getRun(conversing.id));
-    const accepted = await report(context, replying, "worker", {
+    const accepted = await reportAccepted(context, workerHandle(context, replying, "worker"), {
       to: "finished",
       exit: "done",
       message: "Used the requested concise wording and Clear filters label.",
     });
-    await observeTerminal(t3, executionBlock(accepted), "completed");
-    const settled = await reconcileUntil(context, current.id, (run) => run.lifecycle === "settled");
+    turnEnds(context, workerHandle(context, accepted, "worker"));
+    const settled = await observe(context, current.id, (run) => run.lifecycle === "settled");
     assert.equal(settled.activations.length, 1);
     return { ok: true };
   },
@@ -431,13 +429,13 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   // The implementing Agent hands off to the reviewer, which becomes the active Block.
   async "/__fixture/live/handoff"(query) {
     const run = await liveRun(query.get("key")!);
-    const accepted = await report(context, run, "worker", {
+    const accepted = await reportAccepted(context, workerHandle(context, run, "worker"), {
       to: "finished",
       exit: "review",
       message: "Ready for review.",
     });
-    await observeTerminal(t3, executionBlock(accepted), "completed");
-    await reconcileUntil(context, run.id, (detail) =>
+    turnEnds(context, workerHandle(context, accepted, "worker"));
+    await observe(context, run.id, (detail) =>
       detail.blocks.some((block) => block.blockId === "reviewer" && block.state === "working"),
     );
     return { ok: true };
@@ -446,17 +444,18 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   async "/__fixture/live/report"(query) {
     const run = await liveRun(query.get("key")!);
     const message = query.get("message");
+    const worker = workerHandle(context, run, "worker");
     if (message) {
-      await report(context, run, "worker", { to: "working", message });
+      await reportAccepted(context, worker, { to: "working", message });
       return { ok: true };
     }
-    const accepted = await report(context, run, "worker", {
+    const accepted = await reportAccepted(context, worker, {
       to: "finished",
       exit: "done",
       message: "Picker spacing tidied.",
     });
-    await observeTerminal(t3, executionBlock(accepted), "completed");
-    await reconcileUntil(context, run.id, (detail) => detail.lifecycle === "settled");
+    turnEnds(context, workerHandle(context, accepted, "worker"));
+    await observe(context, run.id, (detail) => detail.lifecycle === "settled");
     return { ok: true };
   },
   "/__fixture/live/requests/reset": () => {
