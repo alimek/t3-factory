@@ -180,8 +180,9 @@ export function openRunnerSettle(
     });
   }
 
-  /** One T3 thread Stop per unfinished worker of the attempt, each recorded before it is sent.
-   * Stop is thread-scoped, covers delegated work and has no run fence. */
+  /** One T3 thread Stop per unfinished worker of the attempt, each recorded before it is sent and
+   * only under the Run's live authorization context, rechecked for every Stop. Stop is
+   * thread-scoped, covers delegated work and has no run fence. */
   function requestStops(
     run: RunRow,
     attempt: number,
@@ -211,6 +212,16 @@ export function openRunnerSettle(
             worker,
             "unsupported",
             `T3 cannot stop worker threads: ${support.explanation}`,
+          );
+          continue;
+        }
+        if ((yield* liveContextId()) !== run.context_id) {
+          yield* store.recordStopOutcome(
+            run,
+            attempt,
+            worker,
+            "failed",
+            "The T3 connection is unavailable or its authorization changed, so Factory did not request Stop.",
           );
           continue;
         }
@@ -272,10 +283,12 @@ export function openRunnerSettle(
 
   /**
    * One pass of a confirmed manual settlement, in the Run's drive lane. Its gate is already
-   * closed. Every bound worker is read fresh; only the first pass of an attempt, by the backend
-   * that accepted it, stops the unfinished ones and reads them again. Once a pass reads every
-   * worker finished the Run settles; otherwise each worker's progress is recorded, and a worker
-   * that cannot be stopped or confirmed stays unresolved until the user retries.
+   * closed. Every bound worker is read fresh; the first pass of an attempt, by the backend that
+   * accepted it, stops the unfinished ones and reads them again. A worker bound later by a launch
+   * search joins the attempt and is stopped by a later pass of that backend. Once a pass reads
+   * every worker finished and no launch outcome is unresolved, the Run settles; otherwise each
+   * worker's progress is recorded, and a worker that cannot be stopped or confirmed stays
+   * unresolved until the user retries.
    */
   function advanceSettlement(id: string) {
     return lifecycle.serial(id, () =>
@@ -291,15 +304,26 @@ export function openRunnerSettle(
             const read = reads.get(worker.thread_id)!;
             return !read.finished && read.readable;
           });
-          if ((yield* store.claimStopPass(run, operation.attempt)) && stoppable.length) {
-            yield* requestStops(run, operation.attempt, stoppable, reads);
-            for (const worker of stoppable)
+          const stops = (yield* store.claimStopPass(run, operation.attempt))
+            ? stoppable
+            : operation.owned
+              ? stoppable.filter(
+                  (worker) =>
+                    !operation.workers.some((record) => record.thread_id === worker.thread_id),
+                )
+              : [];
+          if (stops.length) {
+            yield* requestStops(run, operation.attempt, stops, reads);
+            for (const worker of stops)
               reads.set(worker.thread_id, yield* readForSettlement(run, worker.thread_id));
           }
-          if (workers.every((worker) => reads.get(worker.thread_id)!.finished)) {
-            yield* complete(run, workers, reads);
+          const launchesResolved = !(yield* store.unresolvedLaunches(id)).length;
+          if (
+            launchesResolved &&
+            workers.every((worker) => reads.get(worker.thread_id)!.finished) &&
+            (yield* complete(run, workers, reads))
+          )
             return;
-          }
           const records = (yield* store.readSettlementAttempt(id))?.workers ?? [];
           const time = yield* Clock.currentTimeMillis;
           yield* store.recordSettlementProgress(
@@ -342,7 +366,8 @@ export function openRunnerSettle(
         if (run.archived_at || run.settled_at || !run.gate_open) return yield* currentOutcome(id);
         const workers = yield* store.boundWorkers(id);
         const reads = yield* readWorkers(run, workers);
-        if (workers.every((worker) => reads.get(worker.thread_id)!.finished)) {
+        const launches = yield* store.unresolvedLaunches(id);
+        if (!launches.length && workers.every((worker) => reads.get(worker.thread_id)!.finished)) {
           // A report or answer accepted during the reads makes `complete` refuse; the user retries.
           yield* complete(run, workers, reads);
           return yield* currentOutcome(id);
@@ -354,18 +379,21 @@ export function openRunnerSettle(
           value: {
             outcome: "confirmation-required",
             run: detail.value,
-            workers: workers.map((worker): RunSettlementWorker => {
-              const read = reads.get(worker.thread_id)!;
-              return {
-                blockId: worker.block_id,
-                blockName: worker.name,
-                threadId: worker.thread_id,
-                link: threadHref(worker.link),
-                state: read.finished ? "finished" : "executing",
-                stopRequestedAt: null,
-                problem: read.finished ? null : read.problem,
-              };
-            }),
+            workers: [
+              ...workers.map((worker): RunSettlementWorker => {
+                const read = reads.get(worker.thread_id)!;
+                return {
+                  blockId: worker.block_id,
+                  blockName: worker.name,
+                  threadId: worker.thread_id,
+                  link: threadHref(worker.link),
+                  state: read.finished ? "finished" : "executing",
+                  stopRequestedAt: null,
+                  problem: read.finished ? null : read.problem,
+                };
+              }),
+              ...launches.map((launch) => ({ ...launch, state: "executing" as const })),
+            ],
           },
         };
       }),

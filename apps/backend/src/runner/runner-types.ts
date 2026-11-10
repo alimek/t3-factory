@@ -104,6 +104,7 @@ export type ReportRunRow = Pick<
   | "workspace_root"
   | "gate_open"
   | "archived_at"
+  | "settled_at"
   | "context_id"
   | "definitions"
 > & { token: string };

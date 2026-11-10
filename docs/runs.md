@@ -329,14 +329,16 @@ and settles only once fresh reads confirm every worker finished; a Stop acknowle
 Active and its settlement shows **stopping**, with each worker's progress. A worker becomes **unresolved** when T3 does not
 support or accept Stop, cannot show the thread in the Run's project, workspace and authorization, or still shows it unfinished
 30 seconds after acknowledging Stop; the settlement then names the affected workers and what blocks them (a run in progress, a
-native request, delegated work or a queued run). **Settle** again retries with a new Stop request; repeating it while stopping
-changes nothing. The hold stays, Factory keeps reading the workers and settles as soon as all read finished. An unresolved
+native request, delegated work or a queued run). A worker whose launch T3 may have accepted without Factory receiving the reply
+also keeps the settlement unresolved: Factory keeps searching for it and stops the worker it finds before settling. Factory sends
+Stop only while the T3 authorization the Run started under is still live. **Settle** again retries with a new Stop request;
+repeating it while stopping changes nothing. The hold stays, Factory keeps reading the workers and settles as soon as all read finished. An unresolved
 settlement is not a lifecycle state: there is no Resume, and **Archive** remains available. Work T3 holds queued in a worker
 thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing.
 
 Settling cancels unsent launches, sends and handoffs (held or released), unsent Request report turns, pending Human occurrences
 without inventing answers and messages waiting at a Continuation. Pending attention settles as `manual-settlement`, activated
-Blocks without a Final result show stopped, and in-flight or uncertain deliveries keep their recorded state. The Run moves to
+Blocks without a Final result show stopped, and uncertain sends keep their recorded state. The Run moves to
 **Settled**, Snooze and Woke clear, and Factory best-effort settles the worker threads in T3. The timeline records the
 confirmation and each retry, each Stop request, each worker found stopped and the settlement. Stopping raises no
 execution-failure Problem. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped

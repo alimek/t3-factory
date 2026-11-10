@@ -1,5 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
-import { nextSettlement, reopenDuringSettlement } from "./support/run-worker.ts";
+import {
+  changeAuthorizationBeforeStop,
+  nextSettlement,
+  reopenDuringSettlement,
+  settleDuringNextLaunch,
+} from "./support/run-worker.ts";
 import {
   allTurnsEnd,
   archived,
@@ -26,7 +31,11 @@ import {
   workingReport,
 } from "./support/scenarios.ts";
 import { prepared } from "./support/prepared-runner.ts";
-import { answerDelegatedWait, stopsEndThreads } from "./support/controlled-thread.ts";
+import {
+  answerDelegatedWait,
+  recordLaunchedThread,
+  stopsEndThreads,
+} from "./support/controlled-thread.ts";
 
 it("a finished terminal Block settles its worker thread in T3 without waiting for Run settlement", async (c) => {
   // Arrange
@@ -719,4 +728,102 @@ it("a newer completed turn is settled once by the Run fallback rather than an ol
 
   // Assert
   expect(f.t3.settlements).toStrictEqual([{ threadId: "thread-1" }]);
+});
+
+it("a launch whose reply was lost during Settle holds the Run unresolved while Factory searches for its worker", async (c) => {
+  // Arrange
+  const { f, t3, input, world } = await prepared(c);
+  const accepted = await f.startRun(input);
+  assert(accepted.ok);
+  t3.loseLaunchReply = true;
+  t3.discoverAvailable = false;
+  settleDuringNextLaunch(world, accepted.value.id);
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(accepted.value.id);
+  assert(run.ok);
+  expect(run.value).toMatchObject({
+    lifecycle: "active",
+    gateOpen: false,
+    settlement: {
+      state: "unresolved",
+      workers: [
+        {
+          blockId: "worker",
+          threadId: null,
+          state: "unresolved",
+          problem:
+            "Factory has not confirmed whether T3 launched this worker. It keeps searching and stops the worker it finds.",
+        },
+      ],
+    },
+  });
+  expect(t3.threadStops).toStrictEqual([]);
+});
+
+it("a worker found after its launch reply was lost during Settle is stopped before the Run settles", async (c) => {
+  // Arrange
+  const { f, t3, input, world } = await prepared(c);
+  const accepted = await f.startRun(input);
+  assert(accepted.ok);
+  t3.loseLaunchReply = true;
+  settleDuringNextLaunch(world, accepted.value.id);
+  await f.reconcileRuns();
+  t3.loseLaunchReply = false;
+  await recordLaunchedThread(t3, "thread-1");
+  stopsEndThreads(t3);
+
+  // Act
+  await f.reconcileRuns();
+
+  // Assert
+  const run = await f.getRun(accepted.value.id);
+  assert(run.ok);
+  expect(run.value).toMatchObject({ lifecycle: "settled", settlement: null });
+  expect(t3.threadStops.map((stop) => stop.threadId)).toStrictEqual(["thread-1"]);
+  expect(t3.launches.size).toBe(1);
+});
+
+it("a Stop is not requested once T3 authorization changes after the reads, and the worker stays unresolved", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  changeAuthorizationBeforeStop(f.t3);
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({
+    lifecycle: "active",
+    settlement: { state: "unresolved", workers: [{ blockId: "worker", state: "unresolved" }] },
+  });
+  expect(f.t3.threadStops).toStrictEqual([]);
+});
+
+it("a report while a confirmed settlement is stopping its worker records nothing and does not claim the work stopped", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+  await f.f.reconcileRuns();
+
+  // Act
+  const result = await f.f.runtime.submit(workerFinal(f.blockId));
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "RUN_SETTLED",
+    state: "settling",
+    next: "The user is settling this Run: Factory accepts no new work for it and is stopping its workers, so Factory recorded nothing. Stop work on this Block and end the turn.",
+  });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({ lifecycle: "active", gateOpen: false, reports: [] });
 });

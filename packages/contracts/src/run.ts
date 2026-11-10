@@ -173,14 +173,15 @@ export interface RunSettlementWorker {
   /** The worker's Flow block. */
   readonly blockId: string;
   readonly blockName: string;
-  readonly threadId: string;
+  /** Null for a launch Factory has no acknowledgement for: it searches T3 for its worker. */
+  readonly threadId: string | null;
   readonly link: string | null;
   /**
    * `executing` (only in a `confirmation-required` answer): a fresh read did not confirm the
    * worker finished. `stopping`: Factory requested T3 Stop in this attempt, or is about to, and
    * waits for a fresh read to confirm the thread finished. `finished`: the latest fresh read
-   * confirmed it. `unresolved`: Stop is unsupported, failed or not confirmed, or T3 could not
-   * show the thread; Settle with `stopWorkers` again to retry.
+   * confirmed it. `unresolved`: Stop is unsupported, failed or not confirmed, T3 could not
+   * show the thread, or the launch is still searched for; Settle with `stopWorkers` again to retry.
    */
   readonly state: "executing" | "stopping" | "finished" | "unresolved";
   /** When Factory requested T3 Stop for this worker in the current attempt. */

@@ -62,6 +62,28 @@ export type SettledWorker = {
 const boundWorkerRows = (sql: SqlClient.SqlClient, runId: string) =>
   sql<BoundWorker>`SELECT b.block_id,b.name,b.thread_id,t.link FROM run_blocks b LEFT JOIN run_thread_bindings t ON t.run_id=b.run_id AND t.thread_id=b.thread_id WHERE b.run_id=${runId} AND b.thread_id IS NOT NULL ORDER BY b.rowid`;
 
+/** A launch T3 may have accepted though Factory has no acknowledgement for it: it is still
+ * searched for, and its worker, if any, is not bound yet. */
+type UnresolvedLaunch = { readonly block_id: string; readonly name: string };
+
+const unresolvedLaunchRows = (sql: SqlClient.SqlClient, runId: string) =>
+  sql<UnresolvedLaunch>`SELECT o.block_id,b.name FROM operation_intents o JOIN run_blocks b ON b.run_id=o.run_id AND b.block_id=o.block_id WHERE o.run_id=${runId} AND o.kind='launch' AND o.state IN ('reserved','uncertain') ORDER BY o.rowid`;
+
+/** An unresolved launch as a settlement worker: it blocks settlement until the search binds its
+ * worker, which then joins Stop and the completion reads, or finds that none started. */
+function unresolvedLaunchWorker(launch: UnresolvedLaunch): RunSettlementWorker {
+  return {
+    blockId: launch.block_id,
+    blockName: launch.name,
+    threadId: null,
+    link: null,
+    state: "unresolved",
+    stopRequestedAt: null,
+    problem:
+      "Factory has not confirmed whether T3 launched this worker. It keeps searching and stops the worker it finds.",
+  };
+}
+
 /** The confirmed manual settlement of a Run that has not settled yet, as Run detail shows it. */
 export function readRunSettlement(
   sql: SqlClient.SqlClient,
@@ -84,20 +106,27 @@ export function readRunSettlement(
       stop_requested_at: string | null;
       problem: string | null;
     }>`SELECT w.block_id,b.name,w.thread_id,t.link,w.state,w.stop_requested_at,w.problem FROM run_settlement_workers w JOIN run_blocks b ON b.run_id=w.run_id AND b.block_id=w.block_id LEFT JOIN run_thread_bindings t ON t.run_id=w.run_id AND t.thread_id=w.thread_id WHERE w.run_id=${run.id} AND w.attempt=${row.attempt} ORDER BY b.rowid`;
+    const launches = yield* unresolvedLaunchRows(sql, run.id);
     return {
-      state: workers.some((worker) => worker.state === "unresolved") ? "unresolved" : "stopping",
+      state:
+        launches.length || workers.some((worker) => worker.state === "unresolved")
+          ? "unresolved"
+          : "stopping",
       requestedAt: row.requested_at,
       attempt: row.attempt,
       attemptedAt: row.attempted_at,
-      workers: workers.map((worker): RunSettlementWorker => ({
-        blockId: worker.block_id,
-        blockName: worker.name,
-        threadId: worker.thread_id,
-        link: threadHref(worker.link),
-        state: worker.state,
-        stopRequestedAt: worker.stop_requested_at,
-        problem: worker.problem,
-      })),
+      workers: [
+        ...workers.map((worker): RunSettlementWorker => ({
+          blockId: worker.block_id,
+          blockName: worker.name,
+          threadId: worker.thread_id,
+          link: threadHref(worker.link),
+          state: worker.state,
+          stopRequestedAt: worker.stop_requested_at,
+          problem: worker.problem,
+        })),
+        ...launches.map(unresolvedLaunchWorker),
+      ],
     };
   });
 }
@@ -135,7 +164,14 @@ export function openRunManualSettlement(database: RunnerDatabase) {
   const boundWorkers = (runId: string) =>
     database.transaction((sql) => boundWorkerRows(sql, runId));
 
-  /** The current attempt of the Run's confirmed settlement, with its workers' records. */
+  /** The Run's launches whose outcome is unresolved, as unresolved settlement workers. */
+  const unresolvedLaunches = (runId: string) =>
+    database.transaction((sql) =>
+      Effect.map(unresolvedLaunchRows(sql, runId), (rows) => rows.map(unresolvedLaunchWorker)),
+    );
+
+  /** The current attempt of the Run's confirmed settlement, whether this backend accepted it, and
+   * its workers' records. */
   const readSettlementAttempt = (runId: string) =>
     database.transaction((sql) =>
       Effect.gen(function* () {
@@ -144,7 +180,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
         if (!row) return null;
         const workers =
           yield* sql<SettlementWorkerRecord>`SELECT thread_id,state,stop_key,stop_requested_at,stop_outcome,stop_problem FROM run_settlement_workers WHERE run_id=${runId} AND attempt=${row.attempt}`;
-        return { attempt: row.attempt, workers };
+        return { attempt: row.attempt, owned: row.attempt_owner === ownerToken, workers };
       }),
     );
 
@@ -201,8 +237,9 @@ export function openRunManualSettlement(database: RunnerDatabase) {
     );
 
   /** Records Stop for `worker` before its one request in `attempt`. Guards: owner, not Archived,
-   * the attempt is current and no Stop is recorded for the worker in it. Appends "worker stop
-   * requested"; does not advance the generation. Answers whether the caller may send it. */
+   * the Run's live authorization context, the attempt is current and this backend accepted it, and
+   * no Stop is recorded for the worker in it. Appends "worker stop requested"; does not advance the
+   * generation. Answers whether the caller may send it. */
   const claimWorkerStop = (
     run: RunRow,
     attempt: number,
@@ -211,10 +248,12 @@ export function openRunManualSettlement(database: RunnerDatabase) {
   ) =>
     settlementMutation(run, (sql) =>
       Effect.gen(function* () {
+        if (!(yield* guardsHold(sql, ownerToken, run.id, { liveContext: run.context_id })))
+          return false;
         const time = yield* now;
         yield* recordWorker(sql, run.id, attempt, worker);
         const rows =
-          yield* sql`UPDATE run_settlement_workers SET stop_key=${request.key},stop_requested_at=${time} WHERE run_id=${run.id} AND attempt=${attempt} AND thread_id=${worker.thread_id} AND stop_key IS NULL AND stop_outcome IS NULL AND EXISTS(SELECT 1 FROM run_settlements WHERE run_id=${run.id} AND attempt=${attempt}) RETURNING thread_id`;
+          yield* sql`UPDATE run_settlement_workers SET stop_key=${request.key},stop_requested_at=${time} WHERE run_id=${run.id} AND attempt=${attempt} AND thread_id=${worker.thread_id} AND stop_key IS NULL AND stop_outcome IS NULL AND EXISTS(SELECT 1 FROM run_settlements WHERE run_id=${run.id} AND attempt=${attempt} AND attempt_owner=${ownerToken}) RETURNING thread_id`;
         if (!rows.length) return false;
         yield* appendTimelineEvent(sql, {
           kind: "worker-stop-requested",
@@ -271,11 +310,11 @@ export function openRunManualSettlement(database: RunnerDatabase) {
     );
 
   /** Settles `run` manually once the caller's fresh reads, made at `run`'s generation, confirmed
-   * every bound worker finished. Guards: owner, not Archived, not Settled, the generation and,
-   * when the Run has workers, its live authorization context. Closes the gate, cancels owed
-   * automatic work with the manual-settlement reason, records "worker stopped" for each worker
-   * whose Stop T3 acknowledged, settles the Run (clearing Snooze and Woke) and advances the
-   * generation. Answers whether the Run settled. */
+   * every bound worker finished. Guards: owner, not Archived, not Settled, the generation, no
+   * launch whose outcome is unresolved and, when the Run has workers, its live authorization
+   * context. Closes the gate, cancels owed automatic work with the manual-settlement reason,
+   * records "worker stopped" for each worker whose Stop T3 acknowledged, settles the Run
+   * (clearing Snooze and Woke) and advances the generation. Answers whether the Run settled. */
   function completeSettlement(run: RunRow, workers: readonly SettledWorker[]) {
     const id = run.id;
     return database.mutate(id, (sql) =>
@@ -291,6 +330,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
           settled_at: string | null;
         }>`SELECT settled_at FROM runs WHERE id=${id}`;
         if (current?.settled_at) return false;
+        if ((yield* unresolvedLaunchRows(sql, id)).length) return false;
         const time = yield* now;
         yield* sql`UPDATE runs SET gate_open=0 WHERE id=${id}`;
         // A working Block whose current report is its Final result finished: the reads confirmed
@@ -325,6 +365,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
 
   return {
     boundWorkers,
+    unresolvedLaunches,
     readSettlementAttempt,
     acceptSettlement,
     claimStopPass,

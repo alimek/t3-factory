@@ -16,7 +16,7 @@ export function SettlementWorkers({ workers }: { workers: readonly RunSettlement
   return (
     <ul className="max-h-60 space-y-2 overflow-auto text-sm">
       {workers.map((worker) => (
-        <li key={worker.threadId} className="break-words">
+        <li key={worker.threadId ?? worker.blockId} className="break-words">
           {worker.link ? (
             <a className="text-link underline" href={worker.link}>
               {worker.blockName}

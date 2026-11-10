@@ -198,9 +198,10 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
   and the request can be stopped too. Factory treats Stop as supported only when the tool's schema
   has string `threadId` and `clientRequestId` and boolean `stop`. Archive sends one request per
   worker thread (key from the Run and thread) and records no outcome. Manual settlement sends at
-  most one per worker thread and attempt (key from the Run, attempt and thread), records it before
-  sending and settles only after fresh reads confirm the thread finished; unsupported or refused
-  Stop leaves it unresolved. Factory reads no queues and cancels no queued run: a queued run keeps
+  most one per worker thread and attempt (key from the Run, attempt and thread), only under the
+  Run's live authorization context rechecked before each request, records it before sending and
+  settles only after fresh reads confirm the thread finished; unsupported or refused Stop leaves
+  it unresolved. Factory reads no queues and cancels no queued run: a queued run keeps
   manual settlement unresolved, and one that starts after Archive's interrupt is not stopped.
   Acknowledgements never prove termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without

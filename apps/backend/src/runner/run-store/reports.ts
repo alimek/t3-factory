@@ -15,6 +15,7 @@ import {
   acceptedTransition,
   RUN_ARCHIVED,
   RUN_SETTLED,
+  RUN_SETTLING,
   type RuntimeReply,
   type RuntimeReport,
 } from "../../runtime-types.ts";
@@ -58,7 +59,7 @@ function reportTarget(sql: SqlClient.SqlClient, ownerToken: string, publicId: st
     if (!block) return rejected("UNKNOWN_BLOCK");
     const [saved] = yield* sql<
       Omit<ReportRunRow, "definitions"> & { flow_revision_id: string }
-    >`SELECT r.id,r.gate_open,r.archived_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${block.run_id}`;
+    >`SELECT r.id,r.gate_open,r.archived_at,r.settled_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${block.run_id}`;
     if (!saved || saved.token !== ownerToken) return rejected("RUNNER_UNAVAILABLE");
     const [activation] = yield* sql<{
       id: string;
@@ -134,7 +135,7 @@ function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeR
   return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
     const { runRow, block } = target;
     if (runRow.archived_at) return RUN_ARCHIVED;
-    if (!runRow.gate_open) return RUN_SETTLED;
+    if (!runRow.gate_open) return runRow.settled_at ? RUN_SETTLED : RUN_SETTLING;
     const protocol = nonFinalRejection(report);
     if (protocol) return protocol;
     const content = reportFingerprint(report);

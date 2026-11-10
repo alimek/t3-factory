@@ -1,8 +1,9 @@
 -- Manual Settle stops executing workers once the user confirms it. Accepting a confirmed
 -- settlement closes the Run's handoff gate and records it here; the Run settles once fresh T3
 -- reads confirm every bound worker finished. The confirmation and every retry are attempts. Only
--- the backend owner that accepted an attempt requests Stop, once per worker in that attempt's
--- first pass, recording the request before sending it. Runs settled earlier keep their open
+-- the backend owner that accepted an attempt requests Stop, at most once per worker in it: in
+-- that attempt's first pass, or when a worker joins the attempt later, recording the request
+-- before sending it. Runs settled earlier keep their open
 -- gate, owed work and reactivation by reports; this migration stops and cancels nothing.
 CREATE TABLE run_settlements (
   run_id TEXT PRIMARY KEY REFERENCES runs(id),

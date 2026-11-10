@@ -241,8 +241,10 @@ worker reports.
   Block; nothing is recorded and no diagnostic attention is created.
 - Every report for a Run whose [manual settlement](#manual-settlement) closed its gate,
   while stopping or once Settled, is answered with `RUN_SETTLED` before any validation: a
-  successful tool result saying the user settled the Run and the worker should stop work on the
-  Block. Nothing is recorded, so a delayed report from stopped work never revives the Run.
+  successful tool result telling the worker to stop work on the Block. Its state is `settling`
+  while the settlement is in progress, saying Factory accepts no new work and is stopping the
+  workers, and `settled` once the Run is Settled. Nothing is recorded, so a delayed report from
+  stopped work never revives the Run.
 - Any accepted report on an automatically [Settled](#settled-runs) Run, including a repeat of
   the current result, returns the Run to Active in the same transaction and records
   `run-activated` naming the Block.
@@ -437,7 +439,9 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   stopping, records `settlement-requested` and advances the generation, before any Stop. The
   closed gate is the cutoff: no launch, send, release, Continuation forwarding, Human answer or
   Request report crosses it, and observation, recovery settlement and automatic settlement stop.
-  An uncertain launch is still searched for; a worker it binds joins the settlement unstopped.
+  A reserved or uncertain launch is still searched for and blocks settlement: the settlement
+  shows it unresolved, without a thread, until the search binds its worker, which then joins
+  the attempt.
   Repeating the request while stopping changes nothing; with an unresolved worker it starts the
   next attempt under the current owner.
 - **Stopping.** A pass runs right after acceptance and in every reconciliation, in the drive lane.
@@ -445,19 +449,22 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   that accepted it, sends Stop: for each worker read unfinished in scope it records the request
   (`worker-stop-requested`, key derived from the Run, attempt and thread) before one
   `t3_thread_interrupt` with `stop: true`, records whether T3 acknowledged it, then reads the
-  worker again. Unsupported Stop, a refused request, an unreadable or out-of-scope thread, or a
-  worker still unfinished 30 seconds after its acknowledged Stop is unresolved, with the blocker
-  it read; later passes only observe. A restarted backend never sends Stop for an earlier
-  owner's attempt: its workers settle if they read finished, otherwise stay unresolved until the
-  user retries.
-- **Settling.** When one pass reads every bound worker finished, a transaction guarded by owner,
-  generation and live authorization context closes the gate, marks Blocks with a current Final
+  worker again. Each Stop is sent only after a recheck finds the Run's authorization context
+  live, and recording it requires that context in the same transaction; a mismatch sends nothing
+  and leaves the worker unresolved. Unsupported Stop, a refused request, an unreadable or
+  out-of-scope thread, or a worker still unfinished 30 seconds after its acknowledged Stop is
+  unresolved, with the blocker it read. Later passes stop only a worker that joined the attempt
+  after its earlier passes, such as one a launch search bound, and otherwise observe. A
+  restarted backend never sends Stop for an earlier owner's attempt: its workers settle if they
+  read finished, otherwise stay unresolved until the user retries.
+- **Settling.** When one pass reads every bound worker finished and no launch outcome is
+  unresolved, a transaction guarded by owner, generation, live authorization context and the
+  absence of a reserved or uncertain launch closes the gate, marks Blocks with a current Final
   result finished, cancels pending launches, sends and handoffs (`cancelled-on-Settle`), pending
   Human occurrences and waiting Continuation arrivals, settles pending attention as
   `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
   worker whose Stop was acknowledged and `run-settled` (`manual`), and clears Snooze and Woke.
-  Reserved or uncertain deliveries keep their state. Native thread settlement follows in the
-  background.
+  Uncertain sends keep their state. Native thread settlement follows in the background.
 
 A manually settled Run is never reconciled again: its closed gate ends its work, also after
 restart, and reports for it are `RUN_SETTLED`. T3 Stop is thread-scoped with no exact-run fence,

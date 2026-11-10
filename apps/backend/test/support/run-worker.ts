@@ -74,3 +74,22 @@ export function reopenDuringSettlement(world: ScenarioWorld, worker: WorkerHandl
     return inspect(target);
   };
 }
+
+/** The user confirms Settle while T3 receives the next worker launch, before Factory has its reply. */
+export function settleDuringNextLaunch({ factory, t3 }: ScenarioWorld, runId: string) {
+  t3.beforeLaunch = async () => {
+    delete t3.beforeLaunch;
+    assert((await factory.settleRun(runId, { stopWorkers: true })).ok);
+  };
+}
+
+/** T3 authorization changes to another grant while Factory checks Stop support. */
+export function changeAuthorizationBeforeStop(t3: ControlledT3) {
+  const inspect = t3.inspectStopSupport.bind(t3);
+  t3.inspectStopSupport = async (target) => {
+    t3.inspectStopSupport = inspect;
+    const support = await inspect(target);
+    t3.approve("different-grant");
+    return support;
+  };
+}
