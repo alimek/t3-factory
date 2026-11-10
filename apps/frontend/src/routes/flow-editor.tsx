@@ -1,4 +1,5 @@
 import { MutationGate } from "@/client-gate";
+import { useDraftGuard } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
@@ -80,15 +81,7 @@ function useOpenedFlowDraft(
       draft.reportAgentsRefreshed();
     });
   }, [definitions, draft]);
-  useEffect(() => {
-    let dirty = draft.getSnapshot().dirty;
-    return draft.subscribe(() => {
-      const next = draft.getSnapshot().dirty;
-      if (next === dirty) return;
-      dirty = next;
-      reportDraft(id, next);
-    });
-  }, [draft, id, reportDraft]);
+  useDraftGuard(draft, id, reportDraft);
   return { draft, state: useFlowDraftSnapshot(draft) };
 }
 

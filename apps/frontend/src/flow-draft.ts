@@ -249,7 +249,9 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
         // Another comparison, resolution or later conflict may have replaced this one meanwhile.
         if (conflict === comparing) conflict = { status: "compared", latest };
       } catch {
-        if (conflict === comparing) error = "Could not load the latest revision. Try again.";
+        // A readiness check started meanwhile reports its own outcome.
+        if (conflict === comparing && !busy)
+          error = "Could not load the latest revision. Try again.";
       }
       publish();
     },

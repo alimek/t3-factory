@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useDraftGuard } from "../draft-guard.ts";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
 import { useStudioNavigation } from "../settings-navigation.ts";
 import {
@@ -230,19 +231,7 @@ function useOpenedAgentDraft(
   reportDraft: (id: string, dirty: boolean) => void,
 ) {
   const [draft] = useState(() => createAgentDraft(agent, capabilities, operations));
-  useEffect(() => {
-    let dirty = draft.getSnapshot().dirty;
-    const unsubscribe = draft.subscribe(() => {
-      const next = draft.getSnapshot().dirty;
-      if (next === dirty) return;
-      dirty = next;
-      reportDraft(id, next);
-    });
-    return () => {
-      unsubscribe();
-      reportDraft(id, false);
-    };
-  }, [draft, id, reportDraft]);
+  useDraftGuard(draft, id, reportDraft);
   return { draft, state: useAgentDraftSnapshot(draft) };
 }
 
