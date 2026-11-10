@@ -14,14 +14,9 @@ export default defineConfig(({ command }) => ({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   // Node-based tests resolve shared packages from source, like the development UI.
-  ssr: {
-    resolve: {
-      conditions:
-        command === "serve"
-          ? ["factory-source", ...defaultServerConditions]
-          : [...defaultServerConditions],
-    },
-  },
+  ...(command === "serve"
+    ? { ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } } }
+    : {}),
   test: {
     environment: "node",
     include: ["test/*.test.ts"],
