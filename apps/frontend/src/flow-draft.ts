@@ -241,7 +241,7 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
     },
     /** Loads the latest saved Flow beside the local draft, which stays as it is. */
     async compareLatest() {
-      if (!unresolved()) return;
+      if (!unresolved() || busy) return;
       try {
         const latest = await operations.getFlow(id);
         // The conflict may have been resolved with an earlier comparison meanwhile.

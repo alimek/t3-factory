@@ -389,3 +389,15 @@ it("a readiness check failing after the editor was hidden reports nothing", asyn
   // Assert
   expect(draft.getSnapshot().error).toBe("");
 });
+
+it("refreshed saved Agents keep an unresolved revision conflict and its refused save", async () => {
+  // Arrange
+  const { draft } = await conflictedFlow();
+
+  // Act
+  draft.reportAgentsRefreshed();
+  await settled();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ conflict: { status: "detected" }, canSave: false });
+});
