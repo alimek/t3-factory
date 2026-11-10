@@ -5,12 +5,16 @@ import { preparedService } from "./support/prepared-runner.ts";
 import {
   allTurnsEnd,
   consecutiveWaitFlow,
+  fanOutWaitFlow,
+  finishedReport,
   humanThenWaitFlow,
   launchBlockId,
   loopWaitFlow,
   nextLaunch,
   nextSend,
   observeFor,
+  type ReadyFlowShape,
+  report,
   parallelHumanWaitFlow,
   parallelWaitFlow,
   resultHeld,
@@ -24,6 +28,7 @@ import {
   terminalWaitFlow,
   twoWorkersStarted,
   WAIT_MINUTES,
+  waitContinuationFlow,
   waitFlow,
   waitHumanWaitFlow,
   workerAtWork,
@@ -84,6 +89,63 @@ it.effect(
     }),
 );
 
+it.effect("a Wait's output reaches each of its two recipients once", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* preparedService(c, fanOutWaitFlow, scheduledOnly);
+    const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+    yield* Effect.promise(() => resultReported(f.world, worker, { message: "For both." }));
+    const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+
+    // Act
+    yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+    // Assert
+    const run = yield* Effect.promise(() =>
+      observeFor("observe both launches", f.world, worker.runId, (detail) =>
+        detail.intents
+          .filter((intent) => intent.waitArrivalId === waiting.arrival.id)
+          .every((intent) => intent.state === "acknowledged"),
+      ),
+    );
+    expect(
+      run.intents
+        .filter((intent) => intent.waitArrivalId === waiting.arrival.id)
+        .map((intent) => [intent.blockId, intent.kind]),
+    ).toStrictEqual([
+      ["follow-up", "launch"],
+      ["notify", "launch"],
+    ]);
+    expect(run.activations.map((activation) => activation.blockId)).toStrictEqual([
+      "worker",
+      "follow-up",
+      "notify",
+    ]);
+    expect(f.t3.launches.size).toBe(3);
+  }),
+);
+
+it.effect("a repeated delivery of the same result to a Wait keeps its one arrival", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const f = yield* preparedService(c, waitFlow, scheduledOnly);
+    const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+    yield* Effect.promise(() => resultReported(f.world, worker, { message: "Once." }));
+    const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+
+    // Act
+    const repeated = yield* Effect.promise(() => report(f.world, worker, finishedReport("Once.")));
+
+    // Assert
+    expect(repeated).toBe("ACCEPTED");
+    const run = yield* f.factory.getRun(worker.runId);
+    assert(run.ok);
+    expect(run.value.waitArrivals).toStrictEqual([waiting.arrival]);
+    expect(run.value.intents.filter((intent) => intent.blockId === "cool-down")).toHaveLength(1);
+    expect(run.value.events.filter((event) => event.kind === "wait-started")).toHaveLength(1);
+  }),
+);
+
 it.effect(
   "counting starts when the result is released after the worker finishes, not when it is reported",
   (c) =>
@@ -140,7 +202,7 @@ it.effect(
       const run = yield* f.factory.getRun(first.runId);
       assert(run.ok);
       const [early, late] = run.value.waitArrivals;
-      expect([early!.message, early!.state]).toStrictEqual(["First branch.", "forwarded"]);
+      expect([early!.message, early!.state]).toStrictEqual([null, "forwarded"]);
       expect([late!.message, late!.state]).toStrictEqual(["Second branch.", "pending"]);
       expect(Date.parse(late!.deadlineAt) - Date.parse(early!.deadlineAt)).toBe(3 * MINUTE);
       expect(run.value.blocks.find((block) => block.blockId === "cool-down")?.state).toBe(
@@ -200,7 +262,6 @@ it.effect(
 
       // Assert
       yield* Effect.promise(() => followUpLaunch);
-      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
       const run = yield* recovered.getRun(worker.runId);
       assert(run.ok);
       const [arrival] = run.value.waitArrivals;
@@ -250,6 +311,36 @@ it.effect(
         run.value.intents.filter((intent) => intent.blockId === "follow-up").map((i) => i.kind),
       ).toStrictEqual(["launch"]);
       expect(f.t3.launches.size).toBe(2);
+    }),
+);
+
+it.effect(
+  "a forwarded arrival no recipient reads clears its message and keeps its outcome and deadline",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, terminalWaitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() =>
+        resultReported(f.world, worker, { message: "Not needed later." }),
+      );
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+      // Assert
+      const run = yield* f.factory.getRun(worker.runId);
+      assert(run.ok);
+      expect(run.value.waitArrivals).toStrictEqual([
+        {
+          ...waiting.arrival,
+          state: "forwarded",
+          forwardedBy: "timer",
+          message: null,
+          settledAt: waiting.arrival.deadlineAt,
+        },
+      ]);
     }),
 );
 
@@ -417,7 +508,7 @@ it.effect(
       expect(
         run.value.waitArrivals.map((arrival) => [arrival.blockId, arrival.message]),
       ).toStrictEqual([
-        ["cool-down", "Twice delayed."],
+        ["cool-down", null],
         ["settle-in", "Twice delayed."],
       ]);
       expect(run.value.waitArrivals[1]?.origin).toStrictEqual(first.arrival.origin);
@@ -431,14 +522,46 @@ it.effect(
     }),
 );
 
+/** A Run of `shape` whose Entry worker reported "Agreed scope." and finished. */
+const scopeReported = (c: Parameters<typeof preparedService>[0], shape: ReadyFlowShape) =>
+  Effect.gen(function* () {
+    const f = yield* preparedService(c, shape, scheduledOnly);
+    const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+    yield* Effect.promise(() => resultReported(f.world, worker, { message: "Agreed scope." }));
+    return { f, worker };
+  });
+
 it.effect(
-  "a Continuation after a Human step and a Wait queues its prompt on the original worker's thread once the wait elapses",
+  "a Continuation directly after a Wait queues its prompt on the original worker's thread once the wait elapses",
   (c) =>
     Effect.gen(function* () {
       // Arrange
-      const f = yield* preparedService(c, reviewWaitContinuationFlow, scheduledOnly);
-      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
-      yield* Effect.promise(() => resultReported(f.world, worker, { message: "Agreed scope." }));
+      const { f, worker } = yield* scopeReported(c, waitContinuationFlow);
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      const promptSend = nextSend(f.world);
+
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+      // Assert
+      const sent = yield* Effect.promise(() => promptSend);
+      expect(sent.threadId).toBe(worker.threadId);
+      expect(sent.message).toContain("Write the spec from what we agreed.");
+      expect(sent.message).not.toContain("Reply from");
+      expect(f.t3.launches.size).toBe(1);
+      expect(waiting.arrival.origin).toMatchObject({
+        runId: worker.runId,
+        threadId: worker.threadId,
+      });
+    }),
+);
+
+it.effect(
+  "a Continuation after a Human step and a Wait queues its prompt with the reply on the original worker's thread once the wait elapses",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { f, worker } = yield* scopeReported(c, reviewWaitContinuationFlow);
       const review = yield* Effect.promise(() => resultReleasedToHumanReview(f.world, worker));
       const answered = yield* f.factory.answerHumanOccurrence(review.occurrence.id, {
         exitId: "approve",

@@ -7,7 +7,7 @@ import { fingerprint } from "../runner-utils.ts";
 import { now } from "../../time.ts";
 import { settleHumanAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
-import { createHeldHandoffs, storedOrigin } from "./handoffs.ts";
+import { createHandoffs, storedProvenance } from "./handoffs.ts";
 import type { DeliveryRecord } from "./records.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
 import { writeBlockState } from "./blocks.ts";
@@ -42,8 +42,10 @@ export function openRunHuman(database: RunnerDatabase) {
           Effect.gen(function* (): Effect.fn.Return<Result<{ readonly runId: string }>, unknown> {
             const runRow = yield* readRunRow(sql, runId);
             if (!runRow) return failure("not_found", "This Run does not exist.");
-            const [occurrence] =
-              yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE id=${id}`;
+            // The incoming delivery is kept after acknowledgement, so its provenance is always there.
+            const [occurrence] = yield* sql<
+              HumanRow & Pick<DeliveryRecord, "binding_id" | "origin_activation_id">
+            >`SELECT h.*,i.binding_id,i.origin_activation_id FROM human_occurrences h JOIN operation_intents i ON i.id=h.incoming_intent_id WHERE h.id=${id}`;
             if (!(yield* guardsHold(sql, ownerToken, runId, { owner: true, gateOpen: true })))
               return failure("conflict", "This Run is archived and accepts no answers.");
             if (!occurrence) return failure("not_found", "This Human occurrence does not exist.");
@@ -70,11 +72,8 @@ export function openRunHuman(database: RunnerDatabase) {
                   .map((edge) => edge.targetBlockId),
               ),
             ];
-            const [incoming] = yield* sql<
-              Pick<DeliveryRecord, "binding_id" | "origin_activation_id">
-            >`SELECT binding_id,origin_activation_id FROM operation_intents WHERE id=${occurrence.incoming_intent_id}`;
             yield* sql`UPDATE human_occurrences SET state='answered',pending_context=NULL,settled_at=${time},exit_id=${exit.id},answer_fingerprint=${content} WHERE id=${id} AND state='pending'`;
-            yield* createHeldHandoffs(sql, runRow, {
+            yield* createHandoffs(sql, runRow, {
               kind: "human",
               id,
               blockId: occurrence.block_id,
@@ -82,7 +81,7 @@ export function openRunHuman(database: RunnerDatabase) {
               recipients,
               message: message ?? "",
               at: time,
-              origin: storedOrigin(incoming!),
+              origin: storedProvenance(occurrence),
             });
             yield* writeBlockState(
               sql,

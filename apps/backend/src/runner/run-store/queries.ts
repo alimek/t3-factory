@@ -7,6 +7,7 @@ import { threadHref } from "../../thread-link.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { recoveryRows } from "./recovery-read.ts";
 import { waitArrival, type WaitArrivalRow } from "./waits.ts";
+import { workerProvenance } from "./handoffs.ts";
 import type {
   Result,
   RunAttention,
@@ -165,14 +166,7 @@ function runIntent(intent: IntentRow): RunDetail["intents"][number] {
     sourceBlockId: intent.source_block_id,
     exitId: intent.exit_id,
     waitArrivalId: intent.wait_arrival_id,
-    origin:
-      intent.origin_activation_id && intent.origin_thread_id
-        ? {
-            runId: intent.run_id,
-            activationId: intent.origin_activation_id,
-            threadId: intent.origin_thread_id,
-          }
-        : null,
+    origin: workerProvenance(intent),
     payloadRetained: intent.payload_json !== null,
     reference: intent.result_json
       ? (JSON.parse(intent.result_json) as RunDetail["intents"][number]["reference"])

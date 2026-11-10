@@ -98,7 +98,9 @@ export function WaitArrivals({ run, blockId }: { run: RunDetail; blockId: string
             </p>
             {arrival.message === null ? (
               <p className="text-xs text-muted-foreground">
-                Message cleared when the Run was archived.
+                {run.lifecycle === "archived"
+                  ? "Message cleared when the Run was archived."
+                  : "Message cleared once its recipients no longer needed it."}
               </p>
             ) : (
               <p className="text-sm break-words whitespace-pre-wrap text-foreground">

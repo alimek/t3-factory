@@ -21,6 +21,7 @@ import type { RunnerDatabase } from "./database.ts";
 import { writeBlockState } from "./blocks.ts";
 import type { DeliveryKind } from "./states.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
+import { clearSpentWaitMessages } from "./waits.ts";
 
 /** A Block activation and its first message's identity; it is delivered by a launch or a send. */
 function createActivation(
@@ -194,6 +195,7 @@ export function openRunActivations(database: RunnerDatabase) {
             : launched,
         );
         yield* sql`UPDATE operation_intents SET kind=${kind},payload_json=${body},fingerprint=${fingerprint(body)} WHERE id=${handoff.id} AND kind='handoff' AND state='pending'`;
+        yield* clearSpentWaitMessages(sql, current.id);
         yield* advanceGeneration(sql, current.id);
         const [delivery] =
           yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id}`;
@@ -234,6 +236,7 @@ export function openRunActivations(database: RunnerDatabase) {
           observedAt: time,
         });
         yield* raiseHumanAttention(sql, runRow.id, handoff.block_id, id, time);
+        yield* clearSpentWaitMessages(sql, runRow.id);
         yield* advanceGeneration(sql, runRow.id);
       }),
     );

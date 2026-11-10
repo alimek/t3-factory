@@ -1,13 +1,14 @@
 import type { WaitArrival } from "@t3-factory/contracts";
 import { WAIT_OUTPUT, waitDurationMs } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
+import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
 import { now } from "../../time.ts";
 import type { RunRow } from "../runner-types.ts";
 import { writeBlockState } from "./blocks.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
 import { guardsHold } from "./guards.ts";
-import { arrivingHandoff, createHeldHandoffs, storedOrigin } from "./handoffs.ts";
+import { arrivingHandoff, createHandoffs, storedProvenance, workerProvenance } from "./handoffs.ts";
 import type { Handoff } from "./records.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
@@ -38,16 +39,18 @@ type WaitForwarder = NonNullable<WaitArrival["forwardedBy"]>;
 
 /**
  * What a forwarding attempt found. Only `forwarded` changed the Run; the others leave the arrival
- * as it was: forwarded or cancelled already, not yet due for the timer, or a Run that no longer
- * accepts forwarding (closed gate or another owner).
+ * as it was: forwarded or cancelled already, or a Run that no longer accepts forwarding here
+ * (closed gate or another owner).
  */
 export type WaitForwarding =
   | "forwarded"
   | "already-forwarded"
   | "cancelled"
-  | "not-due"
   | "closed"
   | "not-found";
+
+/** The timer's attempt may also find its arrival not yet due; Continue now skips that check. */
+type TimerForwarding = WaitForwarding | "not-due";
 
 /** The public arrival; `origin_thread_id` is its bound worker's thread. */
 export function waitArrival(
@@ -60,18 +63,24 @@ export function waitArrival(
     state: row.state,
     forwardedBy: row.forwarded_by,
     message: row.message,
-    origin:
-      row.origin_activation_id && row.origin_thread_id
-        ? {
-            runId: row.run_id,
-            activationId: row.origin_activation_id,
-            threadId: row.origin_thread_id,
-          }
-        : null,
+    origin: workerProvenance(row),
     startedAt: row.started_at,
     deadlineAt: row.deadline_at,
     settledAt: row.settled_at,
   };
+}
+
+/**
+ * Clears the message of every forwarded arrival of Run `runId` that nothing reads any more: each
+ * outgoing Handoff carries its own copy until its recipient records the message, so only a pending
+ * Handoff or an Agent visit the arrival started, while it is its Block's current visit, still
+ * reads the arrival's message (as that visit's input). Outcome, deadline and identity stay.
+ */
+export function clearSpentWaitMessages(sql: SqlClient.SqlClient, runId: string) {
+  return sql`UPDATE wait_arrivals SET message=NULL WHERE run_id=${runId} AND state='forwarded' AND message IS NOT NULL
+    AND NOT EXISTS(SELECT 1 FROM operation_intents i WHERE i.wait_arrival_id=wait_arrivals.id AND i.kind='handoff' AND i.state='pending')
+    AND NOT EXISTS(SELECT 1 FROM operation_intents i JOIN run_activations a ON a.run_id=i.run_id AND a.cause=i.cause
+      WHERE i.wait_arrival_id=wait_arrivals.id AND a.phase!='finished' AND NOT EXISTS(SELECT 1 FROM continuation_visits v WHERE v.activation_id=a.id))`;
 }
 
 const addMilliseconds = (time: string, milliseconds: number) =>
@@ -105,7 +114,9 @@ export function openRunWaits(database: RunnerDatabase) {
           const [released] = yield* sql<{
             at: string | null;
           }>`SELECT COALESCE((SELECT released_at FROM result_releases WHERE report_id=${pending.report_id}),(SELECT observed_at FROM run_events WHERE run_id=${runRow.id} AND source_key=${pending.cause})) AS at`;
-          const startedAt = released?.at ?? time;
+          if (!released?.at)
+            return yield* Effect.fail(Error("The Handoff to a Wait has no release"));
+          const startedAt = released.at;
           const id = yield* newId;
           const deadlineAt = addMilliseconds(startedAt, waitDurationMs(block.duration));
           yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,binding_id,origin_activation_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${arriving.message},${pending.binding_id},${pending.origin_activation_id},${startedAt},${deadlineAt})`;
@@ -121,6 +132,7 @@ export function openRunWaits(database: RunnerDatabase) {
             arrivalId: id,
             observedAt: time,
           });
+          yield* clearSpentWaitMessages(sql, runRow.id);
           yield* advanceGeneration(sql, runRow.id);
           return { id, runId: runRow.id, deadlineAt };
         }),
@@ -133,14 +145,24 @@ export function openRunWaits(database: RunnerDatabase) {
    * timer forwards only once the deadline passed. Guards: owner and open gate; the arrival is
    * still pending, so competing forwards produce one set of Handoffs. Atomically records the
    * outcome and creates every outgoing Handoff, released from creation and carrying the arrival's
-   * message and origin; the arrival keeps its message as the input its recipients read. Sets the
-   * Wait finished once no arrival is pending, appends "Wait forwarded" and advances the
+   * message and origin; the arrival keeps its message only while a recipient still reads it. Sets
+   * the Wait finished once no arrival is pending, appends "Wait forwarded" and advances the
    * generation. Only a forwarding is published. */
+  function forwardWaitArrival(
+    runId: string,
+    arrivalId: string,
+    forwardedBy: "user",
+  ): Effect.Effect<WaitForwarding, unknown>;
+  function forwardWaitArrival(
+    runId: string,
+    arrivalId: string,
+    forwardedBy: "timer",
+  ): Effect.Effect<TimerForwarding, unknown>;
   function forwardWaitArrival(runId: string, arrivalId: string, forwardedBy: WaitForwarder) {
     return database.mutate(
       runId,
       (sql) =>
-        Effect.gen(function* (): Effect.fn.Return<WaitForwarding, unknown> {
+        Effect.gen(function* (): Effect.fn.Return<TimerForwarding, unknown> {
           const [arrival] =
             yield* sql<WaitArrivalRow>`SELECT * FROM wait_arrivals WHERE id=${arrivalId} AND run_id=${runId}`;
           if (!arrival) return "not-found";
@@ -161,16 +183,19 @@ export function openRunWaits(database: RunnerDatabase) {
                 .map((edge) => edge.targetBlockId),
             ),
           ];
+          // Only Archive clears a pending arrival's message, and it cancels the arrival first.
+          if (arrival.message === null)
+            return yield* Effect.fail(Error("A pending Wait arrival has no message"));
           yield* sql`UPDATE wait_arrivals SET state='forwarded',forwarded_by=${forwardedBy},settled_at=${time} WHERE id=${arrivalId} AND state='pending'`;
-          yield* createHeldHandoffs(sql, runRow, {
+          yield* createHandoffs(sql, runRow, {
             kind: "wait",
             id: arrivalId,
             blockId: arrival.block_id,
             exitId: WAIT_OUTPUT.id,
             recipients,
-            message: arrival.message ?? "",
+            message: arrival.message,
             at: time,
-            origin: storedOrigin(arrival),
+            origin: storedProvenance(arrival),
           });
           yield* writeBlockState(
             sql,
@@ -184,6 +209,7 @@ export function openRunWaits(database: RunnerDatabase) {
             arrivalId,
             observedAt: time,
           });
+          yield* clearSpentWaitMessages(sql, runId);
           yield* advanceGeneration(sql, runId);
           return "forwarded";
         }),

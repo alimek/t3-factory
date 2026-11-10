@@ -669,7 +669,7 @@ function BlockHistory({
             const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
             return (
               <li key={exit.id} className="flex items-baseline gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate">{exitDisplayName(exit) || "Output"}</span>
+                <span className="min-w-0 flex-1 truncate">{exitDisplayName(exit, "Output")}</span>
                 <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
                   {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
                 </span>

@@ -30,10 +30,14 @@ const KIND_ICON_COLORS: Record<FlowBlock["kind"], string> = {
   continuation: "text-brand-cyan",
 };
 
-/** An exit's name as rows show it; a Wait's or Continuation's single output has none. */
-export function exitDisplayName(exit: Pick<EffectiveExit, "name" | "source">) {
+/** An exit's name as rows show it; a Wait's or Continuation's single output has none, so it shows
+ * `singleOutputLabel`. */
+export function exitDisplayName(
+  exit: Pick<EffectiveExit, "name" | "source">,
+  singleOutputLabel = "",
+) {
   return exit.source === "wait" || exit.source === "continuation"
-    ? ""
+    ? singleOutputLabel
     : exit.name || "Unnamed exit";
 }
 

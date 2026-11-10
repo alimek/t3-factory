@@ -117,8 +117,9 @@ CREATE TABLE "flow_revision_blocks" (
   prompt TEXT CHECK ((kind = 'continuation') = (prompt IS NOT NULL)),
   x REAL NOT NULL,
   y REAL NOT NULL,
-  -- A Wait's duration; both are null while the draft has none. Readiness owns the range.
-  wait_amount INTEGER CHECK (wait_amount IS NULL OR wait_amount >= 0),
+  -- A Wait's duration; both are null while the draft has none. Any finite amount saves:
+  -- readiness owns the range, judged on the normalized duration.
+  wait_amount REAL,
   wait_unit TEXT CHECK (wait_unit IS NULL OR wait_unit IN ('minutes', 'hours', 'days')),
   CHECK ((wait_amount IS NULL) = (wait_unit IS NULL)),
   CHECK (kind = 'wait' OR wait_amount IS NULL),

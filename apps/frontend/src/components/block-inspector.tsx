@@ -168,19 +168,16 @@ function WaitBlockSettings({
           <Input
             id={amountId}
             type="number"
-            min="1"
-            step="1"
-            inputMode="numeric"
+            step="any"
+            inputMode="decimal"
             className="font-mono"
             value={block.duration?.amount ?? ""}
             onChange={(e) => {
+              // Any number saves; readiness reports an amount outside 1 minute to 7 days.
               const amount = e.target.valueAsNumber;
               onEdit({
                 ...block,
-                duration:
-                  e.target.value === "" || !Number.isSafeInteger(amount) || amount < 0
-                    ? null
-                    : { amount, unit },
+                duration: Number.isFinite(amount) ? { amount, unit } : null,
               });
             }}
           />

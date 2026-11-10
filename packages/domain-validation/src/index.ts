@@ -455,22 +455,22 @@ function checkBlockFields(
 
 const WAIT_UNITS: readonly string[] = ["minutes", "hours", "days"] satisfies WaitUnit[];
 
-/** A Wait's duration is null or a whole, non-negative amount in a known unit; its range is a
- * readiness rule, so an out-of-range draft still saves. */
+/** A Wait's duration is null or a finite amount in a known unit; its range is a readiness rule
+ * on the normalized duration, so a zero, negative or out-of-range draft still saves. */
 function checkWaitDuration(duration: unknown, path: string, issue: IssueReporter) {
   if (duration === null) return;
   if (
     !isRecord(duration) ||
     Object.keys(duration).some((key) => key !== "amount" && key !== "unit") ||
-    !Number.isSafeInteger(duration.amount) ||
-    (duration.amount as number) < 0 ||
+    typeof duration.amount !== "number" ||
+    !Number.isFinite(duration.amount) ||
     typeof duration.unit !== "string" ||
     !WAIT_UNITS.includes(duration.unit)
   )
     issue(
       "invalid_wait_duration",
       path,
-      "Enter a whole number of minutes, hours or days, or leave the duration empty.",
+      "Enter a number of minutes, hours or days, or leave the duration empty.",
     );
 }
 

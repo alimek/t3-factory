@@ -116,7 +116,7 @@ Changes to the saved Agent appear on the next Flow read; Flows upgraded from per
 exits **Approve** (message optional) and **Request changes** (message required). An unconnected exit ends that branch.
 
 **Wait.** A Wait holds each arrival for a fixed duration, then passes its message on unchanged. Its panel sets the
-Flow-local name and **Wait for** a whole number of **minutes**, **hours** or **days**; an empty amount saves a draft without
+Flow-local name and **Wait for** a number of **minutes**, **hours** or **days**, such as 1.5 hours; an empty amount saves a draft without
 a duration. It has one input and one unnamed output (**after the wait**) whose **Output** section lists the recipients or
 **finish here**. A Wait has no Agent, prompt, execution settings, reports or worker, and the Flow input cannot connect to
 it.
@@ -174,7 +174,7 @@ issues use `workspace.*` paths. A save that omits `workspace` keeps the saved se
 Blocks have stable IDs, position and name. On create or save, positions are optional for every block and the Flow input. If any position is omitted, the backend arranges the whole graph with the same ELK layout as [Auto-arrange](#automatic-layout-and-canvas-view), replacing even the supplied positions. Fully positioned graphs are saved as given. Saved graphs always include all positions; Studio sends them all, so its saves preserve the draft's layout.
 
 An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides) and `localExits`; a Human block has
-no exit fields. A Wait block adds `duration`: `{amount, unit}` with a whole, non-negative `amount` and `unit` `minutes`,
+no exit fields. A Wait block adds `duration`: `{amount, unit}` with any finite number as `amount` and `unit` `minutes`,
 `hours` or `days`, or `null` while the draft has none; a Continuation adds `prompt` (stored trimmed, up to 120,000 characters, empty only in a draft). Each has one fixed, unnamed exit with ID `output`. An exit is `{id, name, description, messageRequired}`, with IDs scoped to their block; runtime consumers enforce a non-empty message when
 `messageRequired` is true. Connections identify source block, exit ID and target block: a Human block's exit is `approve` or `request-changes`, a Wait's or Continuation's is `output`, and an Agent block's
 exit is resolved against its Agent by readiness, not by the save. No block execution settings or prompt overrides are accepted.
@@ -186,12 +186,11 @@ Every graph carries exactly one `flowInput`: a canvas `position` and the `target
 ### Validation
 
 Structural failures return `Result` errors with `code`, `path` and `message`: invalid or duplicate IDs and names,
-positions, Flow input targets, dangling or duplicate edges, a Human or Wait connection from another exit, malformed exits, hide entries or Wait durations (a fractional
-or negative amount, an unknown unit) and unknown block, exit, graph or Flow input fields, including Agent fields on a Wait. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
+positions, Flow input targets, dangling or duplicate edges, a Human or Wait connection from another exit, malformed exits, hide entries or Wait durations (an amount that is not a finite number, an unknown unit) and unknown block, exit, graph or Flow input fields, including Agent fields on a Wait. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
 
 Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name or ID collisions and wires from hidden or removed exits can be saved.
 Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `continuation_prompt_required`; `exit_name_conflict`, `exit_id_conflict`, `exit_hidden`, `exit_missing`), a Wait
-without a duration (`wait_duration_required`) or outside 1 minute to 7 days inclusive after converting its unit (`wait_duration_range`), a Wait Flow input target, missing saved
+without a duration (`wait_duration_required`) or outside 1 minute to 7 days inclusive after converting its unit, including a zero or negative amount (`wait_duration_range`), a Wait Flow input target, missing saved
 Agents and blocks unreachable from the Flow input, resolving each block against the current saved Agents. Hide entries for exits the Agent no longer has are ignored. A
 terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3 capability or live execution readiness.
 

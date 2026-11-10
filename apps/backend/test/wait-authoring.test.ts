@@ -74,12 +74,44 @@ it("a Wait without a duration saves but cannot run", async (c) => {
   ]);
 });
 
-it("a fractional Wait amount is rejected and appends no revision", async (c) => {
+it("a Wait of 1.5 hours is ready and reads back unchanged after restart", async (c) => {
+  // Arrange
+  const draft = await waitDraft(c);
+  const saved = await draft.save(draft.pause({ amount: 1.5, unit: "hours" }));
+  assert(saved.ok);
+  await draft.factory.close();
+
+  // Act
+  const recovered = await readFlowAfterRestart(draft.harness, draft.flowId);
+
+  // Assert
+  expect(saved.value.readiness).toStrictEqual({ ready: true, issues: [] });
+  expect(saved.value.graph.blocks[1]).toMatchObject({ duration: { amount: 1.5, unit: "hours" } });
+  expect(recovered).toStrictEqual(saved);
+});
+
+it("a negative Wait amount saves but cannot run", async (c) => {
   // Arrange
   const draft = await waitDraft(c);
 
   // Act
-  const result = await draft.save(draft.pause({ amount: 1.5, unit: "hours" }));
+  const saved = await draft.save(draft.pause({ amount: -5, unit: "minutes" }));
+
+  // Assert
+  assert(saved.ok);
+  expect(saved.value.graph.blocks[1]).toMatchObject({ duration: { amount: -5, unit: "minutes" } });
+  expect(saved.value.readiness.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["wait_duration_range", "graph.blocks.1.duration"],
+  ]);
+});
+
+it("a Wait amount that is not a number is rejected and appends no revision", async (c) => {
+  // Arrange
+  const draft = await waitDraft(c);
+  const text = { amount: "90", unit: "minutes" } as unknown as { amount: number; unit: "minutes" };
+
+  // Act
+  const result = await draft.save(draft.pause(text));
 
   // Assert
   assert(!result.ok);

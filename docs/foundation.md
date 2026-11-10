@@ -54,8 +54,10 @@ new attempts, and failed Agent work is never retried automatically; see
 [ownership and recovery](runner.md#ownership-and-restart).
 
 **Retention.** History, input, revisions, events, deduplication metadata and closure evidence
-are kept indefinitely. A Wait arrival keeps its message as the input its recipients read until
-Archive clears it; its deadline and outcome stay. Other message payloads persist only while needed for pending Human context,
+are kept indefinitely. A Wait arrival keeps its message while it is pending or needed for
+delivery: after forwarding, until no outgoing Handoff is pending and no current visit of an Agent
+recipient reads it as that visit's input, and never past Archive. Its body is then cleared while
+its outcome, deadline and deduplication identity stay. Other message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
 remain. Initial input, including its images, and revision prompts are intentional exceptions;
 staged images no Run references are deleted after 24 hours. There is no

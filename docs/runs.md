@@ -303,21 +303,19 @@ worker of the message it answered.
 Each delivery released to a Wait becomes its own arrival: Factory keeps its message and the
 [worker provenance](../GLOSSARY.md#worker-provenance) it carries (the T3 thread and, when known, the Block activation that produced it) and fixes an absolute deadline, counted from the
 moment the incoming handoff was released, after the source worker's thread finished, not from the report. Parallel arrivals
-and repeated visits keep their own messages and deadlines and never join; a repeated delivery attempt records no second
-arrival. At its deadline Factory forwards the arrival on its own, with no open window and no worker: every recipient of the
-Wait's output gets the unchanged message, and an unconnected output ends the branch. Timing is best effort. Restarting before
-the deadline keeps it; restarting after it forwards the arrival once, without moving the deadline or repeating anything, and
-closing Factory over a deadline does the same on the next start.
+and repeated visits keep their own messages and deadlines and never join. At its deadline Factory forwards the arrival on its
+own, with no open window and no worker: every recipient of the Wait's output gets the unchanged message, and an unconnected
+output ends the branch. Timing is best effort; the [Runner](runner.md#wait-arrivals) defines how deadlines survive restart and
+downtime and how repeated deliveries and competing forwards resolve.
 
 **Continue now** forwards one selected pending arrival immediately, without confirmation, exactly as its deadline would, and
 disables its timer; other arrivals keep waiting. The Wait's details offer it beside each pending arrival, and the canvas block
 offers it only while exactly one arrival is pending; like other Run actions it is unavailable while offline or synchronizing.
-If the timer or an earlier Continue now already forwarded the arrival, Factory answers that it was already forwarded and
-delivers nothing more. An archived Run's arrivals cannot be continued, and a manually Settled Run stays Settled.
+An arrival the timer already forwarded, or an archived Run's, cannot be continued, and a manually Settled Run stays Settled.
 
 The Wait's details list each arrival with its start, deadline, retained message and outcome, and say when you forwarded one
-early. A forwarded arrival keeps its message, which is the input its recipients read; Archive clears every arrival's message
-and the details say so. The timeline records **wait started · until …**, **wait elapsed → forwarded** and **forwarded early
+early. A forwarded arrival keeps its message only while its recipients still need it
+([retention](foundation.md#persistence-model)); once it is cleared, or Archive clears it, the details say why. The timeline records **wait started · until …**, **wait elapsed → forwarded** and **forwarded early
 by you** with the Wait icon. A pending Wait is visible work, never
 Needs input or a Problem, and does not wake a Snoozed Run. A Continuation after a Wait continues the thread of the worker
 whose message waited.

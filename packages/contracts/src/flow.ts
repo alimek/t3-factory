@@ -25,7 +25,8 @@ interface BlockBase {
 }
 /** The units a Wait duration is entered in. */
 export type WaitUnit = "minutes" | "hours" | "days";
-/** A fixed relative delay; readiness requires 1 minute to 7 days inclusive. */
+/** A fixed relative delay of any finite amount; readiness requires 1 minute to 7 days inclusive
+ * after converting the unit, so 1.5 hours is ready. */
 export interface WaitDuration {
   readonly amount: number;
   readonly unit: WaitUnit;

@@ -19,8 +19,9 @@ CREATE TABLE flow_revision_blocks_with_waits (
   prompt TEXT CHECK ((kind = 'continuation') = (prompt IS NOT NULL)),
   x REAL NOT NULL,
   y REAL NOT NULL,
-  -- A Wait's duration; both are null while the draft has none. Readiness owns the range.
-  wait_amount INTEGER CHECK (wait_amount IS NULL OR wait_amount >= 0),
+  -- A Wait's duration; both are null while the draft has none. Any finite amount saves:
+  -- readiness owns the range, judged on the normalized duration.
+  wait_amount REAL,
   wait_unit TEXT CHECK (wait_unit IS NULL OR wait_unit IN ('minutes', 'hours', 'days')),
   CHECK ((wait_amount IS NULL) = (wait_unit IS NULL)),
   CHECK (kind = 'wait' OR wait_amount IS NULL),
@@ -43,7 +44,8 @@ PRAGMA defer_foreign_keys=OFF
 -- statement-breakpoint
 -- One durable arrival per accepted delivery to a Wait: its retained message and the worker
 -- provenance it carries, the absolute deadline counted from the delivery's release, and its
--- outcome. The message is the input its recipients read after forwarding; Archive clears it.
+-- outcome. After forwarding, the message is kept only while a pending Handoff or a recipient's
+-- current Agent visit still reads it; Archive clears every message.
 -- `binding_id` is the worker thread a later Continuation continues; `origin_activation_id` the
 -- Block activation whose result the message is, known only together with its thread.
 CREATE TABLE wait_arrivals (
@@ -89,3 +91,27 @@ WHERE report_id IS NOT NULL AND binding_id IS NULL
 UPDATE operation_intents SET
   origin_activation_id = (SELECT r.activation_id FROM runtime_reports r WHERE r.id = operation_intents.report_id)
 WHERE report_id IS NOT NULL AND binding_id IS NOT NULL
+-- statement-breakpoint
+-- Existing deliveries from a Human answer or a Continuation pass-through repeat the provenance of
+-- the delivery they answered or passed on, traced back through such deliveries to the Final result
+-- derived above. A chain that reaches no Final result with a worker keeps none.
+WITH RECURSIVE chain(target, current) AS (
+  SELECT id, id FROM operation_intents
+  WHERE report_id IS NULL AND origin_activation_id IS NULL AND (occurrence_id IS NOT NULL OR cause LIKE 'pass:%')
+  UNION ALL
+  SELECT c.target, COALESCE(h.incoming_intent_id, v.incoming_intent_id)
+  FROM chain c
+  JOIN operation_intents i ON i.id = c.current
+  LEFT JOIN human_occurrences h ON h.id = i.occurrence_id
+  LEFT JOIN continuation_visits v ON i.cause LIKE 'pass:%' AND v.id = substr(i.cause, 6, instr(i.cause, '/') - 6)
+  WHERE i.report_id IS NULL
+),
+root(target, binding_id, origin_activation_id) AS (
+  SELECT c.target, r.binding_id, r.origin_activation_id
+  FROM chain c JOIN operation_intents r ON r.id = c.current
+  WHERE r.report_id IS NOT NULL AND r.binding_id IS NOT NULL
+)
+UPDATE operation_intents SET
+  binding_id = COALESCE(binding_id, (SELECT binding_id FROM root WHERE root.target = operation_intents.id)),
+  origin_activation_id = (SELECT origin_activation_id FROM root WHERE root.target = operation_intents.id)
+WHERE id IN (SELECT target FROM root)

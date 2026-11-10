@@ -90,7 +90,7 @@ it.effect(
       expect(
         continued.value.waitArrivals.map((arrival) => [arrival.message, arrival.state]),
       ).toStrictEqual([
-        ["First branch.", "forwarded"],
+        [null, "forwarded"],
         ["Second branch.", "pending"],
       ]);
       expect(continued.value.waitArrivals[1]).toStrictEqual(other);

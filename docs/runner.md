@@ -365,10 +365,6 @@ never reconstructed from the graph or the latest activation, so parallel occurre
 visit of its worker keep their own. A Continuation continues the thread its arriving message is bound to, also after a
 Human step or Wait. Run detail shows the provenance as the delivery's `origin` when both thread and activation are known.
 
-Migration `075` added the binding without deriving it for earlier handoffs. Migration `076` derived the binding and
-activation of existing deliveries from their recorded Final result (the Continuation's prompt thread, else its Block's
-bound worker) and left the others without one.
-
 ### Continuations
 
 The first released handoff to a Continuation becomes its prompt visit: an activation, attributed to the
@@ -419,7 +415,7 @@ the arrival's message and worker provenance; dispatch then uses the ordinary del
 arrival settled and changes nothing, so a race or a crash after commit never produces a second set of Handoffs, and a crash
 before commit leaves the arrival pending with its message. Forwarding needs no T3 request or live authorization context.
 Continue now skips only the deadline check: it answers the Run detail after forwarding, a conflict without change for an
-arrival already forwarded (by the timer or an earlier Continue now) or cancelled, or for a closed gate, and works on a
+arrival already forwarded (by the timer or an earlier Continue now) or cancelled, or for a closed gate or lost ownership, and works on a
 manually Settled Run without reactivating it. Its timeline event is distinct from the timer's.
 
 The Runner schedules one wake-up per pending arrival on its Effect clock, at startup for every pending arrival of a Run that

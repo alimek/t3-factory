@@ -4,13 +4,15 @@ import { failure } from "../result.ts";
 import type { RunStore, WaitForwarding } from "./run-store/run-store.ts";
 import type { RunnerLifecycle } from "./runner-types.ts";
 
-/** Why Continue now changed nothing; only the timer is ever `not-due`. */
+/** Why Continue now changed nothing. */
 const refusals: Record<Exclude<WaitForwarding, "forwarded">, Result<never>> = {
   "not-found": failure("not_found", "This Wait arrival does not exist."),
   "already-forwarded": failure("conflict", "This Wait arrival was already forwarded."),
   cancelled: failure("conflict", "This Wait arrival was cancelled when its Run was archived."),
-  closed: failure("conflict", "This Run is archived and forwards no Wait arrival."),
-  "not-due": failure("conflict", "This Wait arrival is not due yet."),
+  closed: failure(
+    "conflict",
+    "This Run is archived or no longer run by this Factory, so it forwards no Wait arrival.",
+  ),
 };
 
 export function openRunnerWaits(

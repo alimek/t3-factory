@@ -19,7 +19,7 @@ import {
 } from "../../runtime-types.ts";
 import { now } from "../../time.ts";
 import { repeatedReport, settleForReport } from "./current-report.ts";
-import { createHeldHandoffs, resultOrigin } from "./handoffs.ts";
+import { createHandoffs, resultProvenance } from "./handoffs.ts";
 import type { ReportTarget } from "./records.ts";
 import { recordReportVerdict } from "./report-diagnostics.ts";
 import type { RunnerDatabase } from "./database.ts";
@@ -108,7 +108,7 @@ function acceptFinal(
       observedAt: time,
     });
     if (handsOff)
-      yield* createHeldHandoffs(sql, runRow, {
+      yield* createHandoffs(sql, runRow, {
         kind: "report",
         id,
         blockId: block.block_id,
@@ -116,7 +116,7 @@ function acceptFinal(
         recipients: route.recipients,
         message: report.message ?? "",
         at: time,
-        origin: yield* resultOrigin(sql, runRow.id, block.block_id, activationId),
+        origin: yield* resultProvenance(sql, activationId),
       });
     yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, written, {
       report_status: report.status,

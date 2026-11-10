@@ -501,6 +501,34 @@ export const waitFlow: ReadyFlowShape = (world) =>
     ],
   }));
 
+/** Entry worker's "Done" waits in Cool down, which forwards to both Follow-up and Notify. */
+export const fanOutWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait fan-out", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      coolDown(),
+      followUp(agentId),
+      agentBlock("notify", "Notify", agentId),
+    ],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "follow-up"),
+      connection("cool-down", WAIT_OUTPUT, "notify"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which forwards to the Continuation Spec. */
+export const waitContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait before continuation", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown(), specStep],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "spec"),
+    ],
+  }));
+
 /** Entry worker's "Done" goes to a Human Review whose Approve waits in Cool down, which forwards to
  * the Continuation Spec. */
 export const reviewWaitContinuationFlow: ReadyFlowShape = (world) =>

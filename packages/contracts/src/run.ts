@@ -309,7 +309,7 @@ export interface RunDetail extends RunSummary {
     readonly exitId: string | null;
     /** The Wait arrival whose forwarding created this Handoff. */
     readonly waitArrivalId: string | null;
-    readonly origin: DeliveryOrigin | null;
+    readonly origin: WorkerProvenance | null;
     readonly payloadRetained: boolean;
     readonly reference: {
       readonly threadId: string;
@@ -439,11 +439,11 @@ export interface HumanOccurrence {
 }
 
 /**
- * The worker whose result a delivery carries: the Run, the Block activation that produced it and
- * that activation's T3 worker thread. An Agent result establishes it; a Wait forwards it
- * unchanged. Absent when the delivered message has no originating worker.
+ * A delivery's worker provenance as Run detail shows it: the Run, the Block activation whose
+ * result the message is and that worker's T3 thread. An Agent result establishes it; a Wait
+ * forwards it unchanged. Absent unless both thread and activation are known.
  */
-export interface DeliveryOrigin {
+export interface WorkerProvenance {
   readonly runId: string;
   readonly activationId: string;
   readonly threadId: string;
@@ -461,9 +461,9 @@ export interface WaitArrival {
   readonly state: "pending" | "forwarded" | "cancelled";
   /** `timer`: the deadline elapsed; `user`: Continue now forwarded it early. Null unless forwarded. */
   readonly forwardedBy: "timer" | "user" | null;
-  /** The retained incoming message; null once Archive cleared it. */
+  /** The retained incoming message; null once no recipient needs it or Archive cleared it. */
   readonly message: string | null;
-  readonly origin: DeliveryOrigin | null;
+  readonly origin: WorkerProvenance | null;
   /** When the incoming handoff was released and counting started. */
   readonly startedAt: string;
   /** The absolute deadline, fixed when the arrival was recorded. */
