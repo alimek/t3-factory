@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Locator, type Screen } from "e2e";
-import { sha256Hex, solidPng } from "../apps/backend/test/support/run-images.ts";
+import { sha256Hex, solidPng } from "../apps/backend/test/support/scenarios.ts";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import {
   expectFlowInputImages,

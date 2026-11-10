@@ -5,12 +5,8 @@ import {
   preparedWorktreeReviewFlow,
 } from "./support/prepared-runner.ts";
 import { imageStart, screenshots, stageImages } from "./support/run-images.ts";
-import {
-  answeredReview,
-  finishedParallelWork,
-  settleThread,
-  workerFinal,
-} from "./support/run-worker.ts";
+import { answeredReview, finishedParallelWork, settleThread } from "./support/run-worker.ts";
+import { workerFinal } from "./support/scenarios.ts";
 
 it("a worktree Start launches exactly one worktree-creating worker from the resolved base ref", async (c) => {
   // Arrange

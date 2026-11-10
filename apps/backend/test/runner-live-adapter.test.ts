@@ -45,7 +45,8 @@ it("a worker PR cannot supply an executable link to Factory clients", async (c) 
   // Assert
   await expect(observation).rejects.toThrow("Invalid worker pull request URL.");
 });
-import { finishWorker, startWorkerTurn, workerFinal } from "./support/run-worker.ts";
+import { finishWorker, startWorkerTurn } from "./support/run-worker.ts";
+import { workerFinal } from "./support/scenarios.ts";
 
 it("a captured checkout worker retains exact execution identity from its nested thread read", async (c) => {
   // Arrange

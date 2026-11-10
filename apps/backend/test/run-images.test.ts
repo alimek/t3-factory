@@ -10,11 +10,10 @@ import {
   imageStart,
   manifestEntry,
   screenshots,
-  sha256Hex,
-  solidPng,
   stageImageEffects,
   stageImages,
 } from "./support/run-images.ts";
+import { sha256Hex, solidPng } from "./support/scenarios.ts";
 
 const allScreenshots = [screenshots.red, screenshots.blue, screenshots.green];
 const HOUR = 60 * 60_000;

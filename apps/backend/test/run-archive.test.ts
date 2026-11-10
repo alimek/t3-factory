@@ -8,9 +8,8 @@ import {
   nextThreadInterrupt,
   pendingReview,
   reportedWorker,
-  workerFinal,
-  workerWorking,
 } from "./support/run-worker.ts";
+import { workerFinal, workerWorking } from "./support/scenarios.ts";
 
 it("archiving closes the gate, cancels the unsent handoff and archives the Run at once", async (c) => {
   // Arrange

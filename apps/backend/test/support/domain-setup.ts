@@ -1,3 +1,11 @@
+import {
+  blockExit,
+  controlledExecution,
+  agentBlock,
+  humanStep,
+  connection,
+  flowInput,
+} from "./scenarios.ts";
 import { runFactoryProcess } from "./factory-process.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import { fileURLToPath } from "node:url";
@@ -5,20 +13,13 @@ import type { AgentDefinition } from "@t3-factory/contracts";
 import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 
-const sampleExecution = (environmentId = "controlled-environment") => ({
-  environmentId,
-  providerInstanceId: "codex-main",
-  modelId: "gpt-6.1-sol",
-  modelOptions: [{ id: "reasoning", value: "high" }],
-});
-
 /** A new Agent's single exit, as the Agent editor starts it. */
-const doneExit = { id: "done", name: "done", description: "", messageRequired: false };
+const doneExit = blockExit("done", "done", "", false);
 
 export const sampleAgentInput = (name = "Coder") => ({
   name,
   prompt: "Improve the empty search state.\nUse $review-code when helpful.",
-  execution: sampleExecution(),
+  execution: controlledExecution(),
   exits: [doneExit],
 });
 
@@ -83,33 +84,20 @@ export async function flowWithAgent(context: TestContext) {
   const unconnectedGraph = {
     flowInput: flowInput(),
     blocks: [
-      {
-        id: "coder",
-        kind: "agent" as const,
-        name: "Coder",
-        agentId: agent.value.id,
-        position: { x: 20, y: 30 },
-        hiddenExitIds: [] as string[],
-        localExits: [] as (typeof doneExit)[],
-      },
-      {
-        id: "human",
-        kind: "human" as const,
-        name: "Review",
-        position: { x: 400, y: 30 },
-      },
+      agentBlock("coder", "Coder", agent.value.id, { x: 20, y: 30 }, [], []),
+      humanStep("human", "Review", { x: 400, y: 30 }),
     ],
     connections: [
-      { sourceBlockId: "coder", exitId: "done", targetBlockId: "human" },
-      { sourceBlockId: "human", exitId: "request-changes", targetBlockId: "coder" },
+      connection("coder", "done", "human"),
+      connection("human", "request-changes", "coder"),
     ],
   };
   return { harness, factory, created, agent: agent.value, unconnectedGraph };
 }
 
 export const reviewerExits = [
-  { id: "pass", name: "pass", description: "The change is ready.", messageRequired: false },
-  { id: "fail", name: "fail", description: "Corrections are needed.", messageRequired: true },
+  blockExit("pass", "pass", "The change is ready.", false),
+  blockExit("fail", "fail", "Corrections are needed.", true),
 ];
 
 /**
@@ -123,22 +111,11 @@ export async function reviewedFlow(context: TestContext) {
   const reviewer = assertOk(await factory.createAgent(reviewerInput));
   const created = assertOk(await factory.createFlow({ name: "Reviewed change" }));
   const position = { x: 0, y: 0 };
-  const review = {
-    id: "review",
-    kind: "agent" as const,
-    name: "Code review",
-    agentId: reviewer.id,
-    position,
-    hiddenExitIds: [] as string[],
-    localExits: [] as (typeof doneExit)[],
-  };
+  const review = agentBlock("review", "Code review", reviewer.id, position, [], []);
   const graph = (block: typeof review) => ({
     flowInput: flowInput("coder"),
     blocks: [{ ...review, id: "coder", name: "Coder", agentId: coder.id }, block],
-    connections: [
-      { sourceBlockId: "coder", exitId: "done", targetBlockId: "review" },
-      { sourceBlockId: "review", exitId: "fail", targetBlockId: "coder" },
-    ],
+    connections: [connection("coder", "done", "review"), connection("review", "fail", "coder")],
   });
   let revision = created.revision;
   const save = async (block: typeof review) => {
@@ -185,24 +162,17 @@ export async function uncertainProjectCreation(context: TestContext) {
   return p;
 }
 
-/** The Flow input block connected to the given Agent blocks. */
-export const flowInput = (...targetBlockIds: string[]) => ({
-  position: { x: 0, y: 0 },
-  targetBlockIds,
-});
-
 export async function validationFlow(context: TestContext) {
   const factory = await (await factoryHarness(context)).open({ t3: new ControlledT3() });
   const created = await factory.createFlow({ name: "Validation" });
   assert(created.ok);
-  const block = {
-    id: "a",
-    kind: "agent" as const,
-    agentId: "missing-agent",
-    name: "Worker",
-    position: { x: 0, y: 0 },
-    hiddenExitIds: [] as string[],
-    localExits: [{ id: "e", name: "fail", description: "", messageRequired: false }],
-  };
+  const block = agentBlock(
+    "a",
+    "Worker",
+    "missing-agent",
+    { x: 0, y: 0 },
+    [],
+    [blockExit("e", "fail", "", false)],
+  );
   return { factory, created, block };
 }

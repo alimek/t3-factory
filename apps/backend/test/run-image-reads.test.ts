@@ -4,13 +4,8 @@ import { assert, expect, it } from "@effect/vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { base64, factoryMcpClient, readRunImage, toolReply } from "./support/factory-mcp.ts";
 import { preparedServer } from "./support/prepared-runner.ts";
-import {
-  imageRequest,
-  imageStart,
-  manifestEntry,
-  screenshots,
-  sha256Hex,
-} from "./support/run-images.ts";
+import { imageRequest, imageStart, manifestEntry, screenshots } from "./support/run-images.ts";
+import { sha256Hex } from "./support/scenarios.ts";
 import {
   answeredReview,
   finishedParallelWork,

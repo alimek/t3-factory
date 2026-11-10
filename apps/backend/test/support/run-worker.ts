@@ -1,3 +1,11 @@
+import {
+  blockExit,
+  workerFinal,
+  workerWorking,
+  launchBlockId,
+  humanStep,
+  connection,
+} from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { boundWorktreeReview, prepared } from "./prepared-runner.ts";
@@ -25,12 +33,7 @@ export async function workerStart(
   }
   const first = fixture.flow.graph.blocks[0]!;
   const second = { ...first, id: "parallel-block", name: "Parallel work" };
-  const review = {
-    id: "review",
-    kind: "human" as const,
-    name: "Review",
-    position: { x: 400, y: 0 },
-  };
+  const review = humanStep("review", "Review", { x: 400, y: 0 });
   const flow = await fixture.f.updateFlow(fixture.flow.id, {
     ...fixture.flow,
     expectedRevision: fixture.flow.revision,
@@ -43,10 +46,8 @@ export async function workerStart(
             ? [first, review, second]
             : [first],
       connections: [
-        ...(targetBlockId ? [{ sourceBlockId: first.id, exitId: "done", targetBlockId }] : []),
-        ...(targetBlockId === "review"
-          ? [{ sourceBlockId: "review", exitId: "approve", targetBlockId: second.id }]
-          : []),
+        ...(targetBlockId ? [connection(first.id, "done", targetBlockId)] : []),
+        ...(targetBlockId === "review" ? [connection("review", "approve", second.id)] : []),
       ],
     },
   });
@@ -83,7 +84,7 @@ export function launchedBlockId(t3: ControlledT3, blockName = "Entry worker") {
   const launch = [...t3.launches.values()].find((entry) =>
     entry.payload.title.endsWith(` ${blockName}`),
   );
-  return /Factory Block id: ([^.\s]+)/.exec(launch?.payload.message ?? "")?.[1] ?? "";
+  return launchBlockId(launch?.payload.message ?? "");
 }
 
 /** Starts the Run with the entry worker's first turn running. */
@@ -113,19 +114,14 @@ export async function directWorker(
 export async function exitVariantWorker(c: TestContext) {
   const fixture = await prepared(c);
   const { f, agent, flow } = fixture;
-  const blocked = {
-    id: "blocked",
-    name: "Blocked",
-    description: "Explain the blocker.",
-    messageRequired: true,
-  };
+  const blocked = blockExit("blocked", "Blocked", "Explain the blocker.", true);
   const edited = await f.updateAgent(agent.id, {
     ...agent,
     expectedRevision: agent.revision,
     exits: [...agent.exits, blocked],
   });
   assert(edited.ok);
-  const escalate = { id: "escalate", name: "Escalate", description: "", messageRequired: true };
+  const escalate = blockExit("escalate", "Escalate", "", true);
   const saved = await f.updateFlow(flow.id, {
     ...flow,
     expectedRevision: flow.revision,
@@ -142,12 +138,7 @@ export async function exitVariantWorker(c: TestContext) {
 async function twoExitWorker(c: TestContext) {
   const fixture = await prepared(c);
   const source = fixture.flow.graph.blocks[0]!;
-  const revise = {
-    id: "revise",
-    name: "Revise",
-    description: "Needs another pass",
-    messageRequired: false,
-  };
+  const revise = blockExit("revise", "Revise", "Needs another pass", false);
   const first = { ...source, localExits: [revise] };
   const flow = await fixture.f.updateFlow(fixture.flow.id, {
     ...fixture.flow,
@@ -160,8 +151,8 @@ async function twoExitWorker(c: TestContext) {
         { ...source, id: "follow-up", name: "Follow-up" },
       ],
       connections: [
-        { sourceBlockId: first.id, exitId: "done", targetBlockId: "parallel-block" },
-        { sourceBlockId: first.id, exitId: "revise", targetBlockId: "follow-up" },
+        connection(first.id, "done", "parallel-block"),
+        connection(first.id, "revise", "follow-up"),
       ],
     },
   });
@@ -189,14 +180,6 @@ export async function replacedBeforeRelease(c: TestContext) {
   return f;
 }
 
-export const workerFinal = (
-  blockId: string,
-  message = "Implemented the requested result.",
-  exit = "done",
-) => ({ arguments: { blockId, to: "finished", exit, message } });
-export const workerWorking = (blockId: string) => ({
-  arguments: { blockId, to: "working", message: "Opened PR #42; waiting for its CI checks." },
-});
 /** The worker's runs end with `status` and T3 answers that the latest run's delegated and
  * background work have settled. */
 export function finishWorker(f: Awaited<ReturnType<typeof directWorker>>, status = "completed") {
@@ -428,7 +411,7 @@ export async function finishedParallelWork(
   const { f, t3, project } = setup;
   assert((await f.reconcileRuns()).ok);
   const launched = [...t3.launches.values()][1]!;
-  const parallelBlockId = /Factory Block id: ([^.\s]+)/.exec(launched.payload.message)![1]!;
+  const parallelBlockId = launchBlockId(launched.payload.message);
   assert((await f.runtime.submit(workerFinal(parallelBlockId))).code === "ACCEPTED");
   const thread = await t3.readExecution(project, "thread-2");
   const { runId } = launched.reference;

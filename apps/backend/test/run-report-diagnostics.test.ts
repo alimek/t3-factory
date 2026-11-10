@@ -5,8 +5,8 @@ import {
   finishWorker,
   missingWorkerReport,
   settleThread,
-  workerFinal,
 } from "./support/run-worker.ts";
+import { workerFinal } from "./support/scenarios.ts";
 
 it("a rejected worker report explains the rejection without changing execution state or retaining its message", async (c) => {
   // Arrange

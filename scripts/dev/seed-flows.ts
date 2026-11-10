@@ -1,44 +1,13 @@
+import {
+  blockExit,
+  agentBlock,
+  flowInput,
+  humanStep,
+  connection,
+} from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
-import type {
-  BlockExit,
-  FlowBlock,
-  FlowGraph,
-  FlowWorkspace,
-} from "../../packages/contracts/src/index.ts";
+import type { FlowGraph, FlowWorkspace } from "../../packages/contracts/src/index.ts";
 import { requireSuccess } from "./seed-support.ts";
-
-export const exit = (id: string, name: string): BlockExit => ({
-  id,
-  name,
-  description: name,
-  messageRequired: false,
-});
-
-/** An Agent block inheriting its Agent's exits, optionally hiding some and adding local ones. */
-function agentBlock(
-  id: string,
-  name: string,
-  agentId: string,
-  x: number,
-  y: number,
-  exits: { hidden?: string[]; local?: BlockExit[] } = {},
-): FlowBlock {
-  return {
-    id,
-    name,
-    kind: "agent",
-    agentId,
-    position: { x, y },
-    hiddenExitIds: exits.hidden ?? [],
-    localExits: exits.local ?? [],
-  };
-}
-
-/** The Flow input block sits in the left column; blocks start one column to its right. */
-const flowInput = (...targetBlockIds: string[]): FlowGraph["flowInput"] => ({
-  position: { x: 40, y: 180 },
-  targetBlockIds,
-});
 
 async function saveFlow(
   factory: Factory,
@@ -60,56 +29,64 @@ async function saveFlow(
 }
 
 const accessibilityReview = (agentId: string, x: number) =>
-  agentBlock("accessibility", "Accessibility review", agentId, x, 320);
+  agentBlock("accessibility", "Accessibility review", agentId, { x, y: 320 });
 
 export async function createDemoFlows(
   factory: Factory,
   agents: { worker: string; reviewer: string; accessibility: string },
 ) {
   requireSuccess(await factory.createFlow({ name: "Demo · Release checklist (draft)" }));
-  const worker = agentBlock("worker", "Implement change", agents.worker, 320, 180);
+  const worker = agentBlock("worker", "Implement change", agents.worker, { x: 320, y: 180 });
   const simple = await saveFlow(factory, "Demo · Focused change", {
-    flowInput: flowInput("worker"),
+    flowInput: flowInput(["worker"], { x: 40, y: 180 }),
     blocks: [
-      agentBlock("worker", "Implement change", agents.worker, 320, 180, {
-        hidden: ["review"],
-        local: [exit("done", "Done")],
-      }),
+      agentBlock(
+        "worker",
+        "Implement change",
+        agents.worker,
+        { x: 320, y: 180 },
+        ["review"],
+        [blockExit("done", "Done", "Done")],
+      ),
     ],
     connections: [],
   });
   const review = await saveFlow(factory, "Demo · Build, review and decide", {
-    flowInput: flowInput("worker"),
+    flowInput: flowInput(["worker"], { x: 40, y: 180 }),
     blocks: [
       worker,
-      agentBlock("reviewer", "Review implementation", agents.reviewer, 700, 180, {
-        hidden: ["approved"],
-        local: [exit("decision", "Ready for your decision")],
-      }),
-      { id: "decision", name: "Your review", kind: "human", position: { x: 1080, y: 180 } },
+      agentBlock(
+        "reviewer",
+        "Review implementation",
+        agents.reviewer,
+        { x: 700, y: 180 },
+        ["approved"],
+        [blockExit("decision", "Ready for your decision", "Ready for your decision")],
+      ),
+      humanStep("decision", "Your review", { x: 1080, y: 180 }),
     ],
     connections: [
-      { sourceBlockId: "worker", exitId: "review", targetBlockId: "reviewer" },
-      { sourceBlockId: "reviewer", exitId: "decision", targetBlockId: "decision" },
-      { sourceBlockId: "decision", exitId: "request-changes", targetBlockId: "worker" },
+      connection("worker", "review", "reviewer"),
+      connection("reviewer", "decision", "decision"),
+      connection("decision", "request-changes", "worker"),
     ],
   });
   const parallel = await saveFlow(factory, "Demo · Parallel review", {
-    flowInput: flowInput("worker"),
+    flowInput: flowInput(["worker"], { x: 40, y: 180 }),
     blocks: [
       worker,
-      agentBlock("reviewer", "Code review", agents.reviewer, 720, 40),
+      agentBlock("reviewer", "Code review", agents.reviewer, { x: 720, y: 40 }),
       accessibilityReview(agents.accessibility, 720),
     ],
     connections: [
-      { sourceBlockId: "worker", exitId: "review", targetBlockId: "reviewer" },
-      { sourceBlockId: "worker", exitId: "review", targetBlockId: "accessibility" },
+      connection("worker", "review", "reviewer"),
+      connection("worker", "review", "accessibility"),
     ],
   });
   const parallelStart = await saveFlow(factory, "Demo · Parallel review from one prompt", {
-    flowInput: flowInput("reviewer", "accessibility"),
+    flowInput: flowInput(["reviewer", "accessibility"], { x: 40, y: 180 }),
     blocks: [
-      agentBlock("reviewer", "Code review", agents.reviewer, 320, 40),
+      agentBlock("reviewer", "Code review", agents.reviewer, { x: 320, y: 40 }),
       accessibilityReview(agents.accessibility, 320),
     ],
     connections: [],
@@ -118,9 +95,12 @@ export async function createDemoFlows(
     factory,
     "Demo · Build and review in a worktree",
     {
-      flowInput: flowInput("worker"),
-      blocks: [worker, agentBlock("reviewer", "Review implementation", agents.reviewer, 700, 180)],
-      connections: [{ sourceBlockId: "worker", exitId: "review", targetBlockId: "reviewer" }],
+      flowInput: flowInput(["worker"], { x: 40, y: 180 }),
+      blocks: [
+        worker,
+        agentBlock("reviewer", "Review implementation", agents.reviewer, { x: 700, y: 180 }),
+      ],
+      connections: [connection("worker", "review", "reviewer")],
     },
     { mode: "worktree", base: { kind: "default" } },
   );
@@ -141,28 +121,35 @@ async function createExitReadinessScenarios(
       prompt: template.prompt,
       execution: template.execution,
       exits: [
-        exit("pass", "pass"),
-        { ...exit("fail", "fail"), messageRequired: true },
-        exit("needs-human", "needs-human"),
+        blockExit("pass", "pass", "pass"),
+        { ...blockExit("fail", "fail", "fail"), messageRequired: true },
+        blockExit("needs-human", "needs-human", "needs-human"),
       ],
     }),
   );
-  const reviewBlock = agentBlock("reviewer", "Exit contract review", reviewer.id, 320, 120, {
-    hidden: ["needs-human"],
-    local: [
+  const reviewBlock = agentBlock(
+    "reviewer",
+    "Exit contract review",
+    reviewer.id,
+    { x: 320, y: 120 },
+    ["needs-human"],
+    [
       {
-        ...exit("github-url-local", "github-url"),
+        ...blockExit("github-url-local", "github-url", "github-url"),
         description: "A fix is ready. Include its GitHub URL in the message.",
         messageRequired: true,
       },
     ],
-  });
+  );
   await saveFlow(factory, "Demo · Exit configuration needs repair", {
-    flowInput: flowInput("reviewer"),
-    blocks: [reviewBlock, agentBlock("worker", "Apply review changes", workerId, 700, 120)],
+    flowInput: flowInput(["reviewer"], { x: 40, y: 180 }),
+    blocks: [
+      reviewBlock,
+      agentBlock("worker", "Apply review changes", workerId, { x: 700, y: 120 }),
+    ],
     connections: [
-      { sourceBlockId: "reviewer", exitId: "fail", targetBlockId: "worker" },
-      { sourceBlockId: "reviewer", exitId: "github-url-local", targetBlockId: "worker" },
+      connection("reviewer", "fail", "worker"),
+      connection("reviewer", "github-url-local", "worker"),
     ],
   });
   requireSuccess(
@@ -172,19 +159,19 @@ async function createExitReadinessScenarios(
       execution: reviewer.execution,
       expectedRevision: reviewer.revision,
       exits: [
-        exit("pass", "pass"),
-        exit("github-url-agent", "github-url"),
-        exit("needs-human", "needs-human"),
+        blockExit("pass", "pass", "pass"),
+        blockExit("github-url-agent", "github-url", "github-url"),
+        blockExit("needs-human", "needs-human", "needs-human"),
       ],
     }),
   );
   const hiddenFlowId = await saveFlow(factory, "Demo · Hidden exit connection", {
-    flowInput: flowInput("reviewer"),
+    flowInput: flowInput(["reviewer"], { x: 40, y: 180 }),
     blocks: [
-      agentBlock("reviewer", "Review implementation", reviewerId, 320, 120),
-      agentBlock("worker", "Apply review changes", workerId, 700, 120),
+      agentBlock("reviewer", "Review implementation", reviewerId, { x: 320, y: 120 }),
+      agentBlock("worker", "Apply review changes", workerId, { x: 700, y: 120 }),
     ],
-    connections: [{ sourceBlockId: "reviewer", exitId: "approved", targetBlockId: "worker" }],
+    connections: [connection("reviewer", "approved", "worker")],
   });
   const hiddenFlow = requireSuccess(await factory.getFlow(hiddenFlowId));
   requireSuccess(

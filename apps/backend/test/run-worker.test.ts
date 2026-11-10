@@ -7,7 +7,6 @@ import {
 import {
   workerStart,
   directWorker,
-  workerFinal,
   reportedWorker,
   missingWorkerReport,
   revisitedWorker,
@@ -21,8 +20,8 @@ import {
   finishWorker,
   settleThread,
   startWorkerTurn,
-  workerWorking,
 } from "./support/run-worker.ts";
+import { workerFinal, workerWorking } from "./support/scenarios.ts";
 import { prepared } from "./support/prepared-runner.ts";
 
 it("a Flow with two entry Agents launches an independent top-level worker for each", async (c) => {

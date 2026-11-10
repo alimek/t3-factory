@@ -18,13 +18,8 @@ import {
   watchRun,
   withoutGeneration,
 } from "./support/live.ts";
-import {
-  directWorker,
-  finishWorker,
-  startWorkerTurn,
-  workerFinal,
-  workerWorking,
-} from "./support/run-worker.ts";
+import { directWorker, finishWorker, startWorkerTurn } from "./support/run-worker.ts";
+import { workerFinal, workerWorking } from "./support/scenarios.ts";
 
 import { makeLiveChanges } from "../src/live-changes.ts";
 import { makeLiveStreams } from "../src/live-streams.ts";

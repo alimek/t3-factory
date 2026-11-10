@@ -1,12 +1,11 @@
 import { assert, type TestContext } from "@effect/vitest";
 import {
   missingWorkerReport,
-  workerFinal,
   directWorker,
   finishWorker,
   idleWorkingWorker,
-  workerWorking,
 } from "./run-worker.ts";
+import { workerFinal, workerWorking } from "./scenarios.ts";
 
 async function workerRecoveryTurn(f: Awaited<ReturnType<typeof directWorker>>, blockId: string) {
   assert((await f.f.requestReport(f.runId, { blockId })).ok);

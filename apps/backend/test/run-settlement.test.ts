@@ -13,9 +13,8 @@ import {
   settleThread,
   settledWorker,
   startWorkerTurn,
-  workerFinal,
-  workerWorking,
 } from "./support/run-worker.ts";
+import { workerFinal, workerWorking } from "./support/scenarios.ts";
 
 it("a finished terminal Block settles its worker thread in T3 without waiting for Run settlement", async (c) => {
   // Arrange

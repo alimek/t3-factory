@@ -1,3 +1,12 @@
+import {
+  blockExit,
+  launchBlockId,
+  controlledExecution,
+  flowInput,
+  agentBlock,
+  connection,
+  humanStep,
+} from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import type { Factory } from "../../src/index.ts";
@@ -35,13 +44,8 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
   const a = await f.createAgent({
     name: "Worker",
     prompt: "Follow repository instructions.",
-    execution: {
-      environmentId: t3.environmentId,
-      providerInstanceId: "codex-main",
-      modelId: "gpt-6.1-sol",
-      modelOptions: [{ id: "reasoning", value: "high" }],
-    },
-    exits: [{ id: "done", name: "Done", description: "Completed", messageRequired: false }],
+    execution: controlledExecution(t3.environmentId),
+    exits: [blockExit("done", "Done", "Completed", false)],
   });
   assert(a.ok);
   const draft = await f.createFlow({ name: "Single worker" });
@@ -51,18 +55,8 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
     expectedRevision: 1,
     workspace: { mode: "checkout" },
     graph: {
-      flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["worker"] },
-      blocks: [
-        {
-          id: "worker",
-          name: "Entry worker",
-          kind: "agent",
-          agentId: a.value.id,
-          position: { x: 0, y: 0 },
-          hiddenExitIds: [],
-          localExits: [],
-        },
-      ],
+      flowInput: flowInput("worker"),
+      blocks: [agentBlock("worker", "Entry worker", a.value.id, { x: 0, y: 0 }, [], [])],
       connections: [],
     },
   });
@@ -167,11 +161,7 @@ export async function preparedBlockedFlow(c: TestContext) {
         graph: {
           ...flow.graph,
           blocks: [...flow.graph.blocks, ...blocks],
-          connections: blocks.map((block) => ({
-            sourceBlockId: "worker",
-            exitId: "done",
-            targetBlockId: block.id,
-          })),
+          connections: blocks.map((block) => connection("worker", "done", block.id)),
         },
       })
     ).ok,
@@ -212,9 +202,7 @@ async function twoEntryFlow(
         { ...entry, id: "second", name: "Second entry" },
         ...(options.followUp ? [followUp] : []),
       ],
-      connections: options.followUp
-        ? [{ sourceBlockId: entry.id, exitId: "done", targetBlockId: followUp.id }]
-        : [],
+      connections: options.followUp ? [connection(entry.id, "done", followUp.id)] : [],
     },
   });
   assert(flow.ok, JSON.stringify(flow));
@@ -252,20 +240,15 @@ export async function preparedWorktreeReviewFlow(c: TestContext) {
       ...setup.flow.graph,
       blocks: [
         entry,
-        {
-          id: "review",
-          kind: "human",
-          name: "Review",
-          position: { x: 400, y: 0 },
-        },
+        humanStep("review", "Review", { x: 400, y: 0 }),
         { ...source, id: "parallel-block", name: "Parallel work" },
         { ...source, id: "unused", name: "Unused branch" },
       ],
       connections: [
-        { sourceBlockId: entry.id, exitId: "done", targetBlockId: "review" },
-        { sourceBlockId: entry.id, exitId: "revise", targetBlockId: "unused" },
-        { sourceBlockId: "review", exitId: "approve", targetBlockId: "parallel-block" },
-        { sourceBlockId: "parallel-block", exitId: "done", targetBlockId: entry.id },
+        connection(entry.id, "done", "review"),
+        connection(entry.id, "revise", "unused"),
+        connection("review", "approve", "parallel-block"),
+        connection("parallel-block", "done", entry.id),
       ],
     },
   });
@@ -290,6 +273,6 @@ export async function boundWorktreeReview(
     run.ok && run.value.workspace.mode === "worktree" && run.value.workspace.state === "bound",
   );
   const launch = [...setup.t3.launches.values()][0]!;
-  const entryBlockId = /Factory Block id: ([^.\s]+)/.exec(launch.payload.message)![1]!;
+  const entryBlockId = launchBlockId(launch.payload.message);
   return { ...setup, runId: started.value.id, entryBlockId };
 }

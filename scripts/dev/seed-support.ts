@@ -1,3 +1,10 @@
+import {
+  launchBlockId,
+  workerFinal,
+  workerWorking,
+  sha256Hex,
+  solidPng,
+} from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { finishNativeTurn } from "./native-simulation.ts";
@@ -7,7 +14,6 @@ import type {
   RunBlock,
   RunDetail,
 } from "../../packages/contracts/src/index.ts";
-import { sha256Hex, solidPng } from "../../apps/backend/test/support/run-images.ts";
 import type { ExecutionObservation } from "../../apps/backend/src/adapters/t3.ts";
 
 export function requireSuccess<A>(result: Result<A>): A {
@@ -25,9 +31,7 @@ export function executionBlock(run: RunDetail, blockId = "worker") {
 /** The Block id Factory stated in the worker's launch message, as its Agent reads it. */
 export function launchedBlockId(t3: PersistentT3, threadId: string) {
   const launch = [...t3.launches.values()].find((entry) => entry.reference.threadId === threadId);
-  const blockId = /Factory Block id: ([^.\s]+)/.exec(launch?.payload.message ?? "")?.[1];
-  if (!blockId) throw Error(`Development seed: thread ${threadId} has no Block id.`);
-  return blockId;
+  return launchBlockId(launch?.payload.message ?? "");
 }
 
 export interface SeedContext {
@@ -153,7 +157,9 @@ export async function report(
 ) {
   const block = executionBlock(run, blockId);
   const reply = await context.factory.runtime.submit({
-    arguments: { blockId: launchedBlockId(context.t3, block.threadId), ...value },
+    ...(value.to === "working"
+      ? workerWorking(launchedBlockId(context.t3, block.threadId), value.message)
+      : workerFinal(launchedBlockId(context.t3, block.threadId), value.message, value.exit)),
   });
   if (reply.code !== "ACCEPTED") throw Error(`Development report: ${reply.code}`);
   return reconcileUntil(context, run.id, (detail) => {

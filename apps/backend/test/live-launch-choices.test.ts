@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import type { LaunchChoicesLiveMessage } from "@t3-factory/contracts";
-import { assertOk, flowInput, flowWithAgent, projectsHarness } from "./support/domain-setup.ts";
+import { assertOk, flowWithAgent, projectsHarness } from "./support/domain-setup.ts";
+import { flowInput } from "./support/scenarios.ts";
 import { subscribe } from "./support/live.ts";
 
 const changedFlows = (messages: readonly LaunchChoicesLiveMessage[]) =>

@@ -1,11 +1,12 @@
+import { seedScenarios } from "./seed-scenarios.ts";
+import { blockExit, controlledAgent } from "../../apps/backend/test/support/scenarios.ts";
 import { execFile } from "node:child_process";
 import { access, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
-import { createDemoFlows, exit } from "./seed-flows.ts";
-import { seedScenarios } from "./seed-scenarios.ts";
+import { createDemoFlows } from "./seed-flows.ts";
 import { requireSuccess } from "./seed-support.ts";
 
 async function createDemoProject(factory: Factory, t3: PersistentT3, home: string) {
@@ -43,33 +44,29 @@ async function createDemoAgents(factory: Factory, t3: PersistentT3) {
       "worker",
       "Demo · Product engineer",
       "Implement small, clear improvements to Atlas. Keep changes focused and hand off for review with a concise summary.",
-      [exit("review", "Ready for review")],
+      [blockExit("review", "Ready for review", "Ready for review")],
     ],
     [
       "reviewer",
       "Demo · Code reviewer",
       "Review the implementation for correctness, clarity and focused scope. Explain remaining decisions for the human reviewer.",
-      [exit("approved", "Approved")],
+      [blockExit("approved", "Approved", "Approved")],
     ],
     [
       "accessibility",
       "Demo · Accessibility reviewer",
       "Review Atlas keyboard navigation, focus behavior and accessible labels. Report concrete findings independently.",
-      [exit("approved", "Approved")],
+      [blockExit("approved", "Approved", "Approved")],
     ],
   ] as const) {
     const agent = requireSuccess(
-      await factory.createAgent({
-        name,
-        prompt,
-        execution: {
-          environmentId: t3.environmentId,
-          providerInstanceId: "codex-main",
-          modelId: "gpt-6.1-sol",
-          modelOptions: [{ id: "reasoning", value: "high" }],
-        },
-        exits,
-      }),
+      await factory.createAgent(
+        controlledAgent(t3.environmentId, {
+          name,
+          prompt,
+          exits,
+        }),
+      ),
     );
     agents[key] = agent.id;
   }

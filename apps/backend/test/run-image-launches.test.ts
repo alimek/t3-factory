@@ -2,7 +2,8 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { assert, expect, it } from "@effect/vitest";
 import { reportedImageWorker } from "./support/run-worker.ts";
-import { screenshots, sha256Hex, startedImageFanOut } from "./support/run-images.ts";
+import { screenshots, startedImageFanOut } from "./support/run-images.ts";
+import { sha256Hex } from "./support/scenarios.ts";
 
 const attachmentNames = ["image-1-screenshot.png", "image-2-screenshot.png", "image-3-mockup.png"];
 const digests = [screenshots.red, screenshots.blue, screenshots.green].map((image) =>

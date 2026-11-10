@@ -1,41 +1,10 @@
-import { createHash } from "node:crypto";
-import { crc32, deflateSync } from "node:zlib";
+import { solidPng, sha256Hex } from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { preparedFanOutFlow } from "./prepared-runner.ts";
 import type { Factory, FactoryService } from "../../src/index.ts";
 import * as Effect from "effect/Effect";
 import type { PromptSegment, RunImage, StartRunInput } from "@t3-factory/contracts";
-
-function chunk(type: string, data: Buffer) {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-  const checksum = Buffer.alloc(4);
-  checksum.writeUInt32BE(crc32(body));
-  return Buffer.concat([length, body, checksum]);
-}
-
-/** A decodable 8×8 PNG of one colour: distinguishable images with distinct digests. */
-export function solidPng(red: number, green: number, blue: number): Uint8Array {
-  const size = 8;
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(size, 0);
-  header.writeUInt32BE(size, 4);
-  header.set([8, 2, 0, 0, 0], 8);
-  const row = Buffer.concat([
-    Buffer.from([0]),
-    Buffer.from(Array(size).fill([red, green, blue]).flat()),
-  ]);
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", header),
-    chunk("IDAT", deflateSync(Buffer.concat(Array(size).fill(row)))),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
-export const sha256Hex = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
 
 /** Red and blue screenshots share an original filename; green has its own. */
 export const screenshots = {

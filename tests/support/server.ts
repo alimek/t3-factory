@@ -1,3 +1,11 @@
+import { seedScenarios } from "../../scripts/dev/seed-scenarios.ts";
+import {
+  blockExit,
+  flowInput,
+  controlledExecution,
+  agentBlock,
+  sha256Hex,
+} from "../../apps/backend/test/support/scenarios.ts";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -16,9 +24,7 @@ import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-ac
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
-import { sha256Hex } from "../../apps/backend/test/support/run-images.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
-import { seedScenarios } from "../../scripts/dev/seed-scenarios.ts";
 import { seedDevelopment } from "../../scripts/dev/seed.ts";
 import { beginNativeTurn } from "../../scripts/dev/native-simulation.ts";
 import {
@@ -123,14 +129,6 @@ async function prepareWorkerRuns() {
   )!;
 }
 
-/**
- * The Flow input block connected to one Agent block, which starts the Run. Like migrated
- * Flows, it sits 280 left of that block (clamped at 0) on the same row.
- */
-const flowInputTo = (blockId: string, target: { x: number; y: number }) => ({
-  position: { x: Math.max(0, target.x - 280), y: target.y },
-  targetBlockIds: [blockId],
-});
 // Exercise published defaults and mixed value domains through the Agent editor.
 t3.controlledProviders[0] = {
   ...t3.controlledProviders[0]!,
@@ -178,16 +176,11 @@ const response = await fetch(`http://127.0.0.1:${server.address.port}/api/agents
   body: JSON.stringify({
     name: "Sample worker",
     prompt: "Improve the empty search state",
-    execution: {
-      environmentId: t3.environmentId,
-      providerInstanceId: "codex-main",
-      modelId: "gpt-6.1-sol",
-      modelOptions: [],
-    },
+    execution: controlledExecution(t3.environmentId, { modelOptions: [] }),
     exits: [
-      { id: "finish", name: "finish", description: "", messageRequired: false },
-      { id: "ok", name: "ok", description: "The work passes review.", messageRequired: false },
-      { id: "fail", name: "fail", description: "Corrections are needed.", messageRequired: true },
+      blockExit("finish", "finish", "", false),
+      blockExit("ok", "ok", "The work passes review.", false),
+      blockExit("fail", "fail", "Corrections are needed.", true),
     ],
   }),
 });
@@ -207,16 +200,11 @@ const targets = await factory.getReportingInstallations();
 if (!targets.ok || !(await factory.installReporting({ targetId: targets.value[0]!.id })).ok)
   throw Error("Fixture installation failed");
 const runtimeProject = await factory.addRepository({ path: neutral });
-const doneExit = { id: "done", name: "Done", description: "Complete", messageRequired: false };
+const doneExit = blockExit("done", "Done", "Complete", false);
 const agent = await factory.createAgent({
   name: "Runtime worker",
   prompt: "Neutral integration fixture",
-  execution: {
-    environmentId: t3.environmentId,
-    providerInstanceId: "codex-main",
-    modelId: "gpt-6.1-sol",
-    modelOptions: [],
-  },
+  execution: controlledExecution(t3.environmentId, { modelOptions: [] }),
   exits: [doneExit],
 });
 if (!runtimeProject.ok || !agent.ok) throw Error("Could not seed runtime fixture");
@@ -245,12 +233,7 @@ if (!launchProject.ok) throw Error("Launch project unavailable");
 const launchAgent = await factory.createAgent({
   name: "Launch worker",
   prompt: "Neutral launch work",
-  execution: {
-    environmentId: t3.environmentId,
-    providerInstanceId: "codex-main",
-    modelId: "gpt-6.1-sol",
-    modelOptions: [],
-  },
+  execution: controlledExecution(t3.environmentId, { modelOptions: [] }),
   exits: [doneExit],
 });
 if (!launchAgent.ok) throw Error("Launch Agent unavailable");
@@ -262,18 +245,8 @@ await factory.updateFlow(launchFlow.value.id, {
   expectedRevision: 1,
   workspace: { mode: "checkout" },
   graph: {
-    flowInput: flowInputTo("worker", { x: 0, y: 0 }),
-    blocks: [
-      {
-        id: "worker",
-        name: "Entry worker",
-        kind: "agent",
-        agentId: launchAgent.value.id,
-        position: { x: 0, y: 0 },
-        hiddenExitIds: [],
-        localExits: [],
-      },
-    ],
+    flowInput: flowInput("worker"),
+    blocks: [agentBlock("worker", "Entry worker", launchAgent.value.id, { x: 0, y: 0 }, [], [])],
     connections: [],
   },
 });

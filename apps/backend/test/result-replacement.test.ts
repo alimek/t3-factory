@@ -8,9 +8,8 @@ import {
   reportedWorker,
   settleThread,
   startWorkerTurn,
-  workerFinal,
-  workerWorking,
 } from "./support/run-worker.ts";
+import { workerFinal, workerWorking } from "./support/scenarios.ts";
 
 it("a newer finished report before release replaces the held result and only it is handed off", async (c) => {
   // Arrange

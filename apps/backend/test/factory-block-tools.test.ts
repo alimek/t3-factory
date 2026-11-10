@@ -7,10 +7,9 @@ import {
   repliedWorker,
   reportedWorker,
   revisitReportingWorker,
-  workerFinal,
   workerStart,
-  workerWorking,
 } from "./support/run-worker.ts";
+import { workerFinal, workerWorking } from "./support/scenarios.ts";
 
 it("factory_get_block reads the Block named by the id in its launch message", async (c) => {
   // Arrange
