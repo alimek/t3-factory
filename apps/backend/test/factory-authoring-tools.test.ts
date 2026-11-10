@@ -1,10 +1,10 @@
-import { assert, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import { authoringMcpClient, toolReply } from "./support/factory-mcp.ts";
 import { assertOk, sampleAgentInput } from "./support/domain-setup.ts";
 
-it("an Agent and a Flow created through Factory MCP check ready, and Studio reads the saved Flow", async (c) => {
+it("a partial-position save arranges the whole graph after creating a ready Flow at revision 1 without positions", async (c) => {
   // Arrange
-  const { factory, client } = await authoringMcpClient(c);
+  const { client } = await authoringMcpClient(c);
   const capabilities = toolReply(
     await client.callTool({ name: "factory_get_agent_capabilities", arguments: {} }),
   );
@@ -23,39 +23,44 @@ it("an Agent and a Flow created through Factory MCP check ready, and Studio read
       },
     }),
   );
-  const flow = toolReply(
-    await client.callTool({ name: "factory_create_flow", arguments: { name: "Change" } }),
-  );
   const graph = {
-    flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["coder"] },
+    flowInput: { targetBlockIds: ["coder"] },
     blocks: [
       {
         id: "coder",
         kind: "agent",
         name: "Coder",
         agentId: agent.id,
-        position: { x: 240, y: 0 },
         hiddenExitIds: [],
         localExits: [],
       },
     ],
     connections: [],
   };
-  const saved = await client.callTool({
-    name: "factory_save_flow",
-    arguments: { flowId: flow.id, expectedRevision: flow.revision, name: flow.name, graph },
-  });
-  assert(!saved.isError);
+  const workspace = { mode: "worktree", base: { kind: "ref", ref: "origin/develop" } };
 
-  // Act
-  const check = await client.callTool({
-    name: "factory_check_flow",
-    arguments: { flowId: flow.id },
+  const created = await client.callTool({
+    name: "factory_create_flow",
+    arguments: { name: "Change", graph, workspace },
   });
 
-  // Assert
-  expect(check.isError).toBe(false);
-  expect(toolReply(check)).toStrictEqual({ ready: true, issues: [] });
+  expect(created.isError).toBe(false);
+  const flow = toolReply(created);
+  expect(flow).toMatchObject({ revision: 1, workspace, readiness: { ready: true, issues: [] } });
+  expect(flow.graph).toMatchObject(graph);
+  expect(flow.graph.flowInput.position.x).toBeGreaterThanOrEqual(-10000);
+  expect(flow.graph.flowInput.position.x).toBeLessThanOrEqual(10000);
+  expect(flow.graph.flowInput.position.y).toBeGreaterThanOrEqual(-10000);
+  expect(flow.graph.flowInput.position.y).toBeLessThanOrEqual(10000);
+  expect(flow.graph.blocks[0].position.x).toBeGreaterThanOrEqual(-10000);
+  expect(flow.graph.blocks[0].position.x).toBeLessThanOrEqual(10000);
+  expect(flow.graph.blocks[0].position.y).toBeGreaterThanOrEqual(-10000);
+  expect(flow.graph.blocks[0].position.y).toBeLessThanOrEqual(10000);
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_check_flow", arguments: { flowId: flow.id } }),
+    ),
+  ).toStrictEqual({ ready: true, issues: [] });
   expect(provider.reporting.supported).toBe(true);
   expect(agent.settingsStatus).toStrictEqual({
     environment: { state: "available" },
@@ -63,7 +68,25 @@ it("an Agent and a Flow created through Factory MCP check ready, and Studio read
     model: { state: "available" },
     options: [],
   });
-  expect(assertOk(await factory.getFlow(flow.id))).toMatchObject({ revision: 2, graph });
+  // Act
+  const result = await client.callTool({
+    name: "factory_save_flow",
+    arguments: {
+      flowId: flow.id,
+      name: flow.name,
+      expectedRevision: flow.revision,
+      graph: { ...graph, flowInput: { ...graph.flowInput, position: { x: -10000, y: 10000 } } },
+    },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const saved = toolReply(result);
+  expect(saved).toMatchObject({ revision: 2, workspace, readiness: { ready: true, issues: [] } });
+  expect(saved.graph).toStrictEqual(flow.graph);
+  expect(
+    toolReply(await client.callTool({ name: "factory_get_flow", arguments: { flowId: flow.id } })),
+  ).toStrictEqual(saved);
 });
 
 it("an Agent save on a revision Studio has replaced is refused with a conflict and a next step", async (c) => {

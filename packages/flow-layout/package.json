@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@t3-factory/contracts": "workspace:*",
+    "@t3-factory/domain-validation": "workspace:*",
     "elkjs": "0.10.0"
   }
 }

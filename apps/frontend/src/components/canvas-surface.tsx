@@ -1,3 +1,4 @@
+import { createFlowLayoutDimensions, type CanvasDimensions } from "@t3-factory/flow-layout";
 import {
   useImperativeHandle,
   useLayoutEffect,
@@ -11,12 +12,7 @@ import type { AgentDefinition, FlowGraph } from "@t3-factory/contracts";
 import { cn } from "@/lib/utils";
 import { fitGraphView } from "../canvas-fit.ts";
 import { clampGraphPosition, clientToGraphPoint, type CanvasView } from "../canvas-viewport.ts";
-import {
-  createCanvasGeometry,
-  INCOMING_PORT_SPACING,
-  incomingPortIndexForSource,
-  type CanvasDimensions,
-} from "../flow-geometry.ts";
+import { createCanvasGeometry, incomingPortIndexForSource } from "../flow-geometry.ts";
 import {
   addWire,
   canvasGraph,
@@ -498,24 +494,11 @@ function useSurfaceGraph({
     reservedFooterCount: reservedFooters,
     emptyGraphSize,
   };
-  const sourceGeometry = createCanvasGeometry(source, dimensions, facts);
   const layout = useFlowLayoutSession({
     scope,
     graph: sourceGraph,
     agents,
-    dimensions: {
-      flowInput: {
-        width: dimensions.flowInput.width,
-        height: sourceGeometry.flowInputBox.height,
-        outputY: dimensions.flowInput.outputY,
-      },
-      blockWidth: dimensions.block.width,
-      blockHeight: sourceGeometry.reservedHeight,
-      ports: { ...sourceGeometry.ports, inputSpacing: INCOMING_PORT_SPACING },
-      labels: wires.kind === "curved",
-      // Conservative width for the 10 px label, including padding and arrow gaps.
-      labelSize: (text) => ({ width: text.length * 7 + 24, height: 22 }),
-    },
+    dimensions: createFlowLayoutDimensions(source, dimensions, facts, wires.kind === "curved"),
     authoring: arrangement && {
       busy: arrangement.busy,
       savedGraph: arrangement.saved,

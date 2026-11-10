@@ -1,3 +1,9 @@
+import {
+  arrangeFlow,
+  AUTHORING_DIMENSIONS,
+  canvasGraph,
+  createFlowLayoutDimensions,
+} from "@t3-factory/flow-layout";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type {
@@ -5,6 +11,8 @@ import type {
   AgentDefinition,
   FactoryOperations,
   FlowDraft,
+  FlowGraph,
+  FlowGraphInput,
   Result,
 } from "@t3-factory/contracts";
 import {
@@ -84,6 +92,50 @@ export const makeDefinitions = (
         formerExitNames: formerExitNames.get(agent.id) ?? new Map(),
       }));
     });
+    const positionGraph = (input: FlowGraphInput) =>
+      Effect.gen(function* () {
+        const graph: FlowGraph = {
+          ...input,
+          flowInput: { ...input.flowInput, position: input.flowInput.position ?? { x: 0, y: 0 } },
+          blocks: input.blocks.map((block) => ({
+            ...block,
+            position: block.position ?? { x: 0, y: 0 },
+          })),
+        };
+        if (
+          input.flowInput.position !== undefined &&
+          input.blocks.every((block) => block.position !== undefined)
+        )
+          return { ok: true as const, value: graph };
+        const resolved = canvasGraph(graph, yield* readinessAgents);
+        return yield* Effect.tryPromise(() =>
+          arrangeFlow(resolved, createFlowLayoutDimensions(resolved, AUTHORING_DIMENSIONS)),
+        ).pipe(
+          Effect.map((positions): Result<FlowGraph> => ({
+            ok: true,
+            value: {
+              ...graph,
+              flowInput: { ...graph.flowInput, position: positions.flowInput },
+              blocks: graph.blocks.map((block) => ({
+                ...block,
+                position: positions.blocks.get(block.id)!,
+              })),
+            },
+          })),
+          Effect.catch(() =>
+            Effect.succeed(
+              failure("validation", "Could not auto-arrange this Flow within the canvas limits.", [
+                {
+                  code: "layout_failed",
+                  path: "graph",
+                  message:
+                    "Supply positions within -10000 to 10000, or simplify the graph and try again.",
+                },
+              ]),
+            ),
+          ),
+        );
+      });
     const loadCapabilities = Effect.fn("Definitions.loadCapabilities")(function* () {
       const status = yield* connection.getConnection();
       if (!status.ok || status.value.state !== "ready" || !status.value.endpoint) {
@@ -160,28 +212,37 @@ export const makeDefinitions = (
         const validated = validateCreateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql(
-          sql.withTransaction(
-            Effect.gen(function* () {
-              const id = yield* newId;
-              const now = yield* currentTime;
-              const flow: FlowRevision = {
-                id,
-                name: validated.value.name,
-                revision: 1,
-                graph: {
-                  blocks: [],
-                  connections: [],
-                  flowInput: { position: NEW_FLOW_INPUT_POSITION, targetBlockIds: [] },
-                },
-                workspace: { mode: "worktree", base: { kind: "default" } },
-                createdAt: now,
-                updatedAt: now,
-              };
-              yield* sql`INSERT INTO flows (id, created_at) VALUES (${id}, ${now})`;
-              yield* appendFlowRevision(sql, { ...flow, savedAt: now });
-              return { ok: true as const, value: toDraft(flow, []) };
-            }),
-          ),
+          Effect.gen(function* () {
+            const positioned = yield* positionGraph(
+              validated.value.graph ?? {
+                blocks: [],
+                connections: [],
+                flowInput: { position: NEW_FLOW_INPUT_POSITION, targetBlockIds: [] },
+              },
+            );
+            if (!positioned.ok) return positioned;
+            return yield* sql.withTransaction(
+              Effect.gen(function* () {
+                const id = yield* newId;
+                const now = yield* currentTime;
+                const flow: FlowRevision = {
+                  id,
+                  name: validated.value.name,
+                  revision: 1,
+                  graph: positioned.value,
+                  workspace: validated.value.workspace ?? {
+                    mode: "worktree",
+                    base: { kind: "default" },
+                  },
+                  createdAt: now,
+                  updatedAt: now,
+                };
+                yield* sql`INSERT INTO flows (id, created_at) VALUES (${id}, ${now})`;
+                yield* appendFlowRevision(sql, { ...flow, savedAt: now });
+                return { ok: true as const, value: toDraft(flow, yield* readinessAgents) };
+              }),
+            );
+          }),
         );
       },
       validateFlow(input) {
@@ -200,35 +261,39 @@ export const makeDefinitions = (
         const validated = validateUpdateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql<FlowDraft>(
-          sql.withTransaction(
-            Effect.gen(function* () {
-              const [saved] = yield* readCurrentFlows(sql, id);
-              if (!saved) return flowNotFound();
-              if (saved.revision !== validated.value.expectedRevision)
-                return failure(
-                  "conflict",
-                  "A newer revision exists. Keep your edits and reconcile before saving again.",
-                  [
-                    {
-                      code: "stale_revision",
-                      path: "expectedRevision",
-                      message: "Compare the latest saved Flow with your local draft.",
-                    },
-                  ],
-                );
-              const now = yield* currentTime;
-              const flow: FlowRevision = {
-                ...saved,
-                name: validated.value.name,
-                revision: saved.revision + 1,
-                graph: validated.value.graph,
-                workspace: validated.value.workspace ?? saved.workspace,
-                updatedAt: now,
-              };
-              yield* appendFlowRevision(sql, { ...flow, savedAt: now });
-              return { ok: true as const, value: toDraft(flow, yield* readinessAgents) };
-            }),
-          ),
+          Effect.gen(function* () {
+            const positioned = yield* positionGraph(validated.value.graph);
+            if (!positioned.ok) return positioned;
+            return yield* sql.withTransaction(
+              Effect.gen(function* () {
+                const [saved] = yield* readCurrentFlows(sql, id);
+                if (!saved) return flowNotFound();
+                if (saved.revision !== validated.value.expectedRevision)
+                  return failure(
+                    "conflict",
+                    "A newer revision exists. Keep your edits and reconcile before saving again.",
+                    [
+                      {
+                        code: "stale_revision",
+                        path: "expectedRevision",
+                        message: "Compare the latest saved Flow with your local draft.",
+                      },
+                    ],
+                  );
+                const now = yield* currentTime;
+                const flow: FlowRevision = {
+                  ...saved,
+                  name: validated.value.name,
+                  revision: saved.revision + 1,
+                  graph: positioned.value,
+                  workspace: validated.value.workspace ?? saved.workspace,
+                  updatedAt: now,
+                };
+                yield* appendFlowRevision(sql, { ...flow, savedAt: now });
+                return { ok: true as const, value: toDraft(flow, yield* readinessAgents) };
+              }),
+            );
+          }),
         );
       },
       removeFlow(id) {

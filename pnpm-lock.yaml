@@ -213,6 +213,9 @@ importers:
       '@t3-factory/domain-validation':
         specifier: workspace:*
         version: link:../../packages/domain-validation
+      '@t3-factory/flow-layout':
+        specifier: workspace:*
+        version: link:../../packages/flow-layout
       effect:
         specifier: 4.1.2
         version: 4.1.2
@@ -390,6 +393,9 @@ importers:
       '@t3-factory/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@t3-factory/domain-validation':
+        specifier: workspace:*
+        version: link:../domain-validation
       elkjs:
         specifier: 0.10.0
         version: 0.10.0

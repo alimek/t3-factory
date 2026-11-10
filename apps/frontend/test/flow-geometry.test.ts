@@ -1,6 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import { createCanvasGeometry } from "../src/flow-geometry.ts";
-import { AUTHORING_DIMENSIONS, EXECUTION_DIMENSIONS } from "../src/components/canvas-dimensions.ts";
+import { EXECUTION_DIMENSIONS } from "../src/components/canvas-dimensions.ts";
+import { AUTHORING_DIMENSIONS } from "@t3-factory/flow-layout";
 import { geometryGraph } from "./support/geometry.ts";
 
 it("authoring graph bounds enclose the Flow input at its drawn height and incoming growth", () => {

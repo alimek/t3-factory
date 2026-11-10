@@ -275,3 +275,13 @@ export async function arrangeFlow<B extends LayoutBlock>(
   const elk = new ELK.default();
   return parseLayoutPositions(graph, await elk.layout(buildElkGraph(graph, dimensions)));
 }
+
+export {
+  AUTHORING_DIMENSIONS,
+  createNodeGeometry,
+  createFlowLayoutDimensions,
+  incomingPortY,
+  type CanvasDimensions,
+  type GeometryFacts,
+} from "./dimensions.ts";
+export { canvasGraph, type CanvasBlock, type CanvasGraph } from "./graph.ts";
