@@ -24,8 +24,8 @@ The hook first checks attribution in the commits being pushed, then runs
 | 6    | `pnpm test`         | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
 
 During implementation, run the cheap static steps (`pnpm format:check`,
-`pnpm fallow`, and `pnpm lint` after build) and the affected package's tests before
-handing work back; the full `pnpm check` remains required before push.
+`pnpm fallow` and `pnpm lint`) and the affected package's tests before handing
+work back; the full `pnpm check` remains required before push.
 
 The hook checks the working tree, including uncommitted changes, not only the
 pushed commits; commit or discard local changes before pushing so the result
@@ -52,10 +52,14 @@ After image links. Run the same check locally with
 `pnpm check:ui-evidence --pr <number>`. It does not inspect image content or prove the final UI;
 follow the [verification evidence requirements](../.agents/skills/verify-t3-factory/SKILL.md#evidence).
 
-When running `pnpm lint` or `pnpm typecheck` separately in a fresh checkout,
-run `pnpm build` first: workspace package exports resolve to generated `dist`
-declarations. Missing declarations can otherwise produce cascading type and
-type-aware lint errors. `pnpm check` already orders these steps correctly.
+`pnpm lint` and `pnpm typecheck` need no build output. Every default
+`tsconfig.json` that imports a workspace package, which editors and the
+type-aware lint also use, enables the `factory-source` export condition, so
+workspace packages resolve to their TypeScript source and a shared-package
+change is visible to every type-check at once. The emitting configurations `pnpm build` uses (`tsconfig.build.json` where a
+package needs both) keep default resolution and compile against the built
+declarations of their dependencies; the desktop bundle likewise consumes compiled
+backend output.
 
 `pnpm fallow` scans the repository and fails on any finding (including warnings)
 or source parse failure. There is no baseline: every change must preserve zero
