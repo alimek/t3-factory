@@ -43,6 +43,16 @@ with the repository's pinned Node and pnpm versions and a frozen lockfile.
 The job's check name is **Quality gate**. Requiring that check before merge is a
 GitHub ruleset setting; adding a workflow alone does not enable that requirement.
 
+The separate **Git attribution** status runs the same validator on PR open,
+edit, reopen and synchronization events with checkout history and pinned Node,
+without installing dependencies, building or running behavior tests. Its
+concurrency group is separate from Quality's. During this deployment overlap,
+**Quality gate** still runs the validator on PR events, including edits. The owner
+must require **Git attribution** in the `main` ruleset through
+[#203](https://github.com/alimek/t3-factory/issues/203) before
+[#204](https://github.com/alimek/t3-factory/issues/204) removes the duplicate PR
+invocation and code runs for metadata-only edits.
+
 Run `pnpm check` from the repository root for the same sequence locally.
 
 For frontend changes, **UI evidence attachments** runs
