@@ -47,18 +47,25 @@ export function openRunnerRecovery(
         return detail;
       const visit = detail.value.activations.filter((a) => a.blockId === blockId).at(-1);
       const current = yield* store.readRun(runId);
+      // A Continuation's work runs on the thread its prompt was sent to.
+      const promptBinding = detail.value.continuationVisits.find(
+        (entry) => entry.blockId === blockId && entry.kind === "prompt",
+      )?.bindingId;
+      const blockThread =
+        b.threadId ??
+        detail.value.threadBindings.find((binding) => binding.id === promptBinding)?.threadId;
       if (
         !current ||
-        !b.threadId ||
+        !blockThread ||
         !b.executionId ||
         !visit ||
         detail.value.reports.some((r) => r.activationId === visit.id && r.status === "finished")
       )
         return failure(
           "conflict",
-          "Request report needs an Agent Block with a worker thread and no finished result for its current visit. Refresh the Run.",
+          "Request report needs an Agent Block or Continuation with a worker thread and no finished result for its current visit. Refresh the Run.",
         );
-      const threadId = b.threadId,
+      const threadId = blockThread,
         executionId = b.executionId;
       const preflight = yield* recoverOperation(
         Effect.gen(function* () {

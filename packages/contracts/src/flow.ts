@@ -33,7 +33,9 @@ export interface WaitDuration {
 /**
  * An Agent block exposes its Agent's exits, minus those this Flow hides, plus its Flow-local
  * exits. A Human block has the fixed Approve and Request changes exits. A Wait block has one
- * unnamed output; `duration` is null while the draft has none.
+ * unnamed output; `duration` is null while the draft has none. A Continuation sends its prompt
+ * once per Run into the worker thread of the message that reaches it and has one fixed, unnamed
+ * output.
  */
 export type FlowBlock = BlockBase &
   (
@@ -47,6 +49,11 @@ export type FlowBlock = BlockBase &
       }
     | { readonly kind: "human" }
     | { readonly kind: "wait"; readonly duration: WaitDuration | null }
+    | {
+        readonly kind: "continuation";
+        /** Stored trimmed; empty only in a draft, where readiness reports it. */
+        readonly prompt: string;
+      }
   );
 export interface FlowConnection {
   readonly sourceBlockId: string;

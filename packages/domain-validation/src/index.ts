@@ -20,6 +20,7 @@ import type {
   WaitUnit,
 } from "@t3-factory/contracts";
 import {
+  CONTINUATION_EXIT,
   checkExits,
   effectiveExits,
   HUMAN_EXITS,
@@ -397,20 +398,43 @@ function checkHiddenExits(hidden: unknown, path: string, issue: IssueReporter) {
     issue("invalid_hidden_exits", path, "Hide up to 100 distinct inherited exit IDs.");
 }
 
+/** The fields each block kind may carry beside its id, name, kind and position. A Map, so an
+ * untrusted kind such as "toString" never resolves to an Object.prototype member. */
+const KIND_FIELDS: ReadonlyMap<unknown, readonly string[]> = new Map([
+  ["agent", ["agentId", "hiddenExitIds", "localExits"]],
+  ["human", []],
+  ["wait", ["duration"]],
+  ["continuation", ["prompt"]],
+]);
+
+/** An Agent reference, a Wait duration or a Continuation prompt, the fields only one kind has. */
+function checkKindFields(block: Record<string, unknown>, path: string, issue: IssueReporter) {
+  if (block.kind === "agent" && block.agentId !== null && !isId(block.agentId))
+    issue(
+      "invalid_agent_reference",
+      `${path}.agentId`,
+      "Choose a saved Agent or leave the reference empty.",
+    );
+  if (
+    block.kind === "continuation" &&
+    (typeof block.prompt !== "string" || block.prompt.trim().length > CONTINUATION_PROMPT_LIMIT)
+  )
+    issue(
+      "invalid_prompt",
+      `${path}.prompt`,
+      "Enter a Continuation prompt up to 120,000 characters.",
+    );
+  if (block.kind === "wait") checkWaitDuration(block.duration, `${path}.duration`, issue);
+}
+
 function checkBlockFields(
   block: Record<string, unknown>,
   path: string,
   blockIds: Set<string>,
   issue: IssueReporter,
 ) {
-  const allowed = [
-    "id",
-    "name",
-    "kind",
-    "position",
-    ...(block.kind === "agent" ? ["agentId", "hiddenExitIds", "localExits"] : []),
-    ...(block.kind === "wait" ? ["duration"] : []),
-  ];
+  const kindFields = KIND_FIELDS.get(block.kind);
+  const allowed = ["id", "name", "kind", "position", ...(kindFields ?? [])];
   if (Object.keys(block).some((key) => !allowed.includes(key)))
     issue(
       "block_overrides_forbidden",
@@ -420,16 +444,11 @@ function checkBlockFields(
   if (!isId(block.id) || blockIds.has(block.id))
     issue("invalid_block_id", `${path}.id`, "Block IDs must be non-empty and unique.");
   else blockIds.add(block.id);
-  if (block.kind !== "agent" && block.kind !== "human" && block.kind !== "wait")
-    issue("invalid_block_kind", `${path}.kind`, "Use an Agent, Human or Wait block.");
+  if (!kindFields)
+    issue("invalid_block_kind", `${path}.kind`, "Use an Agent, Human, Wait or Continuation block.");
   if (typeof block.name !== "string" || block.name.length > 200)
     issue("invalid_block_name", `${path}.name`, "Use a block name up to 200 characters.");
-  if (block.kind === "agent" && block.agentId !== null && !isId(block.agentId))
-    issue(
-      "invalid_agent_reference",
-      `${path}.agentId`,
-      "Choose a saved Agent or leave the reference empty.",
-    );
+  checkKindFields(block, path, issue);
   if (block.position !== undefined && !isCanvasPosition(block.position))
     issue("invalid_position", `${path}.position`, CANVAS_COORD_MESSAGE);
 }
@@ -456,12 +475,14 @@ function checkWaitDuration(duration: unknown, path: string, issue: IssueReporter
 }
 
 /**
- * The exit IDs a connection may leave each block by: a Human block's fixed exits, or `inherited`
- * for an Agent block, whose wires may also name Agent exits that readiness resolves.
+ * The exit IDs a connection may leave each block by: a Human block's, Wait's or Continuation's fixed exits,
+ * or `inherited` for an Agent block, whose wires may also name Agent exits that readiness resolves.
  */
 type ConnectableExits = Map<string, ReadonlySet<string> | "inherited">;
 const HUMAN_EXIT_IDS: ReadonlySet<string> = new Set(HUMAN_EXITS.map((exit) => exit.id));
 const WAIT_EXIT_IDS: ReadonlySet<string> = new Set([WAIT_OUTPUT.id]);
+const CONTINUATION_EXIT_IDS: ReadonlySet<string> = new Set([CONTINUATION_EXIT.id]);
+const CONTINUATION_PROMPT_LIMIT = 120_000;
 
 function checkBlock(
   block: unknown,
@@ -471,7 +492,7 @@ function checkBlock(
   issue: IssueReporter,
 ) {
   if (!isRecord(block)) {
-    issue("invalid_block", path, "Supply an Agent, Human or Wait block.");
+    issue("invalid_block", path, "Supply an Agent, Human, Wait or Continuation block.");
     return;
   }
   checkBlockFields(block, path, blockIds, issue);
@@ -479,11 +500,16 @@ function checkBlock(
     checkHiddenExits(block.hiddenExitIds, `${path}.hiddenExitIds`, issue);
     checkExits(block.localExits, `${path}.localExits`, false, issue);
   }
-  if (block.kind === "wait") checkWaitDuration(block.duration, `${path}.duration`, issue);
   if (typeof block.id === "string")
     exits.set(
       block.id,
-      block.kind === "human" ? HUMAN_EXIT_IDS : block.kind === "wait" ? WAIT_EXIT_IDS : "inherited",
+      block.kind === "human"
+        ? HUMAN_EXIT_IDS
+        : block.kind === "wait"
+          ? WAIT_EXIT_IDS
+          : block.kind === "continuation"
+            ? CONTINUATION_EXIT_IDS
+            : "inherited",
     );
 }
 
@@ -640,9 +666,7 @@ function checkFlowBody(input: unknown, required: boolean) {
     ok: true as const,
     value: {
       ...name.value,
-      ...(raw.graph !== undefined
-        ? { graph: trimLocalExitNames(raw.graph as FlowGraphInput) }
-        : {}),
+      ...(raw.graph !== undefined ? { graph: trimGraphText(raw.graph as FlowGraphInput) } : {}),
       ...(workspace ? { workspace } : {}),
     },
     expectedRevision: raw.expectedRevision as number,
@@ -662,18 +686,22 @@ export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
   };
 }
 
-/** Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly. */
-function trimLocalExitNames(graph: FlowGraphInput): FlowGraphInput {
+/**
+ * Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly;
+ * Continuation prompts are stored trimmed, as Agent prompts are.
+ */
+function trimGraphText(graph: FlowGraphInput): FlowGraphInput {
   return {
     ...graph,
-    blocks: graph.blocks.map((block) =>
-      block.kind === "agent"
-        ? {
-            ...block,
-            localExits: block.localExits.map((exit) => ({ ...exit, name: exit.name.trim() })),
-          }
-        : block,
-    ),
+    blocks: graph.blocks.map((block) => {
+      if (block.kind === "agent")
+        return {
+          ...block,
+          localExits: block.localExits.map((exit) => ({ ...exit, name: exit.name.trim() })),
+        };
+      if (block.kind === "continuation") return { ...block, prompt: block.prompt.trim() };
+      return block;
+    }),
   };
 }
 
@@ -732,6 +760,12 @@ function blockReadiness(
   const label = blockLabel(block);
   if (!block.name.trim()) add("block_name_required", `${path}.name`, `Name block ${block.id}.`);
   if (block.kind === "wait") waitReadiness(block, path, add);
+  if (block.kind === "continuation" && !block.prompt.trim())
+    add(
+      "continuation_prompt_required",
+      `${path}.prompt`,
+      `Write the prompt ${label} sends to the conversation it continues.`,
+    );
   if (block.kind !== "agent") return;
   if (!agents.some((agent) => agent.id === block.agentId))
     add("agent_required", `${path}.agentId`, `Choose a saved Agent for ${label}.`);
@@ -823,6 +857,32 @@ function reachabilityReadiness(graph: FlowGraphInput, add: IssueReporter) {
 }
 
 /**
+ * The Agent blocks whose worker threads a Continuation can continue: the nearest Agent on each
+ * incoming path, walking back through Human steps, Waits and Continuations, which have no thread of their
+ * own. A Flow input targets only Agents, so every path a Run can take into a Continuation passes
+ * one; at run time the arriving message's own worker decides.
+ */
+export function continuationSources(graph: FlowGraphInput, blockId: string): string[] {
+  const blocks = new Map(graph.blocks.map((block) => [block.id, block]));
+  const sources = new Set<string>();
+  const visited = new Set<string>([blockId]);
+  const pending = [blockId];
+  while (pending.length) {
+    const target = pending.pop()!;
+    for (const edge of graph.connections) {
+      if (edge.targetBlockId !== target) continue;
+      const source = blocks.get(edge.sourceBlockId);
+      if (source?.kind === "agent") sources.add(source.id);
+      else if (source && !visited.has(source.id)) {
+        visited.add(source.id);
+        pending.push(source.id);
+      }
+    }
+  }
+  return graph.blocks.flatMap((block) => (sources.has(block.id) ? [block.id] : []));
+}
+
+/**
  * Graph readiness against the given saved Agents; live T3, project and provisioning gates remain
  * separate. Issues block Start, never a save.
  */
@@ -866,6 +926,7 @@ export function resolveAgentModel(
 }
 
 export {
+  CONTINUATION_EXIT,
   effectiveExits,
   inheritedExits,
   HUMAN_EXITS,

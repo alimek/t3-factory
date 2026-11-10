@@ -19,6 +19,7 @@ import {
   terminalWaitFlow,
   twoWorkersStarted,
   WAIT_MINUTES,
+  waitContinuationFlow,
   waitFlow,
   workerAtWork,
 } from "./support/scenarios.ts";
@@ -422,6 +423,37 @@ it.effect(
         arguments: { blockId: launchBlockId(launched.message) },
       });
       expect(followUp).toMatchObject({ inputs: { feedback: "Twice delayed." } });
+    }),
+);
+
+it.effect(
+  "a Continuation after a Wait queues its prompt on the original worker's thread once the wait elapses",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, waitContinuationFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker, { message: "Agreed scope." }));
+      yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      const promptSend = nextSend(f.world);
+
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+      // Assert
+      const sent = yield* Effect.promise(() => promptSend);
+      expect(sent.threadId).toBe(worker.threadId);
+      expect(sent.message).toContain("Write the spec from what we agreed.");
+      expect(launchBlockId(sent.message)).not.toBe(worker.blockId);
+      expect(f.t3.launches.size).toBe(1);
+      const run = yield* Effect.promise(() =>
+        observeFor("observe the prompt", f.world, worker.runId, (detail) =>
+          detail.blocks.some((block) => block.blockId === "spec" && block.state === "sent"),
+        ),
+      );
+      expect(run.continuationVisits).toMatchObject([
+        { blockId: "spec", kind: "prompt", sourceBlockId: "cool-down", state: "sent" },
+      ]);
     }),
 );
 

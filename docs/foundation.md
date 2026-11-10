@@ -39,7 +39,7 @@ and restricted OAuth credentials live outside project repositories.
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
   context needed to resolve uncertain outcomes. An acknowledgement is not completion.
-  Each delivery also records the [originating worker](runner.md#delivery-origin) of its message,
+  Each delivery also records the [worker provenance](runner.md#worker-provenance) of its message,
   and each Wait arrival is a durable obligation with an absolute deadline.
 - Reports name their Block by the Block id Factory issued; Run and Block identity never come
   from other model-supplied references.

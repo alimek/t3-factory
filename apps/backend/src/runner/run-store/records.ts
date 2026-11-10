@@ -17,10 +17,12 @@ export type DeliveryRecord = {
   report_id: string | null;
   occurrence_id: string | null;
   wait_arrival_id: string | null;
+  /** The Block activation whose result the message is, beside `binding_id`; null when unknown. */
   origin_activation_id: string | null;
-  origin_thread_id: string | null;
   source_block_id: string | null;
   exit_id: string | null;
+  /** The worker thread binding the message belongs to; null for launches and earlier records. */
+  binding_id: string | null;
   result_json: string | null;
   target_json: string;
   request_key: string;

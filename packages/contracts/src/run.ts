@@ -111,8 +111,19 @@ export interface RunDefinitions {
 export interface RunBlock {
   readonly blockId: string;
   readonly name: string;
-  /** `stopped`: the Run was archived before this activated Block finished. */
-  readonly state: "not-started" | "working" | "waiting" | "finished" | "error" | "stopped";
+  /**
+   * `stopped`: the Run was archived before this activated Block finished. A Continuation is
+   * `sent` while its prompt is in a worker thread and `pass-through` once its response went out.
+   */
+  readonly state:
+    | "not-started"
+    | "working"
+    | "waiting"
+    | "finished"
+    | "error"
+    | "stopped"
+    | "sent"
+    | "pass-through";
   readonly threadId: string | null;
   readonly executionId: string | null;
   readonly link: string | null;
@@ -275,6 +286,7 @@ export interface RunDetail extends RunSummary {
   }[];
   readonly humanOccurrences: readonly HumanOccurrence[];
   readonly waitArrivals: readonly WaitArrival[];
+  readonly continuationVisits: readonly ContinuationVisit[];
   readonly attention: readonly RunAttention[];
   readonly executions: readonly {
     readonly bindingId: string;
@@ -389,6 +401,28 @@ export function attentionPresentation(kind: RunAttention["kind"]): RunAttentionP
     case "report-problem":
       return "problem";
   }
+}
+
+/**
+ * One message that reached a Continuation. The first sends the prompt into the message's worker
+ * thread (`prompt`); every later one is forwarded unchanged (`pass-through`), keeping its own
+ * worker. Messages arriving while the prompt is pending stay `queued` until its response is out.
+ */
+export interface ContinuationVisit {
+  readonly id: string;
+  readonly blockId: string;
+  /** The delivery that arrived; Continuation timeline events name it as their cause. */
+  readonly incomingIntentId: string;
+  readonly kind: "prompt" | "pass-through";
+  /** The block whose result or answer arrived. */
+  readonly sourceBlockId: string | null;
+  /** The worker thread binding the message belongs to; see `RunDetail.threadBindings`. */
+  readonly bindingId: string | null;
+  /** The prompt visit's activation, which the worker reports against. */
+  readonly activationId: string | null;
+  readonly state: "queued" | "sent" | "forwarded" | "cancelled";
+  readonly arrivedAt: string;
+  readonly forwardedAt: string | null;
 }
 
 /** Each incoming activation is independent, including repeated visits to the same block. */

@@ -149,6 +149,8 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     // Released deliveries came from no Final result, so they carry no origin.
     intents: run.intents.map((intent) => ({ ...intent, waitArrivalId: null, origin: null })),
     waitArrivals: [],
+    // Released Flows had no Continuation blocks.
+    continuationVisits: [],
     coordinationActions: actions,
   };
 }

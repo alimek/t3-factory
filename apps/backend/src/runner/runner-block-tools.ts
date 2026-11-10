@@ -80,38 +80,46 @@ function blockView(
   const visits = detail.activations.filter((activation) => activation.blockId === blockId);
   const current = visits[visits.length - 1];
   const cause = current?.cause ?? "";
-  const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
+  // A Continuation's worker answers its prompt and finishes without naming an exit.
+  const continuation = graphBlock.kind === "continuation";
   return {
     code: "BLOCK",
     state: block.state,
     visit: visits.length,
-    reason: cause.startsWith("start:")
-      ? "first"
-      : cause.startsWith("human:")
-        ? "Human answer"
-        : cause.startsWith("wait:")
-          ? "Wait"
-          : "feedback",
-    exits: effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({
-      id: exit.id,
-      name: exit.name,
-      description: exit.description,
-      messageRequired: exit.messageRequired,
-    })),
+    reason: continuation ? "continuation" : visitReason(cause),
+    ...(continuation ? { prompt: graphBlock.prompt } : {}),
+    exits: continuation
+      ? []
+      : effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({
+          id: exit.id,
+          name: exit.name,
+          description: exit.description,
+          messageRequired: exit.messageRequired,
+        })),
     inputs: {
       input: detail.input,
       images,
       results: incomingResults(detail, cause),
-      feedback: feedbackId
-        ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
-        : forwardedMessage(detail, cause),
+      feedback: visitFeedback(detail, cause),
     },
     allowedTransitions: current && detail.lifecycle !== "archived" ? OPEN_TRANSITIONS : [],
   };
 }
 
-/** The message a Wait forwarded to this visit, unchanged; null once Archive cleared it. */
-function forwardedMessage(detail: RunDetail, cause: string) {
+/** Why an Agent visit started, from the cause of its activation. */
+function visitReason(cause: string) {
+  if (cause.startsWith("start:")) return "first";
+  if (cause.startsWith("human:")) return "Human answer";
+  if (cause.startsWith("wait:")) return "Wait";
+  return "feedback";
+}
+
+/** The result or answer that started this visit, or the message a Wait forwarded to it unchanged;
+ * null once Archive cleared a Wait's message. */
+function visitFeedback(detail: RunDetail, cause: string) {
+  const feedbackId = /^(?:report|human):([^/]+)/.exec(cause)?.[1];
+  if (feedbackId)
+    return detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null;
   const arrivalId = /^wait:([^/]+)/.exec(cause)?.[1];
   return detail.waitArrivals.find((arrival) => arrival.id === arrivalId)?.message ?? null;
 }

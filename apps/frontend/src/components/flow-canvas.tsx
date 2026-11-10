@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   addWire,
   canConnect,
+  continuedThread,
   exitRecipients,
   type BlockPosition,
   type CanvasBlock,
@@ -241,9 +242,19 @@ function authoringFlowInput({
   };
 }
 
-function blockReference(block: FlowBlock, agents: readonly AgentDefinition[]) {
+function blockReference(
+  graph: FlowGraph,
+  block: FlowBlock,
+  agents: readonly AgentDefinition[],
+): { label: string; value: string; valueClassName?: string } {
   if (block.kind === "human") return { label: "Asks", value: "a person" };
   if (block.kind === "wait") return { label: "Waits", value: waitDurationText(block.duration) };
+  if (block.kind === "continuation") {
+    const thread = continuedThread(graph, block.id);
+    return thread
+      ? { label: "continues", value: thread, valueClassName: "text-brand-cyan" }
+      : { label: "", value: "no Agent before it", valueClassName: "text-muted-foreground" };
+  }
   if (!block.agentId) return { label: "Agent", value: "not chosen" };
   return {
     label: "Agent",
@@ -265,6 +276,15 @@ function AuthoringExit({
   exit: CanvasBlock["exits"][number];
 }) {
   const recipients = exitRecipients(graph, block.id, exit.id).join(", ");
+  if (exit.source === "continuation")
+    return (
+      <>
+        <span className="truncate text-2xs tracking-label text-muted-foreground">
+          response · prompt sent once per Run
+        </span>
+        <span className="sr-only">→ {recipients || "finish here"}</span>
+      </>
+    );
   return (
     <>
       <span className="truncate text-2xs tracking-label text-muted-foreground">
@@ -316,7 +336,7 @@ function authoringBlock({
   const identity = blockIdentity({
     kind: block.kind,
     name,
-    ...blockReference(block, agents),
+    ...blockReference(graph, block, agents),
     trailing: grip(selected),
   });
   return {
@@ -349,7 +369,7 @@ function authoringBlock({
       exit.unavailable
         ? unavailablePort
         : connectionHandle(
-            exit.source === "wait"
+            exit.source === "wait" || exit.source === "continuation"
               ? `Connect output of ${name}`
               : `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
             connectingExitId === exit.id,

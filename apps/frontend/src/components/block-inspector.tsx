@@ -1,15 +1,18 @@
 import { useId, type ComponentProps } from "react";
-import { ExternalLink, Trash2 } from "lucide-react";
+import { CornerDownLeft, ExternalLink, Trash2 } from "lucide-react";
 import type { AgentDefinition, FlowBlock, FlowGraph, WaitUnit } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { StudioLink } from "../components/app-link.tsx";
+import { continuedThread } from "../flow-graph.ts";
 import { BlockExitConfiguration } from "./block-exit-configuration.tsx";
 
 type AgentBlock = Extract<FlowBlock, { kind: "agent" }>;
 type WaitBlock = Extract<FlowBlock, { kind: "wait" }>;
+type ContinuationBlock = Extract<FlowBlock, { kind: "continuation" }>;
 
 /** Configuration of the selected block, shown in the editor's floating panel. */
 export function BlockConfiguration({
@@ -49,7 +52,11 @@ export function BlockConfiguration({
           </p>
         )}
         {block.kind === "wait" && <WaitBlockSettings block={block} onEdit={onEdit} />}
+        {block.kind === "continuation" && (
+          <ContinuationBlockSettings block={block} graph={graph} onEdit={onEdit} />
+        )}
         <BlockExitConfiguration block={block} graph={graph} agents={agents} onEdit={onEdit} />
+        {block.kind === "continuation" && <OncePerRun />}
         <PositionControls block={block} onEdit={onEdit} />
       </div>
       <div className="flex items-center gap-2 border-t px-4 pt-3">
@@ -207,6 +214,81 @@ function WaitBlockSettings({
         no Agent or worker; the Flow input connects only to Agent blocks.
       </p>
     </div>
+  );
+}
+
+function ContinuationBlockSettings({
+  block,
+  graph,
+  onEdit,
+}: {
+  block: ContinuationBlock;
+  graph: FlowGraph;
+  onEdit: (block: FlowBlock) => void;
+}) {
+  const promptId = useId();
+  const thread = continuedThread(graph, block.id);
+  return (
+    <>
+      <div className="grid gap-1.5">
+        <FieldLabel htmlFor={promptId}>
+          Prompt <span className="text-subtle-foreground">required</span>
+        </FieldLabel>
+        <Textarea
+          id={promptId}
+          rows={6}
+          required
+          aria-describedby={`${promptId}-help`}
+          value={block.prompt}
+          maxLength={120_000}
+          onChange={(e) => onEdit({ ...block, prompt: e.target.value })}
+          className="min-h-32 bg-muted text-sm"
+        />
+        <p id={`${promptId}-help`} className="text-xs text-muted-foreground">
+          Sent once, word for word, to the conversation that delivered the first message.
+        </p>
+      </div>
+      <section aria-label="Conversation" className="grid gap-2">
+        <h3 className="text-xs font-semibold text-muted-foreground">Conversation</h3>
+        <div className="grid gap-1 rounded-lg border bg-muted px-3 py-2.5">
+          <p className="flex flex-wrap items-baseline gap-x-1.5 text-sm">
+            <CornerDownLeft aria-hidden className="size-3.5 shrink-0 self-center text-brand-cyan" />
+            {thread ? (
+              <>
+                <span>Continues</span>
+                <span className="text-brand-cyan">{thread}</span>
+                <span className="text-xs text-muted-foreground">
+                  · from the incoming connection
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">No Agent before it</span>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {thread
+              ? "Same T3 conversation, model and workspace as the worker that sent the message. There is nothing to choose here."
+              : "Connect an Agent block, directly or through Human steps, Waits and Continuations, so there is a conversation to continue."}
+          </p>
+        </div>
+      </section>
+    </>
+  );
+}
+
+/** How a Continuation behaves across one Run, in the order it happens. */
+function OncePerRun() {
+  return (
+    <section aria-label="Once per Run" className="grid gap-2">
+      <h3 className="text-xs font-semibold text-muted-foreground">Once per Run</h3>
+      <ol className="grid list-inside list-decimal gap-1.5 text-xs text-muted-foreground marker:text-link">
+        <li>The first message sends the prompt to its thread and waits for finished.</li>
+        <li>Messages arriving meanwhile wait behind that response.</li>
+        <li>
+          After that every message passes straight through, with no second prompt, also in loops.
+        </li>
+      </ol>
+    </section>
   );
 }
 

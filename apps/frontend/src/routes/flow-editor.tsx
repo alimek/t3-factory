@@ -524,6 +524,13 @@ function DraftProblems({
   );
 }
 
+const PANEL_BADGES: Record<FlowBlock["kind"], string> = {
+  agent: "AGENT BLOCK",
+  human: "HUMAN STEP",
+  wait: "WAIT",
+  continuation: "CONTINUATION BLOCK",
+};
+
 /** The floating configuration panel: anchored to the canvas's right edge, only while selected. */
 function BlockPanel({
   block,
@@ -558,7 +565,7 @@ function BlockPanel({
     >
       <div className="flex items-center gap-2 px-4">
         <Badge variant="default" className="rounded-md px-2 py-1 font-medium">
-          {{ agent: "AGENT BLOCK", human: "HUMAN STEP", wait: "WAIT" }[block.kind]}
+          {PANEL_BADGES[block.kind]}
         </Badge>
         <span className="flex-1" />
         <kbd className="rounded-sm border border-border-strong bg-accent px-1.25 font-mono text-2xs text-muted-foreground">

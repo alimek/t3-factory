@@ -79,3 +79,17 @@ export async function expectFlowBlocked(screen: Screen, message: RegExp) {
   await expect(screen.getByRole("button", message)).toBeVisible();
   await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeDisabled();
 }
+
+/** Opens Studio on a wide canvas and creates the named Flow through New Flow. */
+export async function createStudioFlow(
+  app: { open(path: string): Promise<unknown> },
+  screen: Screen,
+  browser: { setViewport(size: { width: number; height: number }): Promise<unknown> },
+  name: string,
+) {
+  await browser.setViewport({ width: 1920, height: 1000 });
+  await app.open("/studio/flows");
+  await screen.getByRole("button", "New Flow").tap();
+  await screen.getByLabel("Flow name").fill(name);
+  await screen.getByRole("button", "Create Flow").tap();
+}

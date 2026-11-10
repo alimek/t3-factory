@@ -28,7 +28,7 @@ Where all workers of one Run work, fixed at Start: the project checkout, or for 
 _Avoid_: A worktree per worker.
 
 **Flow block**:
-A constituent element of a flow: the Flow input block, an agent block, a human step or a Wait.
+A constituent element of a flow: the Flow input block, an agent block, a human step, a Wait or a Continuation.
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
 
 **Agent**:
@@ -56,10 +56,15 @@ A flow block that holds each arrival for a fixed duration from 1 minute to 7 day
 _Avoid_: Timer or delay as the block name; manual resume (not a Wait mode).
 
 **Wait arrival**:
-One accepted delivery to a Wait within a Run, with its retained message, originating worker, absolute deadline counted from the delivery's release, and outcome: pending, forwarded or cancelled by Archive. Arrivals never join or reset one another.
+One accepted delivery to a Wait within a Run, with its retained message, worker provenance, absolute deadline counted from the delivery's release, and outcome: pending, forwarded or cancelled by Archive. Arrivals never join or reset one another.
 
-**Delivery origin**:
-The worker whose result a delivery carries: its Run, Block activation and T3 worker thread. An Agent result sets it and a Wait forwards it unchanged; a message without a known worker has none.
+**Continuation**:
+A flow block with a name, a prompt and one unnamed output, and no Agent or exits of its own. The first message that reaches it in a Run sends its prompt into the worker thread that message belongs to; the work shows on that worker's Agent block while the Continuation is **sent**. Its response leaves the single output, and from then on, for the rest of the Run, every message **passes through** unchanged with its own worker. It needs an Agent before it; human steps, Waits and other Continuations pass the worker on.
+_Avoid_: continuity, follow-up block, reusing a worker by copying its conversation.
+
+**Worker provenance**:
+The worker thread a delivered message belongs to, recorded by its durable T3 thread id, and, when known, the Block activation whose result the message is: an Agent's result carries its worker and activation, a human step's answer the worker of the message it answered (without an activation), a Continuation's response the thread its prompt ran on, and a Wait or pass-through forwards what it received unchanged. A Continuation reads the thread from the message it receives; titles never select a thread. Run detail shows a delivery's provenance as its `origin` when both thread and activation are known.
+_Avoid_: delivery origin as a separate term.
 
 **Block exit**:
 A named result a block finishes with, whose connections determine which blocks run next. An exit has a stable ID, a name, an optional description and a "message required" flag; there is no other classification. An agent block's exits are its Agent's current exits minus those hidden in this Flow, plus its Flow-local exits; a Run uses the Agent revisions it captured. Wires leave by exit ID, so renaming an exit keeps them.
@@ -87,7 +92,7 @@ Retired. Factory no longer saves a model selection for a primary Run conversatio
 Retired as the way a Run starts. Factory launches each Agent Block as its own top-level worker. A closed Run may still show a historical primary conversation.
 
 **Worker**:
-The top-level T3 thread Factory launches for one Agent Block, with the Block's task, when the Block is first reached; no thread exists for a Block before then. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. Its completed turn alone does not establish a completed Block; see Worker thread finished.
+The top-level T3 thread Factory launches for one Agent Block, with the Block's task, when the Block is first reached; no thread exists for a Block before then. It performs that Block's task, receives the user's replies in the same thread, and reports through `factory_update_block` with its Block id from any turn. Two Blocks that share an Agent have separate workers. A Continuation's prompt is a later task in the same thread, reported with the Continuation's own Block id. Its completed turn alone does not establish a completed Block; see Worker thread finished.
 
 **Worker thread finished**:
 Factory's single completion rule for a worker, decided by T3 alone: the thread read shows no active run and no pending native request, and `t3_thread_wait` for its latest run with its delegated work answers a terminal status without timing out. T3's `resultRun` is not consulted. Handoff release, missing report, automatic settlement and Request report use it.
@@ -102,7 +107,7 @@ The execution canvas keeping its view on the active Blocks (or the error-state B
 _Avoid_: auto-scroll, tracking mode.
 
 **Block id**:
-The identifier Factory mints for an Agent Block when a Run starts and states in every launch, visit and Request report message to that Block's worker. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.
+The identifier Factory mints for an Agent Block or Continuation when a Run starts and states in every launch, visit, Continuation prompt and Request report message to the worker that works the task. Factory MCP tools take it to read the Block and its Run and to update the Block; a report naming it applies to the Block's current activation. It is stable across visits and is not the Flow block's id.
 _Avoid_: tool ref, caller correlation.
 
 **Factory MCP**:

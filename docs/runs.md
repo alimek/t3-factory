@@ -116,6 +116,7 @@ The [foundation contract](foundation.md#live-delivery) describes consistency and
 Opening a Run shows the Flow revision it captured at Start on a read-only canvas (labelled **Flow revision**). Positions, exits,
 connections and Agent labels come from the captured revisions, even after the Flow or its Agents are edited or removed or the
 project is unavailable; a later edit or removal is labelled (**Flow edited since**, **Flow removed since**), never substituted.
+Only a read that finds the Flow gone shows **Flow removed since**; any other failed read shows no comparison label.
 A block's exits are its captured Agent revision's exits minus those the Flow hid, plus its Flow-local exits. Reports and handoffs
 keep the exit they recorded; Human steps upgraded from earlier releases show their exits as **Approve** and **Request changes**, the
 fixed Human exits their old exits were mapped to.
@@ -130,7 +131,7 @@ fixed Human exits their old exits were mapped to.
   **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
   retried and creates no attention or state change.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
-  before it finished). Several blocks can be
+  before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
   timeline and executions keep the sequence. Connections use one neutral style, including never-run branches.
 - A working block whose Agent reported `working` shows that message in place of its visit time; its details show the full
@@ -298,8 +299,8 @@ acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
 
 ## Waits
 
-Each delivery released to a Wait becomes its own arrival: Factory keeps its message and the originating worker it carries
-(the Block activation and T3 thread that produced it, when there is one) and fixes an absolute deadline, counted from the
+Each delivery released to a Wait becomes its own arrival: Factory keeps its message and the
+[worker provenance](../GLOSSARY.md#worker-provenance) it carries (the T3 thread and, when known, the Block activation that produced it) and fixes an absolute deadline, counted from the
 moment the incoming handoff was released, after the source worker's thread finished, not from the report. Parallel arrivals
 and repeated visits keep their own messages and deadlines and never join; a repeated delivery attempt records no second
 arrival. At its deadline Factory forwards the arrival on its own, with no open window and no worker: every recipient of the
@@ -310,7 +311,23 @@ closing Factory over a deadline does the same on the next start.
 The Wait's details list each arrival with its start, deadline, retained message and outcome. A forwarded arrival keeps its
 message, which is the input its recipients read; Archive clears every arrival's message and the details say so. The timeline
 records **wait started · until …** and **wait elapsed → forwarded** with the Wait icon. A pending Wait is visible work, never
-Needs input or a Problem, and does not wake a Snoozed Run.
+Needs input or a Problem, and does not wake a Snoozed Run. A Continuation after a Wait continues the thread of the worker
+whose message waited.
+
+## Continuations
+
+A Continuation continues the conversation of the worker whose message reaches it. The first message in a Run queues its prompt on that
+worker's T3 thread, stating the Continuation's own Block id; after a Human step, the person's reply follows the prompt, labelled, because
+the worker has not seen it. The Continuation shows **sent**, and the worker's own Agent block shows **working** while the thread works on
+it, without a new visit and without changing that block's result or firing its connections again. When the worker reports `finished` for
+the Continuation and its thread is finished, the response leaves the single output and the Continuation shows **pass-through**. Messages that
+arrive while the prompt is pending wait (**Queued** in its details) and go out after the response, in arrival order. From then on every
+message is forwarded unchanged with its own worker, also in loops and after a restart; the prompt is never sent again in that Run.
+
+Its details list the prompt visit (input, prompt sent and response) and each pass-through visit, each with **Open thread in T3** for the
+worker its message belongs to; Blocks that share a worker open the same conversation. Timeline rows for it use the Continuation icon. A missing
+report after its prompt is a Problem on the Continuation, and **Request report** asks the same thread for it. Archive stops a pending
+Continuation and cancels waiting messages; its worker thread is interrupted with the other workers.
 
 ## Settled Runs
 

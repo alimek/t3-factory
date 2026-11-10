@@ -66,6 +66,25 @@ CREATE TABLE client_grants (
 CREATE INDEX client_grants_status ON client_grants(status, requested_at)
 ;
 
+CREATE TABLE continuation_visits (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  block_id TEXT NOT NULL,
+  incoming_intent_id TEXT NOT NULL UNIQUE REFERENCES operation_intents(id),
+  kind TEXT NOT NULL CHECK (kind IN ('prompt', 'pass-through')),
+  source_block_id TEXT,
+  binding_id TEXT REFERENCES run_thread_bindings(id),
+  activation_id TEXT UNIQUE REFERENCES run_activations(id),
+  state TEXT NOT NULL CHECK (state IN ('queued', 'sent', 'forwarded', 'cancelled')),
+  arrived_at TEXT NOT NULL,
+  forwarded_at TEXT,
+  CHECK ((kind = 'prompt') = (activation_id IS NOT NULL)),
+  FOREIGN KEY (run_id, block_id) REFERENCES run_blocks(run_id, block_id)
+);
+
+CREATE UNIQUE INDEX one_prompt_per_continuation ON continuation_visits(run_id, block_id) WHERE kind = 'prompt'
+;
+
 CREATE TABLE coordinator_question_replies (
   attention_id TEXT PRIMARY KEY REFERENCES run_attention(id),
   run_id TEXT NOT NULL REFERENCES runs(id),
@@ -90,10 +109,12 @@ CREATE TABLE "flow_revision_blocks" (
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id),
   block_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-  kind TEXT NOT NULL CHECK (kind IN ('agent', 'human', 'wait')),
+  kind TEXT NOT NULL CHECK (kind IN ('agent', 'human', 'continuation', 'wait')),
   name TEXT NOT NULL,
   -- Unresolved by design: drafts may name a missing Agent, and history outlives the Agent.
   agent_id TEXT CHECK (kind = 'agent' OR agent_id IS NULL),
+  -- The prompt a Continuation sends once per Run; empty only in a draft.
+  prompt TEXT CHECK ((kind = 'continuation') = (prompt IS NOT NULL)),
   x REAL NOT NULL,
   y REAL NOT NULL,
   -- A Wait's duration; both are null while the draft has none. Readiness owns the range.
@@ -228,7 +249,7 @@ CREATE TABLE operation_intents (
   reserved_at TEXT,
   result_json TEXT,
   problem TEXT,
-  reconciled_at TEXT, report_id TEXT REFERENCES runtime_reports(id), source_block_id TEXT, exit_id TEXT, occurrence_id TEXT REFERENCES human_occurrences(id), recovery_attempt INTEGER NOT NULL DEFAULT 0, recovery_not_before TEXT, wait_arrival_id TEXT REFERENCES wait_arrivals(id), origin_activation_id TEXT REFERENCES run_activations(id), origin_thread_id TEXT,
+  reconciled_at TEXT, report_id TEXT REFERENCES runtime_reports(id), source_block_id TEXT, exit_id TEXT, occurrence_id TEXT REFERENCES human_occurrences(id), recovery_attempt INTEGER NOT NULL DEFAULT 0, recovery_not_before TEXT, binding_id TEXT REFERENCES run_thread_bindings(id), wait_arrival_id TEXT REFERENCES wait_arrivals(id), origin_activation_id TEXT REFERENCES run_activations(id),
   UNIQUE(run_id,cause),
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
@@ -436,7 +457,7 @@ CREATE TABLE run_events (
 );
 
 CREATE INDEX run_activity_by_run ON run_events(run_id, observed_at DESC)
-WHERE kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','run-settled','run-activated')
+WHERE kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','continuation-passed','run-settled','run-activated')
 ;
 
 CREATE TABLE "run_executions" (
@@ -645,14 +666,14 @@ CREATE TABLE wait_arrivals (
   state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'forwarded', 'cancelled')),
   forwarded_by TEXT CHECK (forwarded_by IN ('timer')),
   message TEXT,
+  binding_id TEXT REFERENCES run_thread_bindings(id),
   origin_activation_id TEXT REFERENCES run_activations(id),
-  origin_thread_id TEXT,
   started_at TEXT NOT NULL,
   deadline_at TEXT NOT NULL,
   settled_at TEXT,
   CHECK ((state = 'forwarded') = (forwarded_by IS NOT NULL)),
   CHECK ((state = 'pending') = (settled_at IS NULL)),
-  CHECK ((origin_activation_id IS NULL) = (origin_thread_id IS NULL)),
+  CHECK (origin_activation_id IS NULL OR binding_id IS NOT NULL),
   FOREIGN KEY (run_id, block_id) REFERENCES run_blocks(run_id, block_id)
 );
 

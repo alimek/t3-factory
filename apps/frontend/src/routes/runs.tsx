@@ -13,11 +13,13 @@ import { useLocation } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   attentionPresentation,
+  type ContinuationVisit,
   type FactoryProject,
   type FlowBlock,
   type RunBlock,
   type RunDetail,
 } from "@t3-factory/contracts";
+import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
 import {
   Archive,
   CircleCheck,
@@ -38,7 +40,13 @@ import {
 import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
 import { RunNumber } from "../components/run-number.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
-import { blockVisits, ExecutionCanvas, waitingText } from "../components/execution-canvas.tsx";
+import {
+  blockVisits,
+  continuationPromptVisit,
+  ExecutionCanvas,
+  threadOwnerName,
+  waitingText,
+} from "../components/execution-canvas.tsx";
 import { BLOCK_KINDS, exitDisplayName } from "../components/flow-block.tsx";
 import { WaitArrivals } from "../components/wait-arrivals.tsx";
 import { waitDurationText } from "../wait-display.ts";
@@ -50,7 +58,7 @@ import { OpenRunKeyboardHost } from "../open-run-keyboard.tsx";
 import { useLiveNavigation } from "../live/navigation.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { capturedExits, exitRecipients } from "../flow-graph.ts";
+import { capturedExits, continuedThread, exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
@@ -588,6 +596,10 @@ function blockAttentionLabel(run: RunDetail, blockId: string) {
 function blockKindLine(run: RunDetail, block: FlowBlock) {
   if (block.kind === "human") return "Human step · asks you";
   if (block.kind === "wait") return `Wait · ${waitDurationText(block.duration)} · no worker`;
+  if (block.kind === "continuation") {
+    const thread = continuedThread(run.definitions.flow.graph, block.id);
+    return `Continuation · ${thread ? `continues ${thread}` : "no Agent before it"}`;
+  }
   const agent = run.definitions.agents.find((item) => item.id === block.agentId)?.name;
   const input = run.definitions.flow.graph.flowInput.targetBlockIds.includes(block.id)
     ? " · receives the Flow input"
@@ -595,56 +607,300 @@ function blockKindLine(run: RunDetail, block: FlowBlock) {
   return `Agent · ${agent ?? "not chosen"}${input}`;
 }
 
-/** A block's recorded history: a Wait's arrivals, or each visit of another block. */
+/** Execution, visits and exits of an Agent block, Human step or Wait; a Wait lists its arrivals. */
 function BlockHistory({
   run,
   block,
   recorded,
+  observationUnavailable,
 }: {
   run: RunDetail;
   block: FlowBlock;
   recorded: RunBlock;
+  observationUnavailable: boolean;
 }) {
-  if (block.kind === "wait") return <WaitArrivals run={run} blockId={block.id} />;
   const visits = blockVisits(run, block);
-  if (!visits.length) return null;
   return (
-    <DetailSection title={`Visits · ${visits.length}`}>
-      <ul className="flex flex-col gap-1.5">
-        {visits
-          .map((visit, index) => ({ visit, number: index + 1 }))
-          .reverse()
-          .map(({ visit, number }) => (
-            <li
-              key={visit.id}
-              className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Visit {number}</p>
-                <p className="truncate text-2xs tracking-label text-subtle-foreground">
-                  {visitSpan(visit)} · {visit.id}
-                </p>
-              </div>
-              <StatePill
-                state={
-                  block.kind === "agent" && number === visits.length ? recorded.state : visit.status
-                }
-              />
-            </li>
-          ))}
-      </ul>
+    <>
+      <DetailSection title="Execution">
+        <dl className="flex flex-col gap-2">
+          <DetailRow label="Visits">{visits.length}</DetailRow>
+          <DetailRow label="Current">{currentVisitText(run, block, visits)}</DetailRow>
+          <DetailRow label="Attention">{blockAttentionLabel(run, block.id)}</DetailRow>
+          <DetailRow label="Observation">
+            {observationUnavailable ? "stale" : recorded.freshness}
+            {recorded.observedAt ? ` · ${dayAndTime(recorded.observedAt)}` : ""}
+          </DetailRow>
+        </dl>
+      </DetailSection>
+      {block.kind === "wait" && <WaitArrivals run={run} blockId={block.id} />}
+      {block.kind !== "wait" && visits.length > 0 && (
+        <DetailSection title={`Visits · ${visits.length}`}>
+          <ul className="flex flex-col gap-1.5">
+            {visits
+              .map((visit, index) => ({ visit, number: index + 1 }))
+              .reverse()
+              .map(({ visit, number }) => (
+                <li
+                  key={visit.id}
+                  className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">Visit {number}</p>
+                    <p className="truncate text-2xs tracking-label text-subtle-foreground">
+                      {visitSpan(visit)} · {visit.id}
+                    </p>
+                  </div>
+                  <StatePill
+                    state={
+                      block.kind === "agent" && number === visits.length
+                        ? recorded.state
+                        : visit.status
+                    }
+                  />
+                </li>
+              ))}
+          </ul>
+        </DetailSection>
+      )}
+      <DetailSection title="Exits in captured revision">
+        <ul className="flex flex-col gap-1.5 px-2">
+          {capturedExits(run.definitions, block.id).map((exit) => {
+            const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
+            return (
+              <li key={exit.id} className="flex items-baseline gap-2 text-sm">
+                <span className="min-w-0 flex-1 truncate">{exitDisplayName(exit) || "Output"}</span>
+                <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
+                  {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </DetailSection>
+    </>
+  );
+}
+
+/** The current `working` report and Request report; a sent Continuation reports like an Agent. */
+function WorkingReport({ run, recorded }: { run: RunDetail; recorded: RunBlock }) {
+  if (recorded.state !== "working" && recorded.state !== "sent") return null;
+  if (!recorded.workingMessage) return null;
+  return (
+    <DetailSection title="Working report">
+      <div className="flex flex-col gap-3 px-2">
+        <p className="text-sm break-words whitespace-pre-wrap text-foreground">
+          {recorded.workingMessage}
+        </p>
+        <RequestReport
+          run={run}
+          blockId={recorded.blockId}
+          executionId={recorded.executionId}
+          recovery={pendingRecovery(run, recorded)}
+        />
+      </div>
     </DetailSection>
   );
 }
 
 /** The current visit, or a waiting Wait's nearest deadline. */
-function currentVisitText(run: RunDetail, block: FlowBlock) {
+function currentVisitText(
+  run: RunDetail,
+  block: FlowBlock,
+  visits: ReturnType<typeof blockVisits>,
+) {
   const waiting = block.kind === "wait" && waitingText(run, block.id);
   if (waiting) return waiting;
-  const visits = blockVisits(run, block);
   const latest = visits[visits.length - 1];
   if (!latest) return "Not visited";
   return `visit ${visits.length}${latest.start ? ` · since ${clockTime(latest.start)}` : ""}`;
+}
+
+type ContinuationBlock = Extract<FlowBlock, { kind: "continuation" }>;
+
+function bindingLink(run: RunDetail, bindingId: string | null) {
+  return run.threadBindings.find((binding) => binding.id === bindingId)?.link ?? null;
+}
+
+function sourceName(run: RunDetail, visit: ContinuationVisit) {
+  if (!visit.sourceBlockId) return "the Flow input";
+  return (
+    run.definitions.flow.graph.blocks.find((block) => block.id === visit.sourceBlockId)?.name ||
+    visit.sourceBlockId
+  );
+}
+
+/** The worker's finished response to the prompt, reported against the prompt visit's activation. */
+function continuationResponse(run: RunDetail, prompt: ContinuationVisit | undefined) {
+  if (!prompt?.activationId) return null;
+  return (
+    run.reports.findLast(
+      (report) => report.activationId === prompt.activationId && report.status === "finished",
+    )?.resultMessage ?? null
+  );
+}
+
+/** A Continuation's prompt, its response and every message that reached it, oldest first. */
+function ContinuationHistory({ run, block }: { run: RunDetail; block: ContinuationBlock }) {
+  const visits = run.continuationVisits.filter((visit) => visit.blockId === block.id);
+  const prompt = visits.find((visit) => visit.kind === "prompt");
+  const ordered = [...(prompt ? [prompt] : []), ...visits.filter((visit) => visit !== prompt)];
+  return (
+    <>
+      <ContinuationExecution run={run} block={block} visits={visits} prompt={prompt} />
+      <ContinuationExchange run={run} block={block} prompt={prompt} />
+      {ordered.length > 0 && (
+        <DetailSection title={`Visits · ${ordered.length}`}>
+          <ul className="flex flex-col gap-1.5">
+            {ordered.map((visit, index) => (
+              <ContinuationVisitItem key={visit.id} run={run} visit={visit} number={index + 1} />
+            ))}
+          </ul>
+        </DetailSection>
+      )}
+      <DetailSection title="Output">
+        <ContinuationRecipients run={run} blockId={block.id} />
+      </DetailSection>
+    </>
+  );
+}
+
+function ContinuationExecution({
+  run,
+  block,
+  visits,
+  prompt,
+}: {
+  run: RunDetail;
+  block: ContinuationBlock;
+  visits: readonly ContinuationVisit[];
+  prompt: ContinuationVisit | undefined;
+}) {
+  const queued = visits.filter((visit) => visit.state === "queued").length;
+  const owner = prompt?.state === "sent" ? threadOwnerName(run, prompt.bindingId) : null;
+  return (
+    <DetailSection title="Execution">
+      <dl className="flex flex-col gap-2">
+        <DetailRow label="Prompt">
+          {prompt ? `sent ${clockTime(prompt.arrivedAt)} · once in this Run` : "not sent"}
+        </DetailRow>
+        {owner && <DetailRow label="Work">{owner}&apos;s thread</DetailRow>}
+        <DetailRow label="Queued">
+          {queued ? `${queued} waiting behind the response` : "none"}
+        </DetailRow>
+        <DetailRow label="Attention">{blockAttentionLabel(run, block.id)}</DetailRow>
+      </dl>
+    </DetailSection>
+  );
+}
+
+const exchangeCardClass = "flex flex-col gap-0.5 rounded-md border bg-muted px-3 py-2";
+const exchangeTextClass = "line-clamp-3 text-2xs tracking-label break-words text-subtle-foreground";
+
+/** Input → prompt → response of the prompt visit; the prompt is the captured revision's. */
+function ContinuationExchange({
+  run,
+  block,
+  prompt,
+}: {
+  run: RunDetail;
+  block: ContinuationBlock;
+  prompt: ContinuationVisit | undefined;
+}) {
+  const response = continuationResponse(run, prompt);
+  const owner = prompt ? threadOwnerName(run, prompt.bindingId) : null;
+  return (
+    <DetailSection title="Input → prompt → response">
+      <div className="flex flex-col gap-1.5">
+        <div className={exchangeCardClass}>
+          <p className="text-sm font-medium">
+            Input{prompt ? ` · from ${sourceName(run, prompt)}` : ""}
+          </p>
+          <p className={exchangeTextClass}>
+            {prompt ? `arrived ${clockTime(prompt.arrivedAt)}` : "no message yet"}
+          </p>
+        </div>
+        <div className={exchangeCardClass}>
+          <p className="text-sm font-medium">
+            {prompt ? `Prompt sent${owner ? ` to ${owner}'s thread` : ""}` : "Prompt · not sent"}
+          </p>
+          <p className={exchangeTextClass} title={block.prompt}>
+            {block.prompt || "No prompt in the captured revision"}
+          </p>
+        </div>
+        <div className={exchangeCardClass}>
+          <p className="text-sm font-medium">Response</p>
+          <p className={exchangeTextClass} title={response ?? undefined}>
+            {response ?? "not yet"}
+          </p>
+        </div>
+      </div>
+    </DetailSection>
+  );
+}
+
+/** Visit pills say what the message did: sent the prompt, passed through, or still waits. */
+function visitPill(visit: ContinuationVisit) {
+  if (visit.state === "queued" || visit.state === "cancelled") return visit.state;
+  return visit.kind === "prompt" ? "sent" : "pass-through";
+}
+
+function visitLine(run: RunDetail, visit: ContinuationVisit) {
+  const source = sourceName(run, visit);
+  if (visit.kind === "prompt") {
+    const end = visit.forwardedAt ? clockTime(visit.forwardedAt) : "now";
+    return `${clockTime(visit.arrivedAt)}–${end} · from ${source}`;
+  }
+  if (visit.state === "queued")
+    return `${clockTime(visit.arrivedAt)} · ${source}'s message waits behind the prompt`;
+  return `${clockTime(visit.arrivedAt)} · ${source}'s message, unchanged · no prompt`;
+}
+
+function ContinuationVisitItem({
+  run,
+  visit,
+  number,
+}: {
+  run: RunDetail;
+  visit: ContinuationVisit;
+  number: number;
+}) {
+  const link = bindingLink(run, visit.bindingId);
+  return (
+    <li className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="text-sm font-medium">
+          Visit {number} · {visit.kind}
+        </p>
+        <p className="text-2xs tracking-label break-words text-subtle-foreground">
+          {visitLine(run, visit)}
+        </p>
+        {link && (
+          <a
+            className="w-fit rounded-sm text-2xs font-medium text-link outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            href={link}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open thread in T3
+          </a>
+        )}
+      </div>
+      <StatePill state={visitPill(visit)} />
+    </li>
+  );
+}
+
+function ContinuationRecipients({ run, blockId }: { run: RunDetail; blockId: string }) {
+  const recipients = exitRecipients(run.definitions.flow.graph, blockId, CONTINUATION_EXIT.id);
+  return (
+    <p className="flex items-baseline gap-2 px-2 text-sm">
+      <span className="min-w-0 flex-1 truncate">response, then pass-through</span>
+      <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
+        {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
+      </span>
+    </p>
+  );
 }
 
 /** Figma RD01b: block details float over the canvas; selection never answers or settles attention. */
@@ -665,9 +921,13 @@ function BlockDetails({
     panel.current?.focus();
   }, [block.id]);
   if (!recorded) return null;
-  const visits = blockVisits(run, block);
-  const KindIcon = BLOCK_KINDS[block.kind].icon;
-  const wait = block.kind === "wait";
+  const KindIcon = BLOCK_KINDS[block.kind].Icon;
+  // A Continuation has no thread of its own: its prompt ran on the thread of its prompt visit.
+  const promptBinding = run.threadBindings.find(
+    (binding) => binding.id === continuationPromptVisit(run, block.id)?.bindingId,
+  );
+  const link = recorded.link ?? promptBinding?.link ?? null;
+  const threadId = recorded.threadId ?? promptBinding?.threadId;
   return (
     <aside
       ref={panel}
@@ -700,55 +960,22 @@ function BlockDetails({
           blockId={block.id}
           observationUnavailable={observationUnavailable}
         />
-        {recorded.state === "working" && recorded.workingMessage && (
-          <DetailSection title="Working report">
-            <div className="flex flex-col gap-3 px-2">
-              <p className="text-sm break-words whitespace-pre-wrap text-foreground">
-                {recorded.workingMessage}
-              </p>
-              <RequestReport
-                run={run}
-                blockId={block.id}
-                executionId={recorded.executionId}
-                recovery={pendingRecovery(run, recorded)}
-              />
-            </div>
-          </DetailSection>
-        )}
+        <WorkingReport run={run} recorded={recorded} />
         <CoordinatorActivations run={run} blockId={block.id} />
-        <DetailSection title="Execution">
-          <dl className="flex flex-col gap-2">
-            <DetailRow label="Visits">{visits.length}</DetailRow>
-            <DetailRow label="Current">{currentVisitText(run, block)}</DetailRow>
-            <DetailRow label="Attention">{blockAttentionLabel(run, block.id)}</DetailRow>
-            <DetailRow label="Observation">
-              {observationUnavailable ? "stale" : recorded.freshness}
-              {recorded.observedAt ? ` · ${dayAndTime(recorded.observedAt)}` : ""}
-            </DetailRow>
-          </dl>
-        </DetailSection>
-        <BlockHistory run={run} block={block} recorded={recorded} />
-        <DetailSection title="Exits in captured revision">
-          <ul className="flex flex-col gap-1.5 px-2">
-            {capturedExits(run.definitions, block.id).map((exit) => {
-              const recipients = exitRecipients(run.definitions.flow.graph, block.id, exit.id);
-              return (
-                <li key={exit.id} className="flex items-baseline gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">
-                    {exitDisplayName(exit) || "Output"}
-                  </span>
-                  <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
-                    {recipients.length ? `→ ${recipients.join(", ")}` : "ends branch"}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </DetailSection>
-        {!wait && (
+        {block.kind === "continuation" ? (
+          <ContinuationHistory run={run} block={block} />
+        ) : (
+          <BlockHistory
+            run={run}
+            block={block}
+            recorded={recorded}
+            observationUnavailable={observationUnavailable}
+          />
+        )}
+        {block.kind !== "wait" && (
           <DetailSection title="T3 references">
             <p className="px-2 font-mono text-2xs leading-4 break-all text-muted-foreground">
-              Thread: {recorded.threadId ?? "unresolved"}
+              Thread: {threadId ?? "unresolved"}
               <br />
               Exact execution: {recorded.executionId ?? "unresolved"}
             </p>
@@ -756,10 +983,10 @@ function BlockDetails({
         )}
       </div>
       <footer className="mx-4 flex items-center gap-3 border-t py-4">
-        {recorded.link ? (
+        {link ? (
           <a
             className="inline-flex h-8 shrink-0 items-center rounded-md border bg-background px-3 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            href={recorded.link}
+            href={link}
             target="_blank"
             rel="noreferrer"
           >
@@ -767,7 +994,7 @@ function BlockDetails({
           </a>
         ) : (
           <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
-            {wait ? "A Wait has no T3 thread" : "No T3 thread yet"}
+            {block.kind === "wait" ? "A Wait has no T3 thread" : "No T3 thread yet"}
           </span>
         )}
         <p className="text-2xs tracking-label text-subtle-foreground">

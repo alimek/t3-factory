@@ -57,7 +57,7 @@ type ThreadSettlementCandidate = {
 };
 
 function finishedBlockCandidates(sql: SqlClient.SqlClient, runId: string) {
-  return sql<ThreadSettlementCandidate>`SELECT r.id AS report_id,b.thread_id,r.execution_id FROM run_blocks b JOIN run_activations a ON a.run_id=b.run_id AND a.block_id=b.block_id AND a.rowid=(SELECT MAX(l.rowid) FROM run_activations l WHERE l.run_id=b.run_id AND l.block_id=b.block_id) LEFT JOIN working_reports w ON w.activation_id=a.id AND w.replaced_at IS NULL JOIN runtime_reports r ON r.activation_id=a.id AND r.status='finished' AND r.rowid=(SELECT MAX(n.rowid) FROM runtime_reports n WHERE n.activation_id=a.id AND n.status='finished') WHERE b.run_id=${runId} AND EXISTS(SELECT 1 FROM runs WHERE id=b.run_id AND block_settlement_enabled=1) AND b.thread_id IS NOT NULL AND w.id IS NULL AND r.execution_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t3_thread_settlements s WHERE s.run_id=b.run_id AND s.thread_id=b.thread_id AND s.execution_id=r.execution_id) AND NOT EXISTS(SELECT 1 FROM run_attention a2 WHERE a2.run_id=b.run_id AND a2.block_id=b.block_id AND a2.kind IN('execution-failed','missing-report') AND a2.settled_at IS NULL) ORDER BY b.rowid`;
+  return sql<ThreadSettlementCandidate>`SELECT r.id AS report_id,b.thread_id,r.execution_id FROM run_blocks b JOIN run_activations a ON a.run_id=b.run_id AND a.block_id=b.block_id AND a.rowid=(SELECT MAX(l.rowid) FROM run_activations l WHERE l.run_id=b.run_id AND l.block_id=b.block_id) LEFT JOIN working_reports w ON w.activation_id=a.id AND w.replaced_at IS NULL JOIN runtime_reports r ON r.activation_id=a.id AND r.status='finished' AND r.rowid=(SELECT MAX(n.rowid) FROM runtime_reports n WHERE n.activation_id=a.id AND n.status='finished') WHERE b.run_id=${runId} AND EXISTS(SELECT 1 FROM runs WHERE id=b.run_id AND block_settlement_enabled=1) AND b.thread_id IS NOT NULL AND w.id IS NULL AND r.execution_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM t3_thread_settlements s WHERE s.run_id=b.run_id AND s.thread_id=b.thread_id AND s.execution_id=r.execution_id) AND NOT EXISTS(SELECT 1 FROM run_attention a2 WHERE a2.run_id=b.run_id AND a2.block_id=b.block_id AND a2.kind IN('execution-failed','missing-report') AND a2.settled_at IS NULL) AND NOT EXISTS(SELECT 1 FROM continuation_visits v JOIN run_thread_bindings t ON t.id=v.binding_id WHERE v.run_id=b.run_id AND t.thread_id=b.thread_id AND v.kind='prompt' AND v.state='sent') ORDER BY b.rowid`;
 }
 
 export function openRunSettlement(database: RunnerDatabase) {
@@ -87,8 +87,10 @@ export function openRunSettlement(database: RunnerDatabase) {
         const current = new Map(
           (yield* currentReports(sql, runId)).map((entry) => [entry.blockId, entry.report?.status]),
         );
+        // A Continuation whose prompt is out owes its response, also once its worker's Block
+        // reported.
         const pending =
-          yield* sql`SELECT id FROM run_attention WHERE run_id=${runId} AND settled_at IS NULL`;
+          yield* sql`SELECT id FROM run_attention WHERE run_id=${runId} AND settled_at IS NULL UNION ALL SELECT id FROM continuation_visits WHERE run_id=${runId} AND state IN ('sent','queued')`;
         const done =
           blocks.length > 0 &&
           !pending.length &&
@@ -122,7 +124,7 @@ export function openRunSettlement(database: RunnerDatabase) {
         // cancelled too, but its Block has no result. An unbound worktree still owes the launches
         // that join it, and a pending Wait arrival still owes its forwarding.
         const pending =
-          yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT id FROM wait_arrivals WHERE run_id=${id} AND state='pending' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing'`;
+          yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT id FROM wait_arrivals WHERE run_id=${id} AND state='pending' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing' UNION ALL SELECT id FROM continuation_visits WHERE run_id=${id} AND state IN ('sent','queued')`;
         if (pending.length) return false;
         const time = yield* now;
         yield* markSettled(sql, id, "automatic", time);

@@ -19,8 +19,8 @@ export type WaitArrivalRow = {
   state: WaitArrival["state"];
   forwarded_by: WaitArrival["forwardedBy"];
   message: string | null;
+  binding_id: string | null;
   origin_activation_id: string | null;
-  origin_thread_id: string | null;
   started_at: string;
   deadline_at: string;
   settled_at: string | null;
@@ -49,13 +49,15 @@ type WaitForwarding =
   | "closed"
   | "not-found";
 
-const origin = (row: Pick<WaitArrivalRow, "origin_activation_id" | "origin_thread_id">) =>
-  row.origin_activation_id && row.origin_thread_id
-    ? ({ activationId: row.origin_activation_id, threadId: row.origin_thread_id } as DeliveryOrigin)
+const origin = (row: Pick<WaitArrivalRow, "binding_id" | "origin_activation_id">) =>
+  row.binding_id
+    ? ({ bindingId: row.binding_id, activationId: row.origin_activation_id } as DeliveryOrigin)
     : null;
 
-export function waitArrival(row: WaitArrivalRow): WaitArrival {
-  const from = origin(row);
+/** The public arrival; `origin_thread_id` is its bound worker's thread. */
+export function waitArrival(
+  row: WaitArrivalRow & { origin_thread_id: string | null },
+): WaitArrival {
   return {
     id: row.id,
     blockId: row.block_id,
@@ -63,7 +65,14 @@ export function waitArrival(row: WaitArrivalRow): WaitArrival {
     state: row.state,
     forwardedBy: row.forwarded_by,
     message: row.message,
-    origin: from && { runId: row.run_id, ...from },
+    origin:
+      row.origin_activation_id && row.origin_thread_id
+        ? {
+            runId: row.run_id,
+            activationId: row.origin_activation_id,
+            threadId: row.origin_thread_id,
+          }
+        : null,
     startedAt: row.started_at,
     deadlineAt: row.deadline_at,
     settledAt: row.settled_at,
@@ -104,7 +113,7 @@ export function openRunWaits(database: RunnerDatabase) {
           const startedAt = released?.at ?? time;
           const id = yield* newId;
           const deadlineAt = addMilliseconds(startedAt, waitDurationMs(block.duration));
-          yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,origin_activation_id,origin_thread_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${arriving.message},${pending.origin_activation_id},${pending.origin_thread_id},${startedAt},${deadlineAt})`;
+          yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,binding_id,origin_activation_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${arriving.message},${pending.binding_id},${pending.origin_activation_id},${startedAt},${deadlineAt})`;
           yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
           yield* writeBlockState(sql, { runId: runRow.id, blockId: handoff.block_id }, "waiting", {
             freshness: "fresh",

@@ -13,8 +13,8 @@ const neverRan = (thread: ExecutionObservation) =>
   thread.recentRuns.length === 0 &&
   thread.pendingRequestCount === 0;
 
-/** A released worker result (or a durable Human answer or Wait forwarding) and, for a revisit, a
- * finished target thread. */
+/** A released worker result (or a durable Human answer, Wait forwarding or pass-through) and, for a
+ * send, a finished target thread that owes no other Block's task. */
 function explicitSourceReleaseGeneration(
   store: RunStore,
   t3: T3Adapter,
@@ -29,6 +29,7 @@ function explicitSourceReleaseGeneration(
     } else if (!(yield* store.directSourceReleased(run.id, record))) return null;
     if (record.kind === "send") {
       const { threadId } = JSON.parse(record.target_json) as { threadId: string };
+      if (yield* store.threadOwesOtherTask(run.id, threadId, record.block_id)) return null;
       const target = yield* Effect.tryPromise(() => readWorkerThread(t3, current, threadId));
       if (!target.finished && !neverRan(target.thread)) return null;
     }

@@ -70,7 +70,11 @@ export function openRunHuman(database: RunnerDatabase) {
               ),
             ];
             yield* sql`UPDATE human_occurrences SET state='answered',pending_context=NULL,settled_at=${time},exit_id=${exit.id},answer_fingerprint=${content} WHERE id=${id} AND state='pending'`;
-            // Human answers carry no originating worker yet; extending that is separate work.
+            // The answer keeps the worker thread of the delivery it answered; its activation is
+            // not carried through Human steps yet.
+            const [incoming] = yield* sql<{
+              binding_id: string | null;
+            }>`SELECT binding_id FROM operation_intents WHERE id=${occurrence.incoming_intent_id}`;
             yield* createHeldHandoffs(sql, runRow, {
               kind: "human",
               id,
@@ -79,7 +83,9 @@ export function openRunHuman(database: RunnerDatabase) {
               recipients,
               message: message ?? "",
               at: time,
-              origin: null,
+              origin: incoming?.binding_id
+                ? { bindingId: incoming.binding_id, activationId: null }
+                : null,
             });
             yield* writeBlockState(
               sql,

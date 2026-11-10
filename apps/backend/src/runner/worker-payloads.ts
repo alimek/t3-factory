@@ -1,4 +1,5 @@
 import type { BlockExit, RunDefinitions } from "@t3-factory/contracts";
+import { HUMAN_EXITS } from "@t3-factory/domain-validation";
 import type { LaunchPayload, SendPayload, T3Target } from "../adapters/t3.ts";
 import { attachmentName } from "../run-images.ts";
 import { conversationReportInstructions } from "./runner-handoffs.ts";
@@ -93,6 +94,30 @@ export function workerRevisitPayload(
     clientRequestId: key,
     message: workerTurn(message, publicId),
   };
+}
+
+/**
+ * A Continuation's prompt, queued as the next turn of the worker thread it continues. A Human
+ * step's reply follows it, labelled, because that worker has not seen it; a message from an Agent
+ * or Continuation was written in this same thread and is not repeated.
+ */
+export function continuationPromptMessage(
+  definitions: RunDefinitions,
+  blockId: string,
+  arrival: { readonly sourceBlockId: string | null; readonly exitId: string | null },
+  message: string,
+) {
+  const blocks = definitions.flow.graph.blocks;
+  const block = blocks.find((entry) => entry.id === blockId);
+  if (!block || block.kind !== "continuation") throw Error("Prompt target is not a Continuation");
+  const lead = `This is a new Factory task for the Continuation "${block.name}" in this conversation. Report it with the Block id above, not with an earlier Block id; finish it without an exit, with your response as the message.`;
+  const source = blocks.find((entry) => entry.id === arrival.sourceBlockId);
+  const exit = HUMAN_EXITS.find((entry) => entry.id === arrival.exitId);
+  const reply =
+    source?.kind === "human"
+      ? `\n\nReply from the Human step "${source.name}"${exit ? ` (${exit.name})` : ""}:\n${message.trim() || "(no message)"}`
+      : "";
+  return `${lead}\n\n${block.prompt}${reply}`;
 }
 
 /** Request report: a turn queued on a finished worker thread asking it to assess its existing work

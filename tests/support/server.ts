@@ -122,6 +122,7 @@ async function prepareWorkerRuns() {
       worktree: flow("Demo · Build and review in a worktree"),
       wait: flow("Demo · Build, cool down and review"),
       parallelWait: flow("Demo · Parallel review held for the sync"),
+      continuation: flow("Demo · Grill, spec and tickets"),
     },
     { titlePrefix: "UI worker · ", keyNamespace: "ui-worker:development-v1:" },
   );

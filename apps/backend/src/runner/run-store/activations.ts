@@ -15,7 +15,7 @@ import {
 import { raiseHumanAttention } from "./attention.ts";
 import { asDelivery, createDelivery } from "./deliveries.ts";
 import { arrivingHandoff } from "./handoffs.ts";
-import { guardsHold } from "./guards.ts";
+import { pendingHandoffHolds } from "./guards.ts";
 import type { DeliveryRecord, Handoff } from "./records.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { writeBlockState } from "./blocks.ts";
@@ -152,17 +152,7 @@ export function openRunActivations(database: RunnerDatabase) {
   ) {
     return database.mutate(current.id, (sql) =>
       Effect.gen(function* () {
-        const held = yield* guardsHold(sql, ownerToken, current.id, {
-          owner: true,
-          notArchived: true,
-          liveContext: current.context_id,
-          gateOpen: true,
-          generation: current.generation,
-        });
-        if (!held) return undefined;
-        const valid =
-          yield* sql`SELECT id FROM operation_intents WHERE id=${handoff.id} AND kind='handoff' AND state='pending'`;
-        if (!valid.length) return undefined;
+        if (!(yield* pendingHandoffHolds(sql, ownerToken, current, handoff.id))) return undefined;
         if (!intactPayload(handoff)) throw Error("Invalid handoff payload");
         const target = JSON.parse(handoff.target_json) as StoredTarget;
         const message = (JSON.parse(handoff.payload_json) as { message: string }).message;

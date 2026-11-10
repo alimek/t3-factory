@@ -52,7 +52,7 @@ reporting protocol.
 - The saved launch title is `Factory #<number> · <block position> <Block name>`, sliced to
   200 characters. The number is a durable Run sequence. The position is the 1-based index
   in the captured block list. Later renames do not change the title recovery searches for.
-- Start mints a **Block id** for each Agent Block. The first message starts with
+- Start mints a **Block id** for each Agent Block and Continuation. The first message starts with
   `$factory-block`, then a `Factory Block id: <id>.` line; every later visit and Request
   report message repeats the same id. The worker passes it to `factory_get_block`, then
   `factory_update_block`. `factory_get_run` is read-only and grants no routing authority.
@@ -62,6 +62,8 @@ reporting protocol.
   error. An uncertain launch is recovered by search, never by another launch.
 - A later handoff or Human correction creates a new activation on the same bound worker.
   Conversation with the user stays in that worker thread; Factory does not track it.
+- A [Continuation](#continuations) has no worker of its own: its prompt is a later task in the worker
+  thread its first message belongs to, with the Continuation's own Block id.
 
 ### Run workspace
 
@@ -350,6 +352,41 @@ acknowledged; keys, fingerprints, targets and references remain afterwards. Init
 and captured prompts are retained intentionally. Payload clearing is logical deletion,
 not secure erasure.
 
+### Worker provenance
+
+Every Handoff, and the launch or send it becomes, records the [worker provenance](../GLOSSARY.md#worker-provenance)
+of the message it carries: the worker's thread binding and, when known, the Block activation whose result the message
+is, within the Handoff's Run. An accepted Final result sets both: its activation, and the Block's bound worker or, for a
+Continuation's result, the thread its prompt ran on. A Human answer keeps the binding of the delivery it answered but
+carries no activation yet. A Wait arrival keeps what its Handoff carried and its forwarded Handoffs repeat it unchanged,
+as a pass-through does, through queued delivery, restart, fan-out and loop visits; it is never reconstructed from the graph
+or the latest activation. A Continuation continues the thread its arriving message is bound to, also after a Wait. Run
+detail shows the provenance as the delivery's `origin` when both thread and activation are known.
+
+Migration `075` added the binding without deriving it for earlier handoffs. Migration `076` derived the binding and
+activation of existing deliveries from their recorded Final result (the Continuation's prompt thread, else its Block's
+bound worker) and left the others without one.
+
+### Continuations
+
+The first released handoff to a Continuation becomes its prompt visit: an activation, attributed to the
+worker's captured Agent revision, delivered by a send queued on the handoff's thread by its T3 id. A Factory
+send into an existing thread (revisit, Continuation prompt or Request report) waits until the thread is
+finished and no other Block's delivered activation on that thread still lacks its `finished` result, so work
+sharing a thread is serialized. Unknown send acceptance follows the ordinary recovery rules and is never
+resent blindly.
+
+Reports naming the Continuation's Block id apply to its prompt activation; `finished` takes no exit (or its
+`output`) and requires a message. The result is held until the thread its prompt ran on is finished and no
+execution failure is pending on the Continuation; Factory also attempts that release on every drive, so a
+Continuation without recipients forwards too. Release records the response's handoffs and makes the
+Continuation pass-through. Later handoffs to it are acknowledged and forwarded with their own binding as
+released handoffs (cause `pass:`), each recorded as a pass-through visit; handoffs arriving while the prompt
+is pending are recorded as queued and wait. A run of the thread that Factory queued for the prompt belongs to
+the Continuation: its failure and a missing report after it are the Continuation's attention, while the
+worker's Agent block shows the thread's activity. A Run neither settles automatically nor has that thread
+settled natively while a Continuation is sent or a message waits.
+
 ### Human occurrences
 
 Every arrival creates a distinct pending Human occurrence with no T3 thread. Parallel and
@@ -367,7 +404,7 @@ without inventing answers.
 ### Wait arrivals
 
 A Handoff to a Wait becomes one durable arrival when its source is released: a Final result's release, or the Human answer
-or forwarding that created it. The arrival keeps the message and the Handoff's [origin](#delivery-origin), and its absolute
+or forwarding that created it. The arrival keeps the message and the Handoff's [worker provenance](#worker-provenance), and its absolute
 deadline is the release time plus the captured Wait's duration; editing the saved Flow never changes it. The Handoff is
 acknowledged in place under the owner, open gate, live authorization context and release generation, so a repeated delivery
 attempt finds it no longer pending and records nothing. Parallel and repeated arrivals are independent; nothing joins.
@@ -375,7 +412,7 @@ attempt finds it no longer pending and records nothing. Parallel and repeated ar
 Forwarding is one guarded Run-store transition, shared by the timer and any later user action that forwards an arrival
 early. Under this owner and the open gate it claims a still-pending arrival, records who forwarded it and creates every
 outgoing Handoff to the Wait output's recipients in the same transaction. Those Handoffs are released from creation and carry
-the arrival's message and origin; dispatch then uses the ordinary delivery and replay rules. A competing forward finds the
+the arrival's message and worker provenance; dispatch then uses the ordinary delivery and replay rules. A competing forward finds the
 arrival settled and changes nothing, so a race or a crash after commit never produces a second set of Handoffs, and a crash
 before commit leaves the arrival pending with its message. Forwarding needs no T3 request or live authorization context.
 
@@ -385,15 +422,6 @@ pending arrival whose deadline has passed, oldest first, so a lost wake-up is ca
 one changes nothing. Restart before a deadline keeps it; after it, the next pass forwards the arrival once without moving
 the deadline or repeating missed time. Timing is best effort and system clock changes get no correction. Shutdown stops the
 wake-ups; the deadlines stay in the store.
-
-### Delivery origin
-
-Every Handoff, and the launch or send it becomes, records the originating worker of the message it carries: the Block
-activation and its bound T3 thread, within the Handoff's Run. An accepted Final result sets it to its activation and the
-Block's worker thread when bound; a Wait arrival keeps it and its forwarded Handoffs repeat it unchanged, through queued
-delivery, restart, fan-out and loop visits. It is never reconstructed from the graph or the latest activation. A message
-without a known worker has no origin: Human answers carry none yet. Migration `075` derived the origin of existing
-deliveries from their recorded Final result and its Block's bound thread, and left the others without one.
 
 ## Settled Runs
 

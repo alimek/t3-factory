@@ -11,10 +11,12 @@ CREATE TABLE flow_revision_blocks_with_waits (
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id),
   block_id TEXT NOT NULL,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-  kind TEXT NOT NULL CHECK (kind IN ('agent', 'human', 'wait')),
+  kind TEXT NOT NULL CHECK (kind IN ('agent', 'human', 'continuation', 'wait')),
   name TEXT NOT NULL,
   -- Unresolved by design: drafts may name a missing Agent, and history outlives the Agent.
   agent_id TEXT CHECK (kind = 'agent' OR agent_id IS NULL),
+  -- The prompt a Continuation sends once per Run; empty only in a draft.
+  prompt TEXT CHECK ((kind = 'continuation') = (prompt IS NOT NULL)),
   x REAL NOT NULL,
   y REAL NOT NULL,
   -- A Wait's duration; both are null while the draft has none. Readiness owns the range.
@@ -26,8 +28,8 @@ CREATE TABLE flow_revision_blocks_with_waits (
   UNIQUE (flow_revision_id, ordinal)
 )
 -- statement-breakpoint
-INSERT INTO flow_revision_blocks_with_waits (flow_revision_id, block_id, ordinal, kind, name, agent_id, x, y)
-SELECT flow_revision_id, block_id, ordinal, kind, name, agent_id, x, y FROM flow_revision_blocks
+INSERT INTO flow_revision_blocks_with_waits (flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, x, y)
+SELECT flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, x, y FROM flow_revision_blocks ORDER BY rowid
 -- statement-breakpoint
 DROP TABLE flow_revision_blocks
 -- statement-breakpoint
@@ -39,9 +41,11 @@ CREATE TRIGGER immutable_flow_revision_block_delete BEFORE DELETE ON flow_revisi
 -- statement-breakpoint
 PRAGMA defer_foreign_keys=OFF
 -- statement-breakpoint
--- One durable arrival per accepted delivery to a Wait: its retained message and the originating
--- worker it carries, the absolute deadline counted from the delivery's release, and its outcome.
--- The message is the input its recipients read after forwarding; Archive clears it.
+-- One durable arrival per accepted delivery to a Wait: its retained message and the worker
+-- provenance it carries, the absolute deadline counted from the delivery's release, and its
+-- outcome. The message is the input its recipients read after forwarding; Archive clears it.
+-- `binding_id` is the worker thread a later Continuation continues; `origin_activation_id` the
+-- Block activation whose result the message is, known only together with its thread.
 CREATE TABLE wait_arrivals (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id),
@@ -50,14 +54,14 @@ CREATE TABLE wait_arrivals (
   state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'forwarded', 'cancelled')),
   forwarded_by TEXT CHECK (forwarded_by IN ('timer')),
   message TEXT,
+  binding_id TEXT REFERENCES run_thread_bindings(id),
   origin_activation_id TEXT REFERENCES run_activations(id),
-  origin_thread_id TEXT,
   started_at TEXT NOT NULL,
   deadline_at TEXT NOT NULL,
   settled_at TEXT,
   CHECK ((state = 'forwarded') = (forwarded_by IS NOT NULL)),
   CHECK ((state = 'pending') = (settled_at IS NULL)),
-  CHECK ((origin_activation_id IS NULL) = (origin_thread_id IS NULL)),
+  CHECK (origin_activation_id IS NULL OR binding_id IS NOT NULL),
   FOREIGN KEY (run_id, block_id) REFERENCES run_blocks(run_id, block_id)
 )
 -- statement-breakpoint
@@ -66,19 +70,22 @@ CREATE INDEX wait_arrivals_pending ON wait_arrivals(deadline_at) WHERE state = '
 -- A Handoff a Wait arrival's forwarding created.
 ALTER TABLE operation_intents ADD COLUMN wait_arrival_id TEXT REFERENCES wait_arrivals(id)
 -- statement-breakpoint
--- The worker whose result a delivery carries: its Block activation and T3 thread, in the
--- delivery's Run. Agent results set it, Waits forward it unchanged; null when none is known.
+-- The Block activation whose result a delivery carries, beside the worker thread in `binding_id`:
+-- Agent and Continuation results set both, Waits and pass-throughs forward them unchanged; null
+-- when no activation is known.
 ALTER TABLE operation_intents ADD COLUMN origin_activation_id TEXT REFERENCES run_activations(id)
 -- statement-breakpoint
-ALTER TABLE operation_intents ADD COLUMN origin_thread_id TEXT
+-- Existing deliveries from a Final result derive their worker from the recorded result: the thread
+-- a Continuation's prompt ran on, else its Block's bound worker. A delivery without one keeps none.
+UPDATE operation_intents SET binding_id = COALESCE(
+  (SELECT v.binding_id FROM continuation_visits v JOIN runtime_reports r ON r.activation_id = v.activation_id
+    WHERE r.id = operation_intents.report_id),
+  (SELECT t.id FROM runtime_reports r
+    JOIN run_blocks b ON b.run_id = r.run_id AND b.block_id = r.block_id
+    JOIN run_thread_bindings t ON t.run_id = b.run_id AND t.thread_id = b.thread_id
+    WHERE r.id = operation_intents.report_id))
+WHERE report_id IS NOT NULL AND binding_id IS NULL
 -- statement-breakpoint
--- Existing deliveries from a Final result derive their origin from the recorded result and its
--- Block's bound worker; a delivery without both keeps no origin.
 UPDATE operation_intents SET
-  origin_activation_id = (SELECT r.activation_id FROM runtime_reports r
-    JOIN run_blocks b ON b.run_id = r.run_id AND b.block_id = r.block_id
-    WHERE r.id = operation_intents.report_id AND b.thread_id IS NOT NULL),
-  origin_thread_id = (SELECT b.thread_id FROM runtime_reports r
-    JOIN run_blocks b ON b.run_id = r.run_id AND b.block_id = r.block_id
-    WHERE r.id = operation_intents.report_id AND r.activation_id IS NOT NULL)
-WHERE report_id IS NOT NULL
+  origin_activation_id = (SELECT r.activation_id FROM runtime_reports r WHERE r.id = operation_intents.report_id)
+WHERE report_id IS NOT NULL AND binding_id IS NOT NULL
