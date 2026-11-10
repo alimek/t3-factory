@@ -1,11 +1,12 @@
 import {
   createNodeGeometry,
   incomingPortY,
+  incomingWires,
   type CanvasDimensions,
   type GeometryFacts,
 } from "@t3-factory/flow-layout";
-import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
-import { sameWire, type WireSource, type CanvasBlock, type CanvasGraph } from "./flow-graph.ts";
+import type { FlowBlock } from "@t3-factory/contracts";
+import type { CanvasBlock, CanvasGraph } from "./flow-graph.ts";
 import { EXECUTION_DIMENSIONS } from "./components/canvas-dimensions.ts";
 import { mergeGraphBounds } from "./canvas-fit.ts";
 
@@ -42,7 +43,7 @@ export function createCanvasGeometry(
     y: block.position.y + incomingPortY(index, ports),
   });
   const incomingPorts = (block: CanvasBlock) =>
-    incomingWiresForBlock(graph, block.id).map((source, index) => ({
+    incomingWires(graph, block.id).map((source, index) => ({
       source,
       ...inputPoint(block, index),
     }));
@@ -147,36 +148,6 @@ export function orthogonalWirePath(exit: Point, input: Point, below: number, app
     { x: approachX, y: to.y },
     to,
   ]);
-}
-
-/** Flow input first, then configured connections in graph order. */
-function incomingWiresForBlock(graph: FlowGraph, targetBlockId: string): readonly WireSource[] {
-  const wires: WireSource[] = [];
-  if (graph.flowInput.targetBlockIds.includes(targetBlockId)) {
-    wires.push({ kind: "flow-input" });
-  }
-  for (const connection of graph.connections) {
-    if (connection.targetBlockId === targetBlockId) {
-      wires.push({
-        kind: "exit",
-        sourceBlockId: connection.sourceBlockId,
-        exitId: connection.exitId,
-      });
-    }
-  }
-  return wires;
-}
-
-export function incomingPortIndexForSource(
-  graph: FlowGraph,
-  targetBlockId: string,
-  wire: WireSource,
-) {
-  const wires = incomingWiresForBlock(graph, targetBlockId);
-  const index = wires.findIndex((item) =>
-    sameWire({ source: item, targetBlockId }, { source: wire, targetBlockId }),
-  );
-  return index >= 0 ? index : 0;
 }
 
 /** Horizontal lane offset for backward manual routes so returns do not share one vertical. */

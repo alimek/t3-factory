@@ -373,11 +373,11 @@ export function validateDuplicateAgent(input: unknown): Result<DuplicateAgentInp
   return { ok: true, value: { name: name.value } };
 }
 
-const CANVAS_COORD_MIN = -10000;
-const CANVAS_COORD_MAX = 10000;
-const CANVAS_COORD_MESSAGE = `Use finite canvas coordinates from ${CANVAS_COORD_MIN} to ${CANVAS_COORD_MAX}.`;
+export const CANVAS_COORD_MIN = -10000;
+export const CANVAS_COORD_MAX = 10000;
+export const CANVAS_COORD_MESSAGE = `Use finite canvas coordinates from ${CANVAS_COORD_MIN} to ${CANVAS_COORD_MAX}.`;
 
-const isCanvasPosition = (v: unknown) =>
+export const isCanvasPosition = (v: unknown): v is { x: number; y: number } =>
   isRecord(v) &&
   [v.x, v.y].every(
     (c) =>

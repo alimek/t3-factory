@@ -1,5 +1,7 @@
 import type { ELK, ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js";
 import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import { isCanvasPosition } from "@t3-factory/domain-validation";
+import { incomingPortIndex, incomingWires } from "./graph.ts";
 
 /** Exits must include unavailable wired endpoints, in the same order the canvas draws them. */
 export type LayoutBlock = FlowBlock & {
@@ -15,10 +17,6 @@ export type FlowLayoutPositions = {
 
 function connectionId(connection: FlowGraph["connections"][number]) {
   return `${connection.sourceBlockId}:${connection.exitId}:${connection.targetBlockId}`;
-}
-
-function incomingConnections(graph: FlowGraph, targetBlockId: string) {
-  return graph.connections.filter((edge) => edge.targetBlockId === targetBlockId);
 }
 
 function elkInputPortId(targetBlockId: string, index: number) {
@@ -72,10 +70,7 @@ function blockPorts<B extends LayoutBlock>(
   dims: FlowLayoutDimensions<B>,
 ) {
   const { ports } = dims;
-  const incoming = [
-    ...(graph.flowInput.targetBlockIds.includes(block.id) ? [null] : []),
-    ...incomingConnections(graph, block.id),
-  ];
+  const incoming = incomingWires(graph, block.id);
   const inputPorts =
     incoming.length > 0
       ? incoming.map((_wire, index) => ({
@@ -206,16 +201,18 @@ function buildEdges<B extends LayoutBlock>(
     edges.push({
       id,
       sources: [flowInputPortId()],
-      targets: [elkInputPortId(targetBlockId, 0)],
+      targets: [
+        elkInputPortId(
+          targetBlockId,
+          incomingPortIndex(graph, targetBlockId, { kind: "flow-input" }),
+        ),
+      ],
     });
   }
   for (const connection of graph.connections) {
     const id = connectionId(connection);
-    const index =
-      incomingConnections(graph, connection.targetBlockId).findIndex(
-        (edge) =>
-          edge.sourceBlockId === connection.sourceBlockId && edge.exitId === connection.exitId,
-      ) + (graph.flowInput.targetBlockIds.includes(connection.targetBlockId) ? 1 : 0);
+    const { sourceBlockId, exitId, targetBlockId } = connection;
+    const index = incomingPortIndex(graph, targetBlockId, { kind: "exit", sourceBlockId, exitId });
     edges.push({
       id,
       sources: [exitPortId(connection.sourceBlockId, connection.exitId)],
@@ -241,23 +238,20 @@ export function buildElkGraph<B extends LayoutBlock>(
   };
 }
 
+/** The arranged graph does not fit within the canvas coordinate limits. */
+export class FlowLayoutLimitError extends Error {
+  constructor() {
+    super("This Flow is too large to auto-arrange within the canvas limits.");
+  }
+}
+
 export function parseLayoutPositions(graph: FlowGraph, laidOut: ElkNode): FlowLayoutPositions {
   const blocks = new Map<string, { x: number; y: number }>();
   for (const child of laidOut.children ?? []) {
-    if (
-      child.x === undefined ||
-      child.y === undefined ||
-      !Number.isFinite(child.x) ||
-      !Number.isFinite(child.y) ||
-      child.x < -10000 ||
-      child.y < -10000 ||
-      child.x > 10000 ||
-      child.y > 10000
-    ) {
-      throw new Error("This Flow is too large to auto-arrange within the canvas limits.");
-    }
+    const position = { x: child.x, y: child.y };
+    if (!isCanvasPosition(position)) throw new FlowLayoutLimitError();
     if (child.id.startsWith(BLOCK_NODE_PREFIX))
-      blocks.set(child.id.slice(BLOCK_NODE_PREFIX.length), { x: child.x, y: child.y });
+      blocks.set(child.id.slice(BLOCK_NODE_PREFIX.length), position);
   }
   const flowInputChild = laidOut.children?.find((c) => c.id === FLOW_INPUT_NODE_ID);
   const flowInput =
@@ -289,4 +283,11 @@ export {
   type CanvasDimensions,
   type GeometryFacts,
 } from "./dimensions.ts";
-export { canvasGraph, type CanvasBlock, type CanvasGraph } from "./graph.ts";
+export {
+  canvasGraph,
+  incomingPortIndex,
+  incomingWires,
+  type CanvasBlock,
+  type CanvasGraph,
+  type WireSource,
+} from "./graph.ts";

@@ -1,5 +1,6 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/server";
 import type { FactoryOperations, OperationError, Result } from "@t3-factory/contracts";
+import { CANVAS_COORD_MAX, CANVAS_COORD_MIN } from "@t3-factory/domain-validation";
 
 /** The definition operations Studio's API uses; authoring tools call nothing else. */
 export type AuthoringOperations = Pick<
@@ -65,8 +66,8 @@ const agentFields = {
 const position = {
   type: "object",
   properties: {
-    x: { type: "number", minimum: -10000, maximum: 10000 },
-    y: { type: "number", minimum: -10000, maximum: 10000 },
+    x: { type: "number", minimum: CANVAS_COORD_MIN, maximum: CANVAS_COORD_MAX },
+    y: { type: "number", minimum: CANVAS_COORD_MIN, maximum: CANVAS_COORD_MAX },
   },
   required: ["x", "y"],
 };
@@ -91,6 +92,38 @@ const flowFields = {
     type: "object",
     description:
       'Optional: {mode: "checkout"} or {mode: "worktree", base: {kind: "default"} | {kind: "ref", ref}}. Omitted keeps the saved workspace, or defaults to a new worktree from the default branch on create.',
+    oneOf: [
+      {
+        type: "object",
+        properties: { mode: { const: "checkout" } },
+        required: ["mode"],
+        additionalProperties: false,
+      },
+      {
+        type: "object",
+        properties: {
+          mode: { const: "worktree" },
+          base: {
+            oneOf: [
+              {
+                type: "object",
+                properties: { kind: { const: "default" } },
+                required: ["kind"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: { kind: { const: "ref" }, ref: { type: "string", minLength: 1 } },
+                required: ["kind", "ref"],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+        required: ["mode", "base"],
+        additionalProperties: false,
+      },
+    ],
   },
 };
 

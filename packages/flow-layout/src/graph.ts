@@ -41,3 +41,28 @@ function canvasExits(
   }
   return exits;
 }
+
+/** Where a wire starts: one exit of a block, or the Flow input block. */
+export type WireSource =
+  | { readonly kind: "exit"; readonly sourceBlockId: string; readonly exitId: string }
+  | { readonly kind: "flow-input" };
+
+/** A block's incoming wires in input-port order: the Flow input first, then connections in graph order. */
+export function incomingWires(graph: FlowGraph, targetBlockId: string): readonly WireSource[] {
+  const wires: WireSource[] = [];
+  if (graph.flowInput.targetBlockIds.includes(targetBlockId)) wires.push({ kind: "flow-input" });
+  for (const { sourceBlockId, exitId, targetBlockId: target } of graph.connections) {
+    if (target === targetBlockId) wires.push({ kind: "exit", sourceBlockId, exitId });
+  }
+  return wires;
+}
+
+/** The input port a wire from `source` attaches to; port 0 when the block has no such wire yet. */
+export function incomingPortIndex(graph: FlowGraph, targetBlockId: string, source: WireSource) {
+  const index = incomingWires(graph, targetBlockId).findIndex((wire) =>
+    wire.kind === "flow-input" || source.kind === "flow-input"
+      ? wire.kind === source.kind
+      : wire.sourceBlockId === source.sourceBlockId && wire.exitId === source.exitId,
+  );
+  return Math.max(index, 0);
+}

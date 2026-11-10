@@ -166,3 +166,48 @@ it("an Agent save choosing a provider without Factory reporting support is refus
     execution: saved.execution,
   });
 });
+
+it("a stale Flow save whose graph is too large to arrange is refused as a conflict before any layout", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const opened = assertOk(await factory.createFlow({ name: "Long" }));
+  const studio = assertOk(
+    await factory.updateFlow(opened.id, {
+      name: "Studio's edit",
+      expectedRevision: opened.revision,
+      graph: opened.graph,
+    }),
+  );
+  const ids = Array.from({ length: 80 }, (_, index) => `step-${index}`);
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_save_flow",
+    arguments: {
+      flowId: opened.id,
+      name: "The agent's edit",
+      expectedRevision: opened.revision,
+      graph: {
+        flowInput: { targetBlockIds: [] },
+        blocks: ids.map((id) => ({ id, kind: "human", name: id })),
+        connections: ids.slice(1).map((id, index) => ({
+          sourceBlockId: ids[index],
+          exitId: "approve",
+          targetBlockId: id,
+        })),
+      },
+    },
+  });
+
+  // Assert
+  expect(result.isError).toBe(true);
+  expect(toolReply(result)).toMatchObject({
+    code: "conflict",
+    issues: [{ code: "stale_revision", path: "expectedRevision", message: expect.any(String) }],
+    next: expect.any(String),
+  });
+  expect(assertOk(await factory.getFlow(opened.id))).toMatchObject({
+    revision: studio.revision,
+    name: "Studio's edit",
+  });
+});

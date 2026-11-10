@@ -16,9 +16,8 @@ import {
   type BlockPosition,
   type CanvasBlock,
   type FlowWire,
-  type WireSource,
 } from "../flow-graph.ts";
-import { AUTHORING_DIMENSIONS } from "@t3-factory/flow-layout";
+import { AUTHORING_DIMENSIONS, type WireSource } from "@t3-factory/flow-layout";
 import {
   CanvasSurface,
   IdentityRows,

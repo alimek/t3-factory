@@ -3,6 +3,7 @@ import {
   AUTHORING_DIMENSIONS,
   canvasGraph,
   createFlowLayoutDimensions,
+  FlowLayoutLimitError,
 } from "@t3-factory/flow-layout";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -16,6 +17,7 @@ import type {
   Result,
 } from "@t3-factory/contracts";
 import {
+  CANVAS_COORD_MESSAGE,
   flowReadiness,
   type ReadinessAgent,
   validateCreateAgent,
@@ -108,9 +110,11 @@ export const makeDefinitions = (
         )
           return { ok: true as const, value: graph };
         const resolved = canvasGraph(graph, yield* readinessAgents);
-        return yield* Effect.tryPromise(() =>
-          arrangeFlow(resolved, createFlowLayoutDimensions(resolved, AUTHORING_DIMENSIONS)),
-        ).pipe(
+        return yield* Effect.tryPromise({
+          try: () =>
+            arrangeFlow(resolved, createFlowLayoutDimensions(resolved, AUTHORING_DIMENSIONS)),
+          catch: (cause) => cause,
+        }).pipe(
           Effect.map((positions): Result<FlowGraph> => ({
             ok: true,
             value: {
@@ -122,19 +126,41 @@ export const makeDefinitions = (
               })),
             },
           })),
-          Effect.catch(() =>
-            Effect.succeed(
-              failure("validation", "Could not auto-arrange this Flow within the canvas limits.", [
-                {
-                  code: "layout_failed",
-                  path: "graph",
-                  message:
-                    "Supply positions within -10000 to 10000, or simplify the graph and try again.",
-                },
-              ]),
-            ),
+          // Only the canvas-limit outcome is the caller's to fix; any other layout failure is a
+          // defect and surfaces as an internal error rather than a misleading validation issue.
+          Effect.catch((error) =>
+            error instanceof FlowLayoutLimitError
+              ? Effect.succeed(
+                  failure("validation", error.message, [
+                    {
+                      code: "layout_failed",
+                      path: "graph",
+                      message: `${CANVAS_COORD_MESSAGE} Supply every position, or simplify the graph.`,
+                    },
+                  ]),
+                )
+              : Effect.die(error),
           ),
         );
+      });
+    /** The saved Flow a save may replace, or the refusal that stops the save. */
+    const savedFlowFor = (id: string, expectedRevision: number) =>
+      Effect.gen(function* () {
+        const [saved] = yield* readCurrentFlows(sql, id);
+        if (!saved) return flowNotFound();
+        if (saved.revision !== expectedRevision)
+          return failure(
+            "conflict",
+            "A newer revision exists. Keep your edits and reconcile before saving again.",
+            [
+              {
+                code: "stale_revision",
+                path: "expectedRevision",
+                message: "Compare the latest saved Flow with your local draft.",
+              },
+            ],
+          );
+        return { ok: true as const, value: saved };
       });
     const loadCapabilities = Effect.fn("Definitions.loadCapabilities")(function* () {
       const status = yield* connection.getConnection();
@@ -262,24 +288,18 @@ export const makeDefinitions = (
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql<FlowDraft>(
           Effect.gen(function* () {
+            const { expectedRevision } = validated.value;
+            // Refuse a missing or stale Flow before any layout, so the refusal names the real cause.
+            const current = yield* savedFlowFor(id, expectedRevision);
+            if (!current.ok) return current;
             const positioned = yield* positionGraph(validated.value.graph);
             if (!positioned.ok) return positioned;
             return yield* sql.withTransaction(
               Effect.gen(function* () {
-                const [saved] = yield* readCurrentFlows(sql, id);
-                if (!saved) return flowNotFound();
-                if (saved.revision !== validated.value.expectedRevision)
-                  return failure(
-                    "conflict",
-                    "A newer revision exists. Keep your edits and reconcile before saving again.",
-                    [
-                      {
-                        code: "stale_revision",
-                        path: "expectedRevision",
-                        message: "Compare the latest saved Flow with your local draft.",
-                      },
-                    ],
-                  );
+                // Checked again: another save may have landed while the graph was arranged.
+                const latest = yield* savedFlowFor(id, expectedRevision);
+                if (!latest.ok) return latest;
+                const saved = latest.value;
                 const now = yield* currentTime;
                 const flow: FlowRevision = {
                   ...saved,

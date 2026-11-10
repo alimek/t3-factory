@@ -1,4 +1,4 @@
-import type { CanvasGraph } from "@t3-factory/flow-layout";
+import type { CanvasGraph, WireSource } from "@t3-factory/flow-layout";
 import type {
   AgentDefinition,
   FlowBlock,
@@ -60,11 +60,6 @@ export function replaceBlock(graph: FlowGraph, next: FlowBlock): FlowGraph {
     ),
   };
 }
-
-/** Where a wire starts: one exit of a block, or the Flow input block. */
-export type WireSource =
-  | { readonly kind: "exit"; readonly sourceBlockId: string; readonly exitId: string }
-  | { readonly kind: "flow-input" };
 
 /**
  * A wire on the canvas: an exit's connection, or the Flow input reaching one of its
