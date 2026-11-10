@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { FlowDraft, Result } from "../packages/contracts/src/index.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
+import { saveSingleAgentFlow } from "./support/flows.ts";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
 import { applyRunState, prepareScenarios, scenarioFixture } from "./support/scenarios.ts";
 
@@ -12,14 +13,13 @@ test("a Wait added from the library saves with a missing duration as a readiness
 }) => {
   // Arrange
   await browser.setViewport({ width: 1920, height: 1000 });
-  await app.open("/studio/flows");
-  await screen.getByRole("button", "New Flow").tap();
-  await screen.getByLabel("Flow name").fill("Wait before review");
-  await screen.getByRole("button", "Create Flow").tap();
-  await screen.getByRole("button", "Add Sample worker").tap();
-  await screen.getByLabel("Block name").fill("Coder");
-  await screen.getByLabel("X position").fill("320");
-  await screen.getByLabel("Y position").fill("60");
+  const flowId = await saveSingleAgentFlow(app.baseUrl, "Wait before review", "Sample worker", {
+    id: "coder",
+    name: "Coder",
+    x: 320,
+    y: 60,
+  });
+  await app.open(`/studio/flows/${flowId}`);
   await screen.getByRole("button", "Add Wait").tap();
   await screen.getByLabel("Block name").fill("Cool down");
   await screen.getByLabel("X position").fill("680");
@@ -51,9 +51,8 @@ test("a Wait added from the library saves with a missing duration as a readiness
   await expect(screen.getByLabel("Wait for")).toHaveValue("90");
   await expect(screen.getByRole("region", "Output")).toContainText("finish here");
   await app.screenshot("wait-configured-after-reload");
-  const path = new URL(await browser.url()).pathname;
   const saved = (await (
-    await fetch(new URL(`/api${path.replace(/^\/studio/, "")}`, app.baseUrl))
+    await fetch(new URL(`/api/flows/${flowId}`, app.baseUrl))
   ).json()) as Result<FlowDraft>;
   assert(saved.ok);
   expect(saved.value.graph.blocks[1]).toMatchObject({
