@@ -55,11 +55,11 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     fiber.addObserver(() => detached.delete(fiber));
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
-  const { consumeBlockUpdate } = openRunnerReports(database, lifecycle);
+  const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(database, t3);
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe, images);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
-  const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
+  const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
     store,

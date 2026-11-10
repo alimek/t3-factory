@@ -78,23 +78,6 @@ export type IntentRow = {
   recovery_not_before: string | null;
 };
 
-export type ReportRow = {
-  activation_id: string | null;
-  result_message: string | null;
-  id: string;
-  block_id: string;
-  /** The Block's latest execution when the report was accepted, if its worker was bound. */
-  execution_id: string | null;
-  fingerprint: string;
-  status: "waiting" | "finished";
-  exit_id: string | null;
-  recipients_json: string;
-  acknowledgement_json: string;
-  accepted_at: string;
-  completion_eligible_at: string | null;
-  pending_message: string | null;
-};
-
 export type ExecutionRow = {
   binding_id: string;
   activation_id: string | null;

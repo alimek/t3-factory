@@ -1,9 +1,4 @@
-import { newId } from "./ids.ts";
 import type { BlockExit } from "@t3-factory/contracts";
-import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/sql/SqlClient";
-import type { ReportRow, RunRow } from "./runner-types.ts";
-import { fingerprint, runTarget } from "./runner-utils.ts";
 function reportExitChoices(exits: readonly BlockExit[]) {
   const choices = exits.map(
     (exit) =>
@@ -15,31 +10,4 @@ function reportExitChoices(exits: readonly BlockExit[]) {
  * conversation in between needs no report. */
 export function conversationReportInstructions(exits: readonly BlockExit[]) {
   return `Report through factory_update_block. Chat alone is not a report. When you start this visit's work, call {to: "working", message: nonempty summary of what you are doing}, with no exit. Working is non-final, does not advance the Flow, keeps Factory from reporting a missing report and stays current across later turns of this visit: asking the user questions, reading their replies, and waiting for CI, review, delegated or background work need no further report. End a questioning turn with the questions as your final message. Report working again only to replace its message or when you reopen the task after a result. Only when the task is actually complete, call {to: "finished", exit: exact name below, message: context for the next step; nonempty when the exit requires a message}. Your newest finished report is the result. To change it, report finished again from a later turn: before hand-off only the newest result is passed on; afterwards the same exit only updates the result, and a different exit also starts that exit's next Blocks. An identical retry returns the original acknowledgement. Never treat unanswered questions or your recommendations as user decisions.\nExits:\n${reportExitChoices(exits)}`;
-}
-export function createHandoffs(
-  sql: SqlClient.SqlClient,
-  runRow: Pick<
-    RunRow,
-    "id" | "context_id" | "endpoint" | "environment_id" | "t3_project_id" | "workspace_root"
-  >,
-  report: Pick<
-    ReportRow,
-    "id" | "block_id" | "exit_id" | "recipients_json" | "pending_message" | "accepted_at"
-  >,
-  occurrenceId: string | null = null,
-) {
-  return Effect.gen(function* () {
-    for (const blockId of JSON.parse(report.recipients_json) as string[]) {
-      const id = yield* newId,
-        cause = `${occurrenceId ? "human" : "report"}:${report.id}/recipient:${blockId}`;
-      const payload = JSON.stringify({ message: report.pending_message ?? "" });
-      const inserted =
-        yield* sql`INSERT INTO operation_intents(id,run_id,block_id,kind,cause,target_json,request_key,payload_json,fingerprint,context_id,report_id,source_block_id,exit_id,occurrence_id)
-          VALUES(${id},${runRow.id},${blockId},'handoff',${cause},${JSON.stringify({ ...runTarget(runRow), blockId })},${fingerprint(cause)},${payload},${fingerprint(payload)},${runRow.context_id},${occurrenceId ? null : report.id},${report.block_id},${report.exit_id},${occurrenceId}) ON CONFLICT(run_id,cause) DO NOTHING RETURNING id`;
-      if (inserted.length)
-        yield* sql`INSERT INTO run_events(run_id,block_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${blockId},${occurrenceId ? "handoff-created" : "handoff-held"},${cause},${id},${report.accepted_at})`;
-    }
-    if (!occurrenceId)
-      yield* sql`UPDATE runtime_reports SET pending_message=NULL WHERE id=${report.id}`;
-  });
 }

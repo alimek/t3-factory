@@ -1,14 +1,14 @@
 import type { Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import { currentReports } from "../../block-report.ts";
 import { failure } from "../../result.ts";
-import { settleReportRejections } from "../../runner-report-diagnostics.ts";
 import type { RunRow } from "../../runner-types.ts";
 import { now } from "../../time.ts";
+import { currentReports } from "./current-report.ts";
 import { guardsHold } from "./guards.ts";
 import { withLifecycle } from "./lifecycle.ts";
 import { clearSnooze } from "./presentation.ts";
+import { settleReportRejections } from "./report-diagnostics.ts";
 import type { RunnerDatabase } from "./runner-database.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
@@ -27,7 +27,7 @@ function markSettled(
 }
 
 /** Any accepted report from a Block of a Settled Run returns the Run to Active, advancing its
- * generation. Report acceptance calls this inside its own transaction until it moves here. */
+ * generation. */
 export function returnToActive(
   sql: SqlClient.SqlClient,
   runId: string,

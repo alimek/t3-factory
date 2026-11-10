@@ -4,6 +4,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";
 import type { HumanRow, IntentRow } from "../../runner-types.ts";
 import { now } from "../../time.ts";
+import { settleAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
 import { withLifecycle } from "./lifecycle.ts";
 import { clearSnooze } from "./presentation.ts";
@@ -52,17 +53,17 @@ function cancelUnsentWork(sql: SqlClient.SqlClient, id: string, time: string) {
       block_id: string;
       execution_id: string;
     }>`SELECT id,block_id,execution_id FROM run_attention WHERE run_id=${id} AND settled_at IS NULL`;
-    for (const matter of attention) {
-      yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason='archived' WHERE id=${matter.id}`;
-      yield* appendTimelineEvent(sql, {
-        kind: "attention-settled",
+    yield* settleAttention(
+      sql,
+      attention.map((matter) => ({
+        id: matter.id,
         runId: id,
         blockId: matter.block_id,
         executionId: matter.execution_id,
-        attentionId: matter.id,
-        observedAt: time,
-      });
-    }
+      })),
+      "archived",
+      time,
+    );
     yield* sql`UPDATE run_blocks SET state=CASE WHEN state IN (${notStarted},${finished}) THEN state ELSE ${stopped} END,problem=NULL WHERE run_id=${id}`;
   });
 }

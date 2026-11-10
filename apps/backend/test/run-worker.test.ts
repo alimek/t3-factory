@@ -597,6 +597,35 @@ it("a Human answer releases its outgoing handoff without waiting for worker evid
   );
 });
 
+it("competing Human answers settle the occurrence once and the other answer is refused as a conflict", async (c) => {
+  // Arrange
+  const f = await pendingReview(c);
+
+  // Act
+  const results = await Promise.all([
+    f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "approve" }),
+    f.f.answerHumanOccurrence(f.occurrence.id, {
+      exitId: "request-changes",
+      message: "Split the migration.",
+    }),
+  ]);
+
+  // Assert
+  expect(results.filter((result) => result.ok)).toHaveLength(1);
+  expect(results.filter((result) => !result.ok)).toMatchObject([
+    {
+      error: {
+        code: "conflict",
+        message: "This occurrence has already been settled with a different answer or reason.",
+      },
+    },
+  ]);
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.humanOccurrences).toMatchObject([{ state: "answered" }]);
+  expect(run.value.events.filter((event) => event.kind === "human-answered")).toHaveLength(1);
+});
+
 it("a Request changes answer without a message is rejected and the review stays pending", async (c) => {
   // Arrange
   const f = await pendingReview(c);

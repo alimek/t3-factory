@@ -7,9 +7,8 @@ import {
 } from "@t3-factory/contracts";
 import { TASK_TITLE_LIMIT } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
+import { currentWorkingMessages, type RunnerDatabase } from "./runner/run-store/run-store.ts";
 import { failure } from "./result.ts";
-import { currentWorkingMessages } from "./block-report.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { storedProjectIcon } from "./projects.ts";
 import { projectFaviconUrl } from "./project-favicon.ts";

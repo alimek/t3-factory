@@ -2,7 +2,7 @@ import { releaseResult } from "./result-release.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import * as Effect from "effect/Effect";
 import type { ExecutionObservation, T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
+import { raiseHumanAttention, type RunnerDatabase } from "./runner/run-store/run-store.ts";
 import { newId } from "./ids.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint } from "./runner-utils.ts";
@@ -80,9 +80,8 @@ export function activatePendingHumanHandoff(
         yield* sql`INSERT INTO human_occurrences(id,run_id,block_id,incoming_intent_id,pending_context,appeared_at) VALUES(${id},${runRow.id},${intent.block_id},${intent.id},${context},${time})`;
         yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${intent.id}`;
         yield* sql`UPDATE run_blocks SET state='waiting',freshness='fresh',observed_at=${time} WHERE run_id=${runRow.id} AND block_id=${intent.block_id}`;
-        yield* sql`INSERT INTO run_attention(id,run_id,block_id,execution_id,kind,source_key,occurrence_id,appeared_at) VALUES(${id},${runRow.id},${intent.block_id},'', 'human',${"human:" + id},${id},${time})`;
         yield* sql`INSERT INTO run_events(run_id,block_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${intent.block_id},'human-waiting',${"human:" + id},${id},${time})`;
-        yield* sql`INSERT INTO run_events(run_id,block_id,kind,source_key,cause_id,observed_at) VALUES(${runRow.id},${intent.block_id},'attention-appeared',${"human-attention:" + id},${id},${time})`;
+        yield* raiseHumanAttention(sql, runRow.id, intent.block_id, id, time);
         yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${runRow.id}`;
       }),
     );

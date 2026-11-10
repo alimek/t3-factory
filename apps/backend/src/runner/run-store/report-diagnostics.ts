@@ -1,10 +1,11 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { RuntimeReply } from "./runtime-types.ts";
-import type { ReportTarget } from "./runner-reports.ts";
-import { attention } from "./runner-attention.ts";
-import { reportDiagnostic } from "./runtime-report-diagnostic.ts";
-import { now } from "./time.ts";
+import { reportDiagnostic } from "../../runtime-report-diagnostic.ts";
+import type { RuntimeReply } from "../../runtime-types.ts";
+import { now } from "../../time.ts";
+import { observeAttention, settleAttention } from "./attention.ts";
+import type { ReportTarget } from "./records.ts";
+import { advanceGeneration } from "./steps.ts";
 
 /** A rejected report for a known Block is attention, never an execution transition or a
  * second copy of the report. */
@@ -29,9 +30,9 @@ export function recordReportVerdict(
     const accepted = yield* sql`SELECT id FROM runtime_reports WHERE activation_id=${activationId}`;
     if (accepted.length) return diagnostic;
     const scope = { block_id: block.block_id, bindingId: binding.id };
-    yield* attention(sql, run, scope, block.execution_id, "report-problem", true, time);
+    yield* observeAttention(sql, run.id, scope, block.execution_id, "report-problem", true, time);
     yield* sql`UPDATE run_attention SET source_key='report-rejected:' || id,message=${`${diagnostic.code}: ${diagnostic.reason} ${diagnostic.next}`} WHERE run_id=${run.id} AND binding_id=${binding.id} AND execution_id=${block.execution_id} AND kind='report-problem' AND settled_at IS NULL`;
-    yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
+    yield* advanceGeneration(sql, run.id);
     return diagnostic;
   });
 }
@@ -49,9 +50,17 @@ export function settleReportRejections(
       execution_id: string;
       binding_id: string;
     }>`SELECT id,execution_id,binding_id FROM run_attention WHERE run_id=${runId} AND block_id=${blockId} AND kind='report-problem' AND source_key LIKE 'report-rejected:%' AND settled_at IS NULL`;
-    for (const row of rows) {
-      yield* sql`UPDATE run_attention SET settled_at=${time},settlement_reason='report-accepted' WHERE id=${row.id}`;
-      yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${runId},${blockId},${row.execution_id},${row.binding_id},'attention-settled',${"attention-settled:" + row.id},${row.id},${time})`;
-    }
+    yield* settleAttention(
+      sql,
+      rows.map((row) => ({
+        id: row.id,
+        runId,
+        blockId,
+        executionId: row.execution_id,
+        bindingId: row.binding_id,
+      })),
+      "report-accepted",
+      time,
+    );
   });
 }

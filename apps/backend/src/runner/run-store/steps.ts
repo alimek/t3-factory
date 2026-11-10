@@ -15,16 +15,39 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
   | { readonly kind: "operation-cancelled"; readonly blockId: string; readonly intentId: string }
   | { readonly kind: "human-cancelled"; readonly blockId: string; readonly occurrenceId: string }
   | {
-      readonly kind: "attention-settled";
+      readonly kind: "attention-appeared";
       readonly blockId: string;
       readonly executionId: string;
       readonly attentionId: string;
     }
+  | { readonly kind: "attention-appeared"; readonly blockId: string; readonly occurrenceId: string }
+  | {
+      readonly kind: "attention-settled";
+      readonly blockId: string;
+      readonly executionId: string;
+      readonly attentionId: string;
+      readonly bindingId?: string;
+    }
+  | { readonly kind: "attention-settled"; readonly blockId: string; readonly occurrenceId: string }
+  | {
+      readonly kind: "report-accepted" | "working-reported";
+      readonly blockId: string;
+      readonly executionId: string | null;
+      readonly reportId: string;
+    }
+  | {
+      readonly kind: "handoff-held" | "handoff-created";
+      readonly blockId: string;
+      readonly cause: string;
+      readonly intentId: string;
+    }
+  | { readonly kind: "human-answered"; readonly blockId: string; readonly occurrenceId: string }
 );
 
 type StoredEvent = {
   blockId: string | null;
   executionId: string | null;
+  bindingId?: string;
   sourceKey: string;
   causeId: string | null;
 };
@@ -62,12 +85,57 @@ function stored(event: TimelineEvent) {
           sourceKey: "human-cancelled:" + event.occurrenceId,
           causeId: event.occurrenceId,
         };
+      case "attention-appeared":
+        return "occurrenceId" in event
+          ? {
+              blockId: event.blockId,
+              executionId: null,
+              sourceKey: "human-attention:" + event.occurrenceId,
+              causeId: event.occurrenceId,
+            }
+          : {
+              blockId: event.blockId,
+              executionId: event.executionId,
+              sourceKey: "attention:" + event.attentionId,
+              causeId: event.attentionId,
+            };
       case "attention-settled":
+        return "occurrenceId" in event
+          ? {
+              blockId: event.blockId,
+              executionId: null,
+              sourceKey: "human-settled:" + event.occurrenceId,
+              causeId: event.occurrenceId,
+            }
+          : {
+              blockId: event.blockId,
+              executionId: event.executionId,
+              ...(event.bindingId === undefined ? {} : { bindingId: event.bindingId }),
+              sourceKey: "attention-settled:" + event.attentionId,
+              causeId: event.attentionId,
+            };
+      case "report-accepted":
+      case "working-reported":
         return {
           blockId: event.blockId,
           executionId: event.executionId,
-          sourceKey: "attention-settled:" + event.attentionId,
-          causeId: event.attentionId,
+          sourceKey: (event.kind === "report-accepted" ? "report:" : "working:") + event.reportId,
+          causeId: event.reportId,
+        };
+      case "handoff-held":
+      case "handoff-created":
+        return {
+          blockId: event.blockId,
+          executionId: null,
+          sourceKey: event.cause,
+          causeId: event.intentId,
+        };
+      case "human-answered":
+        return {
+          blockId: event.blockId,
+          executionId: null,
+          sourceKey: "human-answer:" + event.occurrenceId,
+          causeId: event.occurrenceId,
         };
     }
   });
@@ -75,7 +143,7 @@ function stored(event: TimelineEvent) {
 
 export function appendTimelineEvent(sql: SqlClient.SqlClient, event: TimelineEvent) {
   return Effect.gen(function* () {
-    const { blockId, executionId, sourceKey, causeId } = yield* stored(event);
-    yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,kind,source_key,cause_id,observed_at) VALUES(${event.runId},${blockId},${executionId},${event.kind},${sourceKey},${causeId},${event.observedAt})`;
+    const { blockId, executionId, bindingId, sourceKey, causeId } = yield* stored(event);
+    yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at) VALUES(${event.runId},${blockId},${executionId},${bindingId ?? null},${event.kind},${sourceKey},${causeId},${event.observedAt})`;
   });
 }

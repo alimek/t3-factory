@@ -4,12 +4,23 @@ import type { LiveChanges } from "../../live-changes.ts";
 import { makeRunLanes } from "../../runner-lanes.ts";
 import { now } from "../../time.ts";
 import { openRunArchive } from "./archive.ts";
+import { openRunHuman } from "./human.ts";
 import { openRunPresentation } from "./presentation.ts";
+import { openRunReports } from "./reports.ts";
 import { openRunnerDatabase } from "./runner-database.ts";
 import { openRunSettlement } from "./settlement.ts";
 
 export type { RunnerDatabase } from "./runner-database.ts";
-export { returnToActive } from "./settlement.ts";
+export type { ResultRecord } from "./records.ts";
+export { currentReports, currentWorkingMessages, type CurrentReport } from "./current-report.ts";
+// Shared steps that Runner families not yet moved here call with their raw transaction.
+export {
+  observeAttention,
+  raiseHumanAttention,
+  settleAttention,
+  settlePendingAttention,
+} from "./attention.ts";
+export { settleReportRejections } from "./report-diagnostics.ts";
 
 /**
  * The Run store owns a Run's execution records. Each transition is one SQL transaction in the
@@ -40,13 +51,15 @@ export function openRunStore(
 
   return {
     /** The raw transaction handle for Runner families whose transitions have not moved here yet.
-     * Its `serial` and `mutate` enter the same mutation lane as the transitions. */
+     * Its `mutate` enters the same mutation lane as the transitions. */
     database,
     readRun: database.row,
     takeOwnership,
     ...openRunSettlement(database),
     ...openRunArchive(database),
     ...openRunPresentation(database),
+    ...openRunReports(database),
+    ...openRunHuman(database),
     /** Waits for every queued transition to leave its lane. */
     drain: lanes.drain,
   };

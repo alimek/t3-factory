@@ -1,12 +1,16 @@
-import { currentReports, type CurrentReport } from "./block-report.ts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { RunAttention } from "@t3-factory/contracts";
 import type { T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
+import {
+  currentReports,
+  observeAttention,
+  settlePendingAttention,
+  type CurrentReport,
+  type RunnerDatabase,
+} from "./runner/run-store/run-store.ts";
 import type { BlockRow, RunRow } from "./runner-types.ts";
 import { newId } from "./ids.ts";
-import { attention, settlePending } from "./runner-attention.ts";
 import { recoverOperation } from "./runner-effects.ts";
 import { now } from "./time.ts";
 import { bindRunWorkspace } from "./run-workspace-binding.ts";
@@ -71,9 +75,9 @@ function recordWorkerThread(
     yield* recordWorkerRepository(sql, binding.id, thread.repository, time);
     yield* sql`UPDATE run_thread_bindings SET link=COALESCE(${thread.link},link) WHERE id=${binding.id}`;
     const scope = { block_id: block.block_id, bindingId: binding.id };
-    yield* attention(
+    yield* observeAttention(
       sql,
-      run,
+      run.id,
       scope,
       latest?.runId ?? "",
       "native-request",
@@ -82,10 +86,17 @@ function recordWorkerThread(
     );
     yield* recordExecutions(sql, run, block, binding.id, worker, time);
     if (latest && failedRun(latest.status))
-      yield* attention(sql, run, block, latest.runId, "execution-failed", true, time);
+      yield* observeAttention(sql, run.id, block, latest.runId, "execution-failed", true, time);
     // A later run of the thread that completes recovers earlier execution failures.
     if (latest?.status === "completed")
-      yield* settlePending(sql, run.id, block.block_id, "execution-failed", "completed", time);
+      yield* settlePendingAttention(
+        sql,
+        run.id,
+        block.block_id,
+        "execution-failed",
+        "completed",
+        time,
+      );
     yield* recordActivation(sql, run, block, worker, time);
     yield* sql`UPDATE runs SET generation=generation+1 WHERE id=${run.id}`;
   });
@@ -141,7 +152,7 @@ function recordActivation(
     const current = activation.report?.status;
     if (latest) {
       const missing = missingReport(worker, current);
-      yield* attention(sql, run, block, latest.runId, "missing-report", missing, time);
+      yield* observeAttention(sql, run.id, block, latest.runId, "missing-report", missing, time);
       if (missing)
         yield* sql`UPDATE run_executions SET problem='missing-report' WHERE run_id=${run.id} AND thread_id=${block.thread_id} AND execution_id=${latest.runId}`;
     }

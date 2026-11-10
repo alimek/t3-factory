@@ -21,14 +21,16 @@ import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import { readRunWorkspace, WORKTREE_REJECTED } from "./run-workspace.ts";
 import { attentionRows } from "./runner-attention.ts";
-import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
-import { currentWorkingMessages } from "./block-report.ts";
+import {
+  currentWorkingMessages,
+  type ResultRecord,
+  type RunnerDatabase,
+} from "./runner/run-store/run-store.ts";
 import type {
   BlockRow,
   ExecutionRow,
   HumanRow,
   IntentRow,
-  ReportRow,
   RunRow,
   TaskRow,
   TaskRunRow,
@@ -105,7 +107,7 @@ function runWorkspace(sql: SqlClient.SqlClient, runId: string, intents: readonly
   });
 }
 
-function runReport(report: ReportRow): RunDetail["reports"][number] {
+function runReport(report: ResultRecord): RunDetail["reports"][number] {
   return {
     id: report.id,
     ...(report.activation_id
@@ -256,7 +258,7 @@ export function openRunnerQueries(database: RunnerDatabase) {
         const events =
           yield* sql<RunEventRow>`SELECT * FROM run_events WHERE run_id=${id} ORDER BY sequence`;
         const reports =
-          yield* sql<ReportRow>`SELECT * FROM runtime_reports WHERE run_id=${id} ORDER BY rowid`;
+          yield* sql<ResultRecord>`SELECT * FROM runtime_reports WHERE run_id=${id} ORDER BY rowid`;
         const executions = yield* sql<ExecutionRow>`SELECT x.*,
           EXISTS(SELECT 1 FROM working_reports w WHERE w.run_id=x.run_id AND w.block_id=x.block_id AND w.execution_id=x.execution_id) AS working_reported,
           (SELECT MIN(e.observed_at) FROM run_events e WHERE e.run_id=x.run_id AND e.block_id=x.block_id AND e.execution_id=x.execution_id AND (e.binding_id=x.binding_id OR (e.binding_id IS NULL AND x.thread_id=(SELECT b.thread_id FROM run_blocks b WHERE b.run_id=x.run_id AND b.block_id=x.block_id))) AND e.engine_status IN ('preparing','starting','running','waiting')) AS first_work_at,

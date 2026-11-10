@@ -1,8 +1,8 @@
-import { attention, settlePending } from "./runner-attention.ts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { ReportTarget } from "./runner-reports.ts";
-import type { RuntimeReply } from "./runtime-types.ts";
+import type { RuntimeReply } from "../../runtime-types.ts";
+import { observeAttention, settlePendingAttention } from "./attention.ts";
+import type { ReportTarget } from "./records.ts";
 
 export type CurrentReport = {
   readonly status: "working" | "finished";
@@ -80,7 +80,7 @@ export function settleForReport(
   return Effect.gen(function* () {
     yield* sql`UPDATE run_executions SET report_status=${status},problem=CASE WHEN problem='missing-report' THEN NULL ELSE problem END WHERE run_id=${runRow.id} AND block_id=${block.block_id} AND execution_id=${block.execution_id}`;
     yield* sql`UPDATE working_reports SET replaced_at=${time} WHERE activation_id=${activationId} AND replaced_at IS NULL`;
-    yield* settlePending(
+    yield* settlePendingAttention(
       sql,
       runRow.id,
       block.block_id,
@@ -103,9 +103,9 @@ function settleMissingReports(
       execution_id: string;
     }>`SELECT DISTINCT a.execution_id FROM run_attention a JOIN run_executions e ON e.run_id=a.run_id AND e.block_id=a.block_id AND e.execution_id=a.execution_id JOIN run_thread_bindings b ON b.id=e.binding_id WHERE a.run_id=${runId} AND a.block_id=${blockId} AND a.kind='missing-report' AND a.settled_at IS NULL AND b.role='worker'`;
     for (const row of rows)
-      yield* attention(
+      yield* observeAttention(
         sql,
-        { id: runId },
+        runId,
         { block_id: blockId },
         row.execution_id,
         "missing-report",
