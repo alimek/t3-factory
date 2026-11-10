@@ -719,11 +719,7 @@ function waitReadiness(
     waitDurationMs(block.duration) < WAIT_MIN_MS ||
     waitDurationMs(block.duration) > WAIT_MAX_MS
   )
-    add(
-      "wait_duration_range",
-      `${path}.duration`,
-      `${label} must wait from 1 minute to 7 days.`,
-    );
+    add("wait_duration_range", `${path}.duration`, `${label} must wait from 1 minute to 7 days.`);
 }
 
 /** Names, Agent references and exits of one block. */

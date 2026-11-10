@@ -431,6 +431,42 @@ export const waitFlow: ReadyFlowShape = (world) =>
     ],
   }));
 
+/** Entry worker's "Done" waits in Cool down, whose output ends the branch. */
+export const terminalWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Terminal wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown()],
+    connections: [connection("worker", "done", "cool-down")],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, then in Settle in, which forwards to Follow-up. */
+export const consecutiveWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Consecutive waits", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [
+      entryWorker(agentId),
+      coolDown(),
+      coolDown("settle-in", "Settle in"),
+      followUp(agentId),
+    ],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "settle-in"),
+      connection("settle-in", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker's "Done" waits in Cool down, which returns it to Entry worker. */
+export const loopWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait loop", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown()],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "worker"),
+    ],
+  }));
+
 /** Entry worker and Second entry both start from the Flow input and hand "Done" to Cool down,
  * whose output ends the branch. */
 export const parallelWaitFlow: ReadyFlowShape = (world) =>

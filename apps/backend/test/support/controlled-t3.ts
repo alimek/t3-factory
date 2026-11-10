@@ -244,6 +244,15 @@ export class ControlledT3 implements T3Adapter {
       explanation: "Controlled queue replay lifetime",
     };
   }
+  private readonly sendWaiters: ((
+    payload: import("../../src/adapters/t3.ts").SendPayload,
+  ) => void)[] = [];
+  /** Resolves with the payload of the next send T3 records, as `nextLaunch` does for launches. */
+  nextSend() {
+    return new Promise<import("../../src/adapters/t3.ts").SendPayload>((resolve) =>
+      this.sendWaiters.push(resolve),
+    );
+  }
   async sendMessage(_target: T3Endpoint, payload: import("../../src/adapters/t3.ts").SendPayload) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     await this.beforeSend?.(payload);
@@ -263,6 +272,7 @@ export class ControlledT3 implements T3Adapter {
       };
       this.sends.set(payload.clientRequestId, accepted);
       this.settledThreads.delete(payload.threadId);
+      for (const notify of this.sendWaiters.splice(0)) notify(payload);
     }
     if (this.loseSendReply) throw Error("Lost send acknowledgement");
     return accepted.reference;

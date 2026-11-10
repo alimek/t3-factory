@@ -117,7 +117,14 @@ export function preparedService(
       get: (target, name: string) => (name === "runtime" ? runtime : target[name]),
     }) as unknown as Factory;
     const ready = yield* Effect.promise(() => readyFlow(promised, t3, root, shape));
-    return { h, factory, close, reopen: Effect.map(open, (opened) => opened.factory), t3, ...ready };
+    return {
+      h,
+      factory,
+      close,
+      reopen: Effect.map(open, (opened) => opened.factory),
+      t3,
+      ...ready,
+    };
   });
 }
 

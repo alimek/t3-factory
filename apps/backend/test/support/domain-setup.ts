@@ -185,10 +185,7 @@ export async function validationFlow(context: TestContext) {
  */
 export async function waitDraft(context: TestContext) {
   const { harness, factory, created, agent } = await flowWithAgent(context);
-  const graph = (
-    wait: ReturnType<typeof waitBlock>,
-    targets: readonly string[] = ["coder"],
-  ) => ({
+  const graph = (wait: ReturnType<typeof waitBlock>, targets: readonly string[] = ["coder"]) => ({
     flowInput: flowInput(...targets),
     blocks: [
       agentBlock("coder", "Coder", agent.id, { x: 0, y: 0 }, [], []),

@@ -28,7 +28,11 @@ export type WaitArrivalRow = {
 };
 
 /** A pending arrival as the Runner schedules its wake-up. */
-export type ScheduledWait = { readonly id: string; readonly runId: string; readonly deadlineAt: string };
+export type ScheduledWait = {
+  readonly id: string;
+  readonly runId: string;
+  readonly deadlineAt: string;
+};
 
 /** Who forwards an arrival: its elapsed deadline. */
 export type WaitForwarder = NonNullable<WaitArrival["forwardedBy"]>;
@@ -82,47 +86,49 @@ export function openRunWaits(database: RunnerDatabase) {
    * stored message cannot be verified fails the transition. Sets the Wait waiting, appends "Wait
    * started" and advances the generation. Answers the arrival to schedule. */
   function handoffToWaitArrival(runRow: RunRow, handoff: Handoff, generation: number | undefined) {
-    return database.mutate(runRow.id, (sql) =>
-      Effect.gen(function* (): Effect.fn.Return<ScheduledWait | undefined, unknown> {
-        const held = yield* guardsHold(sql, ownerToken, runRow.id, {
-          owner: true,
-          gateOpen: true,
-          liveContext: handoff.context_id,
-          ...(generation === undefined ? {} : { generation }),
-        });
-        const [pending] =
-          yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id} AND state='pending'`;
-        if (!held || !pending) return undefined;
-        if (!intactPayload(pending)) return yield* Effect.fail(Error("Invalid Wait message"));
-        const block = runRow.definitions.flow.graph.blocks.find(
-          (entry) => entry.id === handoff.block_id,
-        );
-        if (block?.kind !== "wait" || !block.duration)
-          return yield* Effect.fail(Error("Wait duration is missing from the captured Flow"));
-        const time = yield* now;
-        const [released] = yield* sql<{
-          at: string | null;
-        }>`SELECT COALESCE((SELECT released_at FROM result_releases WHERE report_id=${pending.report_id}),(SELECT observed_at FROM run_events WHERE run_id=${runRow.id} AND source_key=${pending.cause})) AS at`;
-        const startedAt = released?.at ?? time;
-        const id = yield* newId;
-        const deadlineAt = addMilliseconds(startedAt, waitDurationMs(block.duration));
-        const message = (JSON.parse(pending.payload_json) as { message: string }).message;
-        yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,origin_activation_id,origin_thread_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${message},${pending.origin_activation_id},${pending.origin_thread_id},${startedAt},${deadlineAt})`;
-        yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
-        yield* writeBlockState(sql, { runId: runRow.id, blockId: handoff.block_id }, "waiting", {
-          freshness: "fresh",
-          observed_at: time,
-        });
-        yield* appendTimelineEvent(sql, {
-          kind: "wait-started",
-          runId: runRow.id,
-          blockId: handoff.block_id,
-          arrivalId: id,
-          observedAt: time,
-        });
-        yield* advanceGeneration(sql, runRow.id);
-        return { id, runId: runRow.id, deadlineAt };
-      }),
+    return database.mutate(
+      runRow.id,
+      (sql) =>
+        Effect.gen(function* (): Effect.fn.Return<ScheduledWait | undefined, unknown> {
+          const held = yield* guardsHold(sql, ownerToken, runRow.id, {
+            owner: true,
+            gateOpen: true,
+            liveContext: handoff.context_id,
+            ...(generation === undefined ? {} : { generation }),
+          });
+          const [pending] =
+            yield* sql<DeliveryRecord>`SELECT * FROM operation_intents WHERE id=${handoff.id} AND state='pending'`;
+          if (!held || !pending) return undefined;
+          if (!intactPayload(pending)) return yield* Effect.fail(Error("Invalid Wait message"));
+          const block = runRow.definitions.flow.graph.blocks.find(
+            (entry) => entry.id === handoff.block_id,
+          );
+          if (block?.kind !== "wait" || !block.duration)
+            return yield* Effect.fail(Error("Wait duration is missing from the captured Flow"));
+          const time = yield* now;
+          const [released] = yield* sql<{
+            at: string | null;
+          }>`SELECT COALESCE((SELECT released_at FROM result_releases WHERE report_id=${pending.report_id}),(SELECT observed_at FROM run_events WHERE run_id=${runRow.id} AND source_key=${pending.cause})) AS at`;
+          const startedAt = released?.at ?? time;
+          const id = yield* newId;
+          const deadlineAt = addMilliseconds(startedAt, waitDurationMs(block.duration));
+          const message = (JSON.parse(pending.payload_json) as { message: string }).message;
+          yield* sql`INSERT INTO wait_arrivals(id,run_id,block_id,incoming_intent_id,message,origin_activation_id,origin_thread_id,started_at,deadline_at) VALUES(${id},${runRow.id},${handoff.block_id},${handoff.id},${message},${pending.origin_activation_id},${pending.origin_thread_id},${startedAt},${deadlineAt})`;
+          yield* sql`UPDATE operation_intents SET state='acknowledged',payload_json=NULL,problem=NULL,reconciled_at=${time} WHERE id=${handoff.id}`;
+          yield* writeBlockState(sql, { runId: runRow.id, blockId: handoff.block_id }, "waiting", {
+            freshness: "fresh",
+            observed_at: time,
+          });
+          yield* appendTimelineEvent(sql, {
+            kind: "wait-started",
+            runId: runRow.id,
+            blockId: handoff.block_id,
+            arrivalId: id,
+            observedAt: time,
+          });
+          yield* advanceGeneration(sql, runRow.id);
+          return { id, runId: runRow.id, deadlineAt };
+        }),
       (scheduled) => scheduled !== undefined,
     );
   }
@@ -154,7 +160,8 @@ export function openRunWaits(database: RunnerDatabase) {
             ...new Set(
               runRow.definitions.flow.graph.connections
                 .filter(
-                  (edge) => edge.sourceBlockId === arrival.block_id && edge.exitId === WAIT_OUTPUT.id,
+                  (edge) =>
+                    edge.sourceBlockId === arrival.block_id && edge.exitId === WAIT_OUTPUT.id,
                 )
                 .map((edge) => edge.targetBlockId),
             ),
