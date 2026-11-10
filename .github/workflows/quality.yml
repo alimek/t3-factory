@@ -10,12 +10,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: quality-${{ github.ref }}-${{ (github.event.action == 'edited' && !github.event.changes.base) && 'metadata' || 'code' }}
   cancel-in-progress: true
 
 jobs:
   check:
-    name: Quality gate
+    # Keep edited for base retargets; rename metadata skips so skipped success cannot mask Quality gate.
+    if: github.event.action != 'edited' || github.event.changes.base
+    name: ${{ (github.event.action == 'edited' && !github.event.changes.base) && 'Quality gate not rerun for PR metadata edit' || 'Quality gate' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -29,6 +31,7 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - name: Check Git attribution and squash input
+        if: github.event_name == 'push'
         run: node scripts/check-git-attribution.mjs --event "$GITHUB_EVENT_PATH"
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
