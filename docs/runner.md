@@ -372,18 +372,22 @@ deadline is the release time plus the captured Wait's duration; editing the save
 acknowledged in place under the owner, open gate, live authorization context and release generation, so a repeated delivery
 attempt finds it no longer pending and records nothing. Parallel and repeated arrivals are independent; nothing joins.
 
-Forwarding is one guarded Run-store transition, shared by the timer and any later user action that forwards an arrival
-early. Under this owner and the open gate it claims a still-pending arrival, records who forwarded it and creates every
+Forwarding is one guarded Run-store transition, shared by the timer and **Continue now**, the arrival-addressed public
+operation that forwards one arrival early. Under this owner and the open gate it claims a still-pending arrival, records who forwarded it and creates every
 outgoing Handoff to the Wait output's recipients in the same transaction. Those Handoffs are released from creation and carry
 the arrival's message and origin; dispatch then uses the ordinary delivery and replay rules. A competing forward finds the
 arrival settled and changes nothing, so a race or a crash after commit never produces a second set of Handoffs, and a crash
 before commit leaves the arrival pending with its message. Forwarding needs no T3 request or live authorization context.
+Continue now skips only the deadline check: it answers the Run detail after forwarding, a conflict without change for an
+arrival already forwarded (by the timer or an earlier Continue now) or cancelled, or for a closed gate, and works on a
+manually Settled Run without reactivating it. Its timeline event is distinct from the timer's.
 
 The Runner schedules one wake-up per pending arrival on its Effect clock, at startup for every pending arrival of a Run that
 is not Archived and whenever an arrival is recorded. A wake-up only drives its Run; every dispatch pass first forwards each
 pending arrival whose deadline has passed, oldest first, so a lost wake-up is caught by the next reconcile sweep and an extra
 one changes nothing. Restart before a deadline keeps it; after it, the next pass forwards the arrival once without moving
-the deadline or repeating missed time. Timing is best effort and system clock changes get no correction. Shutdown stops the
+the deadline or repeating missed time. Timing is best effort and system clock changes get no correction. Continue now
+disables its arrival's wake-up; a stale one, or one scheduled again at restart, finds nothing due. Shutdown stops the
 wake-ups; the deadlines stay in the store.
 
 ### Delivery origin

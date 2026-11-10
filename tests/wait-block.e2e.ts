@@ -62,7 +62,7 @@ test("a Wait added from the library saves with a missing duration as a readiness
   });
 });
 
-test("Run canvases show several waiting arrivals with their nearest deadline, and one arrival forwarded once its minute elapses", async ({
+test("a waiting arrival is held with its message and forwarded by the backend once its minute elapses", async ({
   app,
   screen,
   browser,
@@ -70,15 +70,6 @@ test("Run canvases show several waiting arrivals with their nearest deadline, an
   // Arrange
   await browser.setViewport({ width: 1600, height: 1000 });
   await prepareScenarios(app.baseUrl);
-  const held = await findRun(
-    app.baseUrl,
-    "UI worker · Waiting · Two reviews held for the morning sync",
-  );
-  await app.open(`/runs/${held.id}`);
-  await expect(screen.getByRole("article", "Block Hold for the morning sync")).toContainText(
-    "2 waiting · next until",
-  );
-  await app.screenshot("wait-two-arrivals");
   const started = await scenarioFixture(app.baseUrl, "ensure", {
     key: "wait",
     flow: "UI wait · Pause a minute",
@@ -112,4 +103,47 @@ test("Run canvases show several waiting arrivals with their nearest deadline, an
     "wait-forwarded",
   ]);
   await app.screenshot("wait-one-arrival-forwarded");
+});
+
+test("Continue now forwards the selected one of two waiting arrivals early; the block then offers it for the last one", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  await prepareScenarios(app.baseUrl);
+  const held = await findRun(
+    app.baseUrl,
+    "UI worker · Waiting · Two reviews held for the morning sync",
+  );
+  await app.open(`/runs/${held.id}`);
+  const block = screen.getByRole("article", "Block Hold for the morning sync");
+  await expect(block).toContainText("2 waiting · next until");
+  await expect(screen.getByRole("button", "Continue Hold for the morning sync now")).toHaveCount(0);
+  await screen.getByRole("button", /^Wait Hold for the morning sync, waiting/).tap();
+  await expect(screen.getByRole("button", "Continue arrival 1 now")).toBeVisible();
+  await expect(screen.getByRole("button", "Continue arrival 2 now")).toBeVisible();
+  await app.screenshot("wait-two-arrivals");
+
+  // Act
+  await screen.getByRole("button", "Continue arrival 1 now").tap();
+
+  // Assert
+  await expect(screen.getByRole("listitem", "Arrival 1, forwarded")).toContainText(
+    "forwarded early by you",
+  );
+  await expect(screen.getByRole("button", "Continue arrival 1 now")).toHaveCount(0);
+  await expect(screen.getByRole("button", "Continue arrival 2 now")).toBeVisible();
+  await expect(block).not.toContainText("2 waiting");
+  await expect(block).toContainText("until");
+  await expect(screen.getByRole("button", "Continue Hold for the morning sync now")).toBeVisible();
+  await screen.getByRole("button", "Show timeline").tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText("forwarded early by you");
+  await app.screenshot("wait-continued-early");
+  const run = await readHistoryRun(app.baseUrl, held.id);
+  expect(run.waitArrivals.map((arrival) => [arrival.state, arrival.forwardedBy])).toEqual([
+    ["forwarded", "user"],
+    ["pending", null],
+  ]);
 });

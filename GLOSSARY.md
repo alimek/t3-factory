@@ -56,7 +56,7 @@ A flow block that holds each arrival for a fixed duration from 1 minute to 7 day
 _Avoid_: Timer or delay as the block name; manual resume (not a Wait mode).
 
 **Wait arrival**:
-One accepted delivery to a Wait within a Run, with its retained message, originating worker, absolute deadline counted from the delivery's release, and outcome: pending, forwarded or cancelled by Archive. Arrivals never join or reset one another.
+One accepted delivery to a Wait within a Run, with its retained message, originating worker, absolute deadline counted from the delivery's release, and outcome: pending, forwarded (at its deadline, or early by the user with **Continue now**) or cancelled by Archive. Arrivals never join or reset one another.
 
 **Delivery origin**:
 The worker whose result a delivery carries: its Run, Block activation and T3 worker thread. An Agent result sets it and a Wait forwards it unchanged; a message without a known worker has none.
