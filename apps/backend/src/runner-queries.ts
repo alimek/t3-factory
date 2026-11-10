@@ -21,7 +21,7 @@ import { failure } from "./result.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import { readRunWorkspace, WORKTREE_REJECTED } from "./run-workspace.ts";
 import { attentionRows } from "./runner-attention.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import { currentWorkingMessages } from "./block-report.ts";
 import type {
   BlockRow,

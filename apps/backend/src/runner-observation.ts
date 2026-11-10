@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { RunAttention } from "@t3-factory/contracts";
 import type { T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { BlockRow, RunRow } from "./runner-types.ts";
 import { newId } from "./ids.ts";
 import { attention, settlePending } from "./runner-attention.ts";

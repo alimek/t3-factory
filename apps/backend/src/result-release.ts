@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { RunRow } from "./runner-types.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import { now } from "./time.ts";

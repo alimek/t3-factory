@@ -1,19 +1,25 @@
 import type { Result, RunPresentation } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type { RunnerDatabase } from "./runner-database.ts";
-import { readLifecycle } from "./run-lifecycle.ts";
-import { failure } from "./result.ts";
-/** Presentation shares the Runner mutation lane but never changes its execution generation. */
+import { withLifecycle } from "./lifecycle.ts";
+import type * as SqlClient from "effect/sql/SqlClient";
+import { failure } from "../../result.ts";
+
+/** Settling and archiving clear Snooze and Woke. */
+export function clearSnooze(sql: SqlClient.SqlClient, runId: string) {
+  return sql`UPDATE run_presentation SET snoozed=0,woke=0 WHERE run_id=${runId}`;
+}
+
+/** Snooze, Restore and marking Woke seen share the Run's mutation lane but never advance its
+ * generation. Guards: the Run exists; Snooze and Restore also need it neither Settled nor Archived. */
 export function openRunPresentation(database: RunnerDatabase) {
   function update(
     id: string,
     action: "snooze" | "restore" | "seen",
   ): Effect.Effect<Result<RunPresentation>, unknown> {
-    return database.mutate(id, (sql) =>
+    return withLifecycle<RunPresentation>(database, id, (sql, run) =>
       Effect.gen(function* () {
-        const run = yield* readLifecycle(sql, id);
-        if (!run.ok) return run;
-        if ((run.value.archived_at || run.value.settled_at) && action !== "seen")
+        if ((run.archived_at || run.settled_at) && action !== "seen")
           return failure("conflict", "Only Active Runs can be snoozed or restored.");
         yield* sql`INSERT INTO run_presentation(run_id) VALUES(${id}) ON CONFLICT DO NOTHING`;
         if (action === "snooze") {
@@ -22,7 +28,7 @@ export function openRunPresentation(database: RunnerDatabase) {
             SELECT run_id,id FROM run_attention WHERE run_id=${id} AND settled_at IS NULL`;
           yield* sql`UPDATE run_presentation SET snoozed=1,woke=0 WHERE run_id=${id}`;
         } else if (action === "restore") {
-          yield* sql`UPDATE run_presentation SET snoozed=0,woke=0 WHERE run_id=${id}`;
+          yield* clearSnooze(sql, id);
         } else {
           yield* sql`UPDATE run_presentation SET woke=0 WHERE run_id=${id}`;
         }

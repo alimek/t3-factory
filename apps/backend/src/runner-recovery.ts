@@ -7,7 +7,7 @@ import type { Result, RunDetail } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { T3Adapter, SendPayload } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { RunnerLifecycle, RunRow } from "./runner-types.ts";
 import { fingerprint, runTarget } from "./runner-utils.ts";
 import { readWorkerThread } from "./worker-thread.ts";

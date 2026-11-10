@@ -8,7 +8,7 @@ import type { FactoryOperations } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SendPayload, SendReference, T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type {
   BlockRow,
   Checked,

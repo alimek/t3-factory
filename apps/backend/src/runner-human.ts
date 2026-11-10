@@ -3,7 +3,7 @@ import { HUMAN_EXITS } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "./result.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { HumanRow, RunnerLifecycle, RunRow } from "./runner-types.ts";
 import { fingerprint } from "./runner-utils.ts";

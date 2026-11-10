@@ -1,20 +1,25 @@
-import { newId } from "./ids.ts";
+import { newId } from "../../ids.ts";
 import * as Effect from "effect/Effect";
-import { makeRunLanes } from "./runner-lanes.ts";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { IntentRow, RunRow } from "./runner-types.ts";
-import { now } from "./time.ts";
-import { readRunDefinitions } from "./run-definitions.ts";
-import { readRunWorkspace } from "./run-workspace.ts";
-import type { LiveChanges } from "./live-changes.ts";
+import type { IntentRow, RunRow } from "../../runner-types.ts";
+import { now } from "../../time.ts";
+import { readRunDefinitions } from "../../run-definitions.ts";
+import { readRunWorkspace } from "../../run-workspace.ts";
+import type { LiveChanges } from "../../live-changes.ts";
+import { guardsHold } from "./guards.ts";
+
+type Lane = <A, E>(id: string, action: () => Effect.Effect<A, E>) => Effect.Effect<A, E>;
+
 /**
- * The sole owner of local Run mutation lanes and SQL transaction boundaries. Writers outside
- * `mutate` publish their committed Run changes through `changes` themselves.
+ * The raw transaction handle of the Run store, kept for Runner families whose transitions have
+ * not moved into the store yet. `serial` and `mutate` enter the store's one mutation lane per
+ * Run. Writers outside `mutate` publish their committed Run changes through `changes` themselves.
  */
 export function openRunnerDatabase(
   sqlClient: SqlClient.SqlClient,
   owner: { token: string },
   changes: LiveChanges,
+  serial: Lane,
 ) {
   const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>): Effect.Effect<A, E> =>
     effect.pipe(Effect.provideService(SqlClient.SqlClient, sqlClient));
@@ -27,7 +32,6 @@ export function openRunnerDatabase(
         return yield* sql.withTransaction(fn(sql));
       }),
     );
-  const { serial, drain } = makeRunLanes();
   /** Publishes after the transaction commits; a rolled-back mutation publishes nothing. */
   const mutate = <A>(
     id: string,
@@ -57,22 +61,11 @@ export function openRunnerDatabase(
   }
   /** Observations apply only to an open Run under this owner and its unchanged authorization context. */
   function runHeldUnderContext(sql: SqlClient.SqlClient, runRow: RunRow, requireOpenGate = false) {
-    return Effect.gen(function* () {
-      const [held] = yield* sql<{
-        archived_at: string | null;
-        token: string;
-        live_context: string;
-        gate_open: number;
-      }>`
-          SELECT r.archived_at,r.gate_open,o.token,c.context_id AS live_context FROM runs r
-          JOIN runner_owner o ON o.singleton=1 JOIN t3_connection c ON c.singleton=1 WHERE r.id=${runRow.id}`;
-      return (
-        !!held &&
-        !held.archived_at &&
-        held.token === owner.token &&
-        held.live_context === runRow.context_id &&
-        (!requireOpenGate || Boolean(held.gate_open))
-      );
+    return guardsHold(sql, owner.token, runRow.id, {
+      owner: true,
+      notArchived: true,
+      liveContext: runRow.context_id,
+      ...(requireOpenGate ? { gateOpen: true as const } : {}),
     });
   }
   function problem(intent: IntentRow, message: string) {
@@ -132,18 +125,6 @@ export function openRunnerDatabase(
     runHeldUnderContext,
     problem,
     reserveIntent,
-    initialize() {
-      return Effect.gen(function* () {
-        yield* transaction((sql) =>
-          Effect.gen(function* () {
-            yield* sql`INSERT INTO runner_owner(singleton,token,pid,acquired_at) VALUES(1,${owner.token},${process.pid},${yield* now}) ON CONFLICT(singleton) DO UPDATE SET token=excluded.token,pid=excluded.pid,acquired_at=excluded.acquired_at`;
-            yield* sql`UPDATE operation_intents SET state='uncertain',problem='Previous owner exited with an in-flight reservation.' WHERE state='reserved'`;
-            yield* sql`UPDATE run_blocks SET freshness='stale' WHERE thread_id IS NOT NULL AND run_id IN(SELECT id FROM runs WHERE archived_at IS NULL AND settled_at IS NULL)`;
-          }),
-        );
-      });
-    },
-    drain,
   };
 }
 export type RunnerDatabase = ReturnType<typeof openRunnerDatabase>;

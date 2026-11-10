@@ -22,6 +22,14 @@ const sharedImportRestrictions = [
   },
 ];
 
+const backendImportRestrictions = [
+  privatePackageImports,
+  {
+    regex: "(^|/)(frontend|desktop)(/|$)",
+    message: "The backend owns Factory operations independently of its clients.",
+  },
+];
+
 export default defineConfig({
   fmt: {
     printWidth: 100,
@@ -112,14 +120,21 @@ export default defineConfig({
       {
         files: ["apps/backend/src/**"],
         rules: {
+          "no-restricted-imports": ["error", { patterns: backendImportRestrictions }],
+        },
+      },
+      {
+        files: ["apps/backend/src/runner/run-store/**"],
+        rules: {
           "no-restricted-imports": [
             "error",
             {
               patterns: [
-                privatePackageImports,
+                ...backendImportRestrictions,
                 {
-                  regex: "(^|/)(frontend|desktop)(/|$)",
-                  message: "The backend owns Factory operations independently of its clients.",
+                  regex: "(^|/)adapters/",
+                  message:
+                    "The Run store never reaches T3: its transactions cannot span a T3 call. Orchestration calls the T3 adapter.",
                 },
               ],
             },

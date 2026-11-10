@@ -1,7 +1,6 @@
 import { openBlockTools } from "./runner-block-tools.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
-import { openRunPresentation } from "./run-presentation.ts";
 import { openRunNavigation } from "./run-navigation.ts";
 import type { FactoryOperations, Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
@@ -12,7 +11,7 @@ import type { EffectOperations } from "./effect-operations.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { failure } from "./result.ts";
 import type { BlockRow, IntentRow, RunnerOptions, RunRow } from "./runner-types.ts";
-import { openRunnerDatabase } from "./runner-database.ts";
+import { openRunStore } from "./runner/run-store/run-store.ts";
 import { openRunnerDispatch } from "./runner-dispatch.ts";
 import { openRunnerHuman } from "./runner-human.ts";
 import { openRunnerObservation } from "./runner-observation.ts";
@@ -38,7 +37,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
 ) {
   const sql = yield* SqlClient.SqlClient;
   const scope = yield* Effect.scope;
-  const database = openRunnerDatabase(sql, owner, changes);
+  const store = openRunStore(sql, owner, changes);
+  const { database } = store;
   const { row } = database;
   const { getRun, listTasks, updateTask, listAttention } = openRunnerQueries(database);
   let closed = false;
@@ -60,9 +60,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { dispatchIntent } = openRunnerDispatch(database, ops, t3, checkAgent, observe, images);
   const { start } = openRunnerStart(database, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(database, lifecycle);
-  const { archiveRun } = openRunnerArchive(database, t3, lifecycle, liveContextId);
+  const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
-    database,
+    store,
     t3,
     lifecycle,
     liveContextId,
@@ -165,7 +165,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* sweeps.withPermit(Effect.void);
           yield* Fiber.awaitAll(detached);
           yield* drives.drain();
-          yield* database.drain();
+          yield* store.drain();
         }),
       )
       .pipe(Effect.uninterruptible);
@@ -177,7 +177,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     archiveRun,
     settleRun,
     ...openRunNavigation(database, getRun),
-    ...openRunPresentation(database),
+    snoozeRun: store.snoozeRun,
+    restoreRun: store.restoreRun,
+    markRunWokeSeen: store.markRunWokeSeen,
     getRun,
     listAttention,
     getRunCreationPolicy: () =>
@@ -206,7 +208,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     reconcileRuns,
     initialize: () =>
       Effect.gen(function* () {
-        yield* database.initialize();
+        yield* store.takeOwnership();
         yield* reconcileRuns();
         timer = yield* Effect.forkIn(
           Effect.forever(

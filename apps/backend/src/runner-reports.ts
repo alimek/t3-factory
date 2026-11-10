@@ -5,7 +5,6 @@ import type { RunDefinitions } from "@t3-factory/contracts";
 import { effectiveExits } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { RunnerDatabase } from "./runner-database.ts";
 import { createHandoffs } from "./runner-handoffs.ts";
 import type { BlockRow, ReportRunRow, RunnerLifecycle } from "./runner-types.ts";
 import { fingerprint, rejected } from "./runner-utils.ts";
@@ -18,7 +17,7 @@ import {
 import { resolveBlock } from "./runtime-block-id.ts";
 import { now } from "./time.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
-import { returnToActive } from "./runner-settle.ts";
+import { returnToActive, type RunnerDatabase } from "./runner/run-store/run-store.ts";
 import { acceptWorking } from "./working-report.ts";
 
 /** Exact exit names and identities resolve against the Run's captured definitions, never a later

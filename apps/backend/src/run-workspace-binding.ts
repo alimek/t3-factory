@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { persistEntryLaunches } from "./runner-block-workers.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { RunRow } from "./runner-types.ts";
 import { runTarget } from "./runner-utils.ts";
 import { now } from "./time.ts";

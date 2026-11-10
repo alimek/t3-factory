@@ -14,7 +14,7 @@ import {
 } from "./adapters/t3.ts";
 import { persistActivation } from "./runner-coordination.ts";
 import { recoverOperation } from "./runner-effects.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint, intactPayload, runTarget, unverified, verified } from "./runner-utils.ts";
 import {

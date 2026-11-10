@@ -2,7 +2,7 @@ import { releaseResult } from "./result-release.ts";
 import { readWorkerThread } from "./worker-thread.ts";
 import * as Effect from "effect/Effect";
 import type { ExecutionObservation, T3Adapter } from "./adapters/t3.ts";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import { newId } from "./ids.ts";
 import type { IntentRow, RunRow } from "./runner-types.ts";
 import { fingerprint } from "./runner-utils.ts";

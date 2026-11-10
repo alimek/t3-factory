@@ -1,7 +1,7 @@
 import { releaseResult } from "./result-release.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import * as Effect from "effect/Effect";
-import type { RunnerDatabase } from "./runner-database.ts";
+import type { RunnerDatabase } from "./runner/run-store/run-store.ts";
 import type { IntentRow, RunRow, StoredTarget } from "./runner-types.ts";
 import { persistActivation } from "./runner-coordination.ts";
 import { workerLaunchPayload, workerTurn } from "./runner-block-workers.ts";
