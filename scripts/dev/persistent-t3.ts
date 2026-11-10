@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { advanceNative } from "./native-simulation.ts";
 import { readFileSync } from "node:fs";
 import { writeState } from "./write-state.ts";
 import { join } from "node:path";
@@ -8,6 +7,7 @@ import {
   answerDelegatedWait,
   endThreadRun,
   recordLaunchedThread,
+  startQueuedSend,
 } from "../../apps/backend/test/support/controlled-thread.ts";
 import type {
   LaunchPayload,
@@ -128,7 +128,8 @@ export class PersistentT3 extends ControlledT3 {
   }
 
   async advance() {
-    advanceNative(this);
+    for (const { payload, reference } of this.sends.values())
+      startQueuedSend(this, payload.threadId, reference.runId);
     this.save();
   }
 

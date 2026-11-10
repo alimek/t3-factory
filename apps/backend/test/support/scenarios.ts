@@ -140,8 +140,10 @@ export interface WorkerHandle {
   readonly executionId: string;
 }
 
-function stepFailed(step: string, detail: string): never {
-  throw Error(`Scenario step "${step}" failed: ${detail}`);
+const causeDetail = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+function stepFailed(step: string, detail: string, cause?: unknown): never {
+  throw Error(`Scenario step "${step}" failed: ${detail}`, { cause });
 }
 
 function stepResult<A>(step: string, result: Result<A>): A {
@@ -151,7 +153,8 @@ function stepResult<A>(step: string, result: Result<A>): A {
 
 const OBSERVATION_PASSES = 12;
 
-async function observeFor(
+/** Factory reconciles until `until` holds on the public Run read; bounded by passes, not time. */
+export async function observeFor(
   step: string,
   world: ScenarioWorld,
   runId: string,
@@ -167,10 +170,6 @@ async function observeFor(
     `Run ${runId} did not reach its condition in ${OBSERVATION_PASSES} reconciliations.`,
   );
 }
-
-/** Factory reconciles until `until` holds on the public Run read; bounded by passes, not time. */
-export const observe = (world: ScenarioWorld, runId: string, until: (run: RunDetail) => boolean) =>
-  observeFor("observe", world, runId, until);
 
 /** The launched worker of Flow block `flowBlockId`. */
 export function workerHandle(
@@ -188,10 +187,18 @@ export function workerHandle(
   return {
     runId: run.id,
     flowBlockId,
-    blockId: launchBlockId(launch?.payload.message ?? ""),
+    blockId: launchedBlockId(run, flowBlockId, launch?.payload.message ?? ""),
     threadId,
     executionId: block.executionId,
   };
+}
+
+function launchedBlockId(run: RunDetail, flowBlockId: string, message: string) {
+  try {
+    return launchBlockId(message);
+  } catch (cause) {
+    return stepFailed("worker handle", `${run.title} ${flowBlockId}: ${causeDetail(cause)}`, cause);
+  }
 }
 
 const workersLaunched = (run: RunDetail) =>
@@ -221,12 +228,25 @@ type ReportFields = {
   readonly message?: string;
 };
 
+async function submitReport(
+  step: string,
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  fields: ReportFields,
+) {
+  try {
+    return (
+      await world.factory.runtime.submit({ arguments: { blockId: worker.blockId, ...fields } })
+    ).code;
+  } catch (cause) {
+    return stepFailed(step, `${worker.flowBlockId}: ${causeDetail(cause)}`, cause);
+  }
+}
+
 /** The worker reports through Factory's report entry. Returns the reply code, so a rejected
  * report can be the intended result. */
-export async function report(world: ScenarioWorld, worker: WorkerHandle, fields: ReportFields) {
-  return (await world.factory.runtime.submit({ arguments: { blockId: worker.blockId, ...fields } }))
-    .code;
-}
+export const report = (world: ScenarioWorld, worker: WorkerHandle, fields: ReportFields) =>
+  submitReport("report", world, worker, fields);
 
 /** The worker's next T3 turn begins as run `runId`; the returned handle is on that run. */
 export function turnBegins(world: ScenarioWorld, worker: WorkerHandle, runId: string) {
@@ -485,12 +505,11 @@ export async function blockedLaterFlow(world: ScenarioWorld): Promise<ReadyFlow>
  */
 
 /** Reaches the named Run state; a failed step's error names the state. */
-async function reach<A>(state: string, sequence: () => Promise<A>): Promise<A> {
+export async function reach<A>(state: string, sequence: () => Promise<A>): Promise<A> {
   try {
     return await sequence();
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
-    throw Error(`Run state "${state}" failed: ${detail}`, { cause });
+    throw Error(`Run state "${state}" failed: ${causeDetail(cause)}`, { cause });
   }
 }
 
@@ -500,7 +519,7 @@ async function reportedAs(
   worker: WorkerHandle,
   fields: ReportFields,
 ) {
-  const code = await report(world, worker, fields);
+  const code = await submitReport(step, world, worker, fields);
   if (code !== "ACCEPTED") stepFailed(step, `${worker.flowBlockId} answered ${code}.`);
 }
 
@@ -744,8 +763,9 @@ export function reportRejected(
   rejected: { readonly exit: string; readonly message?: string } = { exit: "unknown" },
 ) {
   return reach("report rejected", async () => {
-    const code = await report(world, worker, { to: "finished", ...rejected });
-    if (code !== "INVALID_EXIT") stepFailed("report on an unknown exit", `answered ${code}.`);
+    const step = "report on an unknown exit";
+    const code = await submitReport(step, world, worker, { to: "finished", ...rejected });
+    if (code !== "INVALID_EXIT") stepFailed(step, `answered ${code}.`);
     return worker;
   });
 }

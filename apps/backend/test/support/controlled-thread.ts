@@ -70,6 +70,25 @@ export function beginThreadRun(t3: ControlledT3, threadId: string, runId: string
     if (send.reference.runId === runId) send.reference = { ...send.reference, status: "running" };
 }
 
+/** T3 starts a send it queued once the thread runs no turn: the send's queued run runs and the
+ * send shows it running with its delivery started. Until then the send stays queued. */
+export function startQueuedSend(t3: ControlledT3, threadId: string, runId: string) {
+  const thread = t3.executionObservations.get(threadId);
+  const queued = thread?.recentRuns.find((run) => run.runId === runId)?.status === "queued";
+  if (!thread || !queued || thread.activeRunId) return;
+  t3.executionObservations.set(threadId, {
+    ...thread,
+    activeRunId: runId,
+    latestRunId: runId,
+    recentRuns: thread.recentRuns.map((run) =>
+      run.runId === runId ? { ...run, status: "running" } : run,
+    ),
+  });
+  for (const send of t3.sends.values())
+    if (send.reference.runId === runId)
+      send.reference = { ...send.reference, status: "running", delivery: "started" };
+}
+
 /** A turn ends: run `runId` of the thread ends with `status`, and T3 answers its delegated wait
  * as settled. A send whose run this is shows the same status. */
 export function endThreadRun(

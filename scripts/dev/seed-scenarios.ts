@@ -25,7 +25,7 @@ export type SeedScenario = {
     ))
   | { state: "result released to two workers"; first: Report; final: Report }
   | { state: "two workers started from one prompt"; repositories: readonly Repository[] }
-  | { state: "worker at work"; repository: Repository; delegations: number }
+  | { state: "delegated work pending"; repository: Repository; delegations: number }
 );
 
 const reviewContent = {
@@ -189,7 +189,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
     key: "working",
     title: "Working · Improve the project picker",
     flow: "simple",
-    state: "worker at work",
+    state: "delegated work pending",
     prompt:
       "Add a concise empty state to the Atlas project picker, including a hint to open an existing repository.",
     repository: {

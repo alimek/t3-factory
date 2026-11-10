@@ -5,9 +5,7 @@ import {
   archived,
   changesRequested,
   executionFailed,
-  idleWorking,
   missingReport,
-  observe,
   repositoryFactsObserved,
   reportRejected,
   resultReleasedToHumanReview,
@@ -31,6 +29,7 @@ import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { createDemoFlows } from "./seed-flows.ts";
 import {
+  delegatedWorkPending,
   requireSuccess,
   demoStart,
   demoNamespace,
@@ -246,13 +245,9 @@ async function finishScenario(
         await resultReplacedBeforeRelease(context, worker, scenario),
       );
       break;
-    case "worker at work":
+    case "delegated work pending":
       await repositoryFactsObserved(context, worker, scenario.repository);
-      // Only the persistent simulator has subagents: they keep its delegated wait pending
-      // after the worker's turn ends, without inventing a missing report.
-      for (let index = 0; index < scenario.delegations; index++)
-        context.t3.delegate(worker.threadId, worker.executionId);
-      await observe(context, worker.runId, idleWorking(worker));
+      await delegatedWorkPending(context, worker, scenario.delegations);
       break;
   }
 }

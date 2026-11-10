@@ -1,4 +1,11 @@
-import { sha256Hex, solidPng } from "../../apps/backend/test/support/scenarios.ts";
+import {
+  idleWorking,
+  observeFor,
+  reach,
+  sha256Hex,
+  solidPng,
+  type WorkerHandle,
+} from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import type { PromptSegment, Result } from "../../packages/contracts/src/index.ts";
@@ -95,4 +102,17 @@ export async function demoStart(
     title: `${namespace.titlePrefix}${title}`,
     createdAt: new Date().toISOString(),
   };
+}
+
+/** Named Run state only the persistent simulator reaches, from a worker at work: the worker
+ * delegated to `subagents` simulated subagents that keep running, and its own turn completed. T3
+ * answers its delegated wait as pending, so Factory observed it idle in working without a missing
+ * report. */
+export function delegatedWorkPending(world: SeedContext, worker: WorkerHandle, subagents: number) {
+  return reach("delegated work pending", async () => {
+    for (let index = 0; index < subagents; index++)
+      world.t3.delegate(worker.threadId, worker.executionId);
+    await observeFor("observe the idle worker", world, worker.runId, idleWorking(worker));
+    return worker;
+  });
 }
