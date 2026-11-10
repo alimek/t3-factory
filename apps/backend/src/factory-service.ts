@@ -16,7 +16,7 @@ import * as ReportingInstaller from "./reporting-installation.ts";
 import type { T3Adapter } from "./adapters/t3.ts";
 import { createRuntime, type RuntimeReports } from "./runtime.ts";
 import type { acquireRunnerOwner } from "./runner-owner.ts";
-import { makeRunner } from "./runner.ts";
+import { makeRunner } from "./runner/runner.ts";
 import { makeClientAccess } from "./client-access.ts";
 import { makeRunImages } from "./run-images.ts";
 import { failure } from "./result.ts";

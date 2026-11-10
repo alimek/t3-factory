@@ -168,6 +168,8 @@ dependencies, duplication and complexity checks. No findings baseline is allowed
 
 - Frontend source imports neither backend nor desktop implementation, and uses no Node built-ins.
 - Backend source imports neither frontend nor desktop implementation.
+- Runner files outside the Run store import neither the SQL client nor store internals; they use only the store entry's transitions and reads.
+- Run store files import no T3 adapter; orchestration owns T3 calls, so store transactions cannot span them.
 - Desktop source reaches backend code through its public package exports.
 - Shared packages import no application code or Node built-ins; network and browser-storage globals are rejected.
 - Contracts do not depend on validation. Cross-package imports use public exports, not `src` or `dist` files.

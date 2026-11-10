@@ -1,11 +1,39 @@
 # Durable Runner
 
 The Runner turns accepted Starts, reports, Human answers and Archive requests into
-durable operations against T3, and decides when a Run settles. It owns
-the SQL tables, transaction boundaries and recovery rules below. Persistence
-principles are in [Application foundation](foundation.md#persistence-model); user
+durable operations against T3, and decides when a Run settles. Inside it, the Run
+store owns Run state and its SQL transactions; orchestration owns T3 calls and
+scheduling. Persistence principles are in [Application foundation](foundation.md#persistence-model); user
 behavior is in [Runs](runs.md); live-support limits are in
 [Compatibility](installation.md).
+
+## Run state and orchestration
+
+The Run store owns the Run's execution state and reads, including history kept from
+the retired Run coordinator. Its transitions own the mutation lane, the owner,
+authorization, gate and generation guards, generation advances, timeline events and
+publication of committed changes. Each transition keeps the guard facts and
+publication conditions its operation requires. Start, startup ownership and renames
+keep their existing exceptions to the per-Run mutation lane. Reads participate in
+the caller's read transaction, so a live view reads navigation and its open Runs
+from one consistent snapshot. The store exposes transitions and reads, without a
+SQL handle, mutation lane or shared write steps.
+
+Orchestration calls T3, verifies payloads, searches uncertain launches and schedules
+observations, dispatch and retries. Its separate reconciliation lane serializes
+observe and dispatch passes for a Run across T3 calls. That scheduling lane is not
+a persistence guarantee: a report can enter the store's mutation lane while a T3
+read is pending. No Run store transaction spans a T3 call.
+
+The store also owns the local part of the [handoff release rule](#routing-and-independent-queues):
+the Final result must still be its activation's newest version, no execution
+failure may be pending, and the required guards and generation must hold.
+Orchestration reads whether the source worker thread is finished and passes the
+observed generation to the release transition. It asks the same rule before a held
+Handoff becomes a delivery, so a held arrival cannot create an activation, and
+again at reservation. T3 calls or a restart can intervene, and a delivery prepared
+before restart reaches reservation without repeating preparation. A revisit also
+checks that the recipient worker thread is finished at send time.
 
 ## Current execution contract
 
