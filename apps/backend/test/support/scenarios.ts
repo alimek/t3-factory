@@ -140,6 +140,7 @@ export interface ScenarioWorld {
     | "archiveRun"
     | "snoozeRun"
     | "answerHumanOccurrence"
+    | "continueWaitArrival"
   > & {
     readonly runtime: { submit(input: unknown): Promise<{ readonly code: string }> };
   };
@@ -1059,6 +1060,19 @@ export function resultWaitingAtWait(world: ScenarioWorld, worker: WorkerHandle) 
         (arrival) => arrival.sourceBlockId === worker.flowBlockId && arrival.state === "pending",
       ),
     );
+    return worker;
+  });
+}
+
+/** The selected worker's pending Wait arrival was forwarded early through the public operation. */
+export function waitContinuedEarly(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("Wait continued early", async () => {
+    const run = stepResult("read waiting Run", await world.factory.getRun(worker.runId));
+    const arrival = run.waitArrivals.find(
+      (item) => item.sourceBlockId === worker.flowBlockId && item.state === "pending",
+    );
+    if (!arrival) stepFailed("continue Wait", "No pending arrival for this worker.");
+    stepResult("continue Wait", await world.factory.continueWaitArrival(arrival.id));
     return worker;
   });
 }

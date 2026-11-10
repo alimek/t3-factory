@@ -120,7 +120,7 @@ test(
   },
 );
 
-test("two reviews waiting at one Wait show the nearest deadline and how many wait", async ({
+test("Continue now advances a selected review while the other keeps waiting", async ({
   app,
   screen,
   browser,
@@ -140,5 +140,29 @@ test("two reviews waiting at one Wait show the nearest deadline and how many wai
   const details = screen.getByRole("complementary", "Block details");
   await expect(details.getByRole("listitem", "Arrival 1")).toContainText("waiting until");
   await expect(details.getByRole("listitem", "Arrival 2")).toContainText("waiting until");
+  await expect(soak.getByRole("button", "Continue now")).toHaveCount(0);
   await app.screenshot("wait-two-pending");
+  await details.getByRole("listitem", "Arrival 1").getByRole("button", "Continue now").tap();
+  await expect(details.getByRole("listitem", "Arrival 1")).toContainText("forwarded early by user");
+  await expect(
+    details.getByRole("listitem", "Arrival 1").getByRole("button", "Continue now"),
+  ).toHaveCount(0);
+  await expect(details.getByRole("listitem", "Arrival 2")).toContainText("waiting until");
+  await expect(soak).not.toContainText("2 pending");
+  await expect(soak.getByRole("button", "Continue now")).toBeVisible();
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+  await expect(screen.getByRole("region", "Timeline")).toContainText("forwarded early by user");
+  await screen
+    .getByRole("region", "Timeline")
+    .getByText("forwarded early by user", { exact: false })
+    .scrollIntoView();
+  await app.screenshot("wait-selected-continued");
+  await soak.getByRole("button", "Continue now").tap();
+  await expect(soak).toContainText("finished");
+  await expect(details.getByRole("listitem", "Arrival 2")).toContainText("forwarded early by user");
+  await expect(soak.getByRole("button", "Continue now")).toHaveCount(0);
+  await app.screenshot("wait-all-continued");
+  await browser.reload();
+  await soak.getByRole("button", "Wait Soak before release", { exact: false }).tap();
+  await expect(details.getByRole("listitem", "Arrival 1")).toContainText("forwarded early by user");
 });

@@ -16,9 +16,9 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
   | { readonly kind: "operation-cancelled"; readonly blockId: string; readonly intentId: string }
   | { readonly kind: "human-cancelled"; readonly blockId: string; readonly occurrenceId: string }
   | {
-      /** About one Wait arrival: counting started, its deadline elapsed and it was forwarded, or
+      /** About one Wait arrival: counting started, it forwarded on expiry or by user action, or
        * Archive cancelled it. */
-      readonly kind: "wait-started" | "wait-elapsed" | "wait-cancelled";
+      readonly kind: "wait-started" | "wait-elapsed" | "wait-continued" | "wait-cancelled";
       readonly blockId: string;
       readonly arrivalId: string;
     }
@@ -140,6 +140,7 @@ const ARRIVAL_KEY_PREFIXES = {
   "human-cancelled": "human-cancelled:",
   "wait-started": "wait-started:",
   "wait-elapsed": "wait-elapsed:",
+  "wait-continued": "wait-continued:",
   "wait-cancelled": "wait-cancelled:",
 } as const;
 type ArrivalEvent = Extract<TimelineEvent, { readonly kind: keyof typeof ARRIVAL_KEY_PREFIXES }>;

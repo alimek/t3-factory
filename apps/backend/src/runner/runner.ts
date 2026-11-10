@@ -2,7 +2,7 @@ import { openBlockTools } from "./runner-block-tools.ts";
 import { openRunnerRecovery } from "./runner-recovery.ts";
 import { settleRecoveries } from "./runner-recovery-settlement.ts";
 import { releaseContinuationResults } from "./runner-continuations.ts";
-import { forwardDueWaits } from "./runner-waits.ts";
+import { forwardDueWaits, openRunnerWaits } from "./runner-waits.ts";
 import { openRunNavigation } from "./run-navigation.ts";
 import type { FactoryOperations, Result } from "@t3-factory/contracts";
 import * as Clock from "effect/Clock";
@@ -61,6 +61,13 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { observe } = openRunnerObservation(store, t3);
   const { dispatchIntent } = openRunnerDispatch(store, ops, t3, checkAgent, observe, images);
   const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
+  const { continueWaitArrival } = openRunnerWaits(store, lifecycle, (id) =>
+    Effect.gen(function* () {
+      const fiber = waitTimers.get(id);
+      waitTimers.delete(id);
+      if (fiber) yield* Fiber.interrupt(fiber);
+    }),
+  );
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
   const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
@@ -202,6 +209,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     ...openRunnerRecovery(store, lifecycle, t3, liveContextId),
     readFactoryTool: openBlockTools(store, getRun, images),
     answerHumanOccurrence,
+    continueWaitArrival,
     archiveRun,
     settleRun,
     ...openRunNavigation(store),

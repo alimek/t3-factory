@@ -59,6 +59,7 @@ are covered by controlled fixtures rather than this seed.
 
 | Run title after prefix | Initial state | Useful interaction |
 | --- | --- | --- |
+| Wait · Code review continued early | Code review was advanced through Continue now; the accessibility review still waits at Soak with its original deadline | Read **forwarded early by user** in arrival history and the timeline; the canvas offers Continue now for the remaining arrival. Continue it without confirmation and reload to see both outcomes retained. Controlled fixtures cover timing races; this seed launches no real T3 work |
 | Working · Improve the project picker | Open, one working Agent whose own turn completed while two simulated subagents still run, so T3's delegated wait stays pending | Open with the working Block centered at no more than 100% zoom, without a missing-report Problem; Archive (with confirmation) in a second visible window and observe the first Run and sidebar update live; launch another Run |
 | Monitoring · Agent is watching CI for the search fix | Open, one Agent that reported `working` with a message about running CI checks; its turn completed and its worker thread is finished | Read the message on the canvas, in the Run row and in Block details with no missing-report Problem, the working visit badge and the accepted working report in Work periods; **Request report** queues one assessment turn on the same worker |
 | Waiting for your review | Pending Human occurrence after implementation/review | Approve, or Request changes with a message |

@@ -14,6 +14,7 @@ import {
   resultReplacedBeforeRelease,
   resultReported,
   resultWaitingAtWait,
+  waitContinuedEarly,
   settled,
   snoozed,
   twoWorkersStarted,
@@ -203,6 +204,8 @@ async function finishScenario(
     { state: "two workers started from one prompt" | "Run worktree bound" }
   >,
 ) {
+  if (scenario.state === "reviews waiting at a Wait" || scenario.state === "Wait continued early")
+    return seedWaitReviews(context, worker, scenario);
   switch (scenario.state) {
     case "settled":
       await repositoryFactsObserved(context, worker, scenario.repository);
@@ -270,19 +273,21 @@ async function finishScenario(
       }
       break;
     }
-    case "reviews waiting at a Wait": {
-      const reviewers = await resultReleasedToTwoWorkers(
-        context,
-        await resultReported(context, worker, scenario.implementation),
-      );
-      for (const [index, review] of scenario.reviews.entries())
-        await resultWaitingAtWait(
-          context,
-          await resultReported(context, reviewers[index]!, review),
-        );
-      break;
-    }
   }
+}
+
+async function seedWaitReviews(
+  context: SeedContext,
+  worker: Worker,
+  scenario: Extract<SeedScenario, { state: "reviews waiting at a Wait" | "Wait continued early" }>,
+) {
+  const reviewers = await resultReleasedToTwoWorkers(
+    context,
+    await resultReported(context, worker, scenario.implementation),
+  );
+  for (const [index, review] of scenario.reviews.entries())
+    await resultWaitingAtWait(context, await resultReported(context, reviewers[index]!, review));
+  if (scenario.state === "Wait continued early") await waitContinuedEarly(context, reviewers[0]!);
 }
 
 export async function seedScenarios(

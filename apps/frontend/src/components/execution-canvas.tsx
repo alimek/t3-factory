@@ -1,3 +1,4 @@
+import { ContinueWait } from "./continue-wait.tsx";
 import type { ReactNode } from "react";
 import {
   attentionPresentation,
@@ -337,7 +338,7 @@ function ExecutionBlockTitle({
   );
 }
 
-/** A block draws at most an attention footer and an observation footer. */
+/** Reserve observation plus attention or the single-arrival Wait action. */
 const MAX_FOOTERS = 2;
 
 const footerClass =
@@ -378,6 +379,9 @@ function executionFooters(
         <CircleHelp aria-hidden className="size-2.75" /> Unknown observation
       </span>,
     );
+  const pending = block.kind === "wait" ? pendingArrivals(run, block.id) : [];
+  if (pending.length === 1 && run.lifecycle !== "archived")
+    footers.push(<ContinueWait arrivalId={pending[0]!.id} />);
   return footers;
 }
 
@@ -437,7 +441,7 @@ function executionBlock(
     className: cn(frameColor[state], selected && "border-primary ring-1 ring-primary"),
     selected,
     press: {
-      covers: "block",
+      covers: block.kind === "wait" ? "identity" : "block",
       render: (rows) => (
         <button
           type="button"

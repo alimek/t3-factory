@@ -30,7 +30,11 @@ export type SeedScenario = {
       | { state: "continuation prompt sent" }
       | { state: "continuation response forwarded"; spec: string }
     ))
-  | { state: "reviews waiting at a Wait"; implementation: Report; reviews: readonly Report[] }
+  | {
+      state: "reviews waiting at a Wait" | "Wait continued early";
+      implementation: Report;
+      reviews: readonly Report[];
+    }
 );
 
 const reviewContent = {
@@ -246,6 +250,15 @@ export const seedScenarioList: readonly SeedScenario[] = [
     title: "Wait · Both reviews soaking before release",
     flow: "soak",
     state: "reviews waiting at a Wait",
+    prompt: soakContent.prompt,
+    implementation: soakContent.implementation,
+    reviews: [soakContent.codeReview, soakContent.accessibilityReview],
+  },
+  {
+    key: "wait-early",
+    title: "Wait · Code review continued early",
+    flow: "soak",
+    state: "Wait continued early",
     prompt: soakContent.prompt,
     implementation: soakContent.implementation,
     reviews: [soakContent.codeReview, soakContent.accessibilityReview],

@@ -321,9 +321,15 @@ next blocks then start under the usual delivery rules, and an unconnected output
 that passed while Factory was closed or the computer slept is forwarded once on the next start or periodic check, with its deadline
 unchanged. System clock changes are not corrected.
 
+**Continue now** beside a pending arrival forwards that message immediately without confirmation. The canvas
+offers it only when exactly one arrival is pending; choose among multiple arrivals in details. Completed and
+cancelled arrivals have no action. Connection and synchronization mutation rules apply. Concurrent expiry or
+retries forward once; the chosen timer is disabled and other deadlines stay unchanged. Continue now also works
+on a manually Settled Run without changing settlement; a later accepted report can return it to Active.
+
 Its details list each arrival with the block it came from, when it started, its deadline, its outcome and, while it waits, its message.
 A forwarded or cancelled arrival keeps only this metadata, and its details say the message was cleared. The timeline records **wait
-started** and **elapsed → forwarded** with the Wait icon. A Wait is not Needs input or attention and does not wake a Snoozed Run;
+started**, **elapsed → forwarded** and **forwarded early by user** with the Wait icon. A Wait is not Needs input or attention and does not wake a Snoozed Run;
 genuine attention from the blocks after it follows the usual rules. A pending arrival keeps the Run from settling automatically.
 Manual Settle leaves it counting and it is still forwarded at its deadline; Archive cancels it, clears its message and shows the Wait
 stopped.
