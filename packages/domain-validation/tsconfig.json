@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": { "noEmit": true, "customConditions": ["factory-source"] },
   "include": ["src/**/*.ts"]
 }

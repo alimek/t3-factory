@@ -14,12 +14,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SectionLabel } from "@/components/page";
-import { api } from "../api.ts";
+import type { StudioDefinitions } from "../studio-definitions.ts";
 
 export function CreateFlow({
+  createFlow,
   onClose,
   onCreated,
 }: {
+  createFlow: StudioDefinitions["createFlow"];
   onClose: () => void;
   onCreated: (flow: FlowDraft) => void;
 }) {
@@ -43,7 +45,7 @@ export function CreateFlow({
     setSaving(true);
     setError("");
     try {
-      onCreated(await api.createFlow(validation.value));
+      onCreated(await createFlow(validation.value));
     } catch {
       setError("Could not save the draft. Your name is still here; try again.");
       setSaving(false);

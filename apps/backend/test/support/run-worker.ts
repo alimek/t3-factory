@@ -345,6 +345,16 @@ export async function revisitedWorker(c: TestContext) {
   return f;
 }
 
+/** The worker's result was released and its revisit prepared as a send, but T3 refused sends, so
+ * the revisit is still unsent. */
+export async function unsentRevisit(c: TestContext) {
+  const f = await reportedWorker(c, "completed", "worker");
+  f.t3.sendSupported = false;
+  assert((await f.f.reconcileRuns()).ok);
+  f.t3.sendSupported = true;
+  return f;
+}
+
 /** The user's reply in the worker thread starts a new execution of that thread. */
 export async function repliedWorker(c: TestContext) {
   const f = await idleWorkingWorker(c);

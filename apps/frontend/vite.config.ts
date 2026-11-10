@@ -1,7 +1,7 @@
 import "vite-plus/test/config";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite-plus";
+import { defaultServerConditions, defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -13,6 +13,9 @@ export default defineConfig(({ command }) => ({
       : {}),
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  // Only Node-run tests use SSR resolution; the shipped UI is a client build, so this
+  // reaches no shipping output.
+  ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } },
   test: {
     environment: "node",
     include: ["test/*.test.ts"],

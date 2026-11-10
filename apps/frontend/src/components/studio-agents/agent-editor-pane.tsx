@@ -1,8 +1,7 @@
 import { MutationGate } from "@/client-gate";
-import { ExecutionSettingsFields, useExecutionSettings } from "../execution-settings-fields.tsx";
-import { useEffect, useState, type FormEvent } from "react";
+import { ExecutionSettingsFields } from "../execution-settings-fields.tsx";
+import { useState } from "react";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
-import { validateCreateAgent, validateUpdateAgent } from "@t3-factory/domain-validation";
 import { fieldLabelClass } from "@/components/page";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CircleAlert, CheckCircle2 } from "lucide-react";
@@ -20,129 +19,38 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { api } from "../../api.ts";
-import { useActiveView } from "../../use-active-view.ts";
+import type { AgentDraftModel, AgentDraftSnapshot } from "../../agent-draft.ts";
 import { editedLabel } from "../studio-list.tsx";
 import { flowUsageLabel } from "@/lib/agent-display";
-import { AgentExitsField, newAgentExits } from "./agent-exits-field.tsx";
-
-type AgentDraft = Pick<AgentDefinition, "name" | "prompt" | "execution" | "exits">;
-
-function saveRequest(
-  agent: AgentDefinition | null,
-  draft: AgentDraft,
-): { error: string } | { save: () => Promise<AgentDefinition> } {
-  if (agent) {
-    const validation = validateUpdateAgent({ ...draft, expectedRevision: agent.revision });
-    if (!validation.ok) return { error: validation.error.message };
-    const input = validation.value;
-    return { save: () => api.updateAgent(agent.id, input) };
-  }
-  const validation = validateCreateAgent(draft);
-  if (!validation.ok) return { error: validation.error.message };
-  const input = validation.value;
-  return { save: () => api.createAgent(input) };
-}
+import { AgentExitsField } from "./agent-exits-field.tsx";
 
 type AgentEditorProps = {
-  agent: AgentDefinition | null;
+  draft: AgentDraftModel;
+  state: AgentDraftSnapshot;
   capabilities: AgentCapabilities | null;
   flowUsage: number;
-  creating: boolean;
   duplicating: boolean;
-  onSaved: (agent: AgentDefinition) => void;
-  onConflict: (message: string) => void;
+  onSave: () => Promise<void>;
   onDuplicate?: (() => void) | undefined;
   onDeleted: () => void;
-  reportDraft: (id: string, dirty: boolean) => void;
 };
 
-function useAgentForm({ agent, capabilities, onSaved, onConflict, reportDraft }: AgentEditorProps) {
-  const active = useActiveView();
-  const draftId = agent?.id ?? "new";
-  const [name, setName] = useState(agent?.name ?? "");
-  const [prompt, setPrompt] = useState(agent?.prompt ?? "");
-  const [exits, setExits] = useState(() => agent?.exits ?? newAgentExits());
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const settings = useExecutionSettings(agent?.execution ?? null, capabilities);
-  const [baseline] = useState(() => ({
-    name: agent?.name ?? "",
-    prompt: agent?.prompt ?? "",
-    execution: settings.execution,
-    exits,
-  }));
-  const dirty =
-    name !== baseline.name ||
-    prompt !== baseline.prompt ||
-    JSON.stringify(settings.execution) !== JSON.stringify(baseline.execution) ||
-    JSON.stringify(exits) !== JSON.stringify(baseline.exits);
-  useEffect(() => {
-    reportDraft(draftId, dirty);
-    return () => reportDraft(draftId, false);
-  }, [draftId, dirty, reportDraft]);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (saving) return;
-    const request = saveRequest(agent, {
-      name,
-      prompt,
-      execution: settings.execution,
-      exits,
-    });
-    if ("error" in request) {
-      setError(request.error);
-      return;
-    }
-    setSaving(true);
-    setError("");
-    try {
-      const saved = await request.save();
-      if (active.current) {
-        setSaving(false);
-        reportDraft(draftId, false);
-      }
-      onSaved(saved);
-    } catch (cause) {
-      if (!active.current) return;
-      const message =
-        cause instanceof Error
-          ? cause.message
-          : "Could not save this Agent. Your edits are still here.";
-      if (agent && message.includes("newer revision")) onConflict(message);
-      setError(message);
-      setSaving(false);
-    }
-  }
-
-  return {
-    name,
-    setName,
-    prompt,
-    setPrompt,
-    exits,
-    setExits,
-    settings,
-    error,
-    saving,
-    dirty,
-    submit,
-  };
-}
-
 export function AgentEditorPane(props: AgentEditorProps) {
-  const { capabilities } = props;
-  const form = useAgentForm(props);
-  const { name, setName, prompt, setPrompt, exits, setExits, settings, error, submit } = form;
-  const saving = form.saving || props.duplicating;
+  const { capabilities, draft, state } = props;
+  const { name, prompt, exits, execution } = state.content;
+  const settings = { ...state.choices, ...draft, execution };
+  const saving = state.saving || props.duplicating;
+  const error = state.error;
   return (
     <>
       <form
         className="flex min-h-0 min-w-0 flex-1 flex-col"
-        onSubmit={(event) => void submit(event)}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void props.onSave();
+        }}
       >
-        <AgentEditorHeader {...props} name={name} saving={saving} dirty={form.dirty} />
+        <AgentEditorHeader {...props} name={name} saving={saving} />
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 md:px-8">
           <div className="@container/agent-form grid min-w-0 gap-3.5">
             <div className="grid gap-1.5">
@@ -153,7 +61,7 @@ export function AgentEditorPane(props: AgentEditorProps) {
                 id="agent-name"
                 maxLength={200}
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => draft.edit({ name: event.target.value })}
                 disabled={saving}
                 className="bg-muted"
               />
@@ -176,7 +84,7 @@ export function AgentEditorPane(props: AgentEditorProps) {
                 rows={8}
                 aria-describedby="agent-prompt-help"
                 value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
+                onChange={(event) => draft.edit({ prompt: event.target.value })}
                 disabled={saving}
                 className="min-h-38 bg-muted font-mono text-xs"
               />
@@ -185,7 +93,11 @@ export function AgentEditorPane(props: AgentEditorProps) {
                 <code className="font-mono">$review-code</code>. No skill catalog is required.
               </p>
             </div>
-            <AgentExitsField exits={exits} disabled={saving} onChange={setExits} />
+            <AgentExitsField
+              exits={exits}
+              disabled={saving}
+              onChange={(exits) => draft.edit({ exits })}
+            />
           </div>
           {error && (
             <Alert variant="destructive" className="mt-4">
@@ -226,15 +138,16 @@ function AgentReportingNotice({ providerId }: { providerId: string }) {
 }
 
 function AgentEditorHeader({
-  agent,
+  draft,
+  state,
   flowUsage,
   name,
   saving,
   onDuplicate,
   onDeleted,
-  dirty,
   duplicating,
-}: AgentEditorProps & { name: string; saving: boolean; dirty: boolean }) {
+}: AgentEditorProps & { name: string; saving: boolean }) {
+  const { saved: agent, dirty } = state;
   const statusLine = agentEditorStatus(agent, flowUsage);
   const saveLabel = agent ? "Save" : "Create Agent";
   return (
@@ -264,6 +177,8 @@ function AgentEditorHeader({
         {agent && (
           <DeleteAgentButton
             agent={agent}
+            draft={draft}
+            state={state}
             flowUsage={flowUsage}
             disabled={saving}
             onDeleted={onDeleted}
@@ -288,29 +203,25 @@ function agentEditorStatus(agent: AgentDefinition | null, flowUsage: number): st
 
 function DeleteAgentButton({
   agent,
+  draft,
+  state,
   flowUsage,
   disabled,
   onDeleted,
 }: {
   agent: AgentDefinition;
+  draft: AgentDraftModel;
+  state: AgentDraftSnapshot;
   flowUsage: number;
   disabled: boolean;
   onDeleted: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState("");
+  const { deleting, deleteError: error } = state;
   async function confirmDelete() {
-    if (deleting) return;
-    setDeleting(true);
-    setError("");
-    try {
-      await api.deleteAgent(agent.id);
+    if (await draft.delete()) {
       setOpen(false);
       onDeleted();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Factory could not delete this Agent.");
-      setDeleting(false);
     }
   }
   return (
@@ -321,7 +232,7 @@ function DeleteAgentButton({
           variant="destructive"
           disabled={disabled}
           onClick={() => {
-            setError("");
+            draft.clearDeleteError();
             setOpen(true);
           }}
         >

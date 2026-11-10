@@ -7,11 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { randomId } from "@/lib/ids";
 
-/** A new Agent starts with one exit, `done`, which needs no message. */
-export function newAgentExits(): BlockExit[] {
-  return [{ id: randomId(), name: "done", description: "", messageRequired: false }];
-}
-
 /**
  * The Agent's exits: every Flow block of this Agent offers them. IDs stay stable across
  * renames, so wires in every Flow stay connected.

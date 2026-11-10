@@ -127,7 +127,7 @@ For endpoint setup, configuration and client access, see
 | `pnpm dev` | Simulated demo with source reload and a separate persistent home |
 | `pnpm build` | Build the workspace, including desktop bundles |
 | `pnpm start` | Serve the built app with production data |
-| `pnpm check` | Format check, fallow, build, lint, typecheck and behavior tests |
+| `pnpm check` | Format check, fallow, lint, typecheck, behavior tests and build |
 | `pnpm test:e2e` | Controlled Chromium journeys; build first |
 | `pnpm desktop:package` | Create a local macOS arm64 developer package |
 

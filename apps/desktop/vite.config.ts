@@ -1,8 +1,11 @@
 import "vite-plus/test/config";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite-plus";
+import { defaultServerConditions, defineConfig } from "vite-plus";
 
 export default defineConfig({
+  // This config serves only the rule tests; the shipped bundle comes from
+  // scripts/bundle.mjs, which resolves compiled workspace output.
+  ssr: { resolve: { conditions: ["factory-source", ...defaultServerConditions] } },
   test: {
     environment: "node",
     include: ["test/*.test.ts"],

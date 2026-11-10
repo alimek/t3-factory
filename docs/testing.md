@@ -90,8 +90,8 @@ assertion narrowing from `@effect/vitest`. `pnpm test` runs the backend, desktop
 repository script tests (`scripts/*.test.mjs`) with `node:test` through `pnpm test:scripts`; those
 scripts run in CI before dependencies install, so their tests need no workspace packages;
 `pnpm --filter @t3-factory/backend test test/flows.test.ts` selects a file.
-Build first on a fresh checkout: public-operation tests and spawned processes
-use the backend package's compiled exports.
+Backend tests import backend source directly; the test runner and spawned Factory
+processes enable `factory-source` for shared packages. `pnpm test` needs no build output.
 
 Use `expect` for observable comparisons (`toBe` for strict scalar equality,
 `toStrictEqual` for full structures). Use the exported `assert` to narrow

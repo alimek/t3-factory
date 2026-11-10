@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bot, Workflow } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { api } from "../api.ts";
 import {
   useStudioNavigation,
   useStudioOptions,
@@ -16,9 +15,50 @@ import { Button } from "./ui/button";
 import { WorkspaceDialogHeader } from "./workspace-dialog-header.tsx";
 import { cn } from "@/lib/utils";
 import { type StudioDraft, useStudioDraftGuard } from "../use-studio-draft-guard.ts";
+import {
+  createStudioDefinitions,
+  useStudioRead,
+  type StudioDefinitions,
+} from "../studio-definitions.ts";
+
+/**
+ * This Studio session's saved definitions, read again after each Studio navigation. The session
+ * ends a moment after Studio closes, so StrictMode's immediate remount keeps the same session.
+ */
+function useStudioSession(selection: StudioSelection) {
+  const [definitions] = useState(() => createStudioDefinitions());
+  const ending = useRef<number>(undefined);
+  useEffect(() => {
+    window.clearTimeout(ending.current);
+    return () => {
+      ending.current = window.setTimeout(definitions.dispose, 0);
+    };
+  }, [definitions]);
+  const shown = useRef(selection);
+  // Before paint, so a new page never shows the previous page's read as its own.
+  useLayoutEffect(() => {
+    if (shown.current === selection) return;
+    shown.current = selection;
+    definitions.refresh();
+  }, [definitions, selection]);
+  return definitions;
+}
+
+/** The Escape handler an open Studio page registers; Studio runs it instead of closing. */
+function useEscapeHandler() {
+  const escapeHandler = useRef<(() => void) | null>(null);
+  const registerEscape = useCallback((handler: () => void) => {
+    escapeHandler.current = handler;
+    return () => {
+      if (escapeHandler.current === handler) escapeHandler.current = null;
+    };
+  }, []);
+  return { escapeHandler, registerEscape };
+}
 
 export function StudioModal({ selection }: { selection: StudioSelection }) {
   const navigate = useStudioNavigation();
+  const definitions = useStudioSession(selection);
   const dialog = useRef<HTMLDivElement>(null);
   const [creating, setCreating] = useState(false);
   const [flowDraft, setFlowDraft] = useState<StudioDraft>();
@@ -43,13 +83,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
     flowRef: flowDraftRef,
     agentRef: agentDraftRef,
   });
-  const escapeHandler = useRef<(() => void) | null>(null);
-  const registerEscape = useCallback((handler: () => void) => {
-    escapeHandler.current = handler;
-    return () => {
-      if (escapeHandler.current === handler) escapeHandler.current = null;
-    };
-  }, []);
+  const { escapeHandler, registerEscape } = useEscapeHandler();
   const close = () => void navigate(undefined);
   return (
     <Dialog
@@ -88,9 +122,10 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
           closeDisabled={creating}
         />
         <div className="flex min-h-0 flex-1">
-          <StudioSidebar selection={selection} />
+          <StudioSidebar selection={selection} definitions={definitions} />
           <StudioContent
             selection={selection}
+            definitions={definitions}
             registerEscape={registerEscape}
             reportFlowDraft={reportFlowDraft}
             reportAgentDraft={reportAgentDraft}
@@ -100,6 +135,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
         {blocker.status === "blocked" && <DraftDiscardDialog blocker={blocker} />}
         {creating && (
           <CreateFlow
+            createFlow={definitions.createFlow}
             onClose={() => setCreating(false)}
             onCreated={(flow) => {
               setCreating(false);
@@ -166,28 +202,17 @@ function DraftDiscardDialog({
   );
 }
 
-function StudioSidebar({ selection }: { selection: StudioSelection }) {
+function StudioSidebar({
+  selection,
+  definitions,
+}: {
+  selection: StudioSelection;
+  definitions: StudioDefinitions;
+}) {
   const flowsOptions = useStudioOptions({ tab: "flows" });
   const agentsOptions = useStudioOptions({ tab: "agents" });
-  const [counts, setCounts] = useState<{ flows?: number; agents?: number }>({});
-  useEffect(() => {
-    let active = true;
-    void api
-      .listFlows()
-      .then((flows) => {
-        if (active) setCounts((current) => ({ ...current, flows: flows.length }));
-      })
-      .catch(() => {});
-    void api
-      .listAgents()
-      .then((agents) => {
-        if (active) setCounts((current) => ({ ...current, agents: agents.length }));
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [selection]);
+  const flows = useStudioRead(definitions, "flows").value;
+  const agents = useStudioRead(definitions, "agents").value;
   return (
     <aside className="flex w-48 shrink-0 flex-col border-r bg-sidebar max-sm:w-36">
       <nav aria-label="Studio navigation" className="grid gap-0.5 px-3 pt-3">
@@ -208,7 +233,7 @@ function StudioSidebar({ selection }: { selection: StudioSelection }) {
           <Workflow aria-hidden className="size-4" strokeWidth={1.5} />
           Flows
           <span aria-hidden className="ml-auto text-2xs font-medium text-subtle-foreground">
-            {counts.flows}
+            {flows?.length}
           </span>
         </Link>
         <Link
@@ -225,7 +250,7 @@ function StudioSidebar({ selection }: { selection: StudioSelection }) {
           <Bot aria-hidden className="size-4" strokeWidth={1.5} />
           Agents
           <span aria-hidden className="ml-auto text-2xs font-medium text-subtle-foreground">
-            {counts.agents}
+            {agents?.length}
           </span>
         </Link>
       </nav>
@@ -235,12 +260,14 @@ function StudioSidebar({ selection }: { selection: StudioSelection }) {
 
 function StudioContent({
   selection,
+  definitions,
   registerEscape,
   onCreate,
   reportFlowDraft,
   reportAgentDraft,
 }: {
   selection: StudioSelection;
+  definitions: StudioDefinitions;
   registerEscape: (handler: () => void) => () => void;
   onCreate: () => void;
   reportFlowDraft: (id: string, dirty: boolean) => void;
@@ -269,10 +296,14 @@ function StudioContent({
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none"
     >
       {selection.tab === "agents" ? (
-        <StudioAgentsPage agentId={agentId} reportAgentDraft={reportAgentDraft} />
+        <StudioAgentsPage
+          agentId={agentId}
+          definitions={definitions}
+          reportAgentDraft={reportAgentDraft}
+        />
       ) : !flowId ? (
         <div className="min-h-0 flex-1 overflow-auto">
-          <FlowList onCreate={onCreate} />
+          <FlowList definitions={definitions} onCreate={onCreate} />
         </div>
       ) : null}
       {openedFlowId && (
@@ -286,6 +317,7 @@ function StudioContent({
         >
           <FlowDetail
             id={openedFlowId}
+            definitions={definitions}
             active={!flowHidden}
             registerEscape={registerEscape}
             reportDraft={reportFlowDraft}
