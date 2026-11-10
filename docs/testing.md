@@ -142,7 +142,7 @@ and journey execution are separate Actions steps so their durations are distingu
 It runs on PR open, reopen, synchronization and becoming ready for review, including
 drafts and forks, without model or production credentials.
 
-Selection compares the event's base and head commits, including deleted paths and
+Selection compares the head commit with its merge base on the event's base commit, including deleted paths and
 both sides of renames. Only an entirely documentation/review-only diff skips:
 indexed prose under `docs/`, root prose documents, the PR description template and
 reviewer configuration and rules; `scripts/select-ui-journeys.mjs` holds the exact

@@ -34,10 +34,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (extra.length || !/^[a-f0-9]{40}$/.test(base ?? "") || !/^[a-f0-9]{40}$/.test(head ?? "")) {
     throw new Error("Usage: node scripts/select-ui-journeys.mjs <base-sha> <head-sha>");
   }
-  // NUL delimiters preserve unusual filenames; disabling renames includes both sides.
-  const changed = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", base, head], {
-    encoding: "utf8",
-  });
+  // base...head diffs from the merge base, so base-branch commits after the PR's
+  // fork point are not attributed to the PR. NUL delimiters preserve unusual
+  // filenames; disabling renames includes both sides.
+  const changed = execFileSync(
+    "git",
+    ["diff", "--no-renames", "--name-only", "-z", `${base}...${head}`],
+    { encoding: "utf8" },
+  );
   const paths = changed === "" ? [] : changed.slice(0, -1).split("\0");
   const output = `run=${shouldRunUiJourneys(paths)}\n`;
   process.stdout.write(output);
