@@ -202,10 +202,12 @@ function stored(event: TimelineEvent) {
   });
 }
 
+/** "Handoff released" keeps main's idempotent write: its key is derived from the Handoff, so a
+ * repeat is a no-op instead of aborting the release. Other kinds keep their plain insert. */
 export function appendTimelineEvent(sql: SqlClient.SqlClient, event: TimelineEvent) {
   return Effect.gen(function* () {
     const { blockId, executionId, bindingId, engineStatus, sourceKey, causeId } =
       yield* stored(event);
-    yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${event.runId},${blockId},${executionId},${bindingId ?? null},${event.kind},${sourceKey},${causeId},${event.observedAt},${engineStatus ?? null})`;
+    yield* sql`INSERT INTO run_events(run_id,block_id,execution_id,binding_id,kind,source_key,cause_id,observed_at,engine_status) VALUES(${event.runId},${blockId},${executionId},${bindingId ?? null},${event.kind},${sourceKey},${causeId},${event.observedAt},${engineStatus ?? null}) ${event.kind === "handoff-released" ? sql`ON CONFLICT DO NOTHING` : sql``}`;
   });
 }
