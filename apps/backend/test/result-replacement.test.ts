@@ -1,20 +1,22 @@
 import { assert, expect, it } from "@effect/vitest";
 import {
-  directWorker,
   launchedBlockId,
   releasedTwoExitWorker,
   replacedBeforeRelease,
-  reportedWorker,
+  workerStart,
 } from "./support/run-worker.ts";
 import {
   allTurnsEnd,
   finishedReport,
   report,
+  resultReported,
   turnBegins,
+  workerAtWork,
   workerFinal,
   workerHandle,
   workingReport,
 } from "./support/scenarios.ts";
+import { prepared } from "./support/prepared-runner.ts";
 import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a newer finished report before release replaces the held result and only it is handed off", async (c) => {
@@ -62,9 +64,12 @@ it("a Run whose result was replaced before handoff settles once every worker is 
 
 it("after release a same-exit finished report updates the result without relaunching the next Block", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...worker };
   assert((await f.f.reconcileRuns()).ok);
-  turnBegins(f.world, f.worker, "followup-execution");
+  turnBegins(f.world, worker, "followup-execution");
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId, "Updated result."));
@@ -130,9 +135,14 @@ it("a different-exit result after release stays held while the worker thread is 
 
 it("repeating the result from a later turn settles an execution failure recorded after it", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "failed");
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await resultReported(setup.world, atWork, {
+    status: "failed",
+  });
+  const f = { ...setup, ...worker };
   assert((await f.f.reconcileRuns()).ok);
-  turnBegins(f.world, f.worker, "retry-execution");
+  turnBegins(f.world, worker, "retry-execution");
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId));
@@ -150,10 +160,12 @@ it("repeating the result from a later turn settles an execution failure recorded
 
 it("a working report after a result keeps the Block working and its Run Active once its worker thread is finished", async (c) => {
   // Arrange
-  const f = await directWorker(c, true, "");
-  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
-  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
+  const setup = await prepared(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, finishedReport())) === "ACCEPTED");
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();

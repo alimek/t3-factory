@@ -1,11 +1,9 @@
 import {
-  blockExit,
-  controlledExecution,
-  flowInput,
-  agentBlock,
   connection,
   humanStep,
+  singleWorkerFlow,
   workerHandle,
+  type SingleWorkerVariant,
 } from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -33,42 +31,30 @@ async function preparedHomes(processHome: string) {
   return { root, t3, reportingStateDirectory };
 }
 
-/** Connects T3, installs reporting and saves a ready single-worker Flow in its project. */
-async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
+/** Connects T3, installs reporting, adds the project and saves the ready single-worker Flow. */
+async function readyFlow(
+  f: Factory,
+  t3: ControlledT3,
+  root: string,
+  variant: SingleWorkerVariant = {},
+) {
   await f.configureConnection({ endpoint: "http://127.0.0.1:3773/mcp" });
   const targets = await f.getReportingInstallations();
   assert(targets.ok);
   assert((await f.installReporting({ targetId: targets.value[0]!.id })).ok);
   const p = await f.addRepository({ path: root });
   assert(p.ok);
-  const a = await f.createAgent({
-    name: "Worker",
-    prompt: "Follow repository instructions.",
-    execution: controlledExecution(t3.environmentId),
-    exits: [blockExit("done", "Done", "Completed", false)],
-  });
-  assert(a.ok);
-  const draft = await f.createFlow({ name: "Single worker" });
-  assert(draft.ok);
-  const flow = await f.updateFlow(draft.value.id, {
-    name: draft.value.name,
-    expectedRevision: 1,
-    workspace: { mode: "checkout" },
-    graph: {
-      flowInput: flowInput("worker"),
-      blocks: [agentBlock("worker", "Entry worker", a.value.id, { x: 0, y: 0 }, [], [])],
-      connections: [],
-    },
-  });
-  assert(flow.ok);
+  const world = { factory: f, t3 };
+  const { agent, flow } = await singleWorkerFlow(world, variant);
   return {
+    world,
     project: p.value,
-    agent: a.value,
-    flow: flow.value,
+    agent,
+    flow,
     input: {
       requestId: "start-one",
       projectId: p.value.id,
-      flowId: flow.value.id,
+      flowId: flow.id,
       input: "Improve search\nKeep it accessible.",
       title: "Improve search",
       createdAt: "2026-11-07T08:00:00.000Z",
@@ -76,13 +62,13 @@ async function readyFlow(f: Factory, t3: ControlledT3, root: string) {
   };
 }
 
-/** A ready single-worker Flow with Factory reporting installed beside the bridge. */
-export async function prepared(c: TestContext) {
+/** A ready single-worker Flow, in `variant`, with Factory reporting installed beside the bridge. */
+export async function prepared(c: TestContext, variant?: SingleWorkerVariant) {
   const h = await factoryHarness(c);
   const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
   const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
   c.onTestFinished(() => f.close());
-  return { h, f, t3, ...(await readyFlow(f, t3, root)) };
+  return { h, f, t3, ...(await readyFlow(f, t3, root, variant)) };
 }
 
 /**
@@ -168,18 +154,6 @@ export async function preparedBlockedFlow(c: TestContext) {
   );
   t3.controlledProviders.pop();
   return setup;
-}
-
-/** The ready single-worker Flow saved with the given workspace setting. */
-export async function preparedWorkspaceFlow(c: TestContext, workspace: FlowWorkspace) {
-  const setup = await prepared(c);
-  const flow = await setup.f.updateFlow(setup.flow.id, {
-    ...setup.flow,
-    expectedRevision: setup.flow.revision,
-    workspace,
-  });
-  assert(flow.ok);
-  return { ...setup, flow: flow.value };
 }
 
 /** Entry worker and Second entry both start from the Flow input; optionally "Done" goes to Follow-up. */

@@ -5,13 +5,13 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { base64, factoryMcpClient, readRunImage, toolReply } from "./support/factory-mcp.ts";
 import { preparedServer } from "./support/prepared-runner.ts";
 import { imageRequest, imageStart, manifestEntry, screenshots } from "./support/run-images.ts";
-import { sha256Hex } from "./support/scenarios.ts";
+import { resultReported, sha256Hex, workerAtWork, workerLaunched } from "./support/scenarios.ts";
 import {
   answeredReview,
   finishedParallelWork,
   launchedBlockId,
   launchedImageFanOut,
-  reportedImageWorker,
+  workerStart,
 } from "./support/run-worker.ts";
 
 const identity = (imageId: string, ordinal: number, image: { name: string; data: Uint8Array }) => ({
@@ -52,9 +52,8 @@ it("a Block read lists the Run images in label order, duplicate names by id, wit
 
 it("a Block read of a Run without images lists no images over the listening Factory MCP endpoint", async (c) => {
   // Arrange
-  const { f, t3, mcp, input } = await preparedServer(c);
-  assert((await f.startRun(input)).ok);
-  assert((await f.reconcileRuns()).ok);
+  const { t3, mcp, world, input } = await preparedServer(c);
+  await workerLaunched(world, input);
   const client = new Client({ name: "worker", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(mcp));
   c.onTestFinished(() => client.close());
@@ -92,7 +91,9 @@ it("an image read returns the image's identity and exactly one image content ite
 
 it("a checkout downstream worker launched without attachments reads an original Run image", async (c) => {
   // Arrange
-  const f = await reportedImageWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   assert((await f.f.reconcileRuns()).ok);
   const downstream = [...f.t3.launches.values()][1]!.payload;
   expect(downstream.attachments).toBeUndefined();

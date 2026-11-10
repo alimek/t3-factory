@@ -1,15 +1,7 @@
-import {
-  observe,
-  sha256Hex,
-  solidPng,
-  startRun,
-  workerHandle,
-  workerObserved,
-} from "../../apps/backend/test/support/scenarios.ts";
+import { sha256Hex, solidPng, workerAtWork } from "../../apps/backend/test/support/scenarios.ts";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
-import type { PromptSegment, Result, RunDetail } from "../../packages/contracts/src/index.ts";
-import type { ExecutionObservation } from "../../apps/backend/src/adapters/t3.ts";
+import type { PromptSegment, Result } from "../../packages/contracts/src/index.ts";
 
 export function requireSuccess<A>(result: Result<A>): A {
   if (!result.ok) throw Error(`Development seed: ${result.error.message}`);
@@ -20,27 +12,6 @@ export interface SeedContext {
   factory: Factory;
   t3: PersistentT3;
   projectId: string;
-}
-
-/** Repository facts belong to simulated T3 workers, never direct Factory database writes. */
-export async function scenarioRepository(
-  context: SeedContext,
-  run: RunDetail,
-  blockId: string,
-  repository: NonNullable<ExecutionObservation["repository"]>,
-) {
-  const worker = workerHandle(context, run, blockId);
-  const observation = await context.t3.readExecution({ endpoint: "" }, worker.threadId);
-  context.t3.executionObservations.set(worker.threadId, { ...observation, repository });
-  context.t3.save();
-  return observe(context, run.id, (detail) =>
-    detail.repositories.some(
-      (item) =>
-        item.threadId === worker.threadId &&
-        item.branch === repository.branch &&
-        item.pullRequests.length === repository.pullRequests.length,
-    ),
-  );
 }
 
 export const demoPullRequest = (number: number, state: "open" | "merged" = "open") => ({
@@ -92,9 +63,8 @@ async function scenarioPrompt(
   return { segments, images };
 }
 
-/** Starts a demo Run under its stable logical key and title; Factory then observes its first
- * worker. */
-export async function startDemoRun(
+/** A demo Run's Start: its stable logical key, title and prompt, with its images staged. */
+export async function demoStart(
   context: SeedContext,
   flowId: string,
   key: string,
@@ -102,27 +72,19 @@ export async function startDemoRun(
   prompt: string,
   attachments: { images: readonly DemoImage[]; referenced: number } = { images: [], referenced: 0 },
 ) {
-  const { run } = await startRun(context, {
+  return {
     requestId: `development-v1:${key}`,
     projectId: context.projectId,
     flowId,
     ...(await scenarioPrompt(context, `Demo · ${title}\n\n${prompt}`, attachments)),
     title: `Demo · ${title}`,
     createdAt: new Date().toISOString(),
-  });
-  return observe(context, run.id, workerObserved);
+  };
 }
 
-export async function nativeAttention(context: SeedContext, run: RunDetail) {
-  const worker = workerHandle(context, run, "worker");
-  const observation = await context.t3.readExecution({ endpoint: "" }, worker.threadId);
-  context.t3.executionObservations.set(worker.threadId, {
-    ...observation,
-    pendingRequestCount: 1,
-  });
-  return observe(context, run.id, (detail) =>
-    detail.attention.some(
-      (matter) => matter.kind === "native-request" && matter.settledAt === null,
-    ),
-  );
+/** The Run read of a demo Run started with one worker at work. */
+export async function startDemoRun(...start: Parameters<typeof demoStart>) {
+  const [context] = start;
+  const worker = await workerAtWork(context, await demoStart(...start));
+  return requireSuccess(await context.factory.getRun(worker.runId));
 }

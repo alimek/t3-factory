@@ -1,9 +1,9 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { assert, expect, it } from "@effect/vitest";
-import { reportedImageWorker } from "./support/run-worker.ts";
-import { screenshots, startedImageFanOut } from "./support/run-images.ts";
-import { sha256Hex } from "./support/scenarios.ts";
+import { workerStart } from "./support/run-worker.ts";
+import { imageRequest, screenshots, startedImageFanOut } from "./support/run-images.ts";
+import { resultReported, sha256Hex, workerAtWork } from "./support/scenarios.ts";
 
 const attachmentNames = ["image-1-screenshot.png", "image-2-screenshot.png", "image-3-mockup.png"];
 const digests = [screenshots.red, screenshots.blue, screenshots.green].map((image) =>
@@ -128,7 +128,9 @@ it("an image launch with a lost acknowledgement is searched for, never uploaded 
 
 it("a downstream worker launches with a text-only message and no attachments", async (c) => {
   // Arrange
-  const f = await reportedImageWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, await imageRequest(setup));
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   assert((await f.f.reconcileRuns()).ok);

@@ -2,18 +2,25 @@ import { assert, expect, it } from "@effect/vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { preparedServer } from "./support/prepared-runner.ts";
 import {
-  archivedWorker,
-  directWorker,
   launchedBlockId,
   nextThreadInterrupt,
   pendingReview,
-  reportedWorker,
+  workerStart,
 } from "./support/run-worker.ts";
-import { workerFinal, workerWorking } from "./support/scenarios.ts";
+import {
+  archived,
+  resultReported,
+  workerAtWork,
+  workerFinal,
+  workerLaunched,
+  workerWorking,
+} from "./support/scenarios.ts";
 
 it("archiving closes the gate, cancels the unsent handoff and archives the Run at once", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   const result = await f.f.archiveRun(f.runId);
@@ -29,7 +36,8 @@ it("archiving closes the gate, cancels the unsent handoff and archives the Run a
 
 it("archiving a working Run requests interruption of its worker thread without waiting for it to stop", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await workerStart(c);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const interrupt = nextThreadInterrupt(f.t3);
 
   // Act
@@ -58,7 +66,10 @@ it("archiving cancels a pending Human occurrence and settles its attention", asy
 
 it("an archived Run is left out of navigation and keeps its history", async (c) => {
   // Arrange
-  const f = await archivedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await archived(setup.world, reported)) };
 
   // Act
   const navigation = await f.f.listRunNavigation();
@@ -75,7 +86,10 @@ it("an archived Run is left out of navigation and keeps its history", async (c) 
 
 it("Factory launches nothing for an archived Run on later reconciliation", async (c) => {
   // Arrange
-  const f = await archivedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await archived(setup.world, reported)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -89,7 +103,10 @@ it("Factory launches nothing for an archived Run on later reconciliation", async
 
 it("a finished report for an archived Run succeeds without changing the Run", async (c) => {
   // Arrange
-  const f = await archivedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await archived(setup.world, reported)) };
   const before = await f.f.getRun(f.runId);
 
   // Act
@@ -102,7 +119,10 @@ it("a finished report for an archived Run succeeds without changing the Run", as
 
 it("a working report for an archived Run succeeds without changing the Run", async (c) => {
   // Arrange
-  const f = await archivedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await archived(setup.world, reported)) };
   const before = await f.f.getRun(f.runId);
 
   // Act
@@ -115,11 +135,8 @@ it("a working report for an archived Run succeeds without changing the Run", asy
 
 it("Factory MCP answers a report for an archived Run as a success that tells the worker to stop", async (c) => {
   // Arrange
-  const { f, t3, mcp, input } = await preparedServer(c);
-  const started = await f.startRun(input);
-  assert(started.ok);
-  assert((await f.reconcileRuns()).ok);
-  assert((await f.archiveRun(started.value.id)).ok);
+  const { t3, mcp, world, input } = await preparedServer(c);
+  await archived(world, await workerLaunched(world, input));
   const client = new Client({ name: "worker", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(mcp));
   c.onTestFinished(() => client.close());

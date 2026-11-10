@@ -1,31 +1,29 @@
 import { assert, expect, it } from "@effect/vitest";
 import {
-  completedWorkerRecovery,
-  completedWorkingRecovery,
-  unfinishedWorkerRecovery,
-} from "./support/run-worker-recovery.ts";
-import {
   workerStart,
-  directWorker,
-  reportedWorker,
-  missingWorkerReport,
-  revisitedWorker,
-  unsentRevisit,
-  repliedWorker,
-  followupReplyWorker,
   launchedBlockId,
   pendingReview,
-  reportedAfterFailure,
   workerMessage,
 } from "./support/run-worker.ts";
 import {
   allTurnsEnd,
-  finishedReport,
+  executionFailed,
+  followUpReplyRunning,
+  missingReport,
+  replyTurnRunning,
   report,
+  reportRecoveryCompleted,
+  reportRecoveryLeftUnfinished,
+  reportRecoveryRequested,
+  resultHeld,
+  resultReleasedToSameWorker,
+  resultReported,
   turnBegins,
+  workerAtWork,
   workerFinal,
   workerWorking,
   workingReport,
+  workingReportedIdle,
 } from "./support/scenarios.ts";
 import { answerDelegatedWait } from "./support/controlled-thread.ts";
 import { prepared } from "./support/prepared-runner.ts";
@@ -166,7 +164,9 @@ it("normal Start launches the entry worker with its own Agent settings and no Ru
 });
 it("a completed reporting worker releases downstream work without a Run conversation", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
 
   // Act
   const result = await f.f.reconcileRuns();
@@ -180,7 +180,9 @@ it("a completed reporting worker releases downstream work without a Run conversa
 });
 it("a worker that fails after reporting cannot release downstream work", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "failed");
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork, { status: "failed" })) };
 
   // Act
   await f.f.reconcileRuns();
@@ -193,7 +195,9 @@ it("a worker that fails after reporting cannot release downstream work", async (
 });
 it("an accepted result stays held while T3 has not settled the worker's delegated work", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "running");
 
   // Act
@@ -209,7 +213,9 @@ it("an accepted result stays held while T3 has not settled the worker's delegate
 
 it("a worker rolled back after reporting shows a Problem and holds its prior result", async (c) => {
   // Arrange
-  const f = await reportedWorker(c, "rolled_back");
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork, { status: "rolled_back" })) };
 
   // Act
   await f.f.reconcileRuns();
@@ -228,7 +234,9 @@ it("a worker rolled back after reporting shows a Problem and holds its prior res
 });
 it("an accepted result stays held while the worker thread has a pending native request", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   const thread = f.t3.executionObservations.get("thread-1")!;
   f.t3.executionObservations.set("thread-1", { ...thread, pendingRequestCount: 1 });
 
@@ -243,8 +251,9 @@ it("an accepted result stays held while the worker thread has a pending native r
 });
 it("an accepted result stays held while the worker thread still has an active run", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultHeld(setup.world, atWork)) };
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "settled", "completed");
 
   // Act
@@ -258,8 +267,10 @@ it("an accepted result stays held while the worker thread still has an active ru
 });
 it("a worker waiting on unsettled background work stays working without a missing-report Problem", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  allTurnsEnd(f.world, f.worker);
+  const setup = await workerStart(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  allTurnsEnd(f.world, worker);
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "completed");
 
   // Act
@@ -273,9 +284,11 @@ it("a worker waiting on unsettled background work stays working without a missin
 });
 it("a worker idle after reporting working shows its message without a missing-report Problem", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
+  const setup = await workerStart(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -293,12 +306,14 @@ it("a worker idle after reporting working shows its message without a missing-re
 });
 it("a reportless turn resumed by a notification shows a missing report once T3 settles the thread", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  allTurnsEnd(f.world, f.worker);
+  const setup = await workerStart(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  allTurnsEnd(f.world, worker);
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "completed");
   assert((await f.f.reconcileRuns()).ok);
-  turnBegins(f.world, f.worker, "notification-execution");
-  allTurnsEnd(f.world, f.worker);
+  turnBegins(f.world, worker, "notification-execution");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -313,11 +328,12 @@ it("a reportless turn resumed by a notification shows a missing report once T3 s
 });
 it("a failed worker run shows an execution-failed Problem that settles when a later run of the thread completes", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  allTurnsEnd(f.world, f.worker, "failed");
-  assert((await f.f.reconcileRuns()).ok);
-  turnBegins(f.world, f.worker, "retry-execution");
-  allTurnsEnd(f.world, f.worker);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await executionFailed(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  turnBegins(f.world, worker, "retry-execution");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -333,8 +349,10 @@ it("a failed worker run shows an execution-failed Problem that settles when a la
 });
 it("a failed worker run's Problem settles when the Block reports", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  allTurnsEnd(f.world, f.worker, "interrupted");
+  const setup = await workerStart(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  allTurnsEnd(f.world, worker, "interrupted");
   assert((await f.f.reconcileRuns()).ok);
 
   // Act
@@ -352,7 +370,11 @@ it("a failed worker run's Problem settles when the Block reports", async (c) => 
 });
 it("an execution failure settled by a report is not raised again while that run is still the thread's latest", async (c) => {
   // Arrange
-  const f = await reportedAfterFailure(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await executionFailed(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
 
   // Act
   await f.f.reconcileRuns();
@@ -367,9 +389,13 @@ it("an execution failure settled by a report is not raised again while that run 
 });
 it("a new failed run after a settled execution failure shows a new Problem", async (c) => {
   // Arrange
-  const f = await reportedAfterFailure(c);
-  turnBegins(f.world, f.worker, "retry-execution");
-  allTurnsEnd(f.world, f.worker, "failed");
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const worker = await executionFailed(setup.world, atWork);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  turnBegins(f.world, worker, "retry-execution");
+  allTurnsEnd(f.world, worker, "failed");
 
   // Act
   await f.f.reconcileRuns();
@@ -384,9 +410,11 @@ it("a new failed run after a settled execution failure shows a new Problem", asy
 });
 it("repeating the current working report after a failed run settles the execution failure", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker, "failed");
+  const setup = await workerStart(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, workingReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker, "failed");
   assert((await f.f.reconcileRuns()).ok);
 
   // Act
@@ -408,7 +436,9 @@ it("repeating the current working report after a failed run settles the executio
 });
 it("missing-report recovery targets the original worker and retains its activation", async (c) => {
   // Arrange
-  const f = await missingWorkerReport(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await missingReport(setup.world, atWork)) };
 
   // Act
   const result = await f.f.requestReport(f.runId, { blockId: f.missing.blockId });
@@ -426,10 +456,9 @@ it("missing-report recovery targets the original worker and retains its activati
 });
 it("Request report on a worker idle in working queues an assessment turn on its thread", async (c) => {
   // Arrange
-  const f = await directWorker(c);
-  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
-  assert((await f.f.reconcileRuns()).ok);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await workingReportedIdle(setup.world, atWork)) };
 
   // Act
   const result = await f.f.requestReport(f.runId, { blockId: "worker" });
@@ -450,7 +479,10 @@ it("Request report on a worker idle in working queues an assessment turn on its 
 });
 it("a revisit reuses the direct worker with distinct activation ownership", async (c) => {
   // Arrange
-  const f = await revisitedWorker(c);
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await resultReleasedToSameWorker(setup.world, reported)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -469,8 +501,14 @@ it("a revisit reuses the direct worker with distinct activation ownership", asyn
 });
 it("a prepared revisit is not sent while its worker thread has started another run", async (c) => {
   // Arrange
-  const f = await unsentRevisit(c);
-  turnBegins(f.world, f.worker, "reply-execution");
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  setup.t3.sendSupported = false;
+  const worker = await resultReleasedToSameWorker(setup.world, reported);
+  setup.t3.sendSupported = true;
+  const f = { ...setup, ...worker };
+  turnBegins(f.world, worker, "reply-execution");
 
   // Act
   await f.f.reconcileRuns();
@@ -483,7 +521,8 @@ it("a prepared revisit is not sent while its worker thread has started another r
 });
 it("restart preserves the worker binding without replaying accepted work", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await workerStart(c);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   await f.f.close();
 
   // Act
@@ -499,7 +538,10 @@ it("restart preserves the worker binding without replaying accepted work", async
 });
 it("a worker resumed by the user's reply finishes the same activation without another working report", async (c) => {
   // Arrange
-  const f = await repliedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const idle = await workingReportedIdle(setup.world, atWork);
+  const f = { ...setup, ...(await replyTurnRunning(setup.world, idle)) };
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId));
@@ -515,7 +557,11 @@ it("a worker resumed by the user's reply finishes the same activation without an
 });
 it("a later user reply can finish the activation after a reportless reply and backend restart", async (c) => {
   // Arrange
-  const f = await followupReplyWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const idle = await workingReportedIdle(setup.world, atWork);
+  const replying = await replyTurnRunning(setup.world, idle);
+  const f = { ...setup, ...(await followUpReplyRunning(setup.world, replying)) };
   await f.f.close();
   const factory = await f.h.open({ t3: f.t3 });
 
@@ -534,9 +580,13 @@ it("a later user reply can finish the activation after a reportless reply and ba
 });
 it("reply turns without reports keep the Block working with its message and no Problem or Needs input", async (c) => {
   // Arrange
-  const f = await repliedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const idle = await workingReportedIdle(setup.world, atWork);
+  const worker = await replyTurnRunning(setup.world, idle);
+  const f = { ...setup, ...worker };
   assert((await f.f.reconcileRuns()).ok);
-  allTurnsEnd(f.world, f.worker);
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();
@@ -556,7 +606,11 @@ it("reply turns without reports keep the Block working with its message and no P
 
 it("completed direct worker recovery settles the original missing report only after source release", async (c) => {
   // Arrange
-  const f = await completedWorkerRecovery(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const missing = await missingReport(setup.world, atWork);
+  const recovering = await reportRecoveryRequested(setup.world, missing);
+  const f = { ...setup, ...(await reportRecoveryCompleted(setup.world, recovering)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -571,7 +625,11 @@ it("completed direct worker recovery settles the original missing report only af
 
 it("Request report on a worker idle in working settles once the assessment turn's result is released", async (c) => {
   // Arrange
-  const f = await completedWorkingRecovery(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const idle = await workingReportedIdle(setup.world, atWork);
+  const recovering = await reportRecoveryRequested(setup.world, idle);
+  const f = { ...setup, ...(await reportRecoveryCompleted(setup.world, recovering)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -586,7 +644,11 @@ it("Request report on a worker idle in working settles once the assessment turn'
 
 it("a Request report turn that finds unfinished work keeps the Block working and its recovery open", async (c) => {
   // Arrange
-  const f = await unfinishedWorkerRecovery(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const missing = await missingReport(setup.world, atWork);
+  const recovering = await reportRecoveryRequested(setup.world, missing);
+  const f = { ...setup, ...(await reportRecoveryLeftUnfinished(setup.world, recovering)) };
 
   // Act
   await f.f.reconcileRuns();
@@ -678,7 +740,9 @@ it("a Human answer naming an exit other than Approve or Request changes is rejec
 
 it("a held worker handoff launches exactly one next worker after a backend restart", async (c) => {
   // Arrange
-  const f = await reportedWorker(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await resultReported(setup.world, atWork)) };
   await f.f.close();
 
   // Act

@@ -6,11 +6,18 @@ import type {
   FactoryOperations,
   FlowBlock,
   FlowGraph,
+  FlowWorkspace,
   Result,
   RunDetail,
 } from "@t3-factory/contracts";
 import type { ControlledT3 } from "./controlled-t3.ts";
-import { beginThreadRun, endThreadRun, recordLaunchedThread } from "./controlled-thread.ts";
+import {
+  beginThreadRun,
+  endThreadRun,
+  recordLaunchedThread,
+  recordThreadFacts,
+  type ThreadFacts,
+} from "./controlled-thread.ts";
 
 type AgentShape = Extract<FlowBlock, { kind: "agent" }>;
 export type ScenarioAgentBlock = { [Key in keyof AgentShape]: AgentShape[Key] };
@@ -103,7 +110,18 @@ export const workerWorking = (blockId: string, message?: string) => ({
 /** What a caller hands in: Factory's public operations with its report entry, and the
  * ControlledT3 (or persistent simulator) that Factory was opened with. */
 export interface ScenarioWorld {
-  readonly factory: Pick<FactoryOperations, "startRun" | "getRun" | "reconcileRuns"> & {
+  readonly factory: Pick<
+    FactoryOperations,
+    | "createAgent"
+    | "createFlow"
+    | "updateFlow"
+    | "startRun"
+    | "getRun"
+    | "reconcileRuns"
+    | "requestReport"
+    | "archiveRun"
+    | "snoozeRun"
+  > & {
     readonly runtime: { submit(input: unknown): Promise<{ readonly code: string }> };
   };
   readonly t3: ControlledT3;
@@ -151,10 +169,6 @@ async function observeFor(
 /** Factory reconciles until `until` holds on the public Run read; bounded by passes, not time. */
 export const observe = (world: ScenarioWorld, runId: string, until: (run: RunDetail) => boolean) =>
   observeFor("observe", world, runId, until);
-
-/** Factory has observed a launched worker's thread. */
-export const workerObserved = (run: RunDetail) =>
-  run.blocks.some((block) => block.threadId !== null && block.freshness === "fresh");
 
 /** The launched worker of Flow block `flowBlockId`. */
 export function workerHandle(
@@ -238,6 +252,16 @@ export function turnBegins(world: ScenarioWorld, worker: WorkerHandle, runId: st
   return { ...worker, executionId: runId };
 }
 
+/** T3 runs Factory's latest send to the worker's thread as its next turn; the returned handle is
+ * on that run. */
+export function sentTurnBegins(world: ScenarioWorld, worker: WorkerHandle) {
+  const send = [...world.t3.sends.values()]
+    .filter((item) => item.payload.threadId === worker.threadId)
+    .at(-1);
+  if (!send) stepFailed("sent turn begins", `T3 received no send on ${worker.threadId}.`);
+  return turnBegins(world, worker, send.reference.runId);
+}
+
 /** The worker's current turn ends with `status` and T3 answers its delegated wait as settled. */
 export function turnEnds(world: ScenarioWorld, worker: WorkerHandle, status = "completed") {
   endThreadRun(world.t3, worker.threadId, worker.executionId, status);
@@ -249,6 +273,366 @@ export function allTurnsEnd(world: ScenarioWorld, worker: WorkerHandle, status =
   const thread = world.t3.executionObservations.get(worker.threadId);
   if (!thread) stepFailed("all turns end", `thread ${worker.threadId} has no stated observation.`);
   for (const run of thread.recentRuns) endThreadRun(world.t3, worker.threadId, run.runId, status);
+}
+
+/** The single-worker Flow's content variants: its Agent's exits, the exits the Flow hides or adds,
+ * its workspace, and whether its Done exit returns the result to the same worker. */
+export interface SingleWorkerVariant {
+  readonly exits?: readonly BlockExit[];
+  readonly hiddenExitIds?: readonly string[];
+  readonly localExits?: readonly BlockExit[];
+  readonly workspace?: FlowWorkspace;
+  readonly revisit?: boolean;
+}
+
+/** Saves the ready single-worker Flow: Flow input to Entry worker (block `worker`) and its Agent. */
+export async function singleWorkerFlow(world: ScenarioWorld, variant: SingleWorkerVariant = {}) {
+  const agent = stepResult(
+    "create the single worker's Agent",
+    await world.factory.createAgent({
+      name: "Worker",
+      prompt: "Follow repository instructions.",
+      execution: controlledExecution(world.t3.environmentId),
+      exits: variant.exits ?? [blockExit("done", "Done", "Completed")],
+    }),
+  );
+  const draft = stepResult(
+    "create the single-worker Flow",
+    await world.factory.createFlow({ name: "Single worker" }),
+  );
+  const flow = stepResult(
+    "save the single-worker Flow",
+    await world.factory.updateFlow(draft.id, {
+      name: draft.name,
+      expectedRevision: draft.revision,
+      workspace: variant.workspace ?? { mode: "checkout" },
+      graph: {
+        flowInput: flowInput("worker"),
+        blocks: [
+          agentBlock(
+            "worker",
+            "Entry worker",
+            agent.id,
+            undefined,
+            variant.hiddenExitIds,
+            variant.localExits,
+          ),
+        ],
+        connections: variant.revisit ? [connection("worker", "done", "worker")] : [],
+      },
+    }),
+  );
+  return { agent, flow };
+}
+
+/*
+ * Named Run states of one worker's lifecycle. Each is a fixed sequence of public Factory
+ * operations and simulated T3 facts, with bounded observation, documented by its postcondition:
+ * what the Run read shows, what T3 holds and what Factory has not yet observed. A state that
+ * takes a worker continues from an earlier state's handle; content comes from the caller.
+ */
+
+/** Reaches the named Run state; a failed step's error names the state. */
+async function reach<A>(state: string, sequence: () => Promise<A>): Promise<A> {
+  try {
+    return await sequence();
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw Error(`Run state "${state}" failed: ${detail}`, { cause });
+  }
+}
+
+async function reportedAs(
+  step: string,
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  fields: ReportFields,
+) {
+  const code = await report(world, worker, fields);
+  if (code !== "ACCEPTED") stepFailed(step, `${worker.flowBlockId} answered ${code}.`);
+}
+
+const workerBlock = (run: RunDetail, worker: WorkerHandle) =>
+  run.blocks.find((block) => block.blockId === worker.flowBlockId);
+
+/** Factory has observed the worker's current turn with `engineStatus`. */
+const turnObserved = (worker: WorkerHandle, engineStatus: string) => (run: RunDetail) => {
+  const block = workerBlock(run, worker);
+  return block?.executionId === worker.executionId && block.engineStatus === engineStatus;
+};
+
+/** Factory shows the worker working after its turn completed, without a Problem. */
+export const idleWorking = (worker: WorkerHandle) => (run: RunDetail) => {
+  const block = workerBlock(run, worker);
+  return block?.engineStatus === "completed" && block.state === "working" && !block.problem;
+};
+
+const unsettled = (kind: string) => (run: RunDetail) =>
+  run.attention.find((matter) => matter.kind === kind && !matter.settledAt);
+
+/** Factory launched the Run's one worker and T3 shows its first turn running; Factory has not
+ * yet observed the worker's thread. */
+export function workerLaunched(world: ScenarioWorld, start: unknown) {
+  return reach("worker launched", async () => {
+    const { workers } = await startRun(world, start);
+    if (workers.length !== 1) stepFailed("start a Run", `${workers.length} workers launched.`);
+    return workers[0]!;
+  });
+}
+
+/** As `workerLaunched`, and Factory has observed the worker's thread: its Block is working. */
+export function workerAtWork(world: ScenarioWorld, start: unknown) {
+  return reach("worker at work", async () => {
+    const worker = await workerLaunched(world, start);
+    await observeFor("observe the worker", world, worker.runId, (run) => {
+      const block = workerBlock(run, worker);
+      return block?.state === "working" && block.freshness === "fresh";
+    });
+    return worker;
+  });
+}
+
+/** Factory accepted the worker's finished report while its turn still runs, so it holds the
+ * result; Factory has observed nothing since. */
+export function resultHeld(
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  result: { readonly message?: string; readonly exit?: string } = {},
+) {
+  return reach("result held", async () => {
+    await reportedAs(
+      "report the result",
+      world,
+      worker,
+      finishedReport(result.message, result.exit),
+    );
+    return worker;
+  });
+}
+
+/** As `resultHeld`, and the worker's turn ended with `status`; Factory has not yet observed the
+ * end, so the result is not released. */
+export function resultReported(
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  result: { readonly message?: string; readonly exit?: string; readonly status?: string } = {},
+) {
+  return reach("result reported", async () => {
+    await resultHeld(world, worker, result);
+    turnEnds(world, worker, result.status);
+    return worker;
+  });
+}
+
+/** From a result reported on a Flow whose exit returns to the worker: Factory observed the end
+ * and released the result back to the same worker as a second activation of its Block. Its
+ * revisit is sent if T3 accepts sends; the revisit's turn has not started. */
+export function resultReleasedToSameWorker(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("result released to the same worker", async () => {
+    await observeFor(
+      "observe the release",
+      world,
+      worker.runId,
+      (run) => run.activations.filter((item) => item.blockId === worker.flowBlockId).length === 2,
+    );
+    return worker;
+  });
+}
+
+/** From a result reported on a Flow with no next Block: Factory observed the end and settled the
+ * Run automatically. */
+export function settled(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("settled", async () => {
+    await observeFor(
+      "observe settlement",
+      world,
+      worker.runId,
+      (run) => run.lifecycle === "settled",
+    );
+    return worker;
+  });
+}
+
+/** The user archived the worker's Run. */
+export function archived(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("archived", async () => {
+    stepResult("archive the Run", await world.factory.archiveRun(worker.runId));
+    return worker;
+  });
+}
+
+/** The user snoozed the worker's Run. */
+export function snoozed(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("snoozed", async () => {
+    stepResult("snooze the Run", await world.factory.snoozeRun(worker.runId));
+    return worker;
+  });
+}
+
+/** The worker's Run was snoozed, then T3 showed a pending native request in its thread; Factory
+ * observed the native attention that woke the Run. */
+export function woke(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("woke", async () => {
+    await snoozed(world, worker);
+    recordThreadFacts(world.t3, worker.threadId, { pendingRequestCount: 1 });
+    await observeFor("observe the native request", world, worker.runId, (run) =>
+      Boolean(unsettled("native-request")(run)),
+    );
+    return worker;
+  });
+}
+
+/** T3 shows `repository` (branch and pull requests) for the worker's thread and Factory observed
+ * it in the Run's repositories. */
+export function repositoryFactsObserved(
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  repository: NonNullable<ThreadFacts["repository"]>,
+) {
+  return reach("repository facts observed", async () => {
+    recordThreadFacts(world.t3, worker.threadId, { repository });
+    await observeFor("observe the repository", world, worker.runId, (run) =>
+      run.repositories.some(
+        (item) =>
+          item.threadId === worker.threadId &&
+          item.branch === repository.branch &&
+          item.pullRequests.length === repository.pullRequests.length,
+      ),
+    );
+    return worker;
+  });
+}
+
+/** The worker reported working and its turn completed, as while CI runs or after asking the user
+ * questions; Factory observed it idle in working, without a missing report. */
+export function workingReportedIdle(world: ScenarioWorld, worker: WorkerHandle, message?: string) {
+  return reach("working reported and idle", async () => {
+    await reportedAs("report working", world, worker, workingReport(message));
+    turnEnds(world, worker);
+    await observeFor("observe the idle worker", world, worker.runId, idleWorking(worker));
+    return worker;
+  });
+}
+
+/** The user replied in the idle worker's thread: a new turn runs, which the handle is on; Factory
+ * has not yet observed it. */
+export function replyTurnRunning(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("reply turn running", async () => turnBegins(world, worker, "answer-execution"));
+}
+
+/** From a reply turn running: Factory observed it, it ended without a report and Factory observed
+ * the end; then the user's follow-up reply runs as the next turn, which the handle is on. */
+export function followUpReplyRunning(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("follow-up reply running", async () => {
+    await observeFor("observe the reply", world, worker.runId, turnObserved(worker, "running"));
+    turnEnds(world, worker);
+    await observeFor(
+      "observe the reply's end",
+      world,
+      worker.runId,
+      turnObserved(worker, "completed"),
+    );
+    return turnBegins(world, worker, "followup-execution");
+  });
+}
+
+/** The worker's turn failed; Factory observed the unsettled execution-failed Problem. */
+export function executionFailed(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("execution failed", async () => {
+    turnEnds(world, worker, "failed");
+    await observeFor("observe the failure", world, worker.runId, (run) =>
+      Boolean(unsettled("execution-failed")(run)),
+    );
+    return worker;
+  });
+}
+
+/** The worker's turn ended without an accepted report; Factory observed the unsettled
+ * missing-report Problem, returned as `missing`. */
+export function missingReport(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("missing report", async () => {
+    turnEnds(world, worker);
+    const run = await observeFor("observe the missing report", world, worker.runId, (detail) =>
+      Boolean(unsettled("missing-report")(detail)),
+    );
+    return { ...worker, missing: unsettled("missing-report")(run)! };
+  });
+}
+
+/** Factory refused the worker's finished report on an exit its Block lacks as INVALID_EXIT; the
+ * worker's turn still runs. */
+export function reportRejected(
+  world: ScenarioWorld,
+  worker: WorkerHandle,
+  rejected: { readonly exit: string; readonly message?: string } = { exit: "unknown" },
+) {
+  return reach("report rejected", async () => {
+    const code = await report(world, worker, { to: "finished", ...rejected });
+    if (code !== "INVALID_EXIT") stepFailed("report on an unknown exit", `answered ${code}.`);
+    return worker;
+  });
+}
+
+/** Request report on the worker's Block; T3 runs the queued assessment as the worker's next turn,
+ * which the handle is on. Factory has not yet observed that turn. */
+export function reportRecoveryRequested(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("report recovery requested", async () => {
+    stepResult(
+      "request a report",
+      await world.factory.requestReport(worker.runId, { blockId: worker.flowBlockId }),
+    );
+    return sentTurnBegins(world, worker);
+  });
+}
+
+/** The recovery turn reported the Block's result and ended; Factory observed the end. */
+export function reportRecoveryCompleted(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("report recovery completed", async () => {
+    await reportedAs("report the result", world, worker, finishedReport());
+    turnEnds(world, worker);
+    await observeFor(
+      "observe the turn's end",
+      world,
+      worker.runId,
+      turnObserved(worker, "completed"),
+    );
+    return worker;
+  });
+}
+
+/** The recovery turn found the work unfinished: it reported working and ended; Factory has not
+ * yet observed the end. */
+export function reportRecoveryLeftUnfinished(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("report recovery left unfinished", async () => {
+    await reportedAs("report working", world, worker, workingReport());
+    turnEnds(world, worker);
+    return worker;
+  });
+}
+
+/** Factory started the Run, but T3's reply to its worker launch was lost; Factory observed the
+ * launch as uncertain, with its recovery unresolved. */
+export function launchUncertain(world: ScenarioWorld, start: unknown) {
+  return reach("launch uncertain", async () => {
+    world.t3.loseLaunchReply = true;
+    const started = stepResult("start a Run", await world.factory.startRun(start));
+    await observeFor("observe the lost launch", world, started.id, (run) =>
+      run.intents.some((intent) => intent.kind === "launch" && intent.state === "uncertain"),
+    );
+    world.t3.loseLaunchReply = false;
+    return { runId: started.id };
+  });
+}
+
+/** Two Runs of one Flow: the first with its worker launched, the second only started. */
+export function twoRunsOfOneFlow(world: ScenarioWorld, first: unknown, second: unknown) {
+  return reach("two Runs of one Flow", async () => {
+    const { run } = await startRun(world, first);
+    return {
+      first: run,
+      second: stepResult("start the second Run", await world.factory.startRun(second)),
+    };
+  });
 }
 
 function chunk(type: string, data: Buffer) {

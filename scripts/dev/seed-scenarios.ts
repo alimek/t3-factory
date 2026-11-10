@@ -1,16 +1,27 @@
 import type { RunDetail } from "../../packages/contracts/src/index.ts";
 import {
+  archived,
+  executionFailed,
+  idleWorking,
+  missingReport,
   observe,
-  report,
+  repositoryFactsObserved,
   reportAccepted,
+  reportRejected,
+  resultReported,
+  settled,
+  snoozed,
+  startRun,
   turnEnds,
+  woke,
+  workerAtWork,
   workerHandle,
+  workingReportedIdle,
 } from "../../apps/backend/test/support/scenarios.ts";
 import {
-  scenarioRepository,
   demoImages,
   demoPullRequest,
-  nativeAttention,
+  demoStart,
   requireSuccess,
   startDemoRun,
   type SeedContext,
@@ -76,26 +87,27 @@ async function applyCorrection(context: SeedContext, run: RunDetail) {
 }
 
 async function settledAndArchivedScenarios(context: SeedContext, flowId: string) {
-  let settled = await startDemoRun(
+  const onboarding = await workerAtWork(
     context,
-    flowId,
-    "settled",
-    "Settled · Clearer onboarding copy",
-    "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
+    await demoStart(
+      context,
+      flowId,
+      "settled",
+      "Settled · Clearer onboarding copy",
+      "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
+    ),
   );
-  settled = await scenarioRepository(context, settled, "worker", {
+  const branched = await repositoryFactsObserved(context, onboarding, {
     branch: "copy/welcome",
     pullRequests: [demoPullRequest(41, "merged")],
   });
-  settled = await reportAccepted(context, workerHandle(context, settled, "worker"), {
-    to: "finished",
+  const reported = await resultReported(context, branched, {
     exit: "Done",
     message: "Updated the welcome text and checked that every action has a descriptive label.",
   });
-  turnEnds(context, workerHandle(context, settled, "worker"));
-  await observe(context, settled.id, (run) => run.lifecycle === "settled");
+  await settled(context, reported);
 
-  const archived = await startDemoRun(
+  const experiment = await demoStart(
     context,
     flowId,
     "archived",
@@ -103,39 +115,35 @@ async function settledAndArchivedScenarios(context: SeedContext, flowId: string)
     "Explore a compact navigation layout for Atlas. This experiment was dropped after a design direction changed.",
     { images: [demoImages.headerDesktop, demoImages.mockup], referenced: 1 },
   );
-  requireSuccess(await context.factory.archiveRun(archived.id));
+  await archived(context, await workerAtWork(context, experiment));
 }
 
 async function attentionScenarios(context: SeedContext, flowId: string) {
-  const failed = await startDemoRun(
+  const failing = await demoStart(
     context,
     flowId,
     "failed",
     "Problem · Search checks failed",
     "Check the search result filters. Investigate why the local checks fail before making further changes.",
   );
-  turnEnds(context, workerHandle(context, failed, "worker"), "failed");
-  await observe(context, failed.id, (run) =>
-    run.attention.some((matter) => matter.kind === "execution-failed" && matter.settledAt === null),
-  );
+  await executionFailed(context, await workerAtWork(context, failing));
 
-  const snoozed = await startDemoRun(
+  const research = await demoStart(
     context,
     flowId,
     "snoozed",
     "Snoozed · Navigation research",
     "Compare the existing navigation labels with the Atlas product glossary. Keep notes for the next design session.",
   );
-  requireSuccess(await context.factory.snoozeRun(snoozed.id));
-  const woke = await startDemoRun(
+  await snoozed(context, await workerAtWork(context, research));
+  const question = await demoStart(
     context,
     flowId,
     "woke",
     "Woke · A question about keyboard shortcuts",
     "Document the search keyboard shortcut. Ask before choosing between slash and command-K.",
   );
-  requireSuccess(await context.factory.snoozeRun(woke.id));
-  await nativeAttention(context, woke);
+  await woke(context, await workerAtWork(context, question));
 }
 
 /** The worker reports working and ends its turn, for example while CI runs or after asking the
@@ -145,48 +153,32 @@ async function idleWorkingScenario(
   flowId: string,
   scenario: { key: string; title: string; input: string; message: string },
 ) {
-  let run = await startDemoRun(context, flowId, scenario.key, scenario.title, scenario.input);
+  let worker = await workerAtWork(
+    context,
+    await demoStart(context, flowId, scenario.key, scenario.title, scenario.input),
+  );
   if (scenario.key === "working-report")
-    run = await scenarioRepository(context, run, "worker", {
+    worker = await repositoryFactsObserved(context, worker, {
       branch: null,
       pullRequests: [demoPullRequest(42)],
     });
-  run = await reportAccepted(context, workerHandle(context, run, "worker"), {
-    to: "working",
-    message: scenario.message,
-  });
-  turnEnds(context, workerHandle(context, run, "worker"));
-  await observe(context, run.id, (detail) =>
-    detail.blocks.some(
-      (block) =>
-        block.blockId === "worker" &&
-        block.engineStatus === "completed" &&
-        block.state === "working" &&
-        block.problem === null,
-    ),
-  );
+  await workingReportedIdle(context, worker, scenario.message);
 }
 
 /** A rejected final is distinct from completed work with no accepted report. */
 async function rejectedReportScenario(context: SeedContext, flowId: string) {
-  const run = await startDemoRun(
+  const review = await demoStart(
     context,
     flowId,
     "rejected-report",
     "Problem · Report exit needs correction",
     "Review the existing navigation wording and report through the Flow's captured exit.",
   );
-  const worker = workerHandle(context, run, "worker");
-  const code = await report(context, worker, {
-    to: "finished",
+  const rejected = await reportRejected(context, await workerAtWork(context, review), {
     exit: "Unknown exit",
     message: "The review is complete; the exit needs correction.",
   });
-  if (code !== "INVALID_EXIT") throw Error(`Development rejection: ${code}`);
-  turnEnds(context, worker);
-  await observe(context, run.id, (detail) =>
-    detail.attention.some((item) => item.kind === "missing-report" && !item.settledAt),
-  );
+  await missingReport(context, rejected);
 }
 
 const bothReviewersWorking = (context: SeedContext, runId: string) =>
@@ -222,28 +214,34 @@ async function parallelScenario(context: SeedContext, flowId: string) {
 
 /** Both Agents connected to the Flow input start from the same prompt, independently. */
 async function parallelStartScenario(context: SeedContext, flowId: string) {
-  const run = await startDemoRun(
+  const { run } = await startRun(
     context,
-    flowId,
-    "parallel-start",
-    "Parallel review from one prompt",
-    "Review the Atlas settings page for code quality and for keyboard accessibility. Each reviewer starts from this prompt and reports independently.",
-    {
-      images: [
-        demoImages.headerDesktop,
-        demoImages.headerMobile,
-        demoImages.focusRing,
-        demoImages.mockup,
-      ],
-      referenced: 3,
-    },
+    await demoStart(
+      context,
+      flowId,
+      "parallel-start",
+      "Parallel review from one prompt",
+      "Review the Atlas settings page for code quality and for keyboard accessibility. Each reviewer starts from this prompt and reports independently.",
+      {
+        images: [
+          demoImages.headerDesktop,
+          demoImages.headerMobile,
+          demoImages.focusRing,
+          demoImages.mockup,
+        ],
+        referenced: 3,
+      },
+    ),
+  );
+  await observe(context, run.id, (detail) =>
+    detail.blocks.some((block) => block.threadId !== null && block.freshness === "fresh"),
   );
   const working = await bothReviewersWorking(context, run.id);
-  await scenarioRepository(context, working, "reviewer", {
+  await repositoryFactsObserved(context, workerHandle(context, working, "reviewer"), {
     branch: "review/project-picker",
     pullRequests: [demoPullRequest(42)],
   });
-  await scenarioRepository(context, working, "accessibility", {
+  await repositoryFactsObserved(context, workerHandle(context, working, "accessibility"), {
     branch: "review/keyboard-accessibility",
     pullRequests: [demoPullRequest(42), demoPullRequest(43)],
   });
@@ -298,28 +296,20 @@ export async function seedScenarios(
     message:
       "Opened pull request #42 with the ranking fix. CI checks are still running; I will report when they finish.",
   });
-  const working = await startDemoRun(
+  const picker = await demoStart(
     context,
     flows.simple,
     "working",
     "Working · Improve the project picker",
     "Add a concise empty state to the Atlas project picker, including a hint to open an existing repository.",
   );
-  const worker = workerHandle(context, working, "worker");
-  await scenarioRepository(context, working, "worker", {
+  const worker = await repositoryFactsObserved(context, await workerAtWork(context, picker), {
     branch: "feature/project-picker-empty-state-and-keyboard-navigation",
     pullRequests: [],
   });
-  // Two subagents keep running after the worker's own turn ends.
+  // Only the persistent simulator has subagents: two keep running after the worker's own turn
+  // ends, so T3's delegated wait stays pending while Factory observes the turn's end.
   context.t3.delegate(worker.threadId, worker.executionId);
   context.t3.delegate(worker.threadId, worker.executionId);
-  await observe(context, working.id, (run) =>
-    run.blocks.some(
-      (block) =>
-        block.blockId === worker.flowBlockId &&
-        block.engineStatus === "completed" &&
-        block.state === "working" &&
-        block.problem === null,
-    ),
-  );
+  await observe(context, worker.runId, idleWorking(worker));
 }

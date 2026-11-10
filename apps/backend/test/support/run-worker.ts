@@ -7,37 +7,28 @@ import {
   connection,
   observe,
   report,
-  startRun,
+  resultReported,
   turnBegins,
   turnEnds,
   workerHandle,
-  workerObserved,
+  workerAtWork,
   workingReport,
+  type ScenarioWorld,
+  type WorkerHandle,
 } from "./scenarios.ts";
 import { assert, type TestContext } from "@effect/vitest";
-import type { RunDetail } from "@t3-factory/contracts";
 import type { ControlledT3 } from "./controlled-t3.ts";
 import { answerDelegatedWait, recordLaunchedThread } from "./controlled-thread.ts";
 import { boundWorktreeReview, prepared } from "./prepared-runner.ts";
-import { imageRequest, startedImageFanOut } from "./run-images.ts";
+import { startedImageFanOut } from "./run-images.ts";
 
-/** The single-worker Flow, handing its result to a second worker, a Human review that
- * releases the second worker, back to itself, or nowhere. */
+/** The single-worker Flow handing its result to a second worker, or to a Human review that
+ * releases the second worker. */
 export async function workerStart(
   c: TestContext,
-  targetBlockId: "parallel-block" | "review" | "worker" | "" = "parallel-block",
-  messageRequired = false,
+  targetBlockId: "parallel-block" | "review" = "parallel-block",
 ) {
   const fixture = await prepared(c);
-  if (messageRequired) {
-    const { agent } = fixture;
-    const updated = await fixture.f.updateAgent(agent.id, {
-      ...agent,
-      expectedRevision: agent.revision,
-      exits: agent.exits.map((exit) => ({ ...exit, messageRequired: true })),
-    });
-    assert(updated.ok);
-  }
   const first = fixture.flow.graph.blocks[0]!;
   const second = { ...first, id: "parallel-block", name: "Parallel work" };
   const review = humanStep("review", "Review", { x: 400, y: 0 });
@@ -46,14 +37,9 @@ export async function workerStart(
     expectedRevision: fixture.flow.revision,
     graph: {
       ...fixture.flow.graph,
-      blocks:
-        targetBlockId === "parallel-block"
-          ? [first, second]
-          : targetBlockId === "review"
-            ? [first, review, second]
-            : [first],
+      blocks: targetBlockId === "review" ? [first, review, second] : [first, second],
       connections: [
-        ...(targetBlockId ? [connection(first.id, "done", targetBlockId)] : []),
+        connection(first.id, "done", targetBlockId),
         ...(targetBlockId === "review" ? [connection("review", "approve", second.id)] : []),
       ],
     },
@@ -75,52 +61,6 @@ export function launchedBlockId(t3: ControlledT3, blockName = "Entry worker") {
     entry.payload.title.endsWith(` ${blockName}`),
   );
   return launchBlockId(launch?.payload.message ?? "");
-}
-
-/** Starts the Run with the entry worker's first turn running. */
-async function startedWorker(
-  fixture: Awaited<ReturnType<typeof prepared>>,
-  observed: boolean,
-  request: object = fixture.input,
-) {
-  const world = { factory: fixture.f, t3: fixture.t3 };
-  const [worker] = (await startRun(world, request)).workers;
-  assert(worker);
-  if (observed) await observe(world, worker.runId, workerObserved);
-  return { ...fixture, world, worker, runId: worker.runId, blockId: worker.blockId };
-}
-
-export async function directWorker(
-  c: TestContext,
-  observe = true,
-  targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
-  messageRequired = false,
-) {
-  return startedWorker(await workerStart(c, targetBlockId, messageRequired), observe);
-}
-
-/** Entry worker's Agent has Done and Blocked; the Flow hides Blocked and adds a local Escalate. */
-export async function exitVariantWorker(c: TestContext) {
-  const fixture = await prepared(c);
-  const { f, agent, flow } = fixture;
-  const blocked = blockExit("blocked", "Blocked", "Explain the blocker.", true);
-  const edited = await f.updateAgent(agent.id, {
-    ...agent,
-    expectedRevision: agent.revision,
-    exits: [...agent.exits, blocked],
-  });
-  assert(edited.ok);
-  const escalate = blockExit("escalate", "Escalate", "", true);
-  const saved = await f.updateFlow(flow.id, {
-    ...flow,
-    expectedRevision: flow.revision,
-    graph: {
-      ...flow.graph,
-      blocks: [{ ...flow.graph.blocks[0]!, hiddenExitIds: ["blocked"], localExits: [escalate] }],
-    },
-  });
-  assert(saved.ok);
-  return startedWorker({ ...fixture, flow: saved.value }, true);
 }
 
 /** The entry worker hands "Done" to Parallel work and "Revise" to Follow-up. */
@@ -146,14 +86,9 @@ async function twoExitWorker(c: TestContext) {
     },
   });
   assert(flow.ok);
-  return startedWorker({ ...fixture, flow: flow.value }, true);
-}
-
-/** The worker thread finishes and Factory observes it; then a follow-up turn of the thread runs. */
-async function followUpTurn<F extends Awaited<ReturnType<typeof directWorker>>>(f: F) {
-  allTurnsEnd(f.world, f.worker);
-  assert((await f.f.reconcileRuns()).ok);
-  return { ...f, worker: turnBegins(f.world, f.worker, "followup-execution") };
+  const setup = { ...fixture, flow: flow.value };
+  const worker = await workerAtWork(setup.world, setup.input);
+  return { ...setup, ...worker, worker };
 }
 
 /** The two-exit worker's "Done" result started Parallel work, and a later turn of the worker
@@ -161,36 +96,19 @@ async function followUpTurn<F extends Awaited<ReturnType<typeof directWorker>>>(
 export async function releasedTwoExitWorker(c: TestContext) {
   const f = await twoExitWorker(c);
   assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
-  return followUpTurn(f);
+  allTurnsEnd(f.world, f.worker);
+  assert((await f.f.reconcileRuns()).ok);
+  return { ...f, worker: turnBegins(f.world, f.worker, "followup-execution") };
 }
 
 /** The worker replaced its first result before release, and its thread is finished. */
 export async function replacedBeforeRelease(c: TestContext) {
-  const f = await directWorker(c);
-  assert((await report(f.world, f.worker, finishedReport("First draft."))) === "ACCEPTED");
-  assert((await report(f.world, f.worker, finishedReport("Final result."))) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
-  return f;
-}
-
-export async function reportedWorker(
-  c: TestContext,
-  status = "completed",
-  targetBlockId: Parameters<typeof workerStart>[1] = "parallel-block",
-) {
-  const f = await directWorker(c, true, targetBlockId);
-  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker, status);
-  return f;
-}
-
-/** As `reportedWorker`, started with the image fixture's prompt. */
-export async function reportedImageWorker(c: TestContext) {
-  const fixture = await workerStart(c);
-  const f = await startedWorker(fixture, true, await imageRequest(fixture));
-  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
-  return f;
+  const setup = await workerStart(c);
+  const worker = await workerAtWork(setup.world, setup.input);
+  assert((await report(setup.world, worker, finishedReport("First draft."))) === "ACCEPTED");
+  assert((await report(setup.world, worker, finishedReport("Final result."))) === "ACCEPTED");
+  allTurnsEnd(setup.world, worker);
+  return { ...setup, ...worker, worker };
 }
 
 /** The image fan-out Run with both Flow-input workers launched; `blockId` is Entry worker's. */
@@ -198,13 +116,6 @@ export async function launchedImageFanOut(c: TestContext) {
   const f = await startedImageFanOut(c);
   assert((await f.f.reconcileRuns()).ok);
   return { ...f, blockId: launchedBlockId(f.t3) };
-}
-
-/** A reported single worker whose thread is finished in T3. */
-export async function finishedWorker(c: TestContext) {
-  const f = await reportedWorker(c, "completed", "");
-  f.t3.engineStatus = "completed";
-  return f;
 }
 
 /** Resolves once T3 receives the next thread settlement, which Factory sends in the background
@@ -231,95 +142,16 @@ export function nextThreadInterrupt(t3: ControlledT3) {
   });
 }
 
-/** A worker's result is held for its next Block when the user archives the Run. */
-export async function archivedWorker(c: TestContext) {
-  const f = await reportedWorker(c);
-  assert((await f.f.archiveRun(f.runId)).ok);
-  return f;
-}
-
-/** A reported single worker whose Run settled automatically once its thread finished. */
-export async function settledWorker(c: TestContext) {
-  const f = await finishedWorker(c);
-  await observe(f.world, f.runId, (run) => run.lifecycle === "settled");
-  return f;
-}
-
 /** The worker's result is waiting in a Human review whose answer hands off to a second worker. */
 export async function pendingReview(c: TestContext) {
-  const f = await reportedWorker(c, "completed", "review");
-  const run = await observe(f.world, f.runId, (detail) =>
+  const setup = await workerStart(c, "review");
+  const worker = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const run = await observe(setup.world, worker.runId, (detail) =>
     detail.humanOccurrences.some((o) => o.state === "pending"),
   );
   const occurrence = run.humanOccurrences.find((o) => o.state === "pending");
   assert(occurrence);
-  return { ...f, occurrence };
-}
-
-/** The worker's run failed and its execution-failed Problem was settled by a working report. */
-export async function reportedAfterFailure(c: TestContext) {
-  const f = await directWorker(c);
-  allTurnsEnd(f.world, f.worker, "failed");
-  assert((await f.f.reconcileRuns()).ok);
-  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
-  return f;
-}
-
-/** A worker reported working and its turn completed, as after asking the user questions. */
-export async function idleWorkingWorker(c: TestContext) {
-  const f = await directWorker(c);
-  assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
-  assert((await f.f.reconcileRuns()).ok);
-  return f;
-}
-export async function missingWorkerReport(
-  c: TestContext,
-  worker?: Awaited<ReturnType<typeof directWorker>>,
-) {
-  const f = worker ?? (await directWorker(c));
-  allTurnsEnd(f.world, f.worker);
-  const unreported = (a: RunDetail["attention"][number]) =>
-    a.kind === "missing-report" && !a.settledAt;
-  const run = await observe(f.world, f.runId, (detail) => detail.attention.some(unreported));
-  const missing = run.attention.find(unreported);
-  assert(missing);
-  return { ...f, missing };
-}
-export async function revisitedWorker(c: TestContext) {
-  const f = await reportedWorker(c, "completed", "worker");
-  await f.f.reconcileRuns();
-  return f;
-}
-
-/** The worker's result was released and its revisit prepared as a send, but T3 refused sends, so
- * the revisit is still unsent. */
-export async function unsentRevisit(c: TestContext) {
-  const f = await reportedWorker(c, "completed", "worker");
-  f.t3.sendSupported = false;
-  assert((await f.f.reconcileRuns()).ok);
-  f.t3.sendSupported = true;
-  return f;
-}
-
-/** The user's reply in the worker thread starts a new execution of that thread. */
-export async function repliedWorker(c: TestContext) {
-  const f = await idleWorkingWorker(c);
-  return { ...f, worker: turnBegins(f.world, f.worker, "answer-execution") };
-}
-
-/** A completed reply turn that omitted its report, followed by another user reply. */
-export async function followupReplyWorker(c: TestContext) {
-  const f = await repliedWorker(c);
-  assert((await f.f.reconcileRuns()).ok);
-  return followUpTurn(f);
-}
-
-/** The revisit's send runs as a new turn of the worker thread. */
-export async function revisitReportingWorker(c: TestContext) {
-  const f = await revisitedWorker(c);
-  const runId = [...f.t3.sends.values()][0]!.reference.runId;
-  return { ...f, worker: turnBegins(f.world, f.worker, runId), workerExecutionId: runId };
+  return { ...setup, ...worker, worker, occurrence };
 }
 
 /** Entry worker finished and the Review answered: Parallel work's first arrival waits to be sent. */
@@ -363,14 +195,15 @@ export async function finishedParallelWork(
 }
 
 /** A new working report arrives during the per-Block sweep's external completion read. */
-export function reopenDuringSettlement(f: Awaited<ReturnType<typeof directWorker>>) {
-  const inspect = f.t3.inspectSettleSupport.bind(f.t3);
-  const read = f.t3.readDelegatedSettlement.bind(f.t3);
-  f.t3.inspectSettleSupport = async (target) => {
-    f.t3.inspectSettleSupport = inspect;
-    f.t3.readDelegatedSettlement = async (...args) => {
-      f.t3.readDelegatedSettlement = read;
-      assert((await report(f.world, f.worker, workingReport())) === "ACCEPTED");
+export function reopenDuringSettlement(world: ScenarioWorld, worker: WorkerHandle) {
+  const { t3 } = world;
+  const inspect = t3.inspectSettleSupport.bind(t3);
+  const read = t3.readDelegatedSettlement.bind(t3);
+  t3.inspectSettleSupport = async (target) => {
+    t3.inspectSettleSupport = inspect;
+    t3.readDelegatedSettlement = async (...args) => {
+      t3.readDelegatedSettlement = read;
+      assert((await report(world, worker, workingReport())) === "ACCEPTED");
       return read(...args);
     };
     return inspect(target);

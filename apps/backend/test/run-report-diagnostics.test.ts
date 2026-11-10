@@ -1,12 +1,22 @@
-import { rejectedWorkerReport, recoveringRejectedWorker } from "./support/run-worker-recovery.ts";
 import { assert, expect, it } from "@effect/vitest";
-import { directWorker, missingWorkerReport } from "./support/run-worker.ts";
-import { allTurnsEnd, finishedReport, report, workerFinal } from "./support/scenarios.ts";
+import { prepared } from "./support/prepared-runner.ts";
+import { workerStart } from "./support/run-worker.ts";
+import {
+  allTurnsEnd,
+  finishedReport,
+  missingReport,
+  report,
+  reportRecoveryRequested,
+  reportRejected,
+  workerAtWork,
+  workerFinal,
+} from "./support/scenarios.ts";
 import { answerDelegatedWait } from "./support/controlled-thread.ts";
 
 it("a rejected worker report explains the rejection without changing execution state or retaining its message", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await workerStart(c);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
 
   // Act
   const result = await f.f.runtime.submit({
@@ -46,7 +56,9 @@ it("a rejected worker report explains the rejection without changing execution s
 
 it("a corrected accepted report settles its rejection Problem", async (c) => {
   // Arrange
-  const f = await rejectedWorkerReport(c);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await reportRejected(setup.world, atWork)) };
 
   // Act
   const result = await f.f.runtime.submit(workerFinal(f.blockId));
@@ -67,9 +79,10 @@ it("a corrected accepted report settles its rejection Problem", async (c) => {
 
 it("a rejected report remains explained after completion and backend restart", async (c) => {
   // Arrange
-  const f = await rejectedWorkerReport(c);
-  allTurnsEnd(f.world, f.worker);
-  await f.f.reconcileRuns();
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const rejected = await reportRejected(setup.world, atWork);
+  const f = { ...setup, ...(await missingReport(setup.world, rejected)) };
   await f.f.close();
 
   // Act
@@ -93,7 +106,9 @@ it("a rejected report remains explained after completion and backend restart", a
 
 it("Request report refuses a stale missing-report Problem while delegated work is unsettled", async (c) => {
   // Arrange
-  const f = await missingWorkerReport(c);
+  const setup = await workerStart(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const f = { ...setup, ...(await missingReport(setup.world, atWork)) };
   answerDelegatedWait(f.t3, "thread-1", "execution-1", "pending", "completed");
 
   // Act
@@ -110,7 +125,8 @@ it("Request report refuses a stale missing-report Problem while delegated work i
 
 it("repeated rejected reports keep one pending diagnostic without launching work", async (c) => {
   // Arrange
-  const f = await directWorker(c);
+  const setup = await workerStart(c);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
   const invalid = { arguments: { blockId: f.blockId, to: "finished", exit: "unknown" } };
   assert((await f.f.runtime.submit(invalid)).code === "INVALID_EXIT");
 
@@ -129,9 +145,14 @@ it("repeated rejected reports keep one pending diagnostic without launching work
 
 it("successful linked recovery settles the original rejection while preserving its diagnostic history", async (c) => {
   // Arrange
-  const f = await recoveringRejectedWorker(c);
-  assert((await report(f.world, f.worker, finishedReport())) === "ACCEPTED");
-  allTurnsEnd(f.world, f.worker);
+  const setup = await prepared(c);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const rejected = await reportRejected(setup.world, atWork);
+  const missing = await missingReport(setup.world, rejected);
+  const worker = await reportRecoveryRequested(setup.world, missing);
+  const f = { ...setup, ...worker };
+  assert((await report(f.world, worker, finishedReport())) === "ACCEPTED");
+  allTurnsEnd(f.world, worker);
 
   // Act
   await f.f.reconcileRuns();

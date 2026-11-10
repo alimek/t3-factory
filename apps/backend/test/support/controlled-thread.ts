@@ -11,6 +11,17 @@ function statedThread(t3: ControlledT3, threadId: string, fact: string) {
   return thread;
 }
 
+type ThreadObservation = NonNullable<ReturnType<ControlledT3["executionObservations"]["get"]>>;
+export type ThreadFacts = Partial<Pick<ThreadObservation, "repository" | "pendingRequestCount">>;
+
+/** T3's read of the thread also shows `facts`: its repository, or pending native requests. */
+export function recordThreadFacts(t3: ControlledT3, threadId: string, facts: ThreadFacts) {
+  t3.executionObservations.set(threadId, {
+    ...statedThread(t3, threadId, "thread facts"),
+    ...facts,
+  });
+}
+
 /** T3's `t3_thread_wait` answer for one run of a thread with its delegated and background work. */
 export function answerDelegatedWait(
   t3: ControlledT3,

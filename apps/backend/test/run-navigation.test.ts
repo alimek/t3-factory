@@ -1,10 +1,36 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { repositoryRun, siblingRuns, unnumberedRun } from "./support/navigation.ts";
+import { unnumberedRun } from "./support/navigation.ts";
+import { repositoryFactsObserved, twoRunsOfOneFlow, workerLaunched } from "./support/scenarios.ts";
+
+const repository = {
+  branch: "feature/search",
+  pullRequests: [
+    {
+      host: "github.com",
+      repository: "example/search",
+      number: 42,
+      url: "https://github.com/example/search/pull/42",
+      state: "open" as const,
+    },
+  ],
+};
+
+/** The second of two Runs of one Flow, created a minute after the first. */
+const secondStart = {
+  requestId: "second",
+  input: "Second title\nHidden body",
+  title: "Second title",
+  createdAt: "2026-11-07T08:01:00.000Z",
+};
 
 it("unchanged worker observations change neither navigation metadata nor the last activity time", async (c) => {
   // Arrange
-  const { f, navigation } = await repositoryRun(c);
+  const { f, world, input } = await prepared(c);
+  await repositoryFactsObserved(world, await workerLaunched(world, input), repository);
+  const listed = await f.listRunNavigation();
+  assert(listed.ok);
+  const navigation = listed.value;
 
   // Act
   assert((await f.reconcileRuns()).ok);
@@ -15,7 +41,12 @@ it("unchanged worker observations change neither navigation metadata nor the las
 
 it("worker branches and linked pull requests remain available after restarting Factory", async (c) => {
   // Arrange
-  const { h, f, t3, runId, threadId, repository, navigation } = await repositoryRun(c);
+  const { h, f, t3, world, input } = await prepared(c);
+  const launched = await workerLaunched(world, input);
+  const { runId, threadId } = await repositoryFactsObserved(world, launched, repository);
+  const before = await f.listRunNavigation();
+  assert(before.ok);
+  const navigation = before.value;
   await f.close();
 
   // Act
@@ -34,7 +65,9 @@ it("worker branches and linked pull requests remain available after restarting F
 
 it("an unavailable observation preserves last known worker repositories and marks them stale", async (c) => {
   // Arrange
-  const { f, t3, runId, repository } = await repositoryRun(c);
+  const { f, t3, world, input } = await prepared(c);
+  const launched = await workerLaunched(world, input);
+  const { runId } = await repositoryFactsObserved(world, launched, repository);
   t3.available = false;
 
   // Act
@@ -122,7 +155,8 @@ it("Runs created at the same time are ordered by their Start request keys", asyn
 
 it("renaming a Run trims its title without changing its sibling or its Task", async (c) => {
   // Arrange
-  const { f, first, second } = await siblingRuns(c);
+  const { f, world, input } = await prepared(c);
+  const { first, second } = await twoRunsOfOneFlow(world, input, { ...input, ...secondStart });
 
   // Act
   const renamed = await f.renameRun(first.id, { title: "  Independent name  " });
@@ -141,7 +175,8 @@ it("renaming a Run trims its title without changing its sibling or its Task", as
 
 it("a whitespace-only Run title is rejected", async (c) => {
   // Arrange
-  const { f, first } = await siblingRuns(c);
+  const { f, world, input } = await prepared(c);
+  const { first } = await twoRunsOfOneFlow(world, input, { ...input, ...secondStart });
 
   // Act
   const result = await f.renameRun(first.id, { title: " \t " });
@@ -153,7 +188,8 @@ it("a whitespace-only Run title is rejected", async (c) => {
 
 it("global navigation leaves out an archived Run and keeps the others in creation order", async (c) => {
   // Arrange
-  const { f, input, first, second } = await siblingRuns(c);
+  const { f, input, world } = await prepared(c);
+  const { first, second } = await twoRunsOfOneFlow(world, input, { ...input, ...secondStart });
   await f.renameRun(first.id, { title: "Latest activity on oldest Run" });
   const third = await f.startRun({
     ...input,

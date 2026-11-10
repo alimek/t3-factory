@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
-import { uncertainLaunch } from "./support/lost-launch.ts";
 import { prepared } from "./support/prepared-runner.ts";
+import { launchUncertain } from "./support/scenarios.ts";
 
 function foreignCandidate(
   launch: {
@@ -41,7 +41,8 @@ function foreignCandidate(
 
 it("an empty launch search does not launch another worker", async (c) => {
   // Arrange
-  const fixture = await uncertainLaunch(c);
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await launchUncertain(setup.world, setup.input)) };
   fixture.t3.discoverAvailable = false;
 
   // Act
@@ -57,7 +58,8 @@ it("an empty launch search does not launch another worker", async (c) => {
 
 it("two candidates with the expected title stay unresolved", async (c) => {
   // Arrange
-  const fixture = await uncertainLaunch(c);
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await launchUncertain(setup.world, setup.input)) };
   const launch = [...fixture.t3.launches.values()][0]!;
   fixture.t3.extraCandidates.push(foreignCandidate(launch, fixture.project.workspaceRoot));
 
@@ -74,7 +76,8 @@ it("two candidates with the expected title stay unresolved", async (c) => {
 
 it("a root-strategy worker reported on the project checkout is recovered", async (c) => {
   // Arrange
-  const fixture = await uncertainLaunch(c);
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await launchUncertain(setup.world, setup.input)) };
   const launch = [...fixture.t3.launches.values()][0]!;
   fixture.t3.launches.clear();
   fixture.t3.extraCandidates.push({
@@ -106,7 +109,8 @@ it("a root-strategy worker reported on the project checkout is recovered", async
 
 it("a mismatched worker is not bound and is not replaced with another launch", async (c) => {
   // Arrange
-  const fixture = await uncertainLaunch(c);
+  const setup = await prepared(c);
+  const fixture = { ...setup, ...(await launchUncertain(setup.world, setup.input)) };
   const launch = [...fixture.t3.launches.values()][0]!;
   fixture.t3.launches.clear();
   fixture.t3.extraCandidates.push(foreignCandidate(launch, "/other-workspace"));
