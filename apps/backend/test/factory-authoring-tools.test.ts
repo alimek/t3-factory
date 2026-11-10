@@ -24,10 +24,10 @@ it("a partial-position save arranges the whole graph after creating a ready Flow
     }),
   );
   const graph = {
-    flowInput: { targetBlockIds: ["coder"] },
+    flowInput: { targetBlockIds: ["flow-input"] },
     blocks: [
       {
-        id: "coder",
+        id: "flow-input",
         kind: "agent",
         name: "Coder",
         agentId: agent.id,

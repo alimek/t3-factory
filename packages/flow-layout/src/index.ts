@@ -25,7 +25,9 @@ function elkInputPortId(targetBlockId: string, index: number) {
   return `in:${targetBlockId}:${index}`;
 }
 
-const FLOW_INPUT_NODE_ID = "__flow_input__";
+// Block node ids are namespaced so no user-chosen Block id can collide with the Flow input node.
+const FLOW_INPUT_NODE_ID = "flow-input";
+const BLOCK_NODE_PREFIX = "block:";
 
 /** The canvas's block geometry as a layout reserves it; `labels` reserves room for exit labels. */
 export type FlowLayoutDimensions<B extends LayoutBlock = LayoutBlock> = {
@@ -173,7 +175,7 @@ function blockNode<B extends LayoutBlock>(
   dims: FlowLayoutDimensions<B>,
 ): ElkNode {
   const node: ElkNode = {
-    id: block.id,
+    id: `${BLOCK_NODE_PREFIX}${block.id}`,
     width: dims.blockWidth,
     height: dims.blockHeight(block),
     layoutOptions: { "org.eclipse.elk.portConstraints": "FIXED_POS" },
@@ -254,8 +256,8 @@ export function parseLayoutPositions(graph: FlowGraph, laidOut: ElkNode): FlowLa
     ) {
       throw new Error("This Flow is too large to auto-arrange within the canvas limits.");
     }
-    if (child.id === FLOW_INPUT_NODE_ID) continue;
-    blocks.set(child.id, { x: child.x, y: child.y });
+    if (child.id.startsWith(BLOCK_NODE_PREFIX))
+      blocks.set(child.id.slice(BLOCK_NODE_PREFIX.length), { x: child.x, y: child.y });
   }
   const flowInputChild = laidOut.children?.find((c) => c.id === FLOW_INPUT_NODE_ID);
   const flowInput =
