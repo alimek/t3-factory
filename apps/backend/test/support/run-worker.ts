@@ -339,6 +339,17 @@ export async function missingWorkerReport(
   assert(missing);
   return { ...f, missing };
 }
+/** The next worker thread read, such as Request report's preflight, waits for a complete
+ * background sweep that observes the unchanged worker; reads during that sweep pass through. */
+export function sweepDuringNextThreadRead(f: Awaited<ReturnType<typeof missingWorkerReport>>) {
+  const read = f.t3.readExecution.bind(f.t3);
+  let sweep: Promise<unknown> | undefined;
+  f.t3.readExecution = (...args) => {
+    if (sweep) return read(...args);
+    sweep = f.f.reconcileRuns();
+    return sweep.then(() => read(...args));
+  };
+}
 export async function revisitedWorker(c: TestContext) {
   const f = await reportedWorker(c, "completed", "worker");
   await f.f.reconcileRuns();

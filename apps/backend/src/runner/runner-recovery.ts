@@ -83,7 +83,6 @@ export function openRunnerRecovery(
         threadId,
         executionId,
         activationId: visit.id,
-        generation: detail.value.generation,
       });
       if (!accepted.ok) return accepted;
       yield* lifecycle.drive(current.id, "dispatch");
