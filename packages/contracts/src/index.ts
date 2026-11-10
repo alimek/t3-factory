@@ -1,115 +1,25 @@
 /** Transport-neutral values shared by the backend and its clients. No Node imports. */
 import type { AgentDefinition, AgentExecutionSettings, agentOperations } from "./agent.ts";
-import type { BlockExit } from "./flow.ts";
+import type { FlowDraft, flowOperations } from "./flow.ts";
+import type { FactoryProject, projectOperations } from "./project.ts";
+import type { connectionOperations } from "./connection.ts";
 import type { FacadeOperations } from "./operation.ts";
-import type { Result, ValidationIssue } from "./result.ts";
+import type { Result } from "./result.ts";
 
 export * from "./result.ts";
 export * from "./flow.ts";
 export * from "./agent.ts";
 export * from "./operation.ts";
+export * from "./project.ts";
+export * from "./connection.ts";
 
-export interface CreateFlowInput {
-  readonly name: string;
-}
-
-interface BlockBase {
-  readonly id: string;
-  readonly name: string;
-  readonly position: { readonly x: number; readonly y: number };
-}
-/**
- * An Agent block exposes its Agent's exits, minus those this Flow hides, plus its Flow-local
- * exits. A Human block has the fixed Approve and Request changes exits.
- */
-export type FlowBlock = BlockBase &
-  (
-    | {
-        readonly kind: "agent";
-        readonly agentId: string | null;
-        /** Inherited Agent exit IDs hidden in this Flow; IDs the Agent no longer has are ignored. */
-        readonly hiddenExitIds: readonly string[];
-        /** Exits only this Flow adds to the block. */
-        readonly localExits: readonly BlockExit[];
-      }
-    | { readonly kind: "human" }
-  );
-export interface FlowConnection {
-  readonly sourceBlockId: string;
-  readonly exitId: string;
-  readonly targetBlockId: string;
-}
-/** The single, always-present source of a Flow; its targets start a Run in parallel. */
-export interface FlowInputBlock {
-  readonly position: { readonly x: number; readonly y: number };
-  /** Agent blocks that each receive the Flow input in their own session at Start. */
-  readonly targetBlockIds: readonly string[];
-}
-export interface FlowGraph {
-  readonly blocks: readonly FlowBlock[];
-  readonly connections: readonly FlowConnection[];
-  readonly flowInput: FlowInputBlock;
-}
-/** Where a new worktree starts: the Project repository's default branch or a named Git ref. */
-export type FlowWorkspaceBase =
-  | { readonly kind: "default" }
-  | { readonly kind: "ref"; readonly ref: string };
-/** The workspace every worker of a Run shares; saved on the Flow, outside its graph. */
-export type FlowWorkspace =
-  | { readonly mode: "checkout" }
-  | { readonly mode: "worktree"; readonly base: FlowWorkspaceBase };
-export interface UpdateFlowInput {
-  readonly name: string;
-  readonly expectedRevision: number;
-  readonly graph: FlowGraph;
-  /** Protocol 1–3 clients cannot see it and omit it; such a save keeps the saved setting. */
-  readonly workspace?: FlowWorkspace;
-}
-
-export interface FlowReadiness {
-  readonly ready: boolean;
-  readonly issues: readonly ValidationIssue[];
-}
-
-export interface FlowDraft {
-  readonly id: string;
-  readonly name: string;
-  readonly revision: number;
-  readonly graph: FlowGraph;
-  readonly workspace: FlowWorkspace;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly readiness: FlowReadiness;
-}
-
-export interface RuntimeSelection {
-  readonly projectId: string;
-  readonly agentId: string;
-}
-export interface RuntimeReadiness extends FlowReadiness {
-  readonly checkedAt: string;
-  readonly instructions: string;
-}
-export interface ReportingInstallationActions {
-  readonly install: boolean;
-  readonly repair: boolean;
-  readonly reinstall: boolean;
-}
-export interface ReportingInstallation {
-  readonly id: string;
-  readonly provider: string;
-  readonly instances: readonly string[];
-  readonly path: string | null;
-  /** `unsupported`: the provider has no Factory reporting yet; there is nothing to install. */
-  readonly status: "not-installed" | "installed" | "needs-attention" | "unsupported";
-  readonly message: string;
-  readonly runtimeEvidence: "UNVERIFIED" | "ACCEPTED_REPORT";
-  readonly actions: ReportingInstallationActions;
-}
 /** The Factory facade: derived from the operation definitions, plus operations HTTP does not reach. */
-export interface FactoryOperations extends FacadeOperations<typeof agentOperations> {
-  getReportingInstallations(): Promise<Result<readonly ReportingInstallation[]>>;
-  installReporting(input: unknown): Promise<Result<ReportingInstallation>>;
+export interface FactoryOperations extends FacadeOperations<
+  typeof agentOperations &
+    typeof flowOperations &
+    typeof projectOperations &
+    typeof connectionOperations
+> {
   answerHumanOccurrence(id: string, input: unknown): Promise<Result<RunDetail>>;
   listAttention(): Promise<Result<readonly RunAttention[]>>;
   /** Asks an idle Agent Block without a finished result to assess its existing work and report. */
@@ -138,29 +48,6 @@ export interface FactoryOperations extends FacadeOperations<typeof agentOperatio
   listTasks(projectId: string): Promise<Result<readonly TaskSummary[]>>;
   updateTask(id: string, input: unknown): Promise<Result<TaskSummary>>;
   reconcileRuns(): Promise<Result<void>>;
-  recheckRuntime(input: unknown): Promise<Result<RuntimeReadiness>>;
-  listProjects(): Promise<Result<ProjectCatalog>>;
-  recheckProjects(): Promise<Result<ProjectCatalog>>;
-  addRepository(input: unknown): Promise<Result<FactoryProject>>;
-  selectProject(input: unknown): Promise<Result<ProjectCatalog>>;
-  getProjectReadiness(id: string): Promise<Result<FlowReadiness>>;
-  getProjectFavicon(id: string): Promise<Result<ProjectFavicon>>;
-  getConnection(): Promise<Result<T3Connection>>;
-  configureConnection(input: unknown): Promise<Result<T3Connection>>;
-  recheckConnection(): Promise<Result<T3Connection>>;
-  authorizeConnection(): Promise<Result<T3Connection>>;
-  /**
-   * Opens authorization for the saved endpoint in the host's browser: reopens a live
-   * pending approval, or starts one when none exists. Never edits the endpoint and never
-   * replaces a grant that is ready or incompatible. Allowed for approved remote clients.
-   */
-  openConnectionAuthorization(): Promise<Result<T3Connection>>;
-  createFlow(input: unknown): Promise<Result<FlowDraft>>;
-  updateFlow(id: string, input: unknown): Promise<Result<FlowDraft>>;
-  removeFlow(id: string): Promise<Result<void>>;
-  validateFlow(input: unknown): Promise<Result<FlowReadiness>>;
-  listFlows(): Promise<Result<readonly FlowDraft[]>>;
-  getFlow(id: string): Promise<Result<FlowDraft>>;
   requestClientAccess(input: unknown): Promise<Result<ClientAccessGrant>>;
   getClientAccess(credential: string): Promise<Result<ClientAccessState>>;
   authenticateClient(credential: string): Promise<Result<FactoryClient>>;
@@ -273,94 +160,6 @@ export interface RemoteAccessStatus {
   readonly problem: string | null;
 }
 
-export type ConnectionState = "unavailable" | "authorization-required" | "incompatible" | "ready";
-export interface T3Contract {
-  readonly serverName: string;
-  readonly serverVersion: string;
-  readonly environmentId: string | null;
-  readonly tools: readonly {
-    readonly name: string;
-    readonly inputSchema: Readonly<Record<string, unknown>>;
-  }[];
-  readonly problems: readonly string[];
-  /** Contract inspection never proves project, harness or runtime execution readiness. */
-  readonly executionVerified: false;
-}
-export interface AuthorizationContext {
-  readonly id: string;
-  readonly endpoint: string;
-  readonly environmentId: string;
-  readonly createdAt: string;
-}
-export interface T3Connection {
-  readonly endpoint: string | null;
-  readonly state: ConnectionState;
-  readonly explanation: string;
-  readonly checkedAt: string | null;
-  readonly authorizationContext: AuthorizationContext | null;
-  /** An approval started on the host is waiting for consent in the host's browser. */
-  readonly authorizationPending: boolean;
-  readonly contract: T3Contract | null;
-}
-
-/** Known T3 project icon palette; unknown colors are rejected at parse time. */
-export type ProjectIconColor =
-  | "gray"
-  | "red"
-  | "orange"
-  | "amber"
-  | "yellow"
-  | "lime"
-  | "green"
-  | "emerald"
-  | "teal"
-  | "cyan"
-  | "sky"
-  | "blue"
-  | "indigo"
-  | "violet"
-  | "purple"
-  | "fuchsia"
-  | "pink"
-  | "rose";
-
-/** Normalized T3 project icon metadata safe for Factory clients to render. */
-export type ProjectIcon =
-  | {
-      readonly kind: "lucide";
-      readonly name: string;
-      readonly color: ProjectIconColor;
-      readonly monogram?: string | null;
-      readonly monogramText?: string | null;
-    }
-  | { readonly kind: "emoji"; readonly emoji: string }
-  | { readonly kind: "monogram"; readonly text: string; readonly color: ProjectIconColor };
-
-/** Durable Factory reference; T3 identity is scoped to endpoint and environment. */
-export interface FactoryProject {
-  readonly id: string;
-  readonly endpoint: string;
-  readonly environmentId: string;
-  readonly projectId: string;
-  readonly title: string;
-  readonly workspaceRoot: string;
-  readonly availability:
-    | "available"
-    | "directory-unavailable"
-    | "project-unavailable"
-    | "connection-unavailable"
-    | "different-environment";
-  readonly observedAt: string;
-  readonly projectIcon?: ProjectIcon | null;
-  /** Same-origin favicon route; explicit projectIcon takes UI priority when both exist. */
-  readonly faviconUrl?: string | null;
-}
-
-/** Binary project favicon bytes served through Factory, not arbitrary upstream URLs. */
-export interface ProjectFavicon {
-  readonly contentType: string;
-  readonly data: Uint8Array;
-}
 export interface RunImageInfo {
   readonly sha256: string;
   readonly mimeType: RunImageMimeType;
@@ -375,12 +174,6 @@ export interface RunImageContent {
   readonly mimeType: RunImageMimeType;
   readonly data: Uint8Array;
 }
-export interface ProjectCatalog {
-  readonly projects: readonly FactoryProject[];
-  readonly selectedProjectId: string | null;
-  readonly problem: string | null;
-}
-
 export type RunImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 /** One image of a Run's initial prompt. `imageId` is draft-local; `sha256` names the staged bytes. */
 export interface RunImage {

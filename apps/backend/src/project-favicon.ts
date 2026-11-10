@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { open, realpath, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { isAbsolute, join, normalize, sep } from "node:path";
-import type { ProjectFavicon, Result, T3Connection } from "@t3-factory/contracts";
+import {
+  operationPath,
+  projectOperations,
+  type ProjectFavicon,
+  type Result,
+  type T3Connection,
+} from "@t3-factory/contracts";
 import { isLocalEndpoint } from "./endpoint-local.ts";
 import { failure as operationFailure } from "./result.ts";
 
@@ -13,7 +19,7 @@ const notFound = (): Result<never> =>
 export function projectFaviconUrl(id: string, faviconPath: string | null): string | null {
   if (!faviconPath) return null;
   const version = createHash("sha256").update(faviconPath).digest("hex").slice(0, 16);
-  return `/api/projects/${id}/favicon?v=${version}`;
+  return `${operationPath(projectOperations.getProjectFavicon, id)}?v=${version}`;
 }
 
 const imageSignatures = [

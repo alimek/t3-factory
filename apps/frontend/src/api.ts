@@ -1,6 +1,9 @@
 import { OfflineError, protocolHeaders, transport, unreachableHeader } from "./transport.ts";
 import {
   agentOperations,
+  flowOperations,
+  projectOperations,
+  connectionOperations,
   operationPath,
   type OperationDefinition,
   type OperationInput,
@@ -22,18 +25,8 @@ import {
   type RunNavigationEntry,
   type RunSummary,
   type TaskSummary,
-  type ReportingInstallation,
-  type RuntimeReadiness,
-  type RuntimeSelection,
-  type FactoryProject,
-  type ProjectCatalog,
-  type CreateFlowInput,
-  type FlowDraft,
-  type FlowReadiness,
-  type UpdateFlowInput,
   type OperationError,
   type Result,
-  type T3Connection,
 } from "@t3-factory/contracts";
 
 export class ApiError extends Error {
@@ -147,6 +140,9 @@ export const runImageUrl = (sha256: string) => `/api/run-images/${encodeURICompo
 
 export const api = {
   ...operationCalls(agentOperations),
+  ...operationCalls(flowOperations),
+  ...operationCalls(projectOperations),
+  ...operationCalls(connectionOperations),
   listRunNavigation: () => request<readonly RunNavigationEntry[]>("/api/run-navigation"),
   snoozeRun: (id: string) =>
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/snooze`, { method: "POST" }),
@@ -184,30 +180,6 @@ export const api = {
     request<readonly RunSummary[]>(`/api/runs?projectId=${encodeURIComponent(projectId)}`),
   updateTask: (id: string, input: { title: string }) =>
     patch<TaskSummary>(`/api/tasks/${encodeURIComponent(id)}`, input),
-  getReportingInstallations: () => request<readonly ReportingInstallation[]>("/api/reporting"),
-  installReporting: (input: { targetId: string }) =>
-    post<ReportingInstallation>("/api/reporting/install", input),
-  recheckRuntime: (input: RuntimeSelection) =>
-    post<RuntimeReadiness>("/api/runtime/recheck", input),
-  listProjects: () => request<ProjectCatalog>("/api/projects"),
-  recheckProjects: () => request<ProjectCatalog>("/api/projects/recheck", { method: "POST" }),
-  addRepository: (input: { path: string }) => post<FactoryProject>("/api/projects", input),
-  selectProject: (input: { id: string | null }) =>
-    put<ProjectCatalog>("/api/projects/selection", input),
-  getConnection: () => request<T3Connection>("/api/connection"),
-  configureConnection: (input: { endpoint: string }) => put<T3Connection>("/api/connection", input),
-  recheckConnection: () => request<T3Connection>("/api/connection/recheck", { method: "POST" }),
-  authorizeConnection: () => request<T3Connection>("/api/connection/authorize", { method: "POST" }),
-  openConnectionAuthorization: () =>
-    request<T3Connection>("/api/connection/authorization/open", { method: "POST" }),
-  listFlows: () => request<readonly FlowDraft[]>("/api/flows"),
-  getFlow: (id: string) => request<FlowDraft>(`/api/flows/${encodeURIComponent(id)}`),
-  createFlow: (input: CreateFlowInput) => post<FlowDraft>("/api/flows", input),
-  updateFlow: (id: string, input: UpdateFlowInput) =>
-    put<FlowDraft>(`/api/flows/${encodeURIComponent(id)}`, input),
-  removeFlow: (id: string) =>
-    request<void>(`/api/flows/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  validateFlow: (input: UpdateFlowInput) => post<FlowReadiness>("/api/flows/validate", input),
   getProtocol: () => request<ProtocolDescriptor>("/api/protocol"),
   getClientScope: () => request<ClientScope>("/api/client-access"),
   requestClientAccess: (input: RequestClientAccessInput) =>
