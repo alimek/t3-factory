@@ -1,10 +1,10 @@
 import { Trash2 } from "lucide-react";
+import { incomingPortIndex, wireRouteKey } from "@t3-factory/flow-layout";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   incomingApproachLane,
-  incomingPortIndexForSource,
   orthogonalWirePath,
   wirePath,
   type createCanvasGeometry,
@@ -12,7 +12,6 @@ import {
 import {
   connectionWire,
   sameWire,
-  wireRouteKey,
   type CanvasBlock,
   type CanvasGraph,
   type FlowWire,
@@ -78,7 +77,7 @@ function exitWires(
     const routed = routes?.get(key);
     const from = geometry.exitPoint(source, connection.exitId);
     const fromBottom = source.position.y + geometry.blockHeight(source);
-    const incomingIndex = incomingPortIndexForSource(graph, connection.targetBlockId, {
+    const incomingIndex = incomingPortIndex(graph, connection.targetBlockId, {
       kind: "exit",
       sourceBlockId: connection.sourceBlockId,
       exitId: connection.exitId,
@@ -108,7 +107,7 @@ function flowInputWires(
     if (!target) return [];
     const key = wireRouteKey({ kind: "flow-input" }, targetBlockId);
     const routed = routes?.get(key);
-    const incomingIndex = incomingPortIndexForSource(graph, targetBlockId, { kind: "flow-input" });
+    const incomingIndex = incomingPortIndex(graph, targetBlockId, { kind: "flow-input" });
     return [
       {
         key,

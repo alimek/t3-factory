@@ -6,8 +6,8 @@ import type {
   CreateAgentInput,
   CreateFlowInput,
   DuplicateAgentInput,
-  FlowBlock,
-  FlowGraph,
+  FlowBlockInput,
+  FlowGraphInput,
   FlowWorkspace,
   UpdateFlowInput,
   FlowReadiness,
@@ -135,7 +135,7 @@ export function parseProjectIcon(input: unknown): ProjectIcon | null {
 }
 
 /** Structural save validation is deliberately separate from execution readiness. */
-export function validateCreateFlow(input: unknown): Result<CreateFlowInput> {
+function validateFlowName(input: unknown): Result<Pick<CreateFlowInput, "name">> {
   const name =
     typeof input === "object" && input !== null && "name" in input ? input.name : undefined;
   if (typeof name !== "string" || name.trim().length === 0 || name.trim().length > 200) {
@@ -373,11 +373,11 @@ export function validateDuplicateAgent(input: unknown): Result<DuplicateAgentInp
   return { ok: true, value: { name: name.value } };
 }
 
-const CANVAS_COORD_MIN = -10000;
-const CANVAS_COORD_MAX = 10000;
-const CANVAS_COORD_MESSAGE = `Use finite canvas coordinates from ${CANVAS_COORD_MIN} to ${CANVAS_COORD_MAX}.`;
+export const CANVAS_COORD_MIN = -10000;
+export const CANVAS_COORD_MAX = 10000;
+export const CANVAS_COORD_MESSAGE = `Use finite canvas coordinates from ${CANVAS_COORD_MIN} to ${CANVAS_COORD_MAX}.`;
 
-const isCanvasPosition = (v: unknown) =>
+export const isCanvasPosition = (v: unknown): v is { x: number; y: number } =>
   isRecord(v) &&
   [v.x, v.y].every(
     (c) =>
@@ -426,7 +426,7 @@ function checkBlockFields(
       `${path}.agentId`,
       "Choose a saved Agent or leave the reference empty.",
     );
-  if (!isCanvasPosition(block.position))
+  if (block.position !== undefined && !isCanvasPosition(block.position))
     issue("invalid_position", `${path}.position`, CANVAS_COORD_MESSAGE);
 }
 
@@ -477,7 +477,7 @@ function checkFlowInput(
       path,
       "The Flow input block has only a position and targets.",
     );
-  if (!isCanvasPosition(flowInput.position))
+  if (flowInput.position !== undefined && !isCanvasPosition(flowInput.position))
     issue("invalid_position", `${path}.position`, CANVAS_COORD_MESSAGE);
   const targets = new Set<string>();
   flowInput.targetBlockIds.forEach((target, i) => {
@@ -581,33 +581,56 @@ function checkWorkspace(raw: unknown, issue: IssueReporter): FlowWorkspace | und
   return undefined;
 }
 
-/** Reject malformed/ambiguous graphs, while preserving unfinished authoring. */
-export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
-  const name = validateCreateFlow(input);
+/** A graph supplied at creation is validated exactly as a saved graph. */
+/** Checks a create or save body in one pass, so a reply lists every defect at once. */
+function checkFlowBody(input: unknown, required: boolean) {
+  const name = validateFlowName(input);
   if (!name.ok) return name;
   const raw = input as Record<string, unknown>;
   const issues: ValidationIssue[] = [];
-  const issue = (code: string, path: string, message: string) =>
-    issues.push({ code, path, message });
-  if (!Number.isSafeInteger(raw.expectedRevision) || (raw.expectedRevision as number) < 1)
+  const issue: IssueReporter = (code, path, message) => issues.push({ code, path, message });
+  if (
+    required &&
+    (!Number.isSafeInteger(raw.expectedRevision) || (raw.expectedRevision as number) < 1)
+  )
     issue("invalid_revision", "expectedRevision", "Include the revision you opened.");
-  checkGraph(raw.graph, issue);
+  if (raw.graph !== undefined) checkGraph(raw.graph, issue);
+  else if (required)
+    issue("invalid_graph", "graph", "Supply blocks, connections and the Flow input block.");
   const workspace = raw.workspace === undefined ? undefined : checkWorkspace(raw.workspace, issue);
-  return issues.length
-    ? { ok: false, error: { code: "validation", message: issues[0]!.message, issues } }
-    : {
-        ok: true,
-        value: {
-          ...name.value,
-          expectedRevision: raw.expectedRevision as number,
-          graph: trimLocalExitNames(raw.graph as FlowGraph),
-          ...(workspace ? { workspace } : {}),
-        },
-      };
+  if (issues.length)
+    return {
+      ok: false as const,
+      error: { code: "validation" as const, message: issues[0]!.message, issues },
+    };
+  return {
+    ok: true as const,
+    value: {
+      ...name.value,
+      ...(raw.graph !== undefined
+        ? { graph: trimLocalExitNames(raw.graph as FlowGraphInput) }
+        : {}),
+      ...(workspace ? { workspace } : {}),
+    },
+    expectedRevision: raw.expectedRevision as number,
+  };
+}
+export function validateCreateFlow(input: unknown): Result<CreateFlowInput> {
+  const checked = checkFlowBody(input, false);
+  return checked.ok ? { ok: true, value: checked.value } : checked;
+}
+export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
+  const checked = checkFlowBody(input, true);
+  if (!checked.ok) return checked;
+  const { graph, ...rest } = checked.value;
+  return {
+    ok: true,
+    value: { ...rest, expectedRevision: checked.expectedRevision, graph: graph! },
+  };
 }
 
 /** Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly. */
-function trimLocalExitNames(graph: FlowGraph): FlowGraph {
+function trimLocalExitNames(graph: FlowGraphInput): FlowGraphInput {
   return {
     ...graph,
     blocks: graph.blocks.map((block) =>
@@ -622,7 +645,7 @@ function trimLocalExitNames(graph: FlowGraph): FlowGraph {
 }
 
 /** Whether any Agent block in the graph references the saved Agent definition. */
-export function flowGraphReferencesAgent(graph: FlowGraph, agentId: string): boolean {
+export function flowGraphReferencesAgent(graph: FlowGraphInput, agentId: string): boolean {
   return graph.blocks.some((block) => block.kind === "agent" && block.agentId === agentId);
 }
 
@@ -634,11 +657,11 @@ export interface ReadinessAgent extends Pick<AgentDefinition, "id" | "exits"> {
   readonly formerExitNames: ReadonlyMap<string, string>;
 }
 
-const blockLabel = (block: FlowBlock) => block.name || block.id;
+const blockLabel = (block: FlowBlockInput) => block.name || block.id;
 
 /** Names, Agent references and exits of one block. */
 function blockReadiness(
-  block: FlowBlock,
+  block: FlowBlockInput,
   path: string,
   agents: readonly ReadinessAgent[],
   add: IssueReporter,
@@ -685,7 +708,7 @@ function blockReadiness(
 
 /** Wires from an Agent block must leave one of its effective exits. */
 function connectionReadiness(
-  graph: FlowGraph,
+  graph: FlowGraphInput,
   agents: readonly ReadinessAgent[],
   add: IssueReporter,
 ) {
@@ -714,7 +737,7 @@ function connectionReadiness(
 }
 
 /** Every block must be reachable from a Flow input target. */
-function reachabilityReadiness(graph: FlowGraph, add: IssueReporter) {
+function reachabilityReadiness(graph: FlowGraphInput, add: IssueReporter) {
   const reached = new Set(graph.flowInput.targetBlockIds);
   let changed = true;
   while (changed) {
@@ -739,7 +762,10 @@ function reachabilityReadiness(graph: FlowGraph, add: IssueReporter) {
  * Graph readiness against the given saved Agents; live T3, project and provisioning gates remain
  * separate. Issues block Start, never a save.
  */
-export function flowReadiness(graph: FlowGraph, agents: readonly ReadinessAgent[]): FlowReadiness {
+export function flowReadiness(
+  graph: FlowGraphInput,
+  agents: readonly ReadinessAgent[],
+): FlowReadiness {
   const issues: ValidationIssue[] = [];
   const add = (code: string, path: string, message: string) => issues.push({ code, path, message });
   if (!graph.flowInput.targetBlockIds.length)

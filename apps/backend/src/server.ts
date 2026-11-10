@@ -802,7 +802,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
   const factory = await openFactory(factoryOptions(config, options));
   const protocol = serverProtocol(options);
   const limiter = new RequestLimiter(accessRequestsPerMinute, 60_000);
-  const mcp = runtimeMcpHandler(factory.runtime);
+  const mcp = runtimeMcpHandler(factory.runtime, factory);
   const live = await startLiveTransport(factory.live);
   let routes: readonly ApiRoute[] = [];
   const handlerFor =

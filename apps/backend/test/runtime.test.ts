@@ -58,19 +58,19 @@ it("a Cursor provider is not rejected as an unsupported harness", async (c) => {
   expect(check.value.issues.some((issue) => issue.code === "reporting_installation")).toBe(true);
 });
 
-it("unsupported harnesses remain visible and block runtime readiness", async (c) => {
+it("a saved Agent's provider that T3 later offers as an unsupported harness stays visible and blocks runtime readiness", async (c) => {
   // Arrange
   const { t3, f, p, input } = await claudeRuntimeConfig(c);
-  t3.controlledProviders.push({
-    ...t3.controlledProviders[0]!,
-    providerInstanceId: "future",
-    driverKind: "future",
-  });
   const future = await f.createAgent({
     ...input,
     execution: { ...input.execution, providerInstanceId: "future" },
   });
   assert(future.ok);
+  t3.controlledProviders.push({
+    ...t3.controlledProviders[0]!,
+    providerInstanceId: "future",
+    driverKind: "future",
+  });
 
   // Act
   const check = await f.recheckRuntime({ projectId: p.value.id, agentId: future.value.id });

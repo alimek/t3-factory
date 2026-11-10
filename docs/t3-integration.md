@@ -237,7 +237,8 @@ An open harness session keeps the tool list it read at start; new tools reach th
 
 Factory MCP is stateless Streamable HTTP on the host-local listener only: the approved-client
 listener answers `/mcp` with `host_only`, and a request whose `Origin` is not the listener's own
-origin is refused, so a browser page cannot drive it. It requires no credential. It exposes
+origin is refused, so a cross-origin browser page cannot drive it. Requests may be up to 2 MB to accommodate whole Flow graphs.
+Alongside the [authoring tools](#authoring-tools), its Block runtime tools are
 `factory_get_block({ blockId })`, read-only `factory_get_run({ blockId })`,
 read-only `factory_get_run_image({ blockId, imageId })` and
 `factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working` or `finished`.
@@ -248,7 +249,7 @@ A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED
   and Request report message states it on a `Factory Block id:` line. The id is stable across
   visits; reports apply to the Block's current activation. Factory does not read native call
   metadata, the harness call id or the T3 timeline to identify a caller, so every reporting
-  harness uses the same contract. Calls without a Block id are `BLOCK_ID_REQUIRED`; ids Factory
+  harness uses the same contract. Runtime calls without a Block id are `BLOCK_ID_REQUIRED`; ids Factory
   never issued are `UNKNOWN_BLOCK`. Ref-based calls from the replaced contract have no
   compatibility path.
 - **Accepted risk.** Anything that knows a Block id can read and report for that Block,
@@ -267,6 +268,23 @@ A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED
   `INVALID_EXIT` with the allowed exit names. Finishing on an exit that requires a message without
   one is `FEEDBACK_REQUIRED`. Names are quoted in prompts, and the exact report content determines
   its fingerprint.
+
+## Authoring tools
+
+Any harness session with Factory MCP registered can author definitions without a Block id or an active Run:
+
+- `factory_list_agents`, `factory_get_agent`, `factory_create_agent` and `factory_save_agent` list, read, create and save Agents.
+- `factory_list_flows`, `factory_get_flow`, `factory_create_flow` and `factory_save_flow` do the same for Flows. Saves replace the whole graph; [Flow creation and layout](studio.md#validation-contract) support a graph and workspace in one creation and optional positions.
+- `factory_check_flow` checks the latest saved Flow's readiness using the same graph checks as Studio's **Check readiness**. It does not validate an unsaved draft or establish live execution readiness.
+- `factory_get_agent_capabilities` reads the live T3 catalog of environments, provider instances, models and model options, including each provider's `reporting.supported` flag and explanation.
+
+There are no delete, duplicate or Start Run tools.
+
+Creates and saves use the same definition operations as Studio: the same validation, one immutable revision per accepted write and a required `expectedRevision` on saves. A stale expected revision returns a conflict and appends nothing; read the latest definition, reconcile the edits and save against its revision. Successful replies contain the Agent with its settings status or the Flow with its readiness. Errors flag the tool call as failed and include a code, issue paths and a short next step without echoing arguments.
+
+Agent creates and saves inspect live T3 capabilities and reject a listed provider without Factory reporting support (`harness_unsupported`), matching Studio's disabled provider choice. Model settings are validated structurally; unavailable environments, providers, models or options are reported in `settingsStatus` and gate Start rather than save. Definition changes refresh open Studio views; a conflicting Flow draft uses [Compare latest revision](studio.md#saving-and-readiness).
+
+**Widened local trust.** Factory MCP checks no credentials or caller identity and refuses non-loopback callers through its host-local access boundary. Authoring requires no Block id, approval step or revision authorship marker: any local process can edit Agent and Flow definitions. The Origin check [above](#factory-mcp-and-block-ids) does not authenticate local processes. This extends the one-local-user trust model beyond runtime calls that require knowledge of a Block id.
 
 ## Reporting authority
 
@@ -308,7 +326,7 @@ routing authority.
 
 ### Run image reads
 
-`factory_get_run_image({ blockId, imageId })` resolves the Block id by the same rules as other Factory tools, then
+`factory_get_run_image({ blockId, imageId })` resolves the Block id by the same rules as other Block runtime tools, then
 looks up the image only in that Block's Run manifest. It accepts no path, URL, storage digest or T3 upload id as an
 alternate lookup. Success returns text identifying the image id, ordinal and name plus exactly one MCP image-content
 item containing the stored original MIME type and bytes, without resizing or recompression. A URL or base64 embedded

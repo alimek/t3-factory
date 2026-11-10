@@ -1,36 +1,4 @@
-import type { CanvasDimensions } from "../flow-geometry.ts";
-
-/**
- * Authoring rows retain their existing border-relative port offsets: anchors are measured
- * from the outer edge while ports sit inside the border.
- */
-export const AUTHORING_DIMENSIONS: CanvasDimensions = {
-  block: {
-    width: 240,
-    border: 1,
-    selectedBorder: 2,
-    header: 30,
-    title: 44,
-    divider: 1,
-    exitPaddingTop: 4,
-    exitPaddingBottom: 6,
-    anchorBorder: 0,
-    inputY: 51,
-    exitRow: 24,
-    footer: 0,
-  },
-  flowInput: {
-    width: 200,
-    border: 1,
-    anchorBorder: 0,
-    header: 30,
-    title: 44,
-    outputY: 51,
-    promptLine: 0,
-    promptImages: 0,
-  },
-  port: { size: 12, outset: 6, handle: 20, highlight: 16 },
-};
+import { AUTHORING_DIMENSIONS, type CanvasDimensions } from "@t3-factory/flow-layout";
 
 export const EXECUTION_DIMENSIONS: CanvasDimensions = {
   block: {

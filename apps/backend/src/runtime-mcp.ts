@@ -4,6 +4,8 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/server";
+import { authoringTools, callAuthoringTool, type AuthoringOperations } from "./authoring-tools.ts";
+import { flowDocumentBody } from "./http-support.ts";
 import { SUCCESS_CODES, type RuntimeReply } from "./runtime-types.ts";
 
 const blockIdProperty = {
@@ -133,26 +135,35 @@ async function callTool(
 }
 
 /**
- * Stateless Streamable HTTP MCP server for harness reporting. Calls name their Block
- * by Block id; the server holds no identity of its own.
+ * Stateless Streamable HTTP MCP server for harness reporting and definition authoring. Reporting
+ * calls name their Block by Block id; authoring calls need none. The server holds no identity.
  */
-export function runtimeMcpHandler(runtime: RuntimeTools): (request: Request) => Promise<Response> {
+export function runtimeMcpHandler(
+  runtime: RuntimeTools,
+  definitions: AuthoringOperations,
+): (request: Request) => Promise<Response> {
   const handler = createMcpHandler(
     () => {
       const server = new Server(
         { name: "factory-runtime", version: "1.0.0" },
         { capabilities: { tools: {} } },
       );
-      server.setRequestHandler("tools/list", () => ({ tools }));
+      server.setRequestHandler("tools/list", () => ({ tools: [...tools, ...authoringTools] }));
       server.setRequestHandler("tools/call", async (request) => {
         const { name, arguments: args } = request.params;
-        if (!Object.hasOwn(operations, name))
-          return { isError: true, content: [{ type: "text", text: `Unknown tool ${name}.` }] };
-        return callTool(runtime, name as keyof typeof operations, args);
+        if (Object.hasOwn(operations, name))
+          return callTool(runtime, name as keyof typeof operations, args);
+        return (
+          (await callAuthoringTool(definitions, name, args)) ?? {
+            isError: true,
+            content: [{ type: "text", text: `Unknown tool ${name}.` }],
+          }
+        );
       });
       return server;
     },
-    { maxRequestBodySize: 131_072 },
+    // A Flow save carries a whole graph, as Studio's Flow document body does.
+    { maxRequestBodySize: flowDocumentBody.bytes },
   );
   return (request) => handler.fetch(request);
 }
