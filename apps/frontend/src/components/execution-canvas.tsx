@@ -285,14 +285,16 @@ function executionFlowInput(run: RunDetail, onClearSelection: () => void): Canva
     // Reference chips and thumbnails are controls, so they sit outside the press target.
     prompt: images
       ? { kind: "images", content: <FlowInputPrompt run={run} /> }
-      : {
-          kind: "line",
-          content: (
-            <p className="truncate px-3 text-xs text-foreground" title={run.input}>
-              {prompt}
-            </p>
-          ),
-        },
+      : !prompt
+        ? { kind: "none" }
+        : {
+            kind: "line",
+            content: (
+              <p className="truncate px-3 text-xs text-foreground" title={run.input}>
+                {prompt}
+              </p>
+            ),
+          },
     port,
   };
 }
