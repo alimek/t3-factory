@@ -130,7 +130,7 @@ fixed Human exits their old exits were mapped to.
   **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
   retried and creates no attention or state change.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
-  before it finished). Several blocks can be
+  before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
   timeline and executions keep the sequence. Connections use one neutral style, including never-run branches.
 - A working block whose Agent reported `working` shows that message in place of its visit time; its details show the full
@@ -292,6 +292,21 @@ occurrence and atomically saves all outgoing handoffs: double submission cannot 
 recipients get independent deliveries on the existing thread/queue rules; a Human recipient gets a new occurrence. The block stays
 waiting until its last occurrence is answered. Context and delivery text survive restart, are cleared after settlement and
 acknowledgement, and Settled keeps only metadata. Human steps have no T3 thread.
+
+## Continuations
+
+A Continuation continues the conversation of the worker whose message reaches it. The first message in a Run queues its prompt on that
+worker's T3 thread, stating the Continuation's own Block id; after a Human step, the person's reply follows the prompt, labelled, because
+the worker has not seen it. The Continuation shows **sent**, and the worker's own Agent block shows **working** while the thread works on
+it, without a new visit and without changing that block's result or firing its connections again. When the worker reports `finished` for
+the Continuation and its thread is finished, the response leaves the single output and the Continuation shows **pass-through**. Messages that
+arrive while the prompt is pending wait (**Queued** in its details) and go out after the response, in arrival order. From then on every
+message is forwarded unchanged with its own worker, also in loops and after a restart; the prompt is never sent again in that Run.
+
+Its details list the prompt visit (input, prompt sent and response) and each pass-through visit, each with **Open thread in T3** for the
+worker its message belongs to; Blocks that share a worker open the same conversation. Timeline rows for it use the Continuation icon. A missing
+report after its prompt is a Problem on the Continuation, and **Request report** asks the same thread for it. Archive stops a pending
+Continuation and cancels waiting messages; its worker thread is interrupted with the other workers.
 
 ## Settled Runs
 

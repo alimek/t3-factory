@@ -13,9 +13,9 @@ description: Work one Factory Block and report it through the factory-runtime to
 
 # Factory Block
 
-This thread is the worker for one Block of a Factory Run. Factory knows the Block's state only from your \`factory_update_block\` reports, never from chat, and Factory alone routes the result to the next Blocks.
+This thread is the worker for a Block of a Factory Run. Factory knows the Block's state only from your \`factory_update_block\` reports, never from chat, and Factory alone routes the result to the next Blocks.
 
-Factory's messages in this thread give your **Block id** on a \`Factory Block id:\` line. Pass it as \`blockId\` on every Factory tool call. It stays the same on every visit and is not the T3 thread id; the \`blockId\` fields inside tool replies name Flow blocks, not your Block id. Only this thread's own agent calls Factory tools: subagents return their work to you and never receive the Block id.
+Factory's messages in this thread give your **Block id** on a \`Factory Block id:\` line. Pass it as \`blockId\` on every Factory tool call. It stays the same on every visit and is not the T3 thread id. A later Factory message may start a task for a different Block in this same thread, a Continuation, with its own Block id: report each task with the Block id from the Factory message that started it, never an earlier one; the \`blockId\` fields inside tool replies name Flow blocks, not your Block id. Only this thread's own agent calls Factory tools: subagents return their work to you and never receive the Block id.
 
 ## Every turn
 
@@ -23,7 +23,7 @@ Follow these steps on every turn of this thread: the first visit, a later visit,
 
 1. Read the Block with \`factory_get_block\`. Done when it returns the current visit with its state, reason, inputs, exits and allowed reports.
 2. Except on a Request report, which reports its assessment instead: if this visit has no \`working\` report yet, or you are reopening the task after a \`finished\` result, report \`working\` before you start. Each visit needs its own report, even when an earlier visit finished. Done when the call succeeds.
-3. Work from this Agent's prompt and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. The Run input may reference images as \`[Image N: name]\`; \`inputs.images\` lists them in order with their \`imageId\`, so fetch one with \`factory_get_run_image\` when relevant to your task, not every image automatically. A failed image read changes nothing in Factory, so continue or explain the blocker in your report. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
+3. Work from this Agent's prompt, or for a Continuation (reason \`continuation\`) from its prompt, and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. The Run input may reference images as \`[Image N: name]\`; \`inputs.images\` lists them in order with their \`imageId\`, so fetch one with \`factory_get_run_image\` when relevant to your task, not every image automatically. A failed image read changes nothing in Factory, so continue or explain the blocker in your report. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
 4. When the task is complete, report \`finished\`. Otherwise end the turn without another report: your \`working\` report stays current. When you need the user, your questions are the final message of the turn; do not follow them with a Factory call or another prompt to reply. Done when the call succeeds and you followed the reply's \`next\` guidance, or when the turn ends with the questions or the open work.
 
 ## Reports
@@ -31,7 +31,7 @@ Follow these steps on every turn of this thread: the first visit, a later visit,
 Your latest report is the Block's **current report**.
 
 - \`to: "working"\` with a \`message\` and no exit: you are on the task. Say what you are doing or waiting on. It stays current across every later turn of this visit, including questions to the user, their replies and waits for CI, review, delegated or background work, so do not report it again for those. Report it again only to replace the message or when you reopen the task. Something must resume this thread when outside work changes, such as a watch or delegated work notifying it.
-- \`to: "finished"\` with one \`exit\` from the Block's exits and a result message: the task is complete. While questions are unanswered or CI, review, delegated or background work is still pending, the task is not complete; leave \`working\` current. Unanswered questions and your recommendations are not the user's decisions.
+- \`to: "finished"\` with one \`exit\` from the Block's exits and a result message: the task is complete. A Continuation has no exits: finish it without an exit, with your response as the message. While questions are unanswered or CI, review, delegated or background work is still pending, the task is not complete; leave \`working\` current. Unanswered questions and your recommendations are not the user's decisions.
 
 There is no \`waiting\` report: a question in chat needs no report.
 

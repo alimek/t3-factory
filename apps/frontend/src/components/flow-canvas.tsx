@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   addWire,
   canConnect,
+  continuedThread,
   exitRecipients,
   type BlockPosition,
   type CanvasBlock,
@@ -31,7 +32,7 @@ import {
   type Placement,
 } from "./canvas-surface.tsx";
 import { DragButton } from "./drag-button.tsx";
-import { blockIdentity, exitSourceLabel } from "./flow-block.tsx";
+import { BLOCK_KINDS, blockIdentity, exitSourceLabel } from "./flow-block.tsx";
 
 /** Places a block dragged by `grab` at viewport point x/y, or null when x/y is outside the canvas. */
 export type DropAt = (x: number, y: number, grab: GrabOffset) => Placement | null;
@@ -240,8 +241,18 @@ function authoringFlowInput({
   };
 }
 
-function blockReference(block: FlowBlock, agents: readonly AgentDefinition[]) {
+function blockReference(
+  graph: FlowGraph,
+  block: FlowBlock,
+  agents: readonly AgentDefinition[],
+): { label: string; value: string; valueClassName?: string } {
   if (block.kind === "human") return { label: "Asks", value: "a person" };
+  if (block.kind === "continuation") {
+    const thread = continuedThread(graph, block.id);
+    return thread
+      ? { label: "continues", value: thread, valueClassName: "text-brand-cyan" }
+      : { label: "", value: "no Agent before it", valueClassName: "text-muted-foreground" };
+  }
   if (!block.agentId) return { label: "Agent", value: "not chosen" };
   return {
     label: "Agent",
@@ -263,6 +274,15 @@ function AuthoringExit({
   exit: CanvasBlock["exits"][number];
 }) {
   const recipients = exitRecipients(graph, block.id, exit.id).join(", ");
+  if (exit.source === "continuation")
+    return (
+      <>
+        <span className="truncate text-2xs tracking-label text-muted-foreground">
+          response · prompt sent once per Run
+        </span>
+        <span className="sr-only">→ {recipients || "finish here"}</span>
+      </>
+    );
   return (
     <>
       <span className="truncate text-2xs tracking-label text-muted-foreground">
@@ -312,9 +332,9 @@ function authoringBlock({
   const human = block.kind === "human";
   const name = block.name || "Unnamed block";
   const identity = blockIdentity({
-    human,
+    kind: block.kind,
     name,
-    ...blockReference(block, agents),
+    ...blockReference(graph, block, agents),
     trailing: grip(selected),
   });
   return {
@@ -331,7 +351,7 @@ function authoringBlock({
       render: (rows) => (
         <DragButton
           className={cn(dragPressClass, "rounded-t-lg")}
-          aria-label={`${human ? "Human step" : "Agent"} ${name}`}
+          aria-label={`${BLOCK_KINDS[block.kind].name} ${name}`}
           aria-pressed={selected}
           {...drag}
           onClick={onSelect}
@@ -347,7 +367,9 @@ function authoringBlock({
       exit.unavailable
         ? unavailablePort
         : connectionHandle(
-            `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
+            exit.source === "continuation"
+              ? `Connect output of ${name}`
+              : `Connect exit ${exit.name || "Unnamed exit"} of ${name}`,
             connectingExitId === exit.id,
             connectFrom(exit),
           ),
@@ -358,14 +380,14 @@ function authoringBlock({
 
 /** The identity rows of a new block as this canvas draws them, for the block library's drag ghost. */
 export function BlockPreview({
-  human,
+  kind,
   name,
   label,
   value,
   className,
   style,
 }: {
-  human: boolean;
+  kind: FlowBlock["kind"];
   name: string;
   label: string;
   value: string;
@@ -373,11 +395,15 @@ export function BlockPreview({
   style?: CSSProperties;
 }) {
   const rows = AUTHORING_DIMENSIONS.block;
-  const identity = blockIdentity({ human, name, label, value });
+  const identity = blockIdentity({ kind, name, label, value });
   return (
     <div
       aria-hidden
-      className={cn("rounded-lg bg-card", human && "border-dashed border-border-strong", className)}
+      className={cn(
+        "rounded-lg bg-card",
+        kind === "human" && "border-dashed border-border-strong",
+        className,
+      )}
       style={{ ...style, width: rows.width, borderWidth: rows.border }}
     >
       <IdentityRows rows={rows} header={identity.header} title={identity.title} />

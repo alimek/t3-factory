@@ -245,7 +245,7 @@ read-only `factory_get_run_image({ blockId, imageId })` and
 A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED` and current guidance.
 `factory_report` and `factory_context` are not exposed.
 
-- **Block id.** Start mints one opaque id per Agent Block of the Run, and every launch, visit
+- **Block id.** Start mints one opaque id per Agent Block and Continuation of the Run, and every launch, visit, Continuation prompt
   and Request report message states it on a `Factory Block id:` line. The id is stable across
   visits; reports apply to the Block's current activation. Factory does not read native call
   metadata, the harness call id or the T3 timeline to identify a caller, so every reporting
@@ -304,7 +304,9 @@ Factory-launched Block workers report for their Block from any turn of their thr
 `factory_get_block({ blockId })` returns the Block's current visit, reason, exits, inputs and allowed transitions, also while
 Factory is still confirming the worker's launch. `exits` lists the exits the worker may finish with, each
 `{ id, name, description, messageRequired }`: its captured Agent revision's exits not hidden in the Flow, then the Flow-local
-exits. A Request report message lists the same exits with their descriptions and message requirement.
+exits. A Request report message lists the same exits with their descriptions and message requirement. For a
+Continuation the reason is `continuation`, `prompt` is its captured prompt and `exits` is empty: the worker finishes
+it without an exit, with its response as the message.
 
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source

@@ -21,9 +21,10 @@ type RevisionRow = {
 type BlockRow = {
   flow_revision_id: string;
   block_id: string;
-  kind: "agent" | "human";
+  kind: FlowBlock["kind"];
   name: string;
   agent_id: string | null;
+  prompt: string | null;
   x: number;
   y: number;
 };
@@ -83,9 +84,10 @@ export const appendFlowRevision = Effect.fnUntraced(function* (
     graph.blocks,
     (block, ordinal) =>
       Effect.gen(function* () {
-        yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, x, y)
+        yield* sql`INSERT INTO flow_revision_blocks (flow_revision_id, block_id, ordinal, kind, name, agent_id, prompt, x, y)
         VALUES (${revisionId}, ${block.id}, ${ordinal}, ${block.kind}, ${block.name},
-          ${block.kind === "agent" ? block.agentId : null}, ${block.position.x}, ${block.position.y})`;
+          ${block.kind === "agent" ? block.agentId : null},
+          ${block.kind === "continuation" ? block.prompt : null}, ${block.position.x}, ${block.position.y})`;
         if (block.kind !== "agent") return;
         yield* Effect.forEach(
           block.localExits,
@@ -139,6 +141,8 @@ const toBlock = (
 ): FlowBlock => {
   const base = { id: row.block_id, name: row.name, position: { x: row.x, y: row.y } };
   if (row.kind === "human") return { ...base, kind: "human" };
+  if (row.kind === "continuation")
+    return { ...base, kind: "continuation", prompt: row.prompt ?? "" };
   return {
     ...base,
     kind: "agent",

@@ -1,11 +1,30 @@
 import type { ReactNode } from "react";
-import { Bot, TextCursorInput, User } from "lucide-react";
+import { Bot, CornerDownLeft, TextCursorInput, User } from "lucide-react";
+import type { FlowBlock } from "@t3-factory/contracts";
 import type { EffectiveExit } from "@t3-factory/domain-validation";
+import { cn } from "@/lib/utils";
 
 const EXIT_SOURCE_LABELS: Record<EffectiveExit["source"], string> = {
   agent: "Agent",
   local: "local",
   human: "fixed",
+  continuation: "output",
+};
+
+/** Each block kind's icon and the kind label its header shows. */
+export const BLOCK_KINDS: Record<
+  FlowBlock["kind"],
+  { readonly Icon: typeof Bot; readonly label: string; readonly name: string }
+> = {
+  agent: { Icon: Bot, label: "AGENT", name: "Agent" },
+  human: { Icon: User, label: "HUMAN STEP", name: "Human step" },
+  continuation: { Icon: CornerDownLeft, label: "CONTINUATION", name: "Continuation" },
+};
+
+const KIND_ICON_COLORS: Record<FlowBlock["kind"], string> = {
+  agent: "text-link",
+  human: "text-muted-foreground",
+  continuation: "text-brand-cyan",
 };
 
 /** Where an exit comes from, and whether finishing on it needs a message. */
@@ -16,28 +35,27 @@ export function exitSourceLabel(exit: EffectiveExit) {
 
 /** The content of an authoring block's header and title rows: kind, name and what it runs. */
 export function blockIdentity({
-  human,
+  kind,
   name,
   label,
   value,
+  valueClassName = "text-emphasis-foreground",
   trailing,
 }: {
-  human: boolean;
+  kind: FlowBlock["kind"];
   name: string;
   label: string;
   value: string;
+  valueClassName?: string;
   trailing?: ReactNode;
 }) {
+  const { Icon, label: kindLabel } = BLOCK_KINDS[kind];
   return {
     header: (
       <span className="flex flex-1 items-center gap-1.5 pt-1.5 pr-2 pl-3">
-        {human ? (
-          <User aria-hidden className="size-3 text-muted-foreground" />
-        ) : (
-          <Bot aria-hidden className="size-3 text-link" />
-        )}
+        <Icon aria-hidden className={cn("size-3", KIND_ICON_COLORS[kind])} />
         <span className="text-2xs font-semibold tracking-section text-muted-foreground">
-          {human ? "HUMAN STEP" : "AGENT"}
+          {kindLabel}
         </span>
         <span className="flex-1" />
         {trailing}
@@ -47,8 +65,8 @@ export function blockIdentity({
       <span className="flex flex-1 flex-col gap-1 px-3 pt-0.5">
         <span className="truncate text-sm font-semibold text-foreground">{name}</span>
         <span className="flex min-w-0 gap-1.5 text-2xs tracking-label">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="truncate text-emphasis-foreground">{value}</span>
+          {label && <span className="text-muted-foreground">{label}</span>}
+          <span className={cn("truncate", valueClassName)}>{value}</span>
         </span>
       </span>
     ),

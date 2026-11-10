@@ -97,6 +97,7 @@ async function prepareWorkerRuns() {
       parallel: flow("Demo · Parallel review"),
       parallelStart: flow("Demo · Parallel review from one prompt"),
       worktree: flow("Demo · Build and review in a worktree"),
+      continuation: flow("Demo · Grill, spec and tickets"),
     },
     { titlePrefix: "UI worker · ", keyNamespace: "ui-worker:development-v1:" },
   );

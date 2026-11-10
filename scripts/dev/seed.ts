@@ -28,6 +28,7 @@ import { promisify } from "node:util";
 import type { Factory } from "../../apps/backend/src/index.ts";
 import type { PersistentT3 } from "./persistent-t3.ts";
 import { createDemoFlows } from "./seed-flows.ts";
+import { promptAnswered, promptSent } from "../../apps/backend/test/support/continuation.ts";
 import {
   delegatedWorkPending,
   requireSuccess,
@@ -249,6 +250,25 @@ async function finishScenario(
       await repositoryFactsObserved(context, worker, scenario.repository);
       await delegatedWorkPending(context, worker, scenario.delegations);
       break;
+    case "continuation prompt sent":
+    case "continuation response forwarded": {
+      const review = await resultReleasedToHumanReview(
+        context,
+        await resultReported(context, worker, scenario.grill),
+      );
+      requireSuccess(
+        await context.factory.answerHumanOccurrence(review.occurrence.id, {
+          exitId: "approve",
+          message: scenario.approval,
+        }),
+      );
+      const spec = await promptSent(context, worker);
+      if (scenario.state === "continuation response forwarded") {
+        await promptAnswered(context, worker, spec, scenario.spec);
+        await promptSent(context, worker, "tickets");
+      }
+      break;
+    }
   }
 }
 

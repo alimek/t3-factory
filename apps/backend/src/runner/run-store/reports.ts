@@ -1,7 +1,12 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
-import { nonFinalRejection, reportFingerprint, reportRoute } from "../report-rules.ts";
+import {
+  nonFinalRejection,
+  reportedState,
+  reportFingerprint,
+  reportRoute,
+} from "../report-rules.ts";
 import { readRunDefinitions } from "./run-definitions.ts";
 import type { ReportRunRow } from "../runner-types.ts";
 import { rejected } from "../runner-utils.ts";
@@ -79,7 +84,12 @@ function acceptFinal(
   return Effect.gen(function* () {
     const id = yield* newId,
       time = yield* now;
-    const state: BlockState = block.engine_status !== "completed" ? working : report.status;
+    const written = reportedState(
+      runRow.definitions,
+      block.block_id,
+      block.engine_status !== "completed" ? working : report.status,
+    );
+    const state: BlockState = typeof written === "string" ? written : written.otherwise;
     const reply = acceptedTransition(
       { code: "ACCEPTED", reportId: id, acceptedAt: time },
       report.status,
@@ -106,7 +116,7 @@ function acceptFinal(
         pending_message: report.message ?? "",
         accepted_at: time,
       });
-    yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, state, {
+    yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, written, {
       report_status: report.status,
       problem: null,
     });
