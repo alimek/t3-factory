@@ -77,7 +77,7 @@ export function CanvasZoomControls({
   onZoom: (factor: number) => void;
   onFit: () => void;
   /** Run execution canvas only; the authoring canvas has nothing to follow. */
-  follow?: FollowControl;
+  follow?: FollowControl | undefined;
   trailing?: ReactNode;
   hint?: string;
 }) {

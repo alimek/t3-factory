@@ -7,11 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { StudioLink } from "../components/app-link.tsx";
-import { BLOCK_WIDTH } from "../flow-geometry.ts";
 import type { BlockPosition } from "../flow-graph.ts";
+import type { GrabOffset } from "./canvas-surface.tsx";
 import { DragButton } from "./drag-button.tsx";
-import { BlockIdentity } from "./flow-block.tsx";
-import type { DropAt, GrabOffset } from "./flow-canvas.tsx";
+import { BlockPreview, type DropAt } from "./flow-canvas.tsx";
 import { SectionLabel } from "./page.tsx";
 
 function agentDetail(agent: AgentDefinition) {
@@ -217,22 +216,17 @@ function LibraryItem({
 /** A compact, non-interactive preview of the block a library drag would add. */
 function BlockGhost({ ghost, human, name }: { ghost: Ghost; human: boolean; name: string }) {
   return createPortal(
-    <div
-      aria-hidden
+    <BlockPreview
+      human={human}
+      name={name}
+      label={human ? "Asks" : "Agent"}
+      value={human ? "a person" : name}
       className={cn(
-        "pointer-events-none fixed z-50 rounded-lg border bg-card pb-1.5 shadow-lift",
-        human && "border-dashed border-border-strong",
+        "pointer-events-none fixed z-50 pb-1.5 shadow-lift",
         ghost.overCanvas ? "opacity-90" : "opacity-50",
       )}
-      style={{ left: ghost.left, top: ghost.top, width: BLOCK_WIDTH }}
-    >
-      <BlockIdentity
-        human={human}
-        name={name}
-        label={human ? "Asks" : "Agent"}
-        value={human ? "a person" : name}
-      />
-    </div>,
+      style={{ left: ghost.left, top: ghost.top }}
+    />,
     document.body,
   );
 }

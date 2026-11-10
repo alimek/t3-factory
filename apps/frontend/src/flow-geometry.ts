@@ -1,9 +1,7 @@
-import type { FlowBlock, FlowGraph, FlowInputBlock } from "@t3-factory/contracts";
-import { sameWire, type WireSource, type CanvasBlock } from "./flow-graph.ts";
-
-import { AUTHORING_DIMENSIONS, EXECUTION_DIMENSIONS } from "./components/canvas-dimensions.ts";
+import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
+import { sameWire, type WireSource, type CanvasBlock, type CanvasGraph } from "./flow-graph.ts";
+import { EXECUTION_DIMENSIONS } from "./components/canvas-dimensions.ts";
 import { mergeGraphBounds } from "./canvas-fit.ts";
-import type { CanvasGraph } from "./flow-graph.ts";
 
 export type BlockPorts = { inputY: number; firstExitY: number; exitRow: number };
 type Point = { x: number; y: number };
@@ -11,26 +9,38 @@ export type CanvasDimensions = {
   readonly block: {
     readonly width: number;
     readonly border: number;
+    /** The border of a selected block; extra width is drawn but not counted in block geometry. */
+    readonly selectedBorder: number;
     readonly header: number;
     readonly title: number;
     readonly divider: number;
     readonly exitPaddingTop: number;
     readonly exitPaddingBottom: number;
+    /** The border included in port anchors, which are measured from the block's outer edge. */
     readonly anchorBorder: number;
     readonly inputY: number;
     readonly exitRow: number;
     readonly footer: number;
-    readonly portSize: number;
   };
   readonly flowInput: {
     readonly width: number;
     readonly border: number;
+    readonly anchorBorder: number;
     readonly header: number;
     readonly title: number;
     readonly outputY: number;
-    readonly portSize: number;
     readonly promptLine: number;
     readonly promptImages: number;
+  };
+  readonly port: {
+    /** The drawn circle. */
+    readonly size: number;
+    /** How far a circle reaches past the block's inner edge. */
+    readonly outset: number;
+    /** The hit area of a port that starts a connection. */
+    readonly handle: number;
+    /** The circle of the input a connection being drawn will use. */
+    readonly highlight: number;
   };
 };
 function dimensionPorts({ block }: CanvasDimensions): BlockPorts {
@@ -46,19 +56,12 @@ function dimensionPorts({ block }: CanvasDimensions): BlockPorts {
     exitRow: block.exitRow,
   };
 }
-export const BLOCK_WIDTH = AUTHORING_DIMENSIONS.block.width;
-export const FLOW_INPUT_WIDTH = AUTHORING_DIMENSIONS.flowInput.width;
-export const FLOW_INPUT_OUTPUT_Y = AUTHORING_DIMENSIONS.flowInput.outputY;
-export const AUTHORING_PORTS = dimensionPorts(AUTHORING_DIMENSIONS);
-export const EXECUTION_PORTS = dimensionPorts(EXECUTION_DIMENSIONS);
-/** Space for top badges and bottom controls; fit never enlarges beyond 100%. */
-export const CANVAS_FIT_PADDING = { x: 48, top: 64, bottom: 80 };
 
 type GeometryFacts = {
   readonly prompt?: "none" | "line" | "images";
   readonly footerCount?: (block: CanvasBlock) => number;
   readonly reservedFooterCount?: number;
-  readonly emptyGraphSize?: { readonly width: number; readonly height: number };
+  readonly emptyGraphSize?: { readonly width: number; readonly height: number } | undefined;
 };
 
 export function createCanvasGeometry(
@@ -77,8 +80,8 @@ export function createCanvasGeometry(
     rows.exitPaddingTop +
     rows.exitPaddingBottom +
     block.exits.length * rows.exitRow;
-  const bodyHeight = (block: CanvasBlock, fanIn = incomingFanIn(graph, block.id)) =>
-    blockHeightForIncomingFanIn(fanIn, ports, baseHeight(block));
+  const bodyHeight = (block: CanvasBlock) =>
+    blockHeightForIncomingFanIn(incomingFanIn(graph, block.id), ports, baseHeight(block));
   const blockHeight = (block: CanvasBlock) =>
     bodyHeight(block) + (facts.footerCount?.(block) ?? 0) * rows.footer;
   const flowInputBox = {
@@ -109,10 +112,14 @@ export function createCanvasGeometry(
           height: Math.max(box.height, facts.emptyGraphSize.height),
         };
   };
+  const inputPoint = (block: FlowBlock, index: number): Point => ({
+    x: block.position.x,
+    y: block.position.y + incomingPortY(index, ports),
+  });
   const incomingPorts = (block: CanvasBlock) =>
     incomingWiresForBlock(graph, block.id).map((source, index) => ({
       source,
-      ...blockInputPointForIndex(block, index, ports),
+      ...inputPoint(block, index),
     }));
   const reservedHeight = (block: CanvasBlock) =>
     Math.max(
@@ -128,30 +135,28 @@ export function createCanvasGeometry(
     ports,
     flowInputBox,
     blockHeight,
-    bodyHeight,
     bounds,
     incomingPorts,
     reservedHeight,
     focusBounds,
-    incomingGrowth: (block: CanvasBlock) => bodyHeight(block) - baseHeight(block),
-  };
-}
-
-export function exitPoint(block: CanvasBlock, exitId: string, ports = AUTHORING_PORTS) {
-  const index = Math.max(
-    0,
-    block.exits.findIndex((exit) => exit.id === exitId),
-  );
-  return {
-    x: block.position.x + BLOCK_WIDTH,
-    y: block.position.y + ports.firstExitY + index * ports.exitRow,
-  };
-}
-
-export function flowInputPoint(flowInput: FlowInputBlock) {
-  return {
-    x: flowInput.position.x + FLOW_INPUT_WIDTH,
-    y: flowInput.position.y + FLOW_INPUT_OUTPUT_Y,
+    inputPoint,
+    exitPoint: (block: CanvasBlock, exitId: string): Point => {
+      const index = Math.max(
+        0,
+        block.exits.findIndex((exit) => exit.id === exitId),
+      );
+      return {
+        x: block.position.x + rows.width,
+        y: block.position.y + ports.firstExitY + index * ports.exitRow,
+      };
+    },
+    flowInputPoint: {
+      x: graph.flowInput.position.x + input.width,
+      y: graph.flowInput.position.y + input.outputY,
+    },
+    /** Room below the rows for incoming ports, in a frame drawn with `border`. */
+    incomingGrowth: (block: CanvasBlock, border = rows.border) =>
+      Math.max(0, bodyHeight(block) - baseHeight(block) - 2 * (border - rows.border)),
   };
 }
 
@@ -173,7 +178,7 @@ export function wirePath(from: Point, to: Point, approachLane = 0) {
 
 const CORNER = 4;
 /** Ports are 10 px circles centred on the block edge; edges start and end at their rims. */
-export const PORT_RIM = EXECUTION_DIMENSIONS.block.portSize / 2;
+export const PORT_RIM = EXECUTION_DIMENSIONS.port.size / 2;
 
 /** A polyline with 4 px rounded corners (Figma execution edges). */
 export function roundedPolyline(points: readonly Point[]) {
@@ -271,10 +276,6 @@ export function incomingPortIndexForSource(
 
 export function incomingPortY(index: number, ports: BlockPorts) {
   return ports.inputY + index * INCOMING_PORT_SPACING;
-}
-
-export function blockInputPointForIndex(block: FlowBlock, index: number, ports: BlockPorts): Point {
-  return { x: block.position.x, y: block.position.y + incomingPortY(index, ports) };
 }
 
 export function elkInputPortId(targetBlockId: string, index: number) {

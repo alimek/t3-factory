@@ -1,10 +1,14 @@
 import type { CanvasDimensions } from "../flow-geometry.ts";
 
-/** Authoring rows retain their existing border-relative port offsets. */
+/**
+ * Authoring rows retain their existing border-relative port offsets: anchors are measured
+ * from the outer edge while ports sit inside the border.
+ */
 export const AUTHORING_DIMENSIONS: CanvasDimensions = {
   block: {
     width: 240,
     border: 1,
+    selectedBorder: 2,
     header: 30,
     title: 44,
     divider: 1,
@@ -14,24 +18,25 @@ export const AUTHORING_DIMENSIONS: CanvasDimensions = {
     inputY: 51,
     exitRow: 24,
     footer: 0,
-    portSize: 12,
   },
   flowInput: {
     width: 200,
     border: 1,
+    anchorBorder: 0,
     header: 30,
     title: 44,
     outputY: 51,
-    portSize: 12,
     promptLine: 0,
     promptImages: 0,
   },
+  port: { size: 12, outset: 6, handle: 20, highlight: 16 },
 };
 
 export const EXECUTION_DIMENSIONS: CanvasDimensions = {
   block: {
     width: 240,
     border: 1.5,
+    selectedBorder: 1.5,
     header: 26,
     title: 62,
     divider: 1,
@@ -41,7 +46,12 @@ export const EXECUTION_DIMENSIONS: CanvasDimensions = {
     inputY: 18.5,
     exitRow: 22,
     footer: 32,
-    portSize: 10,
   },
-  flowInput: { ...AUTHORING_DIMENSIONS.flowInput, portSize: 10, promptLine: 26, promptImages: 108 },
+  flowInput: {
+    ...AUTHORING_DIMENSIONS.flowInput,
+    anchorBorder: 1,
+    promptLine: 26,
+    promptImages: 108,
+  },
+  port: { size: 10, outset: 6, handle: 10, highlight: 10 },
 };

@@ -21,13 +21,13 @@ type CanvasViewportOptions = {
   scope: string | null;
   getBounds: () => GraphBounds;
   /** Whether this canvas is shown rather than covered by another screen. */
-  shown?: boolean;
+  shown: boolean;
   /** Frames `focusTargets` on entry and while following; explicit Fit and accepted layouts still fit the whole graph. */
-  getFocusView?: (width: number, height: number) => CanvasView;
+  getFocusView?: ((width: number, height: number) => CanvasView) | undefined;
   /** Ids the focus view frames, in a stable order. Providing them enables following. */
-  focusTargets?: readonly string[];
+  focusTargets?: readonly string[] | undefined;
   padding: { x: number; top: number; bottom: number };
-  contentInsetY?: number;
+  /** Width a floating panel covers at the right; fit frames the graph beside it. */
   reservedRight?: number;
   /** Authoring refits on real size changes; a fitted Run keeps its view. */
   resize: "refit" | "preserve";
@@ -209,7 +209,7 @@ function useCanvasFit(
               size.width,
               size.height,
               current.padding,
-              current.contentInsetY ?? 0,
+              0,
             ),
       );
       const rect = size.element.getBoundingClientRect();
@@ -270,7 +270,7 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     options.focusTargets?.join("\n"),
     liveRef,
     moveToFocus,
-    options.shown ?? true,
+    options.shown,
     stopAnimation,
   );
   const { stopFollowing } = follow;
@@ -308,7 +308,6 @@ export function useCanvasViewport(options: CanvasViewportOptions) {
     changeViewManually((current) => zoomCanvasBy(surface.current, current, factor));
   return {
     view,
-    fit,
     fitFlow,
     zoom,
     startPan,

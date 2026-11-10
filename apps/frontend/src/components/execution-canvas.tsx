@@ -16,8 +16,9 @@ import {
   CanvasSurface,
   type CanvasBlockContent,
   type CanvasFlowInputContent,
+  type CanvasPort,
 } from "./canvas-surface.tsx";
-import { exitSourceLabel } from "./flow-wires.tsx";
+import { exitSourceLabel } from "./flow-block.tsx";
 import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
 import { clockTime, executionStateLabel, StatePill } from "./execution-state.tsx";
@@ -257,12 +258,30 @@ function executionFooters(
   return footers;
 }
 
+const pressClass =
+  "flex w-full flex-col rounded-lg text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+/** Ports only mark where wires meet the block. */
+const port: CanvasPort = { className: "border-[1.5px] border-subtle-foreground bg-background" };
+
+/** Without blocks, fit frames a canvas-sized area from the Flow input instead of the input alone. */
+const EMPTY_GRAPH_SIZE = { width: 640, height: 420 };
+
 /** Read-only Flow input: the Run prompt with no execution state; pressing it clears the selection. */
 function executionFlowInput(run: RunDetail, onClearSelection: () => void): CanvasFlowInputContent {
   const images = run.images.length > 0;
   const prompt = images ? runPromptText(run) : run.input.trim();
   return {
-    press: { label: `Flow input, prompt: ${prompt}`, onPress: onClearSelection },
+    press: (rows) => (
+      <button
+        type="button"
+        className={pressClass}
+        aria-label={`Flow input, prompt: ${prompt}`}
+        onClick={onClearSelection}
+      >
+        {rows}
+      </button>
+    ),
     // Reference chips and thumbnails are controls, so they sit outside the press target.
     prompt: images
       ? { kind: "images", content: <FlowInputPrompt run={run} /> }
@@ -274,6 +293,7 @@ function executionFlowInput(run: RunDetail, onClearSelection: () => void): Canva
             </p>
           ),
         },
+    port,
   };
 }
 
@@ -291,19 +311,34 @@ function executionBlock(
   const human = block.kind === "human";
   return {
     className: cn(frameColor[state], selected && "border-primary ring-1 ring-primary"),
+    selected,
     press: {
-      label: `${human ? "Human step" : "Agent"} ${block.name || "Unnamed block"}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`,
-      pressed: selected,
-      onPress: onSelect,
+      covers: "block",
+      render: (rows) => (
+        <button
+          type="button"
+          className={pressClass}
+          aria-label={`${human ? "Human step" : "Agent"} ${block.name || "Unnamed block"}, ${executionStateLabel(state)}${workingMessage ? ` · ${workingMessage}` : ""}`}
+          aria-pressed={selected}
+          onClick={onSelect}
+        >
+          {rows}
+        </button>
+      ),
     },
     header: <ExecutionBlockHeader human={human} state={state} />,
     title: (
       <ExecutionBlockTitle run={run} block={block} recorded={recorded} observation={observation} />
     ),
     exit: (exit) => <ExecutionExit graph={run.definitions.flow.graph} block={block} exit={exit} />,
+    exitPort: () => port,
+    incomingPort: () => port,
     footers: executionFooters(run, block, recorded, observation),
   };
 }
+
+/** Space the top-left badges cover above the graph. */
+const BADGES_HEIGHT = 64;
 
 /**
  * Read-only canvas of a captured Flow revision. The viewport is local UI state: live updates
@@ -339,6 +374,10 @@ export function ExecutionCanvas({
           onSelect(block.id),
         )
       }
+      wires={{ kind: "orthogonal", label: "Configured connections" }}
+      resize="preserve"
+      covered={{ top: BADGES_HEIGHT, right: 0 }}
+      emptyGraphSize={EMPTY_GRAPH_SIZE}
       focusTargets={selectExecutionTargets(run.blocks)}
       shown={shown}
       onTap={() => onSelect(null)}
