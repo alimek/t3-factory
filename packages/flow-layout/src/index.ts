@@ -1,7 +1,7 @@
 import type { ELK, ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api.js";
 import type { FlowBlock, FlowGraph } from "@t3-factory/contracts";
 import { isCanvasPosition } from "@t3-factory/domain-validation";
-import { incomingPortIndex, incomingWires } from "./graph.ts";
+import { incomingPortIndex, incomingWires, wireRouteKey } from "./graph.ts";
 
 /** Exits must include unavailable wired endpoints, in the same order the canvas draws them. */
 export type LayoutBlock = FlowBlock & {
@@ -14,10 +14,6 @@ export type FlowLayoutPositions = {
   readonly flowInput: { x: number; y: number };
   readonly blocks: ReadonlyMap<string, { x: number; y: number }>;
 };
-
-function connectionId(connection: FlowGraph["connections"][number]) {
-  return `${connection.sourceBlockId}:${connection.exitId}:${connection.targetBlockId}`;
-}
 
 function elkInputPortId(targetBlockId: string, index: number) {
   return `in:${targetBlockId}:${index}`;
@@ -197,7 +193,7 @@ function buildEdges<B extends LayoutBlock>(
 ): ElkExtendedEdge[] {
   const edges: ElkExtendedEdge[] = [];
   for (const targetBlockId of graph.flowInput.targetBlockIds) {
-    const id = `flow-input:${targetBlockId}`;
+    const id = wireRouteKey({ kind: "flow-input" }, targetBlockId);
     edges.push({
       id,
       sources: [flowInputPortId()],
@@ -210,8 +206,8 @@ function buildEdges<B extends LayoutBlock>(
     });
   }
   for (const connection of graph.connections) {
-    const id = connectionId(connection);
     const { sourceBlockId, exitId, targetBlockId } = connection;
+    const id = wireRouteKey({ kind: "exit", sourceBlockId, exitId }, targetBlockId);
     const index = incomingPortIndex(graph, targetBlockId, { kind: "exit", sourceBlockId, exitId });
     edges.push({
       id,
@@ -289,5 +285,6 @@ export {
   incomingWires,
   type CanvasBlock,
   type CanvasGraph,
+  wireRouteKey,
   type WireSource,
 } from "./graph.ts";

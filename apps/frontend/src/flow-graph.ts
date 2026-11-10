@@ -67,11 +67,6 @@ export function replaceBlock(graph: FlowGraph, next: FlowBlock): FlowGraph {
  */
 export type FlowWire = { readonly source: WireSource; readonly targetBlockId: string };
 
-export function wireRouteKey(source: WireSource, targetBlockId: string) {
-  if (source.kind === "flow-input") return `flow-input:${targetBlockId}`;
-  return `${source.sourceBlockId}:${source.exitId}:${targetBlockId}`;
-}
-
 export function connectionWire(connection: FlowConnection): FlowWire {
   const { sourceBlockId, exitId, targetBlockId } = connection;
   return { source: { kind: "exit", sourceBlockId, exitId }, targetBlockId };

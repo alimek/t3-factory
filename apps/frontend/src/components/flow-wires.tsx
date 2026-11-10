@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { incomingPortIndex } from "@t3-factory/flow-layout";
+import { incomingPortIndex, wireRouteKey } from "@t3-factory/flow-layout";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,6 @@ import {
 import {
   connectionWire,
   sameWire,
-  wireRouteKey,
   type CanvasBlock,
   type CanvasGraph,
   type FlowWire,

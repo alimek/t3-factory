@@ -306,6 +306,11 @@ export async function callAuthoringTool(
       next: nextSteps[subject][code] ?? unavailableNext,
     });
   } catch {
-    return textResult(true, { code: "internal", issues: [], next: unavailableNext });
+    return textResult(true, {
+      code: "internal",
+      message: "Factory could not complete this call.",
+      issues: [],
+      next: unavailableNext,
+    });
   }
 }

@@ -47,6 +47,12 @@ export type WireSource =
   | { readonly kind: "exit"; readonly sourceBlockId: string; readonly exitId: string }
   | { readonly kind: "flow-input" };
 
+/** The id of a wire's ELK edge, which is also the key the canvas looks its route up by. */
+export function wireRouteKey(source: WireSource, targetBlockId: string) {
+  if (source.kind === "flow-input") return `flow-input:${targetBlockId}`;
+  return `${source.sourceBlockId}:${source.exitId}:${targetBlockId}`;
+}
+
 /** A block's incoming wires in input-port order: the Flow input first, then connections in graph order. */
 export function incomingWires(graph: FlowGraph, targetBlockId: string): readonly WireSource[] {
   const wires: WireSource[] = [];

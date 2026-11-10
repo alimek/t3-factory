@@ -582,56 +582,51 @@ function checkWorkspace(raw: unknown, issue: IssueReporter): FlowWorkspace | und
 }
 
 /** A graph supplied at creation is validated exactly as a saved graph. */
-export function validateCreateFlow(input: unknown): Result<CreateFlowInput> {
+/** Checks a create or save body in one pass, so a reply lists every defect at once. */
+function checkFlowBody(input: unknown, required: boolean) {
   const name = validateFlowName(input);
   if (!name.ok) return name;
   const raw = input as Record<string, unknown>;
   const issues: ValidationIssue[] = [];
   const issue: IssueReporter = (code, path, message) => issues.push({ code, path, message });
+  if (
+    required &&
+    (!Number.isSafeInteger(raw.expectedRevision) || (raw.expectedRevision as number) < 1)
+  )
+    issue("invalid_revision", "expectedRevision", "Include the revision you opened.");
   if (raw.graph !== undefined) checkGraph(raw.graph, issue);
+  else if (required)
+    issue("invalid_graph", "graph", "Supply blocks, connections and the Flow input block.");
   const workspace = raw.workspace === undefined ? undefined : checkWorkspace(raw.workspace, issue);
-  return issues.length
-    ? { ok: false, error: { code: "validation", message: issues[0]!.message, issues } }
-    : {
-        ok: true,
-        value: {
-          ...name.value,
-          ...(raw.graph !== undefined
-            ? { graph: trimLocalExitNames(raw.graph as FlowGraphInput) }
-            : {}),
-          ...(workspace ? { workspace } : {}),
-        },
-      };
+  if (issues.length)
+    return {
+      ok: false as const,
+      error: { code: "validation" as const, message: issues[0]!.message, issues },
+    };
+  return {
+    ok: true as const,
+    value: {
+      ...name.value,
+      ...(raw.graph !== undefined
+        ? { graph: trimLocalExitNames(raw.graph as FlowGraphInput) }
+        : {}),
+      ...(workspace ? { workspace } : {}),
+    },
+    expectedRevision: raw.expectedRevision as number,
+  };
 }
-
-/** Reject malformed/ambiguous graphs, while preserving unfinished authoring. */
+export function validateCreateFlow(input: unknown): Result<CreateFlowInput> {
+  const checked = checkFlowBody(input, false);
+  return checked.ok ? { ok: true, value: checked.value } : checked;
+}
 export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
-  const created = validateCreateFlow(input);
-  if (!created.ok) return created;
-  const raw = input as Record<string, unknown>;
-  const issues: ValidationIssue[] = [];
-  if (!Number.isSafeInteger(raw.expectedRevision) || (raw.expectedRevision as number) < 1)
-    issues.push({
-      code: "invalid_revision",
-      path: "expectedRevision",
-      message: "Include the revision you opened.",
-    });
-  if (raw.graph === undefined)
-    issues.push({
-      code: "invalid_graph",
-      path: "graph",
-      message: "Supply blocks, connections and the Flow input block.",
-    });
-  return issues.length
-    ? { ok: false, error: { code: "validation", message: issues[0]!.message, issues } }
-    : {
-        ok: true,
-        value: {
-          ...created.value,
-          expectedRevision: raw.expectedRevision as number,
-          graph: created.value.graph!,
-        },
-      };
+  const checked = checkFlowBody(input, true);
+  if (!checked.ok) return checked;
+  const { graph, ...rest } = checked.value;
+  return {
+    ok: true,
+    value: { ...rest, expectedRevision: checked.expectedRevision, graph: graph! },
+  };
 }
 
 /** Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly. */
