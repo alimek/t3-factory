@@ -65,6 +65,14 @@ The public Factory API is the behavioral boundary for HTTP clients and integrati
 full synchronous durability, and applies pending migrations before exposing operations.
 Always close it with `await factory.close()`.
 
+Each HTTP operation is defined once in the contracts package: its method, path, named
+parameters, request body and answer kinds, and input and output types. The backend route
+table, frontend client and facade type derive from those definitions. The table requires
+an entry for every definition, with one entry per listener for client scope; path shape
+determines precedence and conflicting entries refuse server startup. Trust attributes and
+body limits belong to the backend, alongside the handlers and business validation.
+The facade declares only its three operations not reached over HTTP separately.
+
 Operations return either a value or an error with `code`, `message` and field-addressed
 issues. Storage failures are sanitized at this boundary. Validate untrusted input here;
 keep transports limited to translating requests and responses. Product routes are shared

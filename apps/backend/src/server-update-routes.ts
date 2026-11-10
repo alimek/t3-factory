@@ -6,7 +6,7 @@ import {
   type ServerUpdateAction,
 } from "@t3-factory/contracts";
 import { resultResponse } from "./http-support.ts";
-import { operationRoutes } from "./route-table.ts";
+import type { RouteEntries } from "./route-table.ts";
 import type { Factory } from "./open-factory.ts";
 import { failure } from "./result.ts";
 
@@ -43,7 +43,7 @@ export function serverUpdateRoutes(
   factory: Factory,
   application: string,
   updates: ApplicationUpdates = sourceUpdates,
-): ReturnType<typeof operationRoutes> {
+): RouteEntries<typeof serverUpdateOperations> {
   const read = async (): Promise<Result<ServerUpdate>> => {
     const lifecycle = await factory.getHostLifecycle();
     if (!lifecycle.ok) return lifecycle;
@@ -73,12 +73,12 @@ export function serverUpdateRoutes(
         (result) => resultResponse(result),
       ),
   });
-  return operationRoutes(serverUpdateOperations, {
+  return {
     getServerUpdate: {
       handle: () => Effect.map(Effect.promise(read), (result) => resultResponse(result)),
     },
     checkServerUpdate: action("check"),
     downloadServerUpdate: action("download"),
     installServerUpdate: action("install"),
-  });
+  };
 }

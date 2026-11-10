@@ -1,20 +1,21 @@
 import type * as Effect from "effect/Effect";
 import type { HttpServerResponse } from "effect/http";
 import {
+  httpOperations,
   matchOperation,
   type OperationDefinition,
   type OperationParameters,
   type RawBody,
 } from "@t3-factory/contracts";
-import type { ApiRoute, JsonBodyLimit, OperationCall, RouteTrust } from "./http-support.ts";
+import type { JsonBodyLimit, OperationCall, RouteTrust } from "./http-support.ts";
 import type { Surface } from "./listener.ts";
 
 type Response = Effect.Effect<HttpServerResponse.HttpServerResponse>;
 
 type BodyInput<Body> = Body extends "json" ? unknown : Body extends "bytes" ? RawBody : undefined;
 
-/** What the handler of a derived entry receives. */
-interface RouteCall<D extends OperationDefinition> extends Omit<OperationCall, "id" | "input"> {
+/** What an operation handler receives. */
+interface RouteCall<D extends OperationDefinition> extends Omit<OperationCall, "input"> {
   /** Path parameters and declared query parameters by name. */
   readonly parameters: OperationParameters<D>;
   /** The unvalidated JSON value, the received bytes, or undefined without a body. */
@@ -29,13 +30,13 @@ type ListenerEntry<D extends OperationDefinition> = Omit<RouteTrust, "surface"> 
 type RouteEntry<D extends OperationDefinition> = ListenerEntry<D> & Pick<RouteTrust, "surface">;
 
 /** One entry per definition, or one per listener when each listener answers differently. */
-type RouteEntries<Definitions extends Record<string, OperationDefinition>> = {
-  readonly [K in keyof Definitions]:
-    | RouteEntry<Definitions[K]>
-    | {
+export type RouteEntries<Definitions extends Record<string, OperationDefinition>> = {
+  readonly [K in keyof Definitions]: K extends "getClientScope"
+    ? {
         readonly host: ListenerEntry<Definitions[K]>;
         readonly remote: ListenerEntry<Definitions[K]>;
-      };
+      }
+    : RouteEntry<Definitions[K]>;
 };
 
 interface DerivedRoute extends RouteTrust {
@@ -45,14 +46,10 @@ interface DerivedRoute extends RouteTrust {
   readonly handle: (call: RouteCall<OperationDefinition>) => Response;
 }
 
-/** The route table's entries for a set of definitions. */
-export function operationRoutes<Definitions extends Record<string, OperationDefinition>>(
-  definitions: Definitions,
-  entries: RouteEntries<Definitions>,
-): readonly DerivedRoute[] {
-  return Object.entries(definitions).flatMap(([name, definition]) => {
+function operationRoutes(entries: RouteEntries<typeof httpOperations>): readonly DerivedRoute[] {
+  return Object.entries(httpOperations).flatMap(([name, definition]) => {
     // The mapped type pairs each entry with its own definition; the table handles them uniformly.
-    const entry = entries[name] as unknown as
+    const entry = entries[name as keyof typeof httpOperations] as unknown as
       | RouteEntry<OperationDefinition>
       | { host: RouteEntry<OperationDefinition>; remote: RouteEntry<OperationDefinition> };
     return "handle" in entry
@@ -72,10 +69,7 @@ interface Route extends RouteTrust {
     method: string,
     pathname: string,
   ) => Readonly<Record<string, string>> | undefined;
-  readonly handle: (
-    parameters: Readonly<Record<string, string>>,
-    call: Omit<OperationCall, "id">,
-  ) => Response;
+  readonly handle: (parameters: Readonly<Record<string, string>>, call: OperationCall) => Response;
 }
 
 export interface RouteMatch {
@@ -112,7 +106,7 @@ const byPrecedence = (a: DerivedRoute, b: DerivedRoute) => {
 const shareListener = (a: RouteTrust, b: RouteTrust) =>
   a.surface === undefined || b.surface === undefined || a.surface === b.surface;
 
-/** Refuses two derived entries that could claim the same request on one listener. */
+/** Refuses two entries that could claim the same request on one listener. */
 function refuseConflicts(routes: readonly DerivedRoute[]) {
   for (const [index, route] of routes.entries())
     for (const other of routes.slice(index + 1))
@@ -145,31 +139,11 @@ const fromDerived = (route: DerivedRoute): Route => ({
     }),
 });
 
-const fromPattern = (route: ApiRoute): Route => ({
-  ...route,
-  body: route.body
-    ? { kind: "json", limit: route.body }
-    : route.rawBody
-      ? { kind: "bytes", limit: route.rawBody }
-      : undefined,
-  match: (method, pathname) => {
-    const match = method === route.method ? route.path.exec(pathname) : null;
-    return match ? { id: match[1] ?? "" } : undefined;
-  },
-  handle: (parameters, call) => route.handle({ ...call, id: parameters.id ?? "" }),
-});
-
-/**
- * Derived entries match by path shape and are tried before pattern routes, which keep their
- * order until their group is migrated. Throws when two derived entries conflict.
- */
-export function routeTable(routes: readonly (ApiRoute | DerivedRoute)[]): RouteTable {
-  const derived = routes.filter((route): route is DerivedRoute => "definition" in route);
-  refuseConflicts(derived);
-  const ordered = [
-    ...derived.toSorted(byPrecedence).map(fromDerived),
-    ...routes.filter((route): route is ApiRoute => !("definition" in route)).map(fromPattern),
-  ];
+/** Literal segments win over parameters; conflicting entries refuse server startup. */
+export function routeTable(entries: RouteEntries<typeof httpOperations>): RouteTable {
+  const routes = operationRoutes(entries);
+  refuseConflicts(routes);
+  const ordered = routes.toSorted(byPrecedence).map(fromDerived);
   return (surface, method, pathname) => {
     for (const route of ordered) {
       if (route.surface !== undefined && route.surface !== surface) continue;

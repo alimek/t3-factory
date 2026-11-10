@@ -49,7 +49,7 @@ import { runtimeMcpHandler } from "./runtime-mcp.ts";
 import { remoteAccessController } from "./remote-listener.ts";
 import { serverUpdateRoutes, type ApplicationUpdates } from "./server-update-routes.ts";
 import { startLiveTransport, type LiveTransport } from "./live-transport.ts";
-import { operationRoutes, routeTable, type RouteTable } from "./route-table.ts";
+import { routeTable, type RouteEntries, type RouteTable } from "./route-table.ts";
 
 export type { ApplicationUpdates } from "./server-update-routes.ts";
 
@@ -113,19 +113,18 @@ function requestTarget(request: HttpServerRequestType): { url: URL; pathname: st
 const answer = (operation: () => Promise<Result<unknown>>, successStatus = 200) =>
   Effect.map(Effect.promise(operation), (result) => resultResponse(result, successStatus));
 
-/** Pattern routes: first match wins, so literal paths precede parameter routes within each resource. */
 function apiRoutes(factory: Factory) {
-  return [
+  return {
     ...runRoutes(factory),
     ...connectionRoutes(factory),
     ...projectRoutes(factory),
     ...flowRoutes(factory),
     ...agentRoutes(factory),
-  ];
+  };
 }
 
-function runRoutes(factory: Factory) {
-  return operationRoutes(runOperations, {
+function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
+  return {
     listRunNavigation: {
       handle: () => answer(() => factory.listRunNavigation()),
     },
@@ -197,11 +196,11 @@ function runRoutes(factory: Factory) {
           runImageResponse,
         ),
     },
-  });
+  };
 }
 
-function connectionRoutes(factory: Factory) {
-  return operationRoutes(connectionOperations, {
+function connectionRoutes(factory: Factory): RouteEntries<typeof connectionOperations> {
+  return {
     getReportingInstallations: { handle: () => answer(() => factory.getReportingInstallations()) },
     installReporting: {
       body: standardBody,
@@ -228,49 +227,47 @@ function connectionRoutes(factory: Factory) {
       // the consent page, state and tokens stay on the host.
       handle: () => answer(() => factory.openConnectionAuthorization()),
     },
-  });
+  };
 }
 
-function projectRoutes(factory: Factory) {
-  return [
-    ...operationRoutes(projectOperations, {
-      listProjects: { handle: () => answer(() => factory.listProjects()) },
-      recheckProjects: { handle: () => answer(() => factory.recheckProjects()) },
-      addRepository: {
-        body: standardBody,
-        handle: ({ input }) => answer(() => factory.addRepository(input)),
-      },
-      selectProject: {
-        body: standardBody,
-        handle: ({ input }) => answer(() => factory.selectProject(input)),
-      },
-      getProjectFavicon: {
-        protocolOptional: true,
-        handle: ({ parameters }) =>
-          Effect.map(
-            Effect.promise(() => factory.getProjectFavicon(parameters.id)),
-            sendFaviconResponse,
-          ),
-      },
-      getProjectReadiness: {
-        handle: ({ parameters }) => answer(() => factory.getProjectReadiness(parameters.id)),
-      },
-    }),
-    ...operationRoutes(projectServerOperations, {
-      headProjectFavicon: {
-        protocolOptional: true,
-        handle: ({ parameters }) =>
-          Effect.map(
-            Effect.promise(() => factory.getProjectFavicon(parameters.id)),
-            sendFaviconResponse,
-          ),
-      },
-    }),
-  ];
+function projectRoutes(
+  factory: Factory,
+): RouteEntries<typeof projectOperations & typeof projectServerOperations> {
+  return {
+    listProjects: { handle: () => answer(() => factory.listProjects()) },
+    recheckProjects: { handle: () => answer(() => factory.recheckProjects()) },
+    addRepository: {
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.addRepository(input)),
+    },
+    selectProject: {
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.selectProject(input)),
+    },
+    getProjectFavicon: {
+      protocolOptional: true,
+      handle: ({ parameters }) =>
+        Effect.map(
+          Effect.promise(() => factory.getProjectFavicon(parameters.id)),
+          sendFaviconResponse,
+        ),
+    },
+    getProjectReadiness: {
+      handle: ({ parameters }) => answer(() => factory.getProjectReadiness(parameters.id)),
+    },
+    headProjectFavicon: {
+      protocolOptional: true,
+      handle: ({ parameters }) =>
+        Effect.map(
+          Effect.promise(() => factory.getProjectFavicon(parameters.id)),
+          sendFaviconResponse,
+        ),
+    },
+  };
 }
 
-function flowRoutes(factory: Factory) {
-  return operationRoutes(flowOperations, {
+function flowRoutes(factory: Factory): RouteEntries<typeof flowOperations> {
+  return {
     listFlows: { handle: () => answer(() => factory.listFlows()) },
     createFlow: {
       body: standardBody,
@@ -286,11 +283,11 @@ function flowRoutes(factory: Factory) {
       body: flowDocumentBody,
       handle: ({ parameters, input }) => answer(() => factory.updateFlow(parameters.id, input)),
     },
-  });
+  };
 }
 
-function agentRoutes(factory: Factory) {
-  return operationRoutes(agentOperations, {
+function agentRoutes(factory: Factory): RouteEntries<typeof agentOperations> {
+  return {
     getAgentCapabilities: { handle: () => answer(() => factory.getAgentCapabilities()) },
     listAgents: { handle: () => answer(() => factory.listAgents()) },
     createAgent: {
@@ -308,7 +305,7 @@ function agentRoutes(factory: Factory) {
       handle: ({ parameters, input }) => answer(() => factory.updateAgent(parameters.id, input)),
     },
     removeAgent: { handle: ({ parameters }) => answer(() => factory.removeAgent(parameters.id)) },
-  });
+  };
 }
 
 /**
@@ -637,11 +634,11 @@ export async function startServer(config: Configuration, options: ServerOptions 
   let host: Awaited<ReturnType<typeof listen>>;
   try {
     // Refuses conflicting entries before the server binds.
-    routes = routeTable([
+    routes = routeTable({
       ...accessRoutes(factory, protocol, remote, limiter, live),
       ...apiRoutes(factory),
       ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
-    ]);
+    });
     host = await listen(
       nodeServer,
       config.host,

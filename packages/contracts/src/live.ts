@@ -1,11 +1,8 @@
-import type {
-  FlowDraft,
-  OperationError,
-  ProjectCatalog,
-  RunDetail,
-  RunNavigationEntry,
-  T3Connection,
-} from "./index.ts";
+import type { FlowDraft } from "./flow.ts";
+import type { OperationError } from "./result.ts";
+import type { ProjectCatalog } from "./project.ts";
+import type { RunDetail, RunNavigationEntry } from "./run.ts";
+import type { T3Connection } from "./connection.ts";
 
 /**
  * Live delivery over the shared window connection. Every scope starts with an authoritative

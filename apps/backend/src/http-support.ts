@@ -138,8 +138,6 @@ export function runImageResponse(
 }
 
 export interface OperationCall {
-  /** First path parameter; empty for routes without one. */
-  readonly id: string;
   /** Parsed JSON body; undefined for routes that take none. */
   readonly input: unknown;
   readonly url: URL;
@@ -161,14 +159,4 @@ export interface RouteTrust {
   readonly public?: true;
   /** Host setup that changes the host's T3 or reporting state; remote clients get `host_only`. */
   readonly hostOnly?: true;
-}
-
-/** A route in pattern form, replaced group by group by entries derived from definitions. */
-export interface ApiRoute extends RouteTrust {
-  readonly method: string;
-  readonly path: RegExp;
-  readonly body?: JsonBodyLimit;
-  /** Raw bytes instead of JSON; the input is `{ mimeType, data }`. */
-  readonly rawBody?: JsonBodyLimit;
-  readonly handle: (call: OperationCall) => Effect.Effect<HttpServerResponse.HttpServerResponse>;
 }

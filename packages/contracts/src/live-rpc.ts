@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import type { OperationError } from "./index.ts";
+import type { OperationError } from "./result.ts";
 import {
   RUN_VIEW_LIMIT,
   type ConnectionLiveMessage,
