@@ -20,7 +20,9 @@ const modSlash = `${shortcutMod}+/`;
 test("palette Enter opens the selected Flow", async ({ app, screen, browser }) => {
   // Arrange
   await app.open("/runs/new");
-  await expect(screen.getByRole("heading", /What should we work on/)).toBeVisible();
+  await expect(
+    screen.getByRole("heading", /Deliberately missing heading for validation/),
+  ).toBeVisible();
   await browser.keyboard.press(`${shortcutMod}+k`);
   await screen.getByLabel("Search commands and items").fill("Launch ready Flow");
   await expect(screen.getByRole("option", /Launch ready Flow/)).toBeVisible();
@@ -85,7 +87,9 @@ test("the fake desktop bridge enables Mod+N for New Run", async ({ app, screen, 
   await browser.keyboard.press(`${shortcutMod}+n`);
 
   // Assert
-  await expect(screen.getByRole("heading", /What should we work on/)).toBeVisible();
+  await expect(
+    screen.getByRole("heading", /Deliberately missing heading for validation/),
+  ).toBeVisible();
 });
 
 test("Settings Reset restores the desktop default for New Run", async ({
