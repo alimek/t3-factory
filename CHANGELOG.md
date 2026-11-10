@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.0](https://github.com/alimek/t3-factory/compare/v0.3.0...v0.4.0) (2026-11-10)
+
+
+### Features
+
+* browse retained Run images from the Flow input block ([#137](https://github.com/alimek/t3-factory/issues/137)) ([8804b09](https://github.com/alimek/t3-factory/commit/8804b098e553c3394c025d743294e3eb599db9c3))
+* declare exits on Agents; Flows only wire ([#152](https://github.com/alimek/t3-factory/issues/152)) ([28c8cbd](https://github.com/alimek/t3-factory/commit/28c8cbdcc2285e913197e741b5afbf35a630ba5e))
+* drop three retired history tables ([#207](https://github.com/alimek/t3-factory/issues/207)) ([c35dcf4](https://github.com/alimek/t3-factory/commit/c35dcf4077cd1b3974abbf100327244c7f33eb8e))
+* Factory MCP authoring tools for Agents and Flows ([#225](https://github.com/alimek/t3-factory/issues/225)) ([0c1cb8d](https://github.com/alimek/t3-factory/commit/0c1cb8d6c587cedbfc6db5108c372d9c08cacb96))
+* generate and gate a current-schema snapshot beside the migrations ([#208](https://github.com/alimek/t3-factory/issues/208)) ([c742def](https://github.com/alimek/t3-factory/commit/c742def971cd0ff5950ede21996b41bc7e1956c9))
+* let every worker retrieve original Run images through Factory MCP ([#136](https://github.com/alimek/t3-factory/issues/136)) ([cd0d25d](https://github.com/alimek/t3-factory/commit/cd0d25daf1b35326d0f49846ba89421eeea7b667))
+* paste and reference screenshots inside the Run prompt ([#135](https://github.com/alimek/t3-factory/issues/135)) ([a644f68](https://github.com/alimek/t3-factory/commit/a644f684d47b9177bab528ea8f9985213653b5ed))
+* resize the sidebar and Run side panel ([#149](https://github.com/alimek/t3-factory/issues/149)) ([4512876](https://github.com/alimek/t3-factory/commit/4512876eb951ed2c14012d2dee7e6382f9b4b8d2))
+* Run canvas focuses and follows the active Block ([#129](https://github.com/alimek/t3-factory/issues/129)) ([60d07fc](https://github.com/alimek/t3-factory/commit/60d07fc7cd4407447ffd013a513de17b2e8fb1b6))
+* settle T3 worker threads after each finished Block ([#127](https://github.com/alimek/t3-factory/issues/127)) ([7de9093](https://github.com/alimek/t3-factory/commit/7de9093901742d19585ea6ff5d60b36f67659d08))
+* share the UI evidence validator and document the evidence workflow ([#151](https://github.com/alimek/t3-factory/issues/151)) ([020ee2a](https://github.com/alimek/t3-factory/commit/020ee2a33b3d84d5144c9ca6ee2ab4782c68c4bc))
+* show the Run number as a #N pill in sidebar, top bar and palette ([#141](https://github.com/alimek/t3-factory/issues/141)) ([38b2915](https://github.com/alimek/t3-factory/commit/38b2915bc43a1f60c9c73dbd728b47047a19af56))
+* start Runs with persistent screenshot attachments ([#134](https://github.com/alimek/t3-factory/issues/134)) ([90bb5a5](https://github.com/alimek/t3-factory/commit/90bb5a51df02123a491d4537d48bb18c36e2ac67))
+
+
+### Bug Fixes
+
+* **desktop:** declare the current live protocol in the packaged-app probe ([#213](https://github.com/alimek/t3-factory/issues/213)) ([4d916d7](https://github.com/alimek/t3-factory/commit/4d916d74ebc0c30638c624dd01bb0a8b44c0ac1d))
+* **desktop:** enable Cmd+R reload in packaged builds ([#142](https://github.com/alimek/t3-factory/issues/142)) ([e5273d1](https://github.com/alimek/t3-factory/commit/e5273d152f5bc8fef63681648f882408ed6ec1d5))
+* launch a worktree Run's later Block workers only when reached ([#133](https://github.com/alimek/t3-factory/issues/133)) ([ea3d825](https://github.com/alimek/t3-factory/commit/ea3d825ca61b8ee91832027d677144f4f1a4b7bb))
+* make the app icon read as large as other macOS Dock icons ([#150](https://github.com/alimek/t3-factory/issues/150)) ([069d3da](https://github.com/alimek/t3-factory/commit/069d3da53f630e1d025ed2ee4039793b685964c0))
+* place the prompt caret at the end when opening a Draft ([#153](https://github.com/alimek/t3-factory/issues/153)) ([f871148](https://github.com/alimek/t3-factory/commit/f87114805bfa95fae883145863f933e3004d9928))
+
 ## [0.3.0](https://github.com/alimek/t3-factory/compare/v0.2.0...v0.3.0) (2026-11-08)
 
 
