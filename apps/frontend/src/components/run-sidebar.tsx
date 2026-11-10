@@ -1,3 +1,4 @@
+import { useSettleRun } from "./settle-run.tsx";
 import { RenameDialog } from "./rename-dialog.tsx";
 import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
@@ -49,6 +50,12 @@ import { cn } from "../lib/utils.ts";
 
 /** Run/ExecIndicator: whole-Run execution only; attention stays in the chips. */
 function execution(run: RunNavigationEntry) {
+  if (run.settlement)
+    return {
+      Icon: run.settlement === "stopping" ? LoaderCircle : CircleDashed,
+      label: run.settlement === "stopping" ? "Stopping workers" : "Settlement unresolved",
+      className: "text-attention",
+    };
   if (run.lifecycle === "settled")
     return { Icon: CircleCheck, label: "Settled", className: "text-success" };
   if (run.blocks.some((block) => block.state !== "not-started" && block.freshness !== "fresh"))
@@ -113,7 +120,7 @@ export function RunSidebar({ path }: { path: string }) {
   const { onRename, onArchive, dialogs } = useSidebarDialogs();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
-  const { act, busy, actionError } = useRunActions(!!query, runs);
+  const { act, busy, actionError, settlementDialog } = useRunActions(!!query, runs);
   const actOnRun = useCallback(
     (runId: string, action: SidebarRunAction) => {
       const entry = runs.find((run) => run.id === runId);
@@ -171,6 +178,7 @@ export function RunSidebar({ path }: { path: string }) {
         />
       </SidebarRowsProvider>
       {dialogs}
+      {settlementDialog}
     </section>
   );
 }
@@ -255,10 +263,9 @@ function SidebarRenameDialog({
 }
 
 type RunAction = "snooze" | "restore" | "settle";
-const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
+const runActions = {
   snooze: api.snoozeRun,
   restore: api.restoreRun,
-  settle: (id) => api.settleRun(id, {}),
 };
 /** The group a Run moves to, whose toggle takes focus after the row leaves the open list. */
 const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
@@ -282,13 +289,17 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     target.focus();
     setFocusAfterRender(undefined);
   }, [focusAfterRender, runs]);
+  const { settle, dialog: settlementDialog } = useSettleRun();
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState<string>();
   const act = async (run: RunNavigationEntry, action: RunAction) => {
+    if (busy) return;
     setBusy(run.id);
     setActionError("");
     try {
-      await runActions[action](run.id);
+      if (action === "settle") {
+        if (!(await settle(run.id, run.settlement === "unresolved"))) return;
+      } else await runActions[action](run.id);
       const id =
         searching || action === "restore" ? `run-row-${run.id}` : `${actionGroup[action]}-toggle`;
       setFocusAfterRender({ id, runId: run.id, action });
@@ -298,7 +309,7 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
       setBusy(undefined);
     }
   };
-  return { act, busy, actionError };
+  return { act, busy, actionError, settlementDialog };
 }
 
 /** Navigation already shows the Run where `action` puts it. */
@@ -670,6 +681,7 @@ function RunRow({
   const compact = run.lifecycle === "settled";
   const muted = !selected && (searchMuted || compact);
   const hasMetadata =
+    run.settlement !== null ||
     branches.length > 0 ||
     pullRequests.length > 0 ||
     run.presentation.woke ||
@@ -781,6 +793,11 @@ function RunPreview({ run }: { run: RunNavigationEntry }) {
 function RunRowIndicators({ run }: { run: RunNavigationEntry }) {
   return (
     <>
+      {run.settlement && (
+        <span className="text-2xs text-muted-foreground">
+          {run.settlement === "stopping" ? "Stopping" : "Settle unresolved"}
+        </span>
+      )}
       {run.presentation.woke && <RunStatusChip kind="woke" />}
       {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
       {run.attention.problem && <RunStatusChip kind="problem" />}

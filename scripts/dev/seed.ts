@@ -1,6 +1,7 @@
 import { seedScenarioList, type DemoFlows, type SeedScenario } from "./seed-scenarios.ts";
 import {
   blockExit,
+  observeFor,
   controlledAgent,
   archived,
   changesRequested,
@@ -207,6 +208,21 @@ async function finishScenario(
       await repositoryFactsObserved(context, worker, scenario.repository);
       await settled(context, await resultReported(context, worker, scenario.result));
       break;
+    case "settlement unresolved": {
+      context.t3.stopSupported = false;
+      try {
+        requireSuccess(await context.factory.settleRun(worker.runId, { stopWorkers: true }));
+        await observeFor(
+          "Stop unavailable",
+          context,
+          worker.runId,
+          (run) => run.settlement?.state === "unresolved",
+        );
+      } finally {
+        context.t3.stopSupported = true;
+      }
+      break;
+    }
     case "archived":
       await archived(context, worker);
       break;

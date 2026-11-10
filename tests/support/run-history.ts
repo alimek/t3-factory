@@ -1,3 +1,4 @@
+import type { Screen } from "e2e";
 import assert from "node:assert/strict";
 import type { Result, RunDetail, RunNavigationEntry } from "../../packages/contracts/src/index.ts";
 
@@ -19,4 +20,8 @@ export async function readHistoryRun(baseUrl: string | undefined, id: string) {
   const saved = (await response.json()) as Result<RunDetail>;
   assert(saved.ok);
   return saved.value;
+}
+
+export async function confirmSettlement(screen: Screen) {
+  await screen.getByRole("alertdialog").getByRole("button", "Settle", { exact: true }).tap();
 }
