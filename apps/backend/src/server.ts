@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest as HttpServerRequestType } from "effect/http/HttpServerRequest";
 import {
+  agentOperations,
   LIVE_PATH,
   type ProtocolDescriptor,
   type Result,
@@ -39,12 +40,14 @@ import {
   writeJsonResponse,
   type ApiRoute,
   type OperationCall,
+  type RouteTrust,
 } from "./http-support.ts";
 import { listen, type Surface } from "./listener.ts";
 import { runtimeMcpHandler } from "./runtime-mcp.ts";
 import { remoteAccessController } from "./remote-listener.ts";
 import { serverUpdateRoutes, type ApplicationUpdates } from "./server-update-routes.ts";
 import { startLiveTransport, type LiveTransport } from "./live-transport.ts";
+import { operationRoutes, routeTable, type RouteTable } from "./route-table.ts";
 
 export type { ApplicationUpdates } from "./server-update-routes.ts";
 
@@ -127,8 +130,12 @@ const fromId =
       resultResponse,
     );
 
-/** First match wins, so literal paths precede parameter routes within each resource. */
-function apiRoutes(factory: Factory): readonly ApiRoute[] {
+/** Answers a facade operation's Result with the operation's success status. */
+const answer = (operation: () => Promise<Result<unknown>>, successStatus = 200) =>
+  Effect.map(Effect.promise(operation), (result) => resultResponse(result, successStatus));
+
+/** Pattern routes: first match wins, so literal paths precede parameter routes within each resource. */
+function apiRoutes(factory: Factory) {
   return [
     ...runResponseRoutes(factory),
     ...runRoutes(factory),
@@ -440,73 +447,34 @@ function flowRoutes(factory: Factory): readonly ApiRoute[] {
   ];
 }
 
-function agentRoutes(factory: Factory): readonly ApiRoute[] {
-  return [
-    {
-      method: "GET",
-      path: /^\/api\/agents\/capabilities$/,
-      handle: fromResult(() => factory.getAgentCapabilities()),
-    },
-    {
-      method: "GET",
-      path: /^\/api\/agents$/,
-      handle: fromResult(() => factory.listAgents()),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/agents$/,
+function agentRoutes(factory: Factory) {
+  return operationRoutes(agentOperations, {
+    getAgentCapabilities: { handle: () => answer(() => factory.getAgentCapabilities()) },
+    listAgents: { handle: () => answer(() => factory.listAgents()) },
+    createAgent: {
       body: standardBody,
-      handle: ({ input }) =>
-        Effect.map(
-          Effect.promise(() => factory.createAgent(input)),
-          (result) => resultResponse(result, 201),
-        ),
+      handle: ({ input }) => answer(() => factory.createAgent(input), 201),
     },
-    {
-      method: "GET",
-      path: /^\/api\/agents\/([^/]+)$/,
-      handle: fromId((id) => factory.getAgent(id)),
-    },
-    {
-      method: "POST",
-      path: /^\/api\/agents\/([^/]+)\/duplicate$/,
+    getAgent: { handle: ({ parameters }) => answer(() => factory.getAgent(parameters.id)) },
+    duplicateAgent: {
       body: standardBody,
-      handle: fromCall((id, input) => factory.duplicateAgent(id, input), 201),
+      handle: ({ parameters, input }) =>
+        answer(() => factory.duplicateAgent(parameters.id, input), 201),
     },
-    {
-      method: "PUT",
-      path: /^\/api\/agents\/([^/]+)$/,
+    updateAgent: {
       body: standardBody,
-      handle: fromCall((id, input) => factory.updateAgent(id, input)),
+      handle: ({ parameters, input }) => answer(() => factory.updateAgent(parameters.id, input)),
     },
-    {
-      method: "DELETE",
-      path: /^\/api\/agents\/([^/]+)$/,
-      handle: fromId((id) => factory.removeAgent(id)),
-    },
-  ];
+    removeAgent: { handle: ({ parameters }) => answer(() => factory.removeAgent(parameters.id)) },
+  });
 }
-
-/** The listener's routes in order; a route for the other surface does not exist here. */
-const findRoute = (
-  routes: readonly ApiRoute[],
-  surface: Surface,
-  method: string,
-  pathname: string,
-) =>
-  routes.find(
-    (candidate) =>
-      candidate.method === method &&
-      (candidate.surface === undefined || candidate.surface === surface) &&
-      candidate.path.test(pathname),
-  );
 
 /**
  * Before any operation: a declared protocol must be compatible, and a remote client
  * must declare one, hold an approved credential, and not call host setup.
  */
 function admission(
-  route: ApiRoute,
+  route: RouteTrust,
   request: HttpServerRequestType,
   binding: HttpBinding,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse | undefined> {
@@ -533,7 +501,7 @@ function admission(
   });
 }
 
-/** Runs the first matching API route; undefined when no route claims the request. */
+/** Runs the API route that claims the request; undefined when none does. */
 function dispatchApi(
   request: HttpServerRequestType,
   target: { url: URL; pathname: string },
@@ -541,21 +509,21 @@ function dispatchApi(
   peer: string,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse | undefined> {
   return Effect.gen(function* () {
-    const route = findRoute(binding.routes, binding.surface, request.method, target.pathname);
-    if (!route) return undefined;
+    const matched = binding.routes(binding.surface, request.method, target.pathname);
+    if (!matched) return undefined;
+    const { route, parameters } = matched;
     const rejected = yield* admission(route, request, binding);
     if (rejected) return rejected;
-    const id = route.path.exec(target.pathname)?.[1] ?? "";
     let input: unknown;
-    if (route.body || route.rawBody) {
-      const body = route.body
-        ? yield* readJsonBody(request, route.body)
-        : yield* readRawBody(request, route.rawBody!);
+    if (route.body) {
+      const body =
+        route.body.kind === "json"
+          ? yield* readJsonBody(request, route.body.limit)
+          : yield* readRawBody(request, route.body.limit);
       if (body.kind === "invalid") return body.response;
       input = body.value;
     }
-    return yield* route.handle({
-      id,
+    return yield* route.handle(parameters, {
       input,
       url: target.url,
       method: request.method,
@@ -607,7 +575,7 @@ interface HttpBinding {
   readonly nodeServer: Server;
   readonly surface: Surface;
   readonly allowedHosts: readonly string[];
-  readonly routes: readonly ApiRoute[];
+  readonly routes: RouteTable;
   readonly uiDirectory: string | null;
   readonly protocol: ProtocolDescriptor;
   readonly factory: Factory;
@@ -804,7 +772,7 @@ export async function startServer(config: Configuration, options: ServerOptions 
   const limiter = new RequestLimiter(accessRequestsPerMinute, 60_000);
   const mcp = runtimeMcpHandler(factory.runtime);
   const live = await startLiveTransport(factory.live);
-  let routes: readonly ApiRoute[] = [];
+  let routes: RouteTable = () => undefined;
   const handlerFor =
     (surface: Surface, allowedHosts: readonly string[]) => (nodeServer: Server) => {
       const binding: HttpBinding = {
@@ -823,14 +791,15 @@ export async function startServer(config: Configuration, options: ServerOptions 
       return (request: HttpServerRequestType) => handleHttpRequest(request, binding);
     };
   const remote = remoteAccessController(config, handlerFor("remote", config.allowedHosts ?? []));
-  routes = [
-    ...accessRoutes(factory, protocol, remote, limiter, live),
-    ...apiRoutes(factory),
-    ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
-  ];
   const nodeServer = createServer();
   let host: Awaited<ReturnType<typeof listen>>;
   try {
+    // Refuses conflicting entries before the server binds.
+    routes = routeTable([
+      ...accessRoutes(factory, protocol, remote, limiter, live),
+      ...apiRoutes(factory),
+      ...serverUpdateRoutes(factory, protocol.application, options.applicationUpdates),
+    ]);
     host = await listen(
       nodeServer,
       config.host,

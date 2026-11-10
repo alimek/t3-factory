@@ -1,38 +1,39 @@
 import { OfflineError, protocolHeaders, transport, unreachableHeader } from "./transport.ts";
-import type {
-  ClientAccessGrant,
-  ClientScope,
-  FactoryClient,
-  HostLifecycle,
-  ProtocolDescriptor,
-  RemoteAccessStatus,
-  RequestClientAccessInput,
-  ServerUpdate,
-  ServerUpdateAction,
-  RunDetail,
-  RunImageInfo,
-  StartRunInput,
-  RunPresentation,
-  RunNavigationEntry,
-  RunSummary,
-  TaskSummary,
-  ReportingInstallation,
-  RuntimeReadiness,
-  RuntimeSelection,
-  FactoryProject,
-  ProjectCatalog,
-  AgentCapabilities,
-  AgentDefinition,
-  CreateAgentInput,
-  CreateFlowInput,
-  DuplicateAgentInput,
-  FlowDraft,
-  FlowReadiness,
-  UpdateFlowInput,
-  OperationError,
-  Result,
-  T3Connection,
-  UpdateAgentInput,
+import {
+  agentOperations,
+  operationPath,
+  type OperationDefinition,
+  type OperationInput,
+  type OperationOutput,
+  type OperationParameterValues,
+  type ClientAccessGrant,
+  type ClientScope,
+  type FactoryClient,
+  type HostLifecycle,
+  type ProtocolDescriptor,
+  type RemoteAccessStatus,
+  type RequestClientAccessInput,
+  type ServerUpdate,
+  type ServerUpdateAction,
+  type RunDetail,
+  type RunImageInfo,
+  type StartRunInput,
+  type RunPresentation,
+  type RunNavigationEntry,
+  type RunSummary,
+  type TaskSummary,
+  type ReportingInstallation,
+  type RuntimeReadiness,
+  type RuntimeSelection,
+  type FactoryProject,
+  type ProjectCatalog,
+  type CreateFlowInput,
+  type FlowDraft,
+  type FlowReadiness,
+  type UpdateFlowInput,
+  type OperationError,
+  type Result,
+  type T3Connection,
 } from "@t3-factory/contracts";
 
 export class ApiError extends Error {
@@ -93,6 +94,51 @@ const post = <A>(path: string, body: unknown) => jsonRequest<A>("POST", path, bo
 const put = <A>(path: string, body: unknown) => jsonRequest<A>("PUT", path, body);
 const patch = <A>(path: string, body: unknown) => jsonRequest<A>("PATCH", path, body);
 
+/** What a client sends for a definition's body: its input as JSON, or a Blob with its media type. */
+type ClientInput<D extends OperationDefinition> = D["body"] extends "json"
+  ? [input: OperationInput<D>]
+  : D["body"] extends "bytes"
+    ? [data: Blob]
+    : [];
+
+/** One call per definition answered with a `Result`; bytes and text answers are fetched by URL. */
+type OperationCalls<Definitions extends Record<string, OperationDefinition>> = {
+  readonly [K in keyof Definitions as Definitions[K]["answer"] extends "result" ? K : never]: (
+    ...args: [...OperationParameterValues<Definitions[K]>, ...ClientInput<Definitions[K]>]
+  ) => Promise<OperationOutput<Definitions[K]>>;
+};
+
+function requestInit(definition: OperationDefinition, input: unknown): RequestInit {
+  const { method } = definition;
+  if (definition.body === "json")
+    return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(input) };
+  if (definition.body === "bytes") {
+    const data = input as Blob;
+    return { method, headers: { "content-type": data.type }, body: data };
+  }
+  return { method };
+}
+
+/** The HTTP calls of a definition set, named after the definitions. */
+function operationCalls<Definitions extends Record<string, OperationDefinition>>(
+  definitions: Definitions,
+): OperationCalls<Definitions> {
+  const calls: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
+  for (const [name, definition] of Object.entries(definitions)) {
+    if (definition.answer !== "result") continue;
+    // Parameter values come first; a body, when the definition has one, is the last argument.
+    calls[name] = (...args) => {
+      const values = definition.body === "none" ? args : args.slice(0, -1);
+      const path = operationPath(definition, ...(values as string[]));
+      return request(
+        path,
+        requestInit(definition, definition.body === "none" ? undefined : args.at(-1)),
+      );
+    };
+  }
+  return calls as OperationCalls<Definitions>;
+}
+
 /**
  * Retained Run image bytes on the selected server, for `<img src>`: an authenticated GET that
  * needs no protocol header and is cached as immutable.
@@ -100,6 +146,7 @@ const patch = <A>(path: string, body: unknown) => jsonRequest<A>("PATCH", path, 
 export const runImageUrl = (sha256: string) => `/api/run-images/${encodeURIComponent(sha256)}`;
 
 export const api = {
+  ...operationCalls(agentOperations),
   listRunNavigation: () => request<readonly RunNavigationEntry[]>("/api/run-navigation"),
   snoozeRun: (id: string) =>
     request<RunPresentation>(`/api/runs/${encodeURIComponent(id)}/snooze`, { method: "POST" }),
@@ -161,16 +208,6 @@ export const api = {
   removeFlow: (id: string) =>
     request<void>(`/api/flows/${encodeURIComponent(id)}`, { method: "DELETE" }),
   validateFlow: (input: UpdateFlowInput) => post<FlowReadiness>("/api/flows/validate", input),
-  getAgentCapabilities: () => request<AgentCapabilities>("/api/agents/capabilities"),
-  listAgents: () => request<readonly AgentDefinition[]>("/api/agents"),
-  getAgent: (id: string) => request<AgentDefinition>(`/api/agents/${encodeURIComponent(id)}`),
-  createAgent: (input: CreateAgentInput) => post<AgentDefinition>("/api/agents", input),
-  updateAgent: (id: string, input: UpdateAgentInput) =>
-    put<AgentDefinition>(`/api/agents/${encodeURIComponent(id)}`, input),
-  duplicateAgent: (id: string, input: DuplicateAgentInput = {}) =>
-    post<AgentDefinition>(`/api/agents/${encodeURIComponent(id)}/duplicate`, input),
-  deleteAgent: (id: string) =>
-    request<void>(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getProtocol: () => request<ProtocolDescriptor>("/api/protocol"),
   getClientScope: () => request<ClientScope>("/api/client-access"),
   requestClientAccess: (input: RequestClientAccessInput) =>

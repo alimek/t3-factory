@@ -13,7 +13,7 @@ export type StudioDefinitionsOperations = Pick<
   | "createAgent"
   | "updateAgent"
   | "duplicateAgent"
-  | "deleteAgent"
+  | "removeAgent"
 >;
 
 /** One saved list, with the live scope's three facts and their meaning. */
@@ -113,7 +113,7 @@ export function createStudioDefinitions(operations: StudioDefinitionsOperations 
     createAgent: write(operations.createAgent),
     updateAgent: write(operations.updateAgent),
     duplicateAgent: write(operations.duplicateAgent),
-    deleteAgent: write(operations.deleteAgent),
+    removeAgent: write(operations.removeAgent),
     dispose() {
       ended = true;
       flows.retire();

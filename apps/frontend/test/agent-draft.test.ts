@@ -336,7 +336,7 @@ it("an accepted delete leaves no unsaved changes", async () => {
 
   // Assert
   expect(deleted).toBe(true);
-  expect(factory.deleteAgent).toHaveBeenCalledWith("agent");
+  expect(factory.removeAgent).toHaveBeenCalledWith("agent");
   expect(draft.getSnapshot()).toMatchObject({ dirty: false, deleting: false, deleteError: "" });
 });
 
@@ -345,7 +345,7 @@ it("a rejected delete keeps the draft unsaved and its failure separate from the 
   const { draft, factory } = editedAgent();
   factory.updateAgent.mockRejectedValueOnce(new Error("Save unavailable."));
   await draft.save();
-  factory.deleteAgent.mockRejectedValueOnce(new Error("Agent is still used by a Flow."));
+  factory.removeAgent.mockRejectedValueOnce(new Error("Agent is still used by a Flow."));
 
   // Act
   const deleted = await draft.delete();

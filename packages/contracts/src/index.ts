@@ -1,46 +1,18 @@
 /** Transport-neutral values shared by the backend and its clients. No Node imports. */
-export interface ValidationIssue {
-  readonly code: string;
-  readonly path: string;
-  readonly message: string;
-}
+import type { AgentDefinition, AgentExecutionSettings, agentOperations } from "./agent.ts";
+import type { BlockExit } from "./flow.ts";
+import type { FacadeOperations } from "./operation.ts";
+import type { Result, ValidationIssue } from "./result.ts";
 
-export interface OperationError {
-  /**
-   * `unauthorized`, `host_only` and `incompatible` are client-access transport
-   * outcomes: no Factory operation ran.
-   */
-  readonly code:
-    | "validation"
-    | "not_found"
-    | "conflict"
-    | "internal"
-    | "unauthorized"
-    | "host_only"
-    | "incompatible"
-    /** Start referenced images that Factory has not staged; upload them and retry the same request. */
-    | "missing_images";
-  readonly message: string;
-  readonly issues: readonly ValidationIssue[];
-}
-
-export type Result<A> =
-  | { readonly ok: true; readonly value: A }
-  | { readonly ok: false; readonly error: OperationError };
+export * from "./result.ts";
+export * from "./flow.ts";
+export * from "./agent.ts";
+export * from "./operation.ts";
 
 export interface CreateFlowInput {
   readonly name: string;
 }
 
-/** A named result a Block finishes with. Wires leave by `id`, so renaming keeps them. */
-export interface BlockExit {
-  readonly id: string;
-  readonly name: string;
-  /** Empty when the exit has no description. */
-  readonly description: string;
-  /** Finishing on this exit needs a non-empty message. */
-  readonly messageRequired: boolean;
-}
 interface BlockBase {
   readonly id: string;
   readonly name: string;
@@ -110,108 +82,6 @@ export interface FlowDraft {
   readonly readiness: FlowReadiness;
 }
 
-export interface AgentModelOptionValue {
-  readonly id: string;
-  readonly value: string | boolean;
-}
-
-export interface AgentExecutionSettings {
-  readonly environmentId: string;
-  readonly providerInstanceId: string;
-  readonly modelId: string;
-  readonly modelOptions: readonly AgentModelOptionValue[];
-}
-
-export type AgentSettingAvailability = "available" | "unavailable" | "unknown";
-
-export interface AgentSettingStatus {
-  readonly state: AgentSettingAvailability;
-  readonly explanation?: string;
-}
-
-export interface AgentExecutionSettingsStatus {
-  readonly environment: AgentSettingStatus;
-  readonly provider: AgentSettingStatus;
-  readonly model: AgentSettingStatus;
-  readonly options: readonly { readonly id: string; readonly state: AgentSettingAvailability }[];
-}
-
-export interface AgentDefinition {
-  readonly id: string;
-  readonly name: string;
-  readonly prompt: string;
-  readonly revision: number;
-  readonly execution: AgentExecutionSettings;
-  /** Inherited live by every Flow block of this Agent; a Run keeps the revision it captured. */
-  readonly exits: readonly BlockExit[];
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly settingsStatus: AgentExecutionSettingsStatus;
-}
-
-export interface AgentEnvironment {
-  readonly environmentId: string;
-  readonly label: string;
-}
-
-export interface AgentOptionChoice {
-  readonly id: string;
-  readonly label: string;
-}
-
-export interface AgentModelOptionDescriptor {
-  readonly id: string;
-  readonly label: string;
-  readonly type: "select" | "boolean";
-  readonly choices?: readonly AgentOptionChoice[];
-  /** Exact permitted values when published; absent for unrestricted legacy booleans. */
-  readonly values?: readonly (string | boolean)[];
-  readonly default?: string | boolean;
-}
-
-export interface AgentModelCapability {
-  readonly id: string;
-  readonly label: string | null;
-  readonly options?: readonly AgentModelOptionDescriptor[];
-}
-
-/** Whether Factory can accept Block reports from this provider's harness. */
-export interface AgentProviderReporting {
-  readonly supported: boolean;
-  readonly explanation: string;
-}
-
-export interface AgentProviderCapability {
-  readonly providerInstanceId: string;
-  readonly displayName: string | null;
-  readonly driverKind: string;
-  readonly models: readonly AgentModelCapability[];
-  readonly reporting: AgentProviderReporting;
-}
-
-export interface AgentCapabilities {
-  readonly state: "ready" | "unavailable";
-  readonly explanation: string;
-  readonly checkedAt: string | null;
-  readonly environments: readonly AgentEnvironment[];
-  readonly providers: readonly AgentProviderCapability[];
-}
-
-export interface CreateAgentInput {
-  readonly name: string;
-  readonly prompt: string;
-  readonly execution: AgentExecutionSettings;
-  readonly exits: readonly BlockExit[];
-}
-
-export interface UpdateAgentInput extends CreateAgentInput {
-  readonly expectedRevision: number;
-}
-
-export interface DuplicateAgentInput {
-  readonly name?: string;
-}
-
 export interface RuntimeSelection {
   readonly projectId: string;
   readonly agentId: string;
@@ -236,7 +106,8 @@ export interface ReportingInstallation {
   readonly runtimeEvidence: "UNVERIFIED" | "ACCEPTED_REPORT";
   readonly actions: ReportingInstallationActions;
 }
-export interface FactoryOperations {
+/** The Factory facade: derived from the operation definitions, plus operations HTTP does not reach. */
+export interface FactoryOperations extends FacadeOperations<typeof agentOperations> {
   getReportingInstallations(): Promise<Result<readonly ReportingInstallation[]>>;
   installReporting(input: unknown): Promise<Result<ReportingInstallation>>;
   answerHumanOccurrence(id: string, input: unknown): Promise<Result<RunDetail>>;
@@ -290,13 +161,6 @@ export interface FactoryOperations {
   validateFlow(input: unknown): Promise<Result<FlowReadiness>>;
   listFlows(): Promise<Result<readonly FlowDraft[]>>;
   getFlow(id: string): Promise<Result<FlowDraft>>;
-  listAgents(): Promise<Result<readonly AgentDefinition[]>>;
-  getAgent(id: string): Promise<Result<AgentDefinition>>;
-  createAgent(input: unknown): Promise<Result<AgentDefinition>>;
-  updateAgent(id: string, input: unknown): Promise<Result<AgentDefinition>>;
-  duplicateAgent(id: string, input: unknown): Promise<Result<AgentDefinition>>;
-  removeAgent(id: string): Promise<Result<void>>;
-  getAgentCapabilities(): Promise<Result<AgentCapabilities>>;
   requestClientAccess(input: unknown): Promise<Result<ClientAccessGrant>>;
   getClientAccess(credential: string): Promise<Result<ClientAccessState>>;
   authenticateClient(credential: string): Promise<Result<FactoryClient>>;

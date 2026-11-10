@@ -1,5 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import type { FlowDraft, Result } from "@t3-factory/contracts";
+import type { AgentCapabilities, FlowDraft, Result } from "@t3-factory/contracts";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,4 +80,23 @@ it("first server start persists loopback host in config and creates restricted c
 
   expect(persisted.host).toBe("127.0.0.1");
   expect(credentialsMode).toBe(0o700);
+});
+
+it("reading Agent capabilities answers the capabilities, not an Agent with that id", async (c) => {
+  // Arrange
+  const directory = await mkdtemp(join(tmpdir(), "t3-factory-server-"));
+  c.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const config = await loadConfiguration({ FACTORY_HOME: directory, FACTORY_PORT: "0" });
+  const server = await startServer(config, { uiDirectory: null });
+  c.onTestFinished(() => server.close());
+
+  // Act
+  const response = await fetch(`http://127.0.0.1:${server.address.port}/api/agents/capabilities`);
+
+  // Assert
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as Result<AgentCapabilities>;
+  assert(body.ok);
+  expect(body.value.state).toBe("unavailable");
+  expect(body.value.providers).toStrictEqual([]);
 });

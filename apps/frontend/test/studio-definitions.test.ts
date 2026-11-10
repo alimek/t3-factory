@@ -70,7 +70,7 @@ it("a read requested before an accepted write cannot synchronize a list after th
   const beforeWrite = held(factory.listAgents);
   definitions.refresh();
   held(factory.listAgents);
-  await definitions.duplicateAgent("agent");
+  await definitions.duplicateAgent("agent", {});
 
   // Act
   beforeWrite.answer([savedAgent()]);
@@ -126,10 +126,10 @@ it("a rejected write passes its rejection to the caller and reads neither list a
   // Arrange
   const { definitions, factory } = await openedStudio();
   const refused = new Error("Agent is still used by a Flow.");
-  factory.deleteAgent.mockRejectedValueOnce(refused);
+  factory.removeAgent.mockRejectedValueOnce(refused);
 
   // Act
-  const deleting = definitions.deleteAgent("agent");
+  const deleting = definitions.removeAgent("agent");
 
   // Assert
   await expect(deleting).rejects.toBe(refused);

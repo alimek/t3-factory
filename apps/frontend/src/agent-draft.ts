@@ -14,7 +14,7 @@ import { api, ApiError } from "./api.ts";
 import { randomId } from "./lib/ids.ts";
 
 /** Factory writes used by one Agent draft; the HTTP client in the app, fakes in Node tests. */
-export type AgentDraftOperations = Pick<typeof api, "createAgent" | "updateAgent" | "deleteAgent">;
+export type AgentDraftOperations = Pick<typeof api, "createAgent" | "updateAgent" | "removeAgent">;
 export type AgentContent = Pick<AgentDefinition, "name" | "prompt" | "execution" | "exits">;
 
 export function optionValue(
@@ -177,7 +177,7 @@ export function createAgentDraft(
       deleteError = "";
       publish();
       try {
-        await operations.deleteAgent(saved.id);
+        await operations.removeAgent(saved.id);
         baseline = content;
         return true;
       } catch (cause) {
