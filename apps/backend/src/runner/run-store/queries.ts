@@ -6,6 +6,7 @@ import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "../../thread-link.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { recoveryRows } from "./recovery-read.ts";
+import { waitArrival, type WaitArrivalRow } from "./waits.ts";
 import type {
   Result,
   RunAttention,
@@ -160,6 +161,15 @@ function runIntent(intent: DeliveryRecord): RunDetail["intents"][number] {
     occurrenceId: intent.occurrence_id,
     sourceBlockId: intent.source_block_id,
     exitId: intent.exit_id,
+    waitArrivalId: intent.wait_arrival_id,
+    origin:
+      intent.origin_activation_id && intent.origin_thread_id
+        ? {
+            runId: intent.run_id,
+            activationId: intent.origin_activation_id,
+            threadId: intent.origin_thread_id,
+          }
+        : null,
     payloadRetained: intent.payload_json !== null,
     reference: intent.result_json
       ? (JSON.parse(intent.result_json) as RunDetail["intents"][number]["reference"])
@@ -258,6 +268,8 @@ export function openRunQueries(database: RunnerDatabase) {
           FROM run_executions x WHERE run_id=${id} ORDER BY rowid`;
         const humans =
           yield* sql<HumanRow>`SELECT * FROM human_occurrences WHERE run_id=${id} ORDER BY rowid`;
+        const waits =
+          yield* sql<WaitArrivalRow>`SELECT * FROM wait_arrivals WHERE run_id=${id} ORDER BY rowid`;
         const attention = yield* attentionRows(sql, id);
         const working = new Map(
           (yield* currentWorkingMessages(sql, id)).map((row) => [row.block_id, row.message]),
@@ -294,6 +306,7 @@ export function openRunQueries(database: RunnerDatabase) {
             reports: reports.map(runReport),
             executions: executions.map(runExecution),
             humanOccurrences: humans.map(humanOccurrence),
+            waitArrivals: waits.map(waitArrival),
             recoveries: yield* recoveryRows(sql, id),
             attention,
             intents: intents.map(runIntent),

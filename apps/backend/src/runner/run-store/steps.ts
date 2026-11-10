@@ -45,6 +45,11 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
   | { readonly kind: "human-answered"; readonly blockId: string; readonly occurrenceId: string }
   | { readonly kind: "human-waiting"; readonly blockId: string; readonly occurrenceId: string }
   | {
+      readonly kind: "wait-started" | "wait-forwarded" | "wait-cancelled";
+      readonly blockId: string;
+      readonly arrivalId: string;
+    }
+  | {
       readonly kind: "handoff-released" | "operation-unresolved";
       readonly blockId: string;
       readonly intentId: string;
@@ -188,6 +193,15 @@ function stored(event: TimelineEvent) {
           executionId: event.executionId,
           sourceKey: (event.kind === "report-accepted" ? "report:" : "working:") + event.reportId,
           causeId: event.reportId,
+        };
+      case "wait-started":
+      case "wait-forwarded":
+      case "wait-cancelled":
+        return {
+          blockId: event.blockId,
+          executionId: null,
+          sourceKey: `${event.kind}:${event.arrivalId}`,
+          causeId: event.arrivalId,
         };
       case "human-answered":
       case "human-waiting":

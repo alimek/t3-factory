@@ -19,10 +19,12 @@ import { openRunnerDatabase } from "./database.ts";
 import { openRunSettlement } from "./settlement.ts";
 import { openRunStart } from "./start.ts";
 import { openRunWorkspace } from "./workspace.ts";
+import { openRunWaits } from "./waits.ts";
 
 export type { Delivery, Handoff } from "./records.ts";
 export type { StartPlan, StartWorkspace } from "./start.ts";
 export type { RequestReportSettlement } from "./request-report.ts";
+export type { ScheduledWait, WaitForwarder, WaitForwarding } from "./waits.ts";
 
 /**
  * The Run store owns a Run's execution records and reads. Transitions own their guards,
@@ -61,6 +63,7 @@ export const openRunStore = Effect.fn("RunStore.open")(function* (
     ...openRunPresentation(database),
     ...openRunReports(database),
     ...openRunHuman(database),
+    ...openRunWaits(database),
     ...openRunRelease(database),
     ...openRunActivations(database),
     ...openRunDeliveries(database),

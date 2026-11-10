@@ -99,12 +99,14 @@ function acceptFinal(
     });
     if (handsOff)
       yield* createHeldHandoffs(sql, runRow, {
+        kind: "report",
         id,
-        block_id: block.block_id,
-        exit_id: route.exitId,
-        recipients_json: recipients,
-        pending_message: report.message ?? "",
-        accepted_at: time,
+        blockId: block.block_id,
+        exitId: route.exitId,
+        recipients: route.recipients,
+        message: report.message ?? "",
+        at: time,
+        origin: block.thread_id ? { activationId, threadId: block.thread_id } : null,
       });
     yield* writeBlockState(sql, { runId: runRow.id, blockId: block.block_id }, state, {
       report_status: report.status,

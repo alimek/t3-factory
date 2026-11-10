@@ -50,6 +50,7 @@ export const runEntityKeys = {
   reports: (report: Entity<"reports">) => report.id,
   recoveries: (recovery: Entity<"recoveries">) => recovery.intentId,
   humanOccurrences: (occurrence: Entity<"humanOccurrences">) => occurrence.id,
+  waitArrivals: (arrival: Entity<"waitArrivals">) => arrival.id,
   attention: (matter: Entity<"attention">) => matter.id,
   executions: (execution: Pick<Entity<"executions">, "bindingId" | "executionId">) =>
     JSON.stringify([execution.bindingId, execution.executionId]),

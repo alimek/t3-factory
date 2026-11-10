@@ -70,23 +70,21 @@ export function openRunHuman(database: RunnerDatabase) {
               ),
             ];
             yield* sql`UPDATE human_occurrences SET state='answered',pending_context=NULL,settled_at=${time},exit_id=${exit.id},answer_fingerprint=${content} WHERE id=${id} AND state='pending'`;
-            yield* createHeldHandoffs(
-              sql,
-              runRow,
-              {
-                id,
-                block_id: occurrence.block_id,
-                exit_id: exit.id,
-                recipients_json: JSON.stringify(recipients),
-                pending_message: message ?? "",
-                accepted_at: time,
-              },
+            // Human answers carry no originating worker yet; extending that is separate work.
+            yield* createHeldHandoffs(sql, runRow, {
+              kind: "human",
               id,
-            );
+              blockId: occurrence.block_id,
+              exitId: exit.id,
+              recipients,
+              message: message ?? "",
+              at: time,
+              origin: null,
+            });
             yield* writeBlockState(
               sql,
               { runId, blockId: occurrence.block_id },
-              { whileHumanPending: "waiting", otherwise: "finished" },
+              { whileArrivalPending: "waiting", otherwise: "finished" },
             );
             yield* appendTimelineEvent(sql, {
               kind: "human-answered",

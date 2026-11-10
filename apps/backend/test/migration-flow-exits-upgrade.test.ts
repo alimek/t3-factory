@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { flowExitsUpgradeData, upgradedGraph } from "./support/flow-exits-upgrade.ts";
 
-it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Human exits to Approve and Request changes with merged wires, and keeps in-progress and finished Runs with their history", async (c) => {
+it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Human exits to Approve and Request changes with merged wires, and keeps in-progress and finished Runs with their history and result origins", async (c) => {
   // Arrange
   const fixture = await flowExitsUpgradeData(c);
   const graph = upgradedGraph(fixture.agent.id, fixture.flow.graph.flowInput);
@@ -27,10 +27,19 @@ it("upgrading outcome exits keeps Agent block exits as Flow-local exits, maps Hu
   expect(finished.value.reports).toStrictEqual(fixture.finished.reports);
   expect(finished.value.humanOccurrences).toMatchObject([{ state: "answered", exitId: "approve" }]);
   expect(finished.value.intents).toMatchObject([
-    { blockId: "worker", kind: "launch", exitId: null },
-    { blockId: "review", kind: "handoff", exitId: "done" },
-    { blockId: "deploy", kind: "launch", exitId: "approve" },
-    { blockId: "notify", kind: "launch", exitId: "approve" },
+    { blockId: "worker", kind: "launch", exitId: null, origin: null },
+    {
+      blockId: "review",
+      kind: "handoff",
+      exitId: "done",
+      origin: {
+        runId: fixture.finished.id,
+        activationId: fixture.finished.reports[0]!.activationId,
+        threadId: "thread-3",
+      },
+    },
+    { blockId: "deploy", kind: "launch", exitId: "approve", origin: null },
+    { blockId: "notify", kind: "launch", exitId: "approve", origin: null },
   ]);
   const answered = await factory.getRun(fixture.answered.id);
   assert(answered.ok);

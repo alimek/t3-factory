@@ -415,6 +415,34 @@ export const twoExitFlow: ReadyFlowShape = (world) =>
     ],
   }));
 
+/** Ten minutes, the duration of every Wait in the Wait Flow shapes. */
+export const WAIT_MINUTES = 10;
+const coolDown = (id = "cool-down", name = "Cool down") =>
+  waitBlock(id, name, { amount: WAIT_MINUTES, unit: "minutes" }, { x: 400, y: 0 });
+
+/** Entry worker's "Done" waits in Cool down, which forwards to Follow-up. */
+export const waitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Wait", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [entryWorker(agentId), coolDown(), followUp(agentId)],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("cool-down", WAIT_OUTPUT, "follow-up"),
+    ],
+  }));
+
+/** Entry worker and Second entry both start from the Flow input and hand "Done" to Cool down,
+ * whose output ends the branch. */
+export const parallelWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Parallel wait", (agentId) => ({
+    flowInput: flowInput("worker", "second"),
+    blocks: [entryWorker(agentId), agentBlock("second", "Second entry", agentId), coolDown()],
+    connections: [
+      connection("worker", "done", "cool-down"),
+      connection("second", "done", "cool-down"),
+    ],
+  }));
+
 /** Entry worker and Second entry both start from the Flow input; Entry worker's "Done" goes to
  * Follow-up. */
 export const fanOutFlow: ReadyFlowShape = (world) =>
@@ -924,6 +952,17 @@ export function resultReleasedToHumanReview(world: ScenarioWorld, worker: Worker
 }
 
 type HumanReview = Awaited<ReturnType<typeof resultReleasedToHumanReview>>;
+
+/** Factory observed the worker's end and released its result to a Wait, whose pending arrival the
+ * returned handle carries beside the worker's. */
+export function resultReleasedToWait(world: ScenarioWorld, worker: WorkerHandle) {
+  return reach("result released to a Wait", async () => {
+    const run = await observeFor("observe the arrival", world, worker.runId, (detail) =>
+      detail.waitArrivals.some((arrival) => arrival.state === "pending"),
+    );
+    return { ...worker, arrival: run.waitArrivals.find((item) => item.state === "pending")! };
+  });
+}
 
 /** The user approved the pending review; Factory has not yet observed the answer's handoff. */
 export function reviewApproved(world: ScenarioWorld, review: HumanReview) {

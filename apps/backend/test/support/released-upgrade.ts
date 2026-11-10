@@ -119,7 +119,7 @@ function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
 
 /** A released closed Run as current Run detail shows it in its new lifecycle state (Settled with
  * its handoff gate open for Finished, Archived for Stopped), keeping the same history without
- * the retired report keys, completion evidence and closure, and with no working message. */
+ * the retired report keys, completion evidence and closure, and with no working message or Wait. */
 export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archived"): CurrentRun {
   const {
     snapshot,
@@ -146,6 +146,9 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),
     reports: run.reports.map(({ key: _key, ...report }) => report),
     activations: run.activations.map(({ coverage: _coverage, evidence: _evidence, ...a }) => a),
+    // Released deliveries came from no Final result, so they carry no origin.
+    intents: run.intents.map((intent) => ({ ...intent, waitArrivalId: null, origin: null })),
+    waitArrivals: [],
     coordinationActions: actions,
   };
 }

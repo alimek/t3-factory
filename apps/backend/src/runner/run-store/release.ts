@@ -6,17 +6,21 @@ import { guardsHold } from "./guards.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
-/** Where a Handoff comes from: a Final result version, or else a Human occurrence's answer. */
+/** Where a Handoff comes from: a Final result version, a Human occurrence's answer or a Wait
+ * arrival's forwarding. */
 type HandoffSource = {
   readonly report_id: string | null;
   readonly occurrence_id: string | null;
+  readonly wait_arrival_id: string | null;
   readonly source_block_id: string | null;
 };
 
-/** A Human answer releases the Handoffs it creates. */
-function humanAnswered(sql: SqlClient.SqlClient, runId: string, source: HandoffSource) {
+/** A Human answer or a Wait arrival's forwarding releases the Handoffs it creates. */
+function directSourceSettled(sql: SqlClient.SqlClient, runId: string, source: HandoffSource) {
   return Effect.map(
-    sql`SELECT id FROM human_occurrences WHERE id=${source.occurrence_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='answered'`,
+    source.wait_arrival_id
+      ? sql`SELECT id FROM wait_arrivals WHERE id=${source.wait_arrival_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='forwarded'`
+      : sql`SELECT id FROM human_occurrences WHERE id=${source.occurrence_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='answered'`,
     (rows) => rows.length > 0,
   );
 }
@@ -37,7 +41,7 @@ export function handoffReleased(
 ) {
   return source.report_id
     ? resultReleased(sql, run.context_id, source.report_id)
-    : humanAnswered(sql, run.id, source);
+    : directSourceSettled(sql, run.id, source);
 }
 
 /** A Final result version's Block worker thread, and whether the version is still its
@@ -122,9 +126,10 @@ export function openRunRelease(database: RunnerDatabase) {
     );
   }
 
-  /** Whether the Human occurrence behind a delivery is answered, read before it is reserved. */
-  const humanSourceAnswered = (runId: string, source: HandoffSource) =>
-    database.transaction((sql) => humanAnswered(sql, runId, source));
+  /** Whether the Human answer or Wait forwarding behind a delivery is recorded, read before it is
+   * reserved. */
+  const directSourceReleased = (runId: string, source: HandoffSource) =>
+    database.transaction((sql) => directSourceSettled(sql, runId, source));
 
-  return { releaseWait, releaseFinalResult, humanSourceAnswered };
+  return { releaseWait, releaseFinalResult, directSourceReleased };
 }

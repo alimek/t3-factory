@@ -21,6 +21,7 @@ import { openRunnerArchive } from "./runner-archive.ts";
 import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
 import { recoverOperation } from "./runner-effects.ts";
+import { makeWaitTimers } from "./runner-wait-timers.ts";
 import type { LiveChanges } from "../live-changes.ts";
 import type { RunImages } from "../run-images.ts";
 
@@ -52,9 +53,18 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     fiber.addObserver(() => detached.delete(fiber));
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun };
+  const waitTimers = makeWaitTimers(scope, (runId) => fork(drive(runId, "dispatch")));
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(store, t3);
-  const { dispatchIntent } = openRunnerDispatch(store, ops, t3, checkAgent, observe, images);
+  const { dispatchIntent } = openRunnerDispatch(
+    store,
+    ops,
+    t3,
+    checkAgent,
+    observe,
+    images,
+    waitTimers.schedule,
+  );
   const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
@@ -99,12 +109,20 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         for (const block of blocks) yield* observe((yield* row(id))!, block, contextId);
       yield* settleRecoveries(store, lifecycle, t3, id);
       if (phase === "observe") return;
+      yield* forwardDueWaits(id);
       const observed = (yield* row(id)) ?? runRow;
       yield* dispatchIntents(observed, contextId);
       // Binding the Run worktree during dispatch records the launches that join it.
       const current = yield* row(id);
       if (preparing(observed) && current && !preparing(current))
         yield* dispatchIntents(current, contextId);
+    });
+  }
+  /** Forwards every arrival whose deadline passed, before the pass dispatches its Handoffs. */
+  function forwardDueWaits(runId: string) {
+    return Effect.gen(function* () {
+      for (const arrival of yield* store.dueWaitArrivals(runId))
+        yield* store.forwardWaitArrival(runId, arrival.id, "timer");
     });
   }
   function dispatchIntents(runRow: RunRow, contextId: string | null) {
@@ -153,6 +171,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           if (closed) return;
           closed = true;
           if (timer) yield* Fiber.interrupt(timer);
+          yield* waitTimers.close();
           yield* starts.withPermit(Effect.void);
           yield* sweeps.withPermit(Effect.void);
           yield* Fiber.awaitAll(detached);
@@ -203,6 +222,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       Effect.gen(function* () {
         yield* store.takeOwnership();
         yield* reconcileRuns();
+        yield* Effect.forEach(yield* store.pendingWaits(), waitTimers.schedule, { discard: true });
         timer = yield* Effect.forkIn(
           Effect.forever(
             Effect.gen(function* () {

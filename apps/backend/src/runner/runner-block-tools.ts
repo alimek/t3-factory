@@ -89,7 +89,9 @@ function blockView(
       ? "first"
       : cause.startsWith("human:")
         ? "Human answer"
-        : "feedback",
+        : cause.startsWith("wait:")
+          ? "Wait"
+          : "feedback",
     exits: effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({
       id: exit.id,
       name: exit.name,
@@ -102,10 +104,16 @@ function blockView(
       results: incomingResults(detail, cause),
       feedback: feedbackId
         ? (detail.reports.find((report) => report.id === feedbackId)?.resultMessage ?? null)
-        : null,
+        : forwardedMessage(detail, cause),
     },
     allowedTransitions: current && detail.lifecycle !== "archived" ? OPEN_TRANSITIONS : [],
   };
+}
+
+/** The message a Wait forwarded to this visit, unchanged; null once Archive cleared it. */
+function forwardedMessage(detail: RunDetail, cause: string) {
+  const arrivalId = /^wait:([^/]+)/.exec(cause)?.[1];
+  return detail.waitArrivals.find((arrival) => arrival.id === arrivalId)?.message ?? null;
 }
 
 /** One arrival activates one visit; graph neighbors and later reports are not its inputs. */

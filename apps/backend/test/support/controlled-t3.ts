@@ -104,6 +104,12 @@ export class ControlledT3 implements T3Adapter {
   protected launchIds(n: number) {
     return { threadId: `thread-${n}`, runId: `execution-${n}` };
   }
+  private readonly launchWaiters: ((payload: LaunchPayload) => void)[] = [];
+  /** Resolves with the payload of the next worker launch T3 records: a completion signal for
+   * launches background work issues. */
+  nextLaunch() {
+    return new Promise<LaunchPayload>((resolve) => this.launchWaiters.push(resolve));
+  }
   async launchThread(_target: T3Endpoint, payload: LaunchPayload) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
     await this.beforeLaunch?.();
@@ -126,6 +132,7 @@ export class ControlledT3 implements T3Adapter {
         },
       };
       this.launches.set(payload.clientRequestId, launch);
+      for (const notify of this.launchWaiters.splice(0)) notify(payload);
     }
     if (this.rejectLaunch) throw new LaunchRejected("T3 rejected the worker launch");
     if (this.loseLaunchReply) throw Error("Lost response after remote acceptance");

@@ -274,6 +274,7 @@ export interface RunDetail extends RunSummary {
     readonly settledAt: string | null;
   }[];
   readonly humanOccurrences: readonly HumanOccurrence[];
+  readonly waitArrivals: readonly WaitArrival[];
   readonly attention: readonly RunAttention[];
   readonly executions: readonly {
     readonly bindingId: string;
@@ -294,6 +295,9 @@ export interface RunDetail extends RunSummary {
     readonly occurrenceId: string | null;
     readonly sourceBlockId: string | null;
     readonly exitId: string | null;
+    /** The Wait arrival whose forwarding created this Handoff. */
+    readonly waitArrivalId: string | null;
+    readonly origin: DeliveryOrigin | null;
     readonly payloadRetained: boolean;
     readonly reference: {
       readonly threadId: string;
@@ -398,6 +402,39 @@ export interface HumanOccurrence {
   readonly appearedAt: string;
   readonly settledAt: string | null;
   readonly exitId: string | null;
+}
+
+/**
+ * The worker whose result a delivery carries: the Run, the Block activation that produced it and
+ * that activation's T3 worker thread. An Agent result establishes it; a Wait forwards it
+ * unchanged. Absent when the delivered message has no originating worker.
+ */
+export interface DeliveryOrigin {
+  readonly runId: string;
+  readonly activationId: string;
+  readonly threadId: string;
+}
+
+/**
+ * One accepted delivery to a Wait, held until its own deadline and then forwarded unchanged to
+ * every recipient of the Wait's output. Parallel and repeated arrivals stay independent.
+ */
+export interface WaitArrival {
+  readonly id: string;
+  readonly blockId: string;
+  readonly incomingIntentId: string;
+  /** `cancelled`: Archive cancelled the arrival before it forwarded. */
+  readonly state: "pending" | "forwarded" | "cancelled";
+  /** `timer`: the deadline elapsed. Null unless forwarded. */
+  readonly forwardedBy: "timer" | null;
+  /** The retained incoming message; null once Archive cleared it. */
+  readonly message: string | null;
+  readonly origin: DeliveryOrigin | null;
+  /** When the incoming handoff was released and counting started. */
+  readonly startedAt: string;
+  /** The absolute deadline, fixed when the arrival was recorded. */
+  readonly deadlineAt: string;
+  readonly settledAt: string | null;
 }
 
 export const runOperations = {
