@@ -30,8 +30,9 @@ and restricted OAuth credentials live outside project repositories.
   and Human exits became Approve or Request changes by their feedback flag, with their wires,
   answers and handoffs following. Earlier Human exit names are not kept.
 - Run images are bytes on disk under `FACTORY_HOME/images`, named by their SHA-256 digest, with
-  staging metadata in SQLite. Start attaches the ordered manifest to the Run; the prompt segments
-  and manifest are immutable and the Run's input keeps the worker-readable text. Migration `071`
+  staging metadata in SQLite. Start attaches the ordered manifest to the Run, accepting only digests
+  that are staged and still have their file; the prompt segments and manifest are immutable and the
+  Run's input keeps the worker-readable text. Migration `071`
   gives every existing Run one text segment and no images.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
@@ -60,8 +61,11 @@ recipient reads it as that visit's input, and never past its cancellation or Arc
 its outcome, deadline and deduplication identity stay. Other message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
 remain. Initial input, including its images, and revision prompts are intentional exceptions;
-staged images no Run references are deleted after 24 hours. There is no
-transcript archive, and payload clearing is not secure erasure.
+staged images no Run references are deleted after 24 hours. The only other image removal is manual
+deletion from **Settings → Run images** of an image whose every Run is Settled or Archived. Factory
+rechecks that rule at deletion and removes only the bytes; manifest, staging row and history stay. A
+later Start naming the image gets the missing-images outcome, and uploading identical bytes restores
+it. There is no transcript archive, and neither payload clearing nor image deletion is secure erasure.
 
 ## Public operations
 

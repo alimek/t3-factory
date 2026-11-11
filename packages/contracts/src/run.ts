@@ -2,7 +2,7 @@
 import type { AgentDefinition, AgentExecutionSettings } from "./agent.ts";
 import type { FlowDraft } from "./flow.ts";
 import type { FactoryProject } from "./project.ts";
-import { operation } from "./operation.ts";
+import { operation, operationPath } from "./operation.ts";
 
 export interface RunImageInfo {
   readonly sha256: string;
@@ -26,6 +26,32 @@ export interface RunImage {
   readonly name: string;
   readonly mimeType: RunImageMimeType;
   readonly sizeBytes: number;
+}
+/** A Settled or Archived Run that attached a stored image, at the image's 1-based `ordinal`. */
+export interface RunImageReference {
+  readonly id: string;
+  readonly number: number | null;
+  readonly title: string;
+  readonly lifecycle: Exclude<RunLifecycle, "active">;
+  readonly project: { readonly id: string; readonly title: string };
+  readonly ordinal: number;
+}
+/**
+ * Stored image bytes whose every referencing Run is Settled or Archived. `name` is the name the
+ * newest referencing Run gave it; `runs` lists every referencing Run, newest first.
+ */
+export interface EligibleRunImage extends RunImageInfo {
+  readonly name: string;
+  readonly runs: readonly RunImageReference[];
+}
+/** Stored images to delete, by their lowercase hex SHA-256 digests. */
+export interface DeleteRunImagesInput {
+  readonly sha256: readonly string[];
+}
+/** Digests whose bytes were removed, and those kept because they were unknown or no longer eligible. */
+export interface RunImageDeletion {
+  readonly deleted: readonly string[];
+  readonly skipped: readonly string[];
 }
 /** The initial prompt in order: text, and references to images of the manifest. */
 export type PromptSegment =
@@ -637,9 +663,34 @@ export const runOperations = {
     path: "/api/run-images/:sha256",
     body: "bytes",
   }),
+  /** A stored image's bytes, revalidated by the digest's ETag on every load; see `runImageUrl`. */
   getRunImage: operation<never, RunImageContent>()({
     method: "GET",
     path: "/api/run-images/:sha256",
     answer: "bytes",
   }),
+  /** Stored images no Active Run uses; a `projectId` keeps those a Run of that project uses. */
+  listEligibleRunImages: operation<never, readonly EligibleRunImage[]>()({
+    method: "GET",
+    path: "/api/run-images",
+    query: ["projectId"],
+  }),
+  /**
+   * Deletes the bytes of eligible stored images, rechecking eligibility for each; Run manifests
+   * and history stay unchanged, and a digest that is unknown or no longer eligible is skipped.
+   */
+  deleteRunImages: operation<DeleteRunImagesInput, RunImageDeletion>()({
+    method: "POST",
+    path: "/api/run-images/delete",
+    body: "json",
+  }),
 };
+
+/**
+ * The URL clients load a stored image's bytes from. `key` is the client's revalidation key,
+ * ignored by the server: a client changes it to ask again for bytes it may have loaded before.
+ * Every client URL carries it, so none matches a copy cached under the year-long immutable
+ * policy the bare path was served with before.
+ */
+export const runImageUrl = (sha256: string, key: string) =>
+  `${operationPath(runOperations.getRunImage, sha256)}?v=${key}`;

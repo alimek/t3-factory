@@ -67,7 +67,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     images,
     waitTimers.schedule,
   );
-  const { start } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
+  const { start, startText } = openRunnerStart(store, ops, t3, lifecycle, checkAgent, images);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
@@ -202,6 +202,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     getRunCreationPolicy: () =>
       Effect.succeed({ ok: true as const, value: { ready: true as const } }),
     startRun: (input: unknown) => starts.withPermit(start(input)).pipe(Effect.uninterruptible),
+    startTextRun: (input: unknown) =>
+      starts.withPermit(startText(input)).pipe(Effect.uninterruptible),
     listRuns: (projectId: string) =>
       Effect.gen(function* () {
         const list = yield* listTasks(projectId);

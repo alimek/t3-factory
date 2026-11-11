@@ -194,11 +194,18 @@ function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
     },
     getRunImage: {
       protocolOptional: true,
-      handle: ({ parameters }) =>
+      handle: ({ parameters, headers }) =>
         Effect.map(
           Effect.promise(() => factory.getRunImage(parameters.sha256)),
-          runImageResponse,
+          (result) => runImageResponse(parameters.sha256, headers["if-none-match"], result),
         ),
+    },
+    listEligibleRunImages: {
+      handle: ({ parameters }) => answer(() => factory.listEligibleRunImages(parameters.projectId)),
+    },
+    deleteRunImages: {
+      body: { bytes: 131_072, message: "Send image digests as JSON up to 128 KiB." },
+      handle: ({ input }) => answer(() => factory.deleteRunImages(input)),
     },
   };
 }
@@ -378,7 +385,7 @@ function dispatchApi(
 
 // Known client routes use the built entry; missing assets must stay 404.
 const clientRoutePattern =
-  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/application)?)\/?$/;
+  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/application|\/run-images)?)\/?$/;
 
 function uiFile(uiDirectory: string, pathname: string): string | undefined {
   const root = resolve(uiDirectory);

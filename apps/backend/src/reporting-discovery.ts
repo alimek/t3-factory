@@ -37,6 +37,7 @@ const unknownTarget = (message: string): ReportingInstallation =>
     path: null,
     status: "needs-attention",
     message,
+    launchSkill: null,
     runtimeEvidence: "UNVERIFIED",
   });
 
@@ -101,12 +102,14 @@ const targetFor = Effect.fn(function* (
       path: null,
       status: "unsupported",
       message: providerReporting(driver).explanation,
+      launchSkill: null,
       runtimeEvidence: "UNVERIFIED",
     });
   const base = {
     id,
     provider: String(driver),
     instances: [id],
+    launchSkill: null,
     runtimeEvidence: "UNVERIFIED" as const,
   };
   return yield* Effect.gen(function* (): Generator<

@@ -1,5 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
-import type { FactoryClient, FlowDraft, RunDetail } from "@t3-factory/contracts";
+import {
+  runImageUrl,
+  type FactoryClient,
+  type FlowDraft,
+  type RunDetail,
+} from "@t3-factory/contracts";
 import { remotePrepared, remoteServer } from "./support/remote-clients.ts";
 import { imageStart, screenshots, stageImages } from "./support/run-images.ts";
 import { sha256Hex } from "./support/scenarios.ts";
@@ -195,20 +200,58 @@ it("an approved client uploads images and starts a Run with them over the secure
   expect(runs.value.map((run) => run.id)).toStrictEqual([reply.body.value.id]);
 });
 
-it("an approved client's image load returns the original bytes with immutable caching", async (c) => {
+it("an approved client's image load returns the original bytes, revalidated by digest", async (c) => {
   // Arrange
   const server = await remoteServer(c);
   const laptop = await server.approved("Laptop");
   await stageImages(server.factory, [screenshots.green]);
+  const digest = sha256Hex(screenshots.green.data);
 
   // Act
-  const image = await laptop.asset(`/api/run-images/${sha256Hex(screenshots.green.data)}`);
+  const image = await laptop.asset(runImageUrl(digest, "0"));
 
   // Assert
   expect(image.status).toBe(200);
   expect(image.contentType).toBe("image/png");
-  expect(image.cacheControl).toContain("immutable");
+  expect(image.cacheControl).toBe("private, no-cache");
+  expect(image.etag).toBe(`"${digest}"`);
   expect(image.data.equals(Buffer.from(screenshots.green.data))).toBe(true);
+});
+
+it("an image load revalidating a cached copy is told it is unchanged without the bytes", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const laptop = await server.approved("Laptop");
+  await stageImages(server.factory, [screenshots.green]);
+  const digest = sha256Hex(screenshots.green.data);
+
+  // Act
+  const image = await laptop.asset(runImageUrl(digest, "0"), "GET", {
+    "if-none-match": `"${digest}"`,
+  });
+
+  // Assert
+  expect(image.status).toBe(304);
+  expect(image.data.byteLength).toBe(0);
+});
+
+it("a deleted image's load answers not found even when revalidating a copy cached under its tag", async (c) => {
+  // Arrange
+  const { server, laptop, input } = await remotePrepared(c);
+  await stageImages(server.factory, Object.values(screenshots));
+  const started = await server.factory.startRun(imageStart(input));
+  assert(started.ok);
+  assert((await server.factory.archiveRun(started.value.id)).ok);
+  const digest = sha256Hex(screenshots.green.data);
+  assert((await server.factory.deleteRunImages({ sha256: [digest] })).ok);
+
+  // Act
+  const image = await laptop.asset(runImageUrl(digest, "1"), "GET", {
+    "if-none-match": `"${digest}"`,
+  });
+
+  // Assert
+  expect(image.status).toBe(404);
 });
 
 it("a revoked client cannot probe whether Factory holds a known image", async (c) => {

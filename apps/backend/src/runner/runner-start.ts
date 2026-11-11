@@ -17,6 +17,7 @@ import {
   flowReadiness,
   isCanonicalTimestamp,
   promptText,
+  promptTitle,
   TASK_TITLE_LIMIT,
   validateStartPrompt,
   type StartPrompt,
@@ -29,6 +30,7 @@ import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
+import type { RunImages } from "../run-images.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -184,6 +186,7 @@ export function openRunnerStart(
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
   checkAgent: RunnerOptions["checkAgent"],
+  images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
   function start(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
@@ -216,7 +219,13 @@ export function openRunnerStart(
       if (existing)
         return existing.request_fingerprint === content
           ? yield* getRun(existing.id)
-          : failure("conflict", "This Start key was already accepted with different content.");
+          : failure("conflict", "This Start key was already accepted with different content.", [
+              {
+                code: "start_key_conflict",
+                path: "requestId",
+                message: "This Start request was accepted with other content.",
+              },
+            ]);
       const checked = yield* startPreconditions(input, prompt.value.images.length);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope, workspace } = checked.value;
@@ -238,11 +247,37 @@ export function openRunnerStart(
         contextId: context.id,
         retryScope,
       };
-      const accepted = yield* store.acceptStart(plan);
+      const accepted = yield* store.acceptStart(plan, images.hasFile);
       if (!accepted.ok) return accepted;
       // Deliberately detached from the response. The accepted Run survives a lost HTTP reply.
       if (!isClosed()) yield* lifecycle.fork(drive(accepted.value));
       return yield* getRun(accepted.value);
+    });
+  }
+  /**
+   * A text-only Start whose title and creation time are derived as the Start form derives them.
+   * A retry of an accepted request reuses its stored creation time, so it keeps the same content.
+   */
+  function startText(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
+    return Effect.gen(function* () {
+      const { requestId, projectId, flowId, input } = (
+        rawInput && typeof rawInput === "object" ? rawInput : {}
+      ) as Record<string, unknown>;
+      if (typeof input !== "string")
+        return failure("validation", "Send the Run's prompt as text.", [
+          { code: "start_input", path: "input", message: "Send the prompt as text." },
+        ]);
+      const accepted =
+        typeof requestId === "string" ? yield* store.acceptedStart(requestId) : undefined;
+      return yield* start({
+        requestId,
+        projectId,
+        flowId,
+        segments: [{ type: "text", text: input }],
+        images: [],
+        title: promptTitle(input) ?? "",
+        createdAt: accepted?.created_at ?? (yield* now),
+      });
     });
   }
   /** Before Start: connection/project, Flow readiness, every referenced Agent's runtime and launch schema. */
@@ -373,5 +408,5 @@ export function openRunnerStart(
         : { ok: true, value: agents };
     });
   }
-  return { start };
+  return { start, startText };
 }

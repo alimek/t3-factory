@@ -5,7 +5,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
-import type { FactoryOperations, OperationError, Result } from "@t3-factory/contracts";
+import type { FactoryOperations, OperationError, Result, RunDetail } from "@t3-factory/contracts";
 import type { EffectOperations } from "./effect-operations.ts";
 import type { FactoryOptions } from "./factory-options.ts";
 import { makeConnection } from "./connection.ts";
@@ -28,6 +28,8 @@ export class FactoryService extends Context.Service<
   FactoryService,
   EffectOperations<FactoryOperations> & {
     readonly runtime: RuntimeReports;
+    /** Factory MCP's text-only Start; the Start form uses `startRun`. */
+    readonly startTextRun: (input: unknown) => Effect.Effect<Result<RunDetail>>;
     readonly setRuntimeBackendUrl: (url: string) => void;
     readonly live: LiveStreams;
   }
@@ -138,6 +140,8 @@ export const makeFactoryService = (
       getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
       getRunImage: (sha256) => images.getRunImage(sha256),
+      listEligibleRunImages: (projectId) => images.listEligibleRunImages(projectId),
+      deleteRunImages: (input) => images.deleteRunImages(input),
       listRunNavigation: () => runner.listRunNavigation(),
       renameRun: (id, input) => runner.renameRun(id, input),
       snoozeRun: (id) => runner.snoozeRun(id),
@@ -173,6 +177,7 @@ export const makeFactoryService = (
     const factory: FactoryService["Service"] = {
       ...guarded,
       runtime: runtimeReports,
+      startTextRun: (input) => guard(runner.startTextRun(input)),
       setRuntimeBackendUrl: (url) => {
         runtimeBackendUrl = url;
       },

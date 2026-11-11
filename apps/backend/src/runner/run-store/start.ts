@@ -6,7 +6,12 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import { currentAgentRevisionNumber } from "../../agent-revisions.ts";
 import { currentFlowRevisionNumber } from "../../flow-revisions.ts";
 import { failure } from "../../result.ts";
-import { attachRunImages, stagedManifestProblem, workerPromptText } from "../../run-images.ts";
+import {
+  attachRunImages,
+  stagedManifestProblem,
+  workerPromptText,
+  type RunImages,
+} from "../../run-images.ts";
 import { worktreeBranch, type RunWorkspace } from "../run-workspace.ts";
 import { createEntryLaunches } from "./activations.ts";
 import type { RunnerDatabase } from "./database.ts";
@@ -77,7 +82,11 @@ function startLaunchTargets(definitions: RunDefinitions, workspace: RunWorkspace
 }
 
 /** Deduplicates, creates the Run's Task and records one Factory launch per Flow input target. */
-function acceptStartRecords(sql: SqlClient.SqlClient, plan: StartPlan) {
+function acceptStartRecords(
+  sql: SqlClient.SqlClient,
+  plan: StartPlan,
+  hasFile: RunImages["hasFile"],
+) {
   return Effect.gen(function* () {
     const [duplicate] = yield* sql<{
       id: string;
@@ -86,10 +95,16 @@ function acceptStartRecords(sql: SqlClient.SqlClient, plan: StartPlan) {
     if (duplicate)
       return duplicate.request_fingerprint === plan.requestFingerprint
         ? { ok: true as const, value: duplicate.id }
-        : failure("conflict", "Start key content conflicts.");
+        : failure("conflict", "Start key content conflicts.", [
+            {
+              code: "start_key_conflict",
+              path: "requestId",
+              message: "This Start request was accepted with other content.",
+            },
+          ]);
     const conflict = yield* startConfigurationConflict(sql, plan);
     if (conflict) return conflict;
-    const unstaged = yield* stagedManifestProblem(sql, plan.prompt.images);
+    const unstaged = yield* stagedManifestProblem(sql, plan.prompt.images, hasFile);
     if (unstaged) return unstaged;
     const title = plan.input.title.trim();
     yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${title},${plan.time})`;
@@ -134,9 +149,9 @@ export function openRunStart(database: RunnerDatabase) {
    * changed key, changed configuration or an unstaged image refuses. The staged image manifest is
    * checked and Run image records are written through the Run images module. Publishes the Run's
    * live change after the commit when accepted. */
-  const acceptStart = (plan: StartPlan) =>
+  const acceptStart = (plan: StartPlan, hasFile: RunImages["hasFile"]) =>
     database
-      .transaction((sql) => acceptStartRecords(sql, plan))
+      .transaction((sql) => acceptStartRecords(sql, plan, hasFile))
       .pipe(
         Effect.tap((accepted) =>
           Effect.sync(() => {

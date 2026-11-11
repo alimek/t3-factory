@@ -89,6 +89,10 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
   survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
+### Starting from a conversation
+
+A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-run-launch-skill). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
+
 ## Live viewing
 
 The Run screen and sidebar update live, including reports, attention, timeline and
@@ -126,10 +130,34 @@ fixed Human exits their old exits were mapped to.
   for the rest. A thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
   its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
   the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the context
-  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)). Images are
-  read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
-  **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
-  retried and creates no attention or state change.
+  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)).
+  Images are read from the selected Factory server without thumbnails or transformation. Each load revalidates with the
+  server by the image's digest, and image URLs carry a client revalidation key. Each opened view (a Run's prompt, its
+  gallery, Settings → Run images) gets its own key, so it asks the server again even after this client loaded the bytes
+  before, also when another client deleted them since. Views still open get a new key after a deletion attempt in that
+  client's Settings, whatever its outcome; an image already shown in an open view is not rechecked for deletions made
+  elsewhere until the view opens again. Missing or corrupt retained bytes show **Image unavailable** with
+  the image's ordinal and name; the rest of the history stays readable, and a failed read is not retried in that view and
+  creates no attention or state change.
+- **Settings → Run images** lists each image whose file is stored and whose every Run is Settled or Archived. An image an
+  Active Run also uses is not listed. If the list cannot be read, the section shows the error with **Retry** and lists
+  nothing until a read succeeds.
+  - The list can be filtered to one project; a Run's project is its Task's. Each card shows the image's Runs, states and
+    projects. A card opens an in-section preview with **Image N of M** within the list and every Run that uses the image,
+    each with **Open Run**.
+  - A card's delete icon or the preview's **Delete image** deletes one image. **Delete all** deletes every image the
+    current filter lists.
+  - Each deletion first asks inline. It states the images' count, total size and Runs, that they cannot be restored, and
+    that history shows **Image unavailable**. A filtered **Delete all** also says whether the images are used by Runs in
+    other projects.
+  - The server rechecks each image and deletes only its file. An image an Active Run now uses is kept and reported as not
+    deleted.
+  - Manifests, prompts and timelines stay. The image reads as missing everywhere, including Factory MCP reads and worker
+    launches. It shows as unavailable in the deleting client's open views, also when the deletion's answer was lost, and
+    in every view opened afterwards on any client, even where it was viewed before.
+  - A Settled Run that returns to Active does not get deleted images back. A Start naming a deleted image gets the
+    missing-images outcome; uploading identical bytes again, from any client, restores the image for every Run that uses
+    it, shown the next time a Run view opens.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
   or manually settled before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
