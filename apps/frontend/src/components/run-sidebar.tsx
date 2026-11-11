@@ -275,18 +275,24 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   // A new request object also refocuses the same target after consecutive row actions. The
   // command's response can arrive before live navigation moves the row, so the request waits
   // until navigation shows the Run where the action puts it, then focuses that target.
-  const [focusAfterRender, setFocusAfterRender] = useState<{
-    readonly id: string;
-    readonly runId: string;
-    readonly action: RunAction | undefined;
-  }>();
+  // A Settle still stopping workers focuses its row now and moves the Run later; by then the
+  // user may have moved on, so that request focuses the destination only while focus is still
+  // on the row, on a fallback that took over, or lost to the page because the row left.
+  const [focusAfterRender, setFocusAfterRender] = useState<FocusRequest>();
   useLayoutEffect(() => {
     if (!focusAfterRender) return;
     const run = runs.find((candidate) => candidate.id === focusAfterRender.runId);
-    if (run && focusAfterRender.action && !moved(run, focusAfterRender.action)) return;
+    if (focusAfterRender.owner && !focusAfterRender.ownerFocused) {
+      document.getElementById(focusAfterRender.owner)?.focus();
+      return setFocusAfterRender({ ...focusAfterRender, ownerFocused: true });
+    }
+    const step = focusStep(focusAfterRender, run);
+    if (step === "drop") return setFocusAfterRender(undefined);
+    if (step === "stopping") return setFocusAfterRender({ ...focusAfterRender, stopping: true });
+    if (step === "wait") return;
     const target = document.getElementById(focusAfterRender.id);
     if (!target) return;
-    target.focus();
+    if (!focusAfterRender.owner || ownsFocus(focusAfterRender.owner)) target.focus();
     setFocusAfterRender(undefined);
   }, [focusAfterRender, runs]);
   const { settle, dialog: settlementDialog } = useSettleRun();
@@ -306,18 +312,21 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
       requestPending = false;
       setBusy(undefined);
     };
+    const row = `run-row-${run.id}`;
     try {
       let focusAction: RunAction | undefined = action;
+      let owner: Pick<FocusRequest, "owner" | "from"> = {};
       if (action === "settle") {
         const outcome = await settle(run.id, run.settlement === "unresolved", finishRequest);
         if (!outcome) return;
-        if (outcome.outcome !== "settled") focusAction = undefined;
+        if (outcome.outcome === "stopping") owner = { owner: row, from: run.settlement };
+        else if (outcome.outcome !== "settled") focusAction = undefined;
       } else await runActions[action](run.id);
       const id =
         searching || focusAction === "restore" || !focusAction
-          ? `run-row-${run.id}`
+          ? row
           : `${actionGroup[focusAction]}-toggle`;
-      setFocusAfterRender({ id, runId: run.id, action: focusAction });
+      setFocusAfterRender({ id, runId: run.id, action: focusAction, ...owner });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the Run.");
     } finally {
@@ -325,6 +334,44 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     }
   };
   return { act, busy, actionError, settlementDialog };
+}
+
+/** A focus request after a Run action. A Settle still stopping has an `owner`, the row it
+ * focuses at once; `from` is the settlement navigation showed when Settle was asked and
+ * `stopping` whether navigation has shown it stopping since. */
+type FocusRequest = {
+  readonly id: string;
+  readonly runId: string;
+  readonly action: RunAction | undefined;
+  readonly owner?: string;
+  readonly ownerFocused?: boolean;
+  readonly from?: RunNavigationEntry["settlement"];
+  readonly stopping?: boolean;
+};
+
+/** What a focus request does with the Run as navigation shows it: wait until the Run moved, then
+ * focus. A stopping Settle's request is dropped once the Run leaves navigation, such as by
+ * Archive, or its settlement leaves stopping without settling. */
+function focusStep(request: FocusRequest, run: RunNavigationEntry | undefined) {
+  if (request.owner && request.action) {
+    if (!run) return "drop";
+    if (run.settlement === "stopping") return request.stopping ? "wait" : "stopping";
+    const left = request.stopping || run.settlement !== request.from;
+    if (left && !moved(run, request.action)) return "drop";
+  }
+  return run && request.action && !moved(run, request.action) ? "wait" : "focus";
+}
+
+/** Focus is still on the `owner` element, on a fallback that took over when an action's own
+ * control left the page, or lost to the page. */
+function ownsFocus(owner: string) {
+  const active = document.activeElement;
+  return (
+    !active ||
+    active === document.body ||
+    active.id === owner ||
+    (active instanceof HTMLElement && active.dataset.focusFallback !== undefined)
+  );
 }
 
 /** Navigation already shows the Run where `action` puts it. */

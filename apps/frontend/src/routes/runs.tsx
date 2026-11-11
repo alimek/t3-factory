@@ -1,4 +1,4 @@
-import { RetryRunSettlement, SettlementWorkers } from "../components/settle-run.tsx";
+import { RunSettlementSection } from "../components/settle-run.tsx";
 import { MutationGate } from "@/client-gate";
 import { RootWork } from "../components/run-coordination-controls.tsx";
 import { RunRepositories } from "../components/run-repositories.tsx";
@@ -278,24 +278,7 @@ function RunDetailView({
               <RunAttentionDetails run={run} observationUnavailable={unavailable} />
             </div>
           )}
-          {run.settlement && (
-            <section
-              aria-label="Run settlement"
-              className="max-h-72 space-y-3 overflow-auto border-t px-4 py-3"
-            >
-              <h2 className="text-sm font-semibold">
-                {run.settlement.state === "stopping"
-                  ? "Stopping workers…"
-                  : "Settlement unresolved"}{" "}
-                · Attempt {run.settlement.attempt}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Automatic work is held until every worker is confirmed finished.
-              </p>
-              <SettlementWorkers workers={run.settlement.workers} />
-              {run.settlement.state === "unresolved" && <RetryRunSettlement id={run.id} />}
-            </section>
-          )}
+          {run.settlement && <RunSettlementSection id={run.id} settlement={run.settlement} />}
           <RunTimeline run={run} selectedBlockId={selected} />
         </div>
         {contextOpen && !selected && (

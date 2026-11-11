@@ -1,7 +1,7 @@
 import { confirmSettlement } from "./support/run-history.ts";
 import assert from "node:assert/strict";
-import { beforeEach, test } from "@e2e-dev/web";
-import { expect } from "e2e";
+import { beforeEach, test, type Browser } from "@e2e-dev/web";
+import { expect, type App, type Screen } from "e2e";
 import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { prepareScenarios, applyRunState } from "./support/scenarios.ts";
@@ -562,16 +562,82 @@ test("an unresolved settlement shows worker problems and retries to Settled", as
     screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(found.title)),
   ).toHaveCount(0);
   await app.screenshot("settlement-unresolved");
+  await applyRunState(app.baseUrl, found.id, "Stop taken while the turn continues");
 
   // Act
   await progress.getByRole("button", "Retry", { exact: true }).tap();
 
   // Assert
-  await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
-    .toBe("settled");
+  await expect(progress).toContainText("Stopping workers…");
+  await expect(progress).toBeFocused();
+  await finishStopping(app.baseUrl, found.id);
   await expect(progress).toHaveCount(0);
   await app.screenshot("settlement-retry-finished");
+});
+
+/** T3 ends the turns Settle asked to stop, and the Run settles. */
+async function finishStopping(baseUrl: string | undefined, id: string) {
+  await applyRunState(baseUrl, id, "stopped turns ended");
+  await expect.poll(async () => (await readHistoryRun(baseUrl, id)).lifecycle).toBe("settled");
+}
+
+/** Confirms Settle from the row menu with the keyboard while T3 keeps the stopped turn running. */
+async function confirmSettleStillStopping(
+  { app, screen, browser }: { app: App; screen: Screen; browser: Browser },
+  title: string,
+) {
+  const found = await findRun(app.baseUrl, title);
+  await applyRunState(app.baseUrl, found.id, "Stop taken while the turn continues");
+  await app.open(`/runs/${found.id}`);
+  const row = screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title));
+  await row.secondaryTap();
+  await screen.getByRole("menuitem", "Settle", { exact: true }).tap();
+  const confirmation = screen.getByRole("alertdialog", "Stop the work and settle this Run?");
+  await expect(confirmation.getByRole("button", "Cancel", { exact: true })).toBeFocused();
+  await browser.keyboard.press("Tab");
+  await browser.keyboard.press("Enter");
+  await expect(row).toContainText("Stopping");
+  await expect(row).toBeFocused();
+  return found;
+}
+
+test("a keyboard-confirmed Settle that finishes stopping later focuses the Settled group", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const found = await confirmSettleStillStopping(
+    { app, screen, browser },
+    "UI worker · Applying your requested changes",
+  );
+
+  // Act
+  await finishStopping(app.baseUrl, found.id);
+
+  // Assert
+  await expect(screen.getByRole("button", /^Settled/)).toBeFocused();
+});
+
+test("a Settle that finishes stopping later leaves focus where the user moved it", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const found = await confirmSettleStillStopping(
+    { app, screen, browser },
+    "UI worker · Working · Hotfix notes reviewed without waiting for CI",
+  );
+  const search = screen.getByRole("textbox", "Search Run titles", { exact: true });
+  await search.focus();
+
+  // Act
+  await finishStopping(app.baseUrl, found.id);
+
+  // Assert
+  await expect(screen.getByRole("button", /^Settled/)).toBeVisible();
+  await expect(search).toBeFocused();
 });
 
 test("Archive on the Run page asks for confirmation and archives both worker branches at once", async ({

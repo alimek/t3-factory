@@ -390,6 +390,10 @@ const transitions = {
   "reply turn observed": (run: RunDetail) =>
     replyTurnObserved(context, workerOf(run), "ui-worker-reply"),
   settled: (run: RunDetail) => settled(context, workerOf(run)),
+  "Stop taken while the turn continues": (run: RunDetail) =>
+    t3.holdStops(run.threadBindings.map((binding) => binding.threadId)),
+  "stopped turns ended": (run: RunDetail) =>
+    t3.finishHeldStops(run.threadBindings.map((binding) => binding.threadId)),
 };
 
 export type FixtureState = keyof typeof transitions;

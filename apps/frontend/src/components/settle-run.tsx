@@ -1,6 +1,10 @@
 import { DialogHeader, DialogFooter } from "./ui/dialog";
-import { useRef, useState } from "react";
-import type { RunSettlementOutcome, RunSettlementWorker } from "@t3-factory/contracts";
+import { useLayoutEffect, useRef, useState } from "react";
+import type {
+  RunSettlement,
+  RunSettlementOutcome,
+  RunSettlementWorker,
+} from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { MutationGate } from "../client-gate.tsx";
 import { Button } from "./ui/button";
@@ -19,7 +23,7 @@ const WORKER_STATE_LABEL: Record<RunSettlementWorker["state"], string> = {
   unresolved: "not resolved",
 };
 
-export function SettlementWorkers({ workers }: { workers: readonly RunSettlementWorker[] }) {
+function SettlementWorkers({ workers }: { workers: readonly RunSettlementWorker[] }) {
   return (
     <ul className="max-h-60 space-y-2 overflow-auto text-sm">
       {workers.map((worker, index) => (
@@ -131,8 +135,50 @@ export function useSettleRun() {
   };
 }
 
+/** Run detail's settlement progress. A confirmed retry removes Retry once the settlement shows
+ * the workers stopping; the section keeps the focus that would otherwise fall to the page. */
+export function RunSettlementSection({
+  id,
+  settlement,
+}: {
+  id: string;
+  settlement: RunSettlement;
+}) {
+  const section = useRef<HTMLElement>(null);
+  const retryFocused = useRef(false);
+  const unresolved = settlement.state === "unresolved";
+  useLayoutEffect(() => {
+    if (unresolved || !retryFocused.current) return;
+    retryFocused.current = false;
+    if (document.activeElement === document.body) section.current?.focus();
+  }, [unresolved]);
+  return (
+    <section
+      ref={section}
+      tabIndex={-1}
+      data-focus-fallback
+      onFocus={(event) => {
+        retryFocused.current = event.target.id === RETRY_ID;
+      }}
+      aria-label="Run settlement"
+      className="max-h-72 space-y-3 overflow-auto border-t px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <h2 className="text-sm font-semibold">
+        {unresolved ? "Settlement unresolved" : "Stopping workers…"} · Attempt {settlement.attempt}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Automatic work is held until every worker is confirmed finished.
+      </p>
+      <SettlementWorkers workers={settlement.workers} />
+      {unresolved && <RetryRunSettlement id={id} />}
+    </section>
+  );
+}
+
+const RETRY_ID = "settlement-retry";
+
 /** Run detail can retry even when navigation filters out its Run. */
-export function RetryRunSettlement({ id }: { id: string }) {
+function RetryRunSettlement({ id }: { id: string }) {
   const { settle, dialog } = useSettleRun();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -151,7 +197,7 @@ export function RetryRunSettlement({ id }: { id: string }) {
   return (
     <>
       <MutationGate>
-        <Button disabled={busy} onClick={() => void retry()}>
+        <Button id={RETRY_ID} disabled={busy} onClick={() => void retry()}>
           {busy ? "Settling…" : "Retry"}
         </Button>
       </MutationGate>
