@@ -91,7 +91,7 @@ levels of evidence. A configuration check alone proves neither execution nor rep
 
 ### Starting from a conversation
 
-A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#launch-skill). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
+A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-run-launch-skill). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
 
 ## Live viewing
 

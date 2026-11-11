@@ -102,7 +102,11 @@ Explicit Install, Repair and Reinstall in **Settings → Agent reporting** distr
 both the required Factory Block skill and the optional `factory-start-run` skill
 to each supported harness home. Invoke `factory-start-run` yourself in a harness
 session to start a Run with Factory; workers do not need it. Its installation
-state is shown separately and never blocks reporting readiness or Start.
+state is shown separately and never blocks reporting readiness or Start. The skill
+resolves the conversation's Project, offers the returned Flows, reviews the exact
+prompt and asks for explicit confirmation before it calls
+[`factory_start_run`](t3-integration.md#run-start-tools); that confirmation is
+the skill's instruction, not a server check.
 
 Startup and app updates do not write harness files. When the launch skill is
 missing or outdated, use **Reinstall** (or **Repair** when reporting also needs
