@@ -32,12 +32,10 @@ test("a browser profile has no General settings because it has no menu bar icon"
   app,
   screen,
 }) => {
-  // Arrange
+  // Act
   await openApproved(app, "/settings/general");
 
-  // Act
-  await expect(screen.getByRole("navigation", "Settings sections")).toBeVisible();
-
   // Assert
+  await expect(screen.getByRole("navigation", "Settings sections")).toBeVisible();
   await expect(screen.getByRole("link", "General")).toHaveCount(0);
 });
