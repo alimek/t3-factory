@@ -208,7 +208,7 @@ it("an approved client's image load returns the original bytes, revalidated by d
   const digest = sha256Hex(screenshots.green.data);
 
   // Act
-  const image = await laptop.asset(runImageUrl(digest, 0));
+  const image = await laptop.asset(runImageUrl(digest, "0"));
 
   // Assert
   expect(image.status).toBe(200);
@@ -226,7 +226,7 @@ it("an image load revalidating a cached copy is told it is unchanged without the
   const digest = sha256Hex(screenshots.green.data);
 
   // Act
-  const image = await laptop.asset(runImageUrl(digest, 0), "GET", {
+  const image = await laptop.asset(runImageUrl(digest, "0"), "GET", {
     "if-none-match": `"${digest}"`,
   });
 
@@ -246,7 +246,7 @@ it("a deleted image's load answers not found even when revalidating a copy cache
   assert((await server.factory.deleteRunImages({ sha256: [digest] })).ok);
 
   // Act
-  const image = await laptop.asset(runImageUrl(digest, 1), "GET", {
+  const image = await laptop.asset(runImageUrl(digest, "1"), "GET", {
     "if-none-match": `"${digest}"`,
   });
 

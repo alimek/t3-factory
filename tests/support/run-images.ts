@@ -23,7 +23,7 @@ export async function expectGalleryImage(
   await expect(dialog.getByRole("image", `Image ${ordinal}: ${name}`)).toHaveAttribute(
     "src",
     // Image URLs carry the client's revalidation key, never the bare cacheable path.
-    new RegExp(`/api/run-images/${sha256}\\?v=\\d+$`),
+    new RegExp(`/api/run-images/${sha256}\\?v=\\d+\\.\\d+$`),
   );
   await expect
     .poll(() =>

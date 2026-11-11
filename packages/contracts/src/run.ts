@@ -613,5 +613,5 @@ export const runOperations = {
  * Every client URL carries it, so none matches a copy cached under the year-long immutable
  * policy the bare path was served with before.
  */
-export const runImageUrl = (sha256: string, key: number) =>
+export const runImageUrl = (sha256: string, key: string) =>
   `${operationPath(runOperations.getRunImage, sha256)}?v=${key}`;

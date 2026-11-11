@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { runImageUrl } from "@t3-factory/contracts";
 
 /** Binary units, like the 10 MiB image limit. */
@@ -9,10 +9,12 @@ export function imageSize(bytes: number) {
 
 /*
  * Revalidation keys for image URLs. The server revalidates every load, but a document reuses an
- * earlier load of the same URL, failed or not, without asking. A digest therefore gets a new key
- * after a deletion attempt, whatever its outcome, and after a failed load, so the next view asks
- * the server again: deleted bytes fail to load and show as unavailable, while kept or restored
- * bytes show. The client never decides on its own that an image is unavailable.
+ * earlier load of the same URL, failed or not, without asking. Each view that shows images
+ * therefore gets its own URL, so opening a Run or Settings asks the server again even when this
+ * document loaded the bytes before and another client deleted them since. A digest also gets a new
+ * key after a deletion attempt, whatever its outcome, so views still on screen ask again: deleted
+ * bytes fail to load and show as unavailable, while kept or restored bytes show. The client never
+ * decides on its own that an image is unavailable.
  */
 interface ImageKeys {
   /** The key of every digest without its own; a new selected server gets a new one. */
@@ -21,6 +23,7 @@ interface ImageKeys {
 }
 let keys: ImageKeys = { base: 0, digests: new Map() };
 let revision = 0;
+let views = 0;
 let server: string | undefined;
 const listeners = new Set<() => void>();
 
@@ -29,7 +32,7 @@ function replaceKeys(next: ImageKeys) {
   for (const listener of listeners) listener();
 }
 
-/** After a deletion attempt or a failed load: the next load of each digest asks the server. */
+/** After a deletion attempt: every view of each digest asks the server again. */
 export function revalidateRunImages(digests: readonly string[]) {
   if (!digests.length) return;
   revision += 1;
@@ -55,8 +58,10 @@ const subscribe = (listener: () => void) => {
   };
 };
 
-/** The current URL of a stored image's bytes, by digest. */
+/** The current URL of a stored image's bytes, by digest, for this view. */
 export function useRunImageSource() {
   const current = useSyncExternalStore(subscribe, () => keys);
-  return (sha256: string) => runImageUrl(sha256, current.digests.get(sha256) ?? current.base);
+  const [view] = useState(() => (views += 1));
+  return (sha256: string) =>
+    runImageUrl(sha256, `${current.digests.get(sha256) ?? current.base}.${view}`);
 }

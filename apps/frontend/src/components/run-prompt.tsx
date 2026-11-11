@@ -1,7 +1,7 @@
 import { Fragment, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, Image as ImageIcon, ImageOff } from "lucide-react";
 import type { RunDetail, RunImage } from "@t3-factory/contracts";
-import { revalidateRunImages, useRunImageSource } from "../run-images.ts";
+import { useRunImageSource } from "../run-images.ts";
 import { ImagePreviewDialog, previewImageClass } from "./prompt-images.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.tsx";
@@ -33,10 +33,8 @@ export function runPromptText(run: RunDetail) {
 function useRunImages(run: RunDetail) {
   const [galleryIndex, setGalleryIndex] = useState<number>();
   const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
-  const markUnavailable = (sha256: string) => {
-    revalidateRunImages([sha256]);
+  const markUnavailable = (sha256: string) =>
     setUnavailable((current) => (current.has(sha256) ? current : new Set(current).add(sha256)));
-  };
   const gallery =
     galleryIndex === undefined ? null : (
       <RunImageGallery

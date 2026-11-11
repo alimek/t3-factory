@@ -44,7 +44,7 @@ const imagesLoaded = (selector: string) =>
 
 /** Whether every image URL under the selector carries a revalidation key. */
 const keyedImageUrls = (selector: string) =>
-  `() => [...document.querySelectorAll('${selector}')].every((image) => /\\/api\\/run-images\\/[0-9a-f]{64}\\?v=\\d+$/.test(image.src))`;
+  `() => [...document.querySelectorAll('${selector}')].every((image) => /\\/api\\/run-images\\/[0-9a-f]{64}\\?v=\\d+\\.\\d+$/.test(image.src))`;
 
 /** Settings → Run images with the seeded cards listed; returns the fixture projects. */
 async function openRunImages(app: App, screen: Screen) {
@@ -205,6 +205,17 @@ async function uploadAsAnotherClient(app: App, image: { data: Uint8Array }) {
   assert(response.ok, `Image upload failed with ${response.status}`);
 }
 
+/** Deletes stored image bytes as another client would, through the same operation Settings uses. */
+async function deleteAsAnotherClient(app: App, image: { data: Uint8Array }) {
+  const response = await fetch(new URL("/api/run-images/delete", app.baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Factory-Request": "1" },
+    body: JSON.stringify({ sha256: [sha256Hex(image.data)] }),
+  });
+  const result = (await response.json()) as Result<{ deleted: readonly string[] }>;
+  assert(result.ok && result.value.deleted.length === 1, JSON.stringify(result));
+}
+
 /** The Run with its prompt images loaded, then Settings → Run images previewing `name`. */
 async function previewFromRun(
   app: App,
@@ -318,8 +329,41 @@ test("an image this client deleted shows again when its Run is revisited after a
   expect(await browser.evaluate("() => window.sameDocument === true")).toBe(true);
 });
 
+test("an image another client deletes shows Image unavailable when a Run viewed before is opened again", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await uploadAsAnotherClient(app, demoImages.welcomeCopy);
+  const run = await closedRunWith(app, "welcome-copy.png");
+  await app.open(`/runs/${run.id}`);
+  const context = screen.getByRole("complementary", "Run context");
+  await expect(context.getByRole("button", "Open Image 1: welcome-copy.png")).toBeVisible();
+  await expect
+    .poll(() =>
+      browser.evaluate(imagesLoaded('[aria-label="Run context"] [aria-label="Prompt images"] img')),
+    )
+    .toBe(true);
+  await screen.getByRole("navigation", "Open Runs").getByRole("link").first().tap();
+  await expect(context).not.toContainText("Polish the first-run welcome copy");
+  await deleteAsAnotherClient(app, demoImages.welcomeCopy);
+  await browser.evaluate("() => { window.sameDocument = true; }");
+
+  // Act
+  await browser.back();
+
+  // Assert
+  await expect(context).toContainText("Polish the first-run welcome copy");
+  await expect(context.getByText("Image unavailable", { exact: true })).toBeVisible();
+  expect(await browser.evaluate("() => window.sameDocument === true")).toBe(true);
+});
+
 test("Delete all deletes every image the project filter lists", async ({ app, screen }) => {
   // Arrange
+  // Earlier journeys in the same run delete demo images; identical bytes restore them.
+  await uploadAsAnotherClient(app, demoImages.compactNavigation);
+  await uploadAsAnotherClient(app, demoImages.welcomeCopy);
   const { demo } = await openDemoRunImages(app, screen);
   await screen.getByRole("button", /^Delete all \d+$/).tap();
 

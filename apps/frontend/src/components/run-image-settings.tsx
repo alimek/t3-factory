@@ -408,10 +408,7 @@ function StoredImage({ image, preview }: { image: EligibleRunImage; preview?: bo
       alt={preview ? image.name : ""}
       loading="lazy"
       className={preview ? "size-full object-contain" : "size-full object-cover"}
-      onError={() => {
-        revalidateRunImages([image.sha256]);
-        setUnavailable(true);
-      }}
+      onError={() => setUnavailable(true)}
     />
   );
 }

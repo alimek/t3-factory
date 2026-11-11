@@ -361,7 +361,7 @@ test("unavailable image bytes preserve readable prompt history and other images 
   // Arrange
   const run = await openImageHistory(app);
   await browser.route(
-    new RegExp(`/api/run-images/${run.images[1]!.sha256}\\?v=\\d+$`),
+    new RegExp(`/api/run-images/${run.images[1]!.sha256}\\?v=\\d+\\.\\d+$`),
     async (route) => {
       return route.request.method === "GET" ? route.abort() : route.continue();
     },
