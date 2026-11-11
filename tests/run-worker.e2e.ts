@@ -687,6 +687,33 @@ test("a Settle that finishes stopping later leaves focus where the user moved it
   await expect(search).toBeFocused();
 });
 
+test("a Settle that finishes stopping later leaves focus on the page after the user left the row", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const id = await liveRun(app, "settle-left-row");
+  const { title } = await readHistoryRun(app.baseUrl, id);
+  await confirmSettleStillStopping({ app, screen, browser }, title);
+  const search = screen.getByRole("textbox", "Search Run titles", { exact: true });
+  await search.focus();
+  await expect(search).toBeFocused();
+  // Focus falls to the page, as when the user clicks content outside any focusable container.
+  await browser.evaluate("document.activeElement.blur()");
+  expect(await browser.evaluate("document.activeElement === document.body")).toBe(true);
+
+  // Act
+  await finishStopping(app.baseUrl, id);
+
+  // Assert
+  await expect(
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title)),
+  ).toHaveCount(0);
+  await expect(screen.getByRole("button", /^Settled/)).not.toBeFocused();
+  expect(await browser.evaluate("document.activeElement === document.body")).toBe(true);
+});
+
 test("Archive on the Run page asks for confirmation and archives both worker branches at once", async ({
   app,
   screen,

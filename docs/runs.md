@@ -221,8 +221,8 @@ menu items never opens a row preview.
 - When Runs exist but none are open, the open list shows **Nothing open** / **You're all caught up.**
   Snooze and Settle focus the destination group toggle after it appears. Restore focuses the restored row; during search, all three actions keep focus on that row.
   A Settle still stopping workers focuses the row; when the Run settles later, focus moves to the destination only if it is
-  still on that row, on that Run's detail settlement section, or was lost because the row left; focus the user moved elsewhere
-  stays. A detail **Retry** that starts stopping moves focus to the settlement section as the button disappears.
+  still on that row, on that Run's detail settlement section, or was lost because the row left; focus the user moved elsewhere,
+  including to the page, stays. A detail **Retry** that starts stopping moves focus to the settlement section as the button disappears.
 - **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
   The same shadcn/Radix row menu serves desktop and browser clients. Right click opens it at the pointer;
   Shift+F10 and the context-menu key anchor it below the focused row. Touch devices retain a ⋯ button;

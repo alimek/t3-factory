@@ -2,7 +2,7 @@ import { useSettleRun } from "./settle-run.tsx";
 import { RenameDialog } from "./rename-dialog.tsx";
 import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { publishSidebarNavigation, type SidebarRunAction } from "../sidebar-navigation.ts";
 import type { RunNavigationEntry } from "@t3-factory/contracts";
 import {
@@ -277,7 +277,8 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   // until navigation shows the Run where the action puts it, then focuses that target.
   // A Settle still stopping workers focuses its row now and moves the Run later; by then the
   // user may have moved on, so that request focuses the destination only while focus is still
-  // on the row, on that Run's fallback, or lost to the page because the row left.
+  // on the row, on that Run's fallback, or lost to the page because the holder left. Focus the
+  // user moves anywhere else, the page included, revokes the request.
   const [focusAfterRender, setFocusAfterRender] = useState<FocusRequest>();
   // The navigation a Settle answer arrives at, which tells a lagging entry from a later one.
   const latestRuns = useRef(runs);
@@ -301,6 +302,31 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
       target.focus();
     setFocusAfterRender(undefined);
   }, [focusAfterRender, runs]);
+  const owner = focusAfterRender?.ownerFocused ? focusAfterRender.owner : undefined;
+  const ownerRun = focusAfterRender?.runId;
+  useEffect(() => {
+    if (!owner || !ownerRun) return;
+    const revoke = () =>
+      setFocusAfterRender((current) => (current?.owner === owner ? undefined : current));
+    const focusIn = (event: FocusEvent) => {
+      if (!holdsFocus(event.target, owner, ownerRun)) revoke();
+    };
+    const focusOut = (event: FocusEvent) => {
+      const holder = event.target;
+      if (event.relatedTarget || !(holder instanceof HTMLElement)) return;
+      // Focus falling to the page while its holder stays is the user leaving; a holder removed
+      // as the Run moves keeps the request, and a window switch keeps the holder focused.
+      queueMicrotask(() => {
+        if (holder.isConnected && document.activeElement !== holder) revoke();
+      });
+    };
+    document.addEventListener("focusin", focusIn);
+    document.addEventListener("focusout", focusOut);
+    return () => {
+      document.removeEventListener("focusin", focusIn);
+      document.removeEventListener("focusout", focusOut);
+    };
+  }, [owner, ownerRun]);
   const { settle, dialog: settlementDialog } = useSettleRun();
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState<string>();
@@ -374,14 +400,17 @@ function focusStep(request: FocusRequest, run: RunNavigationEntry | undefined) {
 }
 
 /** Focus is still on the `owner` element, on the fallback of the same Run that took over when an
- * action's own control left the page, or lost to the page. */
+ * action's own control left the page, or lost to the page because its holder left. */
 function ownsFocus(owner: string, runId: string) {
   const active = document.activeElement;
+  return !active || active === document.body || holdsFocus(active, owner, runId);
+}
+
+/** `element` is the `owner` element or the fallback of the same Run. */
+function holdsFocus(element: EventTarget | null, owner: string, runId: string) {
   return (
-    !active ||
-    active === document.body ||
-    active.id === owner ||
-    (active instanceof HTMLElement && active.dataset.focusFallback === runId)
+    element instanceof HTMLElement &&
+    (element.id === owner || element.dataset.focusFallback === runId)
   );
 }
 
