@@ -68,7 +68,7 @@ If reporting still fails, say in chat which report you could not make and the er
 `;
 
 /** Codex keeps the skill next to config.toml. Claude's user config keeps it under `.claude/skills`. */
-export function factorySkillPath(configPath: string, skill: "factory-block" | "factory-start-run") {
+export function factorySkillPath(configPath: string, skill: string) {
   const home = dirname(configPath);
   const nestedClaude = basename(configPath) === ".claude.json" && basename(home) !== ".claude";
   return join(home, ...(nestedClaude ? [".claude"] : []), "skills", skill, "SKILL.md");
