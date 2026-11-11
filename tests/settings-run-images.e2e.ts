@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { beforeEach, test } from "@e2e-dev/web";
+import { beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Screen } from "e2e";
 import type {
   EligibleRunImage,
@@ -7,6 +7,8 @@ import type {
   Result,
   RunSummary,
 } from "../packages/contracts/src/index.ts";
+import { sha256Hex } from "../apps/backend/test/support/scenarios.ts";
+import { demoImages } from "../scripts/dev/seed-support.ts";
 
 beforeEach(async ({ browser }) => {
   await browser.setViewport({ width: 1440, height: 900 });
@@ -34,6 +36,15 @@ async function projects(app: App) {
 
 const cards = (screen: Screen) =>
   screen.getByRole("list", "Run images").getByRole("button", /^Preview /);
+
+/** Whether the selector matches an `<img>` and every match has loaded its bytes. */
+const imagesLoaded = (selector: string) =>
+  `() => [[...document.querySelectorAll('${selector}')]].some((images) => images.length > 0 &&
+    images.every((image) => image.complete && image.naturalWidth > 0))`;
+
+/** Whether every image URL under the selector carries a revalidation key. */
+const keyedImageUrls = (selector: string) =>
+  `() => [...document.querySelectorAll('${selector}')].every((image) => /\\/api\\/run-images\\/[0-9a-f]{64}\\?v=\\d+$/.test(image.src))`;
 
 /** Settings → Run images with the seeded cards listed; returns the fixture projects. */
 async function openRunImages(app: App, screen: Screen) {
@@ -72,6 +83,7 @@ test("Settings lists only images whose every Run is Settled or Archived", async 
           .every((image) => image.complete && image.naturalWidth > 0)`),
     )
     .toBe(true);
+  expect(await browser.evaluate(keyedImageUrls('[aria-label="Run images"] img'))).toBe(true);
   await app.screenshot("settings-run-images");
 });
 
@@ -168,9 +180,52 @@ test("cancelling a filtered Delete all keeps every listed image", async ({ app, 
   expect(images.length).toBe(listed);
 });
 
-/** Whether every `<img>` matched by the selector has loaded its bytes. */
-const imagesLoaded = (selector: string) =>
-  `() => [...document.querySelectorAll('${selector}')].every((image) => image.complete && image.naturalWidth > 0)`;
+/**
+ * Whether the Run view mounted behind Settings shows its image as unavailable in both the context
+ * rail and the Flow input block. The Settings dialog hides that view from the accessibility tree.
+ */
+const runShowsUnavailable = `() => ['[aria-label="Run context"]', '[aria-label="Flow input block"]']
+  .every((selector) => document.querySelector(selector)?.textContent?.includes('Image unavailable'))`;
+
+/** The seeded closed Run that attached the eligible image named `name`. */
+async function closedRunWith(app: App, name: string) {
+  const eligible = await read<readonly EligibleRunImage[]>(app, "/api/run-images");
+  const run = eligible.find((image) => image.name === name)?.runs[0];
+  assert(run, `Expected ${name} to be eligible`);
+  return run;
+}
+
+/** Uploads seeded image bytes as another client would; identical bytes restore a deleted image. */
+async function uploadAsAnotherClient(app: App, image: { data: Uint8Array }) {
+  const response = await fetch(new URL(`/api/run-images/${sha256Hex(image.data)}`, app.baseUrl), {
+    method: "PUT",
+    headers: { "content-type": "image/png", "X-Factory-Request": "1" },
+    body: new Blob([Buffer.from(image.data)]),
+  });
+  assert(response.ok, `Image upload failed with ${response.status}`);
+}
+
+/** The Run with its prompt images loaded, then Settings → Run images previewing `name`. */
+async function previewFromRun(
+  app: App,
+  screen: Screen,
+  browser: Browser,
+  runId: string,
+  name: string,
+) {
+  await app.open(`/runs/${runId}`);
+  const context = screen.getByRole("complementary", "Run context");
+  await expect(context.getByRole("button", `Open Image 1: ${name}`)).toBeVisible();
+  await expect
+    .poll(() => browser.evaluate(imagesLoaded('[aria-label="Prompt images"] img')))
+    .toBe(true);
+  await screen.getByRole("link", /^Settings, /).tap();
+  await screen.getByRole("group", "STORAGE").getByRole("link", "Run images").tap();
+  await screen.getByRole("button", `Preview ${name}`).tap();
+  const preview = screen.getByRole("region", `Preview of ${name}`);
+  await expect(preview.getByRole("image", name)).toBeVisible();
+  return preview;
+}
 
 test("an image deleted in Settings shows Image unavailable in the Run it was viewed in, without a reload", async ({
   app,
@@ -178,21 +233,8 @@ test("an image deleted in Settings shows Image unavailable in the Run it was vie
   browser,
 }) => {
   // Arrange
-  const eligible = await read<readonly EligibleRunImage[]>(app, "/api/run-images");
-  const welcome = eligible.find((image) => image.name === "welcome-copy.png");
-  const seeded = welcome?.runs.find((run) => run.title.endsWith("Clearer onboarding copy"));
-  assert(seeded, "Expected the seeded Settled Run's welcome-copy.png to be eligible");
-  await app.open(`/runs/${seeded.id}`);
-  const context = screen.getByRole("complementary", "Run context");
-  await expect(context.getByRole("button", "Open Image 1: welcome-copy.png")).toBeVisible();
-  await expect
-    .poll(() => browser.evaluate(imagesLoaded('[aria-label="Prompt images"] img')))
-    .toBe(true);
-  await screen.getByRole("link", /^Settings, /).tap();
-  await screen.getByRole("group", "STORAGE").getByRole("link", "Run images").tap();
-  await screen.getByRole("button", "Preview welcome-copy.png").tap();
-  const preview = screen.getByRole("region", "Preview of welcome-copy.png");
-  await expect(preview.getByRole("image", "welcome-copy.png")).toBeVisible();
+  const run = await closedRunWith(app, "welcome-copy.png");
+  const preview = await previewFromRun(app, screen, browser, run.id, "welcome-copy.png");
   await preview.getByRole("button", "Delete image").tap();
   const dialog = confirmation(screen);
   await expect(dialog).toContainText(/^Delete welcome-copy\.png \(.+\)\?/);
@@ -200,30 +242,80 @@ test("an image deleted in Settings shows Image unavailable in the Run it was vie
   await expect(dialog).toContainText(/Used by \d+ Runs? in /);
   await expect(dialog).toContainText(/keeps? (its|their) history and shows? “Image unavailable”/);
   await app.screenshot("settings-run-images-confirm-one");
-  await dialog.getByRole("button", "Delete image").tap();
-  await expect(cards(screen).first()).toBeVisible();
-  await expect(screen.getByRole("button", "Preview welcome-copy.png")).toHaveCount(0);
-  await expect(screen.getByRole("button", "Preview compact-navigation.png")).toBeVisible();
-  await app.screenshot("settings-run-images-after-delete");
 
   // Act
-  await screen.getByRole("button", "Close", { exact: true }).tap();
+  await dialog.getByRole("button", "Delete image").tap();
 
   // Assert
+  await expect(screen.getByRole("button", "Preview welcome-copy.png")).toHaveCount(0);
+  await expect(screen.getByRole("button", "Preview compact-navigation.png")).toBeVisible();
+  await expect.poll(() => browser.evaluate(runShowsUnavailable)).toBe(true);
+  await app.screenshot("settings-run-images-after-delete");
+});
+
+test("an image whose deletion answer is lost still shows Image unavailable in the Run it was viewed in", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const run = await closedRunWith(app, "compact-navigation.png");
+  const preview = await previewFromRun(app, screen, browser, run.id, "compact-navigation.png");
+  // The server deletes the bytes, but its answer never reaches the client.
+  await browser.route("**/api/run-images/delete", async (route) => {
+    await route.fetch();
+    await route.abort();
+  });
+  await preview.getByRole("button", "Delete image").tap();
+
+  // Act
+  await confirmation(screen).getByRole("button", "Delete image").tap();
+
+  // Assert
+  await expect(screen.getByRole("alert")).toBeVisible();
+  await expect(screen.getByRole("button", "Preview compact-navigation.png")).toHaveCount(0);
+  await expect.poll(() => browser.evaluate(runShowsUnavailable)).toBe(true);
+});
+
+test("an image this client deleted shows again when its Run is revisited after another client uploads it", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await uploadAsAnotherClient(app, demoImages.welcomeCopy);
+  const run = await closedRunWith(app, "welcome-copy.png");
+  const preview = await previewFromRun(app, screen, browser, run.id, "welcome-copy.png");
+  await preview.getByRole("button", "Delete image").tap();
+  await confirmation(screen).getByRole("button", "Delete image").tap();
+  await expect(screen.getByRole("button", "Preview welcome-copy.png")).toHaveCount(0);
+  await screen.getByRole("button", "Close", { exact: true }).tap();
+  const context = screen.getByRole("complementary", "Run context");
   await expect(context.getByText("Image unavailable", { exact: true })).toBeVisible();
   await expect(context).toContainText("Polish the first-run welcome copy");
   await app.screenshot("run-image-deleted-context");
-  const input = screen.getByRole("article", "Flow input block");
-  await input.getByRole("button", "Open Image 1: welcome-copy.png").tap();
-  const gallery = screen.getByRole("dialog", "Image 1 of 1 welcome-copy.png");
-  await expect(gallery.getByText("Image unavailable", { exact: true })).toBeVisible();
+  await screen.getByRole("navigation", "Open Runs").getByRole("link").first().tap();
+  await expect(context).not.toContainText("Polish the first-run welcome copy");
+  await uploadAsAnotherClient(app, demoImages.welcomeCopy);
+  await browser.evaluate("() => { window.sameDocument = true; }");
+
+  // Act
+  await browser.back();
+
+  // Assert
+  await expect(context.getByRole("button", "Open Image 1: welcome-copy.png")).toBeVisible();
+  await expect(context.getByText("Image unavailable", { exact: true })).toHaveCount(0);
   await expect
     .poll(() =>
-      browser.evaluate(`() => document.querySelector('[role="dialog"]')
-          ?.getAnimations({ subtree: true }).length === 0`),
+      browser.evaluate(imagesLoaded('[aria-label="Run context"] [aria-label="Prompt images"] img')),
     )
     .toBe(true);
-  await app.screenshot("run-image-deleted-gallery");
+  expect(
+    await browser.evaluate(
+      keyedImageUrls('[aria-label="Run context"] [aria-label="Prompt images"] img'),
+    ),
+  ).toBe(true);
+  expect(await browser.evaluate("() => window.sameDocument === true")).toBe(true);
 });
 
 test("Delete all deletes every image the project filter lists", async ({ app, screen }) => {

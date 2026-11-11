@@ -7,6 +7,7 @@ import { fieldLabelClass } from "@/components/page";
 import { useDesktopState } from "./desktop-state.ts";
 import { GateScreen } from "@/components/gate-screen";
 import { runDraft } from "./run-draft.ts";
+import { selectRunImageServer } from "./run-images.ts";
 import type {
   DesktopState,
   FactoryDesktop,
@@ -23,7 +24,9 @@ export function DesktopShell({ children }: { children: ReactNode }) {
   const state = useDesktopState();
   const server = selectedServer(desktop, state);
   useLayoutEffect(() => {
-    if (server) runDraft.selectServer(server);
+    if (!server) return;
+    runDraft.selectServer(server);
+    selectRunImageServer(server);
   }, [server]);
   if (!desktop) return children;
   if (!state)

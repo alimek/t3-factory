@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { runImageUrl } from "@t3-factory/contracts";
 
 /** Binary units, like the 10 MiB image limit. */
 export function imageSize(bytes: number) {
@@ -7,27 +8,44 @@ export function imageSize(bytes: number) {
 }
 
 /*
- * Digests whose bytes this client deleted. A document may reuse an image it already loaded
- * without asking the server again, so Run image surfaces also consult this list.
+ * Revalidation keys for image URLs. The server revalidates every load, but a document reuses an
+ * earlier load of the same URL, failed or not, without asking. A digest therefore gets a new key
+ * after a deletion attempt, whatever its outcome, and after a failed load, so the next view asks
+ * the server again: deleted bytes fail to load and show as unavailable, while kept or restored
+ * bytes show. The client never decides on its own that an image is unavailable.
  */
-let deleted: ReadonlySet<string> = new Set();
+interface ImageKeys {
+  /** The key of every digest without its own; a new selected server gets a new one. */
+  readonly base: number;
+  readonly digests: ReadonlyMap<string, number>;
+}
+let keys: ImageKeys = { base: 0, digests: new Map() };
+let revision = 0;
+let server: string | undefined;
 const listeners = new Set<() => void>();
 
-function replaceDeleted(next: ReadonlySet<string>) {
-  deleted = next;
+function replaceKeys(next: ImageKeys) {
+  keys = next;
   for (const listener of listeners) listener();
 }
 
-export function markRunImagesDeleted(digests: readonly string[]) {
-  if (digests.length) replaceDeleted(new Set([...deleted, ...digests]));
+/** After a deletion attempt or a failed load: the next load of each digest asks the server. */
+export function revalidateRunImages(digests: readonly string[]) {
+  if (!digests.length) return;
+  revision += 1;
+  const next = new Map(keys.digests);
+  for (const digest of digests) next.set(digest, revision);
+  replaceKeys({ base: keys.base, digests: next });
 }
 
-/** Uploading identical bytes again restores the image for every Run that uses it. */
-export function markRunImageStored(sha256: string) {
-  if (!deleted.has(sha256)) return;
-  const next = new Set(deleted);
-  next.delete(sha256);
-  replaceDeleted(next);
+/** Keys belong to one server; another server's images never reuse this one's loads. */
+export function selectRunImageServer(next: string) {
+  if (next === server) return;
+  const switched = server !== undefined;
+  server = next;
+  if (!switched) return;
+  revision += 1;
+  replaceKeys({ base: revision, digests: new Map() });
 }
 
 const subscribe = (listener: () => void) => {
@@ -37,4 +55,8 @@ const subscribe = (listener: () => void) => {
   };
 };
 
-export const useDeletedRunImages = () => useSyncExternalStore(subscribe, () => deleted);
+/** The current URL of a stored image's bytes, by digest. */
+export function useRunImageSource() {
+  const current = useSyncExternalStore(subscribe, () => keys);
+  return (sha256: string) => runImageUrl(sha256, current.digests.get(sha256) ?? current.base);
+}

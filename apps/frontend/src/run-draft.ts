@@ -16,7 +16,6 @@ import {
 import { randomId } from "./lib/ids.ts";
 import { useNavigate } from "@tanstack/react-router";
 import { api, ApiError } from "./api.ts";
-import { markRunImageStored } from "./run-images.ts";
 import {
   indexedDbImages,
   readImageFile,
@@ -280,7 +279,6 @@ const apiUploads: ImageUploads = {
   has: (image) => api.hasRunImage(image.sha256),
   upload: async (image, data) => {
     await api.stageRunImage(image.sha256, data);
-    markRunImageStored(image.sha256);
   },
 };
 

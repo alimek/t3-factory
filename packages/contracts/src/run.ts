@@ -2,7 +2,7 @@
 import type { AgentDefinition, AgentExecutionSettings } from "./agent.ts";
 import type { FlowDraft } from "./flow.ts";
 import type { FactoryProject } from "./project.ts";
-import { operation } from "./operation.ts";
+import { operation, operationPath } from "./operation.ts";
 
 export interface RunImageInfo {
   readonly sha256: string;
@@ -584,6 +584,7 @@ export const runOperations = {
     path: "/api/run-images/:sha256",
     body: "bytes",
   }),
+  /** A stored image's bytes, revalidated by the digest's ETag on every load; see `runImageUrl`. */
   getRunImage: operation<never, RunImageContent>()({
     method: "GET",
     path: "/api/run-images/:sha256",
@@ -605,3 +606,12 @@ export const runOperations = {
     body: "json",
   }),
 };
+
+/**
+ * The URL clients load a stored image's bytes from. `key` is the client's revalidation key,
+ * ignored by the server: a client changes it to ask again for bytes it may have loaded before.
+ * Every client URL carries it, so none matches a copy cached under the year-long immutable
+ * policy the bare path was served with before.
+ */
+export const runImageUrl = (sha256: string, key: number) =>
+  `${operationPath(runOperations.getRunImage, sha256)}?v=${key}`;

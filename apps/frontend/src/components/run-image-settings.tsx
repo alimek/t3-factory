@@ -11,8 +11,6 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  operationPath,
-  runOperations,
   type EligibleRunImage,
   type FactoryProject,
   type RunImageReference,
@@ -26,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { RUN_IMAGE_DELETION_LIMIT } from "@t3-factory/domain-validation";
 import { api } from "../api.ts";
 import { MutationGate } from "../client-gate.tsx";
-import { imageSize, markRunImagesDeleted } from "../run-images.ts";
+import { imageSize, revalidateRunImages, useRunImageSource } from "../run-images.ts";
 import { useProjects } from "../use-projects.ts";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -79,9 +77,9 @@ export function RunImageSettings() {
       <div className="grid gap-2">
         <h2 className="text-title font-semibold text-foreground">Run images</h2>
         <p className="text-sm text-muted-foreground">
-          Images attached to Settled and Archived Runs, stored on this computer. Deleting an image
-          removes only its file: the Run keeps its history and shows “Image unavailable” in its
-          place.
+          Images attached to Settled and Archived Runs, stored by the Factory server. Deleting an
+          image removes only its file: the Run keeps its history and shows “Image unavailable” in
+          its place.
         </p>
       </div>
       {[error, deletion.error].filter(Boolean).map((message) => (
@@ -162,15 +160,18 @@ function useImageDeletion(deleted: () => void) {
   };
   const confirm = async () => {
     if (!pending) return;
+    const digests = pending.images.map((image) => image.sha256);
     setBusy(true);
     try {
-      const skipped = await deleteImages(pending.images.map((image) => image.sha256));
+      const skipped = await deleteImages(digests);
       setNotice(skippedNotice(skipped.length));
       setPending(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Run images could not be deleted.");
     } finally {
       setBusy(false);
+      // A partial or lost answer cannot say which bytes are gone, so the server decides for all.
+      revalidateRunImages(digests);
       deleted();
     }
   };
@@ -186,7 +187,6 @@ async function deleteImages(digests: readonly string[]) {
   for (let start = 0; start < digests.length; start += RUN_IMAGE_DELETION_LIMIT) {
     const batch = digests.slice(start, start + RUN_IMAGE_DELETION_LIMIT);
     const result = await api.deleteRunImages({ sha256: batch });
-    markRunImagesDeleted(result.deleted);
     skipped.push(...result.skipped);
   }
   return skipped;
@@ -222,14 +222,14 @@ function deletionCopy({ scope, images }: Deletion, project: FactoryProject | nul
     const image = images[0]!;
     return {
       title: `Delete ${image.name} (${size})?`,
-      description: `Used by ${count(runs.size, "Run")} in ${projectsOf(image)}. The file is removed from this computer and cannot be restored; ${keepers(runs.size)} “Image unavailable” in its place.`,
+      description: `Used by ${count(runs.size, "Run")} in ${projectsOf(image)}. The file is removed from the Factory server and cannot be restored; ${keepers(runs.size)} “Image unavailable” in its place.`,
       action: "Delete image",
     };
   }
   const onlyProject = project && [...runs.values()].every((run) => run.project.id === project.id);
   return {
     title: `Delete ${count(images.length, "image")} (${size}) from ${count(runs.size, "Run")}${onlyProject ? ` in ${project.title}` : ""}?`,
-    description: `The files are removed from this computer and cannot be restored. Run history stays unchanged; ${images.length === 1 ? "this image shows" : "these images show"} as “Image unavailable”.${project ? otherProjectsNote(images, project) : ""}`,
+    description: `The files are removed from the Factory server and cannot be restored. Run history stays unchanged; ${images.length === 1 ? "this image shows" : "these images show"} as “Image unavailable”.${project ? otherProjectsNote(images, project) : ""}`,
     action: `Delete ${count(images.length, "image")}`,
   };
 }
@@ -394,6 +394,7 @@ function RunImageSummary({
 /** The retained bytes, or an unavailable icon when they fail to load. */
 function StoredImage({ image, preview }: { image: EligibleRunImage; preview?: boolean }) {
   const [unavailable, setUnavailable] = useState(false);
+  const source = useRunImageSource();
   if (unavailable)
     return (
       <span className="flex size-full flex-col items-center justify-center gap-1 text-xs text-muted-foreground">
@@ -403,11 +404,14 @@ function StoredImage({ image, preview }: { image: EligibleRunImage; preview?: bo
     );
   return (
     <img
-      src={operationPath(runOperations.getRunImage, image.sha256)}
+      src={source(image.sha256)}
       alt={preview ? image.name : ""}
       loading="lazy"
       className={preview ? "size-full object-contain" : "size-full object-cover"}
-      onError={() => setUnavailable(true)}
+      onError={() => {
+        revalidateRunImages([image.sha256]);
+        setUnavailable(true);
+      }}
     />
   );
 }

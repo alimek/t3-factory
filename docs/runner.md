@@ -124,8 +124,8 @@ accepted key is recognized before image staging and capability checks.
 
 An image Start also requires T3's attachment support (`attachments_unsupported` otherwise), at most 8 images with unique
 ids and digests, every image reference in the manifest, names of 1–255 characters, and type and size matching the
-staged image. Inside the acceptance transaction every digest must be staged; otherwise Start fails with
-`missing_images` (HTTP 409, listing the digests), which is not a confirmed rejection, and creates no Run or Task. The
+staged image. Inside the acceptance transaction every digest must be staged with its file present; otherwise Start fails
+with `missing_images` (HTTP 409, listing the digests), which is not a confirmed rejection, and creates no Run or Task. The
 transaction attaches the ordered manifest to the Run and stores the prompt segments; both are immutable. The Run's
 input holds the worker-readable text frozen at Start. Flow input targets start independently and are not handoffs.
 
@@ -147,10 +147,12 @@ server's creation policy before Start.
 ### Run images
 
 Image bytes are content-addressed files in `FACTORY_HOME/images`, written to a temporary file, synced and renamed; a
-staging row in SQLite exists only while its file is complete. Uploads and the staging sweep share one permit. The sweep
-runs at startup and before each upload and deletes staged images no Run references once they are 24 hours old, counted
-from the first upload; uploading again or checking an image does not extend that. A Run's reference keeps shared bytes
-for good, including after Settle and Archive. A failed write is an explicit storage error; there is no quota or eviction.
+staging row in SQLite is written only once its file is complete. Uploads, the staging sweep and manual deletion share one
+permit. The sweep runs at startup and before each upload and deletes staged images no Run references once they are 24
+hours old, counted from the first upload; uploading again or checking an image does not extend that. A Run's reference
+keeps shared bytes through Settle and Archive; the only removal of referenced bytes is manual deletion, which keeps the
+staging row ([retention](foundation.md#persistence-model)). A failed write is an explicit storage error; there is no
+quota or eviction.
 
 Every Flow-input launch intent saves the ordered image list (ordinal, digest, name, type, size), covered by its payload
 fingerprint, also for workers that join a bound worktree later. T3 attachment ids are never saved. Each dispatch of a

@@ -1,8 +1,7 @@
 import { Fragment, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, Image as ImageIcon, ImageOff } from "lucide-react";
 import type { RunDetail, RunImage } from "@t3-factory/contracts";
-import { operationPath, runOperations } from "@t3-factory/contracts";
-import { useDeletedRunImages } from "../run-images.ts";
+import { revalidateRunImages, useRunImageSource } from "../run-images.ts";
 import { ImagePreviewDialog, previewImageClass } from "./prompt-images.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.tsx";
@@ -28,17 +27,16 @@ export function runPromptText(run: RunDetail) {
 }
 
 /**
- * Gallery position and the images unavailable to one view of the prompt: bytes that failed to
- * load, and bytes this client deleted. A failed read only swaps in a placeholder; it is never
- * retried and changes nothing else.
+ * Gallery position and the images whose bytes failed to load for one view of the prompt. A failed
+ * read only swaps in a placeholder and is not retried in this view; a later view asks again.
  */
 function useRunImages(run: RunDetail) {
   const [galleryIndex, setGalleryIndex] = useState<number>();
-  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
-  const deleted = useDeletedRunImages();
-  const unavailable = deleted.size ? new Set([...failed, ...deleted]) : failed;
-  const markUnavailable = (sha256: string) =>
-    setFailed((current) => (current.has(sha256) ? current : new Set(current).add(sha256)));
+  const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
+  const markUnavailable = (sha256: string) => {
+    revalidateRunImages([sha256]);
+    setUnavailable((current) => (current.has(sha256) ? current : new Set(current).add(sha256)));
+  };
   const gallery =
     galleryIndex === undefined ? null : (
       <RunImageGallery
@@ -104,10 +102,11 @@ function ImageSlot({
   unavailable: boolean;
   onUnavailable: (sha256: string) => void;
 }) {
+  const source = useRunImageSource();
   if (unavailable) return <ImageOff aria-hidden className="text-muted-foreground" />;
   return (
     <img
-      src={operationPath(runOperations.getRunImage, image.sha256)}
+      src={source(image.sha256)}
       alt=""
       loading="lazy"
       className="size-full object-cover"
@@ -165,6 +164,7 @@ function RunImageGallery({
   onIndexChange: (index: number) => void;
   onClose: () => void;
 }) {
+  const source = useRunImageSource();
   const image = images[index]!;
   const label = imageLabel(image, index);
   // Wrapping keeps both buttons enabled, so focus never drops out of the dialog at either end.
@@ -195,7 +195,7 @@ function RunImageGallery({
       ) : (
         <img
           key={image.sha256}
-          src={operationPath(runOperations.getRunImage, image.sha256)}
+          src={source(image.sha256)}
           alt={label}
           className={previewImageClass}
           onError={() => onUnavailable(image.sha256)}
