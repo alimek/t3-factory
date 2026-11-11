@@ -2,8 +2,8 @@ import type { ReportingInstallation } from "@t3-factory/contracts";
 
 const labels = {
   current: "installed — optional",
-  missing: "missing — optional, Reinstall to add",
-  outdated: "outdated — optional, Reinstall to update",
+  missing: "missing — optional; Install, Repair or Reinstall adds it",
+  outdated: "outdated — optional; Install, Repair or Reinstall updates it",
 };
 
 export function LaunchSkillStatus({ state }: { state: ReportingInstallation["launchSkill"] }) {
