@@ -11,11 +11,12 @@ import type {
  * peer must understand; raise the minimum only when older peers can no longer
  * interoperate safely. Application release numbers never decide compatibility.
  */
-export const FACTORY_PROTOCOL = 8;
-/** Protocol 8 added Continuation and Wait blocks and their Run states; older clients cannot read them. */
-export const FACTORY_MINIMUM_PEER_PROTOCOL = 8;
-/** The current UI reads Continuation and Wait blocks, their visits, arrivals and states (protocol 8). */
-export const FACTORY_MINIMUM_SERVER_PROTOCOL = 8;
+export const FACTORY_PROTOCOL = 9;
+/** Protocol 9 changed manual Settle's request and answer and added Wait blocks; older clients
+ * cannot settle or read them. */
+export const FACTORY_MINIMUM_PEER_PROTOCOL = 9;
+/** The current UI settles through the settlement outcome and reads Wait blocks (protocol 9). */
+export const FACTORY_MINIMUM_SERVER_PROTOCOL = 9;
 
 export const CLIENT_LABEL_LIMIT = 80;
 
