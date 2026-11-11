@@ -9,6 +9,7 @@ import {
   isCanonicalTimestamp,
   isSha256Hex,
   promptText,
+  promptTitle,
   RUN_IMAGE_LIMIT,
   RUN_IMAGE_MIME_TYPES,
   TASK_TITLE_LIMIT,
@@ -109,11 +110,7 @@ const unsavedUnknownOutcome =
   "Start outcome unknown, and this browser could not save the request for recovery after a reload. Keep this window open and check the same request again to recover its Run without creating a duplicate.";
 
 export function draftTitle(draft: Pick<SavedRunDraft, "segments" | "manualTitle">) {
-  const firstLine = promptText(draft.segments)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  return draft.manualTitle ?? firstLine?.slice(0, TASK_TITLE_LIMIT) ?? "Untitled draft";
+  return draft.manualTitle ?? promptTitle(promptText(draft.segments)) ?? "Untitled draft";
 }
 
 /**

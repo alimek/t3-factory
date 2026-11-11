@@ -22,7 +22,8 @@ export function openRunReads(database: RunnerDatabase) {
           return (yield* sql<{
             id: string;
             request_fingerprint: string;
-          }>`SELECT id,request_fingerprint FROM runs WHERE request_id=${requestId}`)[0];
+            created_at: string;
+          }>`SELECT id,request_fingerprint,created_at FROM runs WHERE request_id=${requestId}`)[0];
         }),
       ),
     readBlock: (runId: string, blockId: string) =>

@@ -17,6 +17,7 @@ import {
   flowReadiness,
   isCanonicalTimestamp,
   promptText,
+  promptTitle,
   TASK_TITLE_LIMIT,
   validateStartPrompt,
   type StartPrompt,
@@ -245,6 +246,32 @@ export function openRunnerStart(
       return yield* getRun(accepted.value);
     });
   }
+  /**
+   * A text-only Start whose title and creation time are derived as the Start form derives them.
+   * A retry of an accepted request reuses its stored creation time, so it keeps the same content.
+   */
+  function startText(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
+    return Effect.gen(function* () {
+      const { requestId, projectId, flowId, input } = (
+        rawInput && typeof rawInput === "object" ? rawInput : {}
+      ) as Record<string, unknown>;
+      if (typeof input !== "string")
+        return failure("validation", "Send the Run's prompt as text.", [
+          { code: "start_input", path: "input", message: "Send the prompt as text." },
+        ]);
+      const accepted =
+        typeof requestId === "string" ? yield* store.acceptedStart(requestId) : undefined;
+      return yield* start({
+        requestId,
+        projectId,
+        flowId,
+        segments: [{ type: "text", text: input }],
+        images: [],
+        title: promptTitle(input) ?? "",
+        createdAt: accepted?.created_at ?? (yield* now),
+      });
+    });
+  }
   /** Before Start: connection/project, Flow readiness, every referenced Agent's runtime and launch schema. */
   function startPreconditions(
     input: Pick<StartRunInput, "projectId" | "flowId">,
@@ -373,5 +400,5 @@ export function openRunnerStart(
         : { ok: true, value: agents };
     });
   }
-  return { start };
+  return { start, startText };
 }
