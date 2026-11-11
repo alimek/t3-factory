@@ -96,6 +96,18 @@ interface). This is unauthenticated development tooling: the Vite proxy reaches 
 Sharing a live Vite session intentionally grants host-local access; restrict its address and port to trusted development devices with tailnet access rules. It does not exercise client approval or TLS. The flag
 changes neither the backend bind, nor the data home, nor Tailscale Serve/Funnel or ACLs. `FACTORY_DEV_HOME` aside, `FACTORY_DEV_HOST` sets an explicit frontend bind and `--tailscale` takes precedence.
 
+## Optional Run launch skill
+
+Explicit Install, Repair and Reinstall in **Settings → Agent reporting** distribute
+both the required Factory Block skill and the optional `factory-start-run` skill
+to each supported harness home. Invoke `factory-start-run` yourself in a harness
+session to start a Run with Factory; workers do not need it. Its installation
+state is shown separately and never blocks reporting readiness or Start.
+
+Startup and app updates do not write harness files. When the launch skill is
+missing or outdated, use **Reinstall** (or **Repair** when reporting also needs
+attention), then start a fresh harness session so it discovers the skill.
+
 ## UI journeys
 
 After `pnpm build`, `pnpm test:e2e` runs the controlled Chromium journeys against a foreground backend with a temporary home and a controlled T3 adapter (no OAuth or paid workload). First boot may need

@@ -1,3 +1,4 @@
+import { LaunchSkillStatus } from "../launch-skill-status.tsx";
 import { MutationGate } from "@/client-gate";
 import { ExecutionSettingsFields } from "../execution-settings-fields.tsx";
 import { useState } from "react";
@@ -126,6 +127,7 @@ function AgentReportingNotice({ providerId }: { providerId: string }) {
       <AlertTitle>{status.label}</AlertTitle>
       <AlertDescription>
         {status.message && <p>{status.message}</p>}
+        <LaunchSkillStatus state={status.launchSkill ?? null} />
         {status.state === "attention" && (
           <p>This provider cannot start a Run until reporting is configured.</p>
         )}
