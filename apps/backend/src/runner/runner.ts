@@ -164,8 +164,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* Effect.forEach(settling, (run) => advanceSettlement(run.run_id), {
             concurrency: "unbounded",
           });
-          // Include dispatches queued by reports while the sweep was observing workers.
-          yield* drives.drain();
+          // Include dispatches queued by reports while the sweep observed its Runs' workers.
+          yield* drives.drain(ids.map((run) => run.id));
           return { ok: true as const, value: undefined };
         }),
       )
