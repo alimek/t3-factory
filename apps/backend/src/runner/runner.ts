@@ -67,7 +67,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     images,
     waitTimers.schedule,
   );
-  const { start, startText } = openRunnerStart(store, ops, t3, lifecycle, checkAgent);
+  const { start, startText } = openRunnerStart(store, ops, t3, lifecycle, checkAgent, images);
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);

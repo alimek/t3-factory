@@ -145,6 +145,11 @@ const applicationRoute = createRoute({
   path: "settings/application",
   beforeLoad: () => openSettings({ tab: "application" }),
 });
+const runImagesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings/run-images",
+  beforeLoad: () => openSettings({ tab: "run-images" }),
+});
 const skillsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "settings/skills",
@@ -172,6 +177,7 @@ const routeTree = rootRoute.addChildren([
   keyboardRoute,
   accessRoute,
   applicationRoute,
+  runImagesRoute,
   skillsRoute,
 ]);
 export const router = createRouter({ routeTree });

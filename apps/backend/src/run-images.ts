@@ -1,22 +1,26 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import type {
+  EligibleRunImage,
   PromptSegment,
   Result,
   RunImage,
   RunImageContent,
   RunImageInfo,
+  RunImageDeletion,
   RunImageMimeType,
+  RunImageReference,
   StageRunImageInput,
   ValidationIssue,
 } from "@t3-factory/contracts";
 import {
   imageSignatureMime,
   isSha256Hex,
+  RUN_IMAGE_DELETION_LIMIT,
   RUN_IMAGE_MAX_BYTES,
   RUN_IMAGE_MIME_TYPES,
 } from "@t3-factory/domain-validation";
@@ -58,6 +62,49 @@ function uploadIssue(sha256: string, input: StageRunImageInput): Result<never> |
 
 const missingFile = (error: unknown) =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
+
+type ReferenceRow = StagedRow & {
+  name: string;
+  ordinal: number;
+  run_id: string;
+  number: number | null;
+  title: string;
+  archived_at: string | null;
+  project_id: string;
+  project_title: string;
+};
+
+/** Every referencing Run's image row, grouped by digest in the rows' order. */
+function groupReferences(rows: readonly ReferenceRow[]): EligibleRunImage[] {
+  const images = new Map<string, Omit<EligibleRunImage, "runs"> & { runs: RunImageReference[] }>();
+  for (const row of rows) {
+    let image = images.get(row.sha256);
+    if (!image) {
+      image = { name: row.name, ...info(row), runs: [] };
+      images.set(row.sha256, image);
+    }
+    image.runs.push({
+      id: row.run_id,
+      number: row.number,
+      title: row.title,
+      lifecycle: row.archived_at ? "archived" : "settled",
+      project: { id: row.project_id, title: row.project_title },
+      ordinal: row.ordinal,
+    });
+  }
+  return [...images.values()];
+}
+
+type EligibilityScope = { readonly projectId?: string; readonly digests?: readonly string[] };
+
+/** The distinct digests of a deletion request, or undefined when the request is malformed. */
+function deletionDigests(input: unknown): readonly string[] | undefined {
+  if (typeof input !== "object" || input === null || !("sha256" in input)) return undefined;
+  const { sha256 } = input;
+  if (!Array.isArray(sha256) || sha256.length < 1 || sha256.length > RUN_IMAGE_DELETION_LIMIT)
+    return undefined;
+  return sha256.every(isSha256Hex) ? [...new Set(sha256)] : undefined;
+}
 
 /** The file's bytes when they still hash to their name; `missing` when absent or corrupt. */
 type StoredImageBytes = { kind: "ok"; data: Uint8Array } | { kind: "missing" };
@@ -171,8 +218,114 @@ export const makeRunImages = (directory: string) =>
       });
     }
 
+    /**
+     * The deletion eligibility rule, apart from the file: at least one Run attached the digest
+     * and every Run that did is Settled or Archived. `digests` limits it to those digests;
+     * `projectId` keeps images a Run of that project attached. Newest Run first, then manifest order.
+     */
+    function referencedOnlyByClosedRuns(scope: EligibilityScope) {
+      return Effect.gen(function* () {
+        const conditions = [
+          sql`NOT EXISTS(SELECT 1 FROM run_images other JOIN runs active ON active.id=other.run_id
+            WHERE other.sha256=ri.sha256 AND active.settled_at IS NULL AND active.archived_at IS NULL)`,
+          ...(scope.digests ? [sql`ri.sha256 IN ${sql.in(scope.digests)}`] : []),
+        ];
+        const rows = yield* sql<ReferenceRow>`
+          SELECT ri.sha256,ri.name,ri.mime_type,ri.size_bytes,ri.ordinal,r.id AS run_id,r.number,
+            r.title,r.archived_at,p.id AS project_id,p.title AS project_title
+          FROM run_images ri JOIN runs r ON r.id=ri.run_id JOIN tasks t ON t.id=r.task_id
+          JOIN projects p ON p.id=t.project_id
+          WHERE ${sql.and(conditions)}
+          ORDER BY r.created_at DESC,r.creation_key DESC,ri.ordinal`;
+        return groupReferences(rows).filter(
+          (image) =>
+            !scope.projectId || image.runs.some((run) => run.project.id === scope.projectId),
+        );
+      });
+    }
+
+    /** The full eligibility rule: closed Runs only, and a file on disk as Start requires. */
+    function eligibleRunImages(scope: EligibilityScope) {
+      return Effect.gen(function* () {
+        const referenced = yield* referencedOnlyByClosedRuns(scope);
+        const stored = yield* Effect.forEach(referenced, (image) => hasFile(image.sha256));
+        return referenced.filter((_, index) => stored[index]);
+      });
+    }
+
+    const listEligibleRunImages = (projectId: string) =>
+      Effect.map(eligibleRunImages(projectId ? { projectId } : {}), (value) => ({
+        ok: true as const,
+        value,
+      }));
+
+    /**
+     * Removes the bytes of each eligible digest and skips the rest; staging rows, Run manifests
+     * and history stay. The permit excludes uploads and the sweep. A Start takes no permit, so the
+     * rule is rechecked and the files unlinked in one transaction, which serializes with Start's:
+     * a Start committed first makes the digest ineligible, and a later one finds no file and
+     * reports the image as not uploaded.
+     */
+    function deleteRunImages(input: unknown): Effect.Effect<Result<RunImageDeletion>, unknown> {
+      const digests = deletionDigests(input);
+      if (!digests)
+        return Effect.succeed(
+          failure(
+            "validation",
+            `Choose 1 to ${RUN_IMAGE_DELETION_LIMIT} images by their lowercase hex SHA-256 digests.`,
+          ),
+        );
+      return permit.withPermits(1)(
+        Effect.gen(function* () {
+          const candidates = (yield* eligibleRunImages({ digests })).map((image) => image.sha256);
+          const deleted = candidates.length
+            ? yield* sql.withTransaction(
+                Effect.gen(function* () {
+                  const still = new Set(
+                    (yield* referencedOnlyByClosedRuns({ digests: candidates })).map(
+                      (image) => image.sha256,
+                    ),
+                  );
+                  const removable = candidates.filter((sha256) => still.has(sha256));
+                  for (const sha256 of removable)
+                    yield* Effect.tryPromise(() => rm(file(sha256), { force: true }));
+                  return removable;
+                }),
+              )
+            : [];
+          return {
+            ok: true as const,
+            value: { deleted, skipped: digests.filter((sha256) => !deleted.includes(sha256)) },
+          };
+        }),
+      );
+    }
+
+    /** Whether the digest's file exists, whatever its content. */
+    function hasFile(sha256: string): Effect.Effect<boolean, unknown> {
+      return Effect.tryPromise({
+        try: () =>
+          stat(file(sha256)).then(
+            () => true,
+            (error: unknown) => {
+              if (missingFile(error)) return false;
+              throw error;
+            },
+          ),
+        catch: (error) => error,
+      });
+    }
+
     yield* permit.withPermits(1)(sweep);
-    return { stageRunImage, getRunImageInfo, getRunImage, storedBytes };
+    return {
+      stageRunImage,
+      getRunImageInfo,
+      getRunImage,
+      listEligibleRunImages,
+      deleteRunImages,
+      storedBytes,
+      hasFile,
+    };
   });
 
 export type RunImages = Effect.Success<ReturnType<typeof makeRunImages>>;
@@ -181,16 +334,21 @@ const unavailable = (): Result<never> => failure("not_found", "Run image is unav
 
 /**
  * Inside the Start transaction: every manifest digest must be staged with the declared type and
- * size. Missing digests are their own outcome, so the client uploads them and retries the request.
+ * size and have its file. Missing digests are their own outcome, so the client uploads them and
+ * retries the request; a digest whose bytes were deleted keeps its staging row but not its file.
  */
-export function stagedManifestProblem(sql: SqlClient.SqlClient, images: readonly RunImage[]) {
+export function stagedManifestProblem(
+  sql: SqlClient.SqlClient,
+  images: readonly RunImage[],
+  hasFile: RunImages["hasFile"],
+) {
   return Effect.gen(function* () {
     const missing: ValidationIssue[] = [];
     const mismatched: ValidationIssue[] = [];
     for (const [index, image] of images.entries()) {
       const [row] =
         yield* sql<StagedRow>`SELECT sha256,mime_type,size_bytes FROM staged_images WHERE sha256=${image.sha256}`;
-      if (!row)
+      if (!row || !(yield* hasFile(image.sha256)))
         missing.push({
           code: "missing_images",
           path: `images.${image.sha256}`,

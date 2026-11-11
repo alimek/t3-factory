@@ -60,6 +60,7 @@ import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { capturedExits, continuedThread, exitRecipients } from "../flow-graph.ts";
 import { api, ApiError } from "../api.ts";
+import { useProjects } from "../use-projects.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
 import { RunInitialPrompt } from "../components/run-prompt.tsx";
@@ -85,22 +86,9 @@ type CurrentFlowRevision = { readonly revision: number } | "missing";
 function useRunObservation(id: string) {
   const { value: run, error: scopeError, synchronized } = useLiveRun(id);
   const delivery = useLiveDelivery();
-  const [catalog, setCatalog] = useState<readonly FactoryProject[]>();
+  const catalog = useProjects(id);
   const [definition, setDefinition] = useState<CurrentFlowRevision>();
   const flowId = run?.flowId;
-  useEffect(() => {
-    let active = true;
-    setCatalog(undefined);
-    void api.listProjects().then(
-      (catalog) => {
-        if (active) setCatalog(catalog.projects);
-      },
-      () => undefined,
-    );
-    return () => {
-      active = false;
-    };
-  }, [id]);
   useEffect(() => {
     let active = true;
     setDefinition(undefined);

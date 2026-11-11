@@ -350,8 +350,8 @@ in a text/JSON result is not the image-content contract.
 
 Every worker of the Run can use this read regardless of activation: a Flow-input worker, a downstream checkout launch,
 a worktree Block's worker launched on its first arrival, a revisit or a later user conversation. The same immutable images and
-label bindings remain available; a worker that received launch attachments can fetch an image again. The host-local
-MCP and Block-id access boundary above is unchanged.
+label bindings remain available unless their bytes were deleted manually; a worker that received launch attachments can
+fetch an image again. The host-local MCP and Block-id access boundary above is unchanged.
 
 Malformed arguments return `IMAGE_ID_REQUIRED` for a missing image id or `INVALID_ARGUMENT` for other malformed
 arguments; existing Block-id validation still applies. `UNKNOWN_IMAGE` means the id is not in this Run's manifest,

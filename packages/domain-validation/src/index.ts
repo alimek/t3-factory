@@ -955,6 +955,7 @@ export {
   imageSignatureMime,
   isSha256Hex,
   promptText,
+  RUN_IMAGE_DELETION_LIMIT,
   RUN_IMAGE_LIMIT,
   RUN_IMAGE_MAX_BYTES,
   RUN_IMAGE_MIME_TYPES,

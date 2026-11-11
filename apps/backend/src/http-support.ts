@@ -125,15 +125,31 @@ export function readRawBody(
   });
 }
 
+/** Whether an `If-None-Match` header names this entity tag (weak or strong) or any (`*`). */
+function matchesEntityTag(ifNoneMatch: string | undefined, tag: string) {
+  return (ifNoneMatch ?? "")
+    .split(",")
+    .map((candidate) => candidate.trim().replace(/^W\//, ""))
+    .some((candidate) => candidate === tag || candidate === "*");
+}
+
+/**
+ * A digest's bytes never change but can be deleted, so caches revalidate every load: an intact
+ * image answers 304 to its own tag, and a deleted one answers not found instead of a cached copy.
+ */
 export function runImageResponse(
+  sha256: string,
+  ifNoneMatch: string | undefined,
   result: Result<{ mimeType: string; data: Uint8Array }>,
 ): HttpServerResponse.HttpServerResponse {
   if (!result.ok) return resultResponse(result);
+  const headers = { "cache-control": "private, no-cache", etag: `"${sha256}"` };
+  if (matchesEntityTag(ifNoneMatch, headers.etag))
+    return HttpServerResponse.empty({ status: 304, headers });
   return HttpServerResponse.uint8Array(result.value.data, {
     status: 200,
     contentType: result.value.mimeType,
-    // Content-addressed: the bytes behind a digest never change.
-    headers: { "cache-control": "private, max-age=31536000, immutable" },
+    headers,
   });
 }
 

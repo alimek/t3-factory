@@ -8,7 +8,9 @@ import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import {
   expectFlowInputImages,
   expectGalleryImage,
+  failSecondImage,
   openImageHistory,
+  openWithFailedSecondImage,
 } from "./support/run-images.ts";
 import {
   dropFiles,
@@ -360,9 +362,7 @@ test("unavailable image bytes preserve readable prompt history and other images 
 }) => {
   // Arrange
   const run = await openImageHistory(app);
-  await browser.route(`**/api/run-images/${run.images[1]!.sha256}`, async (route) => {
-    return route.request.method === "GET" ? route.abort() : route.continue();
-  });
+  await failSecondImage(browser, run);
 
   // Act
   await browser.reload();
@@ -371,19 +371,47 @@ test("unavailable image bytes preserve readable prompt history and other images 
   const input = screen.getByRole("article", "Flow input block");
   await expectFlowInputImages(screen);
   await expect(input).toContainText("Review the Atlas settings page");
-  await input.getByRole("button", "Open Image 2: screenshot.png").tap();
-  const dialog = screen.getByRole("dialog", "Image 2 of 4 screenshot.png");
-  await expect(dialog.getByText("Image unavailable", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("Image 2: screenshot.png", { exact: true })).toBeVisible();
-  await app.screenshot("flow-input-image-unavailable");
-  await screen.getByRole("button", "Previous image").tap();
-  await expectGalleryImage(screen, browser, 1, "screenshot.png", run.images[0]!.sha256);
-  await screen.getByRole("button", "Close", { exact: true }).tap();
   const context = screen.getByRole("complementary", "Run context");
   await expect(context).toContainText("Review the Atlas settings page");
   await expect(context.getByRole("list", "Prompt images").getByRole("button")).toHaveCount(4);
+  // The failed read has run before attention is checked.
+  await expect(context.getByText("Image unavailable", { exact: true })).toBeVisible();
   await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   expect((await readHistoryRun(app.baseUrl, run.id)).attention).toEqual(run.attention);
+});
+
+test("the gallery shows Image unavailable with the ordinal and name for missing image bytes", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { openSecond, dialog } = await openWithFailedSecondImage(app, screen, browser);
+
+  // Act
+  await openSecond();
+
+  // Assert
+  await expect(dialog.getByText("Image unavailable", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Image 2: screenshot.png", { exact: true })).toBeVisible();
+  await app.screenshot("flow-input-image-unavailable");
+});
+
+test("the gallery browses from an unavailable image to an image whose bytes are stored", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { run, openSecond, dialog } = await openWithFailedSecondImage(app, screen, browser);
+  await openSecond();
+  await expect(dialog.getByText("Image unavailable", { exact: true })).toBeVisible();
+
+  // Act
+  await screen.getByRole("button", "Previous image").tap();
+
+  // Assert
+  await expectGalleryImage(screen, browser, 1, "screenshot.png", run.images[0]!.sha256);
 });
 
 test("a Flow input thumbnail opens the matching image even with a duplicate filename", async ({

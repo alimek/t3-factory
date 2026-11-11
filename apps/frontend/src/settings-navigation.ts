@@ -1,7 +1,7 @@
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 
 export type SettingsSelection = {
-  tab: "connection" | "runtime" | "keyboard" | "access" | "application";
+  tab: "connection" | "runtime" | "keyboard" | "access" | "application" | "run-images";
 };
 const settingsTabs: readonly SettingsSelection["tab"][] = [
   "connection",
@@ -9,6 +9,7 @@ const settingsTabs: readonly SettingsSelection["tab"][] = [
   "keyboard",
   "access",
   "application",
+  "run-images",
 ];
 export type StudioSelection =
   | { tab: "flows"; flowId?: string }
@@ -54,6 +55,7 @@ export function settingsMask(selection: SettingsSelection) {
   if (selection.tab === "keyboard") return { to: "/settings/keyboard" as const };
   if (selection.tab === "access") return { to: "/settings/access" as const };
   if (selection.tab === "application") return { to: "/settings/application" as const };
+  if (selection.tab === "run-images") return { to: "/settings/run-images" as const };
   return selection.tab === "runtime"
     ? { to: "/settings/runtime" as const }
     : { to: "/settings/connection" as const };

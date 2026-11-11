@@ -9,6 +9,8 @@ import type {
 export const RUN_IMAGE_LIMIT = 8;
 export const RUN_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const RUN_IMAGE_NAME_LIMIT = 255;
+/** Digests one deletion request may name; clients send larger selections in batches. */
+export const RUN_IMAGE_DELETION_LIMIT = 1000;
 const RUN_PROMPT_TEXT_LIMIT = 100_000;
 export const RUN_IMAGE_MIME_TYPES: readonly RunImageMimeType[] = [
   "image/png",
