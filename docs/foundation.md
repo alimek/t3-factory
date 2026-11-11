@@ -34,8 +34,8 @@ and restricted OAuth credentials live outside project repositories.
   that are staged and still have their file; the prompt segments and manifest are immutable and the
   Run's input keeps the worker-readable text. Migration `071`
   gives every existing Run one text segment and no images.
-- Each Start creates a new Task, Run and threads. A Settled Run returns to Active when one of
-  its Blocks reports; Archived Runs are final and never reopened.
+- Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
+  Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
   status, engine status and observation freshness remain separate facts.
 - External delivery records retain the exact request, target, key and authorization
@@ -57,7 +57,7 @@ new attempts, and failed Agent work is never retried automatically; see
 **Retention.** History, input, revisions, events, deduplication metadata and closure evidence
 are kept indefinitely. A Wait arrival keeps its message while it is pending or needed for
 delivery: after forwarding, until no outgoing Handoff is pending and no current visit of an Agent
-recipient reads it as that visit's input, and never past Archive. Its body is then cleared while
+recipient reads it as that visit's input, and never past its cancellation or Archive. Its body is then cleared while
 its outcome, deadline and deduplication identity stay. Other message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
 remain. Initial input, including its images, and revision prompts are intentional exceptions;

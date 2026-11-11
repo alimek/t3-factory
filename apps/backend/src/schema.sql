@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: wait_blocks
+-- Newest applied migration: manual_settlement
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -529,6 +529,30 @@ CREATE TABLE "run_root_stop_intents" (
   payload_json TEXT NOT NULL,
   state TEXT NOT NULL CHECK(state IN ('pending','reserved','uncertain','acknowledged')),
   PRIMARY KEY(run_id,cause)
+);
+
+CREATE TABLE run_settlement_workers (
+  run_id TEXT NOT NULL REFERENCES run_settlements(run_id),
+  attempt INTEGER NOT NULL CHECK (attempt >= 1),
+  thread_id TEXT NOT NULL,
+  block_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('stopping', 'finished', 'unresolved')),
+  problem TEXT,
+  stop_key TEXT UNIQUE,
+  stop_requested_at TEXT,
+  stop_outcome TEXT CHECK (stop_outcome IN ('acknowledged', 'failed', 'unsupported')),
+  stop_problem TEXT,
+  PRIMARY KEY (run_id, attempt, thread_id),
+  FOREIGN KEY (run_id, block_id) REFERENCES run_blocks(run_id, block_id)
+);
+
+CREATE TABLE run_settlements (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id),
+  requested_at TEXT NOT NULL,
+  attempt INTEGER NOT NULL CHECK (attempt >= 1),
+  attempt_owner TEXT NOT NULL,
+  attempted_at TEXT NOT NULL,
+  stop_pass_at TEXT
 );
 
 CREATE TABLE run_snooze_attention (

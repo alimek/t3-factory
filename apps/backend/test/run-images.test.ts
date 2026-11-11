@@ -401,7 +401,7 @@ it("a Settled Run's image whose file is missing is not eligible for deletion", a
   await stageImages(f.f, allScreenshots);
   const started = await f.f.startRun(imageStart(f.input));
   assert(started.ok);
-  assert((await f.f.settleRun(started.value.id)).ok);
+  assert((await f.f.settleRun(started.value.id, {})).ok);
   await rm(join(f.h.processHome, "images", sha256Hex(screenshots.blue.data)));
 
   // Act
@@ -438,7 +438,7 @@ it("filtering eligible images by project keeps the images its Runs used and list
     images: [manifestEntry("red", screenshots.red)],
   });
   assert(second.ok);
-  assert((await f.f.settleRun(second.value.id)).ok);
+  assert((await f.f.settleRun(second.value.id, {})).ok);
 
   // Act
   const listed = await f.f.listEligibleRunImages(project.value.id);
@@ -495,7 +495,7 @@ it("an image an Active Run attached after it was listed is skipped and keeps its
   await stageImages(f.f, allScreenshots);
   const settled = await f.f.startRun(imageStart(f.input));
   assert(settled.ok);
-  assert((await f.f.settleRun(settled.value.id)).ok);
+  assert((await f.f.settleRun(settled.value.id, {})).ok);
   const [red, green] = [sha256Hex(screenshots.red.data), sha256Hex(screenshots.green.data)];
   const listed = await f.f.listEligibleRunImages("");
   assert(listed.ok && listed.value.some((image) => image.sha256 === green));

@@ -28,7 +28,8 @@ import { clockTime, dayAndTime, executionStateLabel, StatePill } from "./executi
 function blockAttention(run: RunDetail, blockId: string) {
   const pending = run.attention.filter((item) => item.blockId === blockId && !item.settledAt);
   return {
-    needsInput: pending.some((item) => attentionPresentation(item.kind) === "needs-input"),
+    needsInput:
+      !run.settlement && pending.some((item) => attentionPresentation(item.kind) === "needs-input"),
     problem: pending.some((item) => attentionPresentation(item.kind) === "problem"),
   };
 }
@@ -319,9 +320,10 @@ const MAX_FOOTERS = 2;
 const footerClass =
   "flex min-w-0 flex-1 items-center gap-1.5 rounded-b-lg border-t px-2.5 py-1.5 text-2xs tracking-label";
 
-/** A Wait with exactly one pending arrival offers Continue now for it on the block. */
+/** A Wait with exactly one pending arrival offers Continue now for it on the block while the
+ * Run's gate is open. */
 function continuableArrival(run: RunDetail, block: FlowBlock) {
-  if (block.kind !== "wait") return undefined;
+  if (block.kind !== "wait" || !run.gateOpen) return undefined;
   const [only, ...others] = pendingArrivals(run, block.id);
   return others.length ? undefined : only;
 }

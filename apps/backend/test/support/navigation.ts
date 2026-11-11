@@ -7,7 +7,7 @@ export async function unnumberedRun(c: TestContext) {
   const fixture = await prepared(c);
   const started = await fixture.f.startRun(fixture.input);
   assert(started.ok);
-  assert((await fixture.f.settleRun(started.value.id)).ok);
+  assert((await fixture.f.settleRun(started.value.id, {})).ok);
   await fixture.f.close();
   const database = new DatabaseSync(fixture.h.databasePath);
   try {

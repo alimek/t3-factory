@@ -7,6 +7,7 @@ import {
 import * as Effect from "effect/Effect";
 import { currentWorkingMessages } from "./current-report.ts";
 import type { RunnerDatabase } from "./database.ts";
+import { readRunSettlementStates } from "./manual-settlement.ts";
 import { runLifecycle } from "./lifecycle.ts";
 import { failure } from "../../result.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
@@ -42,6 +43,7 @@ export function openRunNavigation(database: RunnerDatabase) {
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
           JOIN flow_revisions f ON f.id=r.flow_revision_id
           LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
+          const settlements = yield* readRunSettlementStates(sql, rows);
           const blocks = yield* sql<{
             run_id: string;
             block_id: string;
@@ -100,6 +102,7 @@ export function openRunNavigation(database: RunnerDatabase) {
               const matters = mattersByRun.get(row.id) ?? [];
               const lifecycle = runLifecycle(row);
               const active = lifecycle === "active";
+              const settlement = settlements.get(row.id) ?? null;
               return {
                 id: row.id,
                 number: row.number,
@@ -118,13 +121,16 @@ export function openRunNavigation(database: RunnerDatabase) {
                   faviconUrl: projectFaviconUrl(row.project_id, row.favicon_path),
                 },
                 lifecycle,
+                settlement,
                 blocks: byRun.get(row.id) ?? [],
                 presentation: {
                   snoozed: active && !!row.snoozed,
                   woke: active && !!row.woke,
                 },
                 attention: {
-                  needsInput: matters.some((matter) => matter.presentation === "needs-input"),
+                  needsInput:
+                    settlement === null &&
+                    matters.some((matter) => matter.presentation === "needs-input"),
                   problem: matters.some((matter) => matter.presentation === "problem"),
                   matters,
                 },

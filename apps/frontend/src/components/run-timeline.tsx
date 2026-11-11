@@ -163,7 +163,7 @@ function attentionSettled(run: RunDetail, event: RunEvent): EventPhrase {
 
 function operationCancelled(run: RunDetail, event: RunEvent): EventPhrase {
   const kind = intentOf(run, event)?.kind ?? "operation";
-  return { actorId: event.blockId, text: `pending ${kind} cancelled by Archive` };
+  return { actorId: event.blockId, text: `pending ${kind} cancelled · automatic delivery ended` };
 }
 
 function operationUnresolved(run: RunDetail, event: RunEvent): EventPhrase {
@@ -216,16 +216,19 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "attention-appeared": attentionAppeared,
   "attention-settled": attentionSettled,
   "operation-cancelled": operationCancelled,
-  "human-cancelled": said("question cancelled by Archive"),
+  "human-cancelled": said("question cancelled · no answer supplied"),
   "wait-started": waitStarted,
   "wait-forwarded": said("wait elapsed → forwarded"),
   "wait-continued": said("forwarded early by you"),
-  "wait-cancelled": said("wait cancelled by Archive"),
+  "wait-cancelled": said("wait cancelled · not forwarded"),
   "continuation-queued": said("waits behind the prompt"),
   "continuation-prompt-sent": continuationPromptSent,
   "continuation-forwarded": said("response forwarded"),
   "continuation-passed": continuationPassed,
   "operation-unresolved": operationUnresolved,
+  "settlement-requested": said("settlement requested · automatic work held"),
+  "worker-stop-requested": said("worker Stop requested · awaiting completion confirmation"),
+  "worker-stopped": said("worker stopped · completion confirmed"),
   "run-settled": (_run, event) => ({
     actorId: null,
     text:

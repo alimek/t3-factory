@@ -152,7 +152,8 @@ function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
       handle: ({ parameters }) => answer(() => factory.markRunWokeSeen(parameters.id)),
     },
     settleRun: {
-      handle: ({ parameters }) => answer(() => factory.settleRun(parameters.id)),
+      body: { bytes: 4096, message: "Send the Settle options as JSON up to 4 KiB." },
+      handle: ({ parameters, input }) => answer(() => factory.settleRun(parameters.id, input)),
     },
     archiveRun: {
       handle: ({ parameters }) => answer(() => factory.archiveRun(parameters.id)),

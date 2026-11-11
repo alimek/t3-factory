@@ -1,3 +1,4 @@
+import { useSettleRun } from "./settle-run.tsx";
 import { RenameDialog } from "./rename-dialog.tsx";
 import { MutationGate, useMutationsAllowed } from "@/client-gate";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
@@ -49,6 +50,12 @@ import { cn } from "../lib/utils.ts";
 
 /** Run/ExecIndicator: whole-Run execution only; attention stays in the chips. */
 function execution(run: RunNavigationEntry) {
+  if (run.settlement)
+    return {
+      Icon: run.settlement === "stopping" ? LoaderCircle : CircleDashed,
+      label: run.settlement === "stopping" ? "Stopping workers" : "Settlement unresolved",
+      className: "text-attention",
+    };
   if (run.lifecycle === "settled")
     return { Icon: CircleCheck, label: "Settled", className: "text-success" };
   if (run.blocks.some((block) => block.state !== "not-started" && block.freshness !== "fresh"))
@@ -113,7 +120,7 @@ export function RunSidebar({ path }: { path: string }) {
   const { onRename, onArchive, dialogs } = useSidebarDialogs();
   const query = search.trim().toLocaleLowerCase();
   const { open, snoozed, settled, matches, total } = navigationGroups(runs, drafts, query);
-  const { act, busy, actionError } = useRunActions(!!query, runs);
+  const { act, busy, actionError, settlementDialog } = useRunActions(!!query, runs);
   const actOnRun = useCallback(
     (runId: string, action: SidebarRunAction) => {
       const entry = runs.find((run) => run.id === runId);
@@ -171,6 +178,7 @@ export function RunSidebar({ path }: { path: string }) {
         />
       </SidebarRowsProvider>
       {dialogs}
+      {settlementDialog}
     </section>
   );
 }
@@ -255,10 +263,9 @@ function SidebarRenameDialog({
 }
 
 type RunAction = "snooze" | "restore" | "settle";
-const runActions: Record<RunAction, (id: string) => Promise<unknown>> = {
+const runActions = {
   snooze: api.snoozeRun,
   restore: api.restoreRun,
-  settle: api.settleRun,
 };
 /** The group a Run moves to, whose toggle takes focus after the row leaves the open list. */
 const actionGroup = { snooze: "snoozed", settle: "settled" } as const;
@@ -271,34 +278,53 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   const [focusAfterRender, setFocusAfterRender] = useState<{
     readonly id: string;
     readonly runId: string;
-    readonly action: RunAction;
+    readonly action: RunAction | undefined;
   }>();
   useLayoutEffect(() => {
     if (!focusAfterRender) return;
     const run = runs.find((candidate) => candidate.id === focusAfterRender.runId);
-    if (run && !moved(run, focusAfterRender.action)) return;
+    if (run && focusAfterRender.action && !moved(run, focusAfterRender.action)) return;
     const target = document.getElementById(focusAfterRender.id);
     if (!target) return;
     target.focus();
     setFocusAfterRender(undefined);
   }, [focusAfterRender, runs]);
+  const { settle, dialog: settlementDialog } = useSettleRun();
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState<string>();
   const act = async (run: RunNavigationEntry, action: RunAction) => {
+    if (busy) {
+      setActionError("Another Run action is still in progress. Try again when it finishes.");
+      return;
+    }
     setBusy(run.id);
     setActionError("");
+    // A cancelled confirmation can finish after another row request has started.
+    let requestPending = true;
+    const finishRequest = () => {
+      if (!requestPending) return;
+      requestPending = false;
+      setBusy(undefined);
+    };
     try {
-      await runActions[action](run.id);
+      let focusAction: RunAction | undefined = action;
+      if (action === "settle") {
+        const outcome = await settle(run.id, run.settlement === "unresolved", finishRequest);
+        if (!outcome) return;
+        if (outcome.outcome !== "settled") focusAction = undefined;
+      } else await runActions[action](run.id);
       const id =
-        searching || action === "restore" ? `run-row-${run.id}` : `${actionGroup[action]}-toggle`;
-      setFocusAfterRender({ id, runId: run.id, action });
+        searching || focusAction === "restore" || !focusAction
+          ? `run-row-${run.id}`
+          : `${actionGroup[focusAction]}-toggle`;
+      setFocusAfterRender({ id, runId: run.id, action: focusAction });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the Run.");
     } finally {
-      setBusy(undefined);
+      finishRequest();
     }
   };
-  return { act, busy, actionError };
+  return { act, busy, actionError, settlementDialog };
 }
 
 /** Navigation already shows the Run where `action` puts it. */
@@ -670,6 +696,7 @@ function RunRow({
   const compact = run.lifecycle === "settled";
   const muted = !selected && (searchMuted || compact);
   const hasMetadata =
+    run.settlement !== null ||
     branches.length > 0 ||
     pullRequests.length > 0 ||
     run.presentation.woke ||
@@ -781,6 +808,11 @@ function RunPreview({ run }: { run: RunNavigationEntry }) {
 function RunRowIndicators({ run }: { run: RunNavigationEntry }) {
   return (
     <>
+      {run.settlement && (
+        <span className="text-2xs text-muted-foreground">
+          {run.settlement === "stopping" ? "Stopping" : "Settle unresolved"}
+        </span>
+      )}
       {run.presentation.woke && <RunStatusChip kind="woke" />}
       {run.attention.needsInput && <RunStatusChip kind="needs-input" />}
       {run.attention.problem && <RunStatusChip kind="problem" />}

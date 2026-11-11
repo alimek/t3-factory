@@ -24,6 +24,7 @@ export type SeedScenario = {
 } & (
   | { state: "settled"; repository: Repository; result: Report }
   | { state: "archived" | "execution failed" | "snoozed" | "woke" }
+  | { state: "settlement unresolved" }
   | { state: "Run worktree bound" }
   | { state: "working reported and idle"; message: string; repository?: Repository }
   | { state: "missing report"; rejected: Report }
@@ -72,6 +73,13 @@ const continuationContent = {
 /** Stable keys, titles and creation order are shared with journeys and the scenario catalog.
  * Reading this list needs no Factory; callers supply the saved Flow ids when instantiating it. */
 export const seedScenarioList: readonly SeedScenario[] = [
+  {
+    key: "settlement-unresolved",
+    title: "Settlement unresolved · Stop support unavailable",
+    flow: "simple",
+    prompt: "Check the empty-state wording.",
+    state: "settlement unresolved",
+  },
   {
     key: "settled",
     title: "Settled · Clearer onboarding copy",

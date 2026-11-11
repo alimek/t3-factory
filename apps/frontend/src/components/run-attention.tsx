@@ -207,6 +207,8 @@ function PendingMatter({
   observationUnavailable: boolean;
 }) {
   const presentation = attentionPresentation(item.kind);
+  // A settling Run accepts no answers, so it shows no Needs input chip or explanation.
+  const answerable = presentation !== "needs-input" || !run.settlement;
   const binding = run.threadBindings.find((b) => b.id === item.bindingId);
   return (
     <article
@@ -218,10 +220,12 @@ function PendingMatter({
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <AttentionChip presentation={presentation} />
+        {answerable && <AttentionChip presentation={presentation} />}
         <h3 className="truncate text-2xs font-medium text-muted-foreground">{item.blockName}</h3>
       </div>
-      <p className="text-sm font-medium text-foreground">{attentionExplanation(item.kind)}</p>
+      {answerable && (
+        <p className="text-sm font-medium text-foreground">{attentionExplanation(item.kind)}</p>
+      )}
       {item.kind === "native-request" && (
         <p className="text-sm text-muted-foreground">
           Thread-level observation; questions and permission approvals may be grouped.
@@ -317,6 +321,12 @@ function PendingHuman({ run, item }: { run: RunDetail; item: RunAttention }) {
   const occurrence = run.humanOccurrences.find((entry) => entry.id === item.occurrenceId);
   if (!occurrence || occurrence.state !== "pending")
     return <p className="text-sm text-muted-foreground">This occurrence is no longer pending.</p>;
+  if (run.settlement)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Factory is settling this Run and stopping its workers, so it accepts no answers.
+      </p>
+    );
   return <HumanResponseForm blockName={item.blockName} occurrence={occurrence} link={item.link} />;
 }
 

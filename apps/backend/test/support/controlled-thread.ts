@@ -133,3 +133,18 @@ export function busyAgainOnSend(t3: ControlledT3, threadId: string) {
     return reference;
   };
 }
+
+const terminalStatuses = ["completed", "failed", "cancelled", "interrupted", "rolled_back"];
+
+/** T3 carries out every thread Stop at once: each unfinished run of the stopped thread ends
+ * interrupted, with its delegated work settled. Until then Stop is only acknowledged. */
+export function stopsEndThreads(t3: ControlledT3) {
+  const stop = t3.stopThread.bind(t3);
+  t3.stopThread = async (target, payload) => {
+    await stop(target, payload);
+    const thread = statedThread(t3, payload.threadId, "Stop ends the thread");
+    for (const run of thread.recentRuns)
+      if (!terminalStatuses.includes(run.status))
+        endThreadRun(t3, payload.threadId, run.runId, "interrupted");
+  };
+}

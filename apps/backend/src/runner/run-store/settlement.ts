@@ -1,19 +1,16 @@
-import type { Result } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import { failure } from "../../result.ts";
 import type { RunRow } from "../runner-types.ts";
 import { now } from "../../time.ts";
 import { currentReports } from "./current-report.ts";
 import { guardsHold } from "./guards.ts";
-import { withLifecycle } from "./lifecycle.ts";
 import { clearSnooze } from "./presentation.ts";
 import { settleReportRejections } from "./report-diagnostics.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
-/** Settled leaves the main navigation and clears Snooze; execution and attention are unchanged. */
-function markSettled(
+/** Settled leaves the main navigation and clears Snooze. */
+export function markSettled(
   sql: SqlClient.SqlClient,
   runId: string,
   cause: "automatic" | "manual",
@@ -62,18 +59,6 @@ function finishedBlockCandidates(sql: SqlClient.SqlClient, runId: string) {
 
 export function openRunSettlement(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
-
-  /** The user settles an Active or Snoozed Run. Guards: the Run exists and is not Archived. It
-   * does not advance the generation. Answers whether the Run changed. */
-  function settleManually(id: string): Effect.Effect<Result<boolean>, unknown> {
-    return withLifecycle<boolean>(database, id, (sql, run) =>
-      Effect.gen(function* () {
-        if (run.archived_at) return failure("conflict", "An archived Run cannot be settled.");
-        if (!run.settled_at) yield* markSettled(sql, id, "manual", yield* now);
-        return { ok: true as const, value: !run.settled_at };
-      }),
-    );
-  }
 
   /** Every visited Block's current report is its finished result and no attention is pending:
    * the worker threads automatic settlement must find finished, or null. */
@@ -195,7 +180,6 @@ export function openRunSettlement(database: RunnerDatabase) {
   }
 
   return {
-    settleManually,
     reportedBlockThreads,
     settleAutomatically,
     threadSettlementCandidates,

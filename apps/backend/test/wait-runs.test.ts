@@ -26,6 +26,7 @@ import {
   sentTurnBegins,
   snoozed,
   terminalWaitFlow,
+  turnBegins,
   twoWorkersStarted,
   WAIT_MINUTES,
   waitContinuationFlow,
@@ -364,30 +365,68 @@ it.effect("a pending Wait keeps the Run from settling automatically", (c) =>
   }),
 );
 
-it.effect("a manually Settled Run keeps its Wait, which still forwards to the next Agent", (c) =>
-  Effect.gen(function* () {
-    // Arrange
-    const f = yield* preparedService(c, waitFlow, scheduledOnly);
-    const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
-    yield* Effect.promise(() => resultReported(f.world, worker));
-    yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
-    assert((yield* f.factory.settleRun(worker.runId)).ok);
-    const followUpLaunch = nextLaunch(f.world);
+it.effect(
+  "manual Settle cancels a pending arrival, and its deadline neither forwards it nor revives the Run",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, waitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker, { message: "Do not forward." }));
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      const settledRun = yield* f.factory.settleRun(worker.runId, {});
+      assert(settledRun.ok);
 
-    // Act
-    yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
 
-    // Assert
-    yield* Effect.promise(() => followUpLaunch);
-    const run = yield* f.factory.getRun(worker.runId);
-    assert(run.ok);
-    expect(run.value.lifecycle).toBe("settled");
-    expect(run.value.waitArrivals[0]?.state).toBe("forwarded");
-    expect(run.value.activations.map((activation) => activation.blockId)).toStrictEqual([
-      "worker",
-      "follow-up",
-    ]);
-  }),
+      // Assert
+      const run = yield* f.factory.getRun(worker.runId);
+      assert(run.ok);
+      expect(run.value.lifecycle).toBe("settled");
+      expect(run.value.waitArrivals).toMatchObject([
+        { id: waiting.arrival.id, state: "cancelled", forwardedBy: null, message: null },
+      ]);
+      expect(run.value.blocks.find((block) => block.blockId === "cool-down")?.state).toBe(
+        "stopped",
+      );
+      expect(
+        run.value.events.filter((event) => event.kind.startsWith("wait-")).map((e) => e.kind),
+      ).toStrictEqual(["wait-started", "wait-cancelled"]);
+      expect(run.value.activations.map((activation) => activation.blockId)).toStrictEqual([
+        "worker",
+      ]);
+      expect(f.t3.launches.size).toBe(1);
+    }),
+);
+
+it.effect(
+  "a deadline that passes while a confirmed Settle is stopping workers forwards nothing",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, waitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker));
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      turnBegins(f.world, worker, "chat-after-release");
+      const stopping = yield* f.factory.settleRun(worker.runId, { stopWorkers: true });
+      assert(stopping.ok);
+
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+      // Assert
+      const run = yield* f.factory.getRun(worker.runId);
+      assert(run.ok);
+      expect(run.value).toMatchObject({
+        lifecycle: "active",
+        gateOpen: false,
+        settlement: { state: "stopping" },
+      });
+      expect(run.value.waitArrivals).toMatchObject([{ id: waiting.arrival.id, state: "pending" }]);
+      expect(f.t3.launches.size).toBe(1);
+    }),
 );
 
 it.effect(

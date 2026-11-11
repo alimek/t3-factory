@@ -54,7 +54,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     detached.add(fiber);
     fiber.addObserver(() => detached.delete(fiber));
   });
-  const lifecycle = { isClosed: () => closed, drive, fork, getRun };
+  const lifecycle = { isClosed: () => closed, drive, fork, getRun, serial: drives.serial };
   const waitTimers = makeWaitTimers(scope, (runId) => fork(drive(runId, "dispatch")));
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(store, t3);
@@ -71,12 +71,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
-  const { settleRun, settleWhenDone, settleFinishedBlockThreads } = openRunnerSettle(
-    store,
-    t3,
-    lifecycle,
-    liveContextId,
-  );
+  const { settleRun, settleWhenDone, settleFinishedBlockThreads, advanceSettlement } =
+    openRunnerSettle(store, t3, lifecycle, liveContextId);
 
   function drive(
     id: string,
@@ -163,6 +159,13 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* Effect.forEach(ids, (run) => settleWhenDone(run.id), {
             concurrency: "unbounded",
           });
+          // A confirmed manual settlement holds its Run's gate closed until it settles.
+          const settling = yield* store.runsWithSettlement(ids.map((run) => run.id));
+          yield* Effect.forEach(settling, (run) => advanceSettlement(run.run_id), {
+            concurrency: "unbounded",
+          });
+          // Include dispatches queued by reports while the sweep observed its Runs' workers.
+          yield* drives.drain(ids.map((run) => run.id));
           return { ok: true as const, value: undefined };
         }),
       )

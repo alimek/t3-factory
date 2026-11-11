@@ -24,10 +24,13 @@ export function makeRunLanes() {
     });
   return {
     serial,
-    drain: () =>
+    /** Waits for the queued work of `ids`, or of every lane when omitted. */
+    drain: (ids?: readonly string[]) =>
       Effect.suspend(() =>
         Effect.all(
-          [...lanes.values()].map((lane) => lane.semaphore.withPermit(Effect.void)),
+          (ids ? ids.flatMap((id) => lanes.get(id) ?? []) : [...lanes.values()]).map((lane) =>
+            lane.semaphore.withPermit(Effect.void),
+          ),
           { concurrency: "unbounded", discard: true },
         ),
       ),

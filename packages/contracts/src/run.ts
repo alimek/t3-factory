@@ -138,8 +138,9 @@ export interface RunBlock {
   readonly blockId: string;
   readonly name: string;
   /**
-   * `stopped`: the Run was archived before this activated Block finished. A Continuation is
-   * `sent` while its prompt is in a worker thread and `pass-through` once its response went out.
+   * `stopped`: the user archived or manually settled the Run before this activated Block
+   * finished. A Continuation is `sent` while its prompt is in a worker thread and `pass-through`
+   * once its response went out.
    */
   readonly state:
     | "not-started"
@@ -178,10 +179,74 @@ export type RunWorkspaceDetail =
     };
 /**
  * Active Runs are in the main navigation. Settled Runs are done, automatically or because the
- * user settled them; an accepted Block report returns them to Active. Archived Runs are final
- * and hidden from navigation; their data stays.
+ * user settled them; an accepted Block report returns an automatically settled Run to Active,
+ * while a manually settled Run's work stays stopped. Archived Runs are final and hidden from
+ * navigation; their data stays.
  */
 export type RunLifecycle = "active" | "settled" | "archived";
+
+/** What the user sends to settle a Run manually. */
+export interface SettleRunInput {
+  /**
+   * Explicit authorization to stop the Run's executing workers. Without it, Settle on a Run whose
+   * workers T3 does not confirm finished answers `confirmation-required` and changes nothing.
+   */
+  readonly stopWorkers?: boolean;
+}
+
+/** One bound worker thread as manual settlement sees it. */
+export interface RunSettlementWorker {
+  /** The worker's Flow block. */
+  readonly blockId: string;
+  readonly blockName: string;
+  /** Null for a launch Factory has no acknowledgement for: it searches T3 for its worker. */
+  readonly threadId: string | null;
+  readonly link: string | null;
+  /**
+   * `executing` (only in a `confirmation-required` answer): a fresh read in the Run's scope showed
+   * the worker unfinished, so confirming stops it. `stopping`: Factory requested T3 Stop in this attempt, or is about to, and
+   * waits for a fresh read to confirm the thread finished. `finished`: the latest fresh read
+   * confirmed it. `unresolved`: Stop is unsupported, failed or not confirmed, T3 could not
+   * show the thread, or the launch is still searched for; Settle with `stopWorkers` again to retry.
+   */
+  readonly state: "executing" | "stopping" | "finished" | "unresolved";
+  /** When Factory requested T3 Stop for this worker in the current attempt. */
+  readonly stopRequestedAt: string | null;
+  /** What keeps the worker from counting as finished, or why it could not be stopped. */
+  readonly problem: string | null;
+}
+
+/**
+ * A manual settlement the user confirmed, while it has not settled the Run yet. Its handoff gate
+ * is closed: nothing new is launched, sent, released or answered. It is not a lifecycle state;
+ * the Run stays Active until every worker is confirmed finished.
+ */
+export interface RunSettlement {
+  /** `unresolved` while any worker of the current attempt is unresolved; otherwise `stopping`. */
+  readonly state: "stopping" | "unresolved";
+  /** When the user first confirmed Settle. */
+  readonly requestedAt: string;
+  /** 1 for the confirmation, increased by every retry. */
+  readonly attempt: number;
+  readonly attemptedAt: string;
+  readonly workers: readonly RunSettlementWorker[];
+}
+
+/** The answer to manual Settle. */
+export type RunSettlementOutcome =
+  /** The Run is Settled: now, or it already was. */
+  | { readonly outcome: "settled"; readonly run: RunDetail }
+  /** The confirmed settlement is in progress; `run.settlement` shows it. */
+  | { readonly outcome: "stopping" | "unresolved"; readonly run: RunDetail }
+  /**
+   * T3 did not confirm every bound worker finished. Nothing changed and no Stop was sent; Settle
+   * again with `stopWorkers: true` to stop them and settle the Run.
+   */
+  | {
+      readonly outcome: "confirmation-required";
+      readonly run: RunDetail;
+      readonly workers: readonly RunSettlementWorker[];
+    };
 export interface RunSummary {
   readonly id: string;
   readonly lifecycle: RunLifecycle;
@@ -230,6 +295,8 @@ export interface RunNavigationEntry {
     "id" | "title" | "workspaceRoot" | "availability" | "projectIcon" | "faviconUrl"
   >;
   readonly lifecycle: Exclude<RunLifecycle, "archived">;
+  /** A confirmed manual settlement in progress; see `RunDetail.settlement`. */
+  readonly settlement: RunSettlement["state"] | null;
   readonly blocks: readonly Pick<RunBlock, "state" | "freshness" | "workingMessage">[];
   /** Pending attention only. Reading this summary does not settle any matter. */
   readonly attention: RunAttentionSummary;
@@ -284,7 +351,10 @@ export interface RunDetail extends RunSummary {
   readonly workspace: RunWorkspaceDetail;
   readonly activations: readonly RunActivation[];
   readonly threadBindings: readonly RunThreadBinding[];
+  /** Closed by Archive and by accepting a manual settlement. */
   readonly gateOpen: boolean;
+  /** The confirmed manual settlement in progress; null once Settled, when Archived or never. */
+  readonly settlement: RunSettlement | null;
   readonly generation: number;
   readonly blocks: readonly RunBlock[];
   readonly reports: readonly {
@@ -456,7 +526,7 @@ export interface HumanOccurrence {
   readonly id: string;
   readonly blockId: string;
   readonly incomingIntentId: string;
-  /** `cancelled`: Archive cancelled the occurrence; no answer was invented. */
+  /** `cancelled`: Archive or manual settlement cancelled the occurrence; no answer was invented. */
   readonly state: "pending" | "answered" | "withdrawn" | "cancelled";
   readonly context: string | null;
   readonly appearedAt: string;
@@ -527,8 +597,17 @@ export const runOperations = {
     method: "POST",
     path: "/api/runs/:id/woke-seen",
   }),
-  /** Moves an Active or Snoozed Run to Settled; an accepted Block report returns it to Active. */
-  settleRun: operation<never, RunDetail>()({ method: "POST", path: "/api/runs/:id/settle" }),
+  /**
+   * Settles an Active or Snoozed Run and cancels its remaining automatic work. Executing workers
+   * are stopped only with `stopWorkers: true`; Factory then settles the Run in the background
+   * once fresh T3 reads confirm every worker finished. Repeating it while stopping changes
+   * nothing; with `stopWorkers: true` on an unresolved settlement it retries.
+   */
+  settleRun: operation<SettleRunInput, RunSettlementOutcome>()({
+    method: "POST",
+    path: "/api/runs/:id/settle",
+    body: "json",
+  }),
   /**
    * Archives a Run for good: closes its handoff gate, cancels unsent work and requests
    * interruption of its worker threads without waiting. The Run leaves navigation; its data stays.

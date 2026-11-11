@@ -159,7 +159,7 @@ fixed Human exits their old exits were mapped to.
     missing-images outcome; uploading identical bytes again, from any client, restores the image for every Run that uses
     it, shown the next time a Run view opens.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
-  before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
+  or manually settled before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
   timeline and executions keep the sequence. Connections use one neutral style, including never-run branches.
 - A working block whose Agent reported `working` shows that message in place of its visit time; its details show the full
@@ -232,8 +232,8 @@ menu items never opens a row preview.
   **Discard**, which removes the draft from this browser at once without confirmation; discarding the open draft leaves an
   empty composition with the same choices. While a draft's Start is in flight or its outcome is unknown, both are
   unavailable: the draft keeps its exact request until **Check same request** settles it.
-- A Settled Run returns to Active only when one of its Agents reports; an Archived Run is never reopened or relaunched. To
-  work on the matter again otherwise, start a **New Run**: it uses the current saved Flow and Agent definitions, not an earlier
+- An automatically Settled Run returns to Active only when one of its Agents reports; a manually settled or Archived Run is
+  never reopened or relaunched. To work on the matter again otherwise, start a **New Run**: it uses the current saved Flow and Agent definitions, not an earlier
   Run's captured revisions.
 
 ### Branches and pull requests
@@ -339,12 +339,13 @@ downtime and how repeated deliveries and competing forwards resolve.
 **Continue now** forwards one selected pending arrival immediately, without confirmation, exactly as its deadline would, and
 disables its timer; other arrivals keep waiting. The Wait's details offer it beside each pending arrival, and the canvas block
 offers it only while exactly one arrival is pending; like other Run actions it is unavailable while offline or synchronizing.
-An arrival the timer already forwarded, or an archived Run's, cannot be continued, and a manually Settled Run stays Settled.
+An arrival the timer already forwarded, or one cancelled by Archive or manual settlement, cannot be continued, nor can any arrival
+while a confirmed **Settle** is stopping the Run's workers; an automatically Settled Run stays Settled.
 
 The Wait's details list each arrival with its start, deadline, retained message and outcome, and say when you forwarded one
 early. A forwarded arrival keeps its message only while its recipients still need it
-([retention](foundation.md#persistence-model)); once it is cleared, or Archive clears it, the details say why. The timeline records **wait started · until …**, **wait elapsed → forwarded** and **forwarded early
-by you** with the Wait icon. A pending Wait is visible work, never
+([retention](foundation.md#persistence-model)); once it is cleared, or Archive or a cancellation clears it, the details say why. The timeline records **wait started · until …**, **wait elapsed → forwarded**,
+**forwarded early by you** and **wait cancelled** with the Wait icon. A pending Wait is visible work, never
 Needs input or a Problem, and does not wake a Snoozed Run. A Continuation after a Wait continues the thread of the worker
 whose message waited.
 
@@ -371,16 +372,46 @@ a fresh read finds every worker thread finished in T3. Never-visited branches ne
 the Run Active. T3 reads are not an atomic cutoff, so direct T3 activity can arrive just before the Run settles; settling does not
 certify result quality or one reviewed revision.
 
-**Settle** in the row menu settles an Active or Snoozed Run at any time, without confirmation. It changes no execution: work in
-progress continues, owed handoffs are still released and delivered, pending Waits still forward at their deadlines, and
-attention stays pending. Either way the Run moves to
-**Settled**, Snooze and Woke clear, and the timeline records why it settled.
+**Settle** settles an Active or Snoozed Run manually and ends its automatic work; every entry point (row menu, Run detail,
+shortcut and desktop menu) uses the same rules. When fresh T3 reads confirm every bound worker thread finished, it settles at
+once. Otherwise nothing changes until you confirm stopping every worker and ending the Run; cancelling or dismissing the
+confirmation changes nothing and sends no Stop. An ordinary Settle request never interrupts a worker: the server answers that
+confirmation is needed.
 
-Any accepted report from one of its Blocks (`working` or `finished`, including a repeat of the current result) returns
-a Settled Run to **Active**, and the timeline names the Block that reported. Chat in a worker thread without a report leaves the
-Run Settled: Factory observes a Settled Run only while it still owes a launch, handoff, send, Request report or Wait forwarding, so later turns add
-no work periods or Problems. Human answers and Request report on a Settled Run are accepted and dispatched without returning it
-to Active. History, input, captured definitions and events remain; no transcript or response-body archive exists.
+Confirming holds the Run at once: nothing new is launched, sent, released or delivered, no Wait forwards (at its deadline or
+through **Continue now**), and Human answers and **Request report** are refused. While settlement is stopping or unresolved,
+Human occurrences stay pending until settlement succeeds, but their answer forms are replaced by a settlement note and the Run
+shows settlement progress instead of **Needs input**. Refused answers explain that Factory is settling the Run and stopping its workers.
+Factory then asks T3 to Stop each worker thread that is still unfinished, with its delegated and background work,
+and settles only once fresh reads confirm every worker finished; a Stop acknowledgement is not enough. Until then the Run stays
+Active and its settlement shows **stopping**, with each worker's progress. A worker shows **not resolved** when T3 does not
+support or accept Stop, cannot show the thread in the Run's project, workspace and authorization, or still shows it unfinished
+30 seconds after acknowledging Stop; the settlement then names the affected workers and what blocks them (a run in progress, a
+native request, delegated work or a queued run). A worker whose launch T3 may have accepted without Factory receiving the reply
+also keeps the settlement unresolved: Factory keeps searching for it and stops the worker it finds before settling. Factory sends
+Stop only while the T3 authorization the Run started under is still live. **Settle** again retries with a new Stop request;
+repeating it while stopping changes nothing. The hold stays, Factory keeps reading the workers and settles as soon as all read finished. An unresolved
+settlement is not a lifecycle state: there is no Resume, and **Archive** remains available. Work T3 holds queued in a worker
+thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing.
+
+Settling cancels unsent launches, sends and handoffs (held or released), unsent Request report turns, pending Human occurrences
+without inventing answers, pending Wait arrivals and messages waiting at a Continuation; a cancelled Wait never forwards, also
+after restart. Pending attention settles as `manual-settlement`, activated
+Blocks without a Final result show stopped, and a send whose T3 reply was lost stays uncertain: Factory never resends it and
+keeps no copy of its message. The Run moves to
+**Settled**, Snooze and Woke clear, and Factory best-effort settles the worker threads in T3. The timeline records the
+confirmation and each retry, each Stop request, each worker found stopped and the settlement. Stopping raises no
+execution-failure Problem. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped
+too, or start after the Run settled; settling does not delete T3 conversations or roll back repository edits.
+
+A manually settled Run's work stays ended: a later report from one of its Blocks, including a delayed one from stopped work, is
+acknowledged as a success that changes nothing and tells the Agent to stop, and Factory no longer observes or drives the Run.
+An automatically Settled Run differs: any accepted report from one of its Blocks (`working` or `finished`, including a repeat
+of the current result) returns it to **Active**, and the timeline names the Block that reported. Chat in a worker thread without
+a report leaves it Settled: Factory observes it only while it still owes a launch, handoff, send, Request report or Wait
+forwarding, so later turns add no work periods or Problems. Human answers and Request report on it are accepted and dispatched without returning it
+to Active. Runs settled before manual settlement stopped workers keep their open gate and behave like automatically Settled
+Runs. History, input, captured definitions and events remain; no transcript or response-body archive exists.
 
 ## Archive
 
@@ -399,9 +430,11 @@ stopped by an earlier release are Archived after the upgrade, with their recorde
 
 ## Restart and shutdown
 
-History stays readable when T3 is unavailable. On startup Factory restores bindings and reconciles Active Runs, and Settled Runs that
-still owe an operation, before dispatching, then
-observes periodically (no Resume button). Missing or incomplete observations stay stale and keep the last known facts. An uncertain
+History stays readable when T3 is unavailable. On startup Factory restores bindings and reconciles Active Runs, and automatically
+Settled Runs that still owe an operation, before dispatching, then
+observes periodically (no Resume button). A confirmed Settle keeps its hold across restart: Factory reads the workers again and
+settles once they read finished, but never sends a Stop the earlier process had not, so a worker still unfinished is unresolved
+until you retry. Missing or incomplete observations stay stale and keep the last known facts. An uncertain
 launch or send replays only with the saved key and body under the same authorization context and a verified replay scope; otherwise it
 stays unresolved and keeps the Run open (see [Runner](runner.md#ownership-and-restart)). One backend owns a database; another
 fails startup. Shutdown neither archives a Run nor interrupts T3; reopening the same data home observes accepted work.

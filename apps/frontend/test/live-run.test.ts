@@ -25,6 +25,7 @@ it("a committed Run update preserves entity order and untouched identities witho
     coordinationActions: run.coordinationActions,
     runCoordinator: run.runCoordinator,
     gateOpen: run.gateOpen,
+    settlement: run.settlement,
   };
 
   // Act

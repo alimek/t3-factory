@@ -1,6 +1,7 @@
 import { seedScenarioList, type DemoFlows, type SeedScenario } from "./seed-scenarios.ts";
 import {
   blockExit,
+  observeFor,
   controlledAgent,
   archived,
   changesRequested,
@@ -198,11 +199,29 @@ async function seedScenario(
   }
   if (scenario.state === "Run worktree bound") return (await worktreeBound(context, start)).runId;
   const worker = await workerAtWork(context, start);
-  await finishScenario(context, worker, scenario);
+  if (scenario.state === "settlement unresolved") await settlementUnresolved(context, worker);
+  else await finishScenario(context, worker, scenario);
   return worker.runId;
 }
 
 type Worker = Awaited<ReturnType<typeof workerAtWork>>;
+
+/** The user confirmed Settle while T3 cannot stop the worker, so the settlement stays unresolved. */
+async function settlementUnresolved(context: SeedContext, worker: Worker) {
+  context.t3.stopSupported = false;
+  try {
+    requireSuccess(await context.factory.settleRun(worker.runId, { stopWorkers: true }));
+    await observeFor(
+      "Stop unavailable",
+      context,
+      worker.runId,
+      (run) => run.settlement?.state === "unresolved",
+    );
+  } finally {
+    context.t3.stopSupported = true;
+  }
+}
+
 async function finishScenario(
   context: SeedContext,
   worker: Worker,
@@ -212,7 +231,8 @@ async function finishScenario(
       state:
         | "two workers started from one prompt"
         | "Run worktree bound"
-        | "results released to a Wait";
+        | "results released to a Wait"
+        | "settlement unresolved";
     }
   >,
 ) {

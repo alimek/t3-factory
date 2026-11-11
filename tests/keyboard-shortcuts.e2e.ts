@@ -1,3 +1,4 @@
+import { confirmSettlement } from "./support/run-history.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
@@ -280,6 +281,7 @@ test("choosing Settle in the desktop menu settles the open Run", async ({
 
   // Act
   await browser.evaluate(`window.__chooseMenuItem("settle")`);
+  await confirmSettlement(screen);
 
   // Assert
   await expect

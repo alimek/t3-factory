@@ -74,3 +74,41 @@ export function reopenDuringSettlement(world: ScenarioWorld, worker: WorkerHandl
     return inspect(target);
   };
 }
+
+/** The user confirms Settle while T3 receives the next worker launch, before Factory has its reply. */
+export function settleDuringNextLaunch({ factory, t3 }: ScenarioWorld, runId: string) {
+  t3.beforeLaunch = async () => {
+    delete t3.beforeLaunch;
+    assert((await factory.settleRun(runId, { stopWorkers: true })).ok);
+  };
+}
+
+/** T3 authorization changes to another grant while Factory checks Stop support. */
+export function changeAuthorizationBeforeStop(t3: ControlledT3) {
+  const inspect = t3.inspectStopSupport.bind(t3);
+  t3.inspectStopSupport = async (target) => {
+    t3.inspectStopSupport = inspect;
+    const support = await inspect(target);
+    t3.approve("different-grant");
+    return support;
+  };
+}
+
+/** T3 cannot answer the next Stop-support check. */
+export function failNextStopSupportCheck(t3: ControlledT3) {
+  const inspect = t3.inspectStopSupport.bind(t3);
+  t3.inspectStopSupport = async () => {
+    t3.inspectStopSupport = inspect;
+    throw new Error("T3 is unreachable");
+  };
+}
+
+/** T3 cannot read this worker until the caller restores its reads. */
+export function pauseWorkerReads(t3: ControlledT3, threadId: string) {
+  const read = t3.readExecution.bind(t3);
+  t3.readExecution = (target, id) =>
+    id === threadId ? Promise.reject(Error("Temporary thread read failure")) : read(target, id);
+  return () => {
+    t3.readExecution = read;
+  };
+}

@@ -79,14 +79,15 @@ type UnresolvedRecord = Omit<DeliveryRecord, "kind"> & { kind: "handoff" | Deliv
 export function openRunDeliveries(database: RunnerDatabase) {
   const { owner, mutate } = database;
 
-  /** The Runs a reconcile sweep drives: open ones, and Settled ones still owing a delivery or a
-   * Wait forwarding. */
+  /** The Runs a reconcile sweep drives: open ones, including a confirmed manual settlement in
+   * progress, and automatically Settled ones still owing a delivery or a Wait forwarding. A
+   * manually settled Run's closed gate ends its work, so it is never driven again. */
   const runsToReconcile = () =>
     database.transaction(
       (sql) =>
         sql<{
           id: string;
-        }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain')) OR EXISTS(SELECT 1 FROM wait_arrivals w WHERE w.run_id=runs.id AND w.state='pending')) ORDER BY started_at,id`,
+        }>`SELECT id FROM runs WHERE archived_at IS NULL AND (settled_at IS NULL OR (gate_open=1 AND (EXISTS(SELECT 1 FROM operation_intents i WHERE i.run_id=runs.id AND i.state IN ('pending','reserved','uncertain')) OR EXISTS(SELECT 1 FROM wait_arrivals w WHERE w.run_id=runs.id AND w.state='pending')))) ORDER BY started_at,id`,
     );
 
   /** The Run's Handoffs not yet turned into deliveries and its deliveries not yet acknowledged or

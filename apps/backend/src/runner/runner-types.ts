@@ -104,6 +104,7 @@ export type ReportRunRow = Pick<
   | "workspace_root"
   | "gate_open"
   | "archived_at"
+  | "settled_at"
   | "context_id"
   | "definitions"
 > & { token: string };
@@ -124,6 +125,8 @@ export type RunnerDrive = (
 export interface RunnerLifecycle {
   isClosed(): boolean;
   drive: RunnerDrive;
+  /** Runs `action` in the Run's drive lane, serialized with its observe and dispatch passes. */
+  serial<A, E>(id: string, action: () => Effect.Effect<A, E>): Effect.Effect<A, E>;
   fork: (effect: Effect.Effect<unknown, unknown>) => Effect.Effect<void>;
   getRun(id: string): Effect.Effect<Result<RunDetail>, unknown>;
 }

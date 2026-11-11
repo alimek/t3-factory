@@ -190,6 +190,7 @@ it("navigation and the open Run share one view and apply one commit together", (
       availability: "available",
     },
     lifecycle: "active",
+    settlement: null,
     blocks: [],
     presentation: { snoozed: false, woke: false },
     attention: { needsInput: false, problem: false, matters: [] },

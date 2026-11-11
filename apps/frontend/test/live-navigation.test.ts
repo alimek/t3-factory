@@ -20,6 +20,7 @@ it("navigation changes replace rows, remove archived Runs and retain backend cre
       availability: "available",
     },
     lifecycle: "active",
+    settlement: null,
     blocks: [],
     presentation: { snoozed: false, woke: false },
     attention: { needsInput: false, problem: false, matters: [] },

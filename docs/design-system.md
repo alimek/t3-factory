@@ -28,6 +28,9 @@ raw HTML controls at call sites. Keep native semantics inside the shared primiti
 Tune a shared variant when the same design rule applies across screens; avoid repeated
 call-site overrides and styled wrapper elements used only to compensate for a primitive.
 
+Destructive Settle confirmation uses the shared alert dialog, initially focuses Cancel and restores
+focus to its opener (or the Run row after a row-menu action) on dismissal.
+
 Every control needs a visible label or accessible name. Icon-only buttons also need a
 tooltip. Preserve meaningful accessible names used by the UI verification journeys.
 Unavailable choices in Agent execution settings stay visible and disabled, with their reason.

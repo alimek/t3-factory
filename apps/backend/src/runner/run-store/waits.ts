@@ -183,7 +183,7 @@ export function openRunWaits(database: RunnerDatabase) {
                 .map((edge) => edge.targetBlockId),
             ),
           ];
-          // Only Archive clears a pending arrival's message, and it cancels the arrival first.
+          // Only cancellation by Archive or manual settlement clears a pending arrival's message.
           if (arrival.message === null)
             return yield* Effect.fail(Error("A pending Wait arrival has no message"));
           yield* sql`UPDATE wait_arrivals SET state='forwarded',forwarded_by=${forwardedBy},settled_at=${time} WHERE id=${arrivalId} AND state='pending'`;

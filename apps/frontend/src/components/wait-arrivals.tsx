@@ -22,7 +22,7 @@ function arrivalTiming(arrival: WaitArrival) {
     return arrival.forwardedBy === "user"
       ? `${started} · forwarded early by you ${settled} · was due ${dayAndTime(arrival.deadlineAt)}`
       : `${started} · elapsed, forwarded ${settled}`;
-  return `${started} · cancelled by Archive ${settled} · was due ${dayAndTime(arrival.deadlineAt)}`;
+  return `${started} · cancelled ${settled} · was due ${dayAndTime(arrival.deadlineAt)}`;
 }
 
 /**
@@ -88,7 +88,7 @@ export function WaitArrivals({ run, blockId }: { run: RunDetail; blockId: string
               <p className="min-w-0 flex-1 text-sm font-medium">Arrival {number}</p>
               <StatePill state={OUTCOME[arrival.state]} />
             </div>
-            {arrival.state === "pending" && (
+            {arrival.state === "pending" && run.gateOpen && (
               <div className="flex flex-col items-start gap-1">
                 <ContinueNow arrival={arrival} label={`Continue arrival ${number} now`} />
               </div>
@@ -100,7 +100,9 @@ export function WaitArrivals({ run, blockId }: { run: RunDetail; blockId: string
               <p className="text-xs text-muted-foreground">
                 {run.lifecycle === "archived"
                   ? "Message cleared when the Run was archived."
-                  : "Message cleared once its recipients no longer needed it."}
+                  : arrival.state === "cancelled"
+                    ? "Message cleared when the arrival was cancelled."
+                    : "Message cleared once its recipients no longer needed it."}
               </p>
             ) : (
               <p className="text-sm break-words whitespace-pre-wrap text-foreground">

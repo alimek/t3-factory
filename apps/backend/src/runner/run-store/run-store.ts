@@ -11,6 +11,7 @@ import { openRunArchive } from "./archive.ts";
 import { openRunContinuations } from "./continuations.ts";
 import { openRunDeliveries } from "./deliveries.ts";
 import { openRunHuman } from "./human.ts";
+import { openRunManualSettlement } from "./manual-settlement.ts";
 import { openRunPresentation } from "./presentation.ts";
 import { openRunRelease } from "./release.ts";
 import { openRunReports } from "./reports.ts";
@@ -25,6 +26,7 @@ import { openRunWaits } from "./waits.ts";
 export type { Delivery, Handoff } from "./records.ts";
 export type { StartPlan, StartWorkspace } from "./start.ts";
 export type { RequestReportSettlement } from "./request-report.ts";
+export type { BoundWorker, SettlementWorkerRecord } from "./manual-settlement.ts";
 export type { ScheduledWait, WaitForwarding } from "./waits.ts";
 
 /**
@@ -61,6 +63,7 @@ export const openRunStore = Effect.fn("RunStore.open")(function* (
     ...openRunNavigation(database),
     ...openRunSettlement(database),
     ...openRunArchive(database),
+    ...openRunManualSettlement(database),
     ...openRunPresentation(database),
     ...openRunReports(database),
     ...openRunHuman(database),

@@ -139,6 +139,7 @@ export interface ScenarioWorld {
     | "reconcileRuns"
     | "requestReport"
     | "archiveRun"
+    | "settleRun"
     | "snoozeRun"
     | "answerHumanOccurrence"
     | "continueWaitArrival"

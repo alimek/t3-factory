@@ -14,6 +14,8 @@ import { resolveBlock, writeBlockState } from "./blocks.ts";
 import {
   acceptedTransition,
   RUN_ARCHIVED,
+  RUN_SETTLED,
+  RUN_SETTLING,
   type RuntimeReply,
   type RuntimeReport,
 } from "../../runtime-types.ts";
@@ -57,7 +59,7 @@ function reportTarget(sql: SqlClient.SqlClient, ownerToken: string, publicId: st
     if (!block) return rejected("UNKNOWN_BLOCK");
     const [saved] = yield* sql<
       Omit<ReportRunRow, "definitions"> & { flow_revision_id: string }
-    >`SELECT r.id,r.gate_open,r.archived_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${block.run_id}`;
+    >`SELECT r.id,r.gate_open,r.archived_at,r.settled_at,r.context_id,r.workspace_root,r.flow_revision_id,o.token,c.endpoint,c.environment_id,p.project_id AS t3_project_id FROM runs r JOIN runner_owner o ON o.singleton=1 JOIN t3_authorization_contexts c ON c.id=r.context_id JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id WHERE r.id=${block.run_id}`;
     if (!saved || saved.token !== ownerToken) return rejected("RUNNER_UNAVAILABLE");
     const [activation] = yield* sql<{
       id: string;
@@ -127,13 +129,15 @@ function acceptFinal(
   });
 }
 
-/** One verdict for the Block's current activation, in this order: an Archived Run, a protocol
+/** One verdict for the Block's current activation, in this order: an Archived Run, a Run whose
+ * manual settlement closed its gate (a report from stopped work never revives it), a protocol
  * violation, a repeat of the current report, then exit resolution and acceptance. The latest
  * report is the activation's current state, so a newer finished report replaces the result. */
 function decide(sql: SqlClient.SqlClient, target: ReportTarget, report: RuntimeReport) {
   return Effect.gen(function* (): Effect.fn.Return<RuntimeReply, unknown> {
     const { runRow, block } = target;
     if (runRow.archived_at) return RUN_ARCHIVED;
+    if (!runRow.gate_open) return runRow.settled_at ? RUN_SETTLED : RUN_SETTLING;
     const protocol = nonFinalRejection(report);
     if (protocol) return protocol;
     const content = reportFingerprint(report);
@@ -152,7 +156,8 @@ export function openRunReports(database: RunnerDatabase) {
     database.transaction((sql) => resolveBlock(sql, publicId));
 
   /** Accepts a report for the Block `publicId` names in Run `runId`. Guards: this backend owns
-   * the database (otherwise RUNNER_UNAVAILABLE); an Archived Run is acknowledged without change.
+   * the database (otherwise RUNNER_UNAVAILABLE); an Archived Run, or one whose manual settlement
+   * closed its gate, is acknowledged without change.
    * An accepted report advances the generation, and again when it returns a Settled Run to
    * Active; a newly raised rejection diagnostic advances it once. The verdict, whatever it is, is
    * published after the commit, because a rejection may record a diagnostic. */

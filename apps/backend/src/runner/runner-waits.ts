@@ -8,10 +8,13 @@ import type { RunnerLifecycle } from "./runner-types.ts";
 const refusals: Record<Exclude<WaitForwarding, "forwarded">, Result<never>> = {
   "not-found": failure("not_found", "This Wait arrival does not exist."),
   "already-forwarded": failure("conflict", "This Wait arrival was already forwarded."),
-  cancelled: failure("conflict", "This Wait arrival was cancelled when its Run was archived."),
+  cancelled: failure(
+    "conflict",
+    "This Wait arrival was cancelled when its Run was archived or settled manually.",
+  ),
   closed: failure(
     "conflict",
-    "This Run is archived or no longer run by this Factory, so it forwards no Wait arrival.",
+    "This Run is archived, stopping its workers to settle, or no longer run by this Factory, so it forwards no Wait arrival.",
   ),
 };
 

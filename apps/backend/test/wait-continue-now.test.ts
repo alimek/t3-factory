@@ -9,6 +9,7 @@ import {
   parallelWaitFlow,
   resultReleasedToWait,
   resultReported,
+  turnBegins,
   twoWorkersStarted,
   WAIT_MINUTES,
   waitFlow,
@@ -272,28 +273,30 @@ it.effect("Archive racing Continue now leaves no forwarded work to deliver", (c)
   }),
 );
 
-it.effect("Continue now on a manually Settled Run forwards without reactivating it", (c) =>
-  Effect.gen(function* () {
-    // Arrange
-    const f = yield* preparedService(c, waitFlow, scheduledOnly);
-    const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
-    yield* Effect.promise(() => resultReported(f.world, worker));
-    const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
-    assert((yield* f.factory.settleRun(worker.runId)).ok);
-    const followUpLaunch = nextLaunch(f.world);
+it.effect(
+  "Continue now while a confirmed Settle is stopping workers is refused and forwards nothing",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, waitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker));
+      const waiting = yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      turnBegins(f.world, worker, "chat-after-release");
+      const stopping = yield* f.factory.settleRun(worker.runId, { stopWorkers: true });
+      assert(stopping.ok);
 
-    // Act
-    const continued = yield* f.factory.continueWaitArrival(waiting.arrival.id);
+      // Act
+      const continued = yield* f.factory.continueWaitArrival(waiting.arrival.id);
 
-    // Assert
-    assert(continued.ok);
-    expect(continued.value.lifecycle).toBe("settled");
-    yield* Effect.promise(() => followUpLaunch);
-    const run = yield* f.factory.getRun(worker.runId);
-    assert(run.ok);
-    expect(run.value.activations.map((activation) => activation.blockId)).toStrictEqual([
-      "worker",
-      "follow-up",
-    ]);
-  }),
+      // Assert
+      assert(!continued.ok);
+      expect(continued.error.code).toBe("conflict");
+      const run = yield* f.factory.getRun(worker.runId);
+      assert(run.ok);
+      expect(run.value.settlement?.state).toBe("stopping");
+      expect(run.value.waitArrivals).toMatchObject([{ id: waiting.arrival.id, state: "pending" }]);
+      expect(run.value.intents.filter((intent) => intent.waitArrivalId !== null)).toStrictEqual([]);
+      expect(f.t3.launches.size).toBe(1);
+    }),
 );

@@ -11,6 +11,8 @@ import {
   connection,
   waitBlock,
   workingReported,
+  report,
+  workingReport,
   replyTurnObserved,
   settled,
   workerAtWork,
@@ -380,6 +382,8 @@ const transitions = {
     resultReleasedToSecondWorker(context, workerOf(run)),
   "result released to two workers": (run: RunDetail) =>
     resultReleasedToTwoWorkers(context, workerOf(run)),
+  "late working report": (run: RunDetail, message?: string) =>
+    report(context, workerOf(run), workingReport(message)),
   "result released to a Wait": (run: RunDetail) => resultReleasedToWait(context, workerOf(run)),
   "working reported": (run: RunDetail, message?: string) =>
     workingReported(context, workerOf(run), message),
@@ -429,8 +433,11 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     const id = query.get("id") ?? journeyRuns.get(query.get("key") ?? "")?.id;
     assert(id, "An existing Run id or journey key is required");
     const run = requireSuccess(await factory.getRun(id));
-    await transitions[state as keyof typeof transitions](run, query.get("message") ?? undefined);
-    return { ok: true };
+    const outcome = await transitions[state as keyof typeof transitions](
+      run,
+      query.get("message") ?? undefined,
+    );
+    return { ok: true, outcome };
   },
   "/__fixture/live/requests/reset": () => {
     browserRequests = [];

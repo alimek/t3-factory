@@ -1,7 +1,7 @@
 # Durable Runner
 
-The Runner turns accepted Starts, reports, Human answers and Archive requests into
-durable operations against T3, and decides when a Run settles. Inside it, the Run
+The Runner turns accepted Starts, reports, Human answers, manual settlements and Archive
+requests into durable operations against T3, and decides when a Run settles. Inside it, the Run
 store owns Run state and its SQL transactions; orchestration owns T3 calls and
 scheduling. Persistence principles are in [Application foundation](foundation.md#persistence-model); user
 behavior is in [Runs](runs.md); live-support limits are in
@@ -241,9 +241,15 @@ worker reports.
   answered with `RUN_ARCHIVED` before any validation. Factory MCP returns it as a successful
   tool result whose text says the Run is archived and the worker should stop work on the
   Block; nothing is recorded and no diagnostic attention is created.
-- Any accepted report on a [Settled](#settled-runs) Run, including a repeat of the current
-  result, returns the Run to Active in the same transaction and records `run-activated`
-  naming the Block.
+- Every report for a Run whose [manual settlement](#manual-settlement) closed its gate,
+  while stopping or once Settled, is answered before any validation with a successful tool
+  result telling the worker to stop work on the Block: `RUN_SETTLING` (state `settling`) while
+  the settlement is in progress, saying Factory accepts no new work and is stopping the
+  workers, and `RUN_SETTLED` (state `settled`) once the Run is Settled. Nothing is recorded, so
+  a delayed report from stopped work never revives the Run.
+- Any accepted report on an automatically [Settled](#settled-runs) Run, including a repeat of
+  the current result, returns the Run to Active in the same transaction and records
+  `run-activated` naming the Block.
 - Exits must match the ID or unambiguous exact name of one of the Block's exits in the Run's
   captured definitions (its captured Agent revision's exits minus those the Flow hid, plus its
   Flow-local exits), with a non-empty message when that exit requires one (`FEEDBACK_REQUIRED`
@@ -417,15 +423,17 @@ the arrival's message and worker provenance; dispatch then uses the ordinary del
 arrival settled and changes nothing, so a race or a crash after commit never produces a second set of Handoffs, and a crash
 before commit leaves the arrival pending with its message. Forwarding needs no T3 request or live authorization context.
 Continue now skips only the deadline check: it answers the Run detail after forwarding, a conflict without change for an
-arrival already forwarded (by the timer or an earlier Continue now) or cancelled, or for a closed gate or lost ownership, and works on a
-manually Settled Run without reactivating it. Its timeline event is distinct from the timer's.
+arrival already forwarded (by the timer or an earlier Continue now) or cancelled, or for a closed gate (Archive or a confirmed
+[manual settlement](#manual-settlement)) or lost ownership, and works on an automatically Settled Run without reactivating it. Its
+timeline event is distinct from the timer's.
 
 The Runner schedules one wake-up per pending arrival on its Effect clock, at startup for every pending arrival of a Run that
 is not Archived and whenever an arrival is recorded. A wake-up only drives its Run; every dispatch pass first forwards each
 pending arrival whose deadline has passed, oldest first, so a lost wake-up is caught by the next reconcile sweep and an extra
 one changes nothing. Restart before a deadline keeps it; after it, the next pass forwards the arrival once without moving
 the deadline or repeating missed time. Timing is best effort and system clock changes get no correction. Continue now
-disables its arrival's wake-up; a stale one, or one scheduled again at restart, finds nothing due. Shutdown stops the
+disables its arrival's wake-up; a stale one, one scheduled again at restart, or one for an arrival cancelled by Archive or manual
+settlement finds nothing due. Shutdown stops the
 wake-ups; the deadlines stay in the store.
 
 ## Settled Runs
@@ -450,15 +458,83 @@ not result quality or a common repository revision. Automatic settlement records
 `run-settled` (`automatic`), marks every result version completion-eligible and settles the
 Blocks' report-rejection diagnostics.
 
-The user can settle an Active or Snoozed Run at any time (`run-settled`, `manual`). Settling
-changes no execution: the gate stays open, owed operations continue, pending Wait arrivals still
-forward and attention stays pending. Both ways clear Snooze and Woke.
+An automatically Settled Run is reconciled only while it owes an operation in pending, reserved
+or uncertain state or a pending Wait arrival, so owed handoffs are still released and delivered. Otherwise Factory does
+not read its worker threads: later turns without a report record no work periods or attention
+and leave the Run Settled. Reports, Human answers and Request report are accepted as for an
+Active Run; only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
+Runs settled manually before [manual settlement](#manual-settlement) stopped workers kept their
+gate open; migration `077` leaves them so, and they behave the same way.
 
-A Settled Run is reconciled only while it owes an operation in pending, reserved or uncertain
-state or a pending Wait arrival, so owed handoffs are still released and delivered. Otherwise Factory does not read its
-worker threads: later turns without a report record no work periods or attention and leave
-the Run Settled. Reports, Human answers and Request report are accepted as for an Active Run;
-only an accepted report returns it to Active ([report acceptance](#report-acceptance)).
+### Manual settlement
+
+The user settles an Active or Snoozed Run through one operation. Without authorization to
+stop, it runs in the Run's drive lane: Factory reads every bound worker thread fresh under the
+Run's authorization context and settles only when each is [finished](#worker-thread-completion)
+and shows no queued run; otherwise it answers that confirmation is needed and changes nothing.
+That answer lists each worker read unfinished in scope as executing, which confirming stops;
+each worker T3 could not show, or not under the Run's live authorization context, as unresolved
+with that problem, because Factory never stops a thread it cannot read; and each reserved or
+uncertain launch as unresolved, without a thread. A malformed body (not
+an object, or any field other than a boolean `stopWorkers`) is a validation error, never a
+declined Settle.
+With explicit authorization (`stopWorkers`) it is a durable operation:
+
+- **Acceptance.** One transaction in the Run's mutation lane closes the handoff gate, records the
+  settlement with attempt 1 and this backend as the attempt's owner, lists the bound workers as
+  stopping, records `settlement-requested` and advances the generation, before any Stop. The
+  closed gate is the cutoff: no launch, send, release, Continuation forwarding, Wait forwarding
+  (by its timer or **Continue now**), Human answer or Request report crosses it, and observation,
+  recovery settlement and automatic settlement stop. A Wait deadline that passes while stopping
+  forwards nothing. Pending Human occurrences remain pending until settlement succeeds; answer conflicts explain that
+  Factory is settling the Run and stopping its workers. Navigation suppresses Needs input while settlement is in progress.
+  A reserved or uncertain launch is still searched for and blocks settlement: the settlement
+  shows it unresolved, without a thread, until the search binds its worker, which then joins
+  the attempt.
+  Repeating the request while stopping changes nothing; with an unresolved worker or launch it
+  starts the next attempt under the current owner.
+- **Stopping.** A pass runs right after acceptance and in every reconciliation, in the drive lane.
+  It reads every bound worker fresh. The backend that accepted the attempt sends Stop once
+  for each worker read unfinished in scope: it records the request
+  (`worker-stop-requested`, key derived from the Run, attempt and thread) before one
+  `t3_thread_interrupt` with `stop: true`, records whether T3 acknowledged it, then reads the
+  worker again. Each Stop is sent only after a recheck finds the Run's authorization context
+  live, and recording it requires that context in the same transaction; a mismatch sends nothing
+  and leaves the worker unresolved. Unsupported Stop, a refused request, an unreadable or
+  out-of-scope thread, or a worker still unfinished 30 seconds after its acknowledged Stop is
+  unresolved, with the blocker it read. Later passes can stop a worker whose earlier reads were
+  unavailable, whose Stop-support check T3 could not answer, or which joined the attempt later,
+  such as one a launch search bound. A recorded
+  Stop request or outcome prevents another request for that worker in the same attempt. A
+  restarted backend never sends Stop for an earlier owner's attempt: its workers settle if they
+  read finished, otherwise stay unresolved until the user retries.
+- **Settling.** When one pass reads every bound worker finished and no launch outcome is
+  unresolved, a transaction guarded by owner, generation, live authorization context and the
+  absence of a reserved or uncertain launch closes the gate, marks Blocks with a current Final
+  result finished, cancels pending launches, sends and handoffs (`cancelled-on-Settle`), pending
+  Human occurrences, pending Wait arrivals (`wait-cancelled`, clearing their messages) and
+  waiting Continuation arrivals, settles pending attention as
+  `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
+  worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
+  completion-eligible as automatic settlement does, and clears Snooze and Woke.
+  Handoffs remain local and pending until they become a launch or send; only that delivery
+  is reserved before calling T3. Human and Wait handoffs are acknowledged locally in the
+  transaction creating their occurrence or arrival. A failed preparation does not reserve
+  the handoff, so manual settlement cancels it with the other pending work.
+  Each reserved or uncertain send stays uncertain, records `operation-unresolved` with a
+  problem saying Factory never confirmed whether T3 received it, and loses its payload. T3 offers
+  no read of a send's outcome; only a same-key replay can resolve it, and a replay into a
+  stopped thread can start new work if the original never arrived, which the closed gate
+  forbids. Driving the Run on to resolve it therefore cannot succeed, while cancelling it would
+  claim it never reached T3; the payload served only that replay. Native thread settlement
+  follows in the background.
+
+A manually settled Run is never reconciled again: its closed gate ends its work, also after
+restart, and reports for it are `RUN_SETTLED`. A Wait timer that wakes after settlement finds
+its arrival cancelled and forwards nothing. T3 Stop is thread-scoped with no exact-run fence,
+and reads across threads are not an atomic cutoff, so direct T3 activity can start just before
+or after the Run settles; Factory settles only on fresh reads and never deletes T3-held queued
+work to succeed. Archive stays available during a settlement and its semantics are unchanged.
 
 ## Archive
 
@@ -536,7 +612,7 @@ settle again; a revisited Block that starts a new T3 run on the same thread may 
 again after it finishes.
 
 Automatic Run settlement settles remaining threads within its reconciliation pass; manual
-Settle triggers the Run sweep in the background. Factory never unsettles. New Runs have no Run
+settlement triggers the Run sweep in the background once it settles. Factory never unsettles. New Runs have no Run
 conversation to organize, and historical Run conversations are not settled. Runs created
 before this behavior was introduced retain Run-level settlement only;
 new Runs use per-Block settlement. The migration preserves existing data and does not

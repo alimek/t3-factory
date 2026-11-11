@@ -24,6 +24,7 @@ of the [quality gate](quality-gates.md), rejects stale rows and missing or malfo
 
 <!-- scenario-catalog:start -->
 
+- `settlement-unresolved`: Demo · Settlement unresolved · Stop support unavailable
 - `settled`: Demo · Settled · Clearer onboarding copy
 - `archived`: Demo · Archived · Earlier navigation experiment
 - `failed`: Demo · Problem · Search checks failed

@@ -102,7 +102,7 @@ function blockView(
       results: incomingResults(detail, cause),
       feedback: visitFeedback(detail, cause),
     },
-    allowedTransitions: current && detail.lifecycle !== "archived" ? OPEN_TRANSITIONS : [],
+    allowedTransitions: current && detail.gateOpen ? OPEN_TRANSITIONS : [],
   };
 }
 
