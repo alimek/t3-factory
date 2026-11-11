@@ -309,7 +309,12 @@ async function setLaunchAtLogin(enabled: boolean): Promise<DesktopResult> {
 }
 
 async function setMenuBarIcon(enabled: boolean): Promise<DesktopResult> {
-  await store.update({ menuBarIcon: enabled });
+  try {
+    await store.update({ menuBarIcon: enabled });
+  } catch (error) {
+    // The stored choice and the icon stay as they were; Settings shows why.
+    return failed(`The menu bar setting could not be saved: ${String(error)}`);
+  }
   applyMenuBarIcon();
   broadcast();
   return { ok: true };
