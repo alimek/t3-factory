@@ -83,6 +83,43 @@ it("an unregistered repository root is explained without selecting or registerin
   expect(catalog.value.projects).toHaveLength(1);
 });
 
+it("an unavailable Project for the conversation's root is explained instead of matched", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  fixture.t3.projects = [];
+  const client = await factoryMcpClient(c, fixture.f);
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_list_projects",
+    arguments: { workspaceRoot: fixture.project.workspaceRoot },
+  });
+
+  // Assert
+  const reply = toolReply(result);
+  expect(reply.match.status).toBe("unavailable");
+  expect(reply.match.projectId).toBeUndefined();
+});
+
+it("a new request identity with the same prompt starts another Run", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  const client = await factoryMcpClient(c, fixture.f);
+  const first = toolReply(
+    await client.callTool({ name: "factory_start_run", arguments: startArguments(fixture) }),
+  );
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_start_run",
+    arguments: { ...startArguments(fixture), requestId: "conversation-start-2" },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result).run.id).not.toBe(first.run.id);
+});
+
 it("a rejected Start explains its problem and creates no Run", async (c) => {
   // Arrange
   const fixture = await prepared(c);
@@ -145,5 +182,8 @@ it("changed content under an accepted request identity is refused as a conflict"
 
   // Assert
   expect(result.isError).toBe(true);
-  expect(toolReply(result).code).toBe("conflict");
+  expect(toolReply(result)).toMatchObject({
+    code: "conflict",
+    issues: [{ code: "start_key_conflict" }],
+  });
 });

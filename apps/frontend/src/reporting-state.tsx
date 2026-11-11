@@ -18,7 +18,7 @@ interface ReportingReads {
 }
 
 interface ReportingStatus {
-  launchSkill?: ReportingInstallation["launchSkill"];
+  launchSkill: ReportingInstallation["launchSkill"];
   state: "checking" | "attention" | "installed";
   label: string;
   message: string;
@@ -29,8 +29,15 @@ export function agentReportingStatus(
   providerInstanceId: string,
   { targets, error }: Pick<ReportingReads, "targets" | "error">,
 ): ReportingStatus {
-  if (error) return { state: "attention", label: "Reporting status unavailable", message: error };
-  if (!targets) return { state: "checking", label: "Checking reporting…", message: "" };
+  if (error)
+    return {
+      state: "attention",
+      label: "Reporting status unavailable",
+      message: error,
+      launchSkill: null,
+    };
+  if (!targets)
+    return { state: "checking", label: "Checking reporting…", message: "", launchSkill: null };
   const target =
     targets.find((target) => target.instances.includes(providerInstanceId)) ??
     targets.find((target) => target.instances.length === 0 && target.status === "needs-attention");
@@ -38,6 +45,7 @@ export function agentReportingStatus(
     return {
       state: "attention",
       label: "Reporting not configured",
+      launchSkill: null,
       message:
         "Factory could not find a reporting installation for this provider. Check Agent reporting before starting a Run.",
     };

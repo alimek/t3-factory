@@ -217,7 +217,13 @@ export function openRunnerStart(
       if (existing)
         return existing.request_fingerprint === content
           ? yield* getRun(existing.id)
-          : failure("conflict", "This Start key was already accepted with different content.");
+          : failure("conflict", "This Start key was already accepted with different content.", [
+              {
+                code: "start_key_conflict",
+                path: "requestId",
+                message: "This Start request was accepted with other content.",
+              },
+            ]);
       const checked = yield* startPreconditions(input, prompt.value.images.length);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope, workspace } = checked.value;

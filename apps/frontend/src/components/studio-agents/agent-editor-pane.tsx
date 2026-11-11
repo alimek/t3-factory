@@ -127,7 +127,7 @@ function AgentReportingNotice({ providerId }: { providerId: string }) {
       <AlertTitle>{status.label}</AlertTitle>
       <AlertDescription>
         {status.message && <p>{status.message}</p>}
-        <LaunchSkillStatus state={status.launchSkill ?? null} />
+        <LaunchSkillStatus state={status.launchSkill} />
         {status.state === "attention" && (
           <p>This provider cannot start a Run until reporting is configured.</p>
         )}

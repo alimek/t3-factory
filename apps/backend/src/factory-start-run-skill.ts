@@ -34,7 +34,9 @@ Skip a collection step only when the user already supplied an unambiguous value 
 5. **Start.** Create one new random UUID as \`requestId\` for this confirmed review, for example with \`uuidgen\`. Call \`factory_start_run\` with \`requestId\`, \`projectId\`, \`flowId\` and \`input\` (the exact prompt), and keep those values frozen.
    - No reply, \`RUNTIME_UNAVAILABLE\` or \`internal\`: the outcome is unknown. Call again with the same \`requestId\` and identical arguments; Factory returns the already accepted Run instead of creating another.
    - \`validation\`: Factory created nothing. Relay the issues and the recovery the user can take. Changing Agents, Flows, Projects, the T3 connection or reporting setup is the user's separate decision. When the user changes the Project, Flow or prompt, return to step 4; the next confirmed review gets a new \`requestId\`.
-   - \`conflict\`: this \`requestId\` was accepted with other content. Return to step 4.
+   - \`conflict\` with a \`start_key_conflict\` issue: this \`requestId\` was accepted with other content. Return to step 4.
+   - Any other \`conflict\`, such as Factory shutting down or setup changing during the check: nothing new was accepted. Follow the reply's \`next\` and call again with the same \`requestId\` and identical arguments.
+   - \`not_found\`: the Flow no longer exists. Return to step 2.
    - Another Run requested later, even with the same prompt, is a new submission: it gets its own review and \`requestId\`.
 6. **Receipt.** Report that Factory accepted the Run, with its number, id, title, Project and Flow from the reply. Acceptance is not startup: workers may not have started yet, and Factory shows their progress. Done when the receipt is sent.
 `;

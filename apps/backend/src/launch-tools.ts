@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/server";
+import { textResult } from "./authoring-tools.ts";
 import type {
   FactoryOperations,
   FactoryProject,
@@ -63,11 +64,6 @@ export const launchTools: Tool[] = [
   },
 ];
 
-const textResult = (isError: boolean, reply: unknown): CallToolResult => ({
-  isError,
-  content: [{ type: "text", text: JSON.stringify(reply) }],
-});
-
 const unavailableNext =
   "The outcome is unknown. Call factory_start_run again with the same requestId and identical arguments.";
 
@@ -75,7 +71,7 @@ const startNext: Partial<Record<OperationError["code"], string>> = {
   validation:
     "No Run was created. Explain the issues to the user; changing definitions or setup is their separate decision.",
   conflict:
-    "This requestId was accepted with other content, or Factory is restarting. Review the submission with the user again before a new Start.",
+    "Nothing new was accepted. Call factory_start_run again with the same requestId and identical arguments; if Factory is shutting down, wait for it to restart first.",
   not_found: "Find a current Flow id with factory_list_flows.",
 };
 
@@ -171,7 +167,9 @@ async function startRun(factory: LaunchOperations, args: Record<string, unknown>
       code,
       message,
       issues,
-      next: startNext[code] ?? unavailableNext,
+      next: issues.some((issue) => issue.code === "start_key_conflict")
+        ? "This requestId was accepted with other content. Review the submission with the user again; a confirmed submission gets a new requestId."
+        : (startNext[code] ?? unavailableNext),
     });
   }
   const run = result.value;
