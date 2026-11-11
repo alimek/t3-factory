@@ -530,8 +530,9 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   result finished, cancels pending launches, sends and handoffs (`cancelled-on-Settle`), pending
   Human occurrences, pending Wait arrivals (`wait-cancelled`, clearing their messages) and
   waiting Continuation arrivals, settles pending attention as
-  `manual-settlement`, shows other activated Blocks stopped, records each worker's latest run
-  with the terminal status the completion reads showed (`execution-observed` when it changed),
+  `manual-settlement`, shows other activated Blocks stopped, records every run each worker's
+  completion read showed, including a stopped run a newer one replaced as the latest, with the
+  terminal status that read showed and its existing owner (`execution-observed` when it changed),
   keeping a Problem already recorded and raising no attention, since the Run is never observed
   again, records `worker-stopped` for each worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
   completion-eligible as automatic settlement does, and clears Snooze and Woke.

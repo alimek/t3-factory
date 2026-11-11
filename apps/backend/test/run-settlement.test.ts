@@ -37,6 +37,8 @@ import { prepared } from "./support/prepared-runner.ts";
 import { promptSent } from "./support/continuation.ts";
 import {
   answerDelegatedWait,
+  beginThreadRun,
+  endThreadRun,
   queueUserMessage,
   recordLaunchedThread,
   stopsEndThreads,
@@ -499,6 +501,37 @@ it("a Run confirmed Settle settled records how T3 showed its stopped work end", 
     }),
   ]);
   expect(run.value.attention).toStrictEqual([]);
+});
+
+it("a Run confirmed Settle settled records its stopped run's end though a newer run became the latest", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  assert((await setup.f.settleRun(worker.runId, { stopWorkers: true })).ok);
+  assert((await setup.f.reconcileRuns()).ok);
+  endThreadRun(setup.t3, worker.threadId, worker.executionId, "interrupted");
+  beginThreadRun(setup.t3, worker.threadId, "user-run");
+  endThreadRun(setup.t3, worker.threadId, "user-run", "completed");
+
+  // Act
+  await setup.f.reconcileRuns();
+
+  // Assert
+  const run = await setup.f.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(run.value.executions).toStrictEqual([
+    expect.objectContaining({
+      executionId: worker.executionId,
+      engineStatus: "interrupted",
+      observedEndedAt: expect.any(String),
+    }),
+    expect.objectContaining({
+      executionId: "user-run",
+      engineStatus: "completed",
+      observedEndedAt: expect.any(String),
+    }),
+  ]);
 });
 
 it("a Run confirmed Settle settled records the end of a Continuation's stopped prompt run on the Continuation", async (c) => {

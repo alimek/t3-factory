@@ -20,7 +20,11 @@ const STOP_CONFIRMATION_MS = 30_000;
 
 /** A fresh, correctly scoped read of a bound worker thread for manual settlement. */
 type SettlementRead =
-  | { readonly finished: true; readonly latest: WorkerThread["latest"] }
+  | {
+      readonly finished: true;
+      readonly latest: WorkerThread["latest"];
+      readonly recentRuns: WorkerThread["thread"]["recentRuns"];
+    }
   | {
       readonly finished: false;
       readonly latest: WorkerThread["latest"];
@@ -191,7 +195,8 @@ export function openRunnerSettle(
       Effect.tryPromise(async (): Promise<SettlementRead> => {
         const worker = await readWorkerThread(t3, run, threadId);
         const queued = worker.thread.recentRuns.some((entry) => entry.status === "queued");
-        if (worker.finished && !queued) return { finished: true, latest: worker.latest };
+        if (worker.finished && !queued)
+          return { finished: true, latest: worker.latest, recentRuns: worker.thread.recentRuns };
         const judged = judgedRun(worker);
         const stoppable =
           judged === worker.latest
@@ -316,11 +321,15 @@ export function openRunnerSettle(
     return Effect.gen(function* () {
       const settled = yield* store.completeSettlement(
         run,
-        workers.map((worker) => ({
-          blockId: worker.block_id,
-          threadId: worker.thread_id,
-          execution: reads.get(worker.thread_id)?.latest ?? null,
-        })),
+        workers.map((worker) => {
+          const read = reads.get(worker.thread_id)!;
+          return {
+            blockId: worker.block_id,
+            threadId: worker.thread_id,
+            latest: read.latest,
+            executions: read.finished ? read.recentRuns : [],
+          };
+        }),
       );
       if (settled)
         yield* lifecycle.fork(
