@@ -94,6 +94,15 @@ export function changeAuthorizationBeforeStop(t3: ControlledT3) {
   };
 }
 
+/** T3 cannot answer the next Stop-support check. */
+export function failNextStopSupportCheck(t3: ControlledT3) {
+  const inspect = t3.inspectStopSupport.bind(t3);
+  t3.inspectStopSupport = async () => {
+    t3.inspectStopSupport = inspect;
+    throw new Error("T3 is unreachable");
+  };
+}
+
 /** T3 cannot read this worker until the caller restores its reads. */
 export function pauseWorkerReads(t3: ControlledT3, threadId: string) {
   const read = t3.readExecution.bind(t3);

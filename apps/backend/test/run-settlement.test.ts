@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import {
   changeAuthorizationBeforeStop,
+  failNextStopSupportCheck,
   nextSettlement,
   pauseWorkerReads,
   reopenDuringSettlement,
@@ -549,6 +550,45 @@ it("retrying an unresolved settlement requests Stop again and settles the Run", 
   assert(run.ok);
   expect(run.value.lifecycle).toBe("settled");
   expect(f.t3.threadStops.map((stop) => stop.threadId)).toStrictEqual(["thread-1"]);
+});
+
+it("a Stop-support check T3 cannot answer keeps the worker's Stop for a later pass", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  stopsEndThreads(f.t3);
+  failNextStopSupportCheck(f.t3);
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(f.t3.threadStops.map((stop) => stop.threadId)).toStrictEqual(["thread-1"]);
+});
+
+it("Settle without confirmation lists a launch Factory has not confirmed as unresolved", async (c) => {
+  // Arrange
+  const { f, t3, input } = await prepared(c);
+  const accepted = await f.startRun(input);
+  assert(accepted.ok);
+  t3.loseLaunchReply = true;
+  t3.discoverAvailable = false;
+  await f.reconcileRuns();
+
+  // Act
+  const result = await f.settleRun(accepted.value.id, {});
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject({
+    outcome: "confirmation-required",
+    workers: [{ blockId: "worker", threadId: null, state: "unresolved" }],
+  });
+  expect(t3.threadStops).toStrictEqual([]);
 });
 
 it("repeating a confirmed Settle while its worker is stopping sends no second Stop", async (c) => {

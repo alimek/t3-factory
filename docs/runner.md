@@ -470,9 +470,10 @@ The user settles an Active or Snoozed Run through one operation. Without authori
 stop, it runs in the Run's drive lane: Factory reads every bound worker thread fresh under the
 Run's authorization context and settles only when each is [finished](#worker-thread-completion)
 and shows no queued run; otherwise it answers that confirmation is needed and changes nothing.
-That answer lists each worker read unfinished in scope as executing, which confirming stops, and
+That answer lists each worker read unfinished in scope as executing, which confirming stops;
 each worker T3 could not show, or not under the Run's live authorization context, as unresolved
-with that problem, because Factory never stops a thread it cannot read. A malformed body (not
+with that problem, because Factory never stops a thread it cannot read; and each reserved or
+uncertain launch as unresolved, without a thread. A malformed body (not
 an object, or any field other than a boolean `stopWorkers`) is a validation error, never a
 declined Settle.
 With explicit authorization (`stopWorkers`) it is a durable operation:
@@ -499,7 +500,8 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   and leaves the worker unresolved. Unsupported Stop, a refused request, an unreadable or
   out-of-scope thread, or a worker still unfinished 30 seconds after its acknowledged Stop is
   unresolved, with the blocker it read. Later passes can stop a worker whose earlier reads were
-  unavailable or which joined the attempt later, such as one a launch search bound. A recorded
+  unavailable, whose Stop-support check T3 could not answer, or which joined the attempt later,
+  such as one a launch search bound. A recorded
   Stop request or outcome prevents another request for that worker in the same attempt. A
   restarted backend never sends Stop for an earlier owner's attempt: its workers settle if they
   read finished, otherwise stay unresolved until the user retries.

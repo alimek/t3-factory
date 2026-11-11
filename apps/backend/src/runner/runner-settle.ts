@@ -209,17 +209,10 @@ export function openRunnerSettle(
         Effect.tryPromise(() => t3.inspectStopSupport(runTarget(run))),
         () => Effect.succeed(null),
       );
+      // A probe that could not run is not a Stop T3 refused: every worker keeps its Stop
+      // eligibility for a later pass of the same attempt.
+      if (!support) return false;
       for (const worker of workers) {
-        if (!support) {
-          yield* store.recordStopOutcome(
-            run,
-            attempt,
-            worker,
-            "failed",
-            "T3 Stop support could not be checked.",
-          );
-          continue;
-        }
         if (!support.supported) {
           yield* store.recordStopOutcome(
             run,
@@ -258,6 +251,32 @@ export function openRunnerSettle(
           worker,
           sent ? "acknowledged" : "failed",
           sent ? null : "T3 did not accept the Stop request.",
+        );
+      }
+      return true;
+    });
+  }
+
+  /** Stops `stops` and reads each again, keeping a failed support check visible on the worker. */
+  function stopAndReread(
+    run: RunRow,
+    attempt: number,
+    stops: readonly BoundWorker[],
+    reads: Map<string, SettlementRead>,
+  ) {
+    return Effect.gen(function* () {
+      const probed = yield* requestStops(run, attempt, stops, reads);
+      for (const worker of stops) {
+        const read = yield* readForSettlement(run, worker.thread_id);
+        reads.set(
+          worker.thread_id,
+          probed || read.finished
+            ? read
+            : {
+                ...read,
+                problem:
+                  "T3 Stop support could not be checked, so Factory retries Stop on a later pass.",
+              },
         );
       }
     });
@@ -332,11 +351,7 @@ export function openRunnerSettle(
                       ),
                   )
                 : [];
-          if (stops.length) {
-            yield* requestStops(run, operation.attempt, stops, reads);
-            for (const worker of stops)
-              reads.set(worker.thread_id, yield* readForSettlement(run, worker.thread_id));
-          }
+          if (stops.length) yield* stopAndReread(run, operation.attempt, stops, reads);
           const launchesResolved = !(yield* store.unresolvedLaunches(id)).length;
           if (
             launchesResolved &&
@@ -414,7 +429,7 @@ export function openRunnerSettle(
                   problem: read.finished ? null : read.problem,
                 };
               }),
-              ...launches.map((launch) => ({ ...launch, state: "executing" as const })),
+              ...launches,
             ],
           },
         };
