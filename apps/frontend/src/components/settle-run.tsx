@@ -156,7 +156,7 @@ export function RunSettlementSection({
     <section
       ref={section}
       tabIndex={-1}
-      data-focus-fallback
+      data-focus-fallback={id}
       onFocus={(event) => {
         retryFocused.current = event.target.id === RETRY_ID;
       }}

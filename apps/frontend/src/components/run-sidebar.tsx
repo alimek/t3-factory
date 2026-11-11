@@ -277,8 +277,13 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   // until navigation shows the Run where the action puts it, then focuses that target.
   // A Settle still stopping workers focuses its row now and moves the Run later; by then the
   // user may have moved on, so that request focuses the destination only while focus is still
-  // on the row, on a fallback that took over, or lost to the page because the row left.
+  // on the row, on that Run's fallback, or lost to the page because the row left.
   const [focusAfterRender, setFocusAfterRender] = useState<FocusRequest>();
+  // The navigation a Settle answer arrives at, which tells a lagging entry from a later one.
+  const latestRuns = useRef(runs);
+  useLayoutEffect(() => {
+    latestRuns.current = runs;
+  }, [runs]);
   useLayoutEffect(() => {
     if (!focusAfterRender) return;
     const run = runs.find((candidate) => candidate.id === focusAfterRender.runId);
@@ -292,7 +297,8 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     if (step === "wait") return;
     const target = document.getElementById(focusAfterRender.id);
     if (!target) return;
-    if (!focusAfterRender.owner || ownsFocus(focusAfterRender.owner)) target.focus();
+    if (!focusAfterRender.owner || ownsFocus(focusAfterRender.owner, focusAfterRender.runId))
+      target.focus();
     setFocusAfterRender(undefined);
   }, [focusAfterRender, runs]);
   const { settle, dialog: settlementDialog } = useSettleRun();
@@ -315,11 +321,15 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     const row = `run-row-${run.id}`;
     try {
       let focusAction: RunAction | undefined = action;
-      let owner: Pick<FocusRequest, "owner" | "from"> = {};
+      let owner: Pick<FocusRequest, "owner" | "seen"> = {};
       if (action === "settle") {
         const outcome = await settle(run.id, run.settlement === "unresolved", finishRequest);
         if (!outcome) return;
-        if (outcome.outcome === "stopping") owner = { owner: row, from: run.settlement };
+        if (outcome.outcome === "stopping")
+          owner = {
+            owner: row,
+            seen: latestRuns.current.find((candidate) => candidate.id === run.id),
+          };
         else if (outcome.outcome !== "settled") focusAction = undefined;
       } else await runActions[action](run.id);
       const id =
@@ -337,40 +347,41 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
 }
 
 /** A focus request after a Run action. A Settle still stopping has an `owner`, the row it
- * focuses at once; `from` is the settlement navigation showed when Settle was asked and
- * `stopping` whether navigation has shown it stopping since. */
+ * focuses at once; `seen` is the Run's navigation entry when the answer arrived and `stopping`
+ * whether navigation has shown it stopping since. */
 type FocusRequest = {
   readonly id: string;
   readonly runId: string;
   readonly action: RunAction | undefined;
   readonly owner?: string;
   readonly ownerFocused?: boolean;
-  readonly from?: RunNavigationEntry["settlement"];
+  readonly seen?: RunNavigationEntry | undefined;
   readonly stopping?: boolean;
 };
 
 /** What a focus request does with the Run as navigation shows it: wait until the Run moved, then
  * focus. A stopping Settle's request is dropped once the Run leaves navigation, such as by
- * Archive, or its settlement leaves stopping without settling. */
+ * Archive, or navigation newer than the answer shows it neither stopping nor settled, such as
+ * unresolved again; only the entry the answer arrived at may still lag behind it. */
 function focusStep(request: FocusRequest, run: RunNavigationEntry | undefined) {
   if (request.owner && request.action) {
     if (!run) return "drop";
     if (run.settlement === "stopping") return request.stopping ? "wait" : "stopping";
-    const left = request.stopping || run.settlement !== request.from;
-    if (left && !moved(run, request.action)) return "drop";
+    const later = request.stopping || run !== request.seen;
+    if (later && !moved(run, request.action)) return "drop";
   }
   return run && request.action && !moved(run, request.action) ? "wait" : "focus";
 }
 
-/** Focus is still on the `owner` element, on a fallback that took over when an action's own
- * control left the page, or lost to the page. */
-function ownsFocus(owner: string) {
+/** Focus is still on the `owner` element, on the fallback of the same Run that took over when an
+ * action's own control left the page, or lost to the page. */
+function ownsFocus(owner: string, runId: string) {
   const active = document.activeElement;
   return (
     !active ||
     active === document.body ||
     active.id === owner ||
-    (active instanceof HTMLElement && active.dataset.focusFallback !== undefined)
+    (active instanceof HTMLElement && active.dataset.focusFallback === runId)
   );
 }
 
