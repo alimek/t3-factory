@@ -2,9 +2,15 @@ import { confirmSettlement } from "./support/run-history.ts";
 import assert from "node:assert/strict";
 import { beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Screen } from "e2e";
-import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
+import {
+  findRun,
+  readHistoryRun,
+  runsTitled,
+  settleStoppingWorkers,
+} from "./support/run-history.ts";
 import { listAgentDefinitions, readAgentDefinition } from "./support/agents.ts";
 import { prepareScenarios, applyRunState } from "./support/scenarios.ts";
+import { liveRun } from "./support/live.ts";
 import { openComposerWithFlow, startLosingResponse } from "./support/composer.ts";
 import {
   fillHumanReviewChanges,
@@ -512,12 +518,7 @@ test("Settle confirmation cancels without changes, then stops workers and settle
 test("a late report cannot revive a manually Settled Run", async ({ app, screen }) => {
   // Arrange
   const found = await findRun(app.baseUrl, "UI worker · Working · Improve the project picker");
-  const response = await fetch(new URL(`/api/runs/${found.id}/settle`, app.baseUrl), {
-    method: "POST",
-    headers: { "X-Factory-Request": "1", "Content-Type": "application/json" },
-    body: JSON.stringify({ stopWorkers: true }),
-  });
-  expect(response.ok).toBe(true);
+  await settleStoppingWorkers(app.baseUrl, found.id);
   await app.open(`/runs/${found.id}`);
   const before = await readHistoryRun(app.baseUrl, found.id);
 
@@ -538,7 +539,7 @@ test("a late report cannot revive a manually Settled Run", async ({ app, screen 
   await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
 });
 
-test("an unresolved settlement shows worker problems and retries to Settled", async ({
+test("Retry of an unresolved settlement keeps focus on the settlement section while stopping", async ({
   app,
   screen,
 }) => {
@@ -570,9 +571,29 @@ test("an unresolved settlement shows worker problems and retries to Settled", as
   // Assert
   await expect(progress).toContainText("Stopping workers…");
   await expect(progress).toBeFocused();
-  await finishStopping(app.baseUrl, found.id);
+  await app.screenshot("settlement-retry-stopping");
+});
+
+test("a held Stop that ends settles the Run and removes its settlement progress", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const id = await liveRun(app, "settle-held-stop");
+  await applyRunState(app.baseUrl, id, "Stop taken while the turn continues");
+  await settleStoppingWorkers(app.baseUrl, id);
+  await app.open(`/runs/${id}`);
+  const progress = screen.getByRole("region", "Run settlement");
+  await expect(progress).toContainText("Stopping workers…");
+
+  // Act
+  await applyRunState(app.baseUrl, id, "stopped turns ended");
+
+  // Assert
+  await expect.poll(async () => (await readHistoryRun(app.baseUrl, id)).lifecycle).toBe("settled");
   await expect(progress).toHaveCount(0);
-  await app.screenshot("settlement-retry-finished");
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await app.screenshot("settlement-stop-finished");
 });
 
 /** T3 ends the turns Settle asked to stop, and the Run settles. */

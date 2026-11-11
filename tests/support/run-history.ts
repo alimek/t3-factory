@@ -25,3 +25,13 @@ export async function readHistoryRun(baseUrl: string | undefined, id: string) {
 export async function confirmSettlement(screen: Screen) {
   await screen.getByRole("alertdialog").getByRole("button", "Settle", { exact: true }).tap();
 }
+
+/** The user's confirmed Settle, sent as the dialog sends it. */
+export async function settleStoppingWorkers(baseUrl: string | undefined, id: string) {
+  const response = await fetch(new URL(`/api/runs/${id}/settle`, baseUrl), {
+    method: "POST",
+    headers: { "X-Factory-Request": "1", "Content-Type": "application/json" },
+    body: JSON.stringify({ stopWorkers: true }),
+  });
+  assert.ok(response.ok, await response.clone().text());
+}
