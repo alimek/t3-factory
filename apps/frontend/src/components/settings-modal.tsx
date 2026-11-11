@@ -7,12 +7,14 @@ import {
   MonitorSmartphone,
   Plug,
   Search,
+  SlidersHorizontal,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { KeyboardSettings } from "./keyboard-settings.tsx";
 import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
+import { GeneralSettings } from "./general-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
@@ -78,6 +80,13 @@ const accessSection: SettingsSection = {
   group: "SETTINGS",
   keywords: ["remote", "clients", "approve", "revoke", "LAN", "Tailscale", "certificate"],
 };
+const generalSection: SettingsSection = {
+  tab: "general",
+  title: "General",
+  icon: SlidersHorizontal,
+  group: "SETTINGS",
+  keywords: ["menu bar", "icon", "tray", "macOS", "appearance"],
+};
 const applicationSection: SettingsSection = {
   tab: "application",
   title: "Application",
@@ -94,7 +103,7 @@ const runImagesSection: SettingsSection = {
   keywords: ["storage", "disk", "space", "screenshots", "attachments", "delete", "files"],
 };
 
-/** Approvals exist only on the host panel; the Application section only in the desktop app. */
+/** Approvals exist only on the host panel; General and Application only in the desktop app. */
 function useSections(): readonly SettingsSection[] {
   const scope = useClientScope();
   return [
@@ -102,7 +111,7 @@ function useSections(): readonly SettingsSection[] {
     reportingSection,
     keyboardSection,
     ...(scope === "host" ? [accessSection] : []),
-    ...(desktopBridge() ? [applicationSection] : []),
+    ...(desktopBridge() ? [generalSection, applicationSection] : []),
     runImagesSection,
   ];
 }
@@ -120,6 +129,7 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   runtime: () => <RuntimeSettings />,
   keyboard: () => <KeyboardSettings />,
   access: () => <AccessSettings />,
+  general: () => <GeneralSettings />,
   application: () => <ApplicationSettings />,
   "run-images": () => <RunImageSettings />,
 };

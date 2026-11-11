@@ -89,6 +89,7 @@ function desktopState(): DesktopState {
       : null,
     backend: backend.state,
     launchAtLogin: settings.launchAtLogin,
+    menuBarIcon: settings.menuBarIcon,
     updateChannel: updateChannel(),
     update: updates.current,
     // macOS keeps a minimized window's document "visible"; live delivery detaches on this.
@@ -208,7 +209,7 @@ function openWindow() {
   created.once("ready-to-show", () => created.show());
   created.on("minimize", broadcast);
   created.on("restore", broadcast);
-  // Closing the window never stops the backend; the tray and Dock reopen it.
+  // Closing the window never stops the backend; the Dock and the optional tray reopen it.
   created.on("closed", () => {
     window = null;
     applyMenuState(withoutOpenRun(menuState));
@@ -221,6 +222,16 @@ function trayImage() {
   const image = nativeImage.createFromPath(join(here, "resources", "trayTemplate.png"));
   image.setTemplateImage(true);
   return image;
+}
+
+/** The menu-bar icon exists only while the user keeps it enabled. */
+function applyMenuBarIcon() {
+  if (store.get().menuBarIcon) {
+    tray ??= new Tray(trayImage());
+    return;
+  }
+  tray?.destroy();
+  tray = null;
 }
 
 function refreshTray() {
@@ -294,6 +305,13 @@ async function setLaunchAtLogin(enabled: boolean): Promise<DesktopResult> {
   const status = app.getLoginItemSettings().status;
   if (enabled && status === "requires-approval")
     return failed("Approve T3 Factory in System Settings → General → Login Items.");
+  return { ok: true };
+}
+
+async function setMenuBarIcon(enabled: boolean): Promise<DesktopResult> {
+  await store.update({ menuBarIcon: enabled });
+  applyMenuBarIcon();
+  broadcast();
   return { ok: true };
 }
 
@@ -426,6 +444,7 @@ const bridgeHandlers: BridgeHandlers = {
     return { ok: true };
   },
   setLaunchAtLogin: (_frame, enabled: boolean) => setLaunchAtLogin(enabled === true),
+  setMenuBarIcon: (_frame, enabled: boolean) => setMenuBarIcon(enabled === true),
   checkForUpdates: async () => {
     await updates.check();
     return { ok: true };
@@ -551,7 +570,7 @@ async function start() {
   applyMenuState(null);
   if (store.get().role === "server") backend.start();
   updates.start(updateChannel());
-  tray = new Tray(trayImage());
+  applyMenuBarIcon();
   refreshTray();
   const settings = store.get();
   // Launch at login starts in the background with the remembered role.
