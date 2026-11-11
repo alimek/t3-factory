@@ -53,7 +53,8 @@ export function RunImageSettings() {
   const projects = useProjects() ?? [];
   const [projectId, setProjectId] = useState("");
   const [listed, setListed] = useState(0);
-  const { images, error } = useEligibleImages(projectId, listed);
+  const listing = useEligibleImages(projectId, listed);
+  const { images } = listing;
   const [previewed, setPreviewed] = useState<string | null>(null);
   const deletion = useImageDeletion(() => setListed((n) => n + 1));
   const project = projects.find((item) => item.id === projectId) ?? null;
@@ -82,11 +83,21 @@ export function RunImageSettings() {
           its place.
         </p>
       </div>
-      {[error, deletion.error].filter(Boolean).map((message) => (
-        <Alert key={message} variant="destructive">
-          <AlertDescription>{message}</AlertDescription>
+      {listing.error && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            {listing.error}
+            <Button type="button" variant="outline" size="sm" onClick={listing.retry}>
+              Retry
+            </Button>
+          </AlertDescription>
         </Alert>
-      ))}
+      )}
+      {deletion.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{deletion.error}</AlertDescription>
+        </Alert>
+      )}
       {deletion.notice && (
         <Alert>
           <AlertDescription>{deletion.notice}</AlertDescription>
@@ -105,6 +116,7 @@ export function RunImageSettings() {
       ) : (
         <RunImageList
           images={images}
+          failed={Boolean(listing.error)}
           projects={projects}
           project={project}
           confirmation={confirmation}
@@ -121,30 +133,44 @@ export function RunImageSettings() {
   );
 }
 
+/** One answer to a listing request: the filter it was for and its images or failure. */
+type Listing = { projectId: string } & (
+  | { images: readonly EligibleRunImage[] }
+  | { error: string }
+);
+
 /**
- * The server's eligible list for the project filter, read again whenever `listed` changes. It is
- * null until the current filter's list arrives, so nothing acts on another filter's images.
+ * The server's eligible list for the project filter, read again whenever `listed` changes or
+ * `retry` is called. `images` is null until the current filter's list arrives, so nothing acts on
+ * another filter's images; `error` is set once the current filter's request failed.
  */
 function useEligibleImages(projectId: string, listed: number) {
-  const [listing, setListing] = useState<{
-    projectId: string;
-    images: readonly EligibleRunImage[];
-  }>();
-  const [error, setError] = useState("");
+  const [listing, setListing] = useState<Listing>();
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
-    setError("");
     api.listEligibleRunImages(projectId).then(
       (images) => active && setListing({ projectId, images }),
       (cause: unknown) =>
         active &&
-        setError(cause instanceof Error ? cause.message : "Run images could not be listed."),
+        setListing({
+          projectId,
+          error: cause instanceof Error ? cause.message : "Run images could not be listed.",
+        }),
     );
     return () => {
       active = false;
     };
-  }, [projectId, listed]);
-  return { images: listing?.projectId === projectId ? listing.images : null, error };
+  }, [projectId, listed, attempt]);
+  const current = listing?.projectId === projectId ? listing : undefined;
+  return {
+    images: current && "images" in current ? current.images : null,
+    error: current && "error" in current ? current.error : "",
+    retry: () => {
+      setListing(undefined);
+      setAttempt((n) => n + 1);
+    },
+  };
 }
 
 /** The pending confirmation, the deletion it confirms and its outcome; `deleted` relists. */
@@ -273,6 +299,7 @@ function DeleteConfirmation({
 
 function RunImageList({
   images,
+  failed,
   projects,
   project,
   confirmation,
@@ -281,8 +308,10 @@ function RunImageList({
   onDelete,
   onDeleteAll,
 }: {
-  /** Null while the current filter's list is loading. */
+  /** Null while the current filter's list is loading or after it failed. */
   images: readonly EligibleRunImage[] | null;
+  /** The current filter's list could not be read. */
+  failed: boolean;
   projects: readonly FactoryProject[];
   project: FactoryProject | null;
   confirmation: ReactNode;
@@ -294,7 +323,7 @@ function RunImageList({
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        <RunImageSummary images={images} project={project} />
+        <RunImageSummary images={images} failed={failed} project={project} />
         <NativeSelect
           aria-label="Project"
           wrapperClassName="ml-auto w-50"
@@ -354,16 +383,18 @@ function RunImageList({
 /** "12 images · 23.8 MiB from 9 Runs", narrowed to the chosen project. */
 function RunImageSummary({
   images,
+  failed,
   project,
 }: {
   images: readonly EligibleRunImage[] | null;
+  failed: boolean;
   project: FactoryProject | null;
 }) {
   if (!images)
     return (
       <p className="mr-auto flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
         <HardDrive aria-hidden strokeWidth={1.5} className="size-4 shrink-0" />
-        Listing images…
+        {failed ? "Images not listed" : "Listing images…"}
       </p>
     );
   const bytes = images.reduce((total, image) => total + image.sizeBytes, 0);

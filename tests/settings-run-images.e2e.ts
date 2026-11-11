@@ -141,6 +141,63 @@ test("a project without Settled or Archived Run images shows the empty state", a
   await app.screenshot("settings-run-images-empty");
 });
 
+/** Makes listing eligible Run images fail until the returned function is called. */
+async function failRunImageListing(browser: Browser) {
+  let failing = true;
+  await browser.route(/\/api\/run-images(\?projectId=[^&]*)?$/, async (route) =>
+    failing && route.request.method === "GET" ? route.abort() : route.continue(),
+  );
+  return () => {
+    failing = false;
+  };
+}
+
+const listingAlert = (screen: Screen) =>
+  screen.getByRole("alert").filter({ has: screen.getByRole("button", "Retry") });
+
+test("a failed Run images listing shows its error with Retry instead of loading forever", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await app.open("/runs/new");
+  await failRunImageListing(browser);
+
+  // Act
+  await app.open("/settings/run-images");
+
+  // Assert
+  await expect(listingAlert(screen)).toBeVisible();
+  await expect(screen.getByText("Images not listed", { exact: true })).toBeVisible();
+  await expect(screen.getByText("Listing images…", { exact: true })).toHaveCount(0);
+  await expect(cards(screen)).toHaveCount(0);
+  await expect(
+    screen.getByText("No stored images from Settled or Archived Runs", { exact: true }),
+  ).toHaveCount(0);
+  await expect(screen.getByRole("button", /^Delete all /)).toHaveCount(0);
+});
+
+test("Retry after a failed Run images listing lists the images", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const recover = await failRunImageListing(browser);
+  await app.open("/settings/run-images");
+  await expect(listingAlert(screen)).toBeVisible();
+  recover();
+
+  // Act
+  await listingAlert(screen).getByRole("button", "Retry").tap();
+
+  // Assert
+  await expect(cards(screen).first()).toBeVisible();
+  await expect(listingAlert(screen)).toHaveCount(0);
+  await expect(screen.getByText("Images not listed", { exact: true })).toHaveCount(0);
+});
+
 /** Run images filtered to the demo project; returns the fixture projects. */
 async function openDemoRunImages(app: App, screen: Screen) {
   const fixtureProjects = await openRunImages(app, screen);

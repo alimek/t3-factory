@@ -136,7 +136,8 @@ fixed Human exits their old exits were mapped to.
   the image's ordinal and name; the rest of the history stays readable, and a failed read is not retried in that view and
   creates no attention or state change.
 - **Settings → Run images** lists each image whose file is stored and whose every Run is Settled or Archived. An image an
-  Active Run also uses is not listed.
+  Active Run also uses is not listed. If the list cannot be read, the section shows the error with **Retry** and lists
+  nothing until a read succeeds.
   - The list can be filtered to one project; a Run's project is its Task's. Each card shows the image's Runs, states and
     projects. A card opens an in-section preview with **Image N of M** within the list and every Run that uses the image,
     each with **Open Run**.
