@@ -207,6 +207,8 @@ function PendingMatter({
   observationUnavailable: boolean;
 }) {
   const presentation = attentionPresentation(item.kind);
+  // A settling Run accepts no answers, so it shows no Needs input chip or explanation.
+  const answerable = presentation !== "needs-input" || !run.settlement;
   const binding = run.threadBindings.find((b) => b.id === item.bindingId);
   return (
     <article
@@ -218,12 +220,10 @@ function PendingMatter({
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {(presentation !== "needs-input" || !run.settlement) && (
-          <AttentionChip presentation={presentation} />
-        )}
+        {answerable && <AttentionChip presentation={presentation} />}
         <h3 className="truncate text-2xs font-medium text-muted-foreground">{item.blockName}</h3>
       </div>
-      {(item.kind !== "human" || !run.settlement) && (
+      {answerable && (
         <p className="text-sm font-medium text-foreground">{attentionExplanation(item.kind)}</p>
       )}
       {item.kind === "native-request" && (
