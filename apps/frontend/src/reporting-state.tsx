@@ -122,6 +122,7 @@ export function reportingSummary(reads: ReportingReads): ReportingStatus {
         state: "attention",
         label: "Agent reporting needs attention",
         message: "Agent reporting needs attention",
+        launchSkill: null,
       }
-    : { state: "installed", label: "Reporting installed", message: "" };
+    : { state: "installed", label: "Reporting installed", message: "", launchSkill: null };
 }
