@@ -160,9 +160,12 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
             concurrency: "unbounded",
           });
           // A confirmed manual settlement holds its Run's gate closed until it settles.
-          yield* Effect.forEach(ids, (run) => advanceSettlement(run.id), {
+          const settling = yield* store.runsWithSettlement(ids.map((run) => run.id));
+          yield* Effect.forEach(settling, (run) => advanceSettlement(run.run_id), {
             concurrency: "unbounded",
           });
+          // Include dispatches queued by reports while the sweep was observing workers.
+          yield* drives.drain();
           return { ok: true as const, value: undefined };
         }),
       )

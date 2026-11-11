@@ -187,6 +187,17 @@ function recordWorker(
 export function openRunManualSettlement(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
 
+  /** Skip Runs without a confirmed settlement before entering their drive lanes. */
+  const runsWithSettlement = (ids: readonly string[]) =>
+    ids.length
+      ? database.transaction(
+          (sql) =>
+            sql<{
+              run_id: string;
+            }>`SELECT run_id FROM run_settlements WHERE run_id IN ${sql.in(ids)}`,
+        )
+      : Effect.succeed([]);
+
   /** A settlement transition on an unarchived Run this backend owns; it answers false otherwise.
    * Published when it answers true. */
   const settlementMutation = (
@@ -423,6 +434,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
   }
 
   return {
+    runsWithSettlement,
     boundWorkers,
     unresolvedLaunches,
     readSettlementAttempt,

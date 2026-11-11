@@ -22,8 +22,8 @@ const WORKER_STATE_LABEL: Record<RunSettlementWorker["state"], string> = {
 export function SettlementWorkers({ workers }: { workers: readonly RunSettlementWorker[] }) {
   return (
     <ul className="max-h-60 space-y-2 overflow-auto text-sm">
-      {workers.map((worker) => (
-        <li key={worker.threadId ?? worker.blockId} className="break-words">
+      {workers.map((worker, index) => (
+        <li key={worker.threadId ?? `${worker.blockId}:${index}`} className="break-words">
           {worker.link ? (
             <a className="text-link underline" href={worker.link}>
               {worker.blockName}
@@ -51,7 +51,10 @@ export function useSettleRun() {
   async function settle(id: string, retry: boolean, onConfirmation?: () => void) {
     if (busy) return;
     close();
-    const outcome = await api.settleRun(id, retry ? { stopWorkers: true } : {});
+    let outcome = await api.settleRun(id, retry ? { stopWorkers: true } : {});
+    // Navigation can lag behind a failed Stop whose settlement was already confirmed.
+    if (!retry && outcome.outcome === "unresolved")
+      outcome = await api.settleRun(id, { stopWorkers: true });
     if (outcome.outcome !== "confirmation-required") return outcome;
     const opener = document.activeElement;
     returnFocus.current =
