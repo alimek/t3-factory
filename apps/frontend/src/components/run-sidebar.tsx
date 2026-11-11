@@ -390,10 +390,16 @@ function focusStep(request: FocusRequest, run: RunNavigationEntry | undefined) {
   if (request.owner && request.action) {
     if (!run) return "drop";
     if (run.settlement === "stopping") return request.stopping ? "wait" : "stopping";
-    const later = request.stopping || run !== request.seen;
+    const later = request.stopping || !sameSettlementState(run, request.seen);
     if (later && !moved(run, request.action)) return "drop";
   }
   return run && request.action && !moved(run, request.action) ? "wait" : "focus";
+}
+
+/** A replaced navigation snapshot gives the Run a new entry object even when nothing about it
+ * changed, so only a different lifecycle or settlement counts as newer navigation. */
+function sameSettlementState(run: RunNavigationEntry, seen: RunNavigationEntry | undefined) {
+  return run.lifecycle === seen?.lifecycle && run.settlement === seen?.settlement;
 }
 
 /** Focus is still on the `owner` element, on the fallback of the same Run that took over when an
