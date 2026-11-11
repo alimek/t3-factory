@@ -39,7 +39,7 @@ import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
-import { seedDevelopment, seedScenarios } from "../../scripts/dev/seed.ts";
+import { seedDevelopment, seedScenarios, settlementUnresolved } from "../../scripts/dev/seed.ts";
 import { requireSuccess, demoStart } from "../../scripts/dev/seed-support.ts";
 import { proxyFixture, proxyFixtureUpgrade } from "./proxy.ts";
 
@@ -390,6 +390,7 @@ const transitions = {
   "reply turn observed": (run: RunDetail) =>
     replyTurnObserved(context, workerOf(run), "ui-worker-reply"),
   settled: (run: RunDetail) => settled(context, workerOf(run)),
+  "settlement unresolved": (run: RunDetail) => settlementUnresolved(context, workerOf(run)),
   "Stop taken while the turn continues": (run: RunDetail) =>
     t3.holdStops(run.threadBindings.map((binding) => binding.threadId)),
   "stopped turns ended": (run: RunDetail) =>

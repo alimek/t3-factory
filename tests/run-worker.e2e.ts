@@ -574,6 +574,32 @@ test("Retry of an unresolved settlement keeps focus on the settlement section wh
   await app.screenshot("settlement-retry-stopping");
 });
 
+test("a Retry the user left does not pull focus to the settlement section once it is stopping", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const id = await liveRun(app, "settle-left-retry");
+  await applyRunState(app.baseUrl, id, "settlement unresolved");
+  await app.open(`/runs/${id}`);
+  const progress = screen.getByRole("region", "Run settlement");
+  const retry = progress.getByRole("button", "Retry", { exact: true });
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  // Focus falls to the page, as when the user clicks content outside any focusable container.
+  await browser.evaluate("document.activeElement.blur()");
+  expect(await browser.evaluate("document.activeElement === document.body")).toBe(true);
+  await applyRunState(app.baseUrl, id, "Stop taken while the turn continues");
+
+  // Act
+  await settleStoppingWorkers(app.baseUrl, id);
+
+  // Assert
+  await expect(progress).toContainText("Stopping workers…");
+  await expect(progress).not.toBeFocused();
+});
+
 test("a held Stop that ends settles the Run and removes its settlement progress", async ({
   app,
   screen,

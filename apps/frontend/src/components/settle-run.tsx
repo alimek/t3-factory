@@ -136,7 +136,8 @@ export function useSettleRun() {
 }
 
 /** Run detail's settlement progress. A confirmed retry removes Retry once the settlement shows
- * the workers stopping; the section keeps the focus that would otherwise fall to the page. */
+ * the workers stopping; the section keeps the focus that would otherwise fall to the page. Only a
+ * Retry that still holds focus, or whose attempt is still settling, claims that fallback. */
 export function RunSettlementSection({
   id,
   settlement,
@@ -160,6 +161,19 @@ export function RunSettlementSection({
       onFocus={(event) => {
         retryFocused.current = event.target.id === RETRY_ID;
       }}
+      onBlur={(event) => {
+        const retry = event.target;
+        if (retry.id !== RETRY_ID) return;
+        if (event.relatedTarget) {
+          retryFocused.current = false;
+          return;
+        }
+        // Focus falling to the page while Retry stays usable is the user leaving it; Retry
+        // removed by the stopping transition, or disabled by its attempt, keeps the claim.
+        queueMicrotask(() => {
+          if (retry.isConnected && retry.matches(":enabled")) retryFocused.current = false;
+        });
+      }}
       aria-label="Run settlement"
       className="max-h-72 space-y-3 overflow-auto border-t px-4 py-3 outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
     >
@@ -170,7 +184,14 @@ export function RunSettlementSection({
         Automatic work is held until every worker is confirmed finished.
       </p>
       <SettlementWorkers workers={settlement.workers} />
-      {unresolved && <RetryRunSettlement id={id} />}
+      {unresolved && (
+        <RetryRunSettlement
+          id={id}
+          onAttemptFailed={() => {
+            retryFocused.current = document.activeElement?.id === RETRY_ID;
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -178,7 +199,7 @@ export function RunSettlementSection({
 const RETRY_ID = "settlement-retry";
 
 /** Run detail can retry even when navigation filters out its Run. */
-function RetryRunSettlement({ id }: { id: string }) {
+function RetryRunSettlement({ id, onAttemptFailed }: { id: string; onAttemptFailed: () => void }) {
   const { settle, dialog } = useSettleRun();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -186,12 +207,15 @@ function RetryRunSettlement({ id }: { id: string }) {
     if (busy) return;
     setBusy(true);
     setError("");
+    let settling = false;
     try {
-      await settle(id, true);
+      const outcome = await settle(id, true);
+      settling = outcome?.outcome === "stopping" || outcome?.outcome === "settled";
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not settle the Run.");
     } finally {
       setBusy(false);
+      if (!settling) onAttemptFailed();
     }
   }
   return (
