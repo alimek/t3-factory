@@ -212,13 +212,25 @@ function recordSettledExecutions(
   return Effect.gen(function* () {
     for (const worker of workers) {
       if (!worker.execution) continue;
+      // A recorded execution keeps its owner, such as the Continuation whose prompt ran on this
+      // Agent's thread, so its end is attributed to it; a new record belongs to the worker.
+      const [owner] = yield* sql<{
+        block_id: string;
+        binding_id: string | null;
+      }>`SELECT block_id,binding_id FROM run_executions WHERE run_id=${runId} AND thread_id=${worker.threadId} AND execution_id=${worker.execution.runId}`;
       const [binding] = yield* sql<{
         id: string;
       }>`SELECT id FROM run_thread_bindings WHERE run_id=${runId} AND thread_id=${worker.threadId}`;
-      if (binding)
+      const bindingId = owner?.binding_id ?? binding?.id;
+      if (bindingId)
         yield* recordExecution(
           sql,
-          { runId, blockId: worker.blockId, threadId: worker.threadId, bindingId: binding.id },
+          {
+            runId,
+            blockId: owner?.block_id ?? worker.blockId,
+            threadId: worker.threadId,
+            bindingId,
+          },
           worker.execution,
           0,
           "keep",

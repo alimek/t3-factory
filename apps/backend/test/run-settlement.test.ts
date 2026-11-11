@@ -10,6 +10,7 @@ import {
 import {
   allTurnsEnd,
   archived,
+  continuationFlow,
   fanOutFlow,
   finishedReport,
   handoffFlow,
@@ -33,6 +34,7 @@ import {
   workingReport,
 } from "./support/scenarios.ts";
 import { prepared } from "./support/prepared-runner.ts";
+import { promptSent } from "./support/continuation.ts";
 import {
   answerDelegatedWait,
   queueUserMessage,
@@ -497,6 +499,34 @@ it("a Run confirmed Settle settled records how T3 showed its stopped work end", 
     }),
   ]);
   expect(run.value.attention).toStrictEqual([]);
+});
+
+it("a Run confirmed Settle settled records the end of a Continuation's stopped prompt run on the Continuation", async (c) => {
+  // Arrange
+  const setup = await prepared(c, continuationFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  await resultReported(setup.world, worker);
+  await promptSent(setup.world, worker);
+  const prompt = sentTurnBegins(setup.world, worker);
+  assert((await setup.f.reconcileRuns()).ok);
+  stopsEndThreads(setup.t3);
+  assert((await setup.f.settleRun(worker.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await setup.f.reconcileRuns();
+
+  // Assert
+  const run = await setup.f.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(
+    run.value.executions.find((execution) => execution.executionId === prompt.executionId),
+  ).toMatchObject({
+    blockId: "spec",
+    engineStatus: "interrupted",
+    problem: null,
+    observedEndedAt: expect.any(String),
+  });
 });
 
 it("Settle keeps the execution-failed Problem of a worker run that failed before it", async (c) => {
