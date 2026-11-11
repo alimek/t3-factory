@@ -117,6 +117,15 @@ endpoint or authorization does not reset it. Every connection and startup gate k
 **Application settings** entry, in browsers too (where it holds only Appearance), and the
 choice works while offline. Visual rules are in the [design system](design-system.md#light-and-dark).
 
+When the host has paired [T3 theme colors](t3-integration.md#theme-colors), the server delivers one
+presentation with a Light and a Dark half to approved clients and the host panel through live
+delivery; each client shows the half of its own mode, so two clients of the same server can show the
+same T3 theme in different modes. A missing or rejected half shows Factory's colors for that mode,
+and the mode choice itself never changes. Connection and access gates, unapproved clients and
+clients of servers older than protocol 10 receive no theme colors and use Factory's colors. An
+offline client keeps the last colors it received until their grant expires. Nothing is cached across
+reloads or restarts yet, so the first paint and the desktop window background use Factory's colors.
+
 - **Desktop**: the mode is saved with the other desktop settings of the installation. The
   main process applies it to native chrome and dialogs and to the window background before
   the window is created, and serves the bundled page with the mode already set, so the first
@@ -237,7 +246,8 @@ product data. Reporting installation is an approved-client product operation; it
 the same server-side installer as the host panel and accepts only a discovered target
 identifier, not a client-supplied filesystem path. Factory MCP (`/mcp`), endpoint changes
 (`PUT /api/connection`), host reauthorization (`POST /api/connection/authorize`, which
-retires the current context) remain `hostOnly`: report ingress
+retires the current context) and theme-color pairing and disconnect
+(`POST`/`DELETE /api/connection/appearance`) remain `hostOnly`: report ingress
 therefore cannot become a bypass into general APIs, and the T3 grant never leaves the
 host. `POST /api/connection/authorization/open` is the one connection mutation an
 approved client may call: it only reopens a pending approval or starts one for the
@@ -280,7 +290,10 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **9**, and both sides require at least **9**. Protocol 9 changed manual
+The current protocol is **10**, and both sides require at least **9**. Protocol 10 added the
+theme-color live subscription (`WatchAppearance`); a client subscribes only when the server's handshake
+declares at least 10, so protocol 9 and 10 peers interoperate and a protocol 9 server's clients show
+Factory's colors without theme-color settings. Protocol 9 changed manual
 Settle: its request may authorize stopping workers (`stopWorkers`) and it answers a settlement
 outcome with the Run instead of the Run alone, and Run detail and navigation carry settlement
 progress; it also added Wait blocks with their durations and Wait arrivals. Older clients could

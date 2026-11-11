@@ -21,6 +21,28 @@ Typography, geometry, radii and motion are identical in both modes. Raw Run imag
 favicons and emoji keep their pixels. Forced-colors mode replaces Factory's colors with the
 system palette in either mode; meaning stays carried by labels and icons.
 
+### T3 theme colors
+
+When the host pairs [theme colors](t3-integration.md#theme-colors), every color token can come
+from the T3 environment's default theme instead of the baseline, separately per mode: the local
+mode still picks Light or Dark, and a mode without an accepted T3 half keeps its baseline. Only
+colors change; typography, geometry, radii, shadows and motion stay Factory's.
+
+The backend maps T3 roles by meaning: canvas to the background, raised surfaces to cards and
+popovers, text and muted text to the foregrounds, sidebar roles to the sidebar, borders and
+inputs to lines, accent to primary actions and links, focus to the focus ring. Hover, pressed and
+selected fills are derived from the canvas or sidebar with that surface's own hue and chroma, so
+they stay neutral and never take the accent. Status colors keep Factory's hue families from the
+mode's baseline. A mode must keep its own polarity (a dark canvas in Dark, a light one in Light).
+
+Contrast policy: text, secondary text, action labels, links and status colors need 4.5:1 on
+every surface they appear on, and focus rings and section labels 3:1. A color that misses is moved
+in lightness only, toward black or white, until it passes; if a required pair cannot pass, that
+whole mode is rejected to its baseline with the reason in Settings, never partially applied.
+Clients receive only Factory-formatted color values and apply them through the CSSOM as one rule
+per mode. Gates and unapproved screens use the baseline. The desktop window background and the
+first paint use the baseline until a client receives the presentation.
+
 ## Visual rules
 
 - Use neutral surfaces and borders for structure. Indigo marks primary actions and
@@ -74,8 +96,9 @@ stylesheet to style an individual feature. Merge caller classes with the existin
 helper and accept `className` where the primitive supports it.
 
 Define new semantic tokens in `apps/frontend/src/styles.css` with a value in both the Dark
-`:root` block and the Light block, and expose them through `@theme inline`. Check new colors
-in both modes. Keep their purpose clear; exact values and component variants belong in that
+`:root` block and the Light block, and expose them through `@theme inline`. A new color token
+also joins the contracts' appearance token list and needs a T3 mapping, so inherited palettes keep
+covering every color. Check new colors in both modes. Keep their purpose clear; exact values and component variants belong in that
 source rather than a second documentation inventory.
 
 When a required primitive is missing, add it from `apps/frontend` with

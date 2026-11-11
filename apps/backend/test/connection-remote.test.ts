@@ -96,3 +96,19 @@ it("an approved client cannot reauthorize and replace the host's ready grant", a
   expect(connection.value.authorizationContext).toStrictEqual(ready.value.authorizationContext);
   expect(t3.authorizationStarts).toBe(0);
 });
+
+it("an approved client cannot pair theme colors with the host's T3", async (c) => {
+  // Arrange
+  const { laptop, t3 } = await remoteConnection(c);
+
+  // Act
+  const reply = await laptop.send("POST", "/api/connection/appearance", {
+    pairing: t3.appearance.pairingCode,
+  });
+
+  // Assert
+  expect(reply.status).toBe(403);
+  assert(!reply.body.ok);
+  expect(reply.body.error.code).toBe("host_only");
+  expect(t3.appearance.pairings).toBe(0);
+});

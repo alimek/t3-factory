@@ -453,6 +453,20 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     liveSnapshotDelayMs = Number(query.get("ms"));
   },
 
+  /** Theme colors: no grant, T3's default theme Ocean and a session T3 still accepts. */
+  async "/__fixture/appearance/reset"() {
+    requireSuccess(await factory.disconnectAppearance());
+    t3.appearance.sessionValid = true;
+    t3.appearance.setDefaultTheme("ocean");
+  },
+  async "/__fixture/appearance/pair"() {
+    requireSuccess(await factory.pairAppearance({ pairing: t3.appearance.pairingCode }));
+  },
+  "/__fixture/appearance/pairing-code": () => ({ code: t3.appearance.pairingCode }),
+  /** `t3 auth session revoke` from another T3 process: open subscriptions keep streaming. */
+  "/__fixture/appearance/revoke": () => {
+    t3.appearance.sessionValid = false;
+  },
   "/__fixture/approve": () => decideAll("pending", "approve"),
   "/__fixture/revoke": () => decideAll("approved", "revoke"),
   "/__fixture/offline": () => {

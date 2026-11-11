@@ -94,7 +94,76 @@ export interface T3Adapter {
   resumeAuthorization(target: T3Endpoint): Promise<AuthorizationResumption>;
   readEnvironment(target: T3Endpoint): Promise<AgentEnvironment>;
   orchestratorCapabilities(target: T3Endpoint): Promise<readonly T3ProviderCapability[]>;
+  /**
+   * Exchanges a T3 pairing code for a separate `orchestration:read` session and stores it in
+   * place of the endpoint's previous appearance grant. Rejects with `AppearancePairingRejected`
+   * when T3 refuses the code or grants anything but exactly that scope.
+   */
+  pairAppearance(target: T3Endpoint, pairingCode: string): Promise<AppearanceGrant>;
+  /** The endpoint's stored appearance grant, without its token. */
+  readAppearanceGrant(target: T3Endpoint): Promise<AppearanceGrantRecord | null>;
+  /**
+   * Asks T3 whether the stored active grant still authenticates. Rejects when T3 cannot be
+   * reached, so a transient outage is never mistaken for a revocation.
+   */
+  checkAppearanceGrant(target: T3Endpoint): Promise<"active" | "refused">;
+  /** Keeps the grant's record for Settings and deletes its token. */
+  endAppearanceGrant(
+    target: T3Endpoint,
+    reason: "expired" | "revoked",
+  ): Promise<AppearanceGrantRecord | null>;
+  /** Deletes the endpoint's appearance grant. T3 keeps the session until it expires or is revoked. */
+  forgetAppearanceGrant(target: T3Endpoint): Promise<void>;
+  /**
+   * Opens T3's configuration subscription with the stored grant. Rejects when no active grant
+   * exists or the connection cannot open.
+   */
+  watchAppearance(target: T3Endpoint): Promise<AppearanceStream>;
   close(): Promise<void>;
+}
+
+/** A stored appearance grant. `id` is Factory's opaque lineage, never the token. */
+export interface AppearanceGrant {
+  readonly id: string;
+  readonly pairedAt: string;
+  readonly expiresAt: string;
+}
+export type AppearanceGrantRecord =
+  | { readonly status: "active"; readonly grant: AppearanceGrant }
+  | {
+      readonly status: "ended";
+      readonly grant: AppearanceGrant;
+      readonly reason: "expired" | "revoked";
+    };
+export class AppearancePairingRejected extends Error {
+  override readonly name = "AppearancePairingRejected";
+  readonly reason: "invalid-code" | "scope-not-granted" | "unexpected-grant";
+  constructor(reason: AppearancePairingRejected["reason"]) {
+    super(`T3 refused the appearance pairing: ${reason}`);
+    this.reason = reason;
+  }
+}
+
+/**
+ * The only configuration facts Factory keeps from T3: the environment identity of each snapshot,
+ * the environment default theme and the published theme set. Every snapshot replaces the
+ * previous state; the two kinds of update arrive independently and unordered.
+ */
+export type AppearanceEvent =
+  | {
+      readonly type: "snapshot";
+      readonly environmentId: string | null;
+      readonly defaultTheme: string;
+    }
+  | { readonly type: "default"; readonly defaultTheme: string }
+  | {
+      readonly type: "themes";
+      readonly themes: readonly { readonly id: string; readonly name: string }[];
+    };
+export interface AppearanceStream {
+  /** The next event, or null once the connection closed for any reason. */
+  next(): Promise<AppearanceEvent | null>;
+  close(): void;
 }
 
 export interface T3Project {

@@ -30,6 +30,16 @@ id. Those lifecycle states were not captured live and do not prove live harness 
 schemas) construct synthetic transport responses, served by `support/oauth-t3.ts` through
 `support/boundaries-setup.ts`. They are not captured live sessions.
 
+## T3 built-in theme provenance
+
+[`t3-builtin-themes.json`](t3-builtin-themes.json) is the output of T3 Code's own resolver
+(`apps/web/src/themePalette.ts`, `getThemeColorsForMode`) for every built-in theme in both modes at
+upstream revision `d2c25950b4d9183ea342d5d5fc14c326b9e0172a` (MIT, © 2026 T3 Tools Inc.), produced on
+2026-11-11 by bundling that unmodified upstream code with stubs only for its React atom registry and
+server-state atom and running it outside T3. It records all 61 roles; Factory's parity tests compare
+the roles its pinned port reads. Regenerating it for another pin is part of moving the resolver to that
+pin; the harness and its logs stay outside Git.
+
 ## Upgrade fixtures
 
 Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). A second capture,

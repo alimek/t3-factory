@@ -5,6 +5,7 @@
  * before first paint); the desktop app keeps it per installation and serves the page in it.
  */
 import { useSyncExternalStore } from "react";
+import { APPEARANCE_COLOR_TOKENS, type AppearancePresentation } from "@t3-factory/contracts";
 import type { Appearance } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "./desktop-bridge.ts";
 
@@ -23,17 +24,54 @@ function syncThemeColor() {
     ?.setAttribute("content", color);
 }
 
-function apply(appearance: Appearance) {
-  if (appearance === currentAppearance()) return;
+/** Switches every color at once instead of letting each control's color transition run. */
+function recolor(change: () => void) {
   const root = document.documentElement;
-  // Switch every color at once instead of letting each control's color transition run.
   root.dataset.appearanceChanging = "";
-  root.dataset.appearance = appearance;
+  change();
   syncThemeColor();
   // Reading layout commits the new colors before transitions are allowed again.
   void root.offsetHeight;
   delete root.dataset.appearanceChanging;
+}
+
+function apply(appearance: Appearance) {
+  if (appearance === currentAppearance()) return;
+  recolor(() => {
+    document.documentElement.dataset.appearance = appearance;
+  });
   for (const listener of listeners) listener();
+}
+
+const inheritedColorsId = "factory-inherited-colors";
+
+/**
+ * Overlays the inherited halves of `presentation` on the baseline, one rule per mode, so the
+ * local mode keeps choosing between them and a baseline half simply has no rule. `null`
+ * restores Factory's own colors. Values are set through the CSSOM, never parsed as CSS text.
+ */
+export function applyInheritedColors(presentation: AppearancePresentation | null) {
+  recolor(() => {
+    document.getElementById(inheritedColorsId)?.remove();
+    if (!presentation) return;
+    const style = document.createElement("style");
+    style.id = inheritedColorsId;
+    style.dataset.revision = presentation.revision;
+    document.head.append(style);
+    const sheet = style.sheet!;
+    for (const mode of ["light", "dark"] as const) {
+      const half = presentation.modes[mode];
+      if (half.kind !== "inherited") continue;
+      // `html:root` outranks the baseline's `:root[data-appearance]` regardless of order.
+      const index = sheet.insertRule(
+        `html:root[data-appearance="${mode}"] {}`,
+        sheet.cssRules.length,
+      );
+      const rule = sheet.cssRules[index] as CSSStyleRule;
+      for (const token of APPEARANCE_COLOR_TOKENS)
+        rule.style.setProperty(`--${token}`, half.colors[token]);
+    }
+  });
 }
 
 /** Applies the document's mode to browser metadata and follows other tabs of this profile. */

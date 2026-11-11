@@ -14,7 +14,8 @@ import { KeyboardSettings } from "./keyboard-settings.tsx";
 import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
-import { useClientScope } from "../client-scope.ts";
+import { useClientScope, useServerInheritsAppearance } from "../client-scope.ts";
+import { ThemeColorsNote } from "./theme-color-settings.tsx";
 import { RuntimeSettings } from "../routes/runtime.tsx";
 import { reportingSummary, useReportingState } from "../reporting-state.tsx";
 import { SettingsPanel } from "./screen-layout.tsx";
@@ -132,9 +133,14 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   runtime: () => <RuntimeSettings />,
   keyboard: () => <KeyboardSettings />,
   access: () => <AccessSettings />,
-  application: () => <ApplicationSettings />,
+  application: () => <ApplicationPane />,
   "run-images": () => <RunImageSettings />,
 };
+
+function ApplicationPane() {
+  const inheritsAppearance = useServerInheritsAppearance();
+  return <ApplicationSettings appearanceNote={inheritsAppearance && <ThemeColorsNote />} />;
+}
 
 function SectionContent({ tab }: { tab: SettingsSelection["tab"] }) {
   return sectionContent[tab]();

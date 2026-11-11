@@ -2,6 +2,7 @@ import { agentOperations } from "./agent.ts";
 import { flowOperations } from "./flow.ts";
 import { projectOperations, projectServerOperations } from "./project.ts";
 import { connectionOperations } from "./connection.ts";
+import { appearanceOperations } from "./appearance.ts";
 import { runOperations } from "./run.ts";
 import {
   type ClientAccessState,
@@ -20,6 +21,7 @@ export const httpOperations = {
   ...projectOperations,
   ...projectServerOperations,
   ...connectionOperations,
+  ...appearanceOperations,
   ...runOperations,
   ...clientAccessOperations,
   ...clientAccessServerOperations,
@@ -32,6 +34,7 @@ export interface FactoryOperations extends FacadeOperations<
     typeof flowOperations &
     typeof projectOperations &
     typeof connectionOperations &
+    typeof appearanceOperations &
     typeof runOperations &
     typeof clientAccessOperations
 > {

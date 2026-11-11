@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,7 +18,7 @@ const appearanceOptions = [
 ] as const;
 
 /** Local to this installation or browser profile; never sent to the Factory server. */
-function AppearanceSettings() {
+function AppearanceSettings({ note }: { note: ReactNode }) {
   const appearance = useAppearance();
   const [error, setError] = useState("");
   const choose = async (next: Appearance) => setError((await chooseAppearance(next)) ?? "");
@@ -36,6 +36,7 @@ function AppearanceSettings() {
           ? "Saved for this desktop installation. Other devices and browsers keep their own choice."
           : "Saved in this browser profile for this Factory address. Other browsers and devices keep their own choice."}
       </p>
+      {note}
       {error && (
         <p role="status" className="text-sm text-destructive">
           {error}
@@ -48,16 +49,22 @@ function AppearanceSettings() {
 /**
  * Appearance for every client; on desktop also role, remembered server, launch at login and
  * updates. `local` is the gate dialog without a usable server, where only this app can be
- * updated.
+ * updated. `appearanceNote` explains the selected mode's colors where a server provides them.
  */
-export function ApplicationSettings({ local = false }: { local?: boolean }) {
+export function ApplicationSettings({
+  local = false,
+  appearanceNote,
+}: {
+  local?: boolean;
+  appearanceNote?: ReactNode;
+}) {
   return (
     <div className="grid gap-6">
       <div className="grid gap-2">
         <h2 className="text-title font-semibold text-foreground">Application</h2>
         <ApplicationSummary />
       </div>
-      <AppearanceSettings />
+      <AppearanceSettings note={appearanceNote} />
       <DesktopApplicationSettings local={local} />
     </div>
   );

@@ -21,11 +21,14 @@ export type LivePart =
   | { readonly kind: "connection" }
   | { readonly kind: "navigation" }
   | { readonly kind: "run"; readonly runId: string }
-  | { readonly kind: "launchChoices" };
+  | { readonly kind: "launchChoices" }
+  /** Theme colors: optional presentation that never gates mutations. */
+  | { readonly kind: "appearance" };
 
 export type LiveWatch =
   | { readonly rpc: "WatchConnection" }
   | { readonly rpc: "WatchLaunchChoices" }
+  | { readonly rpc: "WatchAppearance" }
   | {
       readonly rpc: "WatchRunView";
       readonly navigation: boolean;
@@ -123,11 +126,11 @@ type Entry = {
 };
 
 /**
- * The connection status subscription, the one view subscription for navigation and Runs, and
- * the composer's launch choices.
+ * The connection status subscription, the one view subscription for navigation and Runs, the
+ * composer's launch choices and theme colors.
  */
-type Channel = "connection" | "view" | "launchChoices";
-const channels: readonly Channel[] = ["connection", "view", "launchChoices"];
+type Channel = "connection" | "view" | "launchChoices" | "appearance";
+const channels: readonly Channel[] = ["connection", "view", "launchChoices", "appearance"];
 
 type Subscription = {
   /** Fences events: only the subscription holding the current token may write. */
@@ -142,8 +145,8 @@ type Subscription = {
 type Session = { connected: boolean; handle: LiveSession | undefined };
 
 function channelOf(part: LivePart): Channel {
-  if (part.kind === "connection") return "connection";
-  return part.kind === "launchChoices" ? "launchChoices" : "view";
+  if (part.kind === "navigation" || part.kind === "run") return "view";
+  return part.kind;
 }
 
 const idleSubscription = (): Subscription => ({
@@ -162,6 +165,7 @@ export class LiveOwner {
     connection: idleSubscription(),
     view: idleSubscription(),
     launchChoices: idleSubscription(),
+    appearance: idleSubscription(),
   };
   private session: Session | null = null;
   private retry: (() => void) | undefined;
@@ -281,6 +285,7 @@ export class LiveOwner {
     if (entries.length === 0) return undefined;
     if (channel === "connection") return { rpc: "WatchConnection" };
     if (channel === "launchChoices") return { rpc: "WatchLaunchChoices" };
+    if (channel === "appearance") return { rpc: "WatchAppearance" };
     const runIds = this.viewRuns()
       .served.flatMap(({ scope: { part } }) => (part.kind === "run" ? [part.runId] : []))
       .sort();
@@ -439,9 +444,15 @@ export class LiveOwner {
     session?.handle?.close();
   }
 
+  /** Theme colors are presentation only: they neither gate mutations nor show synchronizing. */
   private settled() {
     for (const entry of this.entries.values())
-      if (!entry.view.synchronized && !terminal(entry.view.error)) return false;
+      if (
+        entry.scope.part.kind !== "appearance" &&
+        !entry.view.synchronized &&
+        !terminal(entry.view.error)
+      )
+        return false;
     return true;
   }
 
