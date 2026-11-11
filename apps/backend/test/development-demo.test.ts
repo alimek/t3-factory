@@ -1,5 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { restoredDevelopmentDemo } from "./support/development-demo.ts";
+import { factoryHarness } from "./support/factory.ts";
+import { PersistentT3 } from "../../../scripts/dev/persistent-t3.ts";
 
 it("restored demo keeps a worker waiting on its running subagents as normal progress and preserves user edits", async (c) => {
   // Arrange
@@ -34,4 +36,30 @@ it("restored demo keeps a worker waiting on its running subagents as normal prog
   ).toStrictEqual([]);
   expect(flow.value).toStrictEqual(edited);
   expect(runs.value).toHaveLength(count);
+});
+
+it("a Stop the demo simulator holds stays held after the simulator restarts", async (c) => {
+  // Arrange
+  const { processHome } = await factoryHarness(c);
+  const threadId = "held-stop-thread";
+  const runId = `run:thread:${threadId}:ordinal:1`;
+  const t3 = new PersistentT3(processHome, false);
+  t3.executionObservations.set(threadId, {
+    threadId,
+    projectId: "demo-project",
+    workspaceRoot: processHome,
+    link: `t3://threads/${threadId}`,
+    activeRunId: runId,
+    latestRunId: runId,
+    pendingRequestCount: 0,
+    recentRuns: [{ runId, status: "running", ordinal: 1 }],
+  });
+  t3.holdStops([threadId]);
+  const restarted = new PersistentT3(processHome, true);
+
+  // Act
+  await restarted.stopThread({ endpoint: "" }, { threadId, clientRequestId: "settle-stop" });
+
+  // Assert
+  expect(restarted.executionObservations.get(threadId)?.activeRunId).toBe(runId);
 });
