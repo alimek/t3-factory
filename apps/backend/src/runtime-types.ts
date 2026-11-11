@@ -66,6 +66,7 @@ export const SUCCESS_CODES: readonly string[] = [
   "ACCEPTED",
   "RUN_ARCHIVED",
   "RUN_SETTLED",
+  "RUN_SETTLING",
   "BLOCK",
   "RUN",
   "IMAGE",
@@ -82,7 +83,7 @@ export const RUN_SETTLED: RuntimeReply = {
 /** Every report for a Run whose confirmed manual settlement is still in progress succeeds and
  * changes nothing; the Run is not Settled yet and its workers may still be stopping. */
 export const RUN_SETTLING: RuntimeReply = {
-  code: "RUN_SETTLED",
+  code: "RUN_SETTLING",
   state: "settling",
   allowedTransitions: [],
   next: "The user is settling this Run: Factory accepts no new work for it and is stopping its workers, so Factory recorded nothing. Stop work on this Block and end the turn.",

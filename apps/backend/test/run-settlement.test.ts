@@ -976,7 +976,7 @@ it("a report while a confirmed settlement is stopping its worker records nothing
 
   // Assert
   expect(result).toMatchObject({
-    code: "RUN_SETTLED",
+    code: "RUN_SETTLING",
     state: "settling",
     next: "The user is settling this Run: Factory accepts no new work for it and is stopping its workers, so Factory recorded nothing. Stop work on this Block and end the turn.",
   });

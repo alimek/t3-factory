@@ -242,11 +242,11 @@ worker reports.
   tool result whose text says the Run is archived and the worker should stop work on the
   Block; nothing is recorded and no diagnostic attention is created.
 - Every report for a Run whose [manual settlement](#manual-settlement) closed its gate,
-  while stopping or once Settled, is answered with `RUN_SETTLED` before any validation: a
-  successful tool result telling the worker to stop work on the Block. Its state is `settling`
-  while the settlement is in progress, saying Factory accepts no new work and is stopping the
-  workers, and `settled` once the Run is Settled. Nothing is recorded, so a delayed report from
-  stopped work never revives the Run.
+  while stopping or once Settled, is answered before any validation with a successful tool
+  result telling the worker to stop work on the Block: `RUN_SETTLING` (state `settling`) while
+  the settlement is in progress, saying Factory accepts no new work and is stopping the
+  workers, and `RUN_SETTLED` (state `settled`) once the Run is Settled. Nothing is recorded, so
+  a delayed report from stopped work never revives the Run.
 - Any accepted report on an automatically [Settled](#settled-runs) Run, including a repeat of
   the current result, returns the Run to Active in the same transaction and records
   `run-activated` naming the Block.
