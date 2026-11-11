@@ -12,6 +12,10 @@ test("an idle Run composer sends no periodic launch-choice requests", async ({ a
   await app.open("/runs/new");
   await expect(screen.getByRole("button", /^Select Flow: /)).toBeVisible();
   await expect(screen.getByRole("button", /^Select project: /)).toBeVisible();
+  // Either state means the initial reporting reads, Agents included, have answered.
+  await expect(
+    screen.getByRole("link", /^Settings, (Connected|Agent reporting needs attention)$/),
+  ).toBeVisible();
   await resetBrowserRequests(app);
 
   // Act
