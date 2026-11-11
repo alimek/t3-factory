@@ -19,6 +19,10 @@ test("a browser profile's Light choice survives reload and is applied before the
     const record = new MutationObserver(() => {
       if (!document.body) return;
       sessionStorage.setItem("appearanceAtBody", document.documentElement.dataset.appearance!);
+      sessionStorage.setItem(
+        "themeColorAtBody",
+        document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content,
+      );
       record.disconnect();
     });
     record.observe(document, { childList: true, subtree: true });
@@ -33,6 +37,7 @@ test("a browser profile's Light choice survives reload and is applied before the
   // Assert
   await expect(screen.getByRole("radio", "Light")).toBeChecked();
   expect(await browser.evaluate(`sessionStorage.getItem("appearanceAtBody")`)).toBe("light");
+  expect(await browser.evaluate(`sessionStorage.getItem("themeColorAtBody")`)).toBe("#ffffff");
   expect(await browser.evaluate(canvasColor)).toBe("rgb(255, 255, 255)");
   expect(
     await browser.evaluate(`document.querySelector('meta[name="theme-color"]').content`),

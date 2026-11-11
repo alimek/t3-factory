@@ -9,5 +9,8 @@
   } catch {
     // Storage can be unavailable (blocked by the profile); the shipped Dark applies.
   }
-  if (stored === "light") document.documentElement.dataset.appearance = "light";
+  if (stored !== "light") return;
+  document.documentElement.dataset.appearance = "light";
+  // The Light canvas of styles.css, so browser chrome matches the page from first paint.
+  document.querySelector('meta[name="theme-color"]').content = "#ffffff";
 })();

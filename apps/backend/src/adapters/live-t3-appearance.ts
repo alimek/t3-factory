@@ -101,6 +101,13 @@ export function publishedThemes(themes: readonly unknown[]): PublishedT3Theme[] 
   });
 }
 
+/**
+ * T3's default theme id, bounded before Settings names it to every client. An id outside the
+ * published form is cut and marked, so it can name no built-in or published theme.
+ */
+const defaultThemeId = (id: string) =>
+  id === "" || THEME_ID.test(id) ? id : `${id.slice(0, 48)}…`;
+
 /** Keeps only the environment identity, default theme and published theme definitions. */
 function appearanceEvent(value: unknown): AppearanceEvent | undefined {
   switch (field(value, "type")) {
@@ -108,11 +115,15 @@ function appearanceEvent(value: unknown): AppearanceEvent | undefined {
       return {
         type: "snapshot",
         environmentId: stringField(value, "config", "environment", "environmentId") || null,
-        defaultTheme: stringField(value, "config", "settings", "defaultTheme") ?? "",
+        defaultTheme: defaultThemeId(
+          stringField(value, "config", "settings", "defaultTheme") ?? "",
+        ),
       };
     case "settingsUpdated": {
       const defaultTheme = stringField(value, "payload", "settings", "defaultTheme");
-      return defaultTheme === undefined ? undefined : { type: "default", defaultTheme };
+      return defaultTheme === undefined
+        ? undefined
+        : { type: "default", defaultTheme: defaultThemeId(defaultTheme) };
     }
     case "environmentThemesUpdated": {
       const themes = field(value, "payload", "themes");

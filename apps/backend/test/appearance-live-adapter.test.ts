@@ -56,6 +56,24 @@ it("the configuration subscription acknowledges each chunk and follows the defau
   stream.close();
 });
 
+it("a default theme id outside T3's published form reaches Factory cut and unable to name a theme", async (context) => {
+  // Arrange
+  const t3 = await appearanceT3(context);
+  await t3.adapter.pairAppearance(t3.target, t3.state.pairingCode);
+  const stream = await t3.adapter.watchAppearance(t3.target);
+  await stream.next();
+
+  // Act
+  t3.setDefaultTheme("ocean".repeat(1000));
+
+  // Assert
+  expect(await stream.next()).toStrictEqual({
+    type: "default",
+    defaultTheme: `${"ocean".repeat(1000).slice(0, 48)}…`,
+  });
+  stream.close();
+});
+
 it("the published theme set keeps bounded definitions and drops entries that are not themes", async (context) => {
   // Arrange
   const t3 = await appearanceT3(context);
