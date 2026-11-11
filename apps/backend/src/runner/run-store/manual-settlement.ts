@@ -357,6 +357,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
               observedAt: time,
             });
         yield* markSettled(sql, id, "manual", time);
+        yield* sql`UPDATE runtime_reports SET completion_eligible_at=COALESCE(completion_eligible_at,${time}) WHERE run_id=${id}`;
         yield* advanceGeneration(sql, id);
         return true;
       }),

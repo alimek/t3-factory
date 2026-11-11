@@ -505,7 +505,8 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   Human occurrences, pending Wait arrivals (`wait-cancelled`, clearing their messages) and
   waiting Continuation arrivals, settles pending attention as
   `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
-  worker whose Stop was acknowledged and `run-settled` (`manual`), and clears Snooze and Woke.
+  worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
+  completion-eligible as automatic settlement does, and clears Snooze and Woke.
   Uncertain sends keep their state. Native thread settlement follows in the background.
 
 A manually settled Run is never reconciled again: its closed gate ends its work, also after

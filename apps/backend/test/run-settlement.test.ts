@@ -328,6 +328,9 @@ it("settling a Run whose worker finished cancels its held handoff without stoppi
     "finished",
     "not-started",
   ]);
+  expect(result.value.run.reports.map((report) => report.completionEligibleAt)).toStrictEqual([
+    expect.any(String),
+  ]);
   expect(result.value.run.events.at(-1)).toMatchObject({ kind: "run-settled", causeId: "manual" });
   expect(f.t3.threadStops).toStrictEqual([]);
 });
