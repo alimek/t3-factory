@@ -312,6 +312,9 @@ The launch message contains the captured Agent prompt. The worker retrieves the 
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source
 `blockId` and `blockName`, selected `exitName`, `threadLink` and `message`. These `blockId` values name Flow blocks, not Block
 ids. Other visits' reports and unrelated graph neighbors are not inputs to that visit. Flow-input visits have no incoming result.
+A visit a [Wait](runs.md#waits) forwarded has reason `Wait`, no `inputs.results` and the forwarded message, unchanged, in
+`inputs.feedback`; Archive clears it to null. The Wait's local timer calls no T3 operation; the deliveries it creates follow the
+usual authorization and delivery guards.
 A result the source Block replaces after hand-off does not change the inputs of a visit it already started.
 
 `inputs.images` is the ordered manifest of the Run's immutable initial images, with entries

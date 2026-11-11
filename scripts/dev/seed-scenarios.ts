@@ -2,7 +2,15 @@ import { demoImages, demoPullRequest, type DemoImage } from "./seed-support.ts";
 import type { ThreadFacts } from "../../apps/backend/test/support/controlled-thread.ts";
 
 export type DemoFlows = Record<
-  "simple" | "review" | "parallel" | "parallelStart" | "worktree" | "continuation",
+  | "simple"
+  | "review"
+  | "parallel"
+  | "parallelStart"
+  | "worktree"
+  | "continuation"
+  | "wait"
+  | "parallelWait"
+  | "humanWait",
   string
 >;
 type Repository = NonNullable<ThreadFacts["repository"]>;
@@ -25,6 +33,10 @@ export type SeedScenario = {
     ))
   | { state: "result released to two workers"; first: Report; final: Report }
   | { state: "two workers started from one prompt"; repositories: readonly Repository[] }
+  | { state: "result released to a Wait"; result: Report }
+  | { state: "Wait continued now"; result: Report }
+  | { state: "results released to a Wait"; results: readonly [Report, Report] }
+  | { state: "review approved into a Wait"; result: Report; approval: string }
   | { state: "delegated work pending"; repository: Repository; delegations: number }
   | ({ grill: Report; approval: string } & (
       | { state: "continuation prompt sent" }
@@ -183,6 +195,58 @@ export const seedScenarioList: readonly SeedScenario[] = [
       {
         branch: "review/keyboard-accessibility",
         pullRequests: [demoPullRequest(42), demoPullRequest(43)],
+      },
+    ],
+  },
+  {
+    key: "wait-pending",
+    title: "Waiting · Release notes settle before review",
+    flow: "wait",
+    state: "result released to a Wait",
+    prompt:
+      "Draft the release notes for the Atlas search update, then let CI settle before a review.",
+    result: {
+      exit: "Ready for review",
+      message:
+        "Release notes drafted from the merged search changes. Ready for review once CI settles.",
+    },
+  },
+  {
+    key: "approved-wait",
+    title: "Waiting · Approved release held for the window",
+    flow: "humanWait",
+    state: "review approved into a Wait",
+    prompt: "Prepare the Atlas 2.4 release branch; I approve it before the release window opens.",
+    result: {
+      exit: "Ready for review",
+      message: "Release branch prepared with the changelog and version bump. Ready for approval.",
+    },
+    approval: "Approved. Announce it once the release window opens.",
+  },
+  {
+    key: "wait-continued",
+    title: "Working · Hotfix notes reviewed without waiting for CI",
+    flow: "wait",
+    state: "Wait continued now",
+    prompt:
+      "Draft the release notes for the Atlas search hotfix; CI already passed, so the review need not wait.",
+    result: {
+      exit: "Ready for review",
+      message: "Hotfix notes drafted; CI is green on the merged fix. Ready for review now.",
+    },
+  },
+  {
+    key: "wait-arrivals",
+    title: "Waiting · Two reviews held for the morning sync",
+    flow: "parallelWait",
+    state: "results released to a Wait",
+    prompt:
+      "Review the Atlas filters panel for code quality and keyboard accessibility; we decide together at the morning sync.",
+    results: [
+      { exit: "Approved", message: "The filters code is ready; one naming nit is noted inline." },
+      {
+        exit: "Approved",
+        message: "Keyboard navigation works; focus returns to the filter button after closing.",
       },
     ],
   },

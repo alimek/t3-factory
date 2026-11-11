@@ -30,6 +30,7 @@ export function capturedExits(
 const DEFAULT_BLOCK_NAMES: Record<FlowBlock["kind"], string> = {
   agent: "Agent block",
   human: "Human step",
+  wait: "Wait",
   continuation: "Continuation",
 };
 
@@ -50,6 +51,7 @@ export function newBlock(
   };
   if (kind === "agent")
     return { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] };
+  if (kind === "wait") return { ...base, kind, duration: null };
   return kind === "continuation" ? { ...base, kind, prompt: "" } : { ...base, kind };
 }
 

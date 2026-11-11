@@ -7,6 +7,9 @@ import {
   resultReported,
   resultReleasedToSecondWorker,
   resultReleasedToTwoWorkers,
+  resultReleasedToWait,
+  connection,
+  waitBlock,
   workingReported,
   replyTurnObserved,
   settled,
@@ -82,6 +85,26 @@ const factory = server.factory;
 factory.setRuntimeBackendUrl(`http://127.0.0.1:${server.address.port}`);
 await seedDevelopment(factory, t3, home);
 const project = requireSuccess(await factory.listProjects()).projects[0]!;
+// A one-minute Wait lets the Wait journey observe a real forwarding without a long Run.
+const engineer = requireSuccess(await factory.listAgents()).find(
+  (agent) => agent.name === "Demo · Product engineer",
+)!;
+const pauseFlow = requireSuccess(await factory.createFlow({ name: "UI wait · Pause a minute" }));
+requireSuccess(
+  await factory.updateFlow(pauseFlow.id, {
+    name: pauseFlow.name,
+    expectedRevision: pauseFlow.revision,
+    workspace: { mode: "checkout" },
+    graph: {
+      flowInput: flowInput("worker"),
+      blocks: [
+        agentBlock("worker", "Implement change", engineer.id, { x: 320, y: 180 }, [], []),
+        waitBlock("pause", "Pause a minute", { amount: 1, unit: "minutes" }, { x: 700, y: 180 }),
+      ],
+      connections: [connection("worker", "review", "pause")],
+    },
+  }),
+);
 const context = { factory, t3, projectId: project.id };
 const flows = requireSuccess(await factory.listFlows());
 const review = flows.find((f) => f.name === "Demo · Build, review and decide")!;
@@ -97,7 +120,10 @@ async function prepareWorkerRuns() {
       parallel: flow("Demo · Parallel review"),
       parallelStart: flow("Demo · Parallel review from one prompt"),
       worktree: flow("Demo · Build and review in a worktree"),
+      wait: flow("Demo · Build, cool down and review"),
+      parallelWait: flow("Demo · Parallel review held for the sync"),
       continuation: flow("Demo · Grill, spec and tickets"),
+      humanWait: flow("Demo · Approve, then hold for release"),
     },
     { titlePrefix: "UI worker · ", keyNamespace: "ui-worker:development-v1:" },
   );
@@ -354,6 +380,7 @@ const transitions = {
     resultReleasedToSecondWorker(context, workerOf(run)),
   "result released to two workers": (run: RunDetail) =>
     resultReleasedToTwoWorkers(context, workerOf(run)),
+  "result released to a Wait": (run: RunDetail) => resultReleasedToWait(context, workerOf(run)),
   "working reported": (run: RunDetail, message?: string) =>
     workingReported(context, workerOf(run), message),
   "reply turn observed": (run: RunDetail) =>

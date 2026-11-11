@@ -6,22 +6,27 @@ import { now } from "../../time.ts";
 import { guardsHold } from "./guards.ts";
 import type { RunnerDatabase } from "./database.ts";
 import { writeBlockState } from "./blocks.ts";
+import { resultBinding } from "./handoffs.ts";
 import { appendTimelineEvent } from "./steps.ts";
 
-/** Where a Handoff comes from: a Final result version, a Human occurrence's answer, or a message a
- * Continuation passed through (cause `pass:`). */
+/** Where a Handoff comes from: a Final result version, a Human occurrence's answer, a Wait
+ * arrival's forwarding, or a message a Continuation passed through (cause `pass:`). */
 type HandoffSource = {
   readonly cause: string;
   readonly report_id: string | null;
   readonly occurrence_id: string | null;
+  readonly wait_arrival_id: string | null;
   readonly source_block_id: string | null;
 };
 
-/** A Human answer releases the Handoffs it creates, as passing through does. */
-function humanAnswered(sql: SqlClient.SqlClient, runId: string, source: HandoffSource) {
+/** A Human answer or a Wait arrival's forwarding releases the Handoffs it creates, as passing
+ * through does. */
+function directSourceReleased(sql: SqlClient.SqlClient, runId: string, source: HandoffSource) {
   if (passedThrough(source)) return Effect.succeed(true);
   return Effect.map(
-    sql`SELECT id FROM human_occurrences WHERE id=${source.occurrence_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='answered'`,
+    source.wait_arrival_id
+      ? sql`SELECT id FROM wait_arrivals WHERE id=${source.wait_arrival_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='forwarded'`
+      : sql`SELECT id FROM human_occurrences WHERE id=${source.occurrence_id} AND run_id=${runId} AND block_id=${source.source_block_id} AND state='answered'`,
     (rows) => rows.length > 0,
   );
 }
@@ -42,7 +47,7 @@ export function handoffReleased(
 ) {
   return source.report_id
     ? resultReleased(sql, run.context_id, source.report_id)
-    : humanAnswered(sql, run.id, source);
+    : directSourceReleased(sql, run.id, source);
 }
 
 /** A Final result version's worker thread (for a Continuation, the thread its prompt ran on), and
@@ -53,7 +58,7 @@ function releaseSource(sql: SqlClient.SqlClient, reportId: string) {
     sql<{
       current: number;
       thread_id: string | null;
-    }>`SELECT r.id=(SELECT n.id FROM runtime_reports n WHERE n.activation_id=r.activation_id AND n.status='finished' ORDER BY n.rowid DESC LIMIT 1) AS current,COALESCE((SELECT t.thread_id FROM continuation_visits v JOIN run_thread_bindings t ON t.id=v.binding_id WHERE v.activation_id=r.activation_id),b.thread_id) AS thread_id FROM runtime_reports r JOIN run_blocks b ON b.run_id=r.run_id AND b.block_id=r.block_id WHERE r.id=${reportId}`,
+    }>`SELECT r.id=(SELECT n.id FROM runtime_reports n WHERE n.activation_id=r.activation_id AND n.status='finished' ORDER BY n.rowid DESC LIMIT 1) AS current,(SELECT t.thread_id FROM run_thread_bindings t WHERE t.id=${resultBinding(sql, sql.literal("r.activation_id"))}) AS thread_id FROM runtime_reports r WHERE r.id=${reportId}`,
     ([source]) => source,
   );
 }
@@ -156,9 +161,12 @@ export function openRunRelease(database: RunnerDatabase) {
     );
   }
 
-  /** Whether the Human occurrence behind a delivery is answered, read before it is reserved. */
-  const humanSourceAnswered = (runId: string, source: HandoffSource) =>
-    database.transaction((sql) => humanAnswered(sql, runId, source));
-
-  return { releaseWait, releaseFinalResult, humanSourceAnswered };
+  return {
+    releaseWait,
+    releaseFinalResult,
+    /** Whether the Human answer or Wait forwarding behind a delivery is recorded, read before it
+     * is reserved. */
+    directSourceReleased: (runId: string, source: HandoffSource) =>
+      database.transaction((sql) => directSourceReleased(sql, runId, source)),
+  };
 }

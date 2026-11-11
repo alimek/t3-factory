@@ -122,9 +122,9 @@ export function openRunSettlement(database: RunnerDatabase) {
         // A replaced result's held handoffs are cancelled and owe no delivery, nor do idle-worker
         // preparations Runs made before Factory stopped preparing them. A rejected launch is
         // cancelled too, but its Block has no result. An unbound worktree still owes the launches
-        // that join it.
+        // that join it, and a pending Wait arrival still owes its forwarding.
         const pending =
-          yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing' UNION ALL SELECT id FROM continuation_visits WHERE run_id=${id} AND state IN ('sent','queued')`;
+          yield* sql`SELECT id FROM operation_intents WHERE run_id=${id} AND state!='acknowledged' AND NOT (state='cancelled' AND kind IN ('handoff','prepare')) UNION ALL SELECT id FROM human_occurrences WHERE run_id=${id} AND state!='answered' UNION ALL SELECT id FROM wait_arrivals WHERE run_id=${id} AND state='pending' UNION ALL SELECT run_id FROM run_workspaces WHERE run_id=${id} AND state='preparing' UNION ALL SELECT id FROM continuation_visits WHERE run_id=${id} AND state IN ('sent','queued')`;
         if (pending.length) return false;
         const time = yield* now;
         yield* markSettled(sql, id, "automatic", time);

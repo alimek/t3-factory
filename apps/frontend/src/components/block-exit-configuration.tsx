@@ -1,7 +1,12 @@
 import { useId } from "react";
 import { Lock, Plus, Trash2 } from "lucide-react";
 import type { AgentDefinition, BlockExit, FlowBlock, FlowGraph } from "@t3-factory/contracts";
-import { CONTINUATION_EXIT, effectiveExits, inheritedExits } from "@t3-factory/domain-validation";
+import {
+  CONTINUATION_EXIT,
+  effectiveExits,
+  inheritedExits,
+  WAIT_OUTPUT,
+} from "@t3-factory/domain-validation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -25,6 +30,19 @@ export function BlockExitConfiguration({
   agents: readonly AgentDefinition[];
   onEdit: (block: FlowBlock) => void;
 }) {
+  if (block.kind === "wait")
+    return (
+      <section aria-label="Output" className="grid gap-2">
+        <h3 className="text-xs font-semibold text-muted-foreground">Output</h3>
+        <p className="text-xs text-muted-foreground">
+          Each arrival continues here when its wait ends. Every connected block receives it; with no
+          connection the branch ends.
+        </p>
+        <div className="rounded-lg border bg-muted px-3 py-2.5">
+          <Recipients graph={graph} blockId={block.id} exitId={WAIT_OUTPUT.id} />
+        </div>
+      </section>
+    );
   if (block.kind === "continuation") return <ContinuationOutput block={block} graph={graph} />;
   if (block.kind === "human")
     return (

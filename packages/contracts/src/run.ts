@@ -311,6 +311,7 @@ export interface RunDetail extends RunSummary {
     readonly settledAt: string | null;
   }[];
   readonly humanOccurrences: readonly HumanOccurrence[];
+  readonly waitArrivals: readonly WaitArrival[];
   readonly continuationVisits: readonly ContinuationVisit[];
   readonly attention: readonly RunAttention[];
   readonly executions: readonly {
@@ -332,6 +333,9 @@ export interface RunDetail extends RunSummary {
     readonly occurrenceId: string | null;
     readonly sourceBlockId: string | null;
     readonly exitId: string | null;
+    /** The Wait arrival whose forwarding created this Handoff. */
+    readonly waitArrivalId: string | null;
+    readonly origin: WorkerProvenance | null;
     readonly payloadRetained: boolean;
     readonly reference: {
       readonly threadId: string;
@@ -460,6 +464,39 @@ export interface HumanOccurrence {
   readonly exitId: string | null;
 }
 
+/**
+ * A delivery's worker provenance as Run detail shows it: the Run, the Block activation whose
+ * result the message is and that worker's T3 thread. An Agent result establishes it; a Wait
+ * forwards it unchanged. Absent unless both thread and activation are known.
+ */
+export interface WorkerProvenance {
+  readonly runId: string;
+  readonly activationId: string;
+  readonly threadId: string;
+}
+
+/**
+ * One accepted delivery to a Wait, held until its own deadline and then forwarded unchanged to
+ * every recipient of the Wait's output. Parallel and repeated arrivals stay independent.
+ */
+export interface WaitArrival {
+  readonly id: string;
+  readonly blockId: string;
+  readonly incomingIntentId: string;
+  /** `cancelled`: Archive cancelled the arrival before it forwarded. */
+  readonly state: "pending" | "forwarded" | "cancelled";
+  /** `timer`: the deadline elapsed; `user`: Continue now forwarded it early. Null unless forwarded. */
+  readonly forwardedBy: "timer" | "user" | null;
+  /** The retained incoming message; null once no recipient needs it or Archive cleared it. */
+  readonly message: string | null;
+  readonly origin: WorkerProvenance | null;
+  /** When the incoming handoff was released and counting started. */
+  readonly startedAt: string;
+  /** The absolute deadline, fixed when the arrival was recorded. */
+  readonly deadlineAt: string;
+  readonly settledAt: string | null;
+}
+
 export const runOperations = {
   listRunNavigation: operation<never, readonly RunNavigationEntry[]>()({
     method: "GET",
@@ -507,6 +544,14 @@ export const runOperations = {
     method: "POST",
     path: "/api/human-occurrences/:id/answer",
     body: "json",
+  }),
+  /**
+   * Continue now: forwards one pending Wait arrival immediately, as its deadline would, and
+   * disables its timer. An arrival already forwarded or cancelled is a conflict without change.
+   */
+  continueWaitArrival: operation<never, RunDetail>()({
+    method: "POST",
+    path: "/api/wait-arrivals/:id/continue",
   }),
   listAttention: operation<never, readonly RunAttention[]>()({
     method: "GET",

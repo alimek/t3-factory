@@ -3,6 +3,8 @@ import {
   controlledExecution,
   agentBlock,
   humanStep,
+  waitBlock,
+  WAIT_OUTPUT,
   connection,
   flowInput,
 } from "./scenarios.ts";
@@ -175,4 +177,31 @@ export async function validationFlow(context: TestContext) {
     [blockExit("e", "fail", "", false)],
   );
   return { factory, created, block };
+}
+
+/**
+ * A Flow draft whose saved Coder hands "done" to a Wait of `duration` that forwards to Review, a
+ * Human step; `save` replaces the Wait's configuration and the Flow input targets.
+ */
+export async function waitDraft(context: TestContext) {
+  const { harness, factory, created, agent } = await flowWithAgent(context);
+  const graph = (wait: ReturnType<typeof waitBlock>, targets: readonly string[] = ["coder"]) => ({
+    flowInput: flowInput(...targets),
+    blocks: [
+      agentBlock("coder", "Coder", agent.id, { x: 0, y: 0 }, [], []),
+      wait,
+      humanStep("human", "Review", { x: 800, y: 0 }),
+    ],
+    connections: [connection("coder", "done", "pause"), connection("pause", WAIT_OUTPUT, "human")],
+  });
+  const save = (wait: ReturnType<typeof waitBlock>, targets?: readonly string[]) =>
+    factory.updateFlow(created.value.id, {
+      name: created.value.name,
+      expectedRevision: created.value.revision,
+      workspace: created.value.workspace,
+      graph: graph(wait, targets),
+    });
+  const pause = (duration: Parameters<typeof waitBlock>[2]) =>
+    waitBlock("pause", "Cool down", duration, { x: 400, y: 0 });
+  return { harness, factory, agent, flowId: created.value.id, pause, save };
 }

@@ -167,6 +167,9 @@ function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
       handle: ({ parameters, input }) =>
         answer(() => factory.answerHumanOccurrence(parameters.id, input)),
     },
+    continueWaitArrival: {
+      handle: ({ parameters }) => answer(() => factory.continueWaitArrival(parameters.id)),
+    },
     listAttention: {
       handle: () => answer(() => factory.listAttention()),
     },

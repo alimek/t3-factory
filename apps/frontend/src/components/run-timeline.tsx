@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import { capturedExits } from "../flow-graph.ts";
 import { ArrowRight, ChevronDown, ChevronUp, ExternalLink, Flag, History } from "lucide-react";
-import { clockTime } from "./execution-state.tsx";
+import { clockTime, dayAndTime } from "./execution-state.tsx";
 import { BLOCK_KINDS } from "./flow-block.tsx";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,12 @@ function exitLabel(run: RunDetail, blockId: string, exitId: string | null) {
   return exit?.name ?? exitId ?? "an exit";
 }
 
+/** Wait and Continuation outputs are deliberately unnamed, so their routes read without "via". */
+function viaExit(run: RunDetail, blockId: string, exitId: string | null) {
+  const label = exitLabel(run, blockId, exitId);
+  return label ? ` via ${label}` : "";
+}
+
 function intentOf(run: RunDetail, event: RunEvent) {
   return run.intents.find((intent) => intent.id === event.causeId);
 }
@@ -51,7 +57,7 @@ function entered(run: RunDetail, event: RunEvent, kind: keyof typeof threadWords
   const intent = intentOf(run, event);
   const { again, thread } = threadWords[kind];
   const from = intent?.sourceBlockId
-    ? ` from ${nameOf(run, intent.sourceBlockId)} via ${exitLabel(run, intent.sourceBlockId, intent.exitId)}`
+    ? ` from ${nameOf(run, intent.sourceBlockId)}${viaExit(run, intent.sourceBlockId, intent.exitId)}`
     : "";
   const status = event.engineStatus ? ` · ${event.engineStatus}` : "";
   return {
@@ -65,10 +71,9 @@ function entered(run: RunDetail, event: RunEvent, kind: keyof typeof threadWords
 function handedOff(run: RunDetail, event: RunEvent): EventPhrase {
   const intent = intentOf(run, event);
   if (!intent?.sourceBlockId) return { actorId: event.blockId, text: "received a handoff" };
-  const exit = exitLabel(run, intent.sourceBlockId, intent.exitId);
   return {
     actorId: intent.sourceBlockId,
-    text: `handed off to ${nameOf(run, event.blockId)} via ${exit}`,
+    text: `handed off to ${nameOf(run, event.blockId)}${viaExit(run, intent.sourceBlockId, intent.exitId)}`,
   };
 }
 
@@ -92,6 +97,14 @@ function answered(run: RunDetail, event: RunEvent): EventPhrase {
     ? ` · exit ${exitLabel(run, occurrence.blockId, occurrence.exitId)}`
     : "";
   return { actorId: event.blockId, text: `you answered${exit}` };
+}
+
+function waitStarted(run: RunDetail, event: RunEvent): EventPhrase {
+  const arrival = run.waitArrivals.find((item) => item.id === event.causeId);
+  return {
+    actorId: event.blockId,
+    text: arrival ? `wait started · until ${dayAndTime(arrival.deadlineAt)}` : "wait started",
+  };
 }
 
 const attentionWords: Record<RunAttention["kind"], string> = {
@@ -204,6 +217,10 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
   "attention-settled": attentionSettled,
   "operation-cancelled": operationCancelled,
   "human-cancelled": said("question cancelled by Archive"),
+  "wait-started": waitStarted,
+  "wait-forwarded": said("wait elapsed → forwarded"),
+  "wait-continued": said("forwarded early by you"),
+  "wait-cancelled": said("wait cancelled by Archive"),
   "continuation-queued": said("waits behind the prompt"),
   "continuation-prompt-sent": continuationPromptSent,
   "continuation-forwarded": said("response forwarded"),
