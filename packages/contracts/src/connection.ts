@@ -22,7 +22,7 @@ export interface ReportingInstallation {
   /** `unsupported`: the provider has no Factory reporting yet; there is nothing to install. */
   readonly status: "not-installed" | "installed" | "needs-attention" | "unsupported";
   readonly message: string;
-  /** Optional user-invoked launch skill; independent of reporting readiness. */
+  /** Least current state among the optional user-invoked skills; independent of reporting readiness. */
   readonly launchSkill: "current" | "missing" | "outdated" | null;
   readonly runtimeEvidence: "UNVERIFIED" | "ACCEPTED_REPORT";
   readonly actions: ReportingInstallationActions;

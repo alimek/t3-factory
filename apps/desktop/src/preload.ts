@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("factoryDesktop", {
   retryBackend: () => ipcRenderer.invoke(channels.retryBackend),
   setLaunchAtLogin: (enabled: boolean) =>
     ipcRenderer.invoke(channels.setLaunchAtLogin, enabled === true),
+  setMenuBarIcon: (enabled: boolean) =>
+    ipcRenderer.invoke(channels.setMenuBarIcon, enabled === true),
   checkForUpdates: () => ipcRenderer.invoke(channels.checkForUpdates),
   downloadUpdate: () => ipcRenderer.invoke(channels.downloadUpdate),
   installUpdate: () => ipcRenderer.invoke(channels.installUpdate),

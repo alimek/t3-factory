@@ -27,9 +27,12 @@ same conflict in the other direction.
 
 ## Lifecycle
 
-- Closing the last window leaves the server (and its Runs) running. The menu-bar icon
-  (**Open Factory**, **Quit Factory**), the Dock icon and launching the app again
-  reopen the panel.
+- Closing the last window leaves the server (and its Runs) running. The Dock icon and
+  launching the app again reopen the panel.
+- **Settings → General → Show Factory in the menu bar** (desktop only) is off by
+  default. When enabled, a menu-bar icon shows the installation's role and status with
+  **Open Factory** and **Quit Factory**. The choice is stored per installation and
+  applies immediately, without a restart.
 - **Quit** on a server with open Runs asks for confirmation: Factory control stops,
   reports and transitions wait, and T3 work already started may continue. **Cancel**
   keeps everything running. Confirmed Quit shuts the backend down in order and

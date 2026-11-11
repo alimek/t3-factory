@@ -96,25 +96,35 @@ interface). This is unauthenticated development tooling: the Vite proxy reaches 
 Sharing a live Vite session intentionally grants host-local access; restrict its address and port to trusted development devices with tailnet access rules. It does not exercise client approval or TLS. The flag
 changes neither the backend bind, nor the data home, nor Tailscale Serve/Funnel or ACLs. `FACTORY_DEV_HOME` aside, `FACTORY_DEV_HOST` sets an explicit frontend bind and `--tailscale` takes precedence.
 
-## Optional Run launch skill
+## Optional skills
 
 Explicit Install, Repair and Reinstall in **Settings → Agent reporting** distribute
-both the required Factory Block skill and the optional `factory-start-run` skill
-to each supported harness home. Invoke `factory-start-run` yourself in a harness
-session to start a Run with Factory; workers do not need it. Its installation
-state is shown separately and never blocks reporting readiness or Start. The skill
-resolves the conversation's Project, offers the returned Flows, reviews the exact
-prompt and asks for explicit confirmation before it calls
-[`factory_start_run`](t3-integration.md#run-start-tools); that confirmation is
-the skill's instruction, not a server check.
+the required Factory Block skill and two optional skills to each supported harness
+home. You invoke the optional skills yourself, by name, in a harness session; workers
+do not need them and neither runs on its own.
 
-A launch-skill copy that is a symlink, special or hard-linked file is never read or replaced,
-and an unwritable launch-skill location is not written. The target names either problem with its
+- `factory-start-run` starts a Run with Factory. It resolves the conversation's
+  Project, offers the returned Flows, reviews the exact prompt and asks for explicit
+  confirmation before it calls [`factory_start_run`](t3-integration.md#run-start-tools);
+  that confirmation is the skill's instruction, not a server check.
+- `setup-factory` configures a repository's tracker claim, once per repository. It
+  explores the repository and its tracker, proposes an "in progress" label (default
+  `factory:in-progress`), shows a draft of every change and writes only after you
+  confirm: it adds the label to the claim operation in the repository's tracker
+  document and creates the label in the tracker when it is missing. Factory itself
+  never writes to the tracker; workers perform the claim.
+
+The optional skills share one installation status, shown separately from reporting:
+the least current state among their copies. It never blocks reporting readiness or
+Start, and the target's message names the skills that are missing or outdated.
+
+An optional-skill copy that is a symlink, special or hard-linked file is never read or replaced,
+and an unwritable optional-skill location is not written. The target names either problem with its
 manual fix on every recheck, while the required reporting setup still completes. Any other
-failed launch-skill replacement, such as a file locked by flags or an ACL, is named with its error
+failed optional-skill replacement, such as a file locked by flags or an ACL, is named with its error
 until a later setup action writes that copy or Factory restarts.
 
-Startup and app updates do not write harness files. When the launch skill is
+Startup and app updates do not write harness files. When an optional skill is
 missing or outdated, use **Reinstall** (or **Repair** when reporting also needs
 attention), then start a fresh harness session so it discovers the skill.
 

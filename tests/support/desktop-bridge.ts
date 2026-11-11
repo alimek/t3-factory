@@ -36,6 +36,7 @@ export function desktopBridgeScript({
     role: role,
     server: role === "client" ? { url: "https://factory.example", fingerprint: "fixture" } : null,
     launchAtLogin: false,
+    menuBarIcon: false,
     updateChannel: "stable",
     backend: { state: "stopped", message: null },
     minimized: false,
@@ -70,6 +71,11 @@ export function desktopBridgeScript({
     forgetServer: async () => ({ ok: true }),
     retryBackend: async () => ({ ok: true }),
     setLaunchAtLogin: async () => ({ ok: true }),
+    setMenuBarIcon: async (menuBarIcon) => {
+      state = { ...state, menuBarIcon };
+      publish();
+      return { ok: true };
+    },
     checkForUpdates: async () => ({ ok: true }),
     downloadUpdate: async () => {
       state = { ...state, update: { ...state.update, state: "downloaded", progress: 100 } };

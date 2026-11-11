@@ -11,6 +11,7 @@ import {
 } from "./support/reporting.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { FACTORY_START_RUN_SKILL } from "../src/factory-start-run-skill.ts";
+import { SETUP_FACTORY_SKILL } from "../src/setup-factory-skill.ts";
 import { isolatedUserHome } from "./support/reporting-home.ts";
 
 it("installing Claude reporting preserves unrelated user settings", async (context) => {
@@ -41,6 +42,15 @@ it("installing Claude reporting preserves unrelated user settings", async (conte
       "utf8",
     ),
   ).toBe(FACTORY_START_RUN_SKILL);
+  expect(await readFile(join(home, ".claude", "skills", "setup-factory", "SKILL.md"), "utf8")).toBe(
+    SETUP_FACTORY_SKILL,
+  );
+  expect(
+    await readFile(
+      join(harness.processHome, "reporting", "skills", "setup-factory", "SKILL.md"),
+      "utf8",
+    ),
+  ).toBe(SETUP_FACTORY_SKILL);
   expect(saved.theme).toBe("dark");
   expect(saved.mcpServers.other).toStrictEqual({ command: "other" });
 });
@@ -491,10 +501,10 @@ it("Grok installation distributes the launch skill while preserving unrelated co
   expect(await readFile(config, "utf8")).toContain('# keep\nmodel = "sample"\n');
 });
 
-it("a missing launch skill leaves reporting installed and offers Reinstall", async (context) => {
+it("a missing optional skill leaves reporting installed and offers Reinstall", async (context) => {
   // Arrange
   const { factory, home } = await installedReportingFixture(context);
-  await rm(join(home, ".claude", "skills", "factory-start-run", "SKILL.md"));
+  await rm(join(home, ".claude", "skills", "setup-factory", "SKILL.md"));
 
   // Act
   const result = await factory.getReportingInstallations();
@@ -526,11 +536,11 @@ it("an outdated harness launch skill leaves reporting installed", async (context
   });
 });
 
-it("an outdated canonical launch skill leaves reporting installed", async (context) => {
+it("an outdated canonical optional skill leaves reporting installed", async (context) => {
   // Arrange
   const { factory, harness } = await installedReportingFixture(context);
   await writeFile(
-    join(harness.processHome, "reporting", "skills", "factory-start-run", "SKILL.md"),
+    join(harness.processHome, "reporting", "skills", "setup-factory", "SKILL.md"),
     "older skill",
   );
 
@@ -686,13 +696,14 @@ it.runIf(process.platform === "darwin")(
   },
 );
 
-it("a missing optional launch skill does not block Start", async (context) => {
+it("missing optional skills do not block Start", async (context) => {
   // Arrange
   const { f, input } = await prepared(context);
   const targets = await f.getReportingInstallations();
   assert(targets.ok);
   const config = targets.value[0]!.path!;
   await rm(join(config, "..", "skills", "factory-start-run", "SKILL.md"));
+  await rm(join(config, "..", "skills", "setup-factory", "SKILL.md"));
 
   // Act
   const result = await f.startRun(input);

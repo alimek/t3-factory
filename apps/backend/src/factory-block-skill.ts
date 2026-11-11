@@ -23,7 +23,7 @@ Follow these steps on every turn of this thread: the first visit, a later visit,
 
 1. Read the Block with \`factory_get_block\`. Done when it returns the current visit with its state, reason, inputs, exits and allowed reports.
 2. Except on a Request report, which reports its assessment instead: if this visit has no \`working\` report yet, or you are reopening the task after a \`finished\` result, report \`working\` before you start. Each visit needs its own report, even when an earlier visit finished. Done when the call succeeds.
-3. Work from this Agent's prompt, or for a Continuation (reason \`continuation\`) from its prompt, and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. The Run input may reference images as \`[Image N: name]\`; \`inputs.images\` lists them in order with their \`imageId\`, so fetch one with \`factory_get_run_image\` when relevant to your task, not every image automatically. A failed image read changes nothing in Factory, so continue or explain the blocker in your report. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
+3. Work from this Agent's prompt, or for a Continuation (reason \`continuation\`) from its prompt, and the current visit's inputs: the Run input, the result that caused this visit and any feedback. Call \`factory_get_run\` only for wider Run context; other Blocks' latest results do not replace this visit's inputs. The Run input may reference images as \`[Image N: name]\`; \`inputs.images\` lists them in order with their \`imageId\`, so fetch one with \`factory_get_run_image\` when relevant to your task, not every image automatically. A failed image read changes nothing in Factory, so continue or explain the blocker in your report. When you start work on an issue from the repository's tracker, claim it as the repository's tracker document describes: each issue you actually take, when you take it, not ones only planned. If the repository has no tracker document, or the document describes no claim operation, skip the claim and invent no label, command or file. Done when the task is complete, you need the user, or what remains runs outside this turn (CI, review, delegated or background work).
 4. When the task is complete, report \`finished\`. Otherwise end the turn without another report: your \`working\` report stays current. When you need the user, your questions are the final message of the turn; do not follow them with a Factory call or another prompt to reply. Done when the call succeeds and you followed the reply's \`next\` guidance, or when the turn ends with the questions or the open work.
 
 ## Reports
@@ -68,7 +68,7 @@ If reporting still fails, say in chat which report you could not make and the er
 `;
 
 /** Codex keeps the skill next to config.toml. Claude's user config keeps it under `.claude/skills`. */
-export function factorySkillPath(configPath: string, skill: "factory-block" | "factory-start-run") {
+export function factorySkillPath(configPath: string, skill: string) {
   const home = dirname(configPath);
   const nestedClaude = basename(configPath) === ".claude.json" && basename(home) !== ".claude";
   return join(home, ...(nestedClaude ? [".claude"] : []), "skills", skill, "SKILL.md");

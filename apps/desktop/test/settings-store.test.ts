@@ -47,6 +47,7 @@ it("settings saved before appearance existed open Dark and keep the installation
     role: "server",
     server: null,
     launchAtLogin: true,
+    menuBarIcon: false,
     updateChannel: "beta",
     appearance: "dark",
   });
