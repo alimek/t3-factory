@@ -38,6 +38,37 @@ export async function openWithFailedSecondImage(app: App, screen: Screen, browse
   };
 }
 
+/**
+ * Runs `journey` while the Run images listing of project `failingProjectId` fails once and every
+ * later listing, of any filter, waits unanswered. When `journey` ends, passing or failing, the gate
+ * opens for good: held listings and any that arrive later fail at once, so the runner can settle.
+ */
+export async function withHeldRunImageListings(
+  browser: Browser,
+  failingProjectId: string,
+  journey: () => Promise<void>,
+) {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let failed = false;
+  await browser.route(/\/api\/run-images\?projectId=[^&]*$/, async (route) => {
+    if (route.request.method !== "GET") return route.continue();
+    if (!failed && route.request.url.endsWith(`projectId=${failingProjectId}`)) {
+      failed = true;
+      return route.abort();
+    }
+    await opened;
+    return route.abort();
+  });
+  try {
+    await journey();
+  } finally {
+    open();
+  }
+}
+
 export async function expectGalleryImage(
   screen: Screen,
   browser: Browser,
