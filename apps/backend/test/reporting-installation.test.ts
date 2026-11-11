@@ -569,22 +569,30 @@ it("Reinstall restores a missing launch skill and updates the outdated canonical
   expect(await readFile(canonical, "utf8")).toBe(FACTORY_START_RUN_SKILL);
 });
 
-it("Reinstall refuses a symlinked launch skill without modifying its destination", async (context) => {
+it("Repair installs required reporting and leaves a symlinked launch skill unchanged with its explanation", async (context) => {
   // Arrange
-  const { factory, home, targetId } = await installedReportingFixture(context);
+  const { factory, home, config, targetId } = await installedReportingFixture(context);
   const skill = join(home, ".claude", "skills", "factory-start-run", "SKILL.md");
   const destination = join(home, "unrelated.md");
   await rm(skill);
   await writeFile(destination, "preserve");
   await symlink(destination, skill);
+  await writeFile(
+    config,
+    JSON.stringify({
+      mcpServers: { "factory-runtime": { type: "http", url: "http://127.0.0.1:4999/mcp" } },
+    }),
+  );
 
   // Act
   const result = await factory.installReporting({ targetId });
 
   // Assert
-  assert(!result.ok);
-  expect(result.error.message).toMatch(/linked/);
+  assert(result.ok);
+  expect(result.value).toMatchObject({ status: "installed", launchSkill: "outdated" });
+  expect(result.value.message).toContain(skill);
   expect(await readFile(destination, "utf8")).toBe("preserve");
+  expect(await readFile(config, "utf8")).not.toContain("4999");
 });
 
 it("a missing optional launch skill does not block Start", async (context) => {

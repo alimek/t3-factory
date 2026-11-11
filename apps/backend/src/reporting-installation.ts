@@ -58,6 +58,15 @@ async function launchSkillState(
       ? "outdated"
       : "current";
 }
+/** The first launch-skill copy Factory refuses to replace, as an actionable explanation. */
+async function launchSkillConflict(paths: readonly string[]) {
+  for (const path of paths) {
+    const info = await lstat(path).catch(() => undefined);
+    if (info && (!info.isFile() || info.nlink !== 1))
+      return `The optional factory-start-run skill at ${path} is a symlink, special or hard-linked file, which Factory leaves unchanged. Replace or remove it manually, then Reinstall.`;
+  }
+  return undefined;
+}
 async function writeSkill(path: string, text: string) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const before = await readConfig(path);
@@ -178,15 +187,9 @@ const openReportingInstallation = Effect.fn(function* (
     target: ReportingInstallation,
   ): Generator<Effect.Effect<unknown, unknown>, ReportingInstallation, never> {
     if (!target.path) return target;
-    target = {
-      ...target,
-      launchSkill: yield* boundary(() =>
-        launchSkillState([
-          factorySkillPath(target.path!, "factory-start-run"),
-          canonicalLaunchSkill,
-        ]),
-      ),
-    };
+    const launchPaths = [factorySkillPath(target.path, "factory-start-run"), canonicalLaunchSkill];
+    target = { ...target, launchSkill: yield* boundary(() => launchSkillState(launchPaths)) };
+    const launchConflict = yield* boundary(() => launchSkillConflict(launchPaths));
     return yield* Effect.gen(function* (): Generator<
       Effect.Effect<unknown, unknown>,
       ReportingInstallation,
@@ -211,7 +214,7 @@ const openReportingInstallation = Effect.fn(function* (
         message:
           target.launchSkill === "current"
             ? "Configuration installed. Start a fresh session; native approvals, managed restrictions and project overrides still apply."
-            : "Reporting configuration installed. The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run; native approvals, managed restrictions and project overrides still apply.",
+            : `Reporting configuration installed. ${launchConflict ?? "The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run."} Native approvals, managed restrictions and project overrides still apply.`,
       });
     }).pipe(
       Effect.catchCause((cause) => {
@@ -276,22 +279,40 @@ const openReportingInstallation = Effect.fn(function* (
                   writeSkill(factorySkillPath(target.path!, "factory-block"), FACTORY_BLOCK_SKILL),
                 );
                 yield* boundary(() => writeSkill(canonicalSkill, FACTORY_BLOCK_SKILL));
-                yield* boundary(() =>
-                  writeSkill(
-                    factorySkillPath(target.path!, "factory-start-run"),
-                    FACTORY_START_RUN_SKILL,
-                  ),
-                );
-                yield* boundary(() => writeSkill(canonicalLaunchSkill, FACTORY_START_RUN_SKILL));
                 if (after !== before) {
                   yield* boundary(() =>
                     mkdir(dirname(target.path!), { recursive: true, mode: 0o700 }),
                   );
                   yield* boundary(() => replace(target.path!, before, after));
                 }
+                // The optional launch skill never blocks required reporting. A copy Factory may not
+                // replace stays as it is, and inspection explains it on the installed target.
+                const launchPaths = [
+                  factorySkillPath(target.path, "factory-start-run"),
+                  canonicalLaunchSkill,
+                ];
+                const launchFailure = (yield* boundary(() => launchSkillConflict(launchPaths)))
+                  ? undefined
+                  : yield* boundary(async () => {
+                      for (const path of launchPaths)
+                        await writeSkill(path, FACTORY_START_RUN_SKILL);
+                    }).pipe(
+                      Effect.as(undefined),
+                      Effect.catch((error) =>
+                        Effect.succeed(error instanceof Error ? error.message : String(error)),
+                      ),
+                    );
                 const checked = yield* inspect(target);
                 if (checked.status !== "installed") throw Error(checked.message);
-                return { ok: true, value: checked };
+                return {
+                  ok: true,
+                  value: launchFailure
+                    ? {
+                        ...checked,
+                        message: `${checked.message} The optional factory-start-run skill could not be written: ${launchFailure}`,
+                      }
+                    : checked,
+                };
               }).pipe(
                 Effect.uninterruptible,
                 Effect.catchCause((cause) => {
