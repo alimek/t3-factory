@@ -278,13 +278,24 @@ Any harness session with Factory MCP registered can author definitions without a
 - `factory_check_flow` checks the latest saved Flow's readiness using the same graph checks as Studio's **Check readiness**. It does not validate an unsaved draft or establish live execution readiness.
 - `factory_get_agent_capabilities` reads the live T3 catalog of environments, provider instances, models and model options, including each provider's `reporting.supported` flag and explanation.
 
-There are no delete, duplicate or Start Run tools.
+There are no delete or duplicate tools; [Run Start tools](#run-start-tools) start Runs.
 
 Creates and saves use the same definition operations as Studio: the same validation, one immutable revision per accepted write and a required `expectedRevision` on saves. A stale expected revision returns a conflict and appends nothing; read the latest definition, reconcile the edits and save against its revision. Successful replies contain the Agent with its settings status or the Flow with its readiness. Errors flag the tool call as failed and include a code, issue paths and a short next step without echoing arguments.
 
 Agent creates and saves inspect live T3 capabilities and reject a listed provider without Factory reporting support (`harness_unsupported`), matching Studio's disabled provider choice. Model settings are validated structurally; unavailable environments, providers, models or options are reported in `settingsStatus` and gate Start rather than save. Definition changes refresh open Studio views; a conflicting Flow draft uses [Compare latest revision](studio.md#saving-and-readiness).
 
 **Widened local trust.** Factory MCP checks no credentials or caller identity and refuses non-loopback callers through its host-local access boundary. Authoring requires no Block id, approval step or revision authorship marker: any local process can edit Agent and Flow definitions. The Origin check [above](#factory-mcp-and-block-ids) does not authenticate local processes. This extends the one-local-user trust model beyond runtime calls that require knowledge of a Block id.
+
+## Run Start tools
+
+Any harness session with Factory MCP registered can start a text-only Run without a Block id:
+
+- `factory_list_projects` rechecks the T3 connection and Project catalog and lists the Projects of the current connection and environment with their availability. Given `workspaceRoot`, the canonical repository root of a T3 Project (T3's `t3_worktree_status` reports it as `projectWorkspaceRoot`, also from a worktree conversation), it matches that exact path and returns `matched` with the Project id, or explains `none`, `ambiguous` or `unavailable`. Separate clones have separate roots and stay distinct. It never consults Factory's remembered Project selection, names or Git remotes, substitutes another Project or registers one.
+- `factory_start_run` takes `requestId`, `projectId`, `flowId` and the exact prompt text as `input`, and calls the same Start operation as the [composer](runs.md#starting): the same validation and readiness gates, the current saved Flow and Agent revisions at acceptance, the Flow's own workspace setting and asynchronous worker dispatch. The Run title is the prompt's first non-empty line. A rejection returns the actual issues and creates no Task, Run or worker; Factory repairs nothing.
+
+Success is an acceptance receipt: the Run id, number, title, Project and Flow. It does not show that workers started or finished, waits for neither and carries no link. One submission keeps one `requestId`: retrying it with identical arguments returns the same Run, also after a lost reply or a backend restart, because Factory reuses the accepted request's creation time; changed content under that `requestId` conflicts. A new Run, even with the same prompt, needs a new `requestId`. Images and attachments are not accepted here.
+
+**Direct Start authority.** `factory_start_run` starts a Run as soon as it is called. The user-invoked [`factory-start-run` skill](installation.md#optional-run-launch-skill) asks for review and explicit confirmation first, but that gate exists only in the skill's instructions: any local caller of Factory MCP can start Runs, launch workers and spend provider budget without it. The host-local boundary [above](#factory-mcp-and-block-ids) is unchanged; reaching Factory from a phone works by driving a T3 conversation on the Factory host, never by exposing Factory MCP remotely.
 
 ## Reporting authority
 

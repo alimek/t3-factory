@@ -280,7 +280,8 @@ const authoringCalls = (factory: AuthoringOperations): Record<string, [Subject, 
   ],
 });
 
-const textResult = (isError: boolean, reply: unknown): CallToolResult => ({
+/** A Factory tool result: one JSON text item, flagged as an error when the call failed. */
+export const textResult = (isError: boolean, reply: unknown): CallToolResult => ({
   isError,
   content: [{ type: "text", text: JSON.stringify(reply) }],
 });

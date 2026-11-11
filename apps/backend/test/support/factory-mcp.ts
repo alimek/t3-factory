@@ -24,8 +24,10 @@ export async function factoryMcpClient(
     new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
       fetch: async (url, init) => {
         const response = await handler(new Request(url, init));
-        if (lost(init)) throw new TypeError("Response lost");
-        return response;
+        if (!lost(init)) return response;
+        // Factory finishes answering before the reply is dropped.
+        await response.arrayBuffer();
+        throw new TypeError("Response lost");
       },
     }),
   );
