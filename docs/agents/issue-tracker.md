@@ -12,6 +12,7 @@ Write issue titles, bodies, comments, and resolutions in English. Conversations 
 - **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>` (database id, as in **Blocking** below). Without sub-issues, put `Part of #<parent>` at the top of the child body.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
+- **Claim an issue**: `gh issue edit <number> --add-assignee @me --add-label "factory:in-progress"`, once the ownership checks under **Tool discovery and work state** show the issue is available. The label marks the issue as taken in Factory. It is information, not a lock: those ownership checks still decide who may take an issue. The label is never removed; closing the issue is the completion signal.
 - **Close**: `gh issue close <number> --comment "..."`
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
@@ -32,7 +33,8 @@ current state to detect overlapping work; coordinate only with the relevant
 owner. If discovery is inconclusive or T3 tools are unavailable, report that limit
 and obtain ownership confirmation from the user or known owner before claiming
 an unassigned issue. An explicit task assignment supplies that confirmation for
-its scope. Claim an available issue before implementation.
+its scope. Claim an available issue before implementation, as in **Claim an
+issue** above.
 
 For long work, keep one short checkpoint in ignored
 `.e2e/checkpoints/<task-key>.md` in the task's worktree. Use a stable thread
@@ -73,5 +75,5 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Child ticket**: an issue linked to the map as a GitHub sub-issue (see **Make an issue a sub-issue of a parent**). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
 - **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line), an assignee or active work found through **Tool discovery and work state**; first available in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
+- **Claim**: as in **Claim an issue** above, the session's first write.
 - **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
