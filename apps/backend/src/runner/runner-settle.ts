@@ -316,15 +316,11 @@ export function openRunnerSettle(
     return Effect.gen(function* () {
       const settled = yield* store.completeSettlement(
         run,
-        workers.map((worker) => {
-          const latest = reads.get(worker.thread_id)?.latest ?? null;
-          return {
-            blockId: worker.block_id,
-            threadId: worker.thread_id,
-            executionId: latest?.runId ?? null,
-            engineStatus: latest?.status ?? null,
-          };
-        }),
+        workers.map((worker) => ({
+          blockId: worker.block_id,
+          threadId: worker.thread_id,
+          execution: reads.get(worker.thread_id)?.latest ?? null,
+        })),
       );
       if (settled)
         yield* lifecycle.fork(

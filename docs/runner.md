@@ -527,8 +527,10 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   result finished, cancels pending launches, sends and handoffs (`cancelled-on-Settle`), pending
   Human occurrences, pending Wait arrivals (`wait-cancelled`, clearing their messages) and
   waiting Continuation arrivals, settles pending attention as
-  `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
-  worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
+  `manual-settlement`, shows other activated Blocks stopped, records each worker's latest run
+  with the terminal status the completion reads showed (`execution-observed` when it changed),
+  keeping a Problem already recorded and raising no attention, since the Run is never observed
+  again, records `worker-stopped` for each worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
   completion-eligible as automatic settlement does, and clears Snooze and Woke.
   Handoffs remain local and pending until they become a launch or send; only that delivery
   is reserved before calling T3. Human and Wait handoffs are acknowledged locally in the

@@ -403,8 +403,9 @@ after restart. Pending attention settles as `manual-settlement`, activated
 Blocks without a Final result show stopped, and a send whose T3 reply was lost stays uncertain: Factory never resends it and
 keeps no copy of its message. The Run moves to
 **Settled**, Snooze and Woke clear, and Factory best-effort settles the worker threads in T3. The timeline records the
-confirmation and each retry, each Stop request, each worker found stopped and the settlement. Stopping raises no
-execution-failure Problem. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped
+confirmation and each retry, each Stop request, each worker found stopped and the settlement. Each worker's last run keeps
+the status T3 showed when it ended, such as interrupted, with its end time. Stopping raises no execution-failure Problem, and a
+Problem recorded before Settle, such as a failed run, stays. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped
 too, or start after the Run settled; settling does not delete T3 conversations or roll back repository edits.
 
 A manually settled Run's work stays ended: a later report from one of its Blocks, including a delayed one from stopped work, is

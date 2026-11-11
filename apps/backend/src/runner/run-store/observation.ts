@@ -49,6 +49,49 @@ function recordWorkerRepository(
   });
 }
 
+/** One T3 run of a worker thread as a fresh read showed it. */
+type ExecutionRead = WorkerThread["thread"]["recentRuns"][number];
+
+/**
+ * Records `execution` of `scope`'s worker thread: its engine status, ordinal and native request
+ * count, with `execution-observed` when its status changed. A new record belongs to `scope`'s
+ * Block. `problem` replaces the recorded Problem; `"keep"` leaves an existing one and gives a new
+ * record none.
+ */
+export function recordExecution(
+  sql: SqlClient.SqlClient,
+  scope: {
+    readonly runId: string;
+    readonly blockId: string;
+    readonly threadId: string;
+    readonly bindingId: string;
+  },
+  execution: ExecutionRead,
+  nativeRequestCount: number,
+  problem: "execution-failed" | null | "keep",
+  time: string,
+) {
+  return Effect.gen(function* () {
+    const { runId, blockId, threadId, bindingId } = scope;
+    const [previous] = yield* sql<{
+      engine_status: string;
+    }>`SELECT engine_status FROM run_executions WHERE run_id=${runId} AND thread_id=${threadId} AND execution_id=${execution.runId}`;
+    const keep = problem === "keep" ? 1 : 0;
+    const recorded = problem === "keep" ? null : problem;
+    yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,binding_id,engine_status,ordinal,observed_at,problem,native_request_count) VALUES(${runId},${blockId},${threadId},${execution.runId},${bindingId},${execution.status},${execution.ordinal ?? null},${time},${recorded},${nativeRequestCount}) ON CONFLICT(run_id,thread_id,execution_id) DO UPDATE SET engine_status=excluded.engine_status,ordinal=COALESCE(excluded.ordinal,run_executions.ordinal),observed_at=excluded.observed_at,problem=CASE WHEN ${keep}=1 THEN run_executions.problem ELSE excluded.problem END,native_request_count=excluded.native_request_count`;
+    if (previous?.engine_status !== execution.status)
+      yield* appendTimelineEvent(sql, {
+        kind: "execution-observed",
+        runId,
+        blockId,
+        executionId: execution.runId,
+        bindingId,
+        engineStatus: execution.status,
+        observedAt: time,
+      });
+  });
+}
+
 function recordExecutions(
   sql: SqlClient.SqlClient,
   run: RunRow,
@@ -58,23 +101,21 @@ function recordExecutions(
   time: string,
 ) {
   return Effect.gen(function* () {
-    for (const execution of thread.recentRuns) {
-      const [previous] = yield* sql<{
-        engine_status: string;
-      }>`SELECT engine_status FROM run_executions WHERE run_id=${run.id} AND thread_id=${thread.threadId} AND execution_id=${execution.runId}`;
-      const problem = failedRun(execution.status) ? "execution-failed" : null;
-      yield* sql`INSERT INTO run_executions(run_id,block_id,thread_id,execution_id,binding_id,engine_status,ordinal,observed_at,problem,native_request_count) VALUES(${run.id},${block.block_id},${thread.threadId},${execution.runId},${bindingId},${execution.status},${execution.ordinal ?? null},${time},${problem},${thread.pendingRequestCount}) ON CONFLICT(run_id,thread_id,execution_id) DO UPDATE SET engine_status=excluded.engine_status,ordinal=COALESCE(excluded.ordinal,run_executions.ordinal),observed_at=excluded.observed_at,problem=excluded.problem,native_request_count=excluded.native_request_count`;
-      if (previous?.engine_status !== execution.status)
-        yield* appendTimelineEvent(sql, {
-          kind: "execution-observed",
-          runId: run.id,
-          blockId: block.block_id,
-          executionId: execution.runId,
-          bindingId,
-          engineStatus: execution.status,
-          observedAt: time,
-        });
-    }
+    const scope = {
+      runId: run.id,
+      blockId: block.block_id,
+      threadId: thread.threadId,
+      bindingId,
+    };
+    for (const execution of thread.recentRuns)
+      yield* recordExecution(
+        sql,
+        scope,
+        execution,
+        thread.pendingRequestCount,
+        failedRun(execution.status) ? "execution-failed" : null,
+        time,
+      );
   });
 }
 

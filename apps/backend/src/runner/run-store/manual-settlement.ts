@@ -13,6 +13,8 @@ import { currentReports } from "./current-report.ts";
 import { cancelOwedWork } from "./owed-work.ts";
 import type { BlockState } from "./states.ts";
 import { markSettled } from "./settlement.ts";
+import type { WorkerThread } from "../worker-thread.ts";
+import { recordExecution } from "./observation.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 /** Every Block state but working. */
@@ -67,12 +69,12 @@ export type SettlementWorkerRecord = {
   readonly stop_problem: string | null;
 };
 
-/** What the caller's fresh read showed for a worker when it settles the Run. */
+/** What the caller's fresh read showed for a worker when it settles the Run: its latest T3 run,
+ * finished, if T3 showed one. */
 export type SettledWorker = {
   readonly blockId: string;
   readonly threadId: string;
-  readonly executionId: string | null;
-  readonly engineStatus: string | null;
+  readonly execution: WorkerThread["latest"];
 };
 
 const boundWorkerRows = (sql: SqlClient.SqlClient, runId: string) =>
@@ -194,6 +196,34 @@ function recordWorker(
   worker: Pick<BoundWorker, "thread_id" | "block_id">,
 ) {
   return sql`INSERT INTO run_settlement_workers(run_id,attempt,thread_id,block_id,state) VALUES(${runId},${attempt},${worker.thread_id},${worker.block_id},'stopping') ON CONFLICT DO NOTHING`;
+}
+
+/** Records each worker's latest run as the completion reads showed it ended. The Run is never
+ * observed again, so these reads are the last record of how its work ended. A requested Stop
+ * raises no Problem, and one already recorded stays. */
+function recordSettledExecutions(
+  sql: SqlClient.SqlClient,
+  runId: string,
+  workers: readonly SettledWorker[],
+  time: string,
+) {
+  return Effect.gen(function* () {
+    for (const worker of workers) {
+      if (!worker.execution) continue;
+      const [binding] = yield* sql<{
+        id: string;
+      }>`SELECT id FROM run_thread_bindings WHERE run_id=${runId} AND thread_id=${worker.threadId}`;
+      if (binding)
+        yield* recordExecution(
+          sql,
+          { runId, blockId: worker.blockId, threadId: worker.threadId, bindingId: binding.id },
+          worker.execution,
+          0,
+          "keep",
+          time,
+        );
+    }
+  });
 }
 
 export function openRunManualSettlement(database: RunnerDatabase) {
@@ -390,8 +420,9 @@ export function openRunManualSettlement(database: RunnerDatabase) {
    * every bound worker finished. Guards: owner, not Archived, not Settled, the generation, no
    * launch whose outcome is unresolved and, when the Run has workers, its live authorization
    * context. Closes the gate, cancels owed automatic work with the manual-settlement reason,
-   * leaves each reserved or uncertain send uncertain without its payload, records "worker
-   * stopped" for each worker whose Stop T3 acknowledged, settles the Run (clearing Snooze and
+   * leaves each reserved or uncertain send uncertain without its payload, records each worker's
+   * latest run as the reads showed it ended, without raising attention or replacing a recorded
+   * Problem, records "worker stopped" for each worker whose Stop T3 acknowledged, settles the Run (clearing Snooze and
    * Woke) and advances the generation. Answers whether the Run settled. */
   function completeSettlement(run: RunRow, workers: readonly SettledWorker[]) {
     const id = run.id;
@@ -436,6 +467,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
             intentId: send.id,
             observedAt: time,
           });
+        yield* recordSettledExecutions(sql, id, workers, time);
         const stopped = yield* sql<{
           thread_id: string;
         }>`SELECT thread_id FROM run_settlement_workers WHERE run_id=${id} AND attempt=(SELECT attempt FROM run_settlements WHERE run_id=${id}) AND stop_outcome='acknowledged'`;
@@ -445,8 +477,8 @@ export function openRunManualSettlement(database: RunnerDatabase) {
               kind: "worker-stopped",
               runId: id,
               blockId: worker.blockId,
-              executionId: worker.executionId,
-              engineStatus: worker.engineStatus,
+              executionId: worker.execution?.runId ?? null,
+              engineStatus: worker.execution?.status ?? null,
               observedAt: time,
             });
         yield* markSettled(sql, id, "manual", time);

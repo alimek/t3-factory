@@ -474,6 +474,53 @@ it("confirming Settle stops every worker and settles the Run once fresh reads sh
   expect(run.value.attention).toStrictEqual([]);
 });
 
+it("a Run confirmed Settle settled records how T3 showed its stopped work end", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  stopsEndThreads(f.t3);
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(run.value.executions).toStrictEqual([
+    expect.objectContaining({
+      executionId: f.executionId,
+      engineStatus: "interrupted",
+      problem: null,
+      observedEndedAt: expect.any(String),
+    }),
+  ]);
+  expect(run.value.attention).toStrictEqual([]);
+});
+
+it("Settle keeps the execution-failed Problem of a worker run that failed before it", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  allTurnsEnd(f.world, f, "failed");
+  assert((await f.f.reconcileRuns()).ok);
+
+  // Act
+  const result = await f.f.settleRun(f.runId, {});
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.run.lifecycle).toBe("settled");
+  expect(result.value.run.executions).toStrictEqual([
+    expect.objectContaining({
+      executionId: f.executionId,
+      engineStatus: "failed",
+      problem: "execution-failed",
+    }),
+  ]);
+});
+
 it("a manually settled Run leaves a send with a lost T3 reply uncertain and drops its payload", async (c) => {
   // Arrange
   const setup = await prepared(c, { revisit: true });
