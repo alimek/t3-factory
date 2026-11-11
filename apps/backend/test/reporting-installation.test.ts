@@ -654,6 +654,38 @@ it("an unwritable launch-skill location stays explained after Repair installs re
   expect(result.value[0]!.message).toContain(`${directory} is not writable`);
 });
 
+// A non-root user can lock a file against replacement only with macOS file flags.
+it.runIf(process.platform === "darwin")(
+  "a launch-skill copy that cannot be replaced keeps its actual failure after Repair installs reporting",
+  async (context) => {
+    // Arrange
+    const { factory, home, config, targetId } = await installedReportingFixture(context);
+    const skill = join(home, ".claude", "skills", "factory-start-run", "SKILL.md");
+    await writeFile(skill, "older skill");
+    execFileSync("chflags", ["uchg", skill]);
+    context.onTestFinished(() => {
+      execFileSync("chflags", ["nouchg", skill]);
+    });
+    await writeFile(
+      config,
+      JSON.stringify({
+        mcpServers: { "factory-runtime": { type: "http", url: "http://127.0.0.1:4999/mcp" } },
+      }),
+    );
+    assert((await factory.installReporting({ targetId })).ok);
+
+    // Act
+    const result = await factory.getReportingInstallations();
+
+    // Assert
+    assert(result.ok);
+    expect(result.value[0]).toMatchObject({ status: "installed", launchSkill: "outdated" });
+    expect(result.value[0]!.message).toContain(`${skill} could not be replaced`);
+    expect(await readFile(skill, "utf8")).toBe("older skill");
+    expect(await readFile(config, "utf8")).not.toContain("4999");
+  },
+);
+
 it("a missing optional launch skill does not block Start", async (context) => {
   // Arrange
   const { f, input } = await prepared(context);

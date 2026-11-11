@@ -110,7 +110,9 @@ the skill's instruction, not a server check.
 
 A launch-skill copy that is a symlink, special or hard-linked file is never read or replaced,
 and an unwritable launch-skill location is not written. The target names either problem with its
-manual fix on every recheck, while the required reporting setup still completes.
+manual fix on every recheck, while the required reporting setup still completes. Any other
+failed launch-skill replacement, such as a file locked by flags or an ACL, is named with its error
+until a later setup action writes that copy or Factory restarts.
 
 Startup and app updates do not write harness files. When the launch skill is
 missing or outdated, use **Reinstall** (or **Repair** when reporting also needs

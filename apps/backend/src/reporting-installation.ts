@@ -203,6 +203,9 @@ const openReportingInstallation = Effect.fn(function* (
     "factory-start-run",
     "SKILL.md",
   );
+  // The last failed launch-skill replacement per copy, until a later write or inspection finds it
+  // current: inspection cannot predict every failure (file flags, ACLs), so it shows the real one.
+  const launchWriteFailures = new Map<string, string>();
   const semaphore = yield* Semaphore.make(1);
   let closed = false;
   yield* Effect.addFinalizer(() =>
@@ -222,6 +225,10 @@ const openReportingInstallation = Effect.fn(function* (
     if (!target.path) return target;
     const launchPaths = [factorySkillPath(target.path, "factory-start-run"), canonicalLaunchSkill];
     const launch = yield* boundary(() => inspectLaunchSkill(launchPaths));
+    if (launch.state === "current")
+      for (const path of launchPaths) launchWriteFailures.delete(path);
+    const launchProblem =
+      launch.problem ?? launchPaths.map((path) => launchWriteFailures.get(path)).find(Boolean);
     target = { ...target, launchSkill: launch.state };
     return yield* Effect.gen(function* (): Generator<
       Effect.Effect<unknown, unknown>,
@@ -247,7 +254,7 @@ const openReportingInstallation = Effect.fn(function* (
         message:
           target.launchSkill === "current"
             ? "Configuration installed. Start a fresh session; native approvals, managed restrictions and project overrides still apply."
-            : `Reporting configuration installed. ${launch.problem ?? "The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run."} Native approvals, managed restrictions and project overrides still apply.`,
+            : `Reporting configuration installed. ${launchProblem ?? "The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run."} Native approvals, managed restrictions and project overrides still apply.`,
       });
     }).pipe(
       Effect.catchCause((cause) => {
@@ -318,16 +325,28 @@ const openReportingInstallation = Effect.fn(function* (
                   );
                   yield* boundary(() => replace(target.path!, before, after));
                 }
-                // The optional launch skill never blocks required reporting. A copy that is not a
-                // writable regular file stays as it is; inspection explains it on every recheck.
-                const launchPaths = [
+                // The optional launch skill never blocks required reporting. Each copy is written on
+                // its own; writeSkill refuses linked and special files without reading them, and a
+                // failed copy stays as it is, explained by inspection until a later write succeeds.
+                for (const path of [
                   factorySkillPath(target.path, "factory-start-run"),
                   canonicalLaunchSkill,
-                ];
-                if (!(yield* boundary(() => inspectLaunchSkill(launchPaths))).problem)
-                  yield* boundary(async () => {
-                    for (const path of launchPaths) await writeSkill(path, FACTORY_START_RUN_SKILL);
-                  }).pipe(Effect.ignore);
+                ]) {
+                  const failure = yield* boundary(() =>
+                    writeSkill(path, FACTORY_START_RUN_SKILL),
+                  ).pipe(
+                    Effect.as(undefined),
+                    Effect.catch((error) =>
+                      Effect.succeed(error instanceof Error ? error.message : String(error)),
+                    ),
+                  );
+                  if (failure)
+                    launchWriteFailures.set(
+                      path,
+                      `The optional factory-start-run skill at ${path} could not be replaced (${failure}). Fix that file manually, for example its permissions or file flags, then Reinstall.`,
+                    );
+                  else launchWriteFailures.delete(path);
+                }
                 const checked = yield* inspect(target);
                 if (checked.status !== "installed") throw Error(checked.message);
                 return { ok: true, value: checked };
