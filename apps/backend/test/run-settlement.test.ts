@@ -398,6 +398,42 @@ it("settling a Run with a pending Human review cancels it without an answer and 
   ]);
 });
 
+it("an unresolved manual settlement refuses Human answers without asking for input or cancelling the occurrence", async (c) => {
+  // Arrange
+  const setup = await prepared(c, humanReviewFlow);
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
+  turnBegins(f.world, f, "review-follow-up");
+  f.t3.stopSupported = false;
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+  assert((await f.f.reconcileRuns()).ok);
+
+  // Act
+  const result = await f.f.answerHumanOccurrence(f.occurrence.id, { exitId: "approve" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error).toMatchObject({
+    code: "conflict",
+    message: "Factory is settling this Run and stopping its workers, so it accepts no answers.",
+  });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({
+    lifecycle: "active",
+    gateOpen: false,
+    settlement: { state: "unresolved" },
+    humanOccurrences: [{ id: f.occurrence.id, state: "pending", exitId: null }],
+  });
+  const navigation = await f.f.listRunNavigation();
+  assert(navigation.ok);
+  expect(navigation.value[0]).toMatchObject({
+    settlement: "unresolved",
+    attention: { needsInput: false },
+  });
+});
+
 it("confirming Settle stops every worker and settles the Run once fresh reads show them finished", async (c) => {
   // Arrange
   const setup = await prepared(c, fanOutFlow);

@@ -28,7 +28,8 @@ import { clockTime, dayAndTime, executionStateLabel, StatePill } from "./executi
 function blockAttention(run: RunDetail, blockId: string) {
   const pending = run.attention.filter((item) => item.blockId === blockId && !item.settledAt);
   return {
-    needsInput: pending.some((item) => attentionPresentation(item.kind) === "needs-input"),
+    needsInput:
+      !run.settlement && pending.some((item) => attentionPresentation(item.kind) === "needs-input"),
     problem: pending.some((item) => attentionPresentation(item.kind) === "problem"),
   };
 }

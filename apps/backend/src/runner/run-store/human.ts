@@ -7,6 +7,7 @@ import { fingerprint } from "../runner-utils.ts";
 import { now } from "../../time.ts";
 import { settleHumanAttention } from "./attention.ts";
 import { guardsHold } from "./guards.ts";
+import { readRunSettlement } from "./manual-settlement.ts";
 import { createHandoffs, storedProvenance } from "./handoffs.ts";
 import type { DeliveryRecord } from "./records.ts";
 import { readRunRow, type RunnerDatabase } from "./database.ts";
@@ -20,7 +21,7 @@ export function openRunHuman(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
 
   /** Answers Human occurrence `id`. Guards: this backend owns the database and the gate is open
-   * (otherwise the Run, Archived or settled by the user, accepts no answers). The exit and its
+   * (otherwise the Run accepts no answers during manual settlement or after Archive). The exit and its
    * required message are validated next, because the answer's fingerprint needs them; only then
    * is an occurrence already answered with the same answer acknowledged without change, and any
    * other settlement a conflict. An answer settles the occurrence and its attention, sets the
@@ -49,7 +50,9 @@ export function openRunHuman(database: RunnerDatabase) {
             if (!(yield* guardsHold(sql, ownerToken, runId, { owner: true, gateOpen: true })))
               return failure(
                 "conflict",
-                "This Run is archived or settled by you, so it accepts no answers.",
+                (yield* readRunSettlement(sql, runRow))
+                  ? "Factory is settling this Run and stopping its workers, so it accepts no answers."
+                  : "This Run is archived or settled by you, so it accepts no answers.",
               );
             if (!occurrence) return failure("not_found", "This Human occurrence does not exist.");
             const exit = HUMAN_EXITS.find((candidate) => candidate.id === exitId);

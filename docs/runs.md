@@ -351,7 +351,10 @@ confirmation changes nothing and sends no Stop. An ordinary Settle request never
 confirmation is needed.
 
 Confirming holds the Run at once: nothing new is launched, sent, released or delivered, no Wait forwards (at its deadline or
-through **Continue now**), and Human answers and **Request report** are refused. Factory then asks T3 to Stop each worker thread that is still unfinished, with its delegated and background work,
+through **Continue now**), and Human answers and **Request report** are refused. While settlement is stopping or unresolved,
+Human occurrences stay pending until settlement succeeds, but their answer forms are replaced by a settlement note and the Run
+shows settlement progress instead of **Needs input**. Refused answers explain that Factory is settling the Run and stopping its workers.
+Factory then asks T3 to Stop each worker thread that is still unfinished, with its delegated and background work,
 and settles only once fresh reads confirm every worker finished; a Stop acknowledgement is not enough. Until then the Run stays
 Active and its settlement shows **stopping**, with each worker's progress. A worker shows **not resolved** when T3 does not
 support or accept Stop, cannot show the thread in the Run's project, workspace and authorization, or still shows it unfinished

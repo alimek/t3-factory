@@ -606,7 +606,9 @@ function visitSpan(visit: ReturnType<typeof blockVisits>[number]) {
 function blockAttentionLabel(run: RunDetail, blockId: string) {
   const pending = run.attention.filter((item) => item.blockId === blockId && !item.settledAt);
   const labels = [
-    pending.some((item) => attentionPresentation(item.kind) === "needs-input") && "Needs input",
+    !run.settlement &&
+      pending.some((item) => attentionPresentation(item.kind) === "needs-input") &&
+      "Needs input",
     pending.some((item) => attentionPresentation(item.kind) === "problem") && "Problem",
   ].filter(Boolean);
   return labels.length ? labels.join(" · ") : "None";

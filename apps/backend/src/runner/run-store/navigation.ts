@@ -102,6 +102,7 @@ export function openRunNavigation(database: RunnerDatabase) {
               const matters = mattersByRun.get(row.id) ?? [];
               const lifecycle = runLifecycle(row);
               const active = lifecycle === "active";
+              const settlement = settlements.get(row.id) ?? null;
               return {
                 id: row.id,
                 number: row.number,
@@ -120,14 +121,16 @@ export function openRunNavigation(database: RunnerDatabase) {
                   faviconUrl: projectFaviconUrl(row.project_id, row.favicon_path),
                 },
                 lifecycle,
-                settlement: settlements.get(row.id) ?? null,
+                settlement,
                 blocks: byRun.get(row.id) ?? [],
                 presentation: {
                   snoozed: active && !!row.snoozed,
                   woke: active && !!row.woke,
                 },
                 attention: {
-                  needsInput: matters.some((matter) => matter.presentation === "needs-input"),
+                  needsInput:
+                    settlement === null &&
+                    matters.some((matter) => matter.presentation === "needs-input"),
                   problem: matters.some((matter) => matter.presentation === "problem"),
                   matters,
                 },
