@@ -135,7 +135,9 @@ its current theme-color source (the connection's T3 environment, the active gran
 pin), both of which the server tells only the host panel and approved clients. A client reads it
 only after that answer, for the same server and exactly that source, before the grant's expiry and
 when it is still exactly a sanitized presentation; after a disconnect, another pairing or another
-T3 source it shows Factory's colors until live delivery answers. A matching snapshot is shown
+T3 source it shows Factory's colors until live delivery answers. The same holds for a client that
+stays open through a reconnect: when the access check after it declares another source, the colors
+it was showing end there. A matching snapshot is shown
 until live delivery answers and while offline, and switching Light and Dark stays immediate. Whatever the server publishes next replaces the snapshot, and a
 presentation without colors (expiry, revocation, disconnect, another T3 source, no inherited theme)
 removes it. A client whose Factory access is missing, pending, denied or revoked deletes it without

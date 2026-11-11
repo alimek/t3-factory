@@ -21,6 +21,24 @@ export function profileStorage(): ProfileStorage | null {
 }
 
 /**
+ * The colors a client may keep showing once its server declares `source`: only those that came
+ * from exactly that T3 environment, grant and resolver. A disconnect, another pairing or
+ * another T3 source therefore ends them at the access check, before live delivery answers.
+ */
+export function colorsOfSource(
+  presentation: AppearancePresentation | null,
+  source: AppearanceSource | null,
+): AppearancePresentation | null {
+  return presentation &&
+    source &&
+    presentation.environmentId === source.environmentId &&
+    presentation.grant.id === source.grantId &&
+    presentation.resolverPin === source.resolverPin
+    ? presentation
+    : null;
+}
+
+/**
  * The snapshot to show for `serverId`, or null: one stored for another Factory server, from
  * another source than the server's current `source` (its T3 environment, grant and resolver),
  * past its grant's expiry or not exactly a sanitized presentation is never used. Call this only
@@ -36,15 +54,9 @@ export function cachedColors(
     const stored: unknown = JSON.parse(storage?.getItem(storageKey) ?? "null");
     if (typeof stored !== "object" || stored === null) return null;
     const { version, serverId: server, presentation } = stored as Record<string, unknown>;
-    if (version !== 1 || server !== serverId || !source) return null;
-    const snapshot = parseAppearancePresentation(presentation);
-    return snapshot &&
-      snapshot.environmentId === source.environmentId &&
-      snapshot.grant.id === source.grantId &&
-      snapshot.resolverPin === source.resolverPin &&
-      now < Date.parse(snapshot.grant.expiresAt)
-      ? snapshot
-      : null;
+    if (version !== 1 || server !== serverId) return null;
+    const snapshot = colorsOfSource(parseAppearancePresentation(presentation), source);
+    return snapshot && now < Date.parse(snapshot.grant.expiresAt) ? snapshot : null;
   } catch {
     return null;
   }

@@ -1,5 +1,10 @@
 import { assert, expect, it } from "vite-plus/test";
-import { cachedColors, forgetColors, rememberColors } from "../src/inherited-colors-cache.ts";
+import {
+  cachedColors,
+  colorsOfSource,
+  forgetColors,
+  rememberColors,
+} from "../src/inherited-colors-cache.ts";
 import { oceanPresentation, memoryStorage } from "./support/inherited-colors.ts";
 
 const NOW = Date.parse("2026-11-11T12:00:00.000Z");
@@ -50,6 +55,32 @@ it.each([
 
   // Assert
   expect(cached).toBe(null);
+});
+
+it("a mounted client keeps its theme colors when the server declares the same source again", () => {
+  // Arrange
+  const shown = oceanPresentation(LATER);
+
+  // Act
+  const kept = colorsOfSource(shown, { ...SOURCE });
+
+  // Assert
+  expect(kept).toBe(shown);
+});
+
+it.each([
+  ["has no theme-color source any more", null],
+  ["follows another T3 environment", { ...SOURCE, environmentId: "environment-2" }],
+  ["was paired again with another grant", { ...SOURCE, grantId: "grant-2" }],
+])("a mounted client drops its theme colors when the server %s", (_, source) => {
+  // Arrange
+  const shown = oceanPresentation(LATER);
+
+  // Act
+  const kept = colorsOfSource(shown, source);
+
+  // Assert
+  expect(kept).toBe(null);
 });
 
 it("cached theme colors are not reused once their grant has expired", () => {

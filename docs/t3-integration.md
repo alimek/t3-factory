@@ -105,7 +105,10 @@ for. A T3 revocation made from another process does not close an
 open socket, so Factory asks T3's session endpoint whether the grant still authenticates on every close and on
 every connection-check interval while connected. An unauthenticated answer ends the grant as revoked (as expired
 within a minute of its expiry); a request that cannot reach T3 is a transient outage. A closed subscription shows
-**Connecting** and reopens on the next interval, never in a loop with T3's closes.
+**Connecting** and reopens on the next interval, never in a loop with T3's closes. A socket can also stop
+delivering without closing. T3 sends nothing while the theme is unchanged, so Factory sends the protocol's Ping
+every 30 seconds; a subscription that delivered no frame since the previous Ping is ended and handled like a
+closed one. Controlled tests cover this; a real half-open network path is not exercised.
 
 **Resolution.** Built-in T3 themes (`t3-chat`, `grove`, `ocean`, `ember`, `iris` and their legacy aliases) and
 published theme definitions resolve through one bounded resolver ported from T3 Code (MIT, © 2026 T3 Tools Inc.)

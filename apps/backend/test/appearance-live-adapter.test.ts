@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { AppearancePairingRejected } from "../src/adapters/t3.ts";
-import { appearanceT3 } from "./support/appearance-t3.ts";
+import { appearanceT3, livenessClock } from "./support/appearance-t3.ts";
 
 it("pairing stores an owner-only orchestration:read grant and returns no token", async (context) => {
   // Arrange
@@ -71,6 +71,45 @@ it("a default theme id outside T3's published form reaches Factory cut and unabl
     type: "default",
     defaultTheme: `${"ocean".repeat(1000).slice(0, 48)}…`,
   });
+  stream.close();
+});
+
+it("a subscription that stops delivering without closing is ended, so Factory checks the grant and subscribes again", async (context) => {
+  // Arrange
+  const clock = livenessClock(context);
+  const t3 = await appearanceT3(context);
+  await t3.adapter.pairAppearance(t3.target, t3.state.pairingCode);
+  const stream = await t3.adapter.watchAppearance(t3.target);
+  await stream.next();
+  t3.state.silent = true;
+
+  // Act
+  clock.pass(2);
+
+  // Assert
+  expect(await stream.next()).toBe(null);
+});
+
+it("a quiet subscription whose T3 still answers stays open", async (context) => {
+  // Arrange
+  const clock = livenessClock(context);
+  const t3 = await appearanceT3(context);
+  await t3.adapter.pairAppearance(t3.target, t3.state.pairingCode);
+  const stream = await t3.adapter.watchAppearance(t3.target);
+  await stream.next();
+  const firstAnswer = t3.answeredPing();
+  clock.pass(1);
+  await firstAnswer;
+  // The answer reaches Factory while it makes its usual grant check.
+  await t3.adapter.checkAppearanceGrant(t3.target);
+  const secondAnswer = t3.answeredPing();
+
+  // Act
+  clock.pass(1);
+
+  // Assert
+  await secondAnswer;
+  expect(t3.openSubscriptions()).toBe(1);
   stream.close();
 });
 

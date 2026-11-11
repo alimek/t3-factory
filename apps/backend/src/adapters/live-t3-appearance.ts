@@ -136,23 +136,47 @@ function appearanceEvent(value: unknown): AppearanceEvent | undefined {
   }
 }
 
+/**
+ * How often a subscription is asked for a sign of life. T3 sends nothing while the theme is
+ * unchanged but answers the protocol's Ping, so a healthy quiet socket is never mistaken for a
+ * dead one.
+ */
+const LIVENESS_MS = 30_000;
+
 /** T3's Effect RPC frames over one WebSocket, as one subscription's event queue. */
 class ConfigurationStream implements AppearanceStream {
   private readonly queue: (AppearanceEvent | null)[] = [];
   private waiter: ((event: AppearanceEvent | null) => void) | undefined;
   private ended = false;
   private readonly socket: WebSocket;
+  /** Whether T3 sent any frame since the last Ping. */
+  private heard = true;
+  private readonly liveness: ReturnType<typeof setInterval>;
 
   constructor(socket: WebSocket) {
     this.socket = socket;
+    this.liveness = setInterval(() => this.probe(), LIVENESS_MS);
     socket.addEventListener("message", (message) => this.receive(message.data));
     socket.addEventListener("close", () => this.push(null));
     socket.addEventListener("error", () => this.close());
   }
 
+  /**
+   * A socket can stop delivering without closing. One that sent nothing since the last Ping
+   * is ended like a closed one, so the grant check and a new subscription follow.
+   */
+  private probe() {
+    if (!this.heard || this.socket.readyState !== WebSocket.OPEN) return this.close();
+    this.heard = false;
+    this.socket.send(JSON.stringify({ _tag: "Ping" }));
+  }
+
   private push(event: AppearanceEvent | null) {
     if (this.ended) return;
-    if (event === null) this.ended = true;
+    if (event === null) {
+      this.ended = true;
+      clearInterval(this.liveness);
+    }
     const wake = this.waiter;
     this.waiter = undefined;
     if (wake) wake(event);
@@ -160,6 +184,7 @@ class ConfigurationStream implements AppearanceStream {
   }
 
   private receive(data: unknown) {
+    this.heard = true;
     if (typeof data !== "string" || data.length > MAX_FRAME_CHARACTERS) return this.close();
     for (const line of data.split("\n")) if (line.trim() && !this.handle(line)) return this.close();
   }

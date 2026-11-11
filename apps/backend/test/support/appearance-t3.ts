@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { vi } from "vite-plus/test";
 import { WebSocketServer, type WebSocket } from "ws";
 import { LiveT3Adapter } from "../../src/adapters/live-t3.ts";
 
@@ -24,7 +25,10 @@ export async function appearanceT3(context: TestContext) {
     authenticated: true,
     environmentId: "env-live-1",
     defaultTheme: "ocean",
+    /** True once the connection stops delivering in either direction without closing. */
+    silent: false,
   };
+  const pings: (() => void)[] = [];
   const authorized = (request: IncomingMessage) =>
     request.headers.authorization === `Bearer ${state.token}`;
   const server = createServer((request, response) => {
@@ -72,7 +76,12 @@ export async function appearanceT3(context: TestContext) {
       };
       subscriptions.push({ ws, send });
       ws.on("message", (data: Buffer) => {
+        if (state.silent) return;
         const frame = JSON.parse(data.toString()) as { _tag: string };
+        if (frame._tag === "Ping") {
+          ws.send(JSON.stringify({ _tag: "Pong" }));
+          pings.shift()?.();
+        }
         if (frame._tag === "Ack") {
           subscription.awaitingAck = false;
           const next = subscription.held.shift();
@@ -114,6 +123,14 @@ export async function appearanceT3(context: TestContext) {
     target: { endpoint },
     credentialsDirectory,
     stop,
+    /** Subscriptions T3 still holds open. */
+    openSubscriptions() {
+      return subscriptions.filter(({ ws }) => ws.readyState === ws.OPEN).length;
+    },
+    /** Resolves once T3 has answered the subscription's next Ping. */
+    answeredPing() {
+      return new Promise<void>((resolve) => pings.push(resolve));
+    },
     /** T3 streams its whole published theme set to every open subscription. */
     publishThemes(themes: unknown[]) {
       for (const { send } of subscriptions)
@@ -125,4 +142,14 @@ export async function appearanceT3(context: TestContext) {
         send({ version: 1, type: "settingsUpdated", payload: { settings: { defaultTheme } } });
     },
   };
+}
+
+/**
+ * Drives the subscription's liveness checks by hand: `pass(n)` lets `n` check intervals elapse
+ * while sockets and requests stay real.
+ */
+export function livenessClock(context: TestContext) {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  context.onTestFinished(() => void vi.useRealTimers());
+  return { pass: (intervals: number) => void vi.advanceTimersByTime(intervals * 30_000) };
 }
