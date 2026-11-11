@@ -1,5 +1,4 @@
-import { SettlementWorkers } from "../components/settle-run.tsx";
-import { getSidebarNavigation } from "../sidebar-navigation.ts";
+import { RetryRunSettlement, SettlementWorkers } from "../components/settle-run.tsx";
 import { MutationGate } from "@/client-gate";
 import { RootWork } from "../components/run-coordination-controls.tsx";
 import { RunRepositories } from "../components/run-repositories.tsx";
@@ -306,13 +305,7 @@ function RunDetailView({
                 Automatic work is held until every worker is confirmed finished.
               </p>
               <SettlementWorkers workers={run.settlement.workers} />
-              {run.settlement.state === "unresolved" && (
-                <MutationGate>
-                  <Button onClick={() => getSidebarNavigation().actOnRun(run.id, "settle")}>
-                    Retry
-                  </Button>
-                </MutationGate>
-              )}
+              {run.settlement.state === "unresolved" && <RetryRunSettlement id={run.id} />}
             </section>
           )}
           <RunTimeline run={run} selectedBlockId={selected} />

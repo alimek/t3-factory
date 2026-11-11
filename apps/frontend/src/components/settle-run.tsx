@@ -127,3 +127,37 @@ export function useSettleRun() {
     ),
   };
 }
+
+/** Run detail can retry even when navigation filters out its Run. */
+export function RetryRunSettlement({ id }: { id: string }) {
+  const { settle, dialog } = useSettleRun();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function retry() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await settle(id, true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not settle the Run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <MutationGate>
+        <Button disabled={busy} onClick={() => void retry()}>
+          {busy ? "Settling…" : "Retry"}
+        </Button>
+      </MutationGate>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {dialog}
+    </>
+  );
+}

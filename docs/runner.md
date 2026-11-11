@@ -514,6 +514,10 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
   worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
   completion-eligible as automatic settlement does, and clears Snooze and Woke.
+  Handoffs remain local and pending until they become a launch or send; only that delivery
+  is reserved before calling T3. Human and Wait handoffs are acknowledged locally in the
+  transaction creating their occurrence or arrival. A failed preparation does not reserve
+  the handoff, so manual settlement cancels it with the other pending work.
   Each reserved or uncertain send stays uncertain, records `operation-unresolved` with a
   problem saying Factory never confirmed whether T3 received it, and loses its payload. T3 offers
   no read of a send's outcome; only a same-key replay can resolve it, and a replay into a

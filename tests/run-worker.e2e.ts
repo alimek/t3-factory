@@ -557,6 +557,10 @@ test("an unresolved settlement shows worker problems and retries to Settled", as
   const before = await readHistoryRun(app.baseUrl, found.id);
   assert(before.settlement?.workers[0]?.problem);
   await expect(progress).toContainText(before.settlement.workers[0].problem);
+  await screen.getByRole("textbox", "Search Run titles", { exact: true }).fill("no matching Run");
+  await expect(
+    screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(found.title)),
+  ).toHaveCount(0);
   await app.screenshot("settlement-unresolved");
 
   // Act
