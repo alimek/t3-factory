@@ -95,7 +95,13 @@ function acceptStartRecords(
     if (duplicate)
       return duplicate.request_fingerprint === plan.requestFingerprint
         ? { ok: true as const, value: duplicate.id }
-        : failure("conflict", "Start key content conflicts.");
+        : failure("conflict", "Start key content conflicts.", [
+            {
+              code: "start_key_conflict",
+              path: "requestId",
+              message: "This Start request was accepted with other content.",
+            },
+          ]);
     const conflict = yield* startConfigurationConflict(sql, plan);
     if (conflict) return conflict;
     const unstaged = yield* stagedManifestProblem(sql, plan.prompt.images, hasFile);

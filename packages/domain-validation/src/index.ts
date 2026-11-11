@@ -34,6 +34,15 @@ import {
 
 export const TASK_TITLE_LIMIT = 500;
 
+/** The automatic Run title: the prompt text's first non-empty line, trimmed and bounded. */
+export function promptTitle(text: string): string | undefined {
+  const firstLine = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return firstLine?.slice(0, TASK_TITLE_LIMIT);
+}
+
 /** Run navigation compares creation times as text, so only `Date.toISOString()` output is valid. */
 export function isCanonicalTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
