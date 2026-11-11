@@ -24,6 +24,8 @@ export interface DesktopSettings {
   readonly server: RememberedServer | null;
   /** Off by default; set only by an explicit user choice. */
   readonly launchAtLogin: boolean;
+  /** Off by default; the menu-bar icon is shown only after an explicit user choice. */
+  readonly menuBarIcon: boolean;
   /** Null until chosen: the installation follows the track of the build it runs. */
   readonly updateChannel: UpdateChannel | null;
 }
@@ -33,6 +35,7 @@ const initialSettings: DesktopSettings = {
   role: null,
   server: null,
   launchAtLogin: false,
+  menuBarIcon: false,
   updateChannel: null,
 };
 
@@ -61,12 +64,14 @@ function parseSettings(raw: unknown): DesktopSettings | undefined {
   const role = value.role === "server" || value.role === "client" ? value.role : null;
   const server = value.server === null || value.server === undefined ? null : value.server;
   if (server !== null && !isServer(server)) return undefined;
-  // The update channel was added within version 1; files without it follow the build's channel.
+  // The update channel and menu-bar icon were added within version 1; files without them
+  // follow the build's channel and keep the icon hidden.
   return {
     version: 1,
     role,
     server,
     launchAtLogin: value.launchAtLogin === true,
+    menuBarIcon: value.menuBarIcon === true,
     updateChannel:
       value.updateChannel === "stable" || value.updateChannel === "beta"
         ? value.updateChannel

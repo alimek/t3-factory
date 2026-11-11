@@ -21,6 +21,8 @@ export interface DesktopState {
     readonly message: string | null;
   };
   readonly launchAtLogin: boolean;
+  /** The macOS menu-bar icon is shown; off until the user turns it on. */
+  readonly menuBarIcon: boolean;
   /** The release track this installation updates from. */
   readonly updateChannel: UpdateChannel;
   readonly update: ApplicationUpdate;
@@ -94,6 +96,7 @@ export interface FactoryDesktop {
   forgetServer(): Promise<DesktopResult>;
   retryBackend(): Promise<DesktopResult>;
   setLaunchAtLogin(enabled: boolean): Promise<DesktopResult>;
+  setMenuBarIcon(enabled: boolean): Promise<DesktopResult>;
   checkForUpdates(): Promise<DesktopResult>;
   downloadUpdate(): Promise<DesktopResult>;
   /** Installs a downloaded update confirmed in the upgrade review; never on an unrelated Quit. */
