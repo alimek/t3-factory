@@ -13,3 +13,8 @@ export function wcagContrast(first: string, second: string) {
   ];
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+/** The weakest WCAG contrast `text` has on any of the `surfaces` it is drawn on. */
+export function lowestContrast(text: string, surfaces: readonly string[]) {
+  return Math.min(...surfaces.map((surface) => wcagContrast(text, surface)));
+}

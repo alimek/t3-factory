@@ -1,7 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { presentThemeModes } from "../src/appearance/palette-mapping.ts";
 import { resolveT3Theme, type T3ThemePalette } from "../src/appearance/t3-theme-palettes.ts";
-import { wcagContrast } from "./support/contrast.ts";
+import { lowestContrast, wcagContrast } from "./support/contrast.ts";
 
 /** T3's built-in Ocean theme as the pinned resolver reads it. */
 function builtInOcean() {
@@ -46,25 +46,40 @@ it("a built-in palette maps T3 surfaces, text, accent and focus to Factory roles
   expect(modes.light.colors["sidebar-accent"]).not.toBe(modes.light.colors.primary);
 });
 
-it.each(["t3-chat", "grove", "ocean", "ember", "iris"])(
-  "secondary text of built-in %s stays readable on hovered rows, the sidebar and its selected rows",
-  (id) => {
+it.each([
+  ["t3-chat", "light"],
+  ["t3-chat", "dark"],
+  ["grove", "light"],
+  ["grove", "dark"],
+  ["ocean", "light"],
+  ["ocean", "dark"],
+  ["ember", "light"],
+  ["ember", "dark"],
+  ["iris", "light"],
+  ["iris", "dark"],
+] as const)(
+  "secondary text of built-in %s in %s stays readable on hovered rows, the sidebar and its selected rows",
+  (id, mode) => {
     // Arrange
     const lookup = resolveT3Theme(id, []);
     assert(lookup.kind === "theme");
 
     // Act
-    const modes = presentThemeModes(lookup.theme);
+    const presented = presentThemeModes(lookup.theme)[mode];
 
     // Assert
-    for (const mode of [modes.light, modes.dark]) {
-      assert(mode.kind === "inherited");
-      const surfaces = ["background", "card", "muted", "accent", "sidebar", "sidebar-accent"];
-      const ratios = surfaces.map((surface) =>
-        wcagContrast(mode.colors["muted-foreground"], mode.colors[surface as "accent"]),
-      );
-      expect(Math.min(...ratios)).toBeGreaterThanOrEqual(4.5);
-    }
+    assert(presented.kind === "inherited");
+    const { colors } = presented;
+    expect(
+      lowestContrast(colors["muted-foreground"], [
+        colors.background,
+        colors.card,
+        colors.muted,
+        colors.accent,
+        colors.sidebar,
+        colors["sidebar-accent"],
+      ]),
+    ).toBeGreaterThanOrEqual(4.5);
   },
 );
 
