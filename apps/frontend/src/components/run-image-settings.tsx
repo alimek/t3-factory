@@ -133,43 +133,41 @@ export function RunImageSettings() {
   );
 }
 
-/** One answer to a listing request: the filter it was for and its images or failure. */
-type Listing = { projectId: string } & (
-  | { images: readonly EligibleRunImage[] }
-  | { error: string }
-);
+/** One answer to a listing request: the request it answers and its images or failure. */
+type ListingAnswer = { images: readonly EligibleRunImage[] } | { error: string };
+type Listing = { request: number } & ListingAnswer;
 
 /**
  * The server's eligible list for the project filter, read again whenever `listed` changes or
- * `retry` is called. `images` is null until the current filter's list arrives, so nothing acts on
- * another filter's images; `error` is set once the current filter's request failed.
+ * `retry` is called. Choosing a filter or retrying starts a new request, and only that request's
+ * answer is shown: `images` is null and `error` empty until it arrives, so an earlier answer for
+ * the same filter never stands in for it. Relisting after a deletion keeps the shown list until
+ * the new one arrives.
  */
 function useEligibleImages(projectId: string, listed: number) {
+  const [request, setRequest] = useState({ projectId, number: 0 });
+  if (request.projectId !== projectId) setRequest({ projectId, number: request.number + 1 });
   const [listing, setListing] = useState<Listing>();
-  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
-    api.listEligibleRunImages(projectId).then(
-      (images) => active && setListing({ projectId, images }),
+    const answer = (result: ListingAnswer) =>
+      active && setListing({ request: request.number, ...result });
+    api.listEligibleRunImages(request.projectId).then(
+      (images) => answer({ images }),
       (cause: unknown) =>
-        active &&
-        setListing({
-          projectId,
+        answer({
           error: cause instanceof Error ? cause.message : "Run images could not be listed.",
         }),
     );
     return () => {
       active = false;
     };
-  }, [projectId, listed, attempt]);
-  const current = listing?.projectId === projectId ? listing : undefined;
+  }, [request, listed]);
+  const current = listing?.request === request.number ? listing : undefined;
   return {
     images: current && "images" in current ? current.images : null,
     error: current && "error" in current ? current.error : "",
-    retry: () => {
-      setListing(undefined);
-      setAttempt((n) => n + 1);
-    },
+    retry: () => setRequest((previous) => ({ ...previous, number: previous.number + 1 })),
   };
 }
 

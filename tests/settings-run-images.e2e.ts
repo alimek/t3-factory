@@ -178,6 +178,43 @@ test("a failed Run images listing shows its error with Retry instead of loading 
   await expect(screen.getByRole("button", /^Delete all /)).toHaveCount(0);
 });
 
+test("returning to a filter whose listing failed shows its new listing as pending, not the old failure", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { demo } = await openRunImages(app, screen);
+  const projectFilter = screen.getByRole("combobox", "Project");
+  // The demo filter's first listing fails; later listings, of any filter, wait for an answer.
+  let demoFailed = false;
+  const held: (() => void)[] = [];
+  await browser.route(/\/api\/run-images\?projectId=[^&]*$/, async (route) => {
+    if (route.request.method !== "GET") return route.continue();
+    if (route.request.url.endsWith(`projectId=${demo.id}`) && !demoFailed) {
+      demoFailed = true;
+      return route.abort();
+    }
+    await new Promise<void>((release) => held.push(release));
+    return route.abort();
+  });
+  await projectFilter.selectOption({ label: demo.title });
+  await expect(listingAlert(screen)).toBeVisible();
+  await projectFilter.selectOption({ label: "All projects" });
+  await expect(screen.getByText("Listing images…", { exact: true })).toBeVisible();
+
+  // Act
+  await projectFilter.selectOption({ label: demo.title });
+
+  // Assert
+  await expect(screen.getByText("Listing images…", { exact: true })).toBeVisible();
+  await expect(listingAlert(screen)).toHaveCount(0);
+  await expect(screen.getByText("Images not listed", { exact: true })).toHaveCount(0);
+
+  // Cleanup: the runner settles only once every held route handler has answered.
+  for (const release of held) release();
+});
+
 test("Retry after a failed Run images listing lists the images", async ({
   app,
   screen,
