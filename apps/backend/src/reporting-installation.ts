@@ -9,7 +9,8 @@ import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parse } from "smol-toml";
 import type { ReportingInstallation, Result, T3Connection } from "@t3-factory/contracts";
-import { FACTORY_BLOCK_SKILL, factoryBlockSkillPath } from "./factory-block-skill.ts";
+import { FACTORY_BLOCK_SKILL, factorySkillPath } from "./factory-block-skill.ts";
+import { FACTORY_START_RUN_SKILL } from "./factory-start-run-skill.ts";
 import { discoverReporting, record } from "./reporting-discovery.ts";
 import { isReportingDriver } from "./reporting-drivers.ts";
 import {
@@ -38,6 +39,29 @@ async function skillMatches(path: string) {
   } catch {
     return false;
   }
+}
+async function launchSkillState(
+  paths: readonly string[],
+): Promise<"current" | "missing" | "outdated"> {
+  const states = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        return (await readFile(path, "utf8")) === FACTORY_START_RUN_SKILL ? "current" : "outdated";
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "outdated";
+      }
+    }),
+  );
+  return states.includes("missing")
+    ? "missing"
+    : states.includes("outdated")
+      ? "outdated"
+      : "current";
+}
+async function writeSkill(path: string, text: string) {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const before = await readConfig(path);
+  await replace(path, before, text);
 }
 async function readConfig(path: string) {
   try {
@@ -130,6 +154,13 @@ const openReportingInstallation = Effect.fn(function* (
   mcpUrl: () => string,
 ) {
   const canonicalSkill = join(directory, "reporting", "skills", "factory-block", "SKILL.md");
+  const canonicalLaunchSkill = join(
+    directory,
+    "reporting",
+    "skills",
+    "factory-start-run",
+    "SKILL.md",
+  );
   const semaphore = yield* Semaphore.make(1);
   let closed = false;
   yield* Effect.addFinalizer(() =>
@@ -147,6 +178,15 @@ const openReportingInstallation = Effect.fn(function* (
     target: ReportingInstallation,
   ): Generator<Effect.Effect<unknown, unknown>, ReportingInstallation, never> {
     if (!target.path) return target;
+    target = {
+      ...target,
+      launchSkill: yield* boundary(() =>
+        launchSkillState([
+          factorySkillPath(target.path!, "factory-start-run"),
+          canonicalLaunchSkill,
+        ]),
+      ),
+    };
     return yield* Effect.gen(function* (): Generator<
       Effect.Effect<unknown, unknown>,
       ReportingInstallation,
@@ -157,7 +197,7 @@ const openReportingInstallation = Effect.fn(function* (
       const after = configChange(target, before, mcpUrl());
       if (after !== before) return withReportingInstallationActions(target);
       if (
-        !(yield* boundary(() => skillMatches(factoryBlockSkillPath(target.path!)))) ||
+        !(yield* boundary(() => skillMatches(factorySkillPath(target.path!, "factory-block")))) ||
         !(yield* boundary(() => skillMatches(canonicalSkill)))
       )
         throw new RepairableInstallationError(
@@ -169,7 +209,9 @@ const openReportingInstallation = Effect.fn(function* (
         // A configured entry proves neither tool visibility nor that a worker reported.
         runtimeEvidence: "UNVERIFIED",
         message:
-          "Configuration installed. Start a fresh session; native approvals, managed restrictions and project overrides still apply.",
+          target.launchSkill === "current"
+            ? "Configuration installed. Start a fresh session; native approvals, managed restrictions and project overrides still apply."
+            : "Reporting configuration installed. The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run; native approvals, managed restrictions and project overrides still apply.",
       });
     }).pipe(
       Effect.catchCause((cause) => {
@@ -230,21 +272,17 @@ const openReportingInstallation = Effect.fn(function* (
                   );
                 const before = yield* boundary(() => readConfig(target.path!));
                 const after = configChange(target, before, mcpUrl(), true);
-                const harnessSkill = factoryBlockSkillPath(target.path);
                 yield* boundary(() =>
-                  mkdir(dirname(harnessSkill), { recursive: true, mode: 0o700 }),
+                  writeSkill(factorySkillPath(target.path!, "factory-block"), FACTORY_BLOCK_SKILL),
                 );
+                yield* boundary(() => writeSkill(canonicalSkill, FACTORY_BLOCK_SKILL));
                 yield* boundary(() =>
-                  mkdir(dirname(canonicalSkill), { recursive: true, mode: 0o700 }),
+                  writeSkill(
+                    factorySkillPath(target.path!, "factory-start-run"),
+                    FACTORY_START_RUN_SKILL,
+                  ),
                 );
-                const harnessSkillBefore = yield* boundary(() => readConfig(harnessSkill));
-                yield* boundary(() =>
-                  replace(harnessSkill, harnessSkillBefore, FACTORY_BLOCK_SKILL),
-                );
-                const canonicalBefore = yield* boundary(() => readConfig(canonicalSkill));
-                yield* boundary(() =>
-                  replace(canonicalSkill, canonicalBefore, FACTORY_BLOCK_SKILL),
-                );
+                yield* boundary(() => writeSkill(canonicalLaunchSkill, FACTORY_START_RUN_SKILL));
                 if (after !== before) {
                   yield* boundary(() =>
                     mkdir(dirname(target.path!), { recursive: true, mode: 0o700 }),

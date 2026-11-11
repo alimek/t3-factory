@@ -1,3 +1,4 @@
+import { LaunchSkillStatus } from "../components/launch-skill-status.tsx";
 import { MutationGate } from "@/client-gate";
 import { useCallback, useEffect, useState } from "react";
 import type { ReportingInstallation } from "@t3-factory/contracts";
@@ -64,6 +65,7 @@ export function RuntimeSettings() {
           <p role="status" className="text-sm font-medium">
             {labels[target.status]}
           </p>
+          <LaunchSkillStatus state={target.launchSkill} />
           {target.status !== "unsupported" && (
             <p className="break-all text-xs text-muted-foreground">
               {target.path ?? "Configuration target unavailable"}

@@ -18,6 +18,7 @@ interface ReportingReads {
 }
 
 interface ReportingStatus {
+  launchSkill?: ReportingInstallation["launchSkill"];
   state: "checking" | "attention" | "installed";
   label: string;
   message: string;
@@ -41,9 +42,15 @@ export function agentReportingStatus(
         "Factory could not find a reporting installation for this provider. Check Agent reporting before starting a Run.",
     };
   if (target.status === "installed")
-    return { state: "installed", label: "Reporting installed", message: target.message };
+    return {
+      state: "installed",
+      label: "Reporting installed",
+      message: target.message,
+      launchSkill: target.launchSkill,
+    };
   return {
     state: "attention",
+    launchSkill: target.launchSkill,
     label:
       target.status === "not-installed" ? "Reporting not installed" : "Reporting needs attention",
     message: target.message,

@@ -1,3 +1,4 @@
+import { LaunchSkillStatus } from "../launch-skill-status.tsx";
 import { MutationGate } from "@/client-gate";
 import { Bot, Search } from "lucide-react";
 import type { AgentCapabilities, AgentDefinition, FlowDraft } from "@t3-factory/contracts";
@@ -198,6 +199,7 @@ function AgentListItemLink({
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="truncate text-sm font-medium">{name}</span>
         <span className="truncate text-2xs text-subtle-foreground">{meta}</span>
+        <LaunchSkillStatus state={status?.launchSkill ?? null} />
         {status && (
           <Badge
             id={`agent-reporting-${id}`}
