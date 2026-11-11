@@ -95,21 +95,48 @@ session until it expires or the owner revokes it in T3 (`t3 auth session revoke`
 
 **Following the default.** Factory reads T3's WebSocket configuration subscription
 (`subscribeServerConfig` with `environmentThemes`, protocol 2) through a short-lived ticket and keeps only the
-environment id, the default theme id and the names of published themes. Every snapshot replaces that state; later
-settings and theme updates apply as they arrive. A T3 revocation made from another process does not close an
+environment id, the default theme id and the published theme definitions. Every snapshot replaces that state; later
+settings and theme updates apply as they arrive. T3 streams the default and the definitions separately and without
+ordering, so a newly selected theme whose definition has not arrived keeps the colors shown so far for at most five
+seconds (**Waiting for T3 to send its default theme**); after that Factory's colors are used with a diagnostic, and
+the definition is followed whenever it does arrive. A definition T3 removes while it is the default is not waited
+for. A T3 revocation made from another process does not close an
 open socket, so Factory asks T3's session endpoint whether the grant still authenticates on every close and on
 every connection-check interval while connected. An unauthenticated answer ends the grant as revoked (as expired
 within a minute of its expiry); a request that cannot reach T3 is a transient outage. A closed subscription shows
 **Connecting** and reopens on the next interval, never in a loop with T3's closes.
 
-**Resolution.** Built-in T3 themes (`t3-chat`, `grove`, `ocean`, `ember`, `iris` and their legacy aliases)
-resolve through one bounded resolver ported from T3 Code (MIT, © 2026 T3 Tools Inc.) at revision
+**Resolution.** Built-in T3 themes (`t3-chat`, `grove`, `ocean`, `ember`, `iris` and their legacy aliases) and
+published theme definitions resolve through one bounded resolver ported from T3 Code (MIT, © 2026 T3 Tools Inc.)
+at revision
 [`d2c25950b4d9`](https://github.com/pingdotgg/t3code/tree/d2c25950b4d9183ea342d5d5fc14c326b9e0172a); the
 ported source keeps the license notice, and parity tests compare it with output of the upstream resolver at that
 revision. Factory maps the roles by meaning and validates each mode under the
 [contrast policy](design-system.md#t3-theme-colors), then publishes one presentation with both halves and their
-availability. A published (non-built-in) default theme is not inherited yet: Factory shows its own colors and
-names the theme in Settings. Factory does not claim compatibility with T3 revisions other than the pin.
+availability. Factory does not claim compatibility with T3 revisions other than the pin.
+
+A published definition resolves as T3 resolves it. Its declared appearance takes the palette T3 generates from its
+`canvas` and `accent` seeds, or T3 Chat's palette for that appearance when it has no seeds, with its `colors` on top.
+The other mode exists only when the definition declares a variant for it: T3 Chat's palette for that mode with the
+variant's colors on top, never the seeds. Without that variant the mode keeps Factory's colors and Settings says
+so; Factory never inverts colors, derives an opposite theme or shows the declared appearance in the other mode. A
+built-in id or legacy alias always names the built-in, whatever a published definition is called.
+
+Support limits of published definitions:
+
+- **Format.** T3's theme file version 1 only: a `light` or `dark` appearance, `#rgb`/`#rrggbb` seeds, and color
+  records of role names to texts of at most 64 characters, in a set of at most 32 definitions. A named definition
+  in any other structure is not followed and Settings names it; unknown extra fields are ignored.
+- **Roles.** Factory reads the twelve T3 roles it maps and ignores every other role, known to T3 or not. A
+  definition without seeds and without any readable color of a T3 role is not a theme.
+- **Color syntax.** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`/`rgba()` with channels in 0–255, and `oklch()`
+  with numbers or percentages. T3 itself accepts more CSS color syntax (named colors, `hsl()`, `lab()` and others);
+  Factory ignores such a color as T3 ignores an unparseable one, so the role keeps its seed-generated or T3 Chat
+  value, and Settings counts the ignored colors of mapped roles. No color text, declaration or URL from a definition
+  reaches a client: clients receive only values Factory formatted itself.
+- **Translucent colors.** A mapped role resolving to a color with alpha rejects that mode to Factory's colors.
+- **Parity.** Verified against upstream output for seeds in both appearances, overrides, partial and complete
+  colors and variants, to the six decimals T3 writes; other inputs are not claimed.
 
 **Fallbacks.** An empty default, an unsupported or removed definition, a rejected mode, an unverifiable or
 mismatched environment, expiry, revocation and disconnect all show Factory's colors for the selected mode with

@@ -12,8 +12,12 @@ import { factoryHarness } from "./support/factory.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { subscribe } from "./support/live.ts";
+import { upstreamPublishedTheme } from "./support/t3-theme-fixture.ts";
 
 const DAY_MS = 24 * 3_600_000;
+/** T3's published "Nightfall": dark canvas and accent seeds, no Light variant. */
+const nightfall = upstreamPublishedTheme("seed-dark").wire;
+const WAITING_NIGHTFALL = "Waiting for T3 to send its default theme “nightfall”.";
 
 it("pairing with a code from the connected environment follows its built-in default in both modes", async (context) => {
   // Arrange
@@ -133,10 +137,117 @@ it("a cleared environment default uses Factory's colors and explains why", async
   expect(latestAppearance(messages)?.explanation).toContain("no default theme");
 });
 
-it("a published default theme is not inherited yet and Settings names it", async (context) => {
+it("a published default theme generated from dark seeds is inherited in Dark while Light keeps Factory's colors and says why", async (context) => {
   // Arrange
   const { t3, live } = await pairedFactory(context, "ocean");
-  t3.appearance.publishThemes([{ id: "nightfall", name: "Nightfall" }]);
+  t3.appearance.publishThemes([nightfall]);
+
+  // Act
+  t3.appearance.setDefaultTheme("nightfall");
+
+  // Assert
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+  );
+  const followed = latestAppearance(messages);
+  expect(followed?.explanation).toBe("Following T3’s default theme “Nightfall”.");
+  expect(followed?.presentation?.modes.dark).toMatchObject({
+    kind: "inherited",
+    colors: { background: "#14121f", primary: "#7c5cff" },
+  });
+  expect(followed?.presentation?.modes.light).toStrictEqual({
+    kind: "baseline",
+    explanation: "T3 theme “Nightfall” has no Light colors. Factory’s Light colors are used.",
+  });
+});
+
+it("an edit that adds a Light variant to the followed definition makes Light inherited too", async (context) => {
+  // Arrange
+  const { t3, live } = await pairedFactory(context, "ocean");
+  t3.appearance.publishThemes([nightfall]);
+  t3.appearance.setDefaultTheme("nightfall");
+  await live.until(
+    (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+  );
+
+  // Act
+  t3.appearance.publishThemes([{ ...nightfall, variants: { light: { canvas: "#fff8eb" } } }]);
+
+  // Assert
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.presentation?.modes.light.kind === "inherited",
+  );
+  expect(latestAppearance(messages)?.presentation?.modes).toMatchObject({
+    light: { colors: { background: "#fff8eb" } },
+    dark: { colors: { background: "#14121f" } },
+  });
+});
+
+it("a variant whose canvas does not read as its mode is rejected without discarding the valid other mode", async (context) => {
+  // Arrange
+  const { t3, live } = await pairedFactory(context, "ocean");
+  t3.appearance.publishThemes([{ ...nightfall, variants: { light: { canvas: "#000000" } } }]);
+
+  // Act
+  t3.appearance.setDefaultTheme("nightfall");
+
+  // Assert
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+  );
+  expect(latestAppearance(messages)?.presentation?.modes.dark.kind).toBe("inherited");
+  expect(latestAppearance(messages)?.presentation?.modes.light).toStrictEqual({
+    kind: "baseline",
+    explanation:
+      "T3 theme “Nightfall” has Light colors with a canvas that does not read as Light. Factory’s Light colors are used.",
+  });
+});
+
+it("a published theme whose canvas is translucent is rejected for that mode as unreadable", async (context) => {
+  // Arrange
+  const { t3, live } = await pairedFactory(context, "ocean");
+  t3.appearance.publishThemes([{ ...nightfall, colors: { canvas: "#14121f80" } }]);
+
+  // Act
+  t3.appearance.setDefaultTheme("nightfall");
+
+  // Assert
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+  );
+  expect(latestAppearance(messages)?.presentation?.modes.dark).toStrictEqual({
+    kind: "baseline",
+    explanation:
+      "T3 theme “Nightfall” has Dark colors with colors Factory cannot read. Factory’s Dark colors are used.",
+  });
+});
+
+it("removing the followed definition from T3 returns to Factory's colors at once and says why", async (context) => {
+  // Arrange
+  const { t3, live } = await pairedFactory(context, "ocean");
+  t3.appearance.publishThemes([nightfall]);
+  t3.appearance.setDefaultTheme("nightfall");
+  await live.until(
+    (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+  );
+
+  // Act
+  t3.appearance.publishThemes([]);
+
+  // Assert
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.presentation === null,
+  );
+  expect(latestAppearance(messages)?.state).toBe("following");
+  expect(latestAppearance(messages)?.explanation).toBe(
+    "T3’s default theme “nightfall” is not available in T3, so Factory’s own colors are used. Factory follows it once T3 publishes it.",
+  );
+});
+
+it("a default theme in a format Factory does not support uses Factory's colors and Settings names it", async (context) => {
+  // Arrange
+  const { t3, live } = await pairedFactory(context, "ocean");
+  t3.appearance.publishThemes([{ ...nightfall, version: 2 }]);
 
   // Act
   t3.appearance.setDefaultTheme("nightfall");
@@ -145,8 +256,108 @@ it("a published default theme is not inherited yet and Settings names it", async
   const messages = await live.until(
     (received) => latestAppearance(received)?.presentation === null,
   );
-  expect(latestAppearance(messages)?.explanation).toContain("Nightfall");
+  expect(latestAppearance(messages)?.explanation).toBe(
+    "T3’s default theme “Nightfall” uses a theme format Factory does not support, so Factory’s own colors are used.",
+  );
 });
+
+it("a followed theme with a color Factory cannot read keeps the rest and Settings counts what was ignored", async (context) => {
+  // Arrange
+  const { t3, live } = await pairedFactory(context, "ocean");
+  t3.appearance.publishThemes([{ ...nightfall, colors: { accent: "var(--accent)" } }]);
+
+  // Act
+  t3.appearance.setDefaultTheme("nightfall");
+
+  // Assert
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+  );
+  expect(latestAppearance(messages)?.explanation).toBe(
+    "Following T3’s default theme “Nightfall”. 1 color Factory cannot read was ignored.",
+  );
+  expect(latestAppearance(messages)?.presentation?.modes.dark).toMatchObject({
+    colors: { primary: "#7c5cff" },
+  });
+});
+
+it.effect(
+  "a newly selected definition that arrives within five seconds replaces the colors with no baseline in between",
+  (context) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { t3, live } = yield* pairedService(context);
+      t3.appearance.setDefaultTheme("nightfall");
+      yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.explanation === WAITING_NIGHTFALL),
+      );
+      yield* TestClock.adjust(4_000);
+
+      // Act
+      t3.appearance.publishThemes([nightfall]);
+
+      // Assert
+      const messages = yield* Effect.promise(() =>
+        live.until(
+          (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+        ),
+      );
+      expect(
+        new Set(messages.map((message) => message.appearance.presentation?.theme.id)),
+      ).toStrictEqual(new Set(["ocean", "nightfall"]));
+    }),
+);
+
+it.effect(
+  "a newly selected definition still missing after five seconds falls back to Factory's colors with a diagnostic",
+  (context) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { t3, live } = yield* pairedService(context);
+      t3.appearance.setDefaultTheme("nightfall");
+      yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.explanation === WAITING_NIGHTFALL),
+      );
+
+      // Act
+      yield* TestClock.adjust(5_000);
+
+      // Assert
+      const messages = yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.presentation === null),
+      );
+      expect(latestAppearance(messages)?.state).toBe("following");
+      expect(latestAppearance(messages)?.explanation).toContain("is not available in T3");
+    }),
+);
+
+it.effect(
+  "a definition that arrives after the five-second fallback is followed automatically",
+  (context) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { t3, live } = yield* pairedService(context);
+      t3.appearance.setDefaultTheme("nightfall");
+      yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.explanation === WAITING_NIGHTFALL),
+      );
+      yield* TestClock.adjust(5_000);
+      yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.presentation === null),
+      );
+
+      // Act
+      t3.appearance.publishThemes([nightfall]);
+
+      // Assert
+      const messages = yield* Effect.promise(() =>
+        live.until(
+          (received) => latestAppearance(received)?.presentation?.theme.id === "nightfall",
+        ),
+      );
+      expect(latestAppearance(messages)?.presentation?.modes.dark.kind).toBe("inherited");
+    }),
+);
 
 it("a grant within seven days of expiry is flagged for re-pairing", async (context) => {
   // Arrange

@@ -1,7 +1,14 @@
 import { assert, expect, it } from "@effect/vitest";
 import { presentThemeModes } from "../src/appearance/palette-mapping.ts";
-import { resolveBuiltInTheme, type T3ThemePalette } from "../src/appearance/t3-theme-palettes.ts";
+import { resolveT3Theme, type T3ThemePalette } from "../src/appearance/t3-theme-palettes.ts";
 import { wcagContrast } from "./support/contrast.ts";
+
+/** T3's built-in Ocean theme as the pinned resolver reads it. */
+function builtInOcean() {
+  const lookup = resolveT3Theme("ocean", []);
+  assert(lookup.kind === "theme");
+  return lookup.theme;
+}
 
 /** A dark palette whose roles are readable as given; cases replace the roles they test. */
 const darkPalette: T3ThemePalette = {
@@ -18,11 +25,11 @@ const darkPalette: T3ThemePalette = {
   sidebar: "#1e2d3b",
   sidebarForeground: "#fffaff",
 };
-const lightPalette: T3ThemePalette = { ...resolveBuiltInTheme("ocean")!.modes.light! };
+const lightPalette: T3ThemePalette = { ...builtInOcean().modes.light! };
 
 it("a built-in palette maps T3 surfaces, text, accent and focus to Factory roles by meaning", () => {
   // Arrange
-  const ocean = resolveBuiltInTheme("ocean")!;
+  const ocean = builtInOcean();
 
   // Act
   const modes = presentThemeModes(ocean);
@@ -103,4 +110,26 @@ it("a dark mode whose canvas is light is not presented as Dark", () => {
 
   // Assert
   expect(modes.dark.kind).toBe("baseline");
+});
+
+it("an accent whose dark action label would be unreadable on a darker hover fill lightens on hover instead", () => {
+  // Arrange
+  const vividAccent = {
+    id: "vivid",
+    name: "Vivid",
+    modes: {
+      light: null,
+      dark: { ...darkPalette, accent: "#7c5cff", focus: "#7c5cff", accentForeground: "#000000" },
+    },
+  };
+
+  // Act
+  const modes = presentThemeModes(vividAccent);
+
+  // Assert
+  assert(modes.dark.kind === "inherited");
+  expect(modes.dark.colors.primary).toBe("#7c5cff");
+  expect(
+    wcagContrast(modes.dark.colors["primary-foreground"], modes.dark.colors["primary-hover"]),
+  ).toBeGreaterThanOrEqual(4.5);
 });

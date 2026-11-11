@@ -13,13 +13,14 @@ import {
   type AppearanceEvent,
   type AppearanceGrantRecord,
   type AppearanceStream,
+  type PublishedT3Theme,
   type T3Adapter,
 } from "../adapters/t3.ts";
 import type { LiveChanges } from "../live-changes.ts";
 import { periodicWorker } from "../periodic.ts";
 import { failure } from "../result.ts";
 import { presentThemeModes } from "./palette-mapping.ts";
-import { resolveBuiltInTheme, T3_RESOLVER_PIN } from "./t3-theme-palettes.ts";
+import { resolveT3Theme, T3_RESOLVER_PIN, type T3ThemeLookup } from "./t3-theme-palettes.ts";
 
 /** Settings warns this long before the grant expires; T3 issues 30-day sessions. */
 const EXPIRY_WARNING_MS = 7 * 24 * 3_600_000;
@@ -27,6 +28,11 @@ const EXPIRY_WARNING_MS = 7 * 24 * 3_600_000;
 const EXPIRY_SKEW_MS = 60_000;
 /** Pairing waits this long for T3's first configuration snapshot to confirm the environment. */
 const FIRST_SNAPSHOT = "10 seconds";
+/**
+ * T3 streams the default theme and the published definitions separately and unordered, so a
+ * newly selected definition gets this long to arrive before Factory's own colors are used.
+ */
+const DEFINITION_WAIT = "5 seconds";
 
 const NOT_PAIRED =
   "Optional. Pair on the Factory host to use the T3 environment’s default theme colors in Light and Dark.";
@@ -46,24 +52,44 @@ const outage = (retained: boolean) =>
     ? "T3 can’t be reached. Factory keeps the theme colors it received while the grant stays valid and reconnects automatically."
     : "T3 can’t be reached, so Factory’s own colors are used. Factory reconnects automatically.";
 
-type PublishedTheme = { readonly id: string; readonly name: string };
 /** What the current subscription last reported; every snapshot replaces it. */
 type Source = {
   readonly environmentId: string;
   readonly defaultTheme: string;
-  readonly themes: readonly PublishedTheme[];
+  readonly themes: readonly PublishedT3Theme[];
 };
 /** One open subscription, bound to the T3 connection environment it was opened for. */
 type Watch = { readonly stream: AppearanceStream; readonly environmentId: string };
+/** The default theme of `source` as the pinned resolver reads it; null without a default. */
+type Followed = { readonly themeId: string; readonly lookup: T3ThemeLookup } | null;
 
-function followingExplanation({ defaultTheme, themes }: Source) {
-  if (!defaultTheme) return "T3 has no default theme, so Factory’s own colors are used.";
-  const builtIn = resolveBuiltInTheme(defaultTheme);
-  if (builtIn) return `Following T3’s default theme “${builtIn.name}”.`;
-  const published = themes.find((theme) => theme.id === defaultTheme);
-  return published
-    ? `T3’s default theme “${published.name}” is a published theme. Factory follows built-in T3 themes only, so its own colors are used.`
-    : `T3’s default theme “${defaultTheme}” is not available in T3, so Factory’s own colors are used.`;
+const follows = (source: Source): Followed =>
+  source.defaultTheme
+    ? {
+        themeId: source.defaultTheme,
+        lookup: resolveT3Theme(source.defaultTheme, source.themes),
+      }
+    : null;
+
+const USES_FACTORY = "so Factory’s own colors are used.";
+
+function followingExplanation(followed: Followed, waiting: boolean) {
+  if (!followed) return `T3 has no default theme, ${USES_FACTORY}`;
+  const { themeId, lookup } = followed;
+  if (lookup.kind === "theme") {
+    const ignored =
+      lookup.unreadColors === 1
+        ? " 1 color Factory cannot read was ignored."
+        : ` ${lookup.unreadColors} colors Factory cannot read were ignored.`;
+    return `Following T3’s default theme “${lookup.theme.name}”.${lookup.unreadColors ? ignored : ""}`;
+  }
+  if (lookup.kind === "missing")
+    return waiting
+      ? `Waiting for T3 to send its default theme “${themeId}”.`
+      : `T3’s default theme “${themeId}” is not available in T3, ${USES_FACTORY} Factory follows it once T3 publishes it.`;
+  return lookup.reason === "format"
+    ? `T3’s default theme “${lookup.name}” uses a theme format Factory does not support, ${USES_FACTORY}`
+    : `T3’s default theme “${lookup.name}” has no colors Factory can read, ${USES_FACTORY}`;
 }
 
 const PAIRING_CODE = /^[A-Za-z0-9._~+/=-]{1,512}$/;
@@ -132,6 +158,9 @@ export const makeAppearance = (
     let record: AppearanceGrantRecord | null = null;
     let watch: Watch | null = null;
     let source: Source | null = null;
+    let followed: Followed = null;
+    /** The newly selected theme id whose definition T3 has not sent yet; null when not waiting. */
+    let awaited: { readonly themeId: string } | null = null;
     let presentation: AppearancePresentation | null = null;
     /** Why an active grant is not followed right now; null while following or connecting. */
     let problem: string | null = null;
@@ -170,7 +199,7 @@ export const makeAppearance = (
         else
           status = {
             state: "following",
-            explanation: followingExplanation(source),
+            explanation: followingExplanation(followed, awaited !== null),
             grant,
             presentation,
           };
@@ -178,13 +207,18 @@ export const makeAppearance = (
       changes.appearanceChanged();
     });
 
-    /** Resolves and validates both modes of the current default into one presentation. */
+    /**
+     * Validates both modes of the followed theme into one presentation. While a newly selected
+     * definition is awaited, the colors shown so far stay.
+     */
     const present = () => {
-      const theme = source?.defaultTheme ? resolveBuiltInTheme(source.defaultTheme) : null;
-      if (!source || !theme || record?.status !== "active") {
+      if (awaited && followed?.lookup.kind === "missing") return;
+      awaited = null;
+      if (!source || followed?.lookup.kind !== "theme" || record?.status !== "active") {
         presentation = null;
         return;
       }
+      const { theme } = followed.lookup;
       const body = {
         environmentId: source.environmentId,
         grant: { id: record.grant.id, expiresAt: record.grant.expiresAt },
@@ -200,32 +234,70 @@ export const makeAppearance = (
       watch = null;
       open?.stream.close();
     };
+    /** What T3 last reported is void: nothing is followed or awaited until a new snapshot. */
+    const forgetSource = () => {
+      source = null;
+      followed = null;
+      awaited = null;
+    };
     /** The previous source's colors must never outlive it. */
     const invalidate = () => {
       closeWatch();
-      source = null;
+      forgetSource();
       presentation = null;
     };
 
-    const apply = (open: Watch, event: AppearanceEvent) => {
-      if (event.type === "snapshot") {
-        if (event.environmentId !== open.environmentId) {
-          refusedEnvironment = open.environmentId;
-          invalidate();
-          problem = MISMATCH;
-          return;
-        }
-        source = {
-          environmentId: event.environmentId,
-          defaultTheme: event.defaultTheme,
-          themes: source?.themes ?? [],
-        };
-        problem = null;
-      } else if (!source) return;
-      else if (event.type === "default") source = { ...source, defaultTheme: event.defaultTheme };
-      else source = { ...source, themes: event.themes };
-      present();
-    };
+    /** Gives the definition of a newly selected theme its time to arrive, then presents without it. */
+    const awaitDefinition = (themeId: string) =>
+      Effect.gen(function* () {
+        const waiting = { themeId };
+        awaited = waiting;
+        yield* Effect.forkIn(
+          Effect.sleep(DEFINITION_WAIT).pipe(
+            Effect.andThen(
+              serial(
+                Effect.gen(function* () {
+                  if (awaited !== waiting) return;
+                  awaited = null;
+                  present();
+                  yield* publish;
+                }),
+              ),
+            ),
+          ),
+          scope,
+        );
+      });
+
+    const apply = (open: Watch, event: AppearanceEvent) =>
+      Effect.gen(function* () {
+        const selectedBefore = source?.defaultTheme;
+        if (event.type === "snapshot") {
+          if (event.environmentId !== open.environmentId) {
+            refusedEnvironment = open.environmentId;
+            invalidate();
+            problem = MISMATCH;
+            return;
+          }
+          source = {
+            environmentId: event.environmentId,
+            defaultTheme: event.defaultTheme,
+            themes: source?.themes ?? [],
+          };
+          problem = null;
+        } else if (!source) return;
+        else if (event.type === "default") source = { ...source, defaultTheme: event.defaultTheme };
+        else source = { ...source, themes: event.themes };
+        followed = follows(source);
+        // Only a selection can be ahead of its definition; a definition T3 removes is gone.
+        if (
+          followed?.lookup.kind === "missing" &&
+          followed.themeId !== selectedBefore &&
+          followed.themeId !== awaited?.themeId
+        )
+          yield* awaitDefinition(followed.themeId);
+        present();
+      });
 
     /** T3 refusing a grant about to expire is its expiry, even with a little clock skew. */
     const refusalReason = Effect.map(Clock.currentTimeMillis, (now) =>
@@ -259,7 +331,7 @@ export const makeAppearance = (
                 yield* closed;
                 return true;
               }
-              apply(open, event);
+              yield* apply(open, event);
               yield* publish;
               return watch !== open;
             }),
@@ -355,7 +427,7 @@ export const makeAppearance = (
         if ((yield* Clock.currentTimeMillis) >= Date.parse(active.grant.expiresAt))
           yield* endGrant(target, "expired");
         // What T3 last reported is stale until a new snapshot; its colors stay meanwhile.
-        else if (yield* verifyGrant(target)) source = null;
+        else if (yield* verifyGrant(target)) forgetSource();
       }
       yield* publish;
     });
@@ -469,7 +541,7 @@ export const makeAppearance = (
         }
         problem = null;
         refusedEnvironment = null;
-        apply(yield* install(stream.value, environment), snapshot);
+        yield* apply(yield* install(stream.value, environment), snapshot);
         yield* publish;
         return { ok: true as const, value: status };
       });

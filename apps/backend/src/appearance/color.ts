@@ -21,7 +21,8 @@ const toLinear = (channel: number) =>
 const toGamma = (channel: number) =>
   channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055;
 
-function linearFromOklch({ l, c, h }: Oklch): [number, number, number] {
+/** Linear sRGB channels, outside 0..1 where the color is out of gamut. */
+export function linearFromOklch({ l, c, h }: Oklch): [number, number, number] {
   const radians = (h * Math.PI) / 180;
   const a = c * Math.cos(radians);
   const b = c * Math.sin(radians);

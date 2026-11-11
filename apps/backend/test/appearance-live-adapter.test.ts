@@ -56,6 +56,56 @@ it("the configuration subscription acknowledges each chunk and follows the defau
   stream.close();
 });
 
+it("the published theme set keeps bounded definitions and drops entries that are not themes", async (context) => {
+  // Arrange
+  const t3 = await appearanceT3(context);
+  await t3.adapter.pairAppearance(t3.target, t3.state.pairingCode);
+  const stream = await t3.adapter.watchAppearance(t3.target);
+  await stream.next();
+
+  // Act
+  t3.publishThemes([
+    {
+      id: "dusk",
+      version: 1,
+      name: "Dusk",
+      appearance: "dark",
+      canvas: "#1a1423",
+      accent: "#f59e0b",
+      colors: { focus: "#ffffff", futureRole: "#000000" },
+      variants: { light: { canvas: "#fff8eb" } },
+      collection: { id: "ignored", label: "Ignored" },
+    },
+    { id: "Not An Id", name: "Dropped", appearance: "dark", canvas: "#000", accent: "#fff" },
+    {
+      id: "long-color",
+      name: "Long color",
+      appearance: "dark",
+      colors: { canvas: "#".repeat(65) },
+    },
+    "not a theme",
+  ]);
+
+  // Assert
+  expect(await stream.next()).toStrictEqual({
+    type: "themes",
+    themes: [
+      {
+        id: "dusk",
+        name: "Dusk",
+        definition: {
+          appearance: "dark",
+          seeds: { canvas: "#1a1423", accent: "#f59e0b" },
+          colors: { focus: "#ffffff", futureRole: "#000000" },
+          variant: { canvas: "#fff8eb" },
+        },
+      },
+      { id: "long-color", name: "Long color", definition: null },
+    ],
+  });
+  stream.close();
+});
+
 it("a grant T3 no longer authenticates is refused rather than treated as an outage", async (context) => {
   // Arrange
   const t3 = await appearanceT3(context);

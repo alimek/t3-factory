@@ -40,6 +40,16 @@ server-state atom and running it outside T3. It records all 61 roles; Factory's 
 the roles its pinned port reads. Regenerating it for another pin is part of moving the resolver to that
 pin; the harness and its logs stay outside Git.
 
+[`t3-published-themes.json`](t3-published-themes.json) comes from the same harness, revision and date for
+published theme definitions (`publishedThemeDefinitions` and `getThemeColorsForMode`). `themes` holds each
+definition exactly as T3 streams it (`input`) and the 61 roles upstream resolved for both modes (`resolved`,
+null where the definition has no colors for a mode): dark and light seeds, seeds with color overrides that
+include an unknown role and an unparseable color, dark seeds with a sparse Light variant, partial colors with a
+partial Dark variant and no seeds, and a definition giving every role a color. `filtered` holds two definitions
+upstream drops, one under a built-in id and one without a usable color. `canonicalColors` maps color texts to
+upstream's canonical `oklch()` text (`toCanonicalThemeColor`). The controlled UI fixture publishes the dark-seed
+and Light-variant definitions as its T3 owner's theme files.
+
 ## Upgrade fixtures
 
 Keep one representative released baseline: [`v0.2.0-upgrade-data.json`](v0.2.0-upgrade-data.json). A second capture,

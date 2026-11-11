@@ -58,6 +58,12 @@ const NON_TEXT_CONTRAST = 3;
  */
 const NEUTRAL_STEP = { muted: [0.04, -0.035], hover: [0.08, -0.06], selected: [0.06, -0.05] };
 
+/** The extremes a label can be moved to: black and white. */
+const INKS: readonly Rgb[] = [
+  { r: 0, g: 0, b: 0 },
+  { r: 1, g: 1, b: 1 },
+];
+
 const modeLabel = (mode: Appearance) => (mode === "dark" ? "Dark" : "Light");
 
 /** Rejection carries the readable reason a whole mode falls back to Factory's colors. */
@@ -112,7 +118,14 @@ function mapMode(palette: T3ThemePalette, mode: Appearance) {
   const sidebar = toRgb(t3.sidebar);
   const selected = step(t3.sidebar, NEUTRAL_STEP.selected);
   const primary = toRgb(t3.accent);
-  const primaryHover = toRgb({ ...t3.accent, l: t3.accent.l - 0.06 });
+  // The action fill darkens on hover as the baselines do. Where no label could stay readable
+  // on both fills, the accent takes a dark label, and the hover fill lightens instead.
+  const actionHover = (step: number) => toRgb({ ...t3.accent, l: t3.accent.l + step });
+  const primaryHover = INKS.some((ink) =>
+    [primary, actionHover(-0.06)].every((fill) => contrast(ink, fill) >= TEXT_CONTRAST),
+  )
+    ? actionHover(-0.06)
+    : actionHover(0.06);
   const surfaces = [background, card, muted];
 
   const foreground = readable(t3.text, [...surfaces, hover], TEXT_CONTRAST, "text");

@@ -39,6 +39,9 @@ Contrast policy: text, secondary text, action labels, links and status colors ne
 every surface they appear on, and focus rings and section labels 3:1. A color that misses is moved
 in lightness only, toward black or white, until it passes; if a required pair cannot pass, that
 whole mode is rejected to its baseline with the reason in Settings, never partially applied.
+The primary action darkens on hover as in the baselines; an accent of middle lightness, on which
+only a dark label is readable, lightens on hover instead so the label stays readable. The same
+mapping and policy apply to built-in, seed-generated, overridden and variant palettes.
 Clients receive only Factory-formatted color values and apply them through the CSSOM as one rule
 per mode. Gates and unapproved screens use the baseline. The desktop window background and the
 first paint use the baseline until a client receives the presentation.

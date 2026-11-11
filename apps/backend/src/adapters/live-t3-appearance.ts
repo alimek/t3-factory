@@ -11,7 +11,9 @@ import {
   type AppearanceGrant,
   type AppearanceGrantRecord,
   type AppearanceStream,
+  type PublishedT3Theme,
   type T3Endpoint,
+  type T3ThemeColors,
 } from "./t3.ts";
 
 /** The appearance grant file; the token never leaves it except toward the T3 origin. */
@@ -36,7 +38,70 @@ const stringField = (value: unknown, ...path: string[]) => {
   return typeof found === "string" ? found : undefined;
 };
 
-/** Keeps only the environment identity, default theme and published theme names. */
+/** T3 examines at most this many theme files, and each is far smaller than these bounds. */
+const MAX_THEMES = 32;
+const MAX_THEME_COLORS = 256;
+const THEME_ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
+const THEME_SEED = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const THEME_ROLE = /^[a-zA-Z][a-zA-Z0-9]{0,63}$/;
+
+const absentOr = <Value>(value: unknown, read: (given: unknown) => Value | undefined) =>
+  value === undefined ? null : read(value);
+
+/** A record of role names to short color texts, or undefined for any other shape. */
+function themeColors(value: unknown): T3ThemeColors | undefined {
+  if (!isRecord(value) || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value);
+  const bounded = entries.every(
+    ([role, color]) =>
+      THEME_ROLE.test(role) && typeof color === "string" && color.length > 0 && color.length <= 64,
+  );
+  return bounded && entries.length <= MAX_THEME_COLORS
+    ? (Object.fromEntries(entries) as T3ThemeColors)
+    : undefined;
+}
+
+const themeSeed = (value: unknown) =>
+  typeof value === "string" && THEME_SEED.test(value) ? value : undefined;
+
+/** The definition of T3's theme file version 1, or null for any structure Factory does not read. */
+function themeDefinition(theme: Record<string, unknown>): PublishedT3Theme["definition"] {
+  const { version, appearance } = theme;
+  if ((version !== undefined && version !== 1) || (appearance !== "light" && appearance !== "dark"))
+    return null;
+  const other = appearance === "dark" ? "light" : "dark";
+  const variants = theme.variants === undefined ? {} : theme.variants;
+  if (!isRecord(variants) || Array.isArray(variants)) return null;
+  const canvas = absentOr(theme.canvas, themeSeed);
+  const accent = absentOr(theme.accent, themeSeed);
+  const colors = absentOr(theme.colors, themeColors);
+  const variant = absentOr(variants[other], themeColors);
+  // A variant for the theme's own appearance is never used, but it must still be well-formed.
+  const unused = absentOr(variants[appearance], themeColors);
+  if ([canvas, accent, colors, variant, unused].includes(undefined)) return null;
+  return {
+    appearance,
+    seeds: canvas && accent ? { canvas, accent } : null,
+    colors: colors ?? {},
+    variant: variant ?? null,
+  };
+}
+
+/**
+ * The published theme set of an `environmentThemesUpdated` event. Entries without a usable id
+ * and name are dropped; a named theme in another format is kept without a definition, so
+ * Settings can say why it is not followed.
+ */
+export function publishedThemes(themes: readonly unknown[]): PublishedT3Theme[] {
+  return themes.slice(0, MAX_THEMES).flatMap((theme) => {
+    const id = stringField(theme, "id");
+    const name = stringField(theme, "name")?.trim();
+    if (!isRecord(theme) || !id || !THEME_ID.test(id) || !name || name.length > 48) return [];
+    return [{ id, name, definition: themeDefinition(theme) }];
+  });
+}
+
+/** Keeps only the environment identity, default theme and published theme definitions. */
 function appearanceEvent(value: unknown): AppearanceEvent | undefined {
   switch (field(value, "type")) {
     case "snapshot":
@@ -51,15 +116,9 @@ function appearanceEvent(value: unknown): AppearanceEvent | undefined {
     }
     case "environmentThemesUpdated": {
       const themes = field(value, "payload", "themes");
-      if (!Array.isArray(themes)) return undefined;
-      return {
-        type: "themes",
-        themes: themes.flatMap((theme) => {
-          const id = stringField(theme, "id");
-          const name = stringField(theme, "name");
-          return id && name !== undefined ? [{ id, name }] : [];
-        }),
-      };
+      return Array.isArray(themes)
+        ? { type: "themes", themes: publishedThemes(themes) }
+        : undefined;
     }
     default:
       return undefined;

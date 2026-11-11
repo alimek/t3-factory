@@ -144,6 +144,26 @@ export class AppearancePairingRejected extends Error {
   }
 }
 
+/** A published theme's colors by T3 role name; names and CSS color text are length-bounded. */
+export type T3ThemeColors = Readonly<Record<string, string>>;
+/**
+ * One theme definition T3 publishes for its environment: seeds, role colors or both for its own
+ * `appearance`, and optional role colors for the other mode. `definition` is null when the
+ * definition is not in the format Factory supports.
+ */
+export interface PublishedT3Theme {
+  readonly id: string;
+  readonly name: string;
+  readonly definition: {
+    readonly appearance: "light" | "dark";
+    /** `#rgb` or `#rrggbb` seeds; T3 generates from them only when both are given. */
+    readonly seeds: { readonly canvas: string; readonly accent: string } | null;
+    readonly colors: T3ThemeColors;
+    /** Colors for the mode other than `appearance`; null when the theme declares none. */
+    readonly variant: T3ThemeColors | null;
+  } | null;
+}
+
 /**
  * The only configuration facts Factory keeps from T3: the environment identity of each snapshot,
  * the environment default theme and the published theme set. Every snapshot replaces the
@@ -158,7 +178,7 @@ export type AppearanceEvent =
   | { readonly type: "default"; readonly defaultTheme: string }
   | {
       readonly type: "themes";
-      readonly themes: readonly { readonly id: string; readonly name: string }[];
+      readonly themes: readonly PublishedT3Theme[];
     };
 export interface AppearanceStream {
   /** The next event, or null once the connection closed for any reason. */

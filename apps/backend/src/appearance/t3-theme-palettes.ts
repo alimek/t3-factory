@@ -1,9 +1,10 @@
 /*!
- * Built-in T3 theme palettes, ported from T3 Code (https://github.com/pingdotgg/t3code) at
- * revision d2c25950b4d9183ea342d5d5fc14c326b9e0172a: the color values of
- * packages/shared/src/themePalettes.ts and the per-mode and legacy-alias resolution of
- * apps/web/src/themePalette.ts, limited to the roles Factory maps. Only built-in themes are
- * resolved; published theme definitions are not.
+ * Built-in T3 theme palettes and the resolution of built-in and published themes, ported from
+ * T3 Code (https://github.com/pingdotgg/t3code) at revision
+ * d2c25950b4d9183ea342d5d5fc14c326b9e0172a: the color values, role names and reserved ids of
+ * packages/shared/src/themePalettes.ts and the per-mode, legacy-alias and published-definition
+ * resolution of apps/web/src/themePalette.ts (`publishedThemeDefinitions`,
+ * `getThemeColorsForMode`), limited to the roles Factory maps.
  *
  * @license MIT
  * Copyright (c) 2026 T3 Tools Inc.
@@ -27,6 +28,8 @@
  * SOFTWARE.
  */
 import type { Appearance } from "@t3-factory/contracts/desktop-bridge";
+import type { PublishedT3Theme, T3ThemeColors } from "../adapters/t3.ts";
+import { canonicalThemeColor, generateSeedColors } from "./t3-theme-generator.ts";
 
 /** The T3 revision these palettes and their resolution were inspected and ported from. */
 export const T3_RESOLVER_PIN = "d2c25950b4d9183ea342d5d5fc14c326b9e0172a";
@@ -47,6 +50,60 @@ export const T3_THEME_ROLES = [
   "sidebarForeground",
 ] as const;
 export type T3ThemePalette = Readonly<Record<(typeof T3_THEME_ROLES)[number], string>>;
+
+/** Every role name T3 defines; a published color under any other name is not a color of T3's. */
+const T3_ROLE_NAMES: ReadonlySet<string> = new Set([
+  ...T3_THEME_ROLES,
+  "chrome",
+  "toolbar",
+  "toolbarForeground",
+  "toolbarBorder",
+  "toolbarControl",
+  "toolbarControlForeground",
+  "toolbarControlHover",
+  "surface",
+  "surfaceOverlay",
+  "secondary",
+  "secondaryForeground",
+  "muted",
+  "mutedForeground",
+  "secondaryLabel",
+  "iconMuted",
+  "error",
+  "errorForeground",
+  "errorSurface",
+  "warning",
+  "warningForeground",
+  "warningSurface",
+  "update",
+  "updateForeground",
+  "updateSurface",
+  "accentSurface",
+  "accentSurfaceForeground",
+  "messageSurface",
+  "messageForeground",
+  "messageAction",
+  "messageActionForeground",
+  "messageActionHover",
+  "codeBackground",
+  "codeForeground",
+  "searchMatchBackground",
+  "searchMatchForeground",
+  "searchMatchActiveBackground",
+  "searchMatchActiveForeground",
+  "sidebarMutedForeground",
+  "sidebarControlSurface",
+  "sidebarRowHover",
+  "sidebarRowActive",
+  "sidebarRowSelected",
+  "sidebarBorder",
+  "terminalBackground",
+  "terminalForeground",
+  "terminalCursor",
+  "terminalSelection",
+  "terminalScrollbar",
+  "terminalScrollbarHover",
+]);
 
 /** One theme as T3 resolves it; a mode is null when the theme has no colors for it. */
 export interface T3Theme {
@@ -226,9 +283,94 @@ const LEGACY_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /** The built-in theme an environment default names, or null for any other id. */
-export function resolveBuiltInTheme(themeId: string): T3Theme | null {
+function resolveBuiltInTheme(themeId: string): T3Theme | null {
   const id = LEGACY_ALIASES[themeId] ?? themeId;
   const theme = Object.hasOwn(BUILT_IN_THEMES, id) ? BUILT_IN_THEMES[id] : undefined;
   if (!theme) return null;
   return { id, name: theme.name, modes: { light: theme.light, dark: theme.dark } };
+}
+
+/** T3's appearance keywords: never a theme, whatever a published definition is called. */
+const APPEARANCE_KEYWORDS: ReadonlySet<string> = new Set(["system", "light", "dark"]);
+
+/** What T3's environment default theme id resolves to. */
+export type T3ThemeLookup =
+  | {
+      readonly kind: "theme";
+      readonly theme: T3Theme;
+      /** Colors given for roles Factory maps that it could not read and so left at their base. */
+      readonly unreadColors: number;
+    }
+  /** Neither a built-in theme nor in the published set. */
+  | { readonly kind: "missing" }
+  | {
+      readonly kind: "unsupported";
+      readonly name: string;
+      /** Not T3's theme file version 1, or no seeds and no color Factory can read. */
+      readonly reason: "format" | "no-colors";
+    };
+
+/**
+ * The colors a published definition gives the roles T3 defines, as upstream's lenient overrides:
+ * unknown roles and colors that cannot be read are dropped, never an error.
+ */
+function readColors(colors: T3ThemeColors) {
+  const read: Partial<Record<string, string>> = {};
+  let unread = 0;
+  for (const [role, color] of Object.entries(colors)) {
+    if (!T3_ROLE_NAMES.has(role)) continue;
+    const canonical = canonicalThemeColor(color);
+    if (canonical) read[role] = canonical;
+    else if ((T3_THEME_ROLES as readonly string[]).includes(role)) unread++;
+  }
+  return { read, unread, usable: Object.keys(read).length > 0 };
+}
+
+const withOverrides = (base: T3ThemePalette, overrides: Partial<Record<string, string>>) =>
+  Object.fromEntries(
+    T3_THEME_ROLES.map((role) => [role, overrides[role] ?? base[role]]),
+  ) as T3ThemePalette;
+
+/**
+ * A published theme as T3 resolves it. Its own appearance starts from the palette generated
+ * from its seeds, or from T3 Chat's without seeds, and takes its `colors` on top. The other
+ * mode exists only when the definition declares a variant for it: T3 Chat's palette for that
+ * mode with the variant's colors on top, never the seeds.
+ */
+function resolvePublishedTheme({ id, name, definition }: PublishedT3Theme): T3ThemeLookup {
+  if (!definition) return { kind: "unsupported", name, reason: "format" };
+  const { appearance, seeds } = definition;
+  const other = appearance === "dark" ? "light" : "dark";
+  const colors = readColors(definition.colors);
+  const variant = definition.variant && readColors(definition.variant);
+  if (!seeds && !colors.usable && !variant?.usable)
+    return { kind: "unsupported", name, reason: "no-colors" };
+  const defaults = BUILT_IN_THEMES["t3-chat"]!;
+  const base = seeds ? generateSeedColors(seeds.canvas, seeds.accent) : defaults[appearance];
+  const modes = {
+    [appearance]: withOverrides(base, colors.read),
+    [other]: variant ? withOverrides(defaults[other], variant.read) : null,
+  } as Record<Appearance, T3ThemePalette | null>;
+  return {
+    kind: "theme",
+    theme: { id, name, modes: { light: modes.light, dark: modes.dark } },
+    unreadColors: colors.unread + (variant?.unread ?? 0),
+  };
+}
+
+/**
+ * Resolves the environment default theme id against T3's built-in themes and the published
+ * set, in T3's order: a built-in id or legacy alias always names the built-in, and appearance
+ * keywords name no theme.
+ */
+export function resolveT3Theme(
+  themeId: string,
+  published: readonly PublishedT3Theme[],
+): T3ThemeLookup {
+  const builtIn = resolveBuiltInTheme(themeId);
+  if (builtIn) return { kind: "theme", theme: builtIn, unreadColors: 0 };
+  const theme = APPEARANCE_KEYWORDS.has(themeId)
+    ? undefined
+    : published.find((candidate) => candidate.id === themeId);
+  return theme ? resolvePublishedTheme(theme) : { kind: "missing" };
 }

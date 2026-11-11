@@ -114,6 +114,11 @@ export async function appearanceT3(context: TestContext) {
     target: { endpoint },
     credentialsDirectory,
     stop,
+    /** T3 streams its whole published theme set to every open subscription. */
+    publishThemes(themes: unknown[]) {
+      for (const { send } of subscriptions)
+        send({ version: 1, type: "environmentThemesUpdated", payload: { themes } });
+    },
     /** T3 publishes a new default theme to every open subscription. */
     setDefaultTheme(defaultTheme: string) {
       for (const { send } of subscriptions)

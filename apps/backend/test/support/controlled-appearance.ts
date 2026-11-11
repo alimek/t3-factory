@@ -4,6 +4,7 @@ import {
   type AppearanceGrantRecord,
   type AppearanceStream,
 } from "../../src/adapters/t3.ts";
+import { publishedThemes } from "../../src/adapters/live-t3-appearance.ts";
 
 /** One open configuration subscription: events queue until Factory reads them. */
 class ControlledAppearanceStream implements AppearanceStream {
@@ -48,7 +49,8 @@ export class ControlledAppearance {
   /** False after a revocation T3 made from another process: open sockets keep streaming. */
   sessionValid = true;
   defaultTheme = "";
-  themes: { id: string; name: string }[] = [];
+  /** Published definitions as T3 streams them; Factory reads them as the live adapter does. */
+  themes: unknown[] = [];
   pairings = 0;
   /** Session checks and subscriptions Factory asked for. */
   checks = 0;
@@ -111,7 +113,7 @@ export class ControlledAppearance {
       environmentId: this.environmentId,
       defaultTheme: this.defaultTheme,
     });
-    stream.push({ type: "themes", themes: [...this.themes] });
+    stream.push({ type: "themes", themes: publishedThemes(this.themes) });
     return stream;
   }
 
@@ -121,9 +123,10 @@ export class ControlledAppearance {
     this.broadcast({ type: "default", defaultTheme: id });
   }
 
-  publishThemes(themes: { id: string; name: string }[]) {
+  /** The owner publishes, edits or removes theme files: T3 streams the whole current set. */
+  publishThemes(themes: unknown[]) {
     this.themes = themes;
-    this.broadcast({ type: "themes", themes: [...themes] });
+    this.broadcast({ type: "themes", themes: publishedThemes(themes) });
   }
 
   /** T3 stops or the network drops: every open subscription closes. */
