@@ -482,8 +482,8 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   A reserved or uncertain launch is still searched for and blocks settlement: the settlement
   shows it unresolved, without a thread, until the search binds its worker, which then joins
   the attempt.
-  Repeating the request while stopping changes nothing; with an unresolved worker it starts the
-  next attempt under the current owner.
+  Repeating the request while stopping changes nothing; with an unresolved worker or launch it
+  starts the next attempt under the current owner.
 - **Stopping.** A pass runs right after acceptance and in every reconciliation, in the drive lane.
   It reads every bound worker fresh. The backend that accepted the attempt sends Stop once
   for each worker read unfinished in scope: it records the request

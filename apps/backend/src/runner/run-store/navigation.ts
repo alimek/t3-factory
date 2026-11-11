@@ -7,7 +7,7 @@ import {
 import * as Effect from "effect/Effect";
 import { currentWorkingMessages } from "./current-report.ts";
 import type { RunnerDatabase } from "./database.ts";
-import { readRunSettlement } from "./manual-settlement.ts";
+import { readRunSettlementStates } from "./manual-settlement.ts";
 import { runLifecycle } from "./lifecycle.ts";
 import { failure } from "../../result.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
@@ -43,14 +43,7 @@ export function openRunNavigation(database: RunnerDatabase) {
           FROM runs r JOIN tasks t ON t.id=r.task_id JOIN projects p ON p.id=t.project_id
           JOIN flow_revisions f ON f.id=r.flow_revision_id
           LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
-          const settlements = new Map(
-            yield* Effect.forEach(rows, (row) =>
-              Effect.map(
-                readRunSettlement(sql, row),
-                (settlement) => [row.id, settlement?.state ?? null] as const,
-              ),
-            ),
-          );
+          const settlements = yield* readRunSettlementStates(sql, rows);
           const blocks = yield* sql<{
             run_id: string;
             block_id: string;

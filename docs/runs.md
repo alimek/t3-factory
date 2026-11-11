@@ -353,7 +353,7 @@ confirmation is needed.
 Confirming holds the Run at once: nothing new is launched, sent, released or delivered, no Wait forwards (at its deadline or
 through **Continue now**), and Human answers and **Request report** are refused. Factory then asks T3 to Stop each worker thread that is still unfinished, with its delegated and background work,
 and settles only once fresh reads confirm every worker finished; a Stop acknowledgement is not enough. Until then the Run stays
-Active and its settlement shows **stopping**, with each worker's progress. A worker becomes **unresolved** when T3 does not
+Active and its settlement shows **stopping**, with each worker's progress. A worker shows **not resolved** when T3 does not
 support or accept Stop, cannot show the thread in the Run's project, workspace and authorization, or still shows it unfinished
 30 seconds after acknowledging Stop; the settlement then names the affected workers and what blocks them (a run in progress, a
 native request, delegated work or a queued run). A worker whose launch T3 may have accepted without Factory receiving the reply

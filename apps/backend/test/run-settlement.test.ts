@@ -933,3 +933,29 @@ it("a restarted backend never sends the Stop deferred by an earlier owner's unre
   });
   expect(f.t3.threadStops).toStrictEqual([]);
 });
+
+it("retrying a launch-only unresolved settlement after restart starts a new owned attempt", async (c) => {
+  // Arrange
+  const { h, f, t3, input, world } = await prepared(c);
+  const accepted = await f.startRun(input);
+  assert(accepted.ok);
+  t3.loseLaunchReply = true;
+  t3.discoverAvailable = false;
+  settleDuringNextLaunch(world, accepted.value.id);
+  assert((await f.reconcileRuns()).ok);
+  await f.close();
+  const reopened = await h.open({ t3, connectionRetryMs: 60_000 });
+  const before = await reopened.getRun(accepted.value.id);
+  assert(before.ok);
+  expect(before.value.settlement).toMatchObject({ state: "unresolved", attempt: 1 });
+
+  // Act
+  const result = await reopened.settleRun(accepted.value.id, { stopWorkers: true });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject({
+    outcome: "unresolved",
+    run: { settlement: { attempt: 2, workers: [{ threadId: null, state: "unresolved" }] } },
+  });
+});

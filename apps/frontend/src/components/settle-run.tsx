@@ -12,6 +12,13 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 
+const WORKER_STATE_LABEL: Record<RunSettlementWorker["state"], string> = {
+  executing: "still running",
+  stopping: "stopping",
+  finished: "finished",
+  unresolved: "not resolved",
+};
+
 export function SettlementWorkers({ workers }: { workers: readonly RunSettlementWorker[] }) {
   return (
     <ul className="max-h-60 space-y-2 overflow-auto text-sm">
@@ -25,7 +32,7 @@ export function SettlementWorkers({ workers }: { workers: readonly RunSettlement
             worker.blockName
           )}
           {" · "}
-          {worker.state}
+          {WORKER_STATE_LABEL[worker.state]}
           {worker.problem && <p className="text-muted-foreground">{worker.problem}</p>}
         </li>
       ))}

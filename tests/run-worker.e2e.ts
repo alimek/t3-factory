@@ -479,7 +479,7 @@ test("Settle confirmation cancels without changes, then stops workers and settle
   // Act
   await screen.getByRole("menuitem", "Settle", { exact: true }).tap();
   const dialog = screen.getByRole("alertdialog", "Stop the work and settle this Run?");
-  await expect(dialog).toContainText("Implement change");
+  await expect(dialog).toContainText("Implement change · still running");
   await expect(dialog.getByRole("button", "Cancel", { exact: true })).toBeFocused();
   await browser.evaluate(
     "Promise.all(document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished))",
@@ -550,6 +550,7 @@ test("an unresolved settlement shows worker problems and retries to Settled", as
   await app.open(`/runs/${found.id}`);
   const progress = screen.getByRole("region", "Run settlement");
   await expect(progress).toContainText("Settlement unresolved");
+  await expect(progress).toContainText("not resolved");
   await expect(
     screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(found.title)),
   ).toContainText("Settle unresolved");

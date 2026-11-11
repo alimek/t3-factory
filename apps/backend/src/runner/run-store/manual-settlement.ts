@@ -84,6 +84,45 @@ function unresolvedLaunchWorker(launch: UnresolvedLaunch): RunSettlementWorker {
   };
 }
 
+/** Both unresolved launch outcomes and workers block a confirmed settlement. */
+function settlementState(
+  unresolvedWorker: boolean,
+  unresolvedLaunch: boolean,
+): RunSettlement["state"] {
+  return unresolvedWorker || unresolvedLaunch ? "unresolved" : "stopping";
+}
+
+/** Navigation reads settlement progress for its listed Runs in three bulk queries. */
+export function readRunSettlementStates(
+  sql: SqlClient.SqlClient,
+  runs: readonly { readonly id: string; readonly settled_at: string | null }[],
+) {
+  return Effect.gen(function* () {
+    const ids = runs.filter((run) => !run.settled_at).map((run) => run.id);
+    if (!ids.length) return new Map<string, RunSettlement["state"] | null>();
+    const settlements = yield* sql<{
+      run_id: string;
+    }>`SELECT run_id FROM run_settlements WHERE run_id IN ${sql.in(ids)}`;
+    const workers = yield* sql<{
+      run_id: string;
+    }>`SELECT DISTINCT w.run_id FROM run_settlement_workers w JOIN run_settlements s ON s.run_id=w.run_id AND s.attempt=w.attempt WHERE w.run_id IN ${sql.in(ids)} AND w.state='unresolved'`;
+    const launches = yield* sql<{
+      run_id: string;
+    }>`SELECT DISTINCT run_id FROM operation_intents WHERE run_id IN ${sql.in(ids)} AND kind='launch' AND state IN ('reserved','uncertain')`;
+    const confirmed = new Set(settlements.map((row) => row.run_id));
+    const unresolvedWorkers = new Set(workers.map((row) => row.run_id));
+    const unresolvedLaunches = new Set(launches.map((row) => row.run_id));
+    return new Map(
+      ids.map((id) => [
+        id,
+        confirmed.has(id)
+          ? settlementState(unresolvedWorkers.has(id), unresolvedLaunches.has(id))
+          : null,
+      ]),
+    );
+  });
+}
+
 /** The confirmed manual settlement of a Run that has not settled yet, as Run detail shows it. */
 export function readRunSettlement(
   sql: SqlClient.SqlClient,
@@ -108,10 +147,10 @@ export function readRunSettlement(
     }>`SELECT w.block_id,b.name,w.thread_id,t.link,w.state,w.stop_requested_at,w.problem FROM run_settlement_workers w JOIN run_blocks b ON b.run_id=w.run_id AND b.block_id=w.block_id LEFT JOIN run_thread_bindings t ON t.run_id=w.run_id AND t.thread_id=w.thread_id WHERE w.run_id=${run.id} AND w.attempt=${row.attempt} ORDER BY b.rowid`;
     const launches = yield* unresolvedLaunchRows(sql, run.id);
     return {
-      state:
-        launches.length || workers.some((worker) => worker.state === "unresolved")
-          ? "unresolved"
-          : "stopping",
+      state: settlementState(
+        workers.some((worker) => worker.state === "unresolved"),
+        launches.length > 0,
+      ),
       requestedAt: row.requested_at,
       attempt: row.attempt,
       attemptedAt: row.attempted_at,
@@ -187,8 +226,8 @@ export function openRunManualSettlement(database: RunnerDatabase) {
   /** The user confirms stopping the Run's workers to settle it. Guards: the Run exists, is not
    * Archived and this backend owns the database; a Settled Run is left unchanged. The first
    * confirmation closes the handoff gate and starts attempt 1; a later one starts the next
-   * attempt only while the current attempt has an unresolved worker. Both record this backend as
-   * the attempt's owner, the bound workers as stopping and "settlement requested", and advance the
+   * attempt only while the current attempt has an unresolved worker or launch. Both record this
+   * backend as the attempt's owner, the bound workers as stopping and "settlement requested", and advance the
    * generation. Answers whether an attempt started. */
   function acceptSettlement(id: string): Effect.Effect<Result<boolean>, unknown> {
     return withLifecycle<boolean>(database, id, (sql, run) =>
@@ -201,9 +240,8 @@ export function openRunManualSettlement(database: RunnerDatabase) {
           yield* sql<SettlementRow>`SELECT * FROM run_settlements WHERE run_id=${id}`;
         const time = yield* now;
         if (current) {
-          const unresolved =
-            yield* sql`SELECT thread_id FROM run_settlement_workers WHERE run_id=${id} AND attempt=${current.attempt} AND state='unresolved'`;
-          if (!unresolved.length) return { ok: true as const, value: false };
+          const settlement = yield* readRunSettlement(sql, { id, ...run });
+          if (settlement?.state !== "unresolved") return { ok: true as const, value: false };
           yield* sql`UPDATE run_settlements SET attempt=attempt+1,attempt_owner=${ownerToken},attempted_at=${time},stop_pass_at=NULL WHERE run_id=${id}`;
         } else {
           yield* sql`UPDATE runs SET gate_open=0 WHERE id=${id}`;
