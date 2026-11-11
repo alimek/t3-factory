@@ -964,6 +964,50 @@ it("a Stop is not requested once T3 authorization changes after the reads, and t
   expect(f.t3.threadStops).toStrictEqual([]);
 });
 
+it("Settle under a replaced T3 authorization is refused and leaves the Run unchanged", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  allTurnsEnd(setup.world, worker);
+  await setup.f.configureConnection({ endpoint: "https://other.example/mcp" });
+
+  // Act
+  const result = await setup.f.settleRun(worker.runId, {});
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error).toMatchObject({
+    code: "conflict",
+    message: expect.stringContaining("earlier T3 authorization"),
+  });
+  const run = await setup.f.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({ lifecycle: "active", gateOpen: true, settlement: null });
+});
+
+it("confirmed Settle under a replaced T3 authorization is refused while T3 is unavailable", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  await setup.f.configureConnection({ endpoint: "https://other.example/mcp" });
+  setup.t3.available = false;
+  await setup.f.recheckConnection();
+
+  // Act
+  const result = await setup.f.settleRun(worker.runId, { stopWorkers: true });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error).toMatchObject({
+    code: "conflict",
+    message: expect.stringContaining("earlier T3 authorization"),
+  });
+  const run = await setup.f.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value).toMatchObject({ lifecycle: "active", gateOpen: true, settlement: null });
+  expect(setup.t3.threadStops).toStrictEqual([]);
+});
+
 it("a report while a confirmed settlement is stopping its worker records nothing and does not claim the work stopped", async (c) => {
   // Arrange
   const setup = await prepared(c, handoffFlow);

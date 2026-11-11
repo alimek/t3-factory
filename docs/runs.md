@@ -376,7 +376,9 @@ certify result quality or one reviewed revision.
 shortcut and desktop menu) uses the same rules. When fresh T3 reads confirm every bound worker thread finished, it settles at
 once. Otherwise nothing changes until you confirm stopping every worker and ending the Run; cancelling or dismissing the
 confirmation changes nothing and sends no Stop. An ordinary Settle request never interrupts a worker: the server answers that
-confirmation is needed.
+confirmation is needed. A Run started under a T3 authorization Factory knows was since replaced, for example by
+reauthorizing or connecting another endpoint, cannot be settled: **Settle** is refused with or without confirmation, also while
+T3 is unavailable, and nothing changes; **Archive** remains available.
 
 Confirming holds the Run at once: nothing new is launched, sent, released or delivered, no Wait forwards (at its deadline or
 through **Continue now**), and Human answers and **Request report** are refused. While settlement is stopping or unresolved,

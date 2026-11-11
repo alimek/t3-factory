@@ -30,6 +30,18 @@ const NOT_WORKING: readonly BlockState[] = [
 const UNRESOLVED_SEND_ON_SETTLE =
   "The Run was settled before Factory confirmed whether T3 received this message; Factory will not resend it.";
 
+/** Settle's refusal for a Run whose authorization context Factory knows was replaced. */
+const REPLACED_AUTHORIZATION =
+  "This Run started under an earlier T3 authorization, so Factory cannot read or stop its workers to settle it. Archive it instead.";
+
+/** Whether Factory knows an authorization context other than the Run's. The known context is
+ * kept while T3 is unavailable and cleared while reauthorization is pending. */
+const authorizationReplaced = (sql: SqlClient.SqlClient, runId: string) =>
+  Effect.map(
+    sql`SELECT 1 FROM runs r JOIN t3_connection c ON c.singleton=1 WHERE r.id=${runId} AND c.context_id IS NOT NULL AND c.context_id!=r.context_id`,
+    (rows) => rows.length > 0,
+  );
+
 /** A bound worker thread of a Run, which manual settlement reads and Archive interrupts. */
 export type BoundWorker = {
   readonly block_id: string;
@@ -224,6 +236,14 @@ export function openRunManualSettlement(database: RunnerDatabase) {
       Effect.map(unresolvedLaunchRows(sql, runId), (rows) => rows.map(unresolvedLaunchWorker)),
     );
 
+  /** Settle's conflict when the Run's known authorization context was replaced, else null. */
+  const replacedAuthorization = (runId: string) =>
+    database.transaction((sql) =>
+      Effect.map(authorizationReplaced(sql, runId), (replaced) =>
+        replaced ? failure("conflict", REPLACED_AUTHORIZATION) : null,
+      ),
+    );
+
   /** The current attempt of the Run's confirmed settlement, whether this backend accepted it, and
    * its workers' records. */
   const readSettlementAttempt = (runId: string) =>
@@ -239,7 +259,9 @@ export function openRunManualSettlement(database: RunnerDatabase) {
     );
 
   /** The user confirms stopping the Run's workers to settle it. Guards: the Run exists, is not
-   * Archived and this backend owns the database; a Settled Run is left unchanged. The first
+   * Archived, this backend owns the database and no known authorization context replaced the
+   * Run's, also while T3 is unavailable: such a settlement could never complete. A Settled Run
+   * is left unchanged. The first
    * confirmation closes the handoff gate and starts attempt 1; a later one starts the next
    * attempt only while the current attempt has an unresolved worker or launch. Both record this
    * backend as the attempt's owner, the bound workers as stopping and "settlement requested", and advance the
@@ -251,6 +273,8 @@ export function openRunManualSettlement(database: RunnerDatabase) {
         if (run.settled_at) return { ok: true as const, value: false };
         if (!(yield* guardsHold(sql, ownerToken, id, { owner: true })))
           return failure("conflict", "Runner ownership changed.");
+        if (yield* authorizationReplaced(sql, id))
+          return failure("conflict", REPLACED_AUTHORIZATION);
         const [current] =
           yield* sql<SettlementRow>`SELECT * FROM run_settlements WHERE run_id=${id}`;
         const time = yield* now;
@@ -437,6 +461,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
     runsWithSettlement,
     boundWorkers,
     unresolvedLaunches,
+    replacedAuthorization,
     readSettlementAttempt,
     acceptSettlement,
     claimStopPass,

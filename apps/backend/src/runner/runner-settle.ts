@@ -392,7 +392,8 @@ export function openRunnerSettle(
   }
 
   /** Settle without authorization to stop: it completes only when fresh reads, in the Run's
-   * drive lane, confirm every bound worker finished; otherwise nothing changes. */
+   * drive lane, confirm every bound worker finished; otherwise nothing changes. A Run whose
+   * known authorization context was replaced is refused. */
   function settleIfFinished(id: string) {
     return lifecycle.serial(id, () =>
       Effect.gen(function* (): Effect.fn.Return<Result<RunSettlementOutcome>, unknown> {
@@ -401,6 +402,9 @@ export function openRunnerSettle(
         if (run.archived_at || run.settled_at || !run.gate_open) return yield* currentOutcome(id);
         const workers = yield* store.boundWorkers(id);
         const reads = yield* readWorkers(run, workers);
+        // After the reads, which recheck the connection: confirming could never settle this Run.
+        const replaced = yield* store.replacedAuthorization(id);
+        if (replaced) return replaced;
         const launches = yield* store.unresolvedLaunches(id);
         if (!launches.length && workers.every((worker) => reads.get(worker.thread_id)!.finished)) {
           // A report or answer accepted during the reads makes `complete` refuse; the user retries.
