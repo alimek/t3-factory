@@ -57,11 +57,10 @@ are kept indefinitely. Message payloads persist only while needed for pending Hu
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
 remain. Initial input, including its images, and revision prompts are intentional exceptions;
 staged images no Run references are deleted after 24 hours. The only other image removal is manual
-deletion from **Settings → Run images** of an image whose every Run is Settled or Archived: Factory
-rechecks that under the image store's serialization and, in a transaction serialized with Start,
-unlinks only the file. Manifest, staging row and history stay; the image then reads as missing until
-identical bytes are uploaded again. There is no transcript archive, and neither payload clearing nor
-image deletion is secure erasure.
+deletion from **Settings → Run images** of an image whose every Run is Settled or Archived. Factory
+rechecks that rule at deletion and removes only the bytes; manifest, staging row and history stay. A
+later Start naming the image gets the missing-images outcome, and uploading identical bytes restores
+it. There is no transcript archive, and neither payload clearing nor image deletion is secure erasure.
 
 ## Public operations
 

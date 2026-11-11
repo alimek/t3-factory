@@ -13,6 +13,7 @@ import type {
   RunImageInfo,
   RunImageDeletion,
   RunImageMimeType,
+  RunImageReference,
   StageRunImageInput,
   ValidationIssue,
 } from "@t3-factory/contracts";
@@ -75,22 +76,20 @@ type ReferenceRow = StagedRow & {
 
 /** Every referencing Run's image row, grouped by digest in the rows' order. */
 function groupReferences(rows: readonly ReferenceRow[]): EligibleRunImage[] {
-  const images = new Map<string, EligibleRunImage>();
+  const images = new Map<string, Omit<EligibleRunImage, "runs"> & { runs: RunImageReference[] }>();
   for (const row of rows) {
-    const image = images.get(row.sha256) ?? { name: row.name, ...info(row), runs: [] };
-    images.set(row.sha256, {
-      ...image,
-      runs: [
-        ...image.runs,
-        {
-          id: row.run_id,
-          number: row.number,
-          title: row.title,
-          lifecycle: row.archived_at ? "archived" : "settled",
-          project: { id: row.project_id, title: row.project_title },
-          ordinal: row.ordinal,
-        },
-      ],
+    let image = images.get(row.sha256);
+    if (!image) {
+      image = { name: row.name, ...info(row), runs: [] };
+      images.set(row.sha256, image);
+    }
+    image.runs.push({
+      id: row.run_id,
+      number: row.number,
+      title: row.title,
+      lifecycle: row.archived_at ? "archived" : "settled",
+      project: { id: row.project_id, title: row.project_title },
+      ordinal: row.ordinal,
     });
   }
   return [...images.values()];
@@ -220,7 +219,7 @@ export const makeRunImages = (directory: string) =>
     }
 
     /**
-     * The deletion eligibility rule, apart from intact bytes: at least one Run attached the digest
+     * The deletion eligibility rule, apart from the file: at least one Run attached the digest
      * and every Run that did is Settled or Archived. `digests` limits it to those digests;
      * `projectId` keeps images a Run of that project attached. Newest Run first, then manifest order.
      */
@@ -245,14 +244,12 @@ export const makeRunImages = (directory: string) =>
       });
     }
 
-    /** The full eligibility rule: closed Runs only, and bytes that still hash to their name. */
+    /** The full eligibility rule: closed Runs only, and a file on disk as Start requires. */
     function eligibleRunImages(scope: EligibilityScope) {
       return Effect.gen(function* () {
         const referenced = yield* referencedOnlyByClosedRuns(scope);
-        const intact = yield* Effect.forEach(referenced, (image) =>
-          Effect.map(storedBytes(image.sha256), (bytes) => bytes.kind === "ok"),
-        );
-        return referenced.filter((_, index) => intact[index]);
+        const stored = yield* Effect.forEach(referenced, (image) => hasFile(image.sha256));
+        return referenced.filter((_, index) => stored[index]);
       });
     }
 

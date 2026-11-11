@@ -2,6 +2,7 @@ import { Fragment, useState, type KeyboardEvent } from "react";
 import { ChevronLeft, ChevronRight, Image as ImageIcon, ImageOff } from "lucide-react";
 import type { RunDetail, RunImage } from "@t3-factory/contracts";
 import { operationPath, runOperations } from "@t3-factory/contracts";
+import { useDeletedRunImages } from "../run-images.ts";
 import { ImagePreviewDialog, previewImageClass } from "./prompt-images.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.tsx";
@@ -27,14 +28,17 @@ export function runPromptText(run: RunDetail) {
 }
 
 /**
- * Gallery position and the images whose bytes failed to load for one view of the prompt.
- * A failed read only swaps in a placeholder; it is never retried and changes nothing else.
+ * Gallery position and the images unavailable to one view of the prompt: bytes that failed to
+ * load, and bytes this client deleted. A failed read only swaps in a placeholder; it is never
+ * retried and changes nothing else.
  */
 function useRunImages(run: RunDetail) {
   const [galleryIndex, setGalleryIndex] = useState<number>();
-  const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
+  const deleted = useDeletedRunImages();
+  const unavailable = deleted.size ? new Set([...failed, ...deleted]) : failed;
   const markUnavailable = (sha256: string) =>
-    setUnavailable((current) => (current.has(sha256) ? current : new Set(current).add(sha256)));
+    setFailed((current) => (current.has(sha256) ? current : new Set(current).add(sha256)));
   const gallery =
     galleryIndex === undefined ? null : (
       <RunImageGallery

@@ -168,17 +168,28 @@ test("cancelling a filtered Delete all keeps every listed image", async ({ app, 
   expect(images.length).toBe(listed);
 });
 
-test("an image deleted from its preview shows Image unavailable in its Run, even after it was previewed", async ({
+/** Whether every `<img>` matched by the selector has loaded its bytes. */
+const imagesLoaded = (selector: string) =>
+  `() => [...document.querySelectorAll('${selector}')].every((image) => image.complete && image.naturalWidth > 0)`;
+
+test("an image deleted in Settings shows Image unavailable in the Run it was viewed in, without a reload", async ({
   app,
   screen,
   browser,
 }) => {
   // Arrange
-  await openRunImages(app, screen);
   const eligible = await read<readonly EligibleRunImage[]>(app, "/api/run-images");
   const welcome = eligible.find((image) => image.name === "welcome-copy.png");
   const seeded = welcome?.runs.find((run) => run.title.endsWith("Clearer onboarding copy"));
   assert(seeded, "Expected the seeded Settled Run's welcome-copy.png to be eligible");
+  await app.open(`/runs/${seeded.id}`);
+  const context = screen.getByRole("complementary", "Run context");
+  await expect(context.getByRole("button", "Open Image 1: welcome-copy.png")).toBeVisible();
+  await expect
+    .poll(() => browser.evaluate(imagesLoaded('[aria-label="Prompt images"] img')))
+    .toBe(true);
+  await screen.getByRole("link", /^Settings, /).tap();
+  await screen.getByRole("group", "STORAGE").getByRole("link", "Run images").tap();
   await screen.getByRole("button", "Preview welcome-copy.png").tap();
   const preview = screen.getByRole("region", "Preview of welcome-copy.png");
   await expect(preview.getByRole("image", "welcome-copy.png")).toBeVisible();
@@ -189,17 +200,16 @@ test("an image deleted from its preview shows Image unavailable in its Run, even
   await expect(dialog).toContainText(/Used by \d+ Runs? in /);
   await expect(dialog).toContainText(/keeps? (its|their) history and shows? “Image unavailable”/);
   await app.screenshot("settings-run-images-confirm-one");
-
-  // Act
   await dialog.getByRole("button", "Delete image").tap();
-
-  // Assert
   await expect(cards(screen).first()).toBeVisible();
   await expect(screen.getByRole("button", "Preview welcome-copy.png")).toHaveCount(0);
   await expect(screen.getByRole("button", "Preview compact-navigation.png")).toBeVisible();
   await app.screenshot("settings-run-images-after-delete");
-  await app.open(`/runs/${seeded.id}`);
-  const context = screen.getByRole("complementary", "Run context");
+
+  // Act
+  await screen.getByRole("button", "Close", { exact: true }).tap();
+
+  // Assert
   await expect(context.getByText("Image unavailable", { exact: true })).toBeVisible();
   await expect(context).toContainText("Polish the first-run welcome copy");
   await app.screenshot("run-image-deleted-context");

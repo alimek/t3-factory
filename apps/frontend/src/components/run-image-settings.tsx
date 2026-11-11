@@ -26,7 +26,8 @@ import { cn } from "@/lib/utils";
 import { RUN_IMAGE_DELETION_LIMIT } from "@t3-factory/domain-validation";
 import { api } from "../api.ts";
 import { MutationGate } from "../client-gate.tsx";
-import { imageSize } from "./prompt-editor.tsx";
+import { imageSize, markRunImagesDeleted } from "../run-images.ts";
+import { useProjects } from "../use-projects.ts";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const lifecycleLabel = { settled: "Settled", archived: "Archived" } as const;
@@ -51,7 +52,7 @@ const projectsOf = (image: EligibleRunImage) =>
  * the server lists them for the chosen project, with an in-section preview.
  */
 export function RunImageSettings() {
-  const projects = useProjects();
+  const projects = useProjects() ?? [];
   const [projectId, setProjectId] = useState("");
   const [listed, setListed] = useState(0);
   const { images, error } = useEligibleImages(projectId, listed);
@@ -104,50 +105,39 @@ export function RunImageSettings() {
           onDelete={() => deletion.ask({ scope: "one", images: [images[index]!] })}
         />
       ) : (
-        images && (
-          <RunImageList
-            images={images}
-            projects={projects}
-            project={project}
-            confirmation={confirmation}
-            onProjectChange={(next) => {
-              deletion.cancel();
-              setProjectId(next);
-            }}
-            onOpen={preview}
-            onDelete={(image) => deletion.ask({ scope: "one", images: [image] })}
-            onDeleteAll={() => deletion.ask({ scope: "all", images })}
-          />
-        )
+        <RunImageList
+          images={images}
+          projects={projects}
+          project={project}
+          confirmation={confirmation}
+          onProjectChange={(next) => {
+            deletion.cancel();
+            setProjectId(next);
+          }}
+          onOpen={preview}
+          onDelete={(image) => deletion.ask({ scope: "one", images: [image] })}
+          onDeleteAll={(listed) => deletion.ask({ scope: "all", images: listed })}
+        />
       )}
     </div>
   );
 }
 
-function useProjects() {
-  const [projects, setProjects] = useState<readonly FactoryProject[]>([]);
-  useEffect(() => {
-    let active = true;
-    api.listProjects().then(
-      (catalog) => active && setProjects(catalog.projects),
-      () => undefined,
-    );
-    return () => {
-      active = false;
-    };
-  }, []);
-  return projects;
-}
-
-/** The server's eligible list for the project filter, read again whenever `listed` changes. */
+/**
+ * The server's eligible list for the project filter, read again whenever `listed` changes. It is
+ * null until the current filter's list arrives, so nothing acts on another filter's images.
+ */
 function useEligibleImages(projectId: string, listed: number) {
-  const [images, setImages] = useState<readonly EligibleRunImage[] | null>(null);
+  const [listing, setListing] = useState<{
+    projectId: string;
+    images: readonly EligibleRunImage[];
+  }>();
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
     setError("");
     api.listEligibleRunImages(projectId).then(
-      (eligible) => active && setImages(eligible),
+      (images) => active && setListing({ projectId, images }),
       (cause: unknown) =>
         active &&
         setError(cause instanceof Error ? cause.message : "Run images could not be listed."),
@@ -156,7 +146,7 @@ function useEligibleImages(projectId: string, listed: number) {
       active = false;
     };
   }, [projectId, listed]);
-  return { images, error };
+  return { images: listing?.projectId === projectId ? listing.images : null, error };
 }
 
 /** The pending confirmation, the deletion it confirms and its outcome; `deleted` relists. */
@@ -196,6 +186,7 @@ async function deleteImages(digests: readonly string[]) {
   for (let start = 0; start < digests.length; start += RUN_IMAGE_DELETION_LIMIT) {
     const batch = digests.slice(start, start + RUN_IMAGE_DELETION_LIMIT);
     const result = await api.deleteRunImages({ sha256: batch });
+    markRunImagesDeleted(result.deleted);
     skipped.push(...result.skipped);
   }
   return skipped;
@@ -214,6 +205,35 @@ function keepers(runs: number) {
   return `${runs === 2 ? "both" : `all ${runs}`} Runs keep their history and show`;
 }
 
+/** A filtered Delete all's note on other projects: kept, or also losing a shared image. */
+function otherProjectsNote(images: readonly EligibleRunImage[], project: FactoryProject) {
+  const shared = images.filter((image) =>
+    image.runs.some((run) => run.project.id !== project.id),
+  ).length;
+  if (shared === 0) return " Images in other projects are kept.";
+  return ` ${count(shared, "image")} ${shared === 1 ? "is" : "are"} also used by Runs in other projects; those Runs show “Image unavailable” too.`;
+}
+
+/** The confirmation's title, description and action for one image or every listed image. */
+function deletionCopy({ scope, images }: Deletion, project: FactoryProject | null) {
+  const size = imageSize(images.reduce((total, image) => total + image.sizeBytes, 0));
+  const runs = new Map(images.flatMap((image) => image.runs).map((run) => [run.id, run]));
+  if (scope === "one") {
+    const image = images[0]!;
+    return {
+      title: `Delete ${image.name} (${size})?`,
+      description: `Used by ${count(runs.size, "Run")} in ${projectsOf(image)}. The file is removed from this computer and cannot be restored; ${keepers(runs.size)} “Image unavailable” in its place.`,
+      action: "Delete image",
+    };
+  }
+  const onlyProject = project && [...runs.values()].every((run) => run.project.id === project.id);
+  return {
+    title: `Delete ${count(images.length, "image")} (${size}) from ${count(runs.size, "Run")}${onlyProject ? ` in ${project.title}` : ""}?`,
+    description: `The files are removed from this computer and cannot be restored. Run history stays unchanged; ${images.length === 1 ? "this image shows" : "these images show"} as “Image unavailable”.${project ? otherProjectsNote(images, project) : ""}`,
+    action: `Delete ${count(images.length, "image")}`,
+  };
+}
+
 /** Figma R10c/R10e: what the deletion removes and keeps, with Cancel and the danger action. */
 function DeleteConfirmation({
   deletion,
@@ -228,17 +248,7 @@ function DeleteConfirmation({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const { images } = deletion;
-  const size = imageSize(images.reduce((total, image) => total + image.sizeBytes, 0));
-  const runs = new Map(images.flatMap((image) => image.runs).map((run) => [run.id, run]));
-  const onlyProject = project && [...runs.values()].every((run) => run.project.id === project.id);
-  const one = deletion.scope === "one" ? images[0]! : null;
-  const title = one
-    ? `Delete ${one.name} (${size})?`
-    : `Delete ${count(images.length, "image")} (${size}) from ${count(runs.size, "Run")}${onlyProject ? ` in ${project.title}` : ""}?`;
-  const description = one
-    ? `Used by ${count(runs.size, "Run")} in ${projectsOf(one)}. The file is removed from this computer and cannot be restored; ${keepers(runs.size)} “Image unavailable” in its place.`
-    : `The files are removed from this computer and cannot be restored. Run history stays unchanged; ${images.length === 1 ? "this image shows" : "these images show"} as “Image unavailable”.${project ? " Images in other projects are kept." : ""}`;
+  const { title, description, action } = deletionCopy(deletion, project);
   return (
     <section
       role="alertdialog"
@@ -253,7 +263,7 @@ function DeleteConfirmation({
         </Button>
         <MutationGate>
           <Button type="button" variant="danger" disabled={busy} onClick={onConfirm}>
-            {busy ? "Deleting…" : one ? "Delete image" : `Delete ${count(images.length, "image")}`}
+            {busy ? "Deleting…" : action}
           </Button>
         </MutationGate>
       </div>
@@ -271,14 +281,15 @@ function RunImageList({
   onDelete,
   onDeleteAll,
 }: {
-  images: readonly EligibleRunImage[];
+  /** Null while the current filter's list is loading. */
+  images: readonly EligibleRunImage[] | null;
   projects: readonly FactoryProject[];
   project: FactoryProject | null;
   confirmation: ReactNode;
   onProjectChange: (projectId: string) => void;
   onOpen: (sha256: string) => void;
   onDelete: (image: EligibleRunImage) => void;
-  onDeleteAll: () => void;
+  onDeleteAll: (images: readonly EligibleRunImage[]) => void;
 }) {
   return (
     <>
@@ -297,16 +308,16 @@ function RunImageList({
             </NativeSelectOption>
           ))}
         </NativeSelect>
-        {images.length > 0 && !confirmation && (
+        {images && images.length > 0 && !confirmation && (
           <MutationGate>
-            <Button type="button" variant="destructive" onClick={onDeleteAll}>
+            <Button type="button" variant="destructive" onClick={() => onDeleteAll(images)}>
               Delete all {images.length}
             </Button>
           </MutationGate>
         )}
       </div>
       {confirmation}
-      {images.length > 0 ? (
+      {images === null ? null : images.length > 0 ? (
         <ul
           aria-label="Run images"
           className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-4"
@@ -345,9 +356,16 @@ function RunImageSummary({
   images,
   project,
 }: {
-  images: readonly EligibleRunImage[];
+  images: readonly EligibleRunImage[] | null;
   project: FactoryProject | null;
 }) {
+  if (!images)
+    return (
+      <p className="mr-auto flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+        <HardDrive aria-hidden strokeWidth={1.5} className="size-4 shrink-0" />
+        Listing images…
+      </p>
+    );
   const bytes = images.reduce((total, image) => total + image.sizeBytes, 0);
   const runs = new Set(
     images.flatMap((image) =>

@@ -127,21 +127,25 @@ fixed Human exits their old exits were mapped to.
   its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
   the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the context
   rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)).
-  **Settings → Run images** lists each stored image whose bytes are intact and whose every Run is Settled or Archived,
-  optionally for one project (a Run's project is its Task's), with each image's Runs, states and projects; an image an
-  Active Run also uses is not listed. A card opens an in-section preview with **Image N of M** within the list and every
-  Run that uses the image with **Open Run**. A card's delete icon or the preview's **Delete image** deletes one image;
-  **Delete all** deletes every image the current filter lists. Each first asks inline, stating the images' count, total
-  size and Runs, that they cannot be restored and that history shows **Image unavailable** (a filtered **Delete all** also
-  says other projects' images are kept). The server rechecks each image and deletes only its file: an image an Active Run
-  now uses is kept and reported as not deleted. Manifests, prompts and timelines stay, and the image reads as missing
-  everywhere, including Factory MCP reads and worker launches. A Settled Run that returns to Active does not get deleted
-  images back; a Start naming a deleted image gets the missing-images outcome, and uploading identical bytes again restores
-  the image for every Run that uses it. Image loads revalidate with the server, so a deleted image shows as unavailable
-  even where it was viewed before. Images are
-  read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
-  **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
-  retried and creates no attention or state change.
+  Images are read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes
+  show **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is
+  not retried and creates no attention or state change.
+- **Settings → Run images** lists each image whose file is stored and whose every Run is Settled or Archived. An image an
+  Active Run also uses is not listed.
+  - The list can be filtered to one project; a Run's project is its Task's. Each card shows the image's Runs, states and
+    projects. A card opens an in-section preview with **Image N of M** within the list and every Run that uses the image,
+    each with **Open Run**.
+  - A card's delete icon or the preview's **Delete image** deletes one image. **Delete all** deletes every image the
+    current filter lists.
+  - Each deletion first asks inline. It states the images' count, total size and Runs, that they cannot be restored, and
+    that history shows **Image unavailable**. A filtered **Delete all** also says whether the images are used by Runs in
+    other projects.
+  - The server rechecks each image and deletes only its file. An image an Active Run now uses is kept and reported as not
+    deleted.
+  - Manifests, prompts and timelines stay. The image reads as missing everywhere, including Factory MCP reads and worker
+    launches, and shows as unavailable even where it was viewed before.
+  - A Settled Run that returns to Active does not get deleted images back. A Start naming a deleted image gets the
+    missing-images outcome; uploading identical bytes again restores the image for every Run that uses it.
 - Each work block shows its recorded state: not started, working, waiting, finished, error or stopped (the Run was archived
   before it finished). A [Continuation](#continuations) shows **sent** or **pass-through** instead of working and finished. Several blocks can be
   active at once; the canvas marks no "current step", percentage or taken path. Repeated visits update the same block; the
