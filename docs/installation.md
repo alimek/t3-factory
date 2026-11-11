@@ -108,8 +108,9 @@ prompt and asks for explicit confirmation before it calls
 [`factory_start_run`](t3-integration.md#run-start-tools); that confirmation is
 the skill's instruction, not a server check.
 
-A launch-skill copy that is a symlink, special or hard-linked file is left unchanged and
-named on the target for manual replacement; the required reporting setup still completes.
+A launch-skill copy that is a symlink, special or hard-linked file is never read or replaced,
+and an unwritable launch-skill location is not written. The target names either problem with its
+manual fix on every recheck, while the required reporting setup still completes.
 
 Startup and app updates do not write harness files. When the launch skill is
 missing or outdated, use **Reinstall** (or **Repair** when reporting also needs

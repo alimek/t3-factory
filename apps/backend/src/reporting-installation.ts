@@ -40,32 +40,65 @@ async function skillMatches(path: string) {
     return false;
   }
 }
-async function launchSkillState(
-  paths: readonly string[],
-): Promise<"current" | "missing" | "outdated"> {
-  const states = await Promise.all(
-    paths.map(async (path) => {
-      try {
-        return (await readFile(path, "utf8")) === FACTORY_START_RUN_SKILL ? "current" : "outdated";
-      } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "outdated";
-      }
-    }),
-  );
-  return states.includes("missing")
+type LaunchSkillInspection = {
+  state: "current" | "missing" | "outdated";
+  /** Why a setup action cannot make the copy current, with the manual recovery step. */
+  problem?: string;
+};
+/** The nearest existing directory a recursive mkdir of `directory` would write into. */
+async function existingAncestor(directory: string): Promise<string> {
+  try {
+    await lstat(directory);
+    return directory;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT" || dirname(directory) === directory)
+      throw error;
+    return existingAncestor(dirname(directory));
+  }
+}
+/**
+ * One launch-skill copy. Its file type is checked without following links before any read, so a
+ * FIFO, device or linked copy is reported instead of read; only a regular file's content is read.
+ */
+async function inspectLaunchSkillCopy(path: string): Promise<LaunchSkillInspection> {
+  const unwritable = async (state: "missing" | "outdated"): Promise<LaunchSkillInspection> => {
+    const directory = await existingAncestor(dirname(path)).catch(() => dirname(path));
+    return access(directory, constants.W_OK).then(
+      () => ({ state }),
+      () => ({
+        state,
+        problem: `The optional factory-start-run skill cannot be written because ${directory} is not writable. Fix its permissions, then Reinstall.`,
+      }),
+    );
+  };
+  try {
+    const info = await lstat(path);
+    if (!info.isFile() || info.nlink !== 1)
+      return {
+        state: "outdated",
+        problem: `The optional factory-start-run skill at ${path} is a symlink, special or hard-linked file, which Factory leaves unchanged. Replace or remove it manually, then Reinstall.`,
+      };
+    if ((await readFile(path, "utf8")) === FACTORY_START_RUN_SKILL) return { state: "current" };
+    return await unwritable("outdated");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return unwritable("missing");
+    return {
+      state: "outdated",
+      problem: `The optional factory-start-run skill at ${path} cannot be read (${(error as NodeJS.ErrnoException).code ?? "error"}). Fix its permissions, then Reinstall.`,
+    };
+  }
+}
+/** Both launch-skill copies: the least current state and the first problem a setup action cannot fix. */
+async function inspectLaunchSkill(paths: readonly string[]): Promise<LaunchSkillInspection> {
+  const copies = await Promise.all(paths.map(inspectLaunchSkillCopy));
+  const states = copies.map((copy) => copy.state);
+  const state = states.includes("missing")
     ? "missing"
     : states.includes("outdated")
       ? "outdated"
       : "current";
-}
-/** The first launch-skill copy Factory refuses to replace, as an actionable explanation. */
-async function launchSkillConflict(paths: readonly string[]) {
-  for (const path of paths) {
-    const info = await lstat(path).catch(() => undefined);
-    if (info && (!info.isFile() || info.nlink !== 1))
-      return `The optional factory-start-run skill at ${path} is a symlink, special or hard-linked file, which Factory leaves unchanged. Replace or remove it manually, then Reinstall.`;
-  }
-  return undefined;
+  const problem = copies.find((copy) => copy.problem)?.problem;
+  return problem ? { state, problem } : { state };
 }
 async function writeSkill(path: string, text: string) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
@@ -188,8 +221,8 @@ const openReportingInstallation = Effect.fn(function* (
   ): Generator<Effect.Effect<unknown, unknown>, ReportingInstallation, never> {
     if (!target.path) return target;
     const launchPaths = [factorySkillPath(target.path, "factory-start-run"), canonicalLaunchSkill];
-    target = { ...target, launchSkill: yield* boundary(() => launchSkillState(launchPaths)) };
-    const launchConflict = yield* boundary(() => launchSkillConflict(launchPaths));
+    const launch = yield* boundary(() => inspectLaunchSkill(launchPaths));
+    target = { ...target, launchSkill: launch.state };
     return yield* Effect.gen(function* (): Generator<
       Effect.Effect<unknown, unknown>,
       ReportingInstallation,
@@ -214,7 +247,7 @@ const openReportingInstallation = Effect.fn(function* (
         message:
           target.launchSkill === "current"
             ? "Configuration installed. Start a fresh session; native approvals, managed restrictions and project overrides still apply."
-            : `Reporting configuration installed. ${launchConflict ?? "The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run."} Native approvals, managed restrictions and project overrides still apply.`,
+            : `Reporting configuration installed. ${launch.problem ?? "The optional factory-start-run skill is missing or outdated. Reinstall and start a fresh session to use factory-start-run."} Native approvals, managed restrictions and project overrides still apply.`,
       });
     }).pipe(
       Effect.catchCause((cause) => {
@@ -285,34 +318,19 @@ const openReportingInstallation = Effect.fn(function* (
                   );
                   yield* boundary(() => replace(target.path!, before, after));
                 }
-                // The optional launch skill never blocks required reporting. A copy Factory may not
-                // replace stays as it is, and inspection explains it on the installed target.
+                // The optional launch skill never blocks required reporting. A copy that is not a
+                // writable regular file stays as it is; inspection explains it on every recheck.
                 const launchPaths = [
                   factorySkillPath(target.path, "factory-start-run"),
                   canonicalLaunchSkill,
                 ];
-                const launchFailure = (yield* boundary(() => launchSkillConflict(launchPaths)))
-                  ? undefined
-                  : yield* boundary(async () => {
-                      for (const path of launchPaths)
-                        await writeSkill(path, FACTORY_START_RUN_SKILL);
-                    }).pipe(
-                      Effect.as(undefined),
-                      Effect.catch((error) =>
-                        Effect.succeed(error instanceof Error ? error.message : String(error)),
-                      ),
-                    );
+                if (!(yield* boundary(() => inspectLaunchSkill(launchPaths))).problem)
+                  yield* boundary(async () => {
+                    for (const path of launchPaths) await writeSkill(path, FACTORY_START_RUN_SKILL);
+                  }).pipe(Effect.ignore);
                 const checked = yield* inspect(target);
                 if (checked.status !== "installed") throw Error(checked.message);
-                return {
-                  ok: true,
-                  value: launchFailure
-                    ? {
-                        ...checked,
-                        message: `${checked.message} The optional factory-start-run skill could not be written: ${launchFailure}`,
-                      }
-                    : checked,
-                };
+                return { ok: true, value: checked };
               }).pipe(
                 Effect.uninterruptible,
                 Effect.catchCause((cause) => {

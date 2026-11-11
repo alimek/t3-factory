@@ -1,5 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
-import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { chmod, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import {
@@ -593,6 +594,64 @@ it("Repair installs required reporting and leaves a symlinked launch skill uncha
   expect(result.value.message).toContain(skill);
   expect(await readFile(destination, "utf8")).toBe("preserve");
   expect(await readFile(config, "utf8")).not.toContain("4999");
+});
+
+it("Repair completes when launch-skill copies are FIFOs, without reading them", async (context) => {
+  // Arrange
+  const { factory, home, harness, config, targetId } = await installedReportingFixture(context);
+  const skill = join(home, ".claude", "skills", "factory-start-run", "SKILL.md");
+  const canonical = join(
+    harness.processHome,
+    "reporting",
+    "skills",
+    "factory-start-run",
+    "SKILL.md",
+  );
+  const fifo = join(home, "launch.fifo");
+  execFileSync("mkfifo", [fifo]);
+  await rm(skill);
+  await symlink(fifo, skill);
+  await rm(canonical);
+  execFileSync("mkfifo", [canonical]);
+  await writeFile(
+    config,
+    JSON.stringify({
+      mcpServers: { "factory-runtime": { type: "http", url: "http://127.0.0.1:4999/mcp" } },
+    }),
+  );
+
+  // Act
+  const result = await factory.installReporting({ targetId });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject({ status: "installed", launchSkill: "outdated" });
+  expect(result.value.message).toContain("special or hard-linked file");
+  expect(await readFile(config, "utf8")).not.toContain("4999");
+});
+
+it("an unwritable launch-skill location stays explained after Repair installs reporting", async (context) => {
+  // Arrange
+  const { factory, home, config, targetId } = await installedReportingFixture(context);
+  const directory = join(home, ".claude", "skills", "factory-start-run");
+  await rm(join(directory, "SKILL.md"));
+  await chmod(directory, 0o500);
+  context.onTestFinished(() => chmod(directory, 0o700));
+  await writeFile(
+    config,
+    JSON.stringify({
+      mcpServers: { "factory-runtime": { type: "http", url: "http://127.0.0.1:4999/mcp" } },
+    }),
+  );
+  assert((await factory.installReporting({ targetId })).ok);
+
+  // Act
+  const result = await factory.getReportingInstallations();
+
+  // Assert
+  assert(result.ok);
+  expect(result.value[0]).toMatchObject({ status: "installed", launchSkill: "missing" });
+  expect(result.value[0]!.message).toContain(`${directory} is not writable`);
 });
 
 it("a missing optional launch skill does not block Start", async (context) => {
