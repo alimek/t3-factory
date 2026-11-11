@@ -28,7 +28,7 @@ Skip a collection step only when the user already supplied an unambiguous value 
 2. **Flow.** Call \`factory_list_flows\`. When it returns no Flows, explain that a Flow must first be created in Factory Studio, then stop. Offer every returned Flow by name; when names repeat, add its workspace setting and id. For a Flow whose \`readiness.ready\` is false, relay its issue messages: Start makes the final check. Done when one Flow id is chosen.
 3. **Prompt.** Use the text the user gave for the Run, or ask for it. Keep it verbatim: the user's own words, unedited and without conversation context added. This entry point carries text only; images and files go through Factory's Start form. Done when the exact text is held.
 4. **Review.** Show the Project title and repository path, the Flow name and workspace setting (project checkout, or a new worktree and its base), the Run title Factory derives (the prompt's first non-empty line) and the exact prompt in a quoted block. Ask the user to confirm, revise or cancel. Done when the user answers:
-   - **Cancel**: say that nothing was started, then stop.
+   - **Cancel**: say that nothing was started, then stop. A later request to start begins again at step 1 and gets its own review.
    - **Revise**: apply the change from its step onward, then review again. A confirmation given before the change no longer counts.
    - **Confirm**: an explicit yes to this review. Complete information in an earlier message is not confirmation.
 5. **Start.** Create one new random UUID as \`requestId\` for this confirmed review, for example with \`uuidgen\`. Call \`factory_start_run\` with \`requestId\`, \`projectId\`, \`flowId\` and \`input\` (the exact prompt), and keep those values frozen.
