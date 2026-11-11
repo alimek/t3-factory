@@ -1,12 +1,21 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { themeColors } from "./support/theme-colors.ts";
+import { delayLiveSnapshots } from "./support/live.ts";
+import { remoteFixture } from "./support/remote-access.ts";
+import {
+  cachedSnapshot,
+  canvasColor,
+  clientWithCachedOcean,
+  oceanDark,
+  themeColors,
+} from "./support/theme-colors.ts";
 
-const canvasColor = `getComputedStyle(document.body).backgroundColor`;
-/** T3's built-in Ocean theme as Factory maps its canvas, per mode. */
-const oceanDark = "rgb(23, 33, 43)";
 const oceanLight = "rgb(245, 247, 248)";
 const factoryDark = "rgb(9, 9, 11)";
+/** The Settings dialog hides the banner behind it from the accessibility tree. */
+const offlineBannerShown = `document.querySelector('[role="status"][aria-label="Offline"]') !== null`;
+/** Longer than any journey: a reopened page gets no live theme colors while it is set. */
+const noLiveDeliveryMs = 600_000;
 
 test("pairing on the host makes Factory follow the T3 environment's default theme", async ({
   app,
@@ -44,9 +53,7 @@ test("two clients show the same T3 theme in their own Light and Dark modes", asy
   await app.open("/settings/application");
   await expect.poll(() => browser.evaluate(canvasColor)).toBe(oceanDark);
   await app.screenshot("theme-colors-client-one-dark");
-  await app.open(colors.otherAddress("/__fixture/remote-browser"));
-  await app.open(colors.otherAddress("/__fixture/approved-browser?next=/settings/application"));
-  await expect(screen.getByText("Colors follow T3’s default theme “Ocean”.")).toBeVisible();
+  await colors.openApprovedClient(screen);
 
   // Act
   await screen.getByRole("radio", "Light").tap();
@@ -84,5 +91,74 @@ test("a grant T3 revoked without closing its socket ends inheritance and asks to
   await expect(screen.getByRole("button", "Pair again")).toBeVisible();
   await expect.poll(() => browser.evaluate(canvasColor)).toBe(factoryDark);
   await app.screenshot("theme-colors-revoked-baseline");
+  await colors.reset();
+});
+
+test("an approved client reopening before live delivery answers shows its cached T3 theme", async (journey) => {
+  // Arrange
+  const { app, browser } = journey;
+  const { colors, application } = await clientWithCachedOcean(journey);
+  await delayLiveSnapshots(app, noLiveDeliveryMs);
+
+  // Act
+  await app.open(application);
+
+  // Assert
+  await expect.poll(() => browser.evaluate(canvasColor)).toBe(oceanDark);
+  await app.screenshot("theme-colors-cached-reopen-dark");
+  await delayLiveSnapshots(app, 0);
+  await colors.reset();
+});
+
+test("an offline client switches Light and Dark immediately within the T3 theme it holds", async (journey) => {
+  // Arrange
+  const { app, screen, browser } = journey;
+  const { colors } = await clientWithCachedOcean(journey);
+  await remoteFixture(app, "offline");
+  await expect.poll(() => browser.evaluate(offlineBannerShown)).toBe(true);
+
+  // Act
+  await screen.getByRole("radio", "Light").tap();
+
+  // Assert
+  await expect.poll(() => browser.evaluate(canvasColor)).toBe(oceanLight);
+  await app.screenshot("theme-colors-offline-light");
+  await screen.getByRole("radio", "Dark").tap();
+  await remoteFixture(app, "online");
+  await colors.reset();
+});
+
+test("a client whose Factory access was revoked keeps no cached theme", async (journey) => {
+  // Arrange
+  const { app, screen, browser } = journey;
+  const { colors, application } = await clientWithCachedOcean(journey);
+  await remoteFixture(app, "revoke");
+
+  // Act
+  await app.open(application);
+
+  // Assert
+  await expect(screen.getByRole("heading", "Access was revoked")).toBeVisible();
+  expect(await browser.evaluate(canvasColor)).toBe(factoryDark);
+  await expect.poll(() => browser.evaluate(cachedSnapshot)).toBe(null);
+  await app.screenshot("theme-colors-access-revoked-baseline");
+  await colors.reset();
+});
+
+test("a theme-color grant T3 revoked leaves a reopening client nothing to restore", async (journey) => {
+  // Arrange
+  const { app, browser } = journey;
+  const { colors, application } = await clientWithCachedOcean(journey);
+  await colors.revoke();
+  await expect.poll(() => browser.evaluate(canvasColor), { timeout: 15_000 }).toBe(factoryDark);
+  await delayLiveSnapshots(app, noLiveDeliveryMs);
+
+  // Act
+  await app.open(application);
+
+  // Assert
+  expect(await browser.evaluate(cachedSnapshot)).toBe(null);
+  expect(await browser.evaluate(canvasColor)).toBe(factoryDark);
+  await delayLiveSnapshots(app, 0);
   await colors.reset();
 });

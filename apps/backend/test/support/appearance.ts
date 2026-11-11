@@ -26,6 +26,29 @@ export async function pairedFactory(context: TestContext, defaultTheme = "ocean"
   return { ...opened, live };
 }
 
+/** An approved controlled T3 whose environment default is Ocean. */
+function oceanT3(arrange: (t3: ControlledT3) => void) {
+  const t3 = new ControlledT3();
+  t3.approve();
+  t3.appearance.defaultTheme = "ocean";
+  arrange(t3);
+  return t3;
+}
+
+/** Backend services in the caller's scope, connected to `t3` and paired for theme colors. */
+function pairedOn(
+  harness: Awaited<ReturnType<typeof factoryHarness>>,
+  t3: ControlledT3,
+  connectionRetryMs: number,
+) {
+  return Effect.gen(function* () {
+    const factory: FactoryService["Service"] = yield* harness.service({ t3, connectionRetryMs });
+    assert((yield* factory.configureConnection({ endpoint: T3_ENDPOINT })).ok);
+    assert((yield* factory.pairAppearance({ pairing: t3.appearance.pairingCode })).ok);
+    return factory;
+  });
+}
+
 /**
  * The same, on backend services in the test's scope so TestClock drives the periodic grant
  * check; `connectionRetryMs` paces both connection and appearance checks.
@@ -37,14 +60,25 @@ export function pairedService(
 ) {
   return Effect.gen(function* () {
     const harness = yield* Effect.promise(() => factoryHarness(context));
-    const t3 = new ControlledT3();
-    t3.approve();
-    t3.appearance.defaultTheme = "ocean";
-    arrange(t3);
-    const factory: FactoryService["Service"] = yield* harness.service({ t3, connectionRetryMs });
-    assert((yield* factory.configureConnection({ endpoint: T3_ENDPOINT })).ok);
-    assert((yield* factory.pairAppearance({ pairing: t3.appearance.pairingCode })).ok);
+    const t3 = oceanT3(arrange);
+    const factory = yield* pairedOn(harness, t3, connectionRetryMs);
     const live = subscribe(context, factory.live.watchAppearance());
     return { factory, t3, live };
+  });
+}
+
+/**
+ * A paired backend that followed `ocean` and then stopped, leaving its stored grant and theme
+ * colors for the backend a test starts next with `harness.service`.
+ */
+export function stoppedPairedService(
+  context: TestContext,
+  arrange: (t3: ControlledT3) => void = () => {},
+) {
+  return Effect.gen(function* () {
+    const harness = yield* Effect.promise(() => factoryHarness(context));
+    const t3 = oceanT3(arrange);
+    yield* Effect.scoped(pairedOn(harness, t3, 1_000));
+    return { harness, t3 };
   });
 }

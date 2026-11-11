@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import {
   runImageUrl,
+  type ClientScope,
   type FactoryClient,
   type FlowDraft,
   type RunDetail,
@@ -286,4 +287,48 @@ it("a pending client cannot even probe whether Factory holds a known image", asy
 
   // Assert
   expect(probe.status).toBe(401);
+});
+
+it("an approved client is told the identity of the Factory server it reached", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const laptop = await server.approved("Laptop");
+
+  // Act
+  const reply = await laptop.send<ClientScope>("GET", "/api/client-access");
+
+  // Assert
+  assert(reply.body.ok);
+  expect(reply.body.value.serverId).toMatch(/^[0-9a-f]{32}$/);
+  expect(await server.factory.getServerId()).toStrictEqual({
+    ok: true,
+    value: reply.body.value.serverId,
+  });
+});
+
+it("a client waiting for approval is not told the Factory server's identity", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const pending = server.client();
+  await pending.requestAccess("Laptop");
+
+  // Act
+  const reply = await pending.send<ClientScope>("GET", "/api/client-access");
+
+  // Assert
+  assert(reply.body.ok);
+  expect(reply.body.value).toMatchObject({ scope: "remote", access: { status: "pending" } });
+  expect(reply.body.value.serverId).toBe(undefined);
+});
+
+it("two Factory data homes have different server identities", async (c) => {
+  // Arrange
+  const first = await remoteServer(c);
+  const second = await remoteServer(c);
+
+  // Act
+  const identities = [await first.factory.getServerId(), await second.factory.getServerId()];
+
+  // Assert
+  expect(identities[0]).not.toStrictEqual(identities[1]);
 });

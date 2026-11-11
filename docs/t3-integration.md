@@ -113,10 +113,20 @@ names the theme in Settings. Factory does not claim compatibility with T3 revisi
 
 **Fallbacks.** An empty default, an unsupported or removed definition, a rejected mode, an unverifiable or
 mismatched environment, expiry, revocation and disconnect all show Factory's colors for the selected mode with
-the reason in Settings. During a transient outage the last presentation of this backend session stays while its
-grant is locally valid and no revocation was observed. A changed endpoint or connection environment discards it
-at once. The presentation is not stored across backend restarts, and a client shows Factory's colors until its
-first delivery. Theme colors never change connection readiness, Start, execution or Run attention.
+the reason in Settings. During a transient outage the last presentation stays while its grant is locally valid
+and no revocation was observed. A changed endpoint or connection environment discards it at once. Theme colors
+never change connection readiness, Start, execution or Run attention.
+
+**Stored snapshot.** The backend keeps the presentation it publishes as one snapshot in its database, with both
+modes together and no credential, and deletes it whenever it stops publishing one (expiry, observed revocation,
+disconnect, another endpoint or environment, no inherited default). A starting backend adopts that snapshot
+before T3 answers only when it was stored for the saved endpoint and still carries the connection's
+environment, the stored grant's identity and expiry and the current resolver pin, and only while the grant is
+active and unexpired; so a host restarted while T3 is unreachable keeps its colors. Nothing is adopted later in
+the process: returning to an earlier endpoint never brings its old colors back. On reconnection Factory checks
+the grant, reads T3's current configuration snapshot and publishes the resulting presentation as one revision;
+T3's settings and theme streams stay independent and are not treated as a transaction. Each client also
+[caches the presentation](desktop-and-clients.md#appearance) it received.
 
 ## Agent reporting
 

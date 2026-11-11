@@ -122,9 +122,22 @@ presentation with a Light and a Dark half to approved clients and the host panel
 delivery; each client shows the half of its own mode, so two clients of the same server can show the
 same T3 theme in different modes. A missing or rejected half shows Factory's colors for that mode,
 and the mode choice itself never changes. Connection and access gates, unapproved clients and
-clients of servers older than protocol 10 receive no theme colors and use Factory's colors. An
-offline client keeps the last colors it received until their grant expires. Nothing is cached across
-reloads or restarts yet, so the first paint and the desktop window background use Factory's colors.
+clients of servers older than protocol 10 receive no theme colors and use Factory's colors.
+
+Each client caches the last presentation its server published: one snapshot with both halves, in the
+storage of the browser profile for that Factory address, or of the desktop installation's bundled
+page. It holds colors, the theme name, the source and resolver identifiers and the grant's opaque id
+and expiry, never a credential. The snapshot is bound to the identity of the Factory server, which
+the server tells only the host panel and approved clients. A client reads it only after that answer,
+for the same server, before the grant's expiry and when it is still exactly a sanitized
+presentation; it then shows the colors until live delivery answers and while offline, and switching
+Light and Dark stays immediate. Whatever the server publishes next replaces the snapshot, and a
+presentation without colors (expiry, revocation, disconnect, another T3 source, no inherited theme)
+removes it. A client whose Factory access is missing, pending, denied or revoked deletes it without
+reading it. The first paint, every gate screen and the desktop window background always use
+Factory's colors for the chosen mode, because access is not established yet. A browser cannot open
+at all while its Factory server is unreachable; the desktop app opens its unreachable screen in
+Factory's colors.
 
 - **Desktop**: the mode is saved with the other desktop settings of the installation. The
   main process applies it to native chrome and dialogs and to the window background before
@@ -291,7 +304,8 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 ## Protocol compatibility
 
 The current protocol is **10**, and both sides require at least **9**. Protocol 10 added the
-theme-color live subscription (`WatchAppearance`); a client subscribes only when the server's handshake
+theme-color live subscription (`WatchAppearance`) and the server identity in the client-scope answer
+for the host panel and approved clients; a client subscribes only when the server's handshake
 declares at least 10, so protocol 9 and 10 peers interoperate and a protocol 9 server's clients show
 Factory's colors without theme-color settings. Protocol 9 changed manual
 Settle: its request may authorize stopping workers (`stopWorkers`) and it answers a settlement

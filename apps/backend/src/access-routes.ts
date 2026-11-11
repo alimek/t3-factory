@@ -75,25 +75,46 @@ export function accessRoutes(
     getClientScope: {
       host: {
         handle: () =>
-          Effect.succeed(
-            resultResponse({ ok: true, value: { scope: "host" } satisfies ClientScope }),
+          Effect.map(
+            Effect.promise(() => factory.getServerId()),
+            (server) =>
+              resultResponse(
+                server.ok
+                  ? {
+                      ok: true,
+                      value: { scope: "host", serverId: server.value } satisfies ClientScope,
+                    }
+                  : server,
+              ),
           ),
       },
       remote: {
         public: true,
         handle: ({ headers }) =>
-          Effect.map(
-            Effect.promise(() => factory.getClientAccess(requestCredential(headers) ?? "")),
-            (result) =>
-              resultResponse(
-                result.ok
-                  ? {
-                      ok: true,
-                      value: { scope: "remote", access: result.value } satisfies ClientScope,
-                    }
-                  : result,
-              ),
-          ),
+          Effect.promise(async () => {
+            const result = await factory.getClientAccess(requestCredential(headers) ?? "");
+            if (!result.ok) return resultResponse(result);
+            const access = result.value;
+            if (access.status !== "approved")
+              return resultResponse({
+                ok: true,
+                value: { scope: "remote", access } satisfies ClientScope,
+              });
+            // Only an approved client may bind cached state to this server's identity.
+            const server = await factory.getServerId();
+            return resultResponse(
+              server.ok
+                ? {
+                    ok: true,
+                    value: {
+                      scope: "remote",
+                      access,
+                      serverId: server.value,
+                    } satisfies ClientScope,
+                  }
+                : server,
+            );
+          }),
       },
     },
     requestClientAccess: {

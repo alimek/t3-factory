@@ -964,3 +964,4 @@ export {
   validateStartPrompt,
   type StartPrompt,
 } from "./run-prompt.ts";
+export { parseAppearancePresentation } from "./appearance.ts";

@@ -170,6 +170,7 @@ export const makeFactoryService = (
       disconnectAppearance: () => appearance.disconnectAppearance(),
       requestClientAccess: (input) => clients.requestClientAccess(input),
       getClientAccess: (credential) => clients.getClientAccess(credential),
+      getServerId: () => clients.getServerId(),
       authenticateClient: (credential) => clients.authenticateClient(credential),
       listClients: () => clients.listClients(),
       approveClient: (id) => clients.approveClient(id),

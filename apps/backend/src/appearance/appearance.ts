@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/sql/SqlClient";
 import type {
   AppearancePresentation,
   Result,
   T3Appearance,
   T3Connection,
 } from "@t3-factory/contracts";
+import { parseAppearancePresentation } from "@t3-factory/domain-validation";
 import {
   AppearancePairingRejected,
   type AppearanceEvent,
@@ -126,6 +128,7 @@ export const makeAppearance = (
 ) =>
   Effect.gen(function* () {
     const scope = yield* Effect.scope;
+    const sql = yield* SqlClient.SqlClient;
     const mutex = yield* Semaphore.make(1);
     const serial = <A, E>(action: Effect.Effect<A, E>) => mutex.withPermits(1)(action);
     let endpoint: string | null = null;
@@ -138,6 +141,8 @@ export const makeAppearance = (
     /** The connection environment a snapshot contradicted; no reconnect until it changes. */
     let refusedEnvironment: string | null = null;
     let binding: string | undefined;
+    /** The stored snapshot's endpoint and revision; undefined until the first publication. */
+    let stored: string | null | undefined;
     let status: T3Appearance = {
       state: "not-paired",
       explanation: NOT_PAIRED,
@@ -145,7 +150,44 @@ export const makeAppearance = (
       presentation: null,
     };
 
+    /**
+     * Keeps the one stored snapshot equal to the published presentation, so whatever ends the
+     * colors (expiry, revocation, disconnect, another source, no default) also deletes it.
+     */
+    const store = Effect.gen(function* () {
+      const key = endpoint && presentation ? `${endpoint}\n${presentation.revision}` : null;
+      if (key === stored) return;
+      if (endpoint && presentation)
+        yield* sql`INSERT INTO appearance_snapshot (singleton, endpoint, presentation)
+          VALUES (1, ${endpoint}, ${JSON.stringify(presentation)})
+          ON CONFLICT (singleton) DO UPDATE SET
+            endpoint = excluded.endpoint, presentation = excluded.presentation`;
+      else yield* sql`DELETE FROM appearance_snapshot`;
+      stored = key;
+    }).pipe(Effect.orDie);
+
+    /**
+     * The snapshot a previous process stored, when it is still bound to this endpoint,
+     * environment, grant and resolver.
+     */
+    const restore = (target: string, environment: string, grant: AppearanceGrantRecord["grant"]) =>
+      Effect.gen(function* () {
+        const [row] = yield* sql<{ endpoint: string; presentation: string }>`
+          SELECT endpoint, presentation FROM appearance_snapshot WHERE singleton = 1`;
+        if (row?.endpoint !== target) return null;
+        const snapshot = yield* Effect.try(() =>
+          parseAppearancePresentation(JSON.parse(row.presentation)),
+        ).pipe(Effect.orElseSucceed(() => null));
+        return snapshot?.environmentId === environment &&
+          snapshot.grant.id === grant.id &&
+          snapshot.grant.expiresAt === grant.expiresAt &&
+          snapshot.resolverPin === T3_RESOLVER_PIN
+          ? snapshot
+          : null;
+      }).pipe(Effect.orDie);
+
     const publish = Effect.gen(function* () {
+      yield* store;
       const now = yield* Clock.currentTimeMillis;
       if (!record) {
         status = { state: "not-paired", explanation: NOT_PAIRED, grant: null, presentation: null };
@@ -379,6 +421,29 @@ export const makeAppearance = (
     const connectionChanged = Effect.gen(function* () {
       if (JSON.stringify(yield* savedBinding) !== binding) yield* reconcile;
     });
+
+    /**
+     * The first status comes from local state alone, before T3 is asked anything: the stored
+     * grant and, while it is active, unexpired and bound to the connection's environment, the
+     * snapshot the previous process stored. Only this step adopts a stored snapshot, so no
+     * later source change can bring old colors back; the grant check and T3's first
+     * configuration snapshot that follow end or replace them.
+     */
+    yield* serial(
+      Effect.gen(function* () {
+        const saved = yield* savedBinding;
+        yield* adoptEndpoint(saved.endpoint);
+        const active = record?.status === "active" ? record.grant : null;
+        if (
+          endpoint &&
+          active &&
+          saved.environment &&
+          (yield* Clock.currentTimeMillis) < Date.parse(active.expiresAt)
+        )
+          presentation = yield* restore(endpoint, saved.environment, active);
+        yield* publish;
+      }),
+    );
 
     const connectionHint = yield* changes.watch({ kind: "connection" });
     yield* Effect.forkIn(
