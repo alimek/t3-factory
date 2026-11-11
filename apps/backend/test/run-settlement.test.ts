@@ -304,6 +304,47 @@ it("settling a Run whose worker is still running asks for confirmation and chang
   expect(f.t3.threadStops).toStrictEqual([]);
 });
 
+it("a worker T3 cannot show is unresolved, not running, when Settle asks for confirmation", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  pauseWorkerReads(f.t3, f.threadId);
+
+  // Act
+  const result = await f.f.settleRun(f.runId, {});
+
+  // Assert
+  assert(result.ok);
+  assert(result.value.outcome === "confirmation-required");
+  expect(result.value.workers).toMatchObject([
+    {
+      blockId: "worker",
+      state: "unresolved",
+      problem: "T3 could not show this worker thread in the Run's project and workspace.",
+    },
+  ]);
+});
+
+it.for([
+  ["an array", [{ stopWorkers: true }]],
+  ["a misspelled authorization flag", { stop_workers: true }],
+] as const)("Settle sent %s is a validation error and changes nothing", async ([, input], c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const f = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+  const before = await f.f.getRun(f.runId);
+  assert(before.ok);
+
+  // Act
+  const result = await f.f.settleRun(f.runId, input);
+
+  // Assert
+  expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.events).toStrictEqual(before.value.events);
+});
+
 it("settling a Run whose worker finished cancels its held handoff without stopping anything", async (c) => {
   // Arrange
   const setup = await prepared(c, handoffFlow);
@@ -393,6 +434,39 @@ it("confirming Settle stops every worker and settles the Run once fresh reads sh
     ["run-settled", null],
   ]);
   expect(run.value.attention).toStrictEqual([]);
+});
+
+it("a manually settled Run leaves a send with a lost T3 reply uncertain and drops its payload", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  setup.t3.loseSendReply = true;
+  const f = { ...setup, ...(await resultReleasedToSameWorker(setup.world, reported)) };
+  const before = await f.f.getRun(f.runId);
+  assert(before.ok);
+  expect(before.value.intents.filter((intent) => intent.kind === "send")).toMatchObject([
+    { state: "uncertain", payloadRetained: true },
+  ]);
+  stopsEndThreads(f.t3);
+  assert((await f.f.settleRun(f.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await f.f.reconcileRuns();
+
+  // Assert
+  const run = await f.f.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.lifecycle).toBe("settled");
+  expect(run.value.intents.filter((intent) => intent.kind === "send")).toMatchObject([
+    {
+      state: "uncertain",
+      payloadRetained: false,
+      problem:
+        "The Run was settled before Factory confirmed whether T3 received this message; Factory will not resend it.",
+    },
+  ]);
+  expect(f.t3.sends.size).toBe(1);
 });
 
 it("an acknowledged Stop does not settle the Run while T3 still shows the worker running", async (c) => {

@@ -177,8 +177,8 @@ export interface RunSettlementWorker {
   readonly threadId: string | null;
   readonly link: string | null;
   /**
-   * `executing` (only in a `confirmation-required` answer): a fresh read did not confirm the
-   * worker finished. `stopping`: Factory requested T3 Stop in this attempt, or is about to, and
+   * `executing` (only in a `confirmation-required` answer): a fresh read in the Run's scope showed
+   * the worker unfinished, so confirming stops it. `stopping`: Factory requested T3 Stop in this attempt, or is about to, and
    * waits for a fresh read to confirm the thread finished. `finished`: the latest fresh read
    * confirmed it. `unresolved`: Stop is unsupported, failed or not confirmed, T3 could not
    * show the thread, or the launch is still searched for; Settle with `stopWorkers` again to retry.

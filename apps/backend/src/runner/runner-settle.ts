@@ -1,4 +1,9 @@
-import type { Result, RunSettlementOutcome, RunSettlementWorker } from "@t3-factory/contracts";
+import type {
+  Result,
+  RunSettlementOutcome,
+  RunSettlementWorker,
+  SettleRunInput,
+} from "@t3-factory/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type { T3Adapter } from "../adapters/t3.ts";
@@ -36,6 +41,16 @@ const CONTEXT_UNAVAILABLE: SettlementRead = {
   readable: false,
   problem: "The T3 connection is unavailable or its authorization changed.",
 };
+
+/** A plain object whose only allowed field is an optional boolean `stopWorkers`: a misspelled or
+ * misplaced authorization flag is a validation error, never a declined Settle. */
+function validSettleInput(input: unknown): input is SettleRunInput {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const { stopWorkers, ...rest } = input as Record<string, unknown>;
+  return (
+    !Object.keys(rest).length && (stopWorkers === undefined || typeof stopWorkers === "boolean")
+  );
+}
 
 /** What still keeps an unfinished worker thread from counting as finished. */
 function blocker(worker: WorkerThread) {
@@ -392,7 +407,9 @@ export function openRunnerSettle(
                   blockName: worker.name,
                   threadId: worker.thread_id,
                   link: threadHref(worker.link),
-                  state: read.finished ? "finished" : "executing",
+                  // Only a worker read running in scope is one confirming stops; Factory never
+                  // stops a thread it cannot read.
+                  state: read.finished ? "finished" : read.readable ? "executing" : "unresolved",
                   stopRequestedAt: null,
                   problem: read.finished ? null : read.problem,
                 };
@@ -418,15 +435,12 @@ export function openRunnerSettle(
   ): Effect.Effect<Result<RunSettlementOutcome>, unknown> {
     return Effect.gen(function* () {
       if (lifecycle.isClosed()) return failure("conflict", "Factory is shutting down.");
-      if (
-        typeof input !== "object" ||
-        input === null ||
-        ("stopWorkers" in input &&
-          input.stopWorkers !== undefined &&
-          typeof input.stopWorkers !== "boolean")
-      )
-        return failure("validation", "Send stopWorkers as true or false, or leave it out.");
-      const stopWorkers = "stopWorkers" in input && input.stopWorkers === true;
+      if (!validSettleInput(input))
+        return failure(
+          "validation",
+          "Send the Settle options as an object whose only field, stopWorkers, is true or false.",
+        );
+      const stopWorkers = input.stopWorkers === true;
       const run = yield* store.readRun(id);
       if (!run) return failure("not_found", "This Run does not exist.");
       if (run.archived_at) return failure("conflict", "An archived Run cannot be settled.");

@@ -470,6 +470,11 @@ The user settles an Active or Snoozed Run through one operation. Without authori
 stop, it runs in the Run's drive lane: Factory reads every bound worker thread fresh under the
 Run's authorization context and settles only when each is [finished](#worker-thread-completion)
 and shows no queued run; otherwise it answers that confirmation is needed and changes nothing.
+That answer lists each worker read unfinished in scope as executing, which confirming stops, and
+each worker T3 could not show, or not under the Run's live authorization context, as unresolved
+with that problem, because Factory never stops a thread it cannot read. A malformed body (not
+an object, or any field other than a boolean `stopWorkers`) is a validation error, never a
+declined Settle.
 With explicit authorization (`stopWorkers`) it is a durable operation:
 
 - **Acceptance.** One transaction in the Run's mutation lane closes the handoff gate, records the
@@ -507,7 +512,13 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
   worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
   completion-eligible as automatic settlement does, and clears Snooze and Woke.
-  Uncertain sends keep their state. Native thread settlement follows in the background.
+  Each reserved or uncertain send stays uncertain, records `operation-unresolved` with a
+  problem saying Factory never confirmed whether T3 received it, and loses its payload. T3 offers
+  no read of a send's outcome; only a same-key replay can resolve it, and a replay into a
+  stopped thread can start new work if the original never arrived, which the closed gate
+  forbids. Driving the Run on to resolve it therefore cannot succeed, while cancelling it would
+  claim it never reached T3; the payload served only that replay. Native thread settlement
+  follows in the background.
 
 A manually settled Run is never reconciled again: its closed gate ends its work, also after
 restart, and reports for it are `RUN_SETTLED`. A Wait timer that wakes after settlement finds

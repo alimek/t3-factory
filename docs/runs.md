@@ -366,7 +366,8 @@ thread keeps the settlement unresolved until it is removed in T3 or runs; Factor
 Settling cancels unsent launches, sends and handoffs (held or released), unsent Request report turns, pending Human occurrences
 without inventing answers, pending Wait arrivals and messages waiting at a Continuation; a cancelled Wait never forwards, also
 after restart. Pending attention settles as `manual-settlement`, activated
-Blocks without a Final result show stopped, and uncertain sends keep their recorded state. The Run moves to
+Blocks without a Final result show stopped, and a send whose T3 reply was lost stays uncertain: Factory never resends it and
+keeps no copy of its message. The Run moves to
 **Settled**, Snooze and Woke clear, and Factory best-effort settles the worker threads in T3. The timeline records the
 confirmation and each retry, each Stop request, each worker found stopped and the settlement. Stopping raises no
 execution-failure Problem. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped

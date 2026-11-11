@@ -26,6 +26,10 @@ const NOT_WORKING: readonly BlockState[] = [
   "pass-through",
 ];
 
+/** A send whose T3 reply was lost when its Run settled manually: it is never replayed again. */
+const UNRESOLVED_SEND_ON_SETTLE =
+  "The Run was settled before Factory confirmed whether T3 received this message; Factory will not resend it.";
+
 /** A bound worker thread of a Run, which manual settlement reads and Archive interrupts. */
 export type BoundWorker = {
   readonly block_id: string;
@@ -351,8 +355,9 @@ export function openRunManualSettlement(database: RunnerDatabase) {
    * every bound worker finished. Guards: owner, not Archived, not Settled, the generation, no
    * launch whose outcome is unresolved and, when the Run has workers, its live authorization
    * context. Closes the gate, cancels owed automatic work with the manual-settlement reason,
-   * records "worker stopped" for each worker whose Stop T3 acknowledged, settles the Run
-   * (clearing Snooze and Woke) and advances the generation. Answers whether the Run settled. */
+   * leaves each reserved or uncertain send uncertain without its payload, records "worker
+   * stopped" for each worker whose Stop T3 acknowledged, settles the Run (clearing Snooze and
+   * Woke) and advances the generation. Answers whether the Run settled. */
   function completeSettlement(run: RunRow, workers: readonly SettledWorker[]) {
     const id = run.id;
     return database.mutate(id, (sql) =>
@@ -381,6 +386,21 @@ export function openRunManualSettlement(database: RunnerDatabase) {
               { keep: NOT_WORKING, otherwise: "finished" },
             );
         yield* cancelOwedWork(sql, id, time, "settle");
+        // T3 has no read for a send's outcome and only a same-key replay can resolve it, which
+        // the closed gate forbids. The send stays uncertain, never cancelled, and its payload,
+        // needed for nothing but that replay, is cleared.
+        const unresolvedSends = yield* sql<{
+          id: string;
+          block_id: string;
+        }>`UPDATE operation_intents SET state='uncertain',payload_json=NULL,problem=${UNRESOLVED_SEND_ON_SETTLE},reconciled_at=${time} WHERE run_id=${id} AND kind='send' AND state IN ('reserved','uncertain') RETURNING id,block_id`;
+        for (const send of unresolvedSends)
+          yield* appendTimelineEvent(sql, {
+            kind: "operation-unresolved",
+            runId: id,
+            blockId: send.block_id,
+            intentId: send.id,
+            observedAt: time,
+          });
         const stopped = yield* sql<{
           thread_id: string;
         }>`SELECT thread_id FROM run_settlement_workers WHERE run_id=${id} AND attempt=(SELECT attempt FROM run_settlements WHERE run_id=${id}) AND stop_outcome='acknowledged'`;
