@@ -201,9 +201,18 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
   most one per worker thread and attempt (key from the Run, attempt and thread), only under the
   Run's live authorization context rechecked before each request, records it before sending and
   settles only after fresh reads confirm the thread finished; unsupported or refused Stop leaves
-  it unresolved. Factory reads no queues and cancels no queued run: a queued run keeps
-  manual settlement unresolved, and one that starts after Archive's interrupt is not stopped.
-  Acknowledgements never prove termination.
+  it unresolved. Factory cancels no queued run: a queued run keeps manual settlement unresolved,
+  and one that starts after Archive's interrupt is not stopped. T3 gives a queued run the next
+  ordinal and shows the highest ordinal as the thread's
+  [latest run](https://github.com/pingdotgg/t3code/blob/44ebb2fe57465d32f2bd07c5eb3d8e871bdf5ed5/apps/server/src/orchestration-v2/ThreadManagementService.ts#L530-L534),
+  while its Stop
+  [targets](https://github.com/pingdotgg/t3code/blob/44ebb2fe57465d32f2bd07c5eb3d8e871bdf5ed5/apps/server/src/orchestration-v2/Orchestrator.ts#L12403-L12417)
+  a running run, or else the latest run that is not queued while its background work is
+  pending, and holds queued runs instead of starting them. Manual settlement therefore judges a
+  thread with no active run or native request whose latest run is queued by its latest run that
+  is not queued, as [manual settlement](runner.md#manual-settlement) describes. This is
+  source-reviewed at that pinned commit, not exercised against a live T3. Acknowledgements never
+  prove termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without
   launching a turn. It provides neither safe replay nor an execution fence.
 

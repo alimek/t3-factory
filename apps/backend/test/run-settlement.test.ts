@@ -35,6 +35,7 @@ import {
 import { prepared } from "./support/prepared-runner.ts";
 import {
   answerDelegatedWait,
+  queueUserMessage,
   recordLaunchedThread,
   stopsEndThreads,
 } from "./support/controlled-thread.ts";
@@ -962,6 +963,84 @@ it("a Stop is not requested once T3 authorization changes after the reads, and t
     settlement: { state: "unresolved", workers: [{ blockId: "worker", state: "unresolved" }] },
   });
   expect(f.t3.threadStops).toStrictEqual([]);
+});
+
+it("a queued run on an otherwise finished worker blocks Settle but is not stopped", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  allTurnsEnd(setup.world, worker);
+  queueUserMessage(setup.t3, worker.threadId, "queued-run");
+  assert((await setup.f.settleRun(worker.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await setup.f.reconcileRuns();
+
+  // Assert
+  const run = await setup.f.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value.settlement).toMatchObject({
+    state: "unresolved",
+    workers: [
+      {
+        threadId: worker.threadId,
+        state: "unresolved",
+        problem: expect.stringContaining("queued"),
+      },
+    ],
+  });
+  expect(setup.t3.threadStops).toStrictEqual([]);
+});
+
+it("a queued run does not hide a worker's unfinished delegated work from Settle's Stop", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  allTurnsEnd(setup.world, worker);
+  answerDelegatedWait(setup.t3, worker.threadId, worker.executionId, "pending", "completed");
+  queueUserMessage(setup.t3, worker.threadId, "queued-run");
+  assert((await setup.f.settleRun(worker.runId, { stopWorkers: true })).ok);
+
+  // Act
+  await setup.f.reconcileRuns();
+
+  // Assert
+  expect(setup.t3.threadStops.map((stop) => stop.threadId)).toStrictEqual([worker.threadId]);
+  const run = await setup.f.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value.settlement).toMatchObject({
+    state: "stopping",
+    workers: [{ threadId: worker.threadId, problem: expect.stringContaining("queued") }],
+  });
+});
+
+it("after a restart, a worker blocked only by queued work keeps its queued reason", async (c) => {
+  // Arrange
+  const setup = await prepared(c, handoffFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  allTurnsEnd(setup.world, worker);
+  queueUserMessage(setup.t3, worker.threadId, "queued-run");
+  assert((await setup.f.settleRun(worker.runId, { stopWorkers: true })).ok);
+  assert((await setup.f.reconcileRuns()).ok);
+  await setup.f.close();
+
+  // Act
+  const reopened = await setup.h.open({ t3: setup.t3, connectionRetryMs: 60_000 });
+
+  // Assert
+  const run = await reopened.getRun(worker.runId);
+  assert(run.ok);
+  expect(run.value.settlement).toMatchObject({
+    state: "unresolved",
+    workers: [
+      {
+        threadId: worker.threadId,
+        state: "unresolved",
+        problem: expect.stringContaining("queued"),
+      },
+    ],
+  });
+  expect(setup.t3.threadStops).toStrictEqual([]);
 });
 
 it("Settle under a replaced T3 authorization is refused and leaves the Run unchanged", async (c) => {

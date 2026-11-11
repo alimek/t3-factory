@@ -472,7 +472,8 @@ The user settles an Active or Snoozed Run through one operation. Without authori
 stop, it runs in the Run's drive lane: Factory reads every bound worker thread fresh under the
 Run's authorization context and settles only when each is [finished](#worker-thread-completion)
 and shows no queued run; otherwise it answers that confirmation is needed and changes nothing.
-That answer lists each worker read unfinished in scope as executing, which confirming stops;
+That answer lists each worker read unfinished in scope as executing, which confirming stops,
+except one only queued work keeps unfinished, which is unresolved with its queued reason;
 each worker T3 could not show, or not under the Run's live authorization context, as unresolved
 with that problem, because Factory never stops a thread it cannot read; and each reserved or
 uncertain launch as unresolved, without a thread. A Run accepted under an authorization context
@@ -502,7 +503,12 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   starts the next attempt under the current owner.
 - **Stopping.** A pass runs right after acceptance and in every reconciliation, in the drive lane.
   It reads every bound worker fresh. The backend that accepted the attempt sends Stop once
-  for each worker read unfinished in scope: it records the request
+  for each worker read unfinished in scope, except one that only queued work keeps unfinished:
+  a thread with no active run or native request whose latest run is queued is judged by its
+  latest run that is not queued ([T3 queue and Stop](t3-integration.md#execution-operations)).
+  It is stopped only while that run's delegated or background work is unfinished; otherwise it
+  is unresolved with its queued reason, gets no Stop, and keeps that reason after a restart.
+  Factory never cancels queued work in T3. For each worker it stops, it records the request
   (`worker-stop-requested`, key derived from the Run, attempt and thread) before one
   `t3_thread_interrupt` with `stop: true`, records whether T3 acknowledged it, then reads the
   worker again. Each Stop is sent only after a recheck finds the Run's authorization context

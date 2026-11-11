@@ -394,7 +394,8 @@ also keeps the settlement unresolved: Factory keeps searching for it and stops t
 Stop only while the T3 authorization the Run started under is still live. **Settle** again retries with a new Stop request;
 repeating it while stopping changes nothing. The hold stays, Factory keeps reading the workers and settles as soon as all read finished. An unresolved
 settlement is not a lifecycle state: there is no Resume, and **Archive** remains available. Work T3 holds queued in a worker
-thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing.
+thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing and does not stop a worker
+that only queued work keeps unfinished.
 
 Settling cancels unsent launches, sends and handoffs (held or released), unsent Request report turns, pending Human occurrences
 without inventing answers, pending Wait arrivals and messages waiting at a Continuation; a cancelled Wait never forwards, also

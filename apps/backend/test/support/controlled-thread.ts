@@ -70,6 +70,26 @@ export function beginThreadRun(t3: ControlledT3, threadId: string, runId: string
     if (send.reference.runId === runId) send.reference = { ...send.reference, status: "running" };
 }
 
+/** The user queued a message in the thread in T3: its run `runId` waits queued. As in T3, the
+ * queued run takes the next ordinal and becomes the thread's latest run, and its wait answers
+ * pending. */
+export function queueUserMessage(t3: ControlledT3, threadId: string, runId: string) {
+  const prior = statedThread(t3, threadId, "user queues a message");
+  t3.executionObservations.set(threadId, {
+    ...prior,
+    latestRunId: runId,
+    recentRuns: [
+      ...prior.recentRuns,
+      {
+        runId,
+        status: "queued",
+        ordinal: 1 + Math.max(0, ...prior.recentRuns.map((run) => run.ordinal ?? 0)),
+      },
+    ],
+  });
+  answerDelegatedWait(t3, threadId, runId, "pending", "queued");
+}
+
 /** T3 starts a send it queued once the thread runs no turn: the send's queued run runs and the
  * send shows it running with its delivery started. Until then the send stays queued. */
 export function startQueuedSend(t3: ControlledT3, threadId: string, runId: string) {

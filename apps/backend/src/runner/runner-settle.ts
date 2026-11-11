@@ -24,21 +24,22 @@ type SettlementRead =
   | {
       readonly finished: false;
       readonly latest: WorkerThread["latest"];
-      /** False when T3 could not show the thread in the Run's scope: Factory never stops it. */
-      readonly readable: boolean;
+      /** Whether confirmed settlement stops the thread: false when T3 could not show it in the
+       * Run's scope, which Factory never stops, or when only queued work keeps it unfinished. */
+      readonly stoppable: boolean;
       readonly problem: string;
     };
 
 const UNREADABLE: SettlementRead = {
   finished: false,
   latest: null,
-  readable: false,
+  stoppable: false,
   problem: "T3 could not show this worker thread in the Run's project and workspace.",
 };
 const CONTEXT_UNAVAILABLE: SettlementRead = {
   finished: false,
   latest: null,
-  readable: false,
+  stoppable: false,
   problem: "The T3 connection is unavailable or its authorization changed.",
 };
 
@@ -167,15 +168,38 @@ export function openRunnerSettle(
     });
   }
 
-  /** Factory's completion rule, plus no queued run, read in the Run's project and workspace. */
+  /** The run Stop is judged by. T3 makes a queued run the thread's latest, and that run's wait
+   * never settles while it waits, so a thread with no active run or native request whose latest
+   * run is queued is judged, as T3's own Stop targets it, by its latest run that is not queued;
+   * null when it has none. Otherwise the active or latest run. */
+  function judgedRun({ thread, latest }: WorkerThread) {
+    if (thread.activeRunId || thread.pendingRequestCount > 0 || latest?.status !== "queued")
+      return latest;
+    return thread.recentRuns
+      .filter((entry) => entry.status !== "queued")
+      .reduce<WorkerThread["latest"]>(
+        (best, entry) => (!best || (entry.ordinal ?? 0) >= (best.ordinal ?? 0) ? entry : best),
+        null,
+      );
+  }
+
+  /** Factory's completion rule, plus no queued run, read in the Run's project and workspace. A
+   * thread whose judged run and its delegated work settled is unfinished only by queued work,
+   * which Stop would not end: it is not stopped. */
   function readForSettlement(run: RunRow, threadId: string) {
     return recoverOperation(
       Effect.tryPromise(async (): Promise<SettlementRead> => {
         const worker = await readWorkerThread(t3, run, threadId);
         const queued = worker.thread.recentRuns.some((entry) => entry.status === "queued");
-        return worker.finished && !queued
-          ? { finished: true, latest: worker.latest }
-          : { finished: false, latest: worker.latest, readable: true, problem: blocker(worker) };
+        if (worker.finished && !queued) return { finished: true, latest: worker.latest };
+        const judged = judgedRun(worker);
+        const stoppable =
+          judged === worker.latest
+            ? !worker.finished
+            : !!judged &&
+              (await t3.readDelegatedSettlement(runTarget(run), threadId, judged.runId)).state !==
+                "settled";
+        return { finished: false, latest: judged, stoppable, problem: blocker(worker) };
       }),
       () => Effect.succeed(UNREADABLE),
     );
@@ -318,8 +342,8 @@ export function openRunnerSettle(
   /**
    * One pass of a confirmed manual settlement, in the Run's drive lane. Its gate is already
    * closed. Every bound worker is read fresh; the backend that accepted the attempt stops each
-   * readable unfinished worker once and reads it again. Unreadable workers keep their Stop
-   * eligibility for later passes; a worker bound later by a launch search joins the attempt.
+   * stoppable worker once and reads it again. Workers not stoppable yet, such as unreadable
+   * ones, keep their Stop eligibility for later passes; a worker bound later by a launch search joins the attempt.
    * Once a pass reads every worker finished and no launch outcome is unresolved, the Run settles; otherwise each
    * worker's progress is recorded, and a worker that cannot be stopped or confirmed stays
    * unresolved until the user retries.
@@ -336,7 +360,7 @@ export function openRunnerSettle(
           const reads = yield* readWorkers(run, workers);
           const stoppable = workers.filter((worker) => {
             const read = reads.get(worker.thread_id)!;
-            return !read.finished && read.readable;
+            return !read.finished && read.stoppable;
           });
           const stops =
             stoppable.length && (yield* store.claimStopPass(run, operation.attempt))
@@ -426,9 +450,9 @@ export function openRunnerSettle(
                   blockName: worker.name,
                   threadId: worker.thread_id,
                   link: threadHref(worker.link),
-                  // Only a worker read running in scope is one confirming stops; Factory never
-                  // stops a thread it cannot read.
-                  state: read.finished ? "finished" : read.readable ? "executing" : "unresolved",
+                  // Only a worker confirming stops is executing; Factory never stops a thread it
+                  // cannot read, or one that only queued work keeps unfinished.
+                  state: read.finished ? "finished" : read.stoppable ? "executing" : "unresolved",
                   stopRequestedAt: null,
                   problem: read.finished ? null : read.problem,
                 };
