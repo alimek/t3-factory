@@ -130,7 +130,15 @@ fixed Human exits their old exits were mapped to.
   **Settings → Run images** lists each stored image whose bytes are intact and whose every Run is Settled or Archived,
   optionally for one project (a Run's project is its Task's), with each image's Runs, states and projects; an image an
   Active Run also uses is not listed. A card opens an in-section preview with **Image N of M** within the list and every
-  Run that uses the image with **Open Run**. Images are
+  Run that uses the image with **Open Run**. A card's delete icon or the preview's **Delete image** deletes one image;
+  **Delete all** deletes every image the current filter lists. Each first asks inline, stating the images' count, total
+  size and Runs, that they cannot be restored and that history shows **Image unavailable** (a filtered **Delete all** also
+  says other projects' images are kept). The server rechecks each image and deletes only its file: an image an Active Run
+  now uses is kept and reported as not deleted. Manifests, prompts and timelines stay, and the image reads as missing
+  everywhere, including Factory MCP reads and worker launches. A Settled Run that returns to Active does not get deleted
+  images back; a Start naming a deleted image gets the missing-images outcome, and uploading identical bytes again restores
+  the image for every Run that uses it. Image loads revalidate with the server, so a deleted image shows as unavailable
+  even where it was viewed before. Images are
   read from the selected Factory server without thumbnails or transformation. Missing or corrupt retained bytes show
   **Image unavailable** with the image's ordinal and name; the rest of the history stays readable, and a failed read is not
   retried and creates no attention or state change.

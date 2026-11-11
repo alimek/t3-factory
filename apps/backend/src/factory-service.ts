@@ -138,6 +138,7 @@ export const makeFactoryService = (
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
       getRunImage: (sha256) => images.getRunImage(sha256),
       listEligibleRunImages: (projectId) => images.listEligibleRunImages(projectId),
+      deleteRunImages: (input) => images.deleteRunImages(input),
       listRunNavigation: () => runner.listRunNavigation(),
       renameRun: (id, input) => runner.renameRun(id, input),
       snoozeRun: (id) => runner.snoozeRun(id),

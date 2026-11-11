@@ -89,6 +89,7 @@ class RemoteClient {
     data: Buffer;
     contentType: string | undefined;
     cacheControl: string | undefined;
+    etag: string | undefined;
   }> {
     return new Promise((resolve, reject) => {
       const outgoing = request(this.options(method, path, headers, false), (response) => {
@@ -99,6 +100,7 @@ class RemoteClient {
               data,
               contentType: response.headers["content-type"],
               cacheControl: response.headers["cache-control"],
+              etag: response.headers.etag,
             }),
           reject,
         );

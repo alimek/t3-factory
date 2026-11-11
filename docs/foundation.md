@@ -30,8 +30,9 @@ and restricted OAuth credentials live outside project repositories.
   and Human exits became Approve or Request changes by their feedback flag, with their wires,
   answers and handoffs following. Earlier Human exit names are not kept.
 - Run images are bytes on disk under `FACTORY_HOME/images`, named by their SHA-256 digest, with
-  staging metadata in SQLite. Start attaches the ordered manifest to the Run; the prompt segments
-  and manifest are immutable and the Run's input keeps the worker-readable text. Migration `071`
+  staging metadata in SQLite. Start attaches the ordered manifest to the Run, accepting only digests
+  that are staged and still have their file; the prompt segments and manifest are immutable and the
+  Run's input keeps the worker-readable text. Migration `071`
   gives every existing Run one text segment and no images.
 - Each Start creates a new Task, Run and threads. A Settled Run returns to Active when one of
   its Blocks reports; Archived Runs are final and never reopened.
@@ -55,8 +56,12 @@ new attempts, and failed Agent work is never retried automatically; see
 are kept indefinitely. Message payloads persist only while needed for pending Human context,
 uncertain delivery or recovery, then are cleared while keys, fingerprints and references
 remain. Initial input, including its images, and revision prompts are intentional exceptions;
-staged images no Run references are deleted after 24 hours. There is no
-transcript archive, and payload clearing is not secure erasure.
+staged images no Run references are deleted after 24 hours. The only other image removal is manual
+deletion from **Settings → Run images** of an image whose every Run is Settled or Archived: Factory
+rechecks that under the image store's serialization and, in a transaction serialized with Start,
+unlinks only the file. Manifest, staging row and history stay; the image then reads as missing until
+identical bytes are uploaded again. There is no transcript archive, and neither payload clearing nor
+image deletion is secure erasure.
 
 ## Public operations
 

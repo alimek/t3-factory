@@ -44,6 +44,15 @@ export interface EligibleRunImage extends RunImageInfo {
   readonly name: string;
   readonly runs: readonly RunImageReference[];
 }
+/** Stored images to delete, by their lowercase hex SHA-256 digests. */
+export interface DeleteRunImagesInput {
+  readonly sha256: readonly string[];
+}
+/** Digests whose bytes were removed, and those kept because they were unknown or no longer eligible. */
+export interface RunImageDeletion {
+  readonly deleted: readonly string[];
+  readonly skipped: readonly string[];
+}
 /** The initial prompt in order: text, and references to images of the manifest. */
 export type PromptSegment =
   | { readonly type: "text"; readonly text: string }
@@ -540,5 +549,14 @@ export const runOperations = {
     method: "GET",
     path: "/api/run-images",
     query: ["projectId"],
+  }),
+  /**
+   * Deletes the bytes of eligible stored images, rechecking eligibility for each; Run manifests
+   * and history stay unchanged, and a digest that is unknown or no longer eligible is skipped.
+   */
+  deleteRunImages: operation<DeleteRunImagesInput, RunImageDeletion>()({
+    method: "POST",
+    path: "/api/run-images/delete",
+    body: "json",
   }),
 };

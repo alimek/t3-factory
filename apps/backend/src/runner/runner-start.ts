@@ -29,6 +29,7 @@ import type { RunnerLifecycle, RunnerOptions } from "./runner-types.ts";
 import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
+import type { RunImages } from "../run-images.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -184,6 +185,7 @@ export function openRunnerStart(
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
   checkAgent: RunnerOptions["checkAgent"],
+  images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
   function start(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
@@ -238,7 +240,7 @@ export function openRunnerStart(
         contextId: context.id,
         retryScope,
       };
-      const accepted = yield* store.acceptStart(plan);
+      const accepted = yield* store.acceptStart(plan, images.hasFile);
       if (!accepted.ok) return accepted;
       // Deliberately detached from the response. The accepted Run survives a lost HTTP reply.
       if (!isClosed()) yield* lifecycle.fork(drive(accepted.value));

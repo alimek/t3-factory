@@ -8,6 +8,7 @@ import {
   HardDrive,
   ImageIcon,
   ImageOff,
+  Trash2,
 } from "lucide-react";
 import {
   operationPath,
@@ -21,7 +22,10 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SectionLabel } from "@/components/page";
+import { cn } from "@/lib/utils";
+import { RUN_IMAGE_DELETION_LIMIT } from "@t3-factory/domain-validation";
 import { api } from "../api.ts";
+import { MutationGate } from "../client-gate.tsx";
 import { imageSize } from "./prompt-editor.tsx";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -47,36 +51,28 @@ const projectsOf = (image: EligibleRunImage) =>
  * the server lists them for the chosen project, with an in-section preview.
  */
 export function RunImageSettings() {
-  const [projects, setProjects] = useState<readonly FactoryProject[]>([]);
+  const projects = useProjects();
   const [projectId, setProjectId] = useState("");
-  const [images, setImages] = useState<readonly EligibleRunImage[] | null>(null);
-  const [error, setError] = useState("");
+  const [listed, setListed] = useState(0);
+  const { images, error } = useEligibleImages(projectId, listed);
   const [previewed, setPreviewed] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    api.listProjects().then(
-      (catalog) => active && setProjects(catalog.projects),
-      () => undefined,
-    );
-    return () => {
-      active = false;
-    };
-  }, []);
-  useEffect(() => {
-    let active = true;
-    setError("");
-    api.listEligibleRunImages(projectId).then(
-      (listed) => active && setImages(listed),
-      (cause: unknown) =>
-        active &&
-        setError(cause instanceof Error ? cause.message : "Run images could not be listed."),
-    );
-    return () => {
-      active = false;
-    };
-  }, [projectId]);
+  const deletion = useImageDeletion(() => setListed((n) => n + 1));
   const project = projects.find((item) => item.id === projectId) ?? null;
   const index = images?.findIndex((image) => image.sha256 === previewed) ?? -1;
+  // Moving to another view or filter abandons an open confirmation.
+  const preview = (sha256: string | null) => {
+    deletion.cancel();
+    setPreviewed(sha256);
+  };
+  const confirmation = deletion.pending && (
+    <DeleteConfirmation
+      deletion={deletion.pending}
+      project={project}
+      busy={deletion.busy}
+      onCancel={deletion.cancel}
+      onConfirm={() => void deletion.confirm()}
+    />
+  );
   return (
     <div className="grid gap-4">
       <div className="grid gap-2">
@@ -87,9 +83,14 @@ export function RunImageSettings() {
           place.
         </p>
       </div>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+      {[error, deletion.error].filter(Boolean).map((message) => (
+        <Alert key={message} variant="destructive">
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      ))}
+      {deletion.notice && (
+        <Alert>
+          <AlertDescription>{deletion.notice}</AlertDescription>
         </Alert>
       )}
       {images && index >= 0 ? (
@@ -97,8 +98,10 @@ export function RunImageSettings() {
           images={images}
           index={index}
           project={project}
-          onIndexChange={(next) => setPreviewed(images[next]!.sha256)}
-          onBack={() => setPreviewed(null)}
+          confirmation={confirmation}
+          onIndexChange={(next) => preview(images[next]!.sha256)}
+          onBack={() => preview(null)}
+          onDelete={() => deletion.ask({ scope: "one", images: [images[index]!] })}
         />
       ) : (
         images && (
@@ -106,8 +109,14 @@ export function RunImageSettings() {
             images={images}
             projects={projects}
             project={project}
-            onProjectChange={setProjectId}
-            onOpen={setPreviewed}
+            confirmation={confirmation}
+            onProjectChange={(next) => {
+              deletion.cancel();
+              setProjectId(next);
+            }}
+            onOpen={preview}
+            onDelete={(image) => deletion.ask({ scope: "one", images: [image] })}
+            onDeleteAll={() => deletion.ask({ scope: "all", images })}
           />
         )
       )}
@@ -115,26 +124,169 @@ export function RunImageSettings() {
   );
 }
 
+function useProjects() {
+  const [projects, setProjects] = useState<readonly FactoryProject[]>([]);
+  useEffect(() => {
+    let active = true;
+    api.listProjects().then(
+      (catalog) => active && setProjects(catalog.projects),
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+  return projects;
+}
+
+/** The server's eligible list for the project filter, read again whenever `listed` changes. */
+function useEligibleImages(projectId: string, listed: number) {
+  const [images, setImages] = useState<readonly EligibleRunImage[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setError("");
+    api.listEligibleRunImages(projectId).then(
+      (eligible) => active && setImages(eligible),
+      (cause: unknown) =>
+        active &&
+        setError(cause instanceof Error ? cause.message : "Run images could not be listed."),
+    );
+    return () => {
+      active = false;
+    };
+  }, [projectId, listed]);
+  return { images, error };
+}
+
+/** The pending confirmation, the deletion it confirms and its outcome; `deleted` relists. */
+function useImageDeletion(deleted: () => void) {
+  const [pending, setPending] = useState<Deletion | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const ask = (next: Deletion) => {
+    setError("");
+    setNotice("");
+    setPending(next);
+  };
+  const confirm = async () => {
+    if (!pending) return;
+    setBusy(true);
+    try {
+      const skipped = await deleteImages(pending.images.map((image) => image.sha256));
+      setNotice(skippedNotice(skipped.length));
+      setPending(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Run images could not be deleted.");
+    } finally {
+      setBusy(false);
+      deleted();
+    }
+  };
+  return { pending, busy, error, notice, ask, cancel: () => setPending(null), confirm };
+}
+
+/** What a confirmation would delete: one image, or every image the current filter lists. */
+type Deletion = { scope: "one" | "all"; images: readonly EligibleRunImage[] };
+
+/** Deletes in batches the server accepts and returns the digests it kept. */
+async function deleteImages(digests: readonly string[]) {
+  const skipped: string[] = [];
+  for (let start = 0; start < digests.length; start += RUN_IMAGE_DELETION_LIMIT) {
+    const batch = digests.slice(start, start + RUN_IMAGE_DELETION_LIMIT);
+    const result = await api.deleteRunImages({ sha256: batch });
+    skipped.push(...result.skipped);
+  }
+  return skipped;
+}
+
+function skippedNotice(skipped: number) {
+  if (skipped === 0) return "";
+  return skipped === 1
+    ? "1 image was kept because it is no longer eligible: an Active Run now uses it, or its file is already gone."
+    : `${skipped} images were kept because they are no longer eligible: an Active Run now uses them, or their files are already gone.`;
+}
+
+/** "the Run keeps its", "both Runs keep their", "all 3 Runs keep their" history. */
+function keepers(runs: number) {
+  if (runs === 1) return "the Run keeps its history and shows";
+  return `${runs === 2 ? "both" : `all ${runs}`} Runs keep their history and show`;
+}
+
+/** Figma R10c/R10e: what the deletion removes and keeps, with Cancel and the danger action. */
+function DeleteConfirmation({
+  deletion,
+  project,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  deletion: Deletion;
+  project: FactoryProject | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { images } = deletion;
+  const size = imageSize(images.reduce((total, image) => total + image.sizeBytes, 0));
+  const runs = new Map(images.flatMap((image) => image.runs).map((run) => [run.id, run]));
+  const onlyProject = project && [...runs.values()].every((run) => run.project.id === project.id);
+  const one = deletion.scope === "one" ? images[0]! : null;
+  const title = one
+    ? `Delete ${one.name} (${size})?`
+    : `Delete ${count(images.length, "image")} (${size}) from ${count(runs.size, "Run")}${onlyProject ? ` in ${project.title}` : ""}?`;
+  const description = one
+    ? `Used by ${count(runs.size, "Run")} in ${projectsOf(one)}. The file is removed from this computer and cannot be restored; ${keepers(runs.size)} “Image unavailable” in its place.`
+    : `The files are removed from this computer and cannot be restored. Run history stays unchanged; ${images.length === 1 ? "this image shows" : "these images show"} as “Image unavailable”.${project ? " Images in other projects are kept." : ""}`;
+  return (
+    <section
+      role="alertdialog"
+      aria-label={title}
+      className="grid gap-2 rounded-lg border bg-card p-3"
+    >
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="text-xs text-muted-foreground">{description}</p>
+      <div className="mt-1 flex gap-2">
+        <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+        <MutationGate>
+          <Button type="button" variant="danger" disabled={busy} onClick={onConfirm}>
+            {busy ? "Deleting…" : one ? "Delete image" : `Delete ${count(images.length, "image")}`}
+          </Button>
+        </MutationGate>
+      </div>
+    </section>
+  );
+}
+
 function RunImageList({
   images,
   projects,
   project,
+  confirmation,
   onProjectChange,
   onOpen,
+  onDelete,
+  onDeleteAll,
 }: {
   images: readonly EligibleRunImage[];
   projects: readonly FactoryProject[];
   project: FactoryProject | null;
+  confirmation: ReactNode;
   onProjectChange: (projectId: string) => void;
   onOpen: (sha256: string) => void;
+  onDelete: (image: EligibleRunImage) => void;
+  onDeleteAll: () => void;
 }) {
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <RunImageSummary images={images} project={project} />
         <NativeSelect
           aria-label="Project"
-          wrapperClassName="w-50"
+          wrapperClassName="ml-auto w-50"
           value={project?.id ?? ""}
           onChange={(event) => onProjectChange(event.target.value)}
         >
@@ -145,7 +297,15 @@ function RunImageList({
             </NativeSelectOption>
           ))}
         </NativeSelect>
+        {images.length > 0 && !confirmation && (
+          <MutationGate>
+            <Button type="button" variant="destructive" onClick={onDeleteAll}>
+              Delete all {images.length}
+            </Button>
+          </MutationGate>
+        )}
       </div>
+      {confirmation}
       {images.length > 0 ? (
         <ul
           aria-label="Run images"
@@ -153,7 +313,11 @@ function RunImageList({
         >
           {images.map((image) => (
             <li key={image.sha256}>
-              <RunImageCard image={image} onOpen={() => onOpen(image.sha256)} />
+              <RunImageCard
+                image={image}
+                onOpen={() => onOpen(image.sha256)}
+                onDelete={() => onDelete(image)}
+              />
             </li>
           ))}
         </ul>
@@ -191,7 +355,7 @@ function RunImageSummary({
     ),
   );
   return (
-    <p className="flex min-w-0 items-center gap-2 text-sm">
+    <p className="mr-auto flex min-w-0 items-center gap-2 text-sm">
       <HardDrive aria-hidden strokeWidth={1.5} className="size-4 shrink-0 text-muted-foreground" />
       {images.length === 0 ? (
         <span className="font-medium text-foreground">No images to delete</span>
@@ -231,27 +395,44 @@ function StoredImage({ image, preview }: { image: EligibleRunImage; preview?: bo
 }
 
 /** Figma Settings/RunImageCard: thumbnail, name, size and type, its Runs and their projects. */
-function RunImageCard({ image, onOpen }: { image: EligibleRunImage; onOpen: () => void }) {
+function RunImageCard({
+  image,
+  onOpen,
+  onDelete,
+}: {
+  image: EligibleRunImage;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={`Preview ${image.name}`}
-      onClick={onOpen}
-      className="group grid h-auto w-full justify-stretch gap-1.5 p-0 text-left font-normal whitespace-normal hover:bg-transparent"
-    >
-      <span className="block aspect-[162/104] overflow-hidden rounded-md border bg-card group-hover:border-border-strong">
-        <StoredImage key={image.sha256} image={image} />
-      </span>
-      <span className="grid min-w-0 gap-px">
-        <span className="truncate text-sm font-medium text-foreground">{image.name}</span>
-        <span className="truncate text-2xs text-muted-foreground">
-          {imageSize(image.sizeBytes)} · {imageType(image)}
+    <div className="relative">
+      <Button
+        type="button"
+        variant="ghost"
+        aria-label={`Preview ${image.name}`}
+        onClick={onOpen}
+        className="group grid h-auto w-full justify-stretch gap-1.5 p-0 text-left font-normal whitespace-normal hover:bg-transparent"
+      >
+        <span className="block aspect-[162/104] overflow-hidden rounded-md border bg-card group-hover:border-border-strong">
+          <StoredImage key={image.sha256} image={image} />
         </span>
-        <span className="truncate text-2xs text-muted-foreground">{runsSummary(image.runs)}</span>
-        <span className="truncate text-2xs text-muted-foreground">{projectsOf(image)}</span>
-      </span>
-    </Button>
+        <span className="grid min-w-0 gap-px">
+          <span className="truncate text-sm font-medium text-foreground">{image.name}</span>
+          <span className="truncate text-2xs text-muted-foreground">
+            {imageSize(image.sizeBytes)} · {imageType(image)}
+          </span>
+          <span className="truncate text-2xs text-muted-foreground">{runsSummary(image.runs)}</span>
+          <span className="truncate text-2xs text-muted-foreground">{projectsOf(image)}</span>
+        </span>
+      </Button>
+      <div className="absolute top-1 right-1">
+        <MutationGate>
+          <IconButton label={`Delete ${image.name}`} onClick={onDelete}>
+            <Trash2 aria-hidden strokeWidth={1.5} />
+          </IconButton>
+        </MutationGate>
+      </div>
+    </div>
   );
 }
 
@@ -281,14 +462,18 @@ function RunImagePreview({
   images,
   index,
   project,
+  confirmation,
   onIndexChange,
   onBack,
+  onDelete,
 }: {
   images: readonly EligibleRunImage[];
   index: number;
   project: FactoryProject | null;
+  confirmation: ReactNode;
   onIndexChange: (index: number) => void;
   onBack: () => void;
+  onDelete: () => void;
 }) {
   const image = images[index]!;
   // Wrapping keeps both buttons enabled, so focus never drops out at either end.
@@ -322,10 +507,20 @@ function RunImagePreview({
             </IconButton>
           </>
         )}
+        {!confirmation && (
+          <MutationGate>
+            <Button type="button" variant="destructive" onClick={onDelete}>
+              Delete image
+            </Button>
+          </MutationGate>
+        )}
       </div>
-      <div className="h-75 overflow-hidden rounded-md border bg-card">
+      <div
+        className={cn("overflow-hidden rounded-md border bg-card", confirmation ? "h-45" : "h-75")}
+      >
         <StoredImage key={image.sha256} image={image} preview />
       </div>
+      {confirmation}
       <div className="grid gap-2">
         <SectionLabel>Used by</SectionLabel>
         <ul aria-label="Used by" className="grid gap-1.5">

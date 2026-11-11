@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { assert, expect, it } from "@effect/vitest";
 import { factoryHarness } from "./support/factory.ts";
@@ -466,4 +466,94 @@ it("filtering eligible images by project keeps the images its Runs used and list
       ordinal: 1,
     },
   ]);
+});
+
+it("deleting an Archived Run's images removes their bytes and leaves the Run's history unchanged", async (c) => {
+  // Arrange
+  const f = await prepared(c);
+  await stageImages(f.f, allScreenshots);
+  const started = await f.f.startRun(imageStart(f.input));
+  assert(started.ok);
+  assert((await f.f.archiveRun(started.value.id)).ok);
+  const before = await f.f.getRun(started.value.id);
+  const [red, green] = [sha256Hex(screenshots.red.data), sha256Hex(screenshots.green.data)];
+
+  // Act
+  const deleted = await f.f.deleteRunImages({ sha256: [red, green] });
+
+  // Assert
+  expect(deleted).toStrictEqual({ ok: true, value: { deleted: [red, green], skipped: [] } });
+  await expect(stat(join(f.h.processHome, "images", red))).rejects.toThrow("ENOENT");
+  expect((await f.f.getRunImage(green)).ok).toBe(false);
+  expect((await f.f.getRunImage(sha256Hex(screenshots.blue.data))).ok).toBe(true);
+  expect(await f.f.getRun(started.value.id)).toStrictEqual(before);
+});
+
+it("an image an Active Run attached after it was listed is skipped and keeps its bytes", async (c) => {
+  // Arrange
+  const f = await prepared(c);
+  await stageImages(f.f, allScreenshots);
+  const settled = await f.f.startRun(imageStart(f.input));
+  assert(settled.ok);
+  assert((await f.f.settleRun(settled.value.id)).ok);
+  const [red, green] = [sha256Hex(screenshots.red.data), sha256Hex(screenshots.green.data)];
+  const listed = await f.f.listEligibleRunImages("");
+  assert(listed.ok && listed.value.some((image) => image.sha256 === green));
+  const reuse = await f.f.startRun({
+    ...imageStart({ ...f.input, requestId: "start-two", title: "Reuse the mockup" }),
+    segments: [{ type: "text", text: "Compare the mockup." }],
+    images: [manifestEntry("green", screenshots.green)],
+  });
+  assert(reuse.ok);
+
+  // Act
+  const deleted = await f.f.deleteRunImages({ sha256: [red, green] });
+
+  // Assert
+  expect(deleted).toStrictEqual({ ok: true, value: { deleted: [red], skipped: [green] } });
+  const kept = await f.f.getRunImage(green);
+  assert(kept.ok);
+  expect(Buffer.from(kept.value.data).equals(Buffer.from(screenshots.green.data))).toBe(true);
+});
+
+it("a Start naming a deleted image reports it as not uploaded", async (c) => {
+  // Arrange
+  const f = await prepared(c);
+  await stageImages(f.f, allScreenshots);
+  const archived = await f.f.startRun(imageStart(f.input));
+  assert(archived.ok);
+  assert((await f.f.archiveRun(archived.value.id)).ok);
+  const green = sha256Hex(screenshots.green.data);
+  assert((await f.f.deleteRunImages({ sha256: [green] })).ok);
+  const reuse = {
+    ...imageStart({ ...f.input, requestId: "start-two", title: "Reuse the mockup" }),
+    segments: [{ type: "text" as const, text: "Compare the mockup." }],
+    images: [manifestEntry("green", screenshots.green)],
+  };
+
+  // Act
+  const started = await f.f.startRun(reuse);
+
+  // Assert
+  assert(!started.ok);
+  expect(started.error.code).toBe("missing_images");
+  expect(started.error.issues.map((issue) => issue.path)).toStrictEqual([`images.${green}`]);
+});
+
+it("a deletion naming a malformed digest is rejected and deletes nothing", async (c) => {
+  // Arrange
+  const f = await prepared(c);
+  await stageImages(f.f, allScreenshots);
+  const archived = await f.f.startRun(imageStart(f.input));
+  assert(archived.ok);
+  assert((await f.f.archiveRun(archived.value.id)).ok);
+  const red = sha256Hex(screenshots.red.data);
+
+  // Act
+  const deleted = await f.f.deleteRunImages({ sha256: [red, red.toUpperCase()] });
+
+  // Assert
+  assert(!deleted.ok);
+  expect(deleted.error.code).toBe("validation");
+  expect((await f.f.getRunImage(red)).ok).toBe(true);
 });
