@@ -83,7 +83,8 @@ pairing material on the T3 computer with `t3 auth pairing create --scope orchest
 connection's T3 address). Without `--scope`, a T3 pairing carries T3's full default scope set; Factory always
 requests exactly `orchestration:read` in the token exchange and discards any other grant. Pairing needs an
 authorized T3 connection: the first configuration snapshot must report the environment id of the connection's
-authorization context, otherwise Factory discards the grant and refuses. Approved remote clients see the status
+authorization context, otherwise Factory discards the grant and refuses. It also refuses, and discards the
+grant, when the saved endpoint or its environment changed while T3 answered. Approved remote clients see the status
 and diagnostics; pairing and **Disconnect theme colors** answer `host_only` for them.
 
 **Grant and credentials.** The appearance grant is a separate T3 session, never the MCP OAuth credential, which

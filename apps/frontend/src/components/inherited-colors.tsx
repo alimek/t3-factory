@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { T3Appearance } from "@t3-factory/contracts";
 import { applyInheritedColors } from "../appearance.ts";
-import { useServerId, useServerInheritsAppearance } from "../client-scope.ts";
+import { useAppearanceSource, useServerId, useServerInheritsAppearance } from "../client-scope.ts";
 import {
   cachedColors,
   forgetColors,
@@ -13,14 +13,16 @@ import { useLiveAppearance } from "../live/live-connection.ts";
 const expiryCheckMs = 60_000;
 
 /**
- * Shows one server's theme colors while product screens are mounted: its cached snapshot until
- * live delivery answers, then exactly what the server publishes. A value live delivery kept
+ * Shows one server's theme colors while product screens are mounted: its cached snapshot of
+ * the source the server declared at the access check until live delivery answers, then exactly
+ * what the server publishes. A value live delivery kept
  * from before a reconnect is not trusted until the current subscription confirms it, so a
  * replaced server or source cannot bring an old palette back.
  */
 function FollowInheritedColors({ serverId }: { serverId: string }) {
   const live = useLiveAppearance();
-  const [cached] = useState(() => cachedColors(profileStorage(), serverId, Date.now()));
+  const source = useAppearanceSource();
+  const [cached] = useState(() => cachedColors(profileStorage(), serverId, source, Date.now()));
   const [published, setPublished] = useState<T3Appearance | null>(null);
   if (live.synchronized && live.value && live.value !== published) setPublished(live.value);
   const presentation = published ? published.presentation : cached;

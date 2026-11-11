@@ -51,6 +51,30 @@ it("pairing is refused and no grant is kept when T3 reports another environment 
   expect(t3.appearance.grants.size).toBe(0);
 });
 
+it("a pairing T3 answers after the T3 endpoint was replaced is refused and keeps no grant or colors", async (context) => {
+  // Arrange
+  const { factory, t3 } = await openFactoryWithApprovedT3(context);
+  t3.appearance.defaultTheme = "ocean";
+  let answer = () => {};
+  t3.appearance.exchangeAnswer = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const pairing = factory.pairAppearance({ pairing: t3.appearance.pairingCode });
+  assert((await factory.configureConnection({ endpoint: "http://127.0.0.1:4888/mcp" })).ok);
+
+  // Act
+  answer();
+  const paired = await pairing;
+
+  // Assert
+  assert(!paired.ok);
+  expect(paired.error.message).toContain("connection changed");
+  expect(t3.appearance.grants.size).toBe(0);
+  const live = subscribe(context, factory.live.watchAppearance());
+  const messages = await live.until((received) => latestAppearance(received) !== null);
+  expect(latestAppearance(messages)?.presentation).toBe(null);
+});
+
 it("pairing is refused before any exchange while the T3 connection is not authorized", async (context) => {
   // Arrange
   const t3 = new ControlledT3();
@@ -386,6 +410,27 @@ it("explicit disconnect forgets the grant and returns to Factory's colors", asyn
   expect(disconnected.value.state).toBe("not-paired");
   expect(disconnected.value.presentation).toBe(null);
   expect(t3.appearance.grants.size).toBe(0);
+});
+
+it("clients are told the current theme-color source while paired and none after disconnect or another endpoint", async (context) => {
+  // Arrange
+  const { factory, t3 } = await pairedFactory(context, "ocean");
+  const paired = await factory.getAppearanceSource();
+
+  // Act
+  assert((await factory.disconnectAppearance()).ok);
+  const disconnected = await factory.getAppearanceSource();
+  assert((await factory.pairAppearance({ pairing: t3.appearance.pairingCode })).ok);
+  const pairedAgain = await factory.getAppearanceSource();
+  assert((await factory.configureConnection({ endpoint: "http://127.0.0.1:4888/mcp" })).ok);
+  const replaced = await factory.getAppearanceSource();
+
+  // Assert
+  assert(paired.ok && pairedAgain.ok);
+  expect(paired.value?.environmentId).toBe(t3.environmentId);
+  expect(pairedAgain.value?.grantId).not.toBe(paired.value?.grantId);
+  expect(disconnected).toStrictEqual({ ok: true, value: null });
+  expect(replaced).toStrictEqual({ ok: true, value: null });
 });
 
 it("changing the T3 endpoint discards the inherited colors of the previous source", async (context) => {

@@ -66,6 +66,21 @@ export function accessRoutes(
     (operation: () => Promise<Result<unknown>>) =>
     (): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
       Effect.map(Effect.promise(operation), (result) => resultResponse(result));
+  /** The scope answer for the host or an approved client, bound to this server and its theme source. */
+  const boundScope = async (scope: ClientScope) => {
+    const server = await factory.getServerId();
+    if (!server.ok) return resultResponse(server);
+    const source = await factory.getAppearanceSource();
+    if (!source.ok) return resultResponse(source);
+    return resultResponse({
+      ok: true,
+      value: {
+        ...scope,
+        serverId: server.value,
+        appearanceSource: source.value,
+      } satisfies ClientScope,
+    });
+  };
   return {
     getProtocol: {
       public: true,
@@ -74,19 +89,7 @@ export function accessRoutes(
     },
     getClientScope: {
       host: {
-        handle: () =>
-          Effect.map(
-            Effect.promise(() => factory.getServerId()),
-            (server) =>
-              resultResponse(
-                server.ok
-                  ? {
-                      ok: true,
-                      value: { scope: "host", serverId: server.value } satisfies ClientScope,
-                    }
-                  : server,
-              ),
-          ),
+        handle: () => Effect.promise(() => boundScope({ scope: "host" })),
       },
       remote: {
         public: true,
@@ -95,25 +98,13 @@ export function accessRoutes(
             const result = await factory.getClientAccess(requestCredential(headers) ?? "");
             if (!result.ok) return resultResponse(result);
             const access = result.value;
-            if (access.status !== "approved")
-              return resultResponse({
-                ok: true,
-                value: { scope: "remote", access } satisfies ClientScope,
-              });
-            // Only an approved client may bind cached state to this server's identity.
-            const server = await factory.getServerId();
-            return resultResponse(
-              server.ok
-                ? {
-                    ok: true,
-                    value: {
-                      scope: "remote",
-                      access,
-                      serverId: server.value,
-                    } satisfies ClientScope,
-                  }
-                : server,
-            );
+            // Only an approved client may bind cached state to this server and its theme source.
+            return access.status === "approved"
+              ? boundScope({ scope: "remote", access })
+              : resultResponse({
+                  ok: true,
+                  value: { scope: "remote", access } satisfies ClientScope,
+                });
           }),
       },
     },

@@ -9,7 +9,7 @@ import {
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
-import type { ClientAccessState, FactoryClient } from "@t3-factory/contracts";
+import type { AppearanceSource, ClientAccessState, FactoryClient } from "@t3-factory/contracts";
 import {
   FACTORY_MINIMUM_SERVER_PROTOCOL,
   FACTORY_PROTOCOL,
@@ -21,7 +21,12 @@ import { Label } from "@/components/ui/label";
 import { fieldLabelClass } from "@/components/page";
 import { GateScreen } from "@/components/gate-screen";
 import { api, ApiError } from "./api.ts";
-import { ScopeContext, ServerIdContext, ServerProtocolContext } from "./client-scope.ts";
+import {
+  AppearanceSourceContext,
+  ScopeContext,
+  ServerIdContext,
+  ServerProtocolContext,
+} from "./client-scope.ts";
 import { forgetColors, profileStorage } from "./inherited-colors-cache.ts";
 import { desktopBridge } from "./desktop-bridge.ts";
 import { transport, useLiveDelivery, useTransport } from "./transport.ts";
@@ -37,6 +42,7 @@ type Gate =
       readonly scope: "host" | "remote";
       readonly serverProtocol: number;
       readonly serverId: string | null;
+      readonly appearanceSource: AppearanceSource | null;
     };
 
 const localProtocol = {
@@ -44,13 +50,8 @@ const localProtocol = {
   minimumPeerProtocol: FACTORY_MINIMUM_SERVER_PROTOCOL,
 };
 
-function accessGate(
-  access: ClientAccessState,
-  serverProtocol: number,
-  serverId: string | null,
-): Gate {
-  if (access.status === "approved")
-    return { kind: "ready", scope: "remote", serverProtocol, serverId };
+function accessGate(access: ClientAccessState, ready: Extract<Gate, { kind: "ready" }>): Gate {
+  if (access.status === "approved") return ready;
   if (access.status === "pending") return { kind: "pending", client: access.client };
   return { kind: "request", previous: access.status };
 }
@@ -63,10 +64,14 @@ async function evaluate(): Promise<Gate> {
     if (compatibility.kind !== "compatible")
       return { kind: "incompatible", message: compatibility.message };
     const scope = await api.getClientScope();
-    const serverId = scope.serverId ?? null;
-    return scope.scope === "host"
-      ? { kind: "ready", scope: "host", serverProtocol: server.protocol, serverId }
-      : accessGate(scope.access, server.protocol, serverId);
+    const ready = {
+      kind: "ready" as const,
+      scope: scope.scope,
+      serverProtocol: server.protocol,
+      serverId: scope.serverId ?? null,
+      appearanceSource: scope.appearanceSource ?? null,
+    };
+    return scope.scope === "host" ? ready : accessGate(scope.access, ready);
   } catch (cause) {
     if (cause instanceof ApiError && cause.detail.code === "incompatible")
       return { kind: "incompatible", message: cause.detail.message };
@@ -139,7 +144,9 @@ export function ClientGate({ children }: { children: ReactNode }) {
     <ScopeContext.Provider value={gate.scope}>
       <ServerProtocolContext.Provider value={gate.serverProtocol}>
         <ServerIdContext.Provider value={gate.serverId}>
-          <OfflineBoundary>{children}</OfflineBoundary>
+          <AppearanceSourceContext.Provider value={gate.appearanceSource}>
+            <OfflineBoundary>{children}</OfflineBoundary>
+          </AppearanceSourceContext.Provider>
         </ServerIdContext.Provider>
       </ServerProtocolContext.Provider>
     </ScopeContext.Provider>

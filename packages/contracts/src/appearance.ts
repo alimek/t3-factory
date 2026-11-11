@@ -78,6 +78,16 @@ export interface AppearancePresentation {
 }
 
 /**
+ * The source theme colors currently come from: the connection's T3 environment, the active
+ * appearance grant and the resolver. A client reuses cached colors only for exactly this source.
+ */
+export interface AppearanceSource {
+  readonly environmentId: string;
+  readonly grantId: string;
+  readonly resolverPin: string;
+}
+
+/**
  * - `not-paired`: no appearance grant for the saved T3 endpoint.
  * - `connecting`: a grant is stored and Factory is reading T3's configuration.
  * - `following`: Factory follows the environment default theme.

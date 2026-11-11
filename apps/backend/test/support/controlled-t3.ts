@@ -495,7 +495,9 @@ export class ControlledT3 implements T3Adapter {
   /** Theme-color pairing and configuration subscription of the same environment. */
   readonly appearance = new ControlledAppearance(this.environmentId, () => this.available);
   async pairAppearance(target: T3Endpoint, pairingCode: string) {
-    return this.appearance.pair(target.endpoint, pairingCode);
+    const grant = this.appearance.pair(target.endpoint, pairingCode);
+    await this.appearance.exchangeAnswer;
+    return grant;
   }
   async readAppearanceGrant(target: T3Endpoint) {
     return this.appearance.grants.get(target.endpoint) ?? null;

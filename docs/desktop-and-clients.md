@@ -127,11 +127,13 @@ clients of servers older than protocol 10 receive no theme colors and use Factor
 Each client caches the last presentation its server published: one snapshot with both halves, in the
 storage of the browser profile for that Factory address, or of the desktop installation's bundled
 page. It holds colors, the theme name, the source and resolver identifiers and the grant's opaque id
-and expiry, never a credential. The snapshot is bound to the identity of the Factory server, which
-the server tells only the host panel and approved clients. A client reads it only after that answer,
-for the same server, before the grant's expiry and when it is still exactly a sanitized
-presentation; it then shows the colors until live delivery answers and while offline, and switching
-Light and Dark stays immediate. Whatever the server publishes next replaces the snapshot, and a
+and expiry, never a credential. The snapshot is bound to the identity of the Factory server and to
+its current theme-color source (the connection's T3 environment, the active grant and the resolver
+pin), both of which the server tells only the host panel and approved clients. A client reads it
+only after that answer, for the same server and exactly that source, before the grant's expiry and
+when it is still exactly a sanitized presentation; after a disconnect, another pairing or another
+T3 source it shows Factory's colors until live delivery answers. A matching snapshot is shown
+until live delivery answers and while offline, and switching Light and Dark stays immediate. Whatever the server publishes next replaces the snapshot, and a
 presentation without colors (expiry, revocation, disconnect, another T3 source, no inherited theme)
 removes it. A client whose Factory access is missing, pending, denied or revoked deletes it without
 reading it. The first paint, every gate screen and the desktop window background always use
@@ -304,8 +306,8 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 ## Protocol compatibility
 
 The current protocol is **10**, and both sides require at least **9**. Protocol 10 added the
-theme-color live subscription (`WatchAppearance`) and the server identity in the client-scope answer
-for the host panel and approved clients; a client subscribes only when the server's handshake
+theme-color live subscription (`WatchAppearance`) and the server identity and current theme-color
+source in the client-scope answer for the host panel and approved clients; a client subscribes only when the server's handshake
 declares at least 10, so protocol 9 and 10 peers interoperate and a protocol 9 server's clients show
 Factory's colors without theme-color settings. Protocol 9 changed manual
 Settle: its request may authorize stopping workers (`stopWorkers`) and it answers a settlement

@@ -129,7 +129,13 @@ function mapMode(palette: T3ThemePalette, mode: Appearance) {
   const surfaces = [background, card, muted];
 
   const foreground = readable(t3.text, [...surfaces, hover], TEXT_CONTRAST, "text");
-  const mutedForeground = readable(t3.textMuted, surfaces, TEXT_CONTRAST, "secondary text");
+  // Secondary text also sits on hovered rows and on the sidebar and its selected rows.
+  const mutedForeground = readable(
+    t3.textMuted,
+    [...surfaces, hover, sidebar, selected],
+    TEXT_CONTRAST,
+    "secondary text",
+  );
   const emphasis = readable(
     toOklch(mix(foreground, mutedForeground, 0.5)),
     surfaces,

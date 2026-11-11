@@ -1,3 +1,4 @@
+import type { AppearanceSource } from "./appearance.ts";
 import { operation } from "./operation.ts";
 
 /** A desktop installation or one browser profile; the label is a display hint, never authority. */
@@ -40,6 +41,11 @@ export type ClientScope = (
    * bind what it caches to the server it came from. Servers before protocol 10 send none.
    */
   readonly serverId?: string;
+  /**
+   * The server's current theme-color source, for the host and approved clients only; null
+   * when there is none. Cached colors of any other source must not be shown.
+   */
+  readonly appearanceSource?: AppearanceSource | null;
 };
 
 /** Factory client/server wire compatibility, independent of application release numbers. */

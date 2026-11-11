@@ -5,6 +5,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import type {
   AppearancePresentation,
+  AppearanceSource,
   Result,
   T3Appearance,
   T3Connection,
@@ -604,6 +605,14 @@ export const makeAppearance = (
             "The paired T3 environment is not the one the T3 connection uses, so Factory discarded the grant. Pair with a code from the connected T3.",
           );
         }
+        // The connection can change while T3 answers; a grant for a replaced source is obsolete.
+        const current = yield* savedBinding;
+        if (current.endpoint !== target || current.environment !== environment) {
+          stream.value.close();
+          return yield* refuse(
+            "The T3 connection changed while pairing, so Factory discarded the grant. Pair again with a code from the connected T3.",
+          );
+        }
         problem = null;
         refusedEnvironment = null;
         yield* apply(yield* install(stream.value, environment), snapshot);
@@ -624,6 +633,19 @@ export const makeAppearance = (
 
     return {
       getAppearance: () => Effect.sync(() => status),
+      /** Read without waiting for a pairing or check in flight: it only compares local state. */
+      getAppearanceSource: () =>
+        Effect.map(savedBinding, (saved): Result<AppearanceSource | null> => ({
+          ok: true,
+          value:
+            record?.status === "active" && saved.environment && saved.endpoint === endpoint
+              ? {
+                  environmentId: saved.environment,
+                  grantId: record.grant.id,
+                  resolverPin: T3_RESOLVER_PIN,
+                }
+              : null,
+        })),
       pairAppearance: (input: unknown) => serial(pair(input)),
       disconnectAppearance: () => serial(disconnect()),
     };

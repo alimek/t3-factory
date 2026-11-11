@@ -4,7 +4,7 @@
  * Factory origin so an approved client shows them before live delivery answers and while it
  * is offline. It holds no credential, and both modes live in the same snapshot.
  */
-import type { AppearancePresentation } from "@t3-factory/contracts";
+import type { AppearancePresentation, AppearanceSource } from "@t3-factory/contracts";
 import { parseAppearancePresentation } from "@t3-factory/domain-validation";
 
 const storageKey = "factory.inherited-colors";
@@ -21,22 +21,30 @@ export function profileStorage(): ProfileStorage | null {
 }
 
 /**
- * The snapshot to show for `serverId`, or null: one stored for another Factory server, past
- * its grant's expiry or not exactly a sanitized presentation is never used. Call this only
- * once the server has confirmed this client's access.
+ * The snapshot to show for `serverId`, or null: one stored for another Factory server, from
+ * another source than the server's current `source` (its T3 environment, grant and resolver),
+ * past its grant's expiry or not exactly a sanitized presentation is never used. Call this only
+ * once the server has confirmed this client's access and declared that source.
  */
 export function cachedColors(
   storage: ProfileStorage | null,
   serverId: string,
+  source: AppearanceSource | null,
   now: number,
 ): AppearancePresentation | null {
   try {
     const stored: unknown = JSON.parse(storage?.getItem(storageKey) ?? "null");
     if (typeof stored !== "object" || stored === null) return null;
-    const { version, serverId: source, presentation } = stored as Record<string, unknown>;
-    if (version !== 1 || source !== serverId) return null;
+    const { version, serverId: server, presentation } = stored as Record<string, unknown>;
+    if (version !== 1 || server !== serverId || !source) return null;
     const snapshot = parseAppearancePresentation(presentation);
-    return snapshot && now < Date.parse(snapshot.grant.expiresAt) ? snapshot : null;
+    return snapshot &&
+      snapshot.environmentId === source.environmentId &&
+      snapshot.grant.id === source.grantId &&
+      snapshot.resolverPin === source.resolverPin &&
+      now < Date.parse(snapshot.grant.expiresAt)
+      ? snapshot
+      : null;
   } catch {
     return null;
   }

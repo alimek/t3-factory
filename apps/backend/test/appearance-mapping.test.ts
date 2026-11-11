@@ -46,6 +46,28 @@ it("a built-in palette maps T3 surfaces, text, accent and focus to Factory roles
   expect(modes.light.colors["sidebar-accent"]).not.toBe(modes.light.colors.primary);
 });
 
+it.each(["t3-chat", "grove", "ocean", "ember", "iris"])(
+  "secondary text of built-in %s stays readable on hovered rows, the sidebar and its selected rows",
+  (id) => {
+    // Arrange
+    const lookup = resolveT3Theme(id, []);
+    assert(lookup.kind === "theme");
+
+    // Act
+    const modes = presentThemeModes(lookup.theme);
+
+    // Assert
+    for (const mode of [modes.light, modes.dark]) {
+      assert(mode.kind === "inherited");
+      const surfaces = ["background", "card", "muted", "accent", "sidebar", "sidebar-accent"];
+      const ratios = surfaces.map((surface) =>
+        wcagContrast(mode.colors["muted-foreground"], mode.colors[surface as "accent"]),
+      );
+      expect(Math.min(...ratios)).toBeGreaterThanOrEqual(4.5);
+    }
+  },
+);
+
 it("a Factory status color too dim for the inherited canvas is adjusted until readable", () => {
   // Arrange
   const dimCanvas = {

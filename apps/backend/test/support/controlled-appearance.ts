@@ -52,6 +52,8 @@ export class ControlledAppearance {
   /** Published definitions as T3 streams them; Factory reads them as the live adapter does. */
   themes: unknown[] = [];
   pairings = 0;
+  /** T3 answers a pairing exchange only once this settles; a test holds it to act meanwhile. */
+  exchangeAnswer: Promise<void> = Promise.resolve();
   /** Session checks and subscriptions Factory asked for. */
   checks = 0;
   watches = 0;

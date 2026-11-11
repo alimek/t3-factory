@@ -2,7 +2,7 @@ import { agentOperations } from "./agent.ts";
 import { flowOperations } from "./flow.ts";
 import { projectOperations, projectServerOperations } from "./project.ts";
 import { connectionOperations } from "./connection.ts";
-import { appearanceOperations } from "./appearance.ts";
+import { appearanceOperations, type AppearanceSource } from "./appearance.ts";
 import { runOperations } from "./run.ts";
 import {
   type ClientAccessState,
@@ -42,5 +42,7 @@ export interface FactoryOperations extends FacadeOperations<
   getClientAccess(credential: string): Promise<Result<ClientAccessState>>;
   /** The identity this Factory's data home was created with; it never changes. */
   getServerId(): Promise<Result<string>>;
+  /** The source theme colors currently come from; null without an active grant to follow. */
+  getAppearanceSource(): Promise<Result<AppearanceSource | null>>;
   authenticateClient(credential: string): Promise<Result<FactoryClient>>;
 }
