@@ -8,7 +8,9 @@ import { findRun, readHistoryRun, runsTitled } from "./support/run-history.ts";
 import {
   expectFlowInputImages,
   expectGalleryImage,
+  failSecondImage,
   openImageHistory,
+  openWithFailedSecondImage,
 } from "./support/run-images.ts";
 import {
   dropFiles,
@@ -353,16 +355,6 @@ test("reloading preserves Flow input thumbnails, the image list and ordinal refe
   await app.screenshot("flow-input-gallery-after-reload");
 });
 
-/** Makes every read of the Run's second image fail, as when its stored bytes are missing. */
-async function failSecondImage(browser: Browser, run: { images: readonly { sha256: string }[] }) {
-  await browser.route(
-    new RegExp(`/api/run-images/${run.images[1]!.sha256}\\?v=\\d+\\.\\d+$`),
-    async (route) => {
-      return route.request.method === "GET" ? route.abort() : route.continue();
-    },
-  );
-}
-
 test("unavailable image bytes preserve readable prompt history and other images without Run attention", async ({
   app,
   screen,
@@ -382,23 +374,11 @@ test("unavailable image bytes preserve readable prompt history and other images 
   const context = screen.getByRole("complementary", "Run context");
   await expect(context).toContainText("Review the Atlas settings page");
   await expect(context.getByRole("list", "Prompt images").getByRole("button")).toHaveCount(4);
+  // The failed read has run before attention is checked.
+  await expect(context.getByText("Image unavailable", { exact: true })).toBeVisible();
   await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   expect((await readHistoryRun(app.baseUrl, run.id)).attention).toEqual(run.attention);
 });
-
-/** The seeded image Run with its second image's bytes failing, and how to open that image. */
-async function openWithFailedSecondImage(app: App, screen: Screen, browser: Browser) {
-  const run = await openImageHistory(app);
-  await failSecondImage(browser, run);
-  const opener = screen
-    .getByRole("article", "Flow input block")
-    .getByRole("button", "Open Image 2: screenshot.png");
-  return {
-    run,
-    openSecond: () => opener.tap(),
-    dialog: screen.getByRole("dialog", "Image 2 of 4 screenshot.png"),
-  };
-}
 
 test("the gallery shows Image unavailable with the ordinal and name for missing image bytes", async ({
   app,
