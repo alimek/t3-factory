@@ -208,10 +208,9 @@ and needs the separate [qualification procedure](installation.md#bounded-live-ve
   while its Stop
   [targets](https://github.com/pingdotgg/t3code/blob/44ebb2fe57465d32f2bd07c5eb3d8e871bdf5ed5/apps/server/src/orchestration-v2/Orchestrator.ts#L12403-L12417)
   a running run, or else the latest run that is not queued while its background work is
-  pending, and holds queued runs instead of starting them. Manual settlement therefore judges a
-  thread with no active run or native request whose latest run is queued by its latest run that
-  is not queued, as [manual settlement](runner.md#manual-settlement) describes. This is
-  source-reviewed at that pinned commit, not exercised against a live T3. Acknowledgements never
+  pending, and holds queued runs instead of starting them; [manual settlement](runner.md#manual-settlement)
+  owns how Factory applies this. This is source-reviewed at that pinned commit, not exercised
+  against a live T3. Acknowledgements never
   prove termination.
 - **Settlement.** `t3_thread_organize` with `action: "settle"` organizes a thread without
   launching a turn. It provides neither safe replay nor an execution fence.
