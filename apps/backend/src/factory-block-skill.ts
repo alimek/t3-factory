@@ -53,7 +53,7 @@ A Factory message saying \`Factory Request report\` asks you to assess the work 
 
 ## Settled and Archived Runs
 
-A Settled Run accepts reports as usual, and an accepted report returns it to Active. An Archived Run answers every report with a success that changes nothing: when a reply says the Run is archived, stop work on this Block and end the turn.
+A Run Factory settled automatically accepts reports as usual, and an accepted report returns it to Active. When the user settles a Run, or archives it, Factory answers every report with a success that records nothing: \`RUN_SETTLING\` while the user is settling it and Factory is stopping its workers, \`RUN_SETTLED\` once the user settled it, and \`RUN_ARCHIVED\` for an Archived Run. After any of these replies, stop work on this Block and end the turn.
 
 ## Tool errors
 

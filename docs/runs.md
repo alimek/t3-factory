@@ -220,6 +220,9 @@ menu items never opens a row preview.
   Case-insensitive title search shows one list of matching Runs and drafts in creation order, with a total match count and no group headers. Snoozed and Settled matches have muted titles and status icons unless selected. Drafts are titled from the first non-empty prompt line, or **Untitled draft**; Escape or × clears search.
 - When Runs exist but none are open, the open list shows **Nothing open** / **You're all caught up.**
   Snooze and Settle focus the destination group toggle after it appears. Restore focuses the restored row; during search, all three actions keep focus on that row.
+  A Settle still stopping workers focuses the row; when the Run settles later, focus moves to the destination only if it is
+  still on that row, on that Run's detail settlement section, or was lost because the row left; focus the user moved elsewhere,
+  including to the page, stays. A detail **Retry** that starts stopping moves focus to the settlement section as the button disappears.
 - **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
   The same shadcn/Radix row menu serves desktop and browser clients. Right click opens it at the pointer;
   Shift+F10 and the context-menu key anchor it below the focused row. Touch devices retain a ⋯ button;
@@ -376,7 +379,10 @@ certify result quality or one reviewed revision.
 shortcut and desktop menu) uses the same rules. When fresh T3 reads confirm every bound worker thread finished, it settles at
 once. Otherwise nothing changes until you confirm stopping every worker and ending the Run; cancelling or dismissing the
 confirmation changes nothing and sends no Stop. An ordinary Settle request never interrupts a worker: the server answers that
-confirmation is needed.
+confirmation is needed. A Run with workers, started under a T3 authorization Factory knows was since replaced, for example by
+reauthorizing or connecting another endpoint, cannot be settled: **Settle** is refused with or without confirmation, also while
+T3 is unavailable, and nothing changes; **Archive** remains available. A Settle confirmed while reauthorization is still
+pending is accepted, but if the new authorization is not the Run's, it ends unresolved and only **Archive** remains.
 
 Confirming holds the Run at once: nothing new is launched, sent, released or delivered, no Wait forwards (at its deadline or
 through **Continue now**), and Human answers and **Request report** are refused. While settlement is stopping or unresolved,
@@ -392,7 +398,8 @@ also keeps the settlement unresolved: Factory keeps searching for it and stops t
 Stop only while the T3 authorization the Run started under is still live. **Settle** again retries with a new Stop request;
 repeating it while stopping changes nothing. The hold stays, Factory keeps reading the workers and settles as soon as all read finished. An unresolved
 settlement is not a lifecycle state: there is no Resume, and **Archive** remains available. Work T3 holds queued in a worker
-thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing.
+thread keeps the settlement unresolved until it is removed in T3 or runs; Factory deletes nothing and does not stop a worker
+that only queued work keeps unfinished.
 
 Settling cancels unsent launches, sends and handoffs (held or released), unsent Request report turns, pending Human occurrences
 without inventing answers, pending Wait arrivals and messages waiting at a Continuation; a cancelled Wait never forwards, also
@@ -400,8 +407,9 @@ after restart. Pending attention settles as `manual-settlement`, activated
 Blocks without a Final result show stopped, and a send whose T3 reply was lost stays uncertain: Factory never resends it and
 keeps no copy of its message. The Run moves to
 **Settled**, Snooze and Woke clear, and Factory best-effort settles the worker threads in T3. The timeline records the
-confirmation and each retry, each Stop request, each worker found stopped and the settlement. Stopping raises no
-execution-failure Problem. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped
+confirmation and each retry, each Stop request, each worker found stopped and the settlement. Each worker's last run keeps
+the status T3 showed when it ended, such as interrupted, with its end time. Stopping raises no execution-failure Problem, and a
+Problem recorded before Settle, such as a failed run, stays. T3 Stop has no exact-run fence: a turn started directly in T3 around the Stop request may be stopped
 too, or start after the Run settled; settling does not delete T3 conversations or roll back repository edits.
 
 A manually settled Run's work stays ended: a later report from one of its Blocks, including a delayed one from stopped work, is

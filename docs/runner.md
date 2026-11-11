@@ -472,10 +472,21 @@ The user settles an Active or Snoozed Run through one operation. Without authori
 stop, it runs in the Run's drive lane: Factory reads every bound worker thread fresh under the
 Run's authorization context and settles only when each is [finished](#worker-thread-completion)
 and shows no queued run; otherwise it answers that confirmation is needed and changes nothing.
-That answer lists each worker read unfinished in scope as executing, which confirming stops;
+That answer lists each worker read unfinished in scope as executing, which confirming stops,
+except one only queued work keeps unfinished, which is unresolved with its queued reason;
 each worker T3 could not show, or not under the Run's live authorization context, as unresolved
 with that problem, because Factory never stops a thread it cannot read; and each reserved or
-uncertain launch as unresolved, without a thread. A malformed body (not
+uncertain launch as unresolved, without a thread. A Run with a bound worker or an unresolved
+launch, accepted under an authorization context that Factory knows was replaced, for example by
+reauthorizing or another endpoint, cannot be settled: Settle answers a conflict with or without
+`stopWorkers` and changes nothing, because that work could never be read, stopped or resolved
+under the Run's context; Archive stays available. A Run without such work settles as before. The
+known context is the connection's recorded one, which Factory keeps while T3 is unavailable;
+the plain request checks it after its reads and the confirmed request in the transaction that
+accepts it. While no context is known, such as during reauthorization, a confirmed request is
+accepted and completion waits for T3 under the Run's context. If the context then recorded is
+not the Run's, that settlement can never complete: its workers end unresolved, a retry answers
+the conflict, and only Archive ends it. A malformed body (not
 an object, or any field other than a boolean `stopWorkers`) is a validation error, never a
 declined Settle.
 With explicit authorization (`stopWorkers`) it is a durable operation:
@@ -495,7 +506,12 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   starts the next attempt under the current owner.
 - **Stopping.** A pass runs right after acceptance and in every reconciliation, in the drive lane.
   It reads every bound worker fresh. The backend that accepted the attempt sends Stop once
-  for each worker read unfinished in scope: it records the request
+  for each worker read unfinished in scope, except one that only queued work keeps unfinished:
+  a thread with no active run or native request whose latest run is queued is judged by its
+  latest run that is not queued ([T3 queue and Stop](t3-integration.md#execution-operations)).
+  It is stopped only while that run's delegated or background work is unfinished; otherwise it
+  is unresolved with its queued reason, gets no Stop, and keeps that reason after a restart.
+  Factory never cancels queued work in T3. For each worker it stops, it records the request
   (`worker-stop-requested`, key derived from the Run, attempt and thread) before one
   `t3_thread_interrupt` with `stop: true`, records whether T3 acknowledged it, then reads the
   worker again. Each Stop is sent only after a recheck finds the Run's authorization context
@@ -514,8 +530,11 @@ With explicit authorization (`stopWorkers`) it is a durable operation:
   result finished, cancels pending launches, sends and handoffs (`cancelled-on-Settle`), pending
   Human occurrences, pending Wait arrivals (`wait-cancelled`, clearing their messages) and
   waiting Continuation arrivals, settles pending attention as
-  `manual-settlement`, shows other activated Blocks stopped, records `worker-stopped` for each
-  worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
+  `manual-settlement`, shows other activated Blocks stopped, records every run each worker's
+  completion read showed, including a stopped run a newer one replaced as the latest, with the
+  terminal status that read showed and its existing owner (`execution-observed` when it changed),
+  keeping a Problem already recorded and raising no attention, since the Run is never observed
+  again, records `worker-stopped` for each worker whose Stop was acknowledged and `run-settled` (`manual`), marks every result version
   completion-eligible as automatic settlement does, and clears Snooze and Woke.
   Handoffs remain local and pending until they become a launch or send; only that delivery
   is reserved before calling T3. Human and Wait handoffs are acknowledged locally in the

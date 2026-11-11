@@ -17,14 +17,18 @@ import type {
 } from "../../apps/backend/src/adapters/t3.ts";
 
 type Snapshot = ReturnType<PersistentT3["snapshot"]>;
-/** Version 5, or version 3 or 4, whose idle worker threads Factory no longer uses. */
-type SavedState = Omit<Snapshot, "version"> & { version: number };
+/** Version 5, or version 3 or 4, whose idle worker threads Factory no longer uses. State saved
+ * before settled threads or held Stops were recorded has none. */
+type SavedState = Omit<Snapshot, "version" | "settledThreads" | "unendedStops"> &
+  Partial<Pick<Snapshot, "settledThreads" | "unendedStops">> & { version: number };
 
 /** A local simulated engine. Its accepted keys outlive the Factory process. */
 export class PersistentT3 extends ControlledT3 {
   private readonly statePath: string;
   /** Simulated subagent threads each worker delegated to; Factory never reads them. */
   private readonly subagents = new Map<string, string[]>();
+  /** Threads whose Stop T3 acknowledges while their runs keep going, until a journey ends them. */
+  private readonly unendedStops = new Set<string>();
 
   constructor(home: string, restore: boolean) {
     super();
@@ -62,6 +66,7 @@ export class PersistentT3 extends ControlledT3 {
       for (const [key, value] of saved.sends) this.sends.set(key, value);
       for (const [key, value] of saved.executions) this.executionObservations.set(key, value);
       for (const threadId of saved.settledThreads ?? []) this.settledThreads.add(threadId);
+      for (const threadId of saved.unendedStops ?? []) this.unendedStops.add(threadId);
     } catch (cause) {
       throw new Error(
         "Demo engine state is missing, damaged or incompatible. Run pnpm db:reset to restore scenarios.",
@@ -83,6 +88,7 @@ export class PersistentT3 extends ControlledT3 {
       sends: [...this.sends],
       executions: [...this.executionObservations],
       settledThreads: [...this.settledThreads],
+      unendedStops: [...this.unendedStops],
     };
   }
 
@@ -138,18 +144,31 @@ export class PersistentT3 extends ControlledT3 {
     payload: { threadId: string; clientRequestId: string },
   ) {
     await super.stopThread(target, payload);
-    const stop = (threadId: string) => {
-      const observation = this.executionObservations.get(threadId);
-      for (const run of observation?.recentRuns ?? []) {
-        if (
-          !["completed", "failed", "interrupted", "cancelled", "rolled_back"].includes(run.status)
-        )
-          endThreadRun(this, threadId, run.runId, "interrupted");
-      }
-      for (const child of this.subagents.get(threadId) ?? []) stop(child);
-    };
-    stop(payload.threadId);
+    if (!this.unendedStops.has(payload.threadId)) this.interrupt(payload.threadId);
     this.save();
+  }
+
+  /** T3 acknowledges each later Stop of `threadIds` but keeps their runs going. */
+  holdStops(threadIds: readonly string[]) {
+    for (const threadId of threadIds) this.unendedStops.add(threadId);
+    this.save();
+  }
+
+  /** T3 carries out the Stops it held for `threadIds`. */
+  finishHeldStops(threadIds: readonly string[]) {
+    for (const threadId of threadIds)
+      if (this.unendedStops.delete(threadId)) this.interrupt(threadId);
+    this.save();
+  }
+
+  /** Every unfinished run of the thread and of its subagents ends interrupted. */
+  private interrupt(threadId: string) {
+    const observation = this.executionObservations.get(threadId);
+    for (const run of observation?.recentRuns ?? []) {
+      if (!["completed", "failed", "interrupted", "cancelled", "rolled_back"].includes(run.status))
+        endThreadRun(this, threadId, run.runId, "interrupted");
+    }
+    for (const child of this.subagents.get(threadId) ?? []) this.interrupt(child);
   }
 
   override async launchThread(target: T3Endpoint, payload: LaunchPayload) {

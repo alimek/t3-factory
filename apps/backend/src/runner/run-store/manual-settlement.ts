@@ -13,6 +13,8 @@ import { currentReports } from "./current-report.ts";
 import { cancelOwedWork } from "./owed-work.ts";
 import type { BlockState } from "./states.ts";
 import { markSettled } from "./settlement.ts";
+import type { WorkerThread } from "../worker-thread.ts";
+import { recordExecution } from "./observation.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
 /** Every Block state but working. */
@@ -29,6 +31,20 @@ const NOT_WORKING: readonly BlockState[] = [
 /** A send whose T3 reply was lost when its Run settled manually: it is never replayed again. */
 const UNRESOLVED_SEND_ON_SETTLE =
   "The Run was settled before Factory confirmed whether T3 received this message; Factory will not resend it.";
+
+/** Settle's refusal for a Run whose authorization context Factory knows was replaced. */
+const REPLACED_AUTHORIZATION =
+  "This Run started under an earlier T3 authorization, so Factory cannot read or stop its workers to settle it. Archive it instead.";
+
+/** Whether Factory knows an authorization context other than the Run's while the Run has work
+ * only T3 can confirm under the Run's context: a bound worker or a launch whose outcome is
+ * unresolved. The known context is kept while T3 is unavailable and cleared while
+ * reauthorization is pending. A Run without such work settles without reading T3. */
+const authorizationReplaced = (sql: SqlClient.SqlClient, runId: string) =>
+  Effect.map(
+    sql`SELECT 1 FROM runs r JOIN t3_connection c ON c.singleton=1 WHERE r.id=${runId} AND c.context_id IS NOT NULL AND c.context_id!=r.context_id AND (EXISTS(SELECT 1 FROM run_blocks b WHERE b.run_id=r.id AND b.thread_id IS NOT NULL) OR EXISTS(SELECT 1 FROM operation_intents o WHERE o.run_id=r.id AND o.kind='launch' AND o.state IN ('reserved','uncertain')))`,
+    (rows) => rows.length > 0,
+  );
 
 /** A bound worker thread of a Run, which manual settlement reads and Archive interrupts. */
 export type BoundWorker = {
@@ -55,12 +71,14 @@ export type SettlementWorkerRecord = {
   readonly stop_problem: string | null;
 };
 
-/** What the caller's fresh read showed for a worker when it settles the Run. */
+/** What the caller's fresh read showed for a worker when it settles the Run: its latest T3 run,
+ * finished, if T3 showed one, and every run the read showed, such as the run Stop ended when a
+ * newer run became the latest before the Run settled. */
 export type SettledWorker = {
   readonly blockId: string;
   readonly threadId: string;
-  readonly executionId: string | null;
-  readonly engineStatus: string | null;
+  readonly latest: WorkerThread["latest"];
+  readonly executions: WorkerThread["thread"]["recentRuns"];
 };
 
 const boundWorkerRows = (sql: SqlClient.SqlClient, runId: string) =>
@@ -184,6 +202,47 @@ function recordWorker(
   return sql`INSERT INTO run_settlement_workers(run_id,attempt,thread_id,block_id,state) VALUES(${runId},${attempt},${worker.thread_id},${worker.block_id},'stopping') ON CONFLICT DO NOTHING`;
 }
 
+/** Records each worker's runs as the completion reads showed them ended. The Run is never
+ * observed again, so these reads are the last record of how its work ended. A requested Stop
+ * raises no Problem, and one already recorded stays. */
+function recordSettledExecutions(
+  sql: SqlClient.SqlClient,
+  runId: string,
+  workers: readonly SettledWorker[],
+  time: string,
+) {
+  return Effect.gen(function* () {
+    for (const worker of workers) {
+      const [binding] = yield* sql<{
+        id: string;
+      }>`SELECT id FROM run_thread_bindings WHERE run_id=${runId} AND thread_id=${worker.threadId}`;
+      for (const execution of worker.executions) {
+        // A recorded execution keeps its owner, such as the Continuation whose prompt ran on this
+        // Agent's thread, so its end is attributed to it; a new record belongs to the worker.
+        const [owner] = yield* sql<{
+          block_id: string;
+          binding_id: string | null;
+        }>`SELECT block_id,binding_id FROM run_executions WHERE run_id=${runId} AND thread_id=${worker.threadId} AND execution_id=${execution.runId}`;
+        const bindingId = owner?.binding_id ?? binding?.id;
+        if (bindingId)
+          yield* recordExecution(
+            sql,
+            {
+              runId,
+              blockId: owner?.block_id ?? worker.blockId,
+              threadId: worker.threadId,
+              bindingId,
+            },
+            execution,
+            0,
+            "keep",
+            time,
+          );
+      }
+    }
+  });
+}
+
 export function openRunManualSettlement(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
 
@@ -224,6 +283,14 @@ export function openRunManualSettlement(database: RunnerDatabase) {
       Effect.map(unresolvedLaunchRows(sql, runId), (rows) => rows.map(unresolvedLaunchWorker)),
     );
 
+  /** Settle's conflict when the Run's known authorization context was replaced, else null. */
+  const replacedAuthorization = (runId: string) =>
+    database.transaction((sql) =>
+      Effect.map(authorizationReplaced(sql, runId), (replaced) =>
+        replaced ? failure("conflict", REPLACED_AUTHORIZATION) : null,
+      ),
+    );
+
   /** The current attempt of the Run's confirmed settlement, whether this backend accepted it, and
    * its workers' records. */
   const readSettlementAttempt = (runId: string) =>
@@ -239,7 +306,9 @@ export function openRunManualSettlement(database: RunnerDatabase) {
     );
 
   /** The user confirms stopping the Run's workers to settle it. Guards: the Run exists, is not
-   * Archived and this backend owns the database; a Settled Run is left unchanged. The first
+   * Archived, this backend owns the database and no known authorization context replaced the
+   * Run's, also while T3 is unavailable: such a settlement could never complete. A Settled Run
+   * is left unchanged. The first
    * confirmation closes the handoff gate and starts attempt 1; a later one starts the next
    * attempt only while the current attempt has an unresolved worker or launch. Both record this
    * backend as the attempt's owner, the bound workers as stopping and "settlement requested", and advance the
@@ -251,6 +320,8 @@ export function openRunManualSettlement(database: RunnerDatabase) {
         if (run.settled_at) return { ok: true as const, value: false };
         if (!(yield* guardsHold(sql, ownerToken, id, { owner: true })))
           return failure("conflict", "Runner ownership changed.");
+        if (yield* authorizationReplaced(sql, id))
+          return failure("conflict", REPLACED_AUTHORIZATION);
         const [current] =
           yield* sql<SettlementRow>`SELECT * FROM run_settlements WHERE run_id=${id}`;
         const time = yield* now;
@@ -366,8 +437,9 @@ export function openRunManualSettlement(database: RunnerDatabase) {
    * every bound worker finished. Guards: owner, not Archived, not Settled, the generation, no
    * launch whose outcome is unresolved and, when the Run has workers, its live authorization
    * context. Closes the gate, cancels owed automatic work with the manual-settlement reason,
-   * leaves each reserved or uncertain send uncertain without its payload, records "worker
-   * stopped" for each worker whose Stop T3 acknowledged, settles the Run (clearing Snooze and
+   * leaves each reserved or uncertain send uncertain without its payload, records each worker's
+   * runs as the reads showed them ended, without raising attention or replacing a recorded
+   * Problem, records "worker stopped" for each worker whose Stop T3 acknowledged, settles the Run (clearing Snooze and
    * Woke) and advances the generation. Answers whether the Run settled. */
   function completeSettlement(run: RunRow, workers: readonly SettledWorker[]) {
     const id = run.id;
@@ -412,6 +484,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
             intentId: send.id,
             observedAt: time,
           });
+        yield* recordSettledExecutions(sql, id, workers, time);
         const stopped = yield* sql<{
           thread_id: string;
         }>`SELECT thread_id FROM run_settlement_workers WHERE run_id=${id} AND attempt=(SELECT attempt FROM run_settlements WHERE run_id=${id}) AND stop_outcome='acknowledged'`;
@@ -421,8 +494,8 @@ export function openRunManualSettlement(database: RunnerDatabase) {
               kind: "worker-stopped",
               runId: id,
               blockId: worker.blockId,
-              executionId: worker.executionId,
-              engineStatus: worker.engineStatus,
+              executionId: worker.latest?.runId ?? null,
+              engineStatus: worker.latest?.status ?? null,
               observedAt: time,
             });
         yield* markSettled(sql, id, "manual", time);
@@ -437,6 +510,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
     runsWithSettlement,
     boundWorkers,
     unresolvedLaunches,
+    replacedAuthorization,
     readSettlementAttempt,
     acceptSettlement,
     claimStopPass,

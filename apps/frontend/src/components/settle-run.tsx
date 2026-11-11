@@ -1,6 +1,10 @@
 import { DialogHeader, DialogFooter } from "./ui/dialog";
-import { useRef, useState } from "react";
-import type { RunSettlementOutcome, RunSettlementWorker } from "@t3-factory/contracts";
+import { useLayoutEffect, useRef, useState } from "react";
+import type {
+  RunSettlement,
+  RunSettlementOutcome,
+  RunSettlementWorker,
+} from "@t3-factory/contracts";
 import { api } from "../api.ts";
 import { MutationGate } from "../client-gate.tsx";
 import { Button } from "./ui/button";
@@ -19,7 +23,7 @@ const WORKER_STATE_LABEL: Record<RunSettlementWorker["state"], string> = {
   unresolved: "not resolved",
 };
 
-export function SettlementWorkers({ workers }: { workers: readonly RunSettlementWorker[] }) {
+function SettlementWorkers({ workers }: { workers: readonly RunSettlementWorker[] }) {
   return (
     <ul className="max-h-60 space-y-2 overflow-auto text-sm">
       {workers.map((worker, index) => (
@@ -131,8 +135,71 @@ export function useSettleRun() {
   };
 }
 
+/** Run detail's settlement progress. A confirmed retry removes Retry once the settlement shows
+ * the workers stopping; the section keeps the focus that would otherwise fall to the page. Only a
+ * Retry that still holds focus, or whose attempt is still settling, claims that fallback. */
+export function RunSettlementSection({
+  id,
+  settlement,
+}: {
+  id: string;
+  settlement: RunSettlement;
+}) {
+  const section = useRef<HTMLElement>(null);
+  const retryFocused = useRef(false);
+  const unresolved = settlement.state === "unresolved";
+  useLayoutEffect(() => {
+    if (unresolved || !retryFocused.current) return;
+    retryFocused.current = false;
+    if (document.activeElement === document.body) section.current?.focus();
+  }, [unresolved]);
+  return (
+    <section
+      ref={section}
+      tabIndex={-1}
+      data-focus-fallback={id}
+      onFocus={(event) => {
+        retryFocused.current = event.target.id === RETRY_ID;
+      }}
+      onBlur={(event) => {
+        const retry = event.target;
+        if (retry.id !== RETRY_ID) return;
+        if (event.relatedTarget) {
+          retryFocused.current = false;
+          return;
+        }
+        // Focus falling to the page while Retry stays usable is the user leaving it; Retry
+        // removed by the stopping transition, or disabled by its attempt, keeps the claim.
+        queueMicrotask(() => {
+          if (retry.isConnected && retry.matches(":enabled")) retryFocused.current = false;
+        });
+      }}
+      aria-label="Run settlement"
+      className="max-h-72 space-y-3 overflow-auto border-t px-4 py-3 outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
+    >
+      <h2 className="text-sm font-semibold">
+        {unresolved ? "Settlement unresolved" : "Stopping workers…"} · Attempt {settlement.attempt}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Automatic work is held until every worker is confirmed finished.
+      </p>
+      <SettlementWorkers workers={settlement.workers} />
+      {unresolved && (
+        <RetryRunSettlement
+          id={id}
+          onAttemptFailed={() => {
+            retryFocused.current = document.activeElement?.id === RETRY_ID;
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+const RETRY_ID = "settlement-retry";
+
 /** Run detail can retry even when navigation filters out its Run. */
-export function RetryRunSettlement({ id }: { id: string }) {
+function RetryRunSettlement({ id, onAttemptFailed }: { id: string; onAttemptFailed: () => void }) {
   const { settle, dialog } = useSettleRun();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -140,18 +207,21 @@ export function RetryRunSettlement({ id }: { id: string }) {
     if (busy) return;
     setBusy(true);
     setError("");
+    let settling = false;
     try {
-      await settle(id, true);
+      const outcome = await settle(id, true);
+      settling = outcome?.outcome === "stopping" || outcome?.outcome === "settled";
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not settle the Run.");
     } finally {
       setBusy(false);
+      if (!settling) onAttemptFailed();
     }
   }
   return (
     <>
       <MutationGate>
-        <Button disabled={busy} onClick={() => void retry()}>
+        <Button id={RETRY_ID} disabled={busy} onClick={() => void retry()}>
           {busy ? "Settling…" : "Retry"}
         </Button>
       </MutationGate>

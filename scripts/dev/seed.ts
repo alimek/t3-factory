@@ -207,7 +207,7 @@ async function seedScenario(
 type Worker = Awaited<ReturnType<typeof workerAtWork>>;
 
 /** The user confirmed Settle while T3 cannot stop the worker, so the settlement stays unresolved. */
-async function settlementUnresolved(context: SeedContext, worker: Worker) {
+export async function settlementUnresolved(context: SeedContext, worker: Worker) {
   context.t3.stopSupported = false;
   try {
     requireSuccess(await context.factory.settleRun(worker.runId, { stopWorkers: true }));

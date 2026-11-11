@@ -259,11 +259,16 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **8**, and both sides require at least **8**. Protocol 8 added
-Continuation blocks with their prompts, the `sent` and `pass-through` block states and Continuation
-visits, and Wait blocks with their durations and Wait arrivals, so older clients could neither read nor save current Flows and Runs. Their approved credentials
+The current protocol is **9**, and both sides require at least **9**. Protocol 9 changed manual
+Settle: its request may authorize stopping workers (`stopWorkers`) and it answers a settlement
+outcome with the Run instead of the Run alone, and Run detail and navigation carry settlement
+progress; it also added Wait blocks with their durations and Wait arrivals. Older clients could
+neither settle nor read current Flows and Runs. The published v0.4.1-beta.11 already carries
+these wire changes while still declaring protocol 8, so protocol 8 does not identify one contract:
+requiring 9 refuses beta.10 and beta.11 peers alike, and both must update. Their approved credentials
 are kept, but every product request answers that the client must update. Older servers likewise show
-the existing update gate before product screens mount (protocol **7** replaced outcome-based block
+the existing update gate before product screens mount (protocol **8** added Continuation blocks with
+their prompts, the `sent` and `pass-through` block states and Continuation visits, protocol **7** replaced outcome-based block
 exits with Agent exits, protocol **6** added Run prompt segments and image manifests, protocol **5** Starts with
 staged images, protocol **4** Flow workspace settings, Run workspaces, navigation activity and
 worker repository metadata, protocol **3** live delivery). Compatibility follows the declared

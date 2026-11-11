@@ -3,6 +3,7 @@ import { test } from "@e2e-dev/web";
 import assert from "node:assert/strict";
 import { expect } from "e2e";
 import { findRun } from "./support/run-history.ts";
+import { prepareScenarios } from "./support/scenarios.ts";
 import {
   openSidebarAction,
   expectFlatSearch,
@@ -12,6 +13,9 @@ import {
 
 const snoozedTitle = "Demo · Snoozed · Navigation research";
 const workingTitle = "Demo · Working · Improve the project picker";
+// Earlier journeys replace the T3 authorization the Demo Runs started under, and Settle refuses
+// such a Run, so Settle journeys use the scenario copy started under the current authorization.
+const settleTitle = "UI worker · Snoozed · Navigation research";
 
 test("the Run preview opens to the right of its row", async ({ app, screen, browser }) => {
   // Arrange
@@ -178,9 +182,10 @@ test("snooze during search keeps focus on the matching row", async ({ app, scree
 
 test("settle during search keeps focus on the matching row", async ({ app, screen, browser }) => {
   // Arrange
+  await prepareScenarios(app.baseUrl);
   const { actions } = await openSidebarAction(
     { app, screen, browser },
-    snoozedTitle,
+    settleTitle,
     "snooze",
     true,
   );
@@ -191,7 +196,7 @@ test("settle during search keeps focus on the matching row", async ({ app, scree
     screen.getByRole("alertdialog").getByRole("button", "Cancel", { exact: true }),
   ).toBeFocused();
   // The modal hides the underlying controls from the accessibility tree.
-  await expect(browser.locator(`button[aria-label="Actions for ${snoozedTitle}"]`)).toBeEnabled();
+  await expect(browser.locator(`button[aria-label="Actions for ${settleTitle}"]`)).toBeEnabled();
   await app.screenshot("settle-confirmation-row-actions-released");
   await confirmSettlement(screen);
 
