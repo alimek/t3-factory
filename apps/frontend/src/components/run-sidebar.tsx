@@ -278,7 +278,7 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   // A Settle still stopping workers focuses its row now and moves the Run later; by then the
   // user may have moved on, so that request focuses the destination only while focus is still
   // on the row, on that Run's fallback, or lost to the page because the holder left. Focus the
-  // user moves anywhere else, the page included, revokes the request.
+  // user moves anywhere else, or a press outside them, such as on page content, revokes it.
   const [focusAfterRender, setFocusAfterRender] = useState<FocusRequest>();
   // The navigation a Settle answer arrives at, which tells a lagging entry from a later one.
   const latestRuns = useRef(runs);
@@ -309,22 +309,19 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     const revoke = () =>
       setFocusAfterRender((current) => (current?.owner === owner ? undefined : current));
     const focusIn = (event: FocusEvent) => {
-      if (!holdsFocus(event.target, owner, ownerRun)) revoke();
+      if (!closingConfirmation() && !holdsFocus(event.target, owner, ownerRun)) revoke();
     };
-    const focusOut = (event: FocusEvent) => {
-      const holder = event.target;
-      if (event.relatedTarget || !(holder instanceof HTMLElement)) return;
-      // Focus falling to the page while its holder stays is the user leaving; a holder removed
-      // as the Run moves keeps the request, and a window switch keeps the holder focused.
-      queueMicrotask(() => {
-        if (holder.isConnected && document.activeElement !== holder) revoke();
-      });
+    // Focus falling to the page is not itself departure: the row also loses it when it moves or
+    // leaves the list. The press that drops focus there is.
+    const holders = `#${CSS.escape(owner)}, [data-focus-fallback="${CSS.escape(ownerRun)}"]`;
+    const press = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(holders)) revoke();
     };
     document.addEventListener("focusin", focusIn);
-    document.addEventListener("focusout", focusOut);
+    document.addEventListener("pointerdown", press, true);
     return () => {
       document.removeEventListener("focusin", focusIn);
-      document.removeEventListener("focusout", focusOut);
+      document.removeEventListener("pointerdown", press, true);
     };
   }, [owner, ownerRun]);
   const { settle, dialog: settlementDialog } = useSettleRun();
@@ -404,6 +401,13 @@ function focusStep(request: FocusRequest, run: RunNavigationEntry | undefined) {
 function ownsFocus(owner: string, runId: string) {
   const active = document.activeElement;
   return !active || active === document.body || holdsFocus(active, owner, runId);
+}
+
+/** The answered Settle confirmation is still closing. Until it unmounts and returns focus to the
+ * row, its focus trap and its disabled or removed controls move focus, which is not the user
+ * leaving. */
+function closingConfirmation() {
+  return !!document.querySelector('[role="alertdialog"][data-state="closed"]');
 }
 
 /** `element` is the `owner` element or the fallback of the same Run. */
