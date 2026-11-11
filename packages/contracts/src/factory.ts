@@ -40,5 +40,7 @@ export interface FactoryOperations extends FacadeOperations<
 > {
   reconcileRuns(): Promise<Result<void>>;
   getClientAccess(credential: string): Promise<Result<ClientAccessState>>;
+  /** The identity this Factory's data home was created with; it never changes. */
+  getServerId(): Promise<Result<string>>;
   authenticateClient(credential: string): Promise<Result<FactoryClient>>;
 }

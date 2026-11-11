@@ -31,9 +31,16 @@ export type ClientAccessState =
  * `host`: the request reached the host-local loopback surface, which owns the server.
  * `remote`: an approved-client listener; product access follows `access`.
  */
-export type ClientScope =
+export type ClientScope = (
   | { readonly scope: "host" }
-  | { readonly scope: "remote"; readonly access: ClientAccessState };
+  | { readonly scope: "remote"; readonly access: ClientAccessState }
+) & {
+  /**
+   * This Factory server's identity, for the host and approved clients only, so a client can
+   * bind what it caches to the server it came from. Servers before protocol 10 send none.
+   */
+  readonly serverId?: string;
+};
 
 /** Factory client/server wire compatibility, independent of application release numbers. */
 export interface ProtocolDescriptor {

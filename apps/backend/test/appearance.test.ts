@@ -5,6 +5,7 @@ import {
   latestAppearance,
   pairedFactory,
   pairedService,
+  stoppedPairedService,
   T3_ENDPOINT,
 } from "./support/appearance.ts";
 import { openFactoryWithApprovedT3 } from "./support/domain-setup.ts";
@@ -536,3 +537,136 @@ it("Start is accepted and raises no attention while theme colors need re-pairing
   assert(started.ok);
   expect(started.value.attention).toStrictEqual([]);
 });
+
+it("a backend restarted while T3 is unreachable publishes the last valid colors of the same source from its first status", async (context) => {
+  // Arrange
+  const t3 = new ControlledT3();
+  t3.approve();
+  t3.appearance.defaultTheme = "iris";
+  const harness = await factoryHarness(context);
+  const first = await harness.open({ t3 });
+  assert((await first.configureConnection({ endpoint: T3_ENDPOINT })).ok);
+  const paired = await first.pairAppearance({ pairing: t3.appearance.pairingCode });
+  assert(paired.ok);
+  await first.close();
+  t3.available = false;
+
+  // Act
+  const reopened = await harness.open({ t3 });
+
+  // Assert
+  const live = subscribe(context, reopened.live.watchAppearance());
+  const messages = await live.until(
+    (received) => latestAppearance(received)?.state === "unavailable",
+  );
+  expect(messages.map((message) => message.appearance.presentation)).toStrictEqual(
+    messages.map(() => paired.value.presentation),
+  );
+});
+
+it.effect("a grant that expired while the backend was stopped restores no colors", (context) =>
+  Effect.gen(function* () {
+    // Arrange
+    const { harness, t3 } = yield* stoppedPairedService(context, (t3) => {
+      t3.appearance.expiresAt = new Date(60_000).toISOString();
+    });
+    t3.available = false;
+    yield* TestClock.adjust(61_000);
+
+    // Act
+    const factory = yield* harness.service({ t3, connectionRetryMs: 1_000 });
+
+    // Assert
+    const live = subscribe(context, factory.live.watchAppearance());
+    const messages = yield* Effect.promise(() =>
+      live.until((received) => latestAppearance(received)?.state === "re-pair-required"),
+    );
+    expect(latestAppearance(messages)?.presentation).toBe(null);
+  }),
+);
+
+it.effect(
+  "a revocation found on reconnecting ends the colors kept through the restart",
+  (context) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { harness, t3 } = yield* stoppedPairedService(context);
+      t3.available = false;
+      const factory = yield* harness.service({ t3, connectionRetryMs: 1_000 });
+      const live = subscribe(context, factory.live.watchAppearance());
+      yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.presentation?.theme.id === "ocean"),
+      );
+      t3.available = true;
+      t3.appearance.sessionValid = false;
+
+      // Act
+      yield* TestClock.adjust(1_000);
+
+      // Assert
+      const messages = yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.state === "re-pair-required"),
+      );
+      expect(latestAppearance(messages)?.presentation).toBe(null);
+    }),
+);
+
+it.effect(
+  "reconnecting after a restart replaces the kept colors with T3's current default in one revision",
+  (context) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { harness, t3 } = yield* stoppedPairedService(context);
+      t3.available = false;
+      const factory = yield* harness.service({ t3, connectionRetryMs: 1_000 });
+      const restored = subscribe(context, factory.live.watchAppearance());
+      yield* Effect.promise(() =>
+        restored.until(
+          (received) => latestAppearance(received)?.presentation?.theme.id === "ocean",
+        ),
+      );
+      const live = subscribe(context, factory.live.watchAppearance());
+      t3.appearance.defaultTheme = "iris";
+      t3.available = true;
+
+      // Act
+      yield* TestClock.adjust(1_000);
+
+      // Assert
+      const messages = yield* Effect.promise(() =>
+        live.until((received) => latestAppearance(received)?.state === "following"),
+      );
+      expect(latestAppearance(messages)?.presentation?.theme.id).toBe("iris");
+      expect(messages.filter((message) => !message.appearance.presentation)).toStrictEqual([]);
+    }),
+);
+
+it.effect(
+  "returning to an earlier T3 endpoint while T3 is unreachable restores none of its old colors",
+  (context) =>
+    Effect.gen(function* () {
+      // Arrange
+      const { harness, t3 } = yield* stoppedPairedService(context);
+      t3.available = false;
+      const factory = yield* harness.service({ t3, connectionRetryMs: 1_000 });
+      const restored = subscribe(context, factory.live.watchAppearance());
+      yield* Effect.promise(() =>
+        restored.until(
+          (received) => latestAppearance(received)?.presentation?.theme.id === "ocean",
+        ),
+      );
+      assert((yield* factory.configureConnection({ endpoint: "http://127.0.0.1:4888/mcp" })).ok);
+      yield* Effect.promise(() =>
+        restored.until((received) => latestAppearance(received)?.state === "not-paired"),
+      );
+
+      // Act
+      assert((yield* factory.configureConnection({ endpoint: T3_ENDPOINT })).ok);
+
+      // Assert
+      const messages = yield* Effect.promise(() =>
+        restored.until((received) => latestAppearance(received)?.state === "unavailable"),
+      );
+      expect(latestAppearance(messages)?.presentation).toBe(null);
+    }),
+);
