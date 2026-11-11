@@ -161,7 +161,7 @@ export function RunSettlementSection({
         retryFocused.current = event.target.id === RETRY_ID;
       }}
       aria-label="Run settlement"
-      className="max-h-72 space-y-3 overflow-auto border-t px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="max-h-72 space-y-3 overflow-auto border-t px-4 py-3 outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
     >
       <h2 className="text-sm font-semibold">
         {unresolved ? "Settlement unresolved" : "Stopping workers…"} · Attempt {settlement.attempt}
