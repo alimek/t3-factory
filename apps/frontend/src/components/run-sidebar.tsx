@@ -293,7 +293,10 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState<string>();
   const act = async (run: RunNavigationEntry, action: RunAction) => {
-    if (busy) return;
+    if (busy) {
+      setActionError("Another Run action is still in progress. Try again when it finishes.");
+      return;
+    }
     setBusy(run.id);
     setActionError("");
     // A cancelled confirmation can finish after another row request has started.
