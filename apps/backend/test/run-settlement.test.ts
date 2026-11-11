@@ -1134,6 +1134,23 @@ it("confirmed Settle under a replaced T3 authorization is refused while T3 is un
   expect(setup.t3.threadStops).toStrictEqual([]);
 });
 
+it("Settle of a Run without workers still settles under a replaced T3 authorization", async (c) => {
+  // Arrange
+  const setup = await prepared(c);
+  setup.t3.rejectLaunch = true;
+  const started = await setup.f.startRun(setup.input);
+  assert(started.ok);
+  assert((await setup.f.reconcileRuns()).ok);
+  await setup.f.configureConnection({ endpoint: "https://other.example/mcp" });
+
+  // Act
+  const result = await setup.f.settleRun(started.value.id, {});
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject({ outcome: "settled", run: { lifecycle: "settled" } });
+});
+
 it("a report while a confirmed settlement is stopping its worker records nothing and does not claim the work stopped", async (c) => {
   // Arrange
   const setup = await prepared(c, handoffFlow);

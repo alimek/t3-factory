@@ -476,14 +476,17 @@ That answer lists each worker read unfinished in scope as executing, which confi
 except one only queued work keeps unfinished, which is unresolved with its queued reason;
 each worker T3 could not show, or not under the Run's live authorization context, as unresolved
 with that problem, because Factory never stops a thread it cannot read; and each reserved or
-uncertain launch as unresolved, without a thread. A Run accepted under an authorization context
-that Factory knows was replaced, for example by reauthorizing or another endpoint, cannot be
-settled: Settle answers a conflict with or without `stopWorkers` and changes nothing, because its
-workers could never be read or stopped under the Run's context; Archive stays available. The
+uncertain launch as unresolved, without a thread. A Run with a bound worker or an unresolved
+launch, accepted under an authorization context that Factory knows was replaced, for example by
+reauthorizing or another endpoint, cannot be settled: Settle answers a conflict with or without
+`stopWorkers` and changes nothing, because that work could never be read, stopped or resolved
+under the Run's context; Archive stays available. A Run without such work settles as before. The
 known context is the connection's recorded one, which Factory keeps while T3 is unavailable;
 the plain request checks it after its reads and the confirmed request in the transaction that
 accepts it. While no context is known, such as during reauthorization, a confirmed request is
-accepted and completion waits for T3 under the Run's context. A malformed body (not
+accepted and completion waits for T3 under the Run's context. If the context then recorded is
+not the Run's, that settlement can never complete: its workers end unresolved, a retry answers
+the conflict, and only Archive ends it. A malformed body (not
 an object, or any field other than a boolean `stopWorkers`) is a validation error, never a
 declined Settle.
 With explicit authorization (`stopWorkers`) it is a durable operation:

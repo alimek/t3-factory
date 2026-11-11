@@ -36,11 +36,13 @@ const UNRESOLVED_SEND_ON_SETTLE =
 const REPLACED_AUTHORIZATION =
   "This Run started under an earlier T3 authorization, so Factory cannot read or stop its workers to settle it. Archive it instead.";
 
-/** Whether Factory knows an authorization context other than the Run's. The known context is
- * kept while T3 is unavailable and cleared while reauthorization is pending. */
+/** Whether Factory knows an authorization context other than the Run's while the Run has work
+ * only T3 can confirm under the Run's context: a bound worker or a launch whose outcome is
+ * unresolved. The known context is kept while T3 is unavailable and cleared while
+ * reauthorization is pending. A Run without such work settles without reading T3. */
 const authorizationReplaced = (sql: SqlClient.SqlClient, runId: string) =>
   Effect.map(
-    sql`SELECT 1 FROM runs r JOIN t3_connection c ON c.singleton=1 WHERE r.id=${runId} AND c.context_id IS NOT NULL AND c.context_id!=r.context_id`,
+    sql`SELECT 1 FROM runs r JOIN t3_connection c ON c.singleton=1 WHERE r.id=${runId} AND c.context_id IS NOT NULL AND c.context_id!=r.context_id AND (EXISTS(SELECT 1 FROM run_blocks b WHERE b.run_id=r.id AND b.thread_id IS NOT NULL) OR EXISTS(SELECT 1 FROM operation_intents o WHERE o.run_id=r.id AND o.kind='launch' AND o.state IN ('reserved','uncertain')))`,
     (rows) => rows.length > 0,
   );
 
