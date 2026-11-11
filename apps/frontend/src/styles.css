@@ -3,13 +3,14 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist-mono";
 
-/* The application is dark-only; `.dark` on <html> enables the shadcn dark variants. */
-@custom-variant dark (&:where(.dark, .dark *));
+/* `data-appearance` on <html> selects Light or Dark (src/appearance.ts); `dark:` follows it. */
+@custom-variant dark (&:where([data-appearance="dark"], [data-appearance="dark"] *));
 
 /*
  * Design tokens from the T3 Factory Figma file (quYma33EdiIQnYOzyVj7Tp): the Foundations
  * page and the variables bound in the Flow Canvas editor (node 58:7044). Components bind
- * to these semantic names; do not hardcode colors in UI code.
+ * to these semantic names; do not hardcode colors in UI code. Dark is the shipped default;
+ * the Light block below redefines every color role, never an inversion of Dark.
  */
 :root {
   color-scheme: dark;
@@ -51,6 +52,7 @@
   --border-hover: #52525b; /* zinc-600: hovered blocks, unchecked boxes */
   --input: #27272a;
   --ring: #818cf8; /* focus ring */
+  --overlay: rgb(9 9 11 / 0.8); /* modal scrim */
 
   /* Status */
   --destructive: #ef4444;
@@ -77,6 +79,74 @@
   --duration-panel-in: 180ms;
   --duration-panel-out: 140ms;
   --duration-fast: 100ms;
+}
+
+/*
+ * Light baseline: the same roles on white canvases and zinc structure. Status and brand
+ * colors keep their hue families at darker shades so text and dots stay readable on light
+ * surfaces; shadows soften because elevation reads from borders as much as depth.
+ */
+:root[data-appearance="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --background: #ffffff;
+  --foreground: #18181b;
+  --sidebar: #f7f7f8;
+  --sidebar-foreground: #18181b;
+  --sidebar-accent: #e8e8eb;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #6366f1;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --subtle-foreground: #71717a;
+  --emphasis-foreground: #3f3f46;
+  --accent: #ececee;
+  --accent-foreground: #18181b;
+  --secondary: #ececee;
+  --secondary-foreground: #18181b;
+
+  /* Brand */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-foreground: #ffffff;
+  --brand-soft: rgb(79 70 229 / 0.08);
+  --brand-soft-border: rgb(79 70 229 / 0.45);
+  --link: #4f46e5;
+  --brand-cyan: #0e7490;
+
+  /* Lines */
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --border-hover: #a1a1aa;
+  --input: #d4d4d8;
+  --ring: #6366f1;
+  --overlay: rgb(24 24 27 / 0.28);
+
+  /* Status */
+  --destructive: #dc2626;
+  --success: #15803d;
+  --attention: #b45309;
+  --status-working: #0e7490;
+  --status-waiting: #4f46e5;
+  --status-stopped: #71717a;
+
+  /* Elevation */
+  --shadow-floating: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 10px rgb(0 0 0 / 0.06);
+  --shadow-panel: 0 1px 3px rgb(0 0 0 / 0.06), 0 16px 40px rgb(0 0 0 / 0.12);
+  --shadow-lift: 0 14px 20px rgb(0 0 0 / 0.16);
+}
+
+/* A mode change applies every color at once; per-control color transitions would stagger it. */
+[data-appearance-changing] *,
+[data-appearance-changing] *::before,
+[data-appearance-changing] *::after {
+  transition: none !important;
 }
 
 /* Only this non-interactive strip drags the native window. Product controls,
@@ -210,6 +280,7 @@ html[data-desktop="true"] [data-studio] {
   --color-border-hover: var(--border-hover);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-attention: var(--attention);

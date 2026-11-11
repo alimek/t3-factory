@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { RadioGroup } from "radix-ui";
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 import { SectionLabel } from "@/components/page";
 import { cn } from "@/lib/utils";
 import type { DesktopState } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "../desktop-bridge.ts";
+import { SegmentedChoice } from "./segmented-choice.tsx";
 import { UpdateControl } from "./update-control.tsx";
+
+const channelOptions = [
+  ["stable", "Stable"],
+  ["beta", "Beta"],
+] as const;
 
 function checkedAgo(checkedAt: string | null) {
   if (!checkedAt) return "";
@@ -52,30 +57,12 @@ export function UpdateSettings({ state, local }: { state: DesktopState; local: b
       <p id="release-channel" className="text-sm text-foreground">
         Release channel
       </p>
-      <RadioGroup.Root
-        aria-labelledby="release-channel"
+      <SegmentedChoice
+        labelledBy="release-channel"
         value={state.updateChannel}
-        onValueChange={(value) => void choose(value === "beta" ? "beta" : "stable")}
-        className="flex gap-2"
-      >
-        {(
-          [
-            ["stable", "Stable"],
-            ["beta", "Beta"],
-          ] as const
-        ).map(([channel, title]) => (
-          <RadioGroup.Item
-            key={channel}
-            value={channel}
-            className={cn(
-              "h-8 rounded-md border bg-muted px-3 text-sm text-foreground outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              "data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
-            )}
-          >
-            {title}
-          </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
+        options={channelOptions}
+        onChange={(channel) => void choose(channel)}
+      />
       <p className="text-xs text-muted-foreground">
         Stable · Tagged releases from main.
         <br />

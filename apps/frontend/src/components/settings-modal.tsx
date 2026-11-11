@@ -15,7 +15,6 @@ import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
 import { useClientScope } from "../client-scope.ts";
-import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
 import { reportingSummary, useReportingState } from "../reporting-state.tsx";
 import { SettingsPanel } from "./screen-layout.tsx";
@@ -83,7 +82,20 @@ const applicationSection: SettingsSection = {
   title: "Application",
   icon: AppWindow,
   group: "SETTINGS",
-  keywords: ["role", "server", "client", "login", "startup", "updates", "channel", "beta"],
+  keywords: [
+    "appearance",
+    "theme",
+    "light",
+    "dark",
+    "role",
+    "server",
+    "client",
+    "login",
+    "startup",
+    "updates",
+    "channel",
+    "beta",
+  ],
 };
 
 const runImagesSection: SettingsSection = {
@@ -94,7 +106,7 @@ const runImagesSection: SettingsSection = {
   keywords: ["storage", "disk", "space", "screenshots", "attachments", "delete", "files"],
 };
 
-/** Approvals exist only on the host panel; the Application section only in the desktop app. */
+/** Approvals exist only on the host panel. */
 function useSections(): readonly SettingsSection[] {
   const scope = useClientScope();
   return [
@@ -102,7 +114,7 @@ function useSections(): readonly SettingsSection[] {
     reportingSection,
     keyboardSection,
     ...(scope === "host" ? [accessSection] : []),
-    ...(desktopBridge() ? [applicationSection] : []),
+    applicationSection,
     runImagesSection,
   ];
 }
@@ -167,7 +179,7 @@ export function SettingsModal() {
         <WorkspaceDialogHeader
           title="Settings"
           section={current.title}
-          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, updates, the desktop application and stored Run images."
+          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, appearance, the desktop application and stored Run images."
           onClose={close}
         />
         <div className="flex min-h-0 flex-1 max-sm:flex-col">

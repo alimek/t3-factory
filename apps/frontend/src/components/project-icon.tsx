@@ -6,25 +6,26 @@ import { cn } from "@/lib/utils";
 type IconData = NonNullable<FactoryProject["projectIcon"]>;
 type IconColor = Extract<IconData, { kind: "lucide" | "monogram" }>["color"];
 
+/** Project identity hues; Light uses darker shades so glyphs stay readable on white. */
 const colors: Record<IconColor, string> = {
   gray: "text-muted-foreground",
-  red: "text-red-400",
-  orange: "text-orange-400",
-  amber: "text-amber-400",
-  yellow: "text-yellow-400",
-  lime: "text-lime-400",
-  green: "text-green-400",
-  emerald: "text-emerald-400",
-  teal: "text-teal-400",
-  cyan: "text-cyan-400",
-  sky: "text-sky-400",
-  blue: "text-blue-400",
-  indigo: "text-indigo-400",
-  violet: "text-violet-400",
-  purple: "text-purple-400",
-  fuchsia: "text-fuchsia-400",
-  pink: "text-pink-400",
-  rose: "text-rose-400",
+  red: "text-red-600 dark:text-red-400",
+  orange: "text-orange-600 dark:text-orange-400",
+  amber: "text-amber-600 dark:text-amber-400",
+  yellow: "text-yellow-600 dark:text-yellow-400",
+  lime: "text-lime-600 dark:text-lime-400",
+  green: "text-green-600 dark:text-green-400",
+  emerald: "text-emerald-600 dark:text-emerald-400",
+  teal: "text-teal-600 dark:text-teal-400",
+  cyan: "text-cyan-600 dark:text-cyan-400",
+  sky: "text-sky-600 dark:text-sky-400",
+  blue: "text-blue-600 dark:text-blue-400",
+  indigo: "text-indigo-600 dark:text-indigo-400",
+  violet: "text-violet-600 dark:text-violet-400",
+  purple: "text-purple-600 dark:text-purple-400",
+  fuchsia: "text-fuchsia-600 dark:text-fuchsia-400",
+  pink: "text-pink-600 dark:text-pink-400",
+  rose: "text-rose-600 dark:text-rose-400",
 };
 
 function FolderFallback() {

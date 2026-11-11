@@ -30,6 +30,7 @@ import {
   type UpdateChannel,
 } from "@t3-factory/contracts";
 import type {
+  Appearance,
   DesktopMenuState,
   DesktopResult,
   DesktopRole,
@@ -49,10 +50,6 @@ import { buildChannel, Updates } from "./updates.ts";
 if (process.env.FACTORY_DESKTOP_USER_DATA)
   app.setPath("userData", process.env.FACTORY_DESKTOP_USER_DATA);
 
-// Factory's UI is dark-only. Keep native window chrome and dialogs consistent even
-// when macOS uses its light appearance; CSS color-scheme cannot style the title bar.
-nativeTheme.themeSource = "dark";
-
 protocol.registerSchemesAsPrivileged([
   { scheme: "factory", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
@@ -61,6 +58,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = join(here, "ui");
 const uiPartition = "persist:factory-ui";
 const documentationUrl = "https://github.com/alimek/t3-factory/tree/main/docs#readme";
+
+/** Each mode's `--background` in the frontend's styles.css, painted while the page loads. */
+const windowBackground: Record<Appearance, string> = { light: "#ffffff", dark: "#09090b" };
 
 const failed = (message: string): Extract<DesktopResult, { ok: false }> => ({ ok: false, message });
 
@@ -184,7 +184,7 @@ function openWindow() {
     title: "T3 Factory",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 17 },
-    backgroundColor: "#09090b",
+    backgroundColor: windowBackground[store.get().appearance],
     // Windows and Linux show the application menu bar on Alt; macOS ignores this option.
     autoHideMenuBar: true,
     webPreferences: {
@@ -303,6 +303,26 @@ async function setUpdateChannel(channel: unknown): Promise<DesktopResult> {
   if (problem) return failed(problem);
   await store.update({ updateChannel: channel });
   broadcast();
+  return { ok: true };
+}
+
+/**
+ * Native chrome and dialogs follow Factory's chosen appearance rather than the macOS one;
+ * CSS color-scheme cannot style the title bar.
+ */
+function applyNativeAppearance(appearance: Appearance) {
+  nativeTheme.themeSource = appearance;
+  if (window && !window.isDestroyed()) window.setBackgroundColor(windowBackground[appearance]);
+}
+
+async function setAppearance(appearance: unknown): Promise<DesktopResult> {
+  if (appearance !== "light" && appearance !== "dark") return failed("Choose Light or Dark.");
+  try {
+    await store.update({ appearance });
+  } catch (error) {
+    return failed(`The appearance could not be saved: ${String(error)}`);
+  }
+  applyNativeAppearance(appearance);
   return { ok: true };
 }
 
@@ -437,6 +457,7 @@ const bridgeHandlers: BridgeHandlers = {
   },
   installUpdate: () => installUpdate(),
   setUpdateChannel: (_frame, channel: unknown) => setUpdateChannel(channel),
+  setAppearance: (_frame, appearance: unknown) => setAppearance(appearance),
   setMenuState: (_frame, state: unknown) => {
     const publication = parseMenuState(state);
     if (!publication.ok) return failed(publication.message);
@@ -467,7 +488,14 @@ function registerUi() {
   const ui = session.fromPartition(uiPartition);
   ui.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ui.setPermissionCheckHandler(() => false);
-  ui.protocol.handle("factory", factoryProtocolHandler({ uiDirectory, target: apiTarget }));
+  ui.protocol.handle(
+    "factory",
+    factoryProtocolHandler({
+      uiDirectory,
+      target: apiTarget,
+      appearance: () => store.get().appearance,
+    }),
+  );
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -504,6 +532,7 @@ if (!app.requestSingleInstanceLock()) {
 
 async function start() {
   store = await SettingsStore.open(app.getPath("userData"));
+  applyNativeAppearance(store.get().appearance);
   approvedClient = await ApprovedClient.open(store, safeStorage);
   backend = new BackendSupervisor(
     join(here, "backend-host.js"),

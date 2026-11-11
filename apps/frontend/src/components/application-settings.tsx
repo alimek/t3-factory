@@ -4,17 +4,82 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SectionLabel } from "@/components/page";
-import type { DesktopResult } from "@t3-factory/contracts/desktop-bridge";
+import type { Appearance, DesktopResult } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { chooseAppearance, useAppearance } from "../appearance.ts";
 import { useDesktopState } from "../desktop-state.ts";
+import { SegmentedChoice } from "./segmented-choice.tsx";
 import { UpdateSettings } from "./update-settings.tsx";
 
+const appearanceOptions = [
+  ["light", "Light"],
+  ["dark", "Dark"],
+] as const;
+
+/** Local to this installation or browser profile; never sent to the Factory server. */
+function AppearanceSettings() {
+  const appearance = useAppearance();
+  const [error, setError] = useState("");
+  const choose = async (next: Appearance) => setError((await chooseAppearance(next)) ?? "");
+  return (
+    <section aria-label="Appearance" className="grid gap-3">
+      <SectionLabel id="appearance-label">Appearance</SectionLabel>
+      <SegmentedChoice
+        labelledBy="appearance-label"
+        value={appearance}
+        options={appearanceOptions}
+        onChange={(next) => void choose(next)}
+      />
+      <p className="text-xs text-muted-foreground">
+        {desktopBridge()
+          ? "Saved for this desktop installation. Other devices and browsers keep their own choice."
+          : "Saved in this browser profile for this Factory address. Other browsers and devices keep their own choice."}
+      </p>
+      {error && (
+        <p role="status" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /**
- * Desktop-only: role, remembered server, launch at login and updates. `local` is the gate
- * dialog without a usable server, where only this app can be updated.
+ * Appearance for every client; on desktop also role, remembered server, launch at login and
+ * updates. `local` is the gate dialog without a usable server, where only this app can be
+ * updated.
  */
 export function ApplicationSettings({ local = false }: { local?: boolean }) {
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-2">
+        <h2 className="text-title font-semibold text-foreground">Application</h2>
+        <ApplicationSummary />
+      </div>
+      <AppearanceSettings />
+      <DesktopApplicationSettings local={local} />
+    </div>
+  );
+}
+
+function ApplicationSummary() {
+  const state = useDesktopState();
+  if (!desktopBridge())
+    return (
+      <p className="text-sm text-muted-foreground">
+        Preferences for this browser, kept independently of the Factory server.
+      </p>
+    );
+  if (!state) return null;
+  return (
+    <p className="text-sm text-muted-foreground">
+      Version {state.version} for macOS (Apple Silicon).
+    </p>
+  );
+}
+
+function DesktopApplicationSettings({ local }: { local: boolean }) {
   const desktop = desktopBridge();
   const state = useDesktopState();
   const [error, setError] = useState("");
@@ -24,13 +89,7 @@ export function ApplicationSettings({ local = false }: { local?: boolean }) {
     setError(result.ok ? "" : result.message);
   };
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2">
-        <h2 className="text-title font-semibold text-foreground">Application</h2>
-        <p className="text-sm text-muted-foreground">
-          Version {state.version} for macOS (Apple Silicon).
-        </p>
-      </div>
+    <>
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -75,14 +134,13 @@ export function ApplicationSettings({ local = false }: { local?: boolean }) {
         <Label htmlFor="launch-at-login">Open Factory in the background at login</Label>
       </section>
       <UpdateSettings state={state} local={local} />
-    </div>
+    </>
   );
 }
 
 /** Local controls stay available even when no server or compatible product UI is available. */
 export function LocalApplicationControls() {
   const [open, setOpen] = useState(false);
-  if (!desktopBridge()) return null;
   return (
     <>
       <Button className="justify-self-start" variant="secondary" onClick={() => setOpen(true)}>
@@ -92,7 +150,9 @@ export function LocalApplicationControls() {
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>Local application settings</DialogTitle>
           <DialogDescription>
-            Settings and updates for this computer, available independently of the server.
+            {desktopBridge()
+              ? "Settings and updates for this computer, available independently of the server."
+              : "Settings for this browser, available independently of the server."}
           </DialogDescription>
           <ApplicationSettings local />
         </DialogContent>

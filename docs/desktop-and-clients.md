@@ -105,7 +105,28 @@ across releases when their protocol ranges overlap; see the
 ## Native window appearance
 
 The sidebar title area drags the desktop window while macOS keeps its native traffic-light controls and the content uses the full window height. Studio opens in an inset dialog below the native controls with the Settings-style header. Product controls, dialogs and canvases stay
-outside the draggable region, fullscreen and window controls stay native, and the background matches the application canvas while content loads. Browser clients keep their layout without desktop chrome.
+outside the draggable region, fullscreen and window controls stay native, and the background matches the application canvas of the chosen [appearance](#appearance) while content loads. Browser clients keep their layout without desktop chrome.
+
+## Appearance
+
+Each desktop installation, and each browser profile per Factory address, has its own
+**Light** or **Dark** appearance, chosen in **Settings → Application → Appearance**. It is
+Dark until chosen. The choice is never sent to or synchronized through the Factory server,
+so clients of the same server can use different modes, and changing the server, role, T3
+endpoint or authorization does not reset it. Every connection and startup gate keeps its
+**Application settings** entry, in browsers too (where it holds only Appearance), and the
+choice works while offline. Visual rules are in the [design system](design-system.md#light-and-dark).
+
+- **Desktop**: the mode is saved with the other desktop settings of the installation. The
+  main process applies it to native chrome and dialogs and to the window background before
+  the window is created, and serves the bundled page with the mode already set, so the first
+  frame and every reload use it. A change applies to the page, native appearance and window
+  background at once, without a restart; if it cannot be saved, the previous mode stays and
+  Settings shows why. Settings saved before appearance existed open Dark.
+- **Browser**: the mode is saved in that profile's storage for the Factory address. A
+  blocking script in the page head applies it before the stylesheet paints, and the browser
+  `theme-color` follows the mode; other tabs of the same profile follow a change. If the
+  browser blocks storage, the choice applies until the tab closes and Settings says so.
 
 ## Application menu
 
@@ -294,7 +315,7 @@ separate from T3 capability checks.
 ## Desktop security
 
 The renderer always runs bundled UI on `factory://app` with context isolation,
-sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. A menu publication is accepted whole or refused: anything but exactly the declared menu commands, each well formed, fails the bridge call and leaves the menu unchanged. Remote servers only answer API requests
+sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update, appearance and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. A menu publication is accepted whole or refused: anything but exactly the declared menu commands, each well formed, fails the bridge call and leaves the menu unchanged. Remote servers only answer API requests
 relayed by the main process; they never load content into the window. The desktop
 client credential stays in the main process, encrypted using Keychain; it is never exposed to the renderer.
 Live delivery also runs through the main process: the renderer exchanges frames over a
