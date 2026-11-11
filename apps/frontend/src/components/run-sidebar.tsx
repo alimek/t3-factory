@@ -278,12 +278,12 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
   const [focusAfterRender, setFocusAfterRender] = useState<{
     readonly id: string;
     readonly runId: string;
-    readonly action: RunAction;
+    readonly action: RunAction | undefined;
   }>();
   useLayoutEffect(() => {
     if (!focusAfterRender) return;
     const run = runs.find((candidate) => candidate.id === focusAfterRender.runId);
-    if (run && !moved(run, focusAfterRender.action)) return;
+    if (run && focusAfterRender.action && !moved(run, focusAfterRender.action)) return;
     const target = document.getElementById(focusAfterRender.id);
     if (!target) return;
     target.focus();
@@ -296,17 +296,29 @@ function useRunActions(searching: boolean, runs: readonly RunNavigationEntry[]) 
     if (busy) return;
     setBusy(run.id);
     setActionError("");
+    // A cancelled confirmation can finish after another row request has started.
+    let requestPending = true;
+    const finishRequest = () => {
+      if (!requestPending) return;
+      requestPending = false;
+      setBusy(undefined);
+    };
     try {
+      let focusAction: RunAction | undefined = action;
       if (action === "settle") {
-        if (!(await settle(run.id, run.settlement === "unresolved"))) return;
+        const outcome = await settle(run.id, run.settlement === "unresolved", finishRequest);
+        if (!outcome) return;
+        if (outcome.outcome !== "settled") focusAction = undefined;
       } else await runActions[action](run.id);
       const id =
-        searching || action === "restore" ? `run-row-${run.id}` : `${actionGroup[action]}-toggle`;
-      setFocusAfterRender({ id, runId: run.id, action });
+        searching || focusAction === "restore" || !focusAction
+          ? `run-row-${run.id}`
+          : `${actionGroup[focusAction]}-toggle`;
+      setFocusAfterRender({ id, runId: run.id, action: focusAction });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the Run.");
     } finally {
-      setBusy(undefined);
+      finishRequest();
     }
   };
   return { act, busy, actionError, settlementDialog };

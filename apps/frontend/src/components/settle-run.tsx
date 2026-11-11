@@ -44,13 +44,15 @@ export function SettlementWorkers({ workers }: { workers: readonly RunSettlement
 export function useSettleRun() {
   const [confirmation, setConfirmation] =
     useState<Extract<RunSettlementOutcome, { outcome: "confirmation-required" }>>();
-  const answer = useRef<(confirmed: boolean) => void>(() => undefined);
+  const answer = useRef<(outcome: RunSettlementOutcome | undefined) => void>(() => undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const returnFocus = useRef<HTMLElement | null>(null);
-  async function settle(id: string, retry: boolean) {
+  async function settle(id: string, retry: boolean, onConfirmation?: () => void) {
+    if (busy) return;
+    close();
     const outcome = await api.settleRun(id, retry ? { stopWorkers: true } : {});
-    if (outcome.outcome !== "confirmation-required") return true;
+    if (outcome.outcome !== "confirmation-required") return outcome;
     const opener = document.activeElement;
     returnFocus.current =
       opener instanceof HTMLElement &&
@@ -59,22 +61,24 @@ export function useSettleRun() {
         ? opener
         : document.getElementById(`run-row-${id}`);
     setConfirmation(outcome);
-    return new Promise<boolean>((resolve) => {
+    onConfirmation?.();
+    return new Promise<RunSettlementOutcome | undefined>((resolve) => {
       answer.current = resolve;
     });
   }
-  function close(confirmed: boolean) {
+  function close(outcome?: RunSettlementOutcome) {
     setConfirmation(undefined);
     setError("");
-    answer.current(confirmed);
+    answer.current(outcome);
+    answer.current = () => undefined;
   }
   async function confirm() {
     if (!confirmation || busy) return;
     setBusy(true);
     setError("");
     try {
-      await api.settleRun(confirmation.run.id, { stopWorkers: true });
-      close(true);
+      const outcome = await api.settleRun(confirmation.run.id, { stopWorkers: true });
+      close(outcome);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not settle the Run.");
     } finally {
@@ -87,7 +91,7 @@ export function useSettleRun() {
       <AlertDialog
         open={!!confirmation}
         onOpenChange={(open) => {
-          if (!open && !busy) close(false);
+          if (!open && !busy) close();
         }}
       >
         <AlertDialogContent

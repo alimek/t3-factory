@@ -187,6 +187,12 @@ test("settle during search keeps focus on the matching row", async ({ app, scree
 
   // Act
   await screen.getByRole("menuitem", "Settle", { exact: true }).tap();
+  await expect(
+    screen.getByRole("alertdialog").getByRole("button", "Cancel", { exact: true }),
+  ).toBeFocused();
+  // The modal hides the underlying controls from the accessibility tree.
+  await expect(browser.locator(`button[aria-label="Actions for ${snoozedTitle}"]`)).toBeEnabled();
+  await app.screenshot("settle-confirmation-row-actions-released");
   await confirmSettlement(screen);
 
   // Assert
