@@ -25,7 +25,7 @@ import {
   NoticeSettingsLink,
   NoticeStudioLink,
 } from "../components/notice.tsx";
-import { fieldLabelClass, selectFieldClass } from "../components/page.tsx";
+import { selectFieldClass, toolbarPillClass, toolbarStatusClass } from "../components/page.tsx";
 import { Button } from "../components/ui/button.tsx";
 import {
   DropdownMenu,
@@ -173,21 +173,44 @@ function useComposer() {
 
 type Composer = ReturnType<typeof useComposer>;
 
-function composerHelp({ presentation }: Composer) {
-  if (presentation === "unavailable")
-    return "Project and Flow lists show their last known values while disconnected.";
-  return "Each Agent Block starts in its own worker. Factory keeps the Flow’s routing.";
+function StartButton({ model }: { model: Composer }) {
+  const { draft } = model;
+  const inactive = !draft.pending && (!model.ready || !draft.text.trim());
+  return (
+    <MutationGate>
+      <Button
+        type="submit"
+        disabled={draft.busy || (!draft.pending && !model.ready && !!draft.text.trim())}
+        aria-disabled={inactive}
+        className={cn(
+          "group/start ml-auto h-9 shrink-0 gap-2 pr-3 pl-3.5 font-semibold has-[>svg]:pr-3 has-[>svg]:pl-3.5",
+          inactive && "bg-accent text-subtle-foreground hover:bg-accent disabled:opacity-100",
+        )}
+      >
+        <Play aria-hidden className="size-3" strokeWidth={2} />
+        {draft.busy ? "Starting…" : draft.pending ? "Check same request" : "Start"}
+        <kbd
+          aria-hidden
+          className={cn(
+            "rounded-sm px-1 py-px font-sans text-2xs font-medium",
+            inactive ? "bg-foreground/8" : "bg-primary-foreground/14",
+          )}
+        >
+          ⌘↵
+        </kbd>
+      </Button>
+    </MutationGate>
+  );
 }
 
 export function RunComposer() {
   const model = useComposer();
-  const { draft, project, projectReady, start } = model;
-  const inactive = !draft.pending && (!model.ready || !draft.text.trim());
+  const { project, projectReady, start } = model;
   return (
     <ScreenLayout title="New Run">
-      <main className="flex flex-1 items-center justify-center px-6 pt-8 pb-16 max-sm:px-4">
+      <main className="flex flex-1 items-center justify-center p-8 max-sm:px-4">
         <form
-          className="flex w-full max-w-160 flex-col gap-4"
+          className="flex w-[clamp(40rem,75%,60rem)] max-w-full flex-col gap-5"
           onSubmit={(event) => {
             event.preventDefault();
             void start();
@@ -199,46 +222,11 @@ export function RunComposer() {
             }
           }}
         >
-          <div className="grid gap-1.5">
-            <h1 className="text-heading font-semibold tracking-heading">
-              {projectReady ? `What should we work on in ${project?.title}?` : "Start a new Run"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              A Run gives this prompt to each Agent the Flow input connects to, each in a new agent
-              thread.
-            </p>
-          </div>
-          <ComposerFields model={model} />
+          <h1 className="text-heading tracking-heading">
+            {projectReady ? `What should we work on in ${project?.title}?` : "Start a new Run"}
+          </h1>
+          <ComposerBox model={model} />
           <ComposerNotices model={model} />
-          <div className="flex items-center justify-between gap-3">
-            <p className="flex-1 text-2xs tracking-label text-subtle-foreground">
-              {composerHelp(model)}
-            </p>
-            <MutationGate>
-              <Button
-                type="submit"
-                disabled={draft.busy || (!draft.pending && !model.ready && !!draft.text.trim())}
-                aria-disabled={inactive}
-                className={cn(
-                  "group/start h-9 shrink-0 gap-2 pr-3 pl-3.5 font-semibold has-[>svg]:pr-3 has-[>svg]:pl-3.5",
-                  inactive &&
-                    "bg-accent text-subtle-foreground hover:bg-accent disabled:opacity-100",
-                )}
-              >
-                <Play aria-hidden className="size-3" strokeWidth={2} />
-                {draft.busy ? "Starting…" : draft.pending ? "Check same request" : "Start"}
-                <kbd
-                  aria-hidden
-                  className={cn(
-                    "rounded-sm px-1 py-px font-sans text-2xs font-medium",
-                    inactive ? "bg-foreground/8" : "bg-primary-foreground/14",
-                  )}
-                >
-                  ⌘↵
-                </kbd>
-              </Button>
-            </MutationGate>
-          </div>
         </form>
       </main>
     </ScreenLayout>
@@ -249,11 +237,6 @@ function flowFieldState({ draft, flows, flow }: Composer) {
   const empty = flows?.length === 0;
   const notReady = !!flow && !flowCanLaunch(flow);
   const missing = !!flows && !!draft.flowId && !flow;
-  const help = notReady
-    ? flowLaunchIssues(flow)
-    : empty
-      ? "Create a Flow to define which Agents run and how they hand off."
-      : "Choose a ready global Flow.";
   return {
     empty,
     notReady,
@@ -262,11 +245,15 @@ function flowFieldState({ draft, flows, flow }: Composer) {
     value:
       flow?.name ??
       (empty ? undefined : flows && draft.flowId ? "Selected Flow unavailable" : undefined),
-    help: flow && flowCanLaunch(flow) ? undefined : help,
+    help: notReady
+      ? flowLaunchIssues(flow)
+      : empty
+        ? "Create a Flow to define which Agents run and how they hand off."
+        : undefined,
   };
 }
 
-/** The visible Run/SelectField value row inside the Flow dropdown trigger. */
+/** The Flow pill's value: the name, marked when the Flow cannot launch. */
 function FlowFieldValue({
   model,
   value,
@@ -281,10 +268,8 @@ function FlowFieldValue({
   return (
     <>
       <span className="min-w-0 truncate font-medium">{value}</span>
-      {flow && (
-        <span className="min-w-0 truncate text-2xs tracking-label text-subtle-foreground">
-          {flowCanLaunch(flow) ? "ready" : "Not ready"}
-        </span>
+      {flow && !flowCanLaunch(flow) && (
+        <span className="shrink-0 text-2xs tracking-label text-destructive">Not ready</span>
       )}
     </>
   );
@@ -392,8 +377,8 @@ function FlowField({ model }: { model: Composer }) {
   const triggerLabel = state.value ?? state.placeholder;
   const showSearch = !!flows?.length;
   return (
-    <div className="grid min-w-0 content-start gap-1.5">
-      <Label htmlFor="launch-flow" className={fieldLabelClass}>
+    <>
+      <Label htmlFor="launch-flow" className="sr-only">
         Flow
       </Label>
       <DropdownMenu
@@ -413,7 +398,12 @@ function FlowField({ model }: { model: Composer }) {
             aria-label={`Select Flow: ${triggerLabel}`}
             aria-invalid={state.notReady || undefined}
             aria-describedby={state.help ? "launch-flow-help" : undefined}
-            className={cn(selectFieldClass, state.invalid && "border-destructive")}
+            className={cn(
+              selectFieldClass,
+              toolbarPillClass,
+              "w-55",
+              state.invalid && "border-destructive",
+            )}
           >
             <Workflow
               aria-hidden
@@ -435,7 +425,7 @@ function FlowField({ model }: { model: Composer }) {
           </Button>
         </DropdownMenuTrigger>
         <PickerMenuContent
-          className="flex max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] max-w-[calc(100vw-1rem)] min-w-0 flex-col overflow-hidden p-0"
+          className="flex max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height))] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
           searchRef={searchRef}
           listRef={listRef}
           searchEnabled={showSearch}
@@ -467,92 +457,90 @@ function FlowField({ model }: { model: Composer }) {
       {state.help && (
         <p
           id="launch-flow-help"
-          className={cn("text-2xs", state.notReady ? "text-destructive" : "text-muted-foreground")}
+          className={cn(
+            toolbarStatusClass,
+            "text-2xs",
+            state.notReady ? "text-destructive" : "text-muted-foreground",
+          )}
         >
           {state.help}
         </p>
       )}
-    </div>
-  );
-}
-
-function ComposerFields({ model }: { model: Composer }) {
-  const { draft, projects, locked, edit } = model;
-  return (
-    <>
-      {" "}
-      <fieldset disabled={locked} className="grid min-w-0 grid-cols-2 gap-3 max-sm:grid-cols-1">
-        <ProjectPicker
-          state={projects}
-          selectedId={draft.projectId}
-          onSelect={(projectId) => edit({ projectId })}
-          disabled={locked}
-        />
-        <FlowField model={model} />
-      </fieldset>
-      <PromptField model={model} />
     </>
   );
 }
 
-/** Required prompt text with inline image references; images are pasted, dropped or picked. */
-function PromptField({ model }: { model: Composer }) {
-  const { draft, locked, edit, prompt, promptMissing } = model;
+/**
+ * The composer box: the required prompt with inline image references (pasted, dropped or picked)
+ * above a toolbar holding the Project, the Flow, image attachment and Start.
+ */
+function ComposerBox({ model }: { model: Composer }) {
+  const { draft, projects, locked, edit, prompt, promptMissing, presentation } = model;
   const missing = promptMissing && !draft.text.trim();
   const [previewing, setPreviewing] = useState<string>();
   const previewed = draft.images.find((image) => image.imageId === previewing);
   const drop = useImageDrop(!locked, (files) => void prompt.current?.insertImages(files));
   return (
-    <div className="grid gap-1.5">
-      <Label
-        id="launch-prompt-label"
-        onClick={() => prompt.current?.focus()}
-        className={cn(fieldLabelClass, "gap-1.5")}
-      >
-        Initial prompt{" "}
-        <span className="font-normal tracking-label text-subtle-foreground">Required</span>
+    <div className="grid gap-2">
+      <Label id="launch-prompt-label" className="sr-only">
+        Initial prompt Required
       </Label>
       <div
         {...drop.handlers}
         className={cn(
-          "relative flex flex-col gap-2 rounded-lg border bg-muted pt-3 pr-3.5 pb-2.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
-          draft.images.length ? "min-h-42" : "h-42",
+          "relative flex flex-col gap-2 rounded-xl border bg-card p-3 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
+          // A third of the window: the prompt scrolls inside it until images let the box grow.
+          draft.images.length ? "min-h-[max(12rem,32vh)]" : "h-[max(12rem,32vh)]",
           missing && "border-destructive focus-within:border-destructive",
         )}
       >
-        <PromptEditor
-          ref={prompt}
-          opening={draft.opening}
-          segments={draft.segments}
-          images={draft.images}
-          locked={locked}
-          invalid={missing}
-          labelledBy="launch-prompt-label"
-          describedBy="prompt-help"
-          placeholder="Describe what this Run should do…"
-          onChange={(segments) => edit({ segments })}
-          attachImages={runDraft.attachImages}
-          onPreview={setPreviewing}
-        />
-        <PromptImageStrip
-          images={draft.images}
-          load={runDraft.loadImage}
-          locked={locked}
-          onPreview={setPreviewing}
-          onRemove={runDraft.removeImage}
-        />
-        <div className="flex items-center gap-2">
-          <p id="prompt-help" className="flex-1 text-2xs tracking-label text-subtle-foreground">
-            The first text line becomes the Run title; you can rename it later. Paste or drop
-            screenshots to reference them.
-          </p>
+        <div className="flex min-h-0 flex-1 flex-col gap-2 px-1.5 pt-1">
+          <PromptEditor
+            ref={prompt}
+            opening={draft.opening}
+            segments={draft.segments}
+            images={draft.images}
+            locked={locked}
+            invalid={missing}
+            labelledBy="launch-prompt-label"
+            describedBy="prompt-help"
+            placeholder="Describe what this Run should do…"
+            onChange={(segments) => edit({ segments })}
+            attachImages={runDraft.attachImages}
+            onPreview={setPreviewing}
+          />
+          <PromptImageStrip
+            images={draft.images}
+            load={runDraft.loadImage}
+            locked={locked}
+            onPreview={setPreviewing}
+            onRemove={runDraft.removeImage}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <fieldset disabled={locked} className="contents">
+            <ProjectPicker
+              state={projects}
+              selectedId={draft.projectId}
+              onSelect={(projectId) => edit({ projectId })}
+              disabled={locked}
+            />
+            <FlowField model={model} />
+          </fieldset>
           <AttachImagesButton
             disabled={locked}
             onFiles={(files) => void runDraft.attachImages(files)}
           />
+          <StartButton model={model} />
         </div>
         {drop.dragging && <ImageDropOverlay />}
       </div>
+      <p id="prompt-help" className="text-xs text-muted-foreground">
+        The first text line becomes the Run title; you can rename it later. Paste or drop
+        screenshots to reference them.
+        {presentation === "unavailable" &&
+          " Project and Flow lists show their last known values while disconnected."}
+      </p>
       <ImageRejections rejections={draft.imageRejections} />
       {missing && (
         <p role="alert" className="text-2xs text-destructive">

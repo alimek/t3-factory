@@ -75,6 +75,28 @@ test("Mod+, opens connection Settings without losing the composer draft", async 
   );
 });
 
+test("Tab moves from the composer prompt through Project, Flow and image attachment to Start", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await app.open("/runs/new");
+  await screen.getByLabel("Initial prompt", { exact: false }).tap();
+  await browser.keyboard.press("Tab");
+  await expect(screen.getByRole("button", /^Select project: /)).toBeFocused();
+  await browser.keyboard.press("Tab");
+  await expect(screen.getByRole("button", /^Select Flow: /)).toBeFocused();
+  await browser.keyboard.press("Tab");
+  await expect(screen.getByRole("button", "Attach images", { exact: true })).toBeFocused();
+
+  // Act
+  await browser.keyboard.press("Tab");
+
+  // Assert
+  await expect(screen.getByRole("button", "Start", { exact: true })).toBeFocused();
+});
+
 test("the fake desktop bridge enables Mod+N for New Run", async ({ app, screen, browser }) => {
   // Arrange
   await installDesktopBridge(browser);

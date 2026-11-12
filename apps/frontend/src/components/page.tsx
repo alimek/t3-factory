@@ -64,3 +64,9 @@ export const fieldLabelClass = "text-2xs leading-none font-medium text-muted-for
 /** Figma Run/SelectField box: 40 px, muted surface, icon + value + context + chevrons. */
 export const selectFieldClass =
   "flex h-10 w-full min-w-0 items-center gap-2 rounded-md border border-border bg-muted pr-2.5 pl-3 text-left text-sm font-normal text-foreground transition-[color,background-color,border-color,box-shadow] outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-0 data-[state=open]:border-primary has-[>svg]:pr-2.5 has-[>svg]:pl-3";
+
+/** A select field as a pill in the launch composer's toolbar: 32 px, narrowing with the row. */
+export const toolbarPillClass = "h-8 max-w-full shrink";
+
+/** A toolbar control's status line: a full-width row after all of the toolbar's controls. */
+export const toolbarStatusClass = "order-last basis-full";
