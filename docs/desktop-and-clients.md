@@ -137,7 +137,8 @@ only after that answer, for the same server and exactly that source, before the 
 when it is still exactly a sanitized presentation; after a disconnect, another pairing or another
 T3 source it shows Factory's colors until live delivery answers. The same holds for a client that
 stays open through a reconnect: when the access check after it declares another source, the colors
-it was showing end there. A matching snapshot is shown
+it was showing end there and return only with a later delivery from the server, not with the one
+the client already held. A matching snapshot is shown
 until live delivery answers and while offline, and switching Light and Dark stays immediate. Whatever the server publishes next replaces the snapshot, and a
 presentation without colors (expiry, revocation, disconnect, another T3 source, no inherited theme)
 removes it. A client whose Factory access is missing, pending, denied or revoked deletes it without

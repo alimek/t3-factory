@@ -1,10 +1,11 @@
 import { assert, expect, it } from "vite-plus/test";
 import {
   cachedColors,
-  colorsOfSource,
+  followColors,
   forgetColors,
   rememberColors,
 } from "../src/inherited-colors-cache.ts";
+import type { AppearancePresentation, T3Appearance } from "@t3-factory/contracts";
 import { oceanPresentation, memoryStorage } from "./support/inherited-colors.ts";
 
 const NOW = Date.parse("2026-11-11T12:00:00.000Z");
@@ -15,6 +16,15 @@ const SOURCE = {
   grantId: "grant-1",
   resolverPin: "d2c25950b4d9183ea342d5d5fc14c326b9e0172a",
 };
+
+const GROVE_SOURCE = { ...SOURCE, environmentId: "environment-2" };
+/** One live delivery of a server that follows `presentation`. */
+const following = (presentation: AppearancePresentation): T3Appearance => ({
+  state: "following",
+  explanation: "",
+  grant: null,
+  presentation,
+});
 
 it("a client reopening on the same Factory server reuses both halves of its cached theme colors", () => {
   // Arrange
@@ -57,30 +67,94 @@ it.each([
   expect(cached).toBe(null);
 });
 
-it("a mounted client keeps its theme colors when the server declares the same source again", () => {
+it("a mounted client keeps the published theme colors when the server declares the same source again", () => {
   // Arrange
-  const shown = oceanPresentation(LATER);
+  const ocean = following(oceanPresentation(LATER));
+  const shown = { declared: SOURCE, cached: null, published: ocean, refused: null };
 
   // Act
-  const kept = colorsOfSource(shown, { ...SOURCE });
+  const followed = followColors(shown, { ...SOURCE }, { value: ocean, synchronized: true });
 
   // Assert
-  expect(kept).toBe(shown);
+  expect(followed.published).toBe(ocean);
+});
+
+it("a mounted client keeps its cached theme colors through an outage of the same source", () => {
+  // Arrange
+  const cached = oceanPresentation(LATER);
+  const shown = { declared: SOURCE, cached, published: null, refused: null };
+
+  // Act
+  const followed = followColors(shown, { ...SOURCE }, { value: null, synchronized: false });
+
+  // Assert
+  expect(followed.cached).toBe(cached);
 });
 
 it.each([
   ["has no theme-color source any more", null],
   ["follows another T3 environment", { ...SOURCE, environmentId: "environment-2" }],
   ["was paired again with another grant", { ...SOURCE, grantId: "grant-2" }],
-])("a mounted client drops its theme colors when the server %s", (_, source) => {
+])(
+  "a mounted client drops theme colors its live delivery still holds when the server %s",
+  (_, source) => {
+    // Arrange
+    const ocean = following(oceanPresentation(LATER));
+    const shown = {
+      declared: SOURCE,
+      cached: oceanPresentation(LATER),
+      published: ocean,
+      refused: null,
+    };
+
+    // Act
+    const followed = followColors(shown, source, { value: ocean, synchronized: true });
+
+    // Assert
+    expect(followed).toStrictEqual({
+      declared: source,
+      cached: null,
+      published: null,
+      refused: ocean,
+    });
+  },
+);
+
+it("theme colors dropped for a replaced source do not return while live delivery still holds them", () => {
   // Arrange
-  const shown = oceanPresentation(LATER);
+  const ocean = following(oceanPresentation(LATER));
+  const live = { value: ocean, synchronized: true };
+  const replaced = followColors(
+    { declared: SOURCE, cached: null, published: ocean, refused: null },
+    GROVE_SOURCE,
+    live,
+  );
 
   // Act
-  const kept = colorsOfSource(shown, source);
+  const followed = followColors(replaced, GROVE_SOURCE, live);
 
   // Assert
-  expect(kept).toBe(null);
+  expect(followed.published).toBe(null);
+});
+
+it("a mounted client takes what the server publishes after its source was replaced", () => {
+  // Arrange
+  const ocean = following(oceanPresentation(LATER));
+  const grove = following({
+    ...oceanPresentation(LATER),
+    environmentId: GROVE_SOURCE.environmentId,
+  });
+  const replaced = followColors(
+    { declared: SOURCE, cached: null, published: ocean, refused: null },
+    GROVE_SOURCE,
+    { value: ocean, synchronized: true },
+  );
+
+  // Act
+  const followed = followColors(replaced, GROVE_SOURCE, { value: grove, synchronized: true });
+
+  // Assert
+  expect(followed.published).toBe(grove);
 });
 
 it("cached theme colors are not reused once their grant has expired", () => {
