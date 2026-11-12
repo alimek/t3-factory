@@ -88,6 +88,53 @@ function resolveReportingHome(
   };
 }
 
+const field = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+
+/**
+ * Drivers T3 leaves off until the user turns them on. T3 holds this default in its code, not in
+ * the settings file, so it is repeated here; a driver T3 adds later is treated as on by default.
+ */
+const DEFAULT_DISABLED_DRIVERS: readonly unknown[] = [
+  "cursor",
+  "grok",
+  "muse",
+  "pi",
+  "opencode",
+  "antigravity",
+];
+
+/**
+ * T3's own rule: an explicit `false` on the instance or inside its config (where older settings
+ * files kept it) wins; otherwise the instance flag, then the config flag, then the driver default.
+ */
+function enabledInT3(instance: unknown): boolean {
+  const flag = field(instance, "enabled");
+  const configFlag = field(field(instance, "config"), "enabled");
+  if (flag === false || configFlag === false) return false;
+  if (flag === true || configFlag === true) return true;
+  return !DEFAULT_DISABLED_DRIVERS.includes(field(instance, "driver"));
+}
+
+/**
+ * The provider instances T3 keeps off. A project that turns an instance on keeps it running in T3
+ * even when the machine has it off, so it is not among them.
+ */
+function disabledInstances(settings: Record<string, unknown>): Set<string> {
+  const projectEnabled = new Set(
+    Object.values(field(settings, "projectSettingsOverrides") ?? {}).flatMap((overrides) =>
+      Object.entries(field(overrides, "providerInstances") ?? {})
+        .filter(([, override]) => field(override, "enabled") === true)
+        .map(([id]) => id),
+    ),
+  );
+  return new Set(
+    Object.entries(record(settings.providerInstances))
+      .filter(([id, instance]) => !projectEnabled.has(id) && !enabledInT3(instance))
+      .map(([id]) => id),
+  );
+}
+
 const targetFor = Effect.fn(function* (
   id: string,
   raw: unknown,
@@ -217,8 +264,9 @@ export const discoverReporting = Effect.fn(function* (
     const settings = record(
       JSON.parse(yield* boundary(() => readFile(join(stateDirectory, "settings.json"), "utf8"))),
     );
+    const disabled = disabledInstances(settings);
     const targets = yield* Effect.forEach(
-      Object.entries(record(settings.providerInstances)),
+      Object.entries(record(settings.providerInstances)).filter(([id]) => !disabled.has(id)),
       ([id, value]) => targetFor(id, value),
       { concurrency: "unbounded" },
     );
@@ -234,7 +282,7 @@ export const discoverReporting = Effect.fn(function* (
     }
     return grouped.size
       ? [...grouped.values()]
-      : [unknownTarget("No configured provider instances found in local T3 settings.")];
+      : [unknownTarget("No enabled provider instances found in local T3 settings.")];
   }).pipe(
     Effect.catchCause((cause) => {
       const error = Cause.squash(cause);

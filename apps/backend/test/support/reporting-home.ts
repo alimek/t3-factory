@@ -15,7 +15,7 @@ export async function writeReportingState(
   await writeFile(join(state, "environment-id"), environmentId);
   await writeFile(
     join(state, "settings.json"),
-    JSON.stringify({ providerInstances: { [provider]: { driver, config } } }),
+    JSON.stringify({ providerInstances: { [provider]: { driver, enabled: true, config } } }),
   );
 }
 
