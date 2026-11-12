@@ -49,7 +49,11 @@ export async function driverHomes(
   const fixture = await reportingFixture(context);
   await writeFile(
     join(fixture.state, "settings.json"),
-    JSON.stringify({ providerInstances: instances }),
+    JSON.stringify({
+      providerInstances: Object.fromEntries(
+        Object.entries(instances).map(([id, instance]) => [id, { ...instance, enabled: true }]),
+      ),
+    }),
   );
   return { ...fixture, home: userHome };
 }

@@ -203,8 +203,8 @@ it("provider instances disabled in T3 are neither listed nor inspected", async (
       providerInstances: {
         claude: { driver: "claudeAgent", enabled: true, config: {} },
         codex: { driver: "codex", enabled: false, config: {} },
-        grok: { driver: "grok", config: { enabled: false } },
-        opencode: { driver: "opencode", enabled: false },
+        grok: { driver: "grok", config: {} },
+        opencode: { driver: "opencode", config: { enabled: false } },
       },
     }),
   );
