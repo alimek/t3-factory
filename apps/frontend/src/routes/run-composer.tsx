@@ -488,13 +488,19 @@ function ComposerBox({ model }: { model: Composer }) {
       <div
         {...drop.handlers}
         className={cn(
-          "relative flex flex-col gap-2 rounded-xl border bg-card p-3 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
-          // A third of the window: the prompt scrolls inside it until images let the box grow.
-          draft.images.length ? "min-h-[max(12rem,32vh)]" : "h-[max(12rem,32vh)]",
+          // A third of the window; the toolbar and its status rows may need more.
+          "relative flex min-h-[max(12rem,32vh)] flex-col gap-2 rounded-xl border bg-card p-3 transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/15",
           missing && "border-destructive focus-within:border-destructive",
         )}
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-2 px-1.5 pt-1">
+        <div
+          className={cn(
+            "flex flex-col gap-2 px-1.5 pt-1",
+            // Without images the prompt keeps a floor of several lines and scrolls inside: its
+            // zero basis keeps the text out of the box height. Images let the box grow.
+            draft.images.length ? "min-h-0 flex-1" : "min-h-20 grow basis-0",
+          )}
+        >
           <PromptEditor
             ref={prompt}
             opening={draft.opening}
