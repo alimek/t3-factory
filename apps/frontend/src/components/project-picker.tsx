@@ -316,7 +316,8 @@ export function ProjectPicker({
             aria-busy={busy}
             aria-label={`Select project: ${selected?.title ?? "No project selected"}`}
             aria-invalid={invalid || undefined}
-            title={selected?.workspaceRoot}
+            // The pill can truncate the title, so the tooltip carries it along with the path.
+            title={selected && `${selected.title}\n${selected.workspaceRoot}`}
             className={cn(selectFieldClass, toolbarPillClass, "w-45")}
           >
             <ProjectTriggerSummary selected={selected} />

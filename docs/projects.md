@@ -6,7 +6,7 @@ available across all selections without assignment. Selecting an unavailable
 project preserves its reference and explains why new Runs are blocked.
 
 The composer's **Select project** dropdown shows the selected project's name and
-icon supplied by T3, with its repository path as a tooltip; the open menu lists each
+icon supplied by T3, with its full name and repository path as a tooltip; the open menu lists each
 project's name, icon and repository path. It displays T3 emoji and monogram
 icons with their configured color. Named Lucide project icons use the frontend's
 statically imported folder fallback with the configured color; Factory does not load
