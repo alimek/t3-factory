@@ -87,6 +87,7 @@ export function desktopBridgeScript({
       publish();
       return { ok: true };
     },
+    setAppearance: async () => ({ ok: true }),
     installUpdate: async () => {
       desktopWindow.__clientInstallRequested = true;
       state = { ...state, update: { ...state.update, state: "idle", version: null } };

@@ -60,6 +60,16 @@ export async function openWaitingConnection(app: FixtureApp, screen: Screen) {
   ).toBeVisible();
 }
 
+/** The incompatible-server gate with its local Application settings dialog open. */
+export async function openIncompatibleApplicationSettings(app: FixtureApp, screen: Screen) {
+  await remoteFixture(app, "incompatible");
+  await app.open("/");
+  await expect(
+    screen.getByRole("heading", "This client and server can’t work together"),
+  ).toBeVisible();
+  await screen.getByRole("button", "Application settings").tap();
+}
+
 /** Opens `path` as a browser profile the host already approved, without an access request. */
 export const openApproved = (app: FixtureApp, path: string) =>
   app.open(`/__fixture/approved-browser?next=${encodeURIComponent(path)}`);

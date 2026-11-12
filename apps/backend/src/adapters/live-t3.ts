@@ -1,20 +1,12 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  closeSync,
-  fsyncSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { chmodSync, mkdirSync } from "node:fs";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { stat, realpath } from "node:fs/promises";
-import { isAbsolute, basename, join } from "node:path";
+import { isAbsolute, basename } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { threadRepository } from "./worker-repository.ts";
+import { credentialPath, readCredentialFile, writeCredentialFile } from "./credential-files.ts";
+import { LiveT3Appearance } from "./live-t3-appearance.ts";
 import {
   Client,
   StreamableHTTPClientTransport,
@@ -413,42 +405,42 @@ export class LiveT3Adapter implements T3Adapter {
   private completing = false;
   private completion: Promise<void> | undefined;
   private transientFailure = false;
+  private readonly appearance: LiveT3Appearance;
   constructor(options: LiveT3Options) {
     this.options = options;
     mkdirSync(options.credentialsDirectory, { recursive: true, mode: 0o700 });
     chmodSync(options.credentialsDirectory, 0o700);
+    this.appearance = new LiveT3Appearance(options.credentialsDirectory);
+  }
+  pairAppearance(target: T3Endpoint, pairingCode: string) {
+    return this.appearance.pair(target, pairingCode);
+  }
+  async readAppearanceGrant(target: T3Endpoint) {
+    return this.appearance.grant(target);
+  }
+  checkAppearanceGrant(target: T3Endpoint) {
+    return this.appearance.check(target);
+  }
+  async endAppearanceGrant(target: T3Endpoint, reason: "expired" | "revoked") {
+    return this.appearance.end(target, reason);
+  }
+  async forgetAppearanceGrant(target: T3Endpoint) {
+    this.appearance.forget(target);
+  }
+  watchAppearance(target: T3Endpoint) {
+    return this.appearance.watch(target);
   }
   private path(endpoint: string) {
-    return join(
-      this.options.credentialsDirectory,
-      `t3-${createHash("sha256").update(endpoint).digest("hex")}.json`,
-    );
+    return credentialPath(this.options.credentialsDirectory, "t3", endpoint);
   }
   private read(endpoint: string): Credentials {
-    const path = this.path(endpoint);
-    if (!existsSync(path)) return { endpoint };
-    chmodSync(path, 0o600);
-    const data = JSON.parse(readFileSync(path, "utf8")) as Credentials;
+    const data = readCredentialFile(this.path(endpoint)) as Credentials | undefined;
+    if (!data) return { endpoint };
     if (data.endpoint !== endpoint) throw new Error("Credential endpoint mismatch");
     return data;
   }
   private save(data: Credentials) {
-    const path = this.path(data.endpoint);
-    const temp = `${path}.${randomUUID()}.tmp`;
-    const fd = openSync(temp, "wx", 0o600);
-    try {
-      writeFileSync(fd, JSON.stringify(data));
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(temp, path);
-    const directory = openSync(this.options.credentialsDirectory, "r");
-    try {
-      fsyncSync(directory);
-    } finally {
-      closeSync(directory);
-    }
+    writeCredentialFile(this.path(data.endpoint), data);
   }
   private provider(endpoint: string, interactive: boolean): OAuthClientProvider {
     const update = (change: (data: Credentials) => void) => {

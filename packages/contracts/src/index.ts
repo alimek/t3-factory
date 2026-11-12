@@ -4,6 +4,7 @@ export * from "./agent.ts";
 export * from "./operation.ts";
 export * from "./project.ts";
 export * from "./connection.ts";
+export * from "./appearance.ts";
 export * from "./run.ts";
 export * from "./client-access.ts";
 export * from "./update.ts";

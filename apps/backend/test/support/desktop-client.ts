@@ -99,6 +99,7 @@ export function desktopRelay(client: ApprovedClient) {
       const connection = client.capture();
       return connection ? { kind: "remote", connection } : null;
     },
+    appearance: () => "dark",
   });
   return (path: string, init?: RequestInit) =>
     relay(

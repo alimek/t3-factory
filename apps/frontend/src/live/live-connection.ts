@@ -9,7 +9,7 @@ import { transport } from "../transport.ts";
 import { desktopLiveSocket } from "./desktop-socket.ts";
 import { LiveOwner, type LiveScope, type LiveScopeView } from "./owner.ts";
 import { rpcSessions } from "./rpc-session.ts";
-import { connectionScope } from "./scopes.ts";
+import { appearanceScope, connectionScope } from "./scopes.ts";
 
 /** Browsers cannot set WebSocket headers, so the protocol range travels in the query. */
 const liveQuery = new URLSearchParams({
@@ -86,3 +86,6 @@ export function useLiveScope<M extends { readonly _tag: string }, V>(
 
 /** The backend's authoritative T3 connection status for this window. */
 export const useLiveConnectionStatus = () => useLiveScope(connectionScope);
+
+/** Theme-color status and presentation; mount only for servers that serve it. */
+export const useLiveAppearance = () => useLiveScope(appearanceScope);

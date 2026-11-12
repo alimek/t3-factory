@@ -1,6 +1,7 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { UpdateChannel } from "@t3-factory/contracts";
+import type { Appearance } from "@t3-factory/contracts/desktop-bridge";
 
 /** How this client trusts its server: a pinned Factory authority, or the system's trust store. */
 export type ServerTrust =
@@ -28,6 +29,7 @@ export interface DesktopSettings {
   readonly menuBarIcon: boolean;
   /** Null until chosen: the installation follows the track of the build it runs. */
   readonly updateChannel: UpdateChannel | null;
+  readonly appearance: Appearance;
 }
 
 const initialSettings: DesktopSettings = {
@@ -37,6 +39,7 @@ const initialSettings: DesktopSettings = {
   launchAtLogin: false,
   menuBarIcon: false,
   updateChannel: null,
+  appearance: "dark",
 };
 
 function isTrust(value: unknown): value is ServerTrust {
@@ -64,8 +67,8 @@ function parseSettings(raw: unknown): DesktopSettings | undefined {
   const role = value.role === "server" || value.role === "client" ? value.role : null;
   const server = value.server === null || value.server === undefined ? null : value.server;
   if (server !== null && !isServer(server)) return undefined;
-  // The update channel and menu-bar icon were added within version 1; files without them
-  // follow the build's channel and keep the icon hidden.
+  // The update channel, menu-bar icon and appearance were added within version 1; files without
+  // them follow the build's channel, keep the icon hidden and open Dark.
   return {
     version: 1,
     role,
@@ -76,6 +79,7 @@ function parseSettings(raw: unknown): DesktopSettings | undefined {
       value.updateChannel === "stable" || value.updateChannel === "beta"
         ? value.updateChannel
         : null,
+    appearance: value.appearance === "light" ? "light" : "dark",
   };
 }
 

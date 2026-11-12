@@ -4,6 +4,7 @@ import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
 import {
   runEntityKeys,
+  type AppearanceLiveMessage,
   type ConnectionLiveMessage,
   type FlowDraft,
   type LaunchChoices,
@@ -19,6 +20,7 @@ import {
   type RunLiveMessage,
   type RunNavigationEntry,
   type RunViewLiveMessage,
+  type T3Appearance,
   type T3Connection,
 } from "@t3-factory/contracts";
 import type { LiveChanges, LiveScope } from "./live-changes.ts";
@@ -37,6 +39,11 @@ export interface LiveStreams {
   /** The Run composer's Project catalog and Flows with their readiness. */
   readonly watchLaunchChoices: () => Stream.Stream<
     LiveEnvelope<LaunchChoicesLiveMessage>,
+    OperationError
+  >;
+  /** Theme-color status and the inherited presentation, for approved clients only. */
+  readonly watchAppearance: () => Stream.Stream<
+    LiveEnvelope<AppearanceLiveMessage>,
     OperationError
   >;
 }
@@ -110,6 +117,9 @@ function connectionDiff(sent: T3Connection, current: T3Connection): ConnectionLi
     ? [{ _tag: "checked", checkedAt: current.checkedAt }]
     : [{ _tag: "changed", connection: current }];
 }
+
+const appearanceDiff = (sent: T3Appearance, current: T3Appearance): AppearanceLiveMessage[] =>
+  Equal.equals(sent, current) ? [] : [{ _tag: "changed", appearance: current }];
 
 function navigationDiff(
   sent: readonly RunNavigationEntry[],
@@ -326,6 +336,7 @@ export function makeLiveStreams(
     readonly getRun: (id: string) => Read<RunDetail>;
     readonly readProjectCatalog: () => Read<ProjectCatalog>;
     readonly listFlows: () => Read<readonly FlowDraft[]>;
+    readonly getAppearance: () => Effect.Effect<T3Appearance>;
   },
   /** One read transaction, so a view's navigation and Runs describe the same committed state. */
   consistently: <A>(read: Effect.Effect<A, OperationError>) => Effect.Effect<A, OperationError>,
@@ -374,6 +385,14 @@ export function makeLiveStreams(
         ),
         (choices) => [{ _tag: "snapshot", choices }],
         launchChoicesDiff,
+      ),
+    watchAppearance: () =>
+      watch(
+        changes,
+        { kind: "appearance" },
+        reads.getAppearance(),
+        (appearance) => [{ _tag: "snapshot", appearance }],
+        appearanceDiff,
       ),
   };
 }

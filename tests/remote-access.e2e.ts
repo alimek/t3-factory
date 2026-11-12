@@ -4,6 +4,7 @@ import { desktopBridgeOptions, desktopBridgeScript } from "./support/desktop-bri
 import {
   approvedBrowser,
   expectServerInstallRequested,
+  openIncompatibleApplicationSettings,
   openApproved,
   openUpgradeReview,
   remoteFixture,
@@ -149,12 +150,7 @@ test("an incompatible desktop client can upgrade itself from local application s
 }) => {
   // Arrange
   await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client"));
-  await remoteFixture(app, "incompatible");
-  await app.open("/");
-  await expect(
-    screen.getByRole("heading", "This client and server can’t work together"),
-  ).toBeVisible();
-  await screen.getByRole("button", "Application settings").tap();
+  await openIncompatibleApplicationSettings(app, screen);
   await screen.getByRole("button", "Review upgrade").tap();
   await expect(screen.getByRole("heading", "Upgrade client?")).toBeVisible();
   await app.screenshot("local-upgrade-review");

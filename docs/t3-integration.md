@@ -57,7 +57,8 @@ connection and Factory launches no onboarding workload.
 ## Credentials and reauthorization
 
 OAuth registration, tokens, discovery, PKCE and pending callback state live in `credentials/t3-<endpoint SHA-256>.json`
-under the data home, apart from configuration and SQLite (directory 0700, files 0600, atomic writes). Credentials and
+under the data home, apart from configuration and SQLite (directory 0700, files 0600, atomic writes). The separate
+[theme-color grant](#theme-colors) has its own file beside it. Credentials and
 callback URLs never appear in API responses, prompts or history; OAuth error bodies are sanitized.
 
 A pending approval can restore its listener after a backend restart within the approval window. Completed grants are
@@ -66,6 +67,97 @@ Reauthorizing retires the active authorization context before external I/O. A ne
 environment gets a new durable context; reconnects and refresh keep it. Operation intents compare their saved context with
 the current one and keep mismatches unresolved: reauthorization is never permission to silently replay old work. See the
 [replay rules](runner.md#ownership-and-restart).
+
+## Theme colors
+
+Factory can optionally use the color palette of the **environment default theme** of the T3 connection's
+environment (`t3 theme set`), not the theme an individual T3 window shows. Each client keeps its own
+[Light or Dark choice](desktop-and-clients.md#appearance) and shows that mode's half of the palette.
+T3 keeps owning theme selection and editing; Factory has no theme catalog or editor.
+
+**Pairing (host only).** **Settings → T3 connection → Theme colors** explains before pairing that the grant
+uses T3's `orchestration:read` scope, which also reads T3 conversations, threads and settings, that T3 ends it
+after its session lifetime (30 days by default) and that it can be revoked in T3 at any time. The owner creates
+pairing material on the T3 computer with `t3 auth pairing create --scope orchestration:read --json` (paste its
+`credential`) or `t3 pair --scope orchestration:read` (paste its `/pair#token=` link; a link must belong to the
+connection's T3 address). Without `--scope`, a T3 pairing carries T3's full default scope set; Factory always
+requests exactly `orchestration:read` in the token exchange and discards any other grant. Pairing needs an
+authorized T3 connection: the first configuration snapshot must report the environment id of the connection's
+authorization context, otherwise Factory discards the grant and refuses. It also refuses, and discards the
+grant, when the saved endpoint or its environment changed while T3 answered. Approved remote clients see the status
+and diagnostics; pairing and **Disconnect theme colors** answer `host_only` for them.
+
+**Grant and credentials.** The appearance grant is a separate T3 session, never the MCP OAuth credential, which
+T3 refuses outside `/mcp`. Its token lives in `credentials/t3-appearance-<endpoint SHA-256>.json` with the same
+protections as the OAuth file and never appears in responses, live delivery or logs. T3 issues no refresh token:
+Factory tracks the expiry itself, warns in Settings seven days before it, ends inheritance at expiry and requires
+pairing again; it never renews or opens consent on its own. Disconnect deletes Factory's copy only; T3 keeps the
+session until it expires or the owner revokes it in T3 (`t3 auth session revoke`).
+
+**Following the default.** Factory reads T3's WebSocket configuration subscription
+(`subscribeServerConfig` with `environmentThemes`, protocol 2) through a short-lived ticket and keeps only the
+environment id, the default theme id and the published theme definitions. Every snapshot replaces that state; later
+settings and theme updates apply as they arrive. T3 streams the default and the definitions separately and without
+ordering, so a newly selected theme whose definition has not arrived keeps the colors shown so far for at most five
+seconds (**Waiting for T3 to send its default theme**); after that Factory's colors are used with a diagnostic, and
+the definition is followed whenever it does arrive. A definition T3 removes while it is the default is not waited
+for. A T3 revocation made from another process does not close an
+open socket, so Factory asks T3's session endpoint whether the grant still authenticates on every close and on
+every connection-check interval while connected. An unauthenticated answer ends the grant as revoked (as expired
+within a minute of its expiry); a request that cannot reach T3 is a transient outage. A closed subscription shows
+**Connecting** and reopens on the next interval, never in a loop with T3's closes. A socket can also stop
+delivering without closing. T3 sends nothing while the theme is unchanged, so Factory sends the protocol's Ping
+every 30 seconds; a subscription that delivered no frame since the previous Ping is ended and handled like a
+closed one. Controlled tests cover this; a real half-open network path is not exercised.
+
+**Resolution.** Built-in T3 themes (`t3-chat`, `grove`, `ocean`, `ember`, `iris` and their legacy aliases) and
+published theme definitions resolve through one bounded resolver ported from T3 Code (MIT, © 2026 T3 Tools Inc.)
+at revision
+[`d2c25950b4d9`](https://github.com/pingdotgg/t3code/tree/d2c25950b4d9183ea342d5d5fc14c326b9e0172a); the
+ported source keeps the license notice, and parity tests compare it with output of the upstream resolver at that
+revision. Factory maps the roles by meaning and validates each mode under the
+[contrast policy](design-system.md#t3-theme-colors), then publishes one presentation with both halves and their
+availability. Factory does not claim compatibility with T3 revisions other than the pin.
+
+A published definition resolves as T3 resolves it. Its declared appearance takes the palette T3 generates from its
+`canvas` and `accent` seeds, or T3 Chat's palette for that appearance when it has no seeds, with its `colors` on top.
+The other mode exists only when the definition declares a variant for it: T3 Chat's palette for that mode with the
+variant's colors on top, never the seeds. Without that variant the mode keeps Factory's colors and Settings says
+so; Factory never inverts colors, derives an opposite theme or shows the declared appearance in the other mode. A
+built-in id or legacy alias always names the built-in, whatever a published definition is called.
+
+Support limits of published definitions:
+
+- **Format.** T3's theme file version 1 only: a `light` or `dark` appearance, `#rgb`/`#rrggbb` seeds, and color
+  records of role names to texts of at most 64 characters, in a set of at most 32 definitions. A named definition
+  in any other structure is not followed and Settings names it; unknown extra fields are ignored.
+- **Roles.** Factory reads the twelve T3 roles it maps and ignores every other role, known to T3 or not. A
+  definition without seeds and without any readable color of a T3 role is not a theme.
+- **Color syntax.** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`/`rgba()` with channels in 0–255, and `oklch()`
+  with numbers or percentages. T3 itself accepts more CSS color syntax (named colors, `hsl()`, `lab()` and others);
+  Factory ignores such a color as T3 ignores an unparseable one, so the role keeps its seed-generated or T3 Chat
+  value, and Settings counts the ignored colors of mapped roles. No color text, declaration or URL from a definition
+  reaches a client: clients receive only values Factory formatted itself.
+- **Translucent colors.** A mapped role resolving to a color with alpha rejects that mode to Factory's colors.
+- **Parity.** Verified against upstream output for seeds in both appearances, overrides, partial and complete
+  colors and variants, to the six decimals T3 writes; other inputs are not claimed.
+
+**Fallbacks.** An empty default, an unsupported or removed definition, a rejected mode, an unverifiable or
+mismatched environment, expiry, revocation and disconnect all show Factory's colors for the selected mode with
+the reason in Settings. During a transient outage the last presentation stays while its grant is locally valid
+and no revocation was observed. A changed endpoint or connection environment discards it at once. Theme colors
+never change connection readiness, Start, execution or Run attention.
+
+**Stored snapshot.** The backend keeps the presentation it publishes as one snapshot in its database, with both
+modes together and no credential, and deletes it whenever it stops publishing one (expiry, observed revocation,
+disconnect, another endpoint or environment, no inherited default). A starting backend adopts that snapshot
+before T3 answers only when it was stored for the saved endpoint and still carries the connection's
+environment, the stored grant's identity and expiry and the current resolver pin, and only while the grant is
+active and unexpired; so a host restarted while T3 is unreachable keeps its colors. Nothing is adopted later in
+the process: returning to an earlier endpoint never brings its old colors back. On reconnection Factory checks
+the grant, reads T3's current configuration snapshot and publishes the resulting presentation as one revision;
+T3's settings and theme streams stay independent and are not treated as a transaction. Each client also
+[caches the presentation](desktop-and-clients.md#appearance) it received.
 
 ## Agent reporting
 
@@ -151,6 +243,10 @@ in a native client remains a live compatibility check.
 | `POST /api/connection/recheck` | Check again |
 | `POST /api/connection/authorize` | Start authorization (host only) |
 | `POST /api/connection/authorization/open` | Open consent on the host for the saved endpoint (host and approved clients) |
+| `POST /api/connection/appearance` | Pair [theme colors](#theme-colors) with a T3 pairing code or link (host only) |
+| `DELETE /api/connection/appearance` | Disconnect theme colors (host only) |
+
+Theme-color status and presentation reach clients through live delivery only.
 
 The authorization context tracks grant continuity, not verified user identity or server
 retention of deduplication keys. Refresh preserves it; a new approval replaces it.

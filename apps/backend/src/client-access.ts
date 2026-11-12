@@ -76,6 +76,8 @@ const unauthorizedMessage: Record<ClientAccessStatus | "none", string> = {
 /** Client approval is Factory's own trust boundary, separate from T3 OAuth and report validation. */
 export const makeClientAccess = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const [server] = yield* sql<{ id: string }>`SELECT id FROM factory_server WHERE singleton = 1`;
+  const serverId = server!.id;
 
   const expirePending = Effect.gen(function* () {
     const cutoff = new Date(Date.parse(yield* now) - PENDING_LIFETIME_MS).toISOString();
@@ -203,6 +205,7 @@ export const makeClientAccess = Effect.gen(function* () {
         "revoked",
         "This client was denied and has no access to revoke.",
       ),
+    getServerId: () => Effect.succeed<Result<string>>({ ok: true, value: serverId }),
     getHostLifecycle: () =>
       Effect.gen(function* (): Generator<
         Effect.Effect<unknown, unknown>,

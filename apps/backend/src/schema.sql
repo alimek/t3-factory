@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: manual_settlement
+-- Newest applied migration: appearance_snapshot
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -50,6 +50,12 @@ CREATE TABLE agents (
   created_at TEXT NOT NULL, removed_at TEXT);
 
 CREATE TRIGGER retained_agent_delete BEFORE DELETE ON agents BEGIN SELECT RAISE(ABORT, 'Agents are removed, not deleted'); END;
+
+CREATE TABLE appearance_snapshot (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  endpoint TEXT NOT NULL,
+  presentation TEXT NOT NULL
+);
 
 CREATE TABLE client_grants (
   id TEXT PRIMARY KEY,
@@ -103,6 +109,11 @@ CREATE TABLE "effect_sql_migrations" (
   migration_id integer PRIMARY KEY NOT NULL,
   created_at datetime NOT NULL DEFAULT current_timestamp,
   name VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE factory_server (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  id TEXT NOT NULL
 );
 
 CREATE TABLE "flow_revision_blocks" (

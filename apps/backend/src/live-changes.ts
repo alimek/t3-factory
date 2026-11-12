@@ -6,7 +6,8 @@ export type LiveScope =
   /** Navigation (when held) and a set of Runs, read and delivered together. */
   | { readonly kind: "view"; readonly navigation: boolean; readonly runIds: ReadonlySet<string> }
   /** The Run composer's Project catalog and Flows. */
-  | { readonly kind: "launchChoices" };
+  | { readonly kind: "launchChoices" }
+  | { readonly kind: "appearance" };
 
 interface Watcher {
   readonly scope: LiveScope;
@@ -43,6 +44,10 @@ export function makeLiveChanges() {
     /** The catalog derives project availability from the current connection. */
     connectionChanged() {
       mark((scope) => scope.kind === "connection" || scope.kind === "launchChoices");
+    },
+    /** Theme-color status or presentation changed; nothing else depends on it. */
+    appearanceChanged() {
+      mark((scope) => scope.kind === "appearance");
     },
     /** Registered for the caller's scope; register before reading a snapshot. */
     watch(scope: LiveScope) {

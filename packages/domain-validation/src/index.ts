@@ -945,6 +945,7 @@ export {
 } from "./block-exits.ts";
 export {
   CLIENT_LABEL_LIMIT,
+  FACTORY_APPEARANCE_PROTOCOL,
   FACTORY_MINIMUM_PEER_PROTOCOL,
   FACTORY_MINIMUM_SERVER_PROTOCOL,
   FACTORY_PROTOCOL,
@@ -963,3 +964,4 @@ export {
   validateStartPrompt,
   type StartPrompt,
 } from "./run-prompt.ts";
+export { parseAppearancePresentation } from "./appearance.ts";

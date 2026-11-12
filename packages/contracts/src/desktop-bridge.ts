@@ -10,6 +10,9 @@ export const livePortMessage = "factory:live-port";
 
 export type DesktopRole = "server" | "client";
 
+/** Factory's Light/Dark appearance, chosen per desktop installation or browser profile. */
+export type Appearance = "light" | "dark";
+
 export interface DesktopState {
   readonly version: string;
   readonly role: DesktopRole | null;
@@ -103,6 +106,11 @@ export interface FactoryDesktop {
   installUpdate(): Promise<DesktopResult>;
   /** A changed channel discards an update found on the previous one and checks again. */
   setUpdateChannel(channel: UpdateChannel): Promise<DesktopResult>;
+  /**
+   * Saves this installation's appearance and applies it to native window chrome, dialogs and
+   * the window background. The page applies its own colors; reloads are served in this mode.
+   */
+  setAppearance(appearance: Appearance): Promise<DesktopResult>;
   /**
    * Opens the window's live delivery socket in the main process (`query` carries only
    * `protocol` and `minimum`). The relay port arrives as a same-origin window message

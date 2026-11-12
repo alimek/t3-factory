@@ -15,7 +15,11 @@
     "apps/desktop/electron-builder.config.mjs",
     // Landing: the static index.html links its Tailwind stylesheet by path.
     "apps/landing/src/styles.css",
+    // Frontend: index.html loads this pre-paint script from Vite's public directory by path.
+    "apps/frontend/public/appearance.js",
   ],
+  // Vite serves apps/frontend/public at the site root, which fallow does not resolve.
+  "ignoreUnresolvedImports": ["/appearance.js"],
   "rules": {
     // Treat every enabled advisory rule as an error, including direct `fallow` runs.
     "unused-dev-dependencies": "error",

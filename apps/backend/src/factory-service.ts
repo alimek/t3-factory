@@ -9,6 +9,7 @@ import type { FactoryOperations, OperationError, Result, RunDetail } from "@t3-f
 import type { EffectOperations } from "./effect-operations.ts";
 import type { FactoryOptions } from "./factory-options.ts";
 import { makeConnection } from "./connection.ts";
+import { makeAppearance } from "./appearance/appearance.ts";
 import { makeProjects } from "./projects.ts";
 import { makeDefinitions } from "./definitions.ts";
 import * as RuntimeSetup from "./runtime-setup.ts";
@@ -75,6 +76,7 @@ export const makeFactoryService = (
     const changes = makeLiveChanges();
     const sql = yield* SqlClient.SqlClient;
     const connection = yield* makeConnection(t3, intervalMs, changes);
+    const appearance = yield* makeAppearance(t3, connection.getConnection, intervalMs, changes);
     const projects = yield* makeProjects(t3, connection, intervalMs, changes);
     yield* projects.recheckProjects();
     const definitions = yield* makeDefinitions(t3, connection, changes);
@@ -164,8 +166,12 @@ export const makeFactoryService = (
       recheckConnection: () => connection.recheckConnection(),
       authorizeConnection: () => connection.authorizeConnection(),
       openConnectionAuthorization: () => connection.openConnectionAuthorization(),
+      pairAppearance: (input) => appearance.pairAppearance(input),
+      disconnectAppearance: () => appearance.disconnectAppearance(),
       requestClientAccess: (input) => clients.requestClientAccess(input),
       getClientAccess: (credential) => clients.getClientAccess(credential),
+      getServerId: () => clients.getServerId(),
+      getAppearanceSource: () => appearance.getAppearanceSource(),
       authenticateClient: (credential) => clients.authenticateClient(credential),
       listClients: () => clients.listClients(),
       approveClient: (id) => clients.approveClient(id),
@@ -183,7 +189,11 @@ export const makeFactoryService = (
       },
       live: makeLiveStreams(
         changes,
-        { ...guarded, readProjectCatalog: () => guard(projects.readCatalog()) },
+        {
+          ...guarded,
+          readProjectCatalog: () => guard(projects.readCatalog()),
+          getAppearance: appearance.getAppearance,
+        },
         (read) =>
           sql
             .withTransaction(read)

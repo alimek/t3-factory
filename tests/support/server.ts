@@ -38,6 +38,7 @@ import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-ac
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
+import { upstreamPublishedTheme } from "../../apps/backend/test/support/t3-theme-fixture.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
 import { seedDevelopment, seedScenarios, settlementUnresolved } from "../../scripts/dev/seed.ts";
 import { requireSuccess, demoStart } from "../../scripts/dev/seed-support.ts";
@@ -406,6 +407,18 @@ const hostLiveSockets = new Set<Duplex>();
 /** Holds back the server's first live frames, so a reconnect stays visibly synchronizing. */
 let liveSnapshotDelayMs = 0;
 
+/**
+ * Theme files the T3 owner published, as upstream's parity fixture defines them: "Nightfall"
+ * from dark seeds only, "Dusk" from dark seeds with a Light variant, and "Future" in a theme
+ * file version Factory does not read.
+ */
+const nightfallThemeFile = upstreamPublishedTheme("seed-dark").wire;
+const publishedThemeFiles = [
+  nightfallThemeFile,
+  upstreamPublishedTheme("seed-with-variant").wire,
+  { ...nightfallThemeFile, id: "future", name: "Future", version: 2 },
+];
+
 const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   "/__fixture/readiness/incomplete-runtime"() {
     t3.runtimeContractComplete = false;
@@ -453,6 +466,29 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     liveSnapshotDelayMs = Number(query.get("ms"));
   },
 
+  /**
+   * Theme colors: no grant, no published themes, T3's default theme Ocean and a session T3
+   * still accepts.
+   */
+  async "/__fixture/appearance/reset"() {
+    requireSuccess(await factory.disconnectAppearance());
+    t3.appearance.sessionValid = true;
+    t3.appearance.publishThemes([]);
+    t3.appearance.setDefaultTheme("ocean");
+  },
+  "/__fixture/appearance/publish": () => t3.appearance.publishThemes(publishedThemeFiles),
+  /** `t3 theme set <id>` on the environment; the id need not be published. */
+  "/__fixture/appearance/default"(query) {
+    t3.appearance.setDefaultTheme(query.get("theme") ?? "");
+  },
+  async "/__fixture/appearance/pair"() {
+    requireSuccess(await factory.pairAppearance({ pairing: t3.appearance.pairingCode }));
+  },
+  "/__fixture/appearance/pairing-code": () => ({ code: t3.appearance.pairingCode }),
+  /** `t3 auth session revoke` from another T3 process: open subscriptions keep streaming. */
+  "/__fixture/appearance/revoke": () => {
+    t3.appearance.sessionValid = false;
+  },
   "/__fixture/approve": () => decideAll("pending", "approve"),
   "/__fixture/revoke": () => decideAll("approved", "revoke"),
   "/__fixture/offline": () => {

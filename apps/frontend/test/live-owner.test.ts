@@ -8,7 +8,7 @@ import { expect, it } from "vite-plus/test";
 import { navigationScope } from "../src/live/navigation.ts";
 import { reconnectDelay } from "../src/live/owner.ts";
 import { runScope } from "../src/live/run.ts";
-import { connectionScope } from "../src/live/scopes.ts";
+import { appearanceScope, connectionScope } from "../src/live/scopes.ts";
 import { changed, checked, envelope, liveHarness, snapshot } from "./support/live.ts";
 import { runDetail } from "./support/run.ts";
 
@@ -287,4 +287,28 @@ it("Runs beyond the view's capacity are refused without breaking the shared view
   expect(live.owner.view(runs.at(-1)?.key ?? "").error?.code).toBe("validation");
   expect(live.openSockets()).toBe(1);
   expect(live.delivery()).toBe("current");
+});
+
+it("theme colors that are refused or not current never hold back product mutations", () => {
+  // Arrange
+  const live = liveHarness();
+  live.owner.acquire(connectionScope);
+  live.owner.acquire(appearanceScope);
+  live.sessions[0]?.connected();
+  live.sessions[0]?.subscriptions[0]?.message(snapshot("ready"));
+
+  // Act
+  live.sessions[0]?.subscriptions[1]?.failed({
+    code: "internal",
+    message: "Live data could not be read.",
+    issues: [],
+  });
+
+  // Assert
+  expect(live.sessions[0]?.watches).toStrictEqual([
+    { rpc: "WatchConnection" },
+    { rpc: "WatchAppearance" },
+  ]);
+  expect(live.delivery()).toBe("current");
+  expect(live.owner.state).toBe("live");
 });

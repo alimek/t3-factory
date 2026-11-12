@@ -108,7 +108,55 @@ across releases when their protocol ranges overlap; see the
 ## Native window appearance
 
 The sidebar title area drags the desktop window while macOS keeps its native traffic-light controls and the content uses the full window height. Studio opens in an inset dialog below the native controls with the Settings-style header. Product controls, dialogs and canvases stay
-outside the draggable region, fullscreen and window controls stay native, and the background matches the application canvas while content loads. Browser clients keep their layout without desktop chrome.
+outside the draggable region, fullscreen and window controls stay native, and the background matches the application canvas of the chosen [appearance](#appearance) while content loads. Browser clients keep their layout without desktop chrome.
+
+## Appearance
+
+Each desktop installation, and each browser profile per Factory address, has its own
+**Light** or **Dark** appearance, chosen in **Settings → Application → Appearance**. It is
+Dark until chosen. The choice is never sent to or synchronized through the Factory server,
+so clients of the same server can use different modes, and changing the server, role, T3
+endpoint or authorization does not reset it. Every connection and startup gate keeps its
+**Application settings** entry, in browsers too (where it holds only Appearance), and the
+choice works while offline. Visual rules are in the [design system](design-system.md#light-and-dark).
+
+When the host has paired [T3 theme colors](t3-integration.md#theme-colors), the server delivers one
+presentation with a Light and a Dark half to approved clients and the host panel through live
+delivery; each client shows the half of its own mode, so two clients of the same server can show the
+same T3 theme in different modes. A missing or rejected half shows Factory's colors for that mode,
+and the mode choice itself never changes. Connection and access gates, unapproved clients and
+clients of servers older than protocol 10 receive no theme colors and use Factory's colors.
+
+Each client caches the last presentation its server published: one snapshot with both halves, in the
+storage of the browser profile for that Factory address, or of the desktop installation's bundled
+page. It holds colors, the theme name, the source and resolver identifiers and the grant's opaque id
+and expiry, never a credential. The snapshot is bound to the identity of the Factory server and to
+its current theme-color source (the connection's T3 environment, the active grant and the resolver
+pin), both of which the server tells only the host panel and approved clients. A client reads it
+only after that answer, for the same server and exactly that source, before the grant's expiry and
+when it is still exactly a sanitized presentation; after a disconnect, another pairing or another
+T3 source it shows Factory's colors until live delivery answers. The same holds for a client that
+stays open through a reconnect: when the access check after it declares another source, the colors
+it was showing end there and return only with a later delivery from the server, not with the one
+the client already held. A matching snapshot is shown
+until live delivery answers and while offline, and switching Light and Dark stays immediate. Whatever the server publishes next replaces the snapshot, and a
+presentation without colors (expiry, revocation, disconnect, another T3 source, no inherited theme)
+removes it. A client whose Factory access is missing, pending, denied or revoked deletes it without
+reading it. The first paint, every gate screen and the desktop window background always use
+Factory's colors for the chosen mode, because access is not established yet. A browser cannot open
+at all while its Factory server is unreachable; the desktop app opens its unreachable screen in
+Factory's colors.
+
+- **Desktop**: the mode is saved with the other desktop settings of the installation. The
+  main process applies it to native chrome and dialogs and to the window background before
+  the window is created, and serves the bundled page with the mode already set, so the first
+  frame and every reload use it. A change applies to the page, native appearance and window
+  background at once, without a restart; if it cannot be saved, the previous mode stays and
+  Settings shows why. Settings saved before appearance existed open Dark.
+- **Browser**: the mode is saved in that profile's storage for the Factory address. A
+  blocking script in the page head applies it before the stylesheet paints, and the browser
+  `theme-color` follows the mode; other tabs of the same profile follow a change. If the
+  browser blocks storage, the choice applies until the tab closes and Settings says so.
 
 ## Application menu
 
@@ -219,7 +267,8 @@ product data. Reporting installation is an approved-client product operation; it
 the same server-side installer as the host panel and accepts only a discovered target
 identifier, not a client-supplied filesystem path. Factory MCP (`/mcp`), endpoint changes
 (`PUT /api/connection`), host reauthorization (`POST /api/connection/authorize`, which
-retires the current context) remain `hostOnly`: report ingress
+retires the current context) and theme-color pairing and disconnect
+(`POST`/`DELETE /api/connection/appearance`) remain `hostOnly`: report ingress
 therefore cannot become a bypass into general APIs, and the T3 grant never leaves the
 host. `POST /api/connection/authorization/open` is the one connection mutation an
 approved client may call: it only reopens a pending approval or starts one for the
@@ -262,7 +311,11 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **9**, and both sides require at least **9**. Protocol 9 changed manual
+The current protocol is **10**, and both sides require at least **9**. Protocol 10 added the
+theme-color live subscription (`WatchAppearance`) and the server identity and current theme-color
+source in the client-scope answer for the host panel and approved clients; a client subscribes only when the server's handshake
+declares at least 10, so protocol 9 and 10 peers interoperate and a protocol 9 server's clients show
+Factory's colors without theme-color settings. Protocol 9 changed manual
 Settle: its request may authorize stopping workers (`stopWorkers`) and it answers a settlement
 outcome with the Run instead of the Run alone, and Run detail and navigation carry settlement
 progress; it also added Wait blocks with their durations and Wait arrivals. Older clients could
@@ -297,7 +350,7 @@ separate from T3 capability checks.
 ## Desktop security
 
 The renderer always runs bundled UI on `factory://app` with context isolation,
-sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. A menu publication is accepted whole or refused: anything but exactly the declared menu commands, each well formed, fails the bridge call and leaves the menu unchanged. Remote servers only answer API requests
+sandbox, no Node integration, denied permissions and blocked navigation. Only requests from `factory://app` may use the privileged desktop bridge. Besides role, server, update, appearance and live-delivery operations, the bridge carries the [application menu](#application-menu): the renderer publishes registry labels, bindings and Run-action availability, which the main process validates and uses only to build the menu, and the main process sends back the identifier of a command chosen with the pointer. A menu publication is accepted whole or refused: anything but exactly the declared menu commands, each well formed, fails the bridge call and leaves the menu unchanged. Remote servers only answer API requests
 relayed by the main process; they never load content into the window. The desktop
 client credential stays in the main process, encrypted using Keychain; it is never exposed to the renderer.
 Live delivery also runs through the main process: the renderer exchanges frames over a

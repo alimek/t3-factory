@@ -11,12 +11,14 @@ import type {
  * peer must understand; raise the minimum only when older peers can no longer
  * interoperate safely. Application release numbers never decide compatibility.
  */
-export const FACTORY_PROTOCOL = 9;
+export const FACTORY_PROTOCOL = 10;
 /** Protocol 9 changed manual Settle's request and answer and added Wait blocks; older clients
  * cannot settle or read them. */
 export const FACTORY_MINIMUM_PEER_PROTOCOL = 9;
 /** The current UI settles through the settlement outcome and reads Wait blocks (protocol 9). */
 export const FACTORY_MINIMUM_SERVER_PROTOCOL = 9;
+/** Protocol 10 servers deliver theme colors; clients do not subscribe to older servers. */
+export const FACTORY_APPEARANCE_PROTOCOL = 10;
 
 export const CLIENT_LABEL_LIMIT = 80;
 

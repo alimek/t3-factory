@@ -89,9 +89,11 @@ by host and approved clients, with explicit [host-only boundaries](desktop-and-c
 
 ## Live delivery
 
-Run detail, sidebar navigation, shared T3 connection status and the Run composer's launch
-choices use typed Effect RPC streams over WebSocket at `/api/live`; commands and other reads
-remain HTTP operations. A window holds one connection-status subscription, one view
+Run detail, sidebar navigation, shared T3 connection status, [theme colors](t3-integration.md#theme-colors)
+and the Run composer's launch choices use typed Effect RPC streams over WebSocket at `/api/live`;
+commands and other reads remain HTTP operations. A window holds one connection-status subscription,
+one theme-color subscription (only toward protocol 10 servers; it never disables mutations or shows
+synchronizing), one view
 subscription carrying navigation and its open Runs, and, while the composer is shown, one
 launch-choices subscription carrying the Project catalog and Flows with their readiness. Each read of a view covers navigation and those Runs in one
 read transaction, and its changes travel in one delivery that the window applies at once,
