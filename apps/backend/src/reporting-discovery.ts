@@ -88,6 +88,22 @@ function resolveReportingHome(
   };
 }
 
+/**
+ * T3 treats an explicit `false` on the instance or inside its config as disabled; the config flag
+ * is where older settings files kept it. An absent flag falls back to a per-driver default that
+ * T3 does not publish, so only the explicit disable hides an instance here.
+ */
+function disabledInT3(raw: unknown) {
+  const instance = record(raw);
+  const config = instance.config;
+  return (
+    instance.enabled === false ||
+    (typeof config === "object" &&
+      config !== null &&
+      (config as Record<string, unknown>).enabled === false)
+  );
+}
+
 const targetFor = Effect.fn(function* (
   id: string,
   raw: unknown,
@@ -218,7 +234,9 @@ export const discoverReporting = Effect.fn(function* (
       JSON.parse(yield* boundary(() => readFile(join(stateDirectory, "settings.json"), "utf8"))),
     );
     const targets = yield* Effect.forEach(
-      Object.entries(record(settings.providerInstances)),
+      Object.entries(record(settings.providerInstances)).filter(
+        ([, value]) => !disabledInT3(value),
+      ),
       ([id, value]) => targetFor(id, value),
       { concurrency: "unbounded" },
     );
@@ -234,7 +252,7 @@ export const discoverReporting = Effect.fn(function* (
     }
     return grouped.size
       ? [...grouped.values()]
-      : [unknownTarget("No configured provider instances found in local T3 settings.")];
+      : [unknownTarget("No enabled provider instances found in local T3 settings.")];
   }).pipe(
     Effect.catchCause((cause) => {
       const error = Cause.squash(cause);

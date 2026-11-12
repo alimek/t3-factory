@@ -178,7 +178,11 @@ discovered configuration home, with a global **Recheck installation**. Codex, Cl
 Grok are those homes. Every other provider instance is listed as **Reporting not available yet**,
 with the `factory-runtime` MCP URL to add by hand and no install action. Agent capabilities
 publish the same per-provider `reporting` status, and Start blocks an unsupported provider with
-`harness_unsupported` pointing to Studio → Agents.
+`harness_unsupported` pointing to Studio → Agents. A provider instance disabled in T3 is left out:
+Factory neither lists it, inspects its home nor offers an action for it. A home shared with an
+enabled instance stays listed for that instance. An Agent saved on a disabled provider shows
+**Reporting not configured** and Start stays blocked until the provider is enabled in T3 or the
+Agent uses another one.
 
 - **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
   Factory's own entry. **Repair installation** appears only when Factory can repair what it owns:
@@ -332,7 +336,7 @@ and retains existing selections, including false and unavailable values.
 ## Reporting installation
 
 The installer needs authorized same-user loopback T3, accessible local state and a matching environment identity; `FACTORY_T3_STATE_DIRECTORY` overrides state discovery, and standard homes assume
-Factory and T3 share an OS user and home. Installed drivers: `codex`, `claudeAgent`, `cursor` and `grok`. Other drivers stay blocked at Start. Agent reporting still lists them with the `factory-runtime` MCP URL to add by hand once Factory can tie that harness's calls to a Run. Home resolution for Codex, Claude and Grok uses the trimmed non-empty persisted `config.homePath`, then the last provider environment entry
+Factory and T3 share an OS user and home. Installed drivers: `codex`, `claudeAgent`, `cursor` and `grok`. Other drivers stay blocked at Start. Discovery skips an instance whose persisted settings carry an explicit `enabled: false`, on the instance or inside its `config`; an instance without the flag is listed, because T3's per-driver default is not in the settings file. Agent reporting still lists enabled instances of other drivers with the `factory-runtime` MCP URL to add by hand once Factory can tie that harness's calls to a Run. Home resolution for Codex, Claude and Grok uses the trimmed non-empty persisted `config.homePath`, then the last provider environment entry
 (`CODEX_HOME`, `CLAUDE_CONFIG_DIR` or `GROK_HOME`), then the same-user default (`~/.codex/config.toml`, `~/.claude.json` or `<dir>/.claude.json`, `~/.grok/config.toml`). Cursor always uses `~/.cursor/mcp.json`; the Cursor SDK reads that path from the OS home and ignores a provider `homePath`. Tilde paths are expanded; relative
 paths are refused. Factory's own environment never redirects discovery and T3's inherited host variables are unobservable, so an undisclosed override needs manual verification. Managed setup,
 shadow homes, custom launch arguments and policy profiles need review; do not switch setup modes to satisfy the installer. Installer support does not qualify live Claude workloads.

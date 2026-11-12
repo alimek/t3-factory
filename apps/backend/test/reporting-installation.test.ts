@@ -193,6 +193,32 @@ it("default provider homes resolve from the user home without explicit homePath"
   );
 });
 
+it("provider instances disabled in T3 are neither listed nor inspected", async (context) => {
+  // Arrange
+  await isolatedUserHome(context);
+  const { factory, state } = await reportingFixture(context);
+  await writeFile(
+    join(state, "settings.json"),
+    JSON.stringify({
+      providerInstances: {
+        claude: { driver: "claudeAgent", enabled: true, config: {} },
+        codex: { driver: "codex", enabled: false, config: {} },
+        grok: { driver: "grok", config: { enabled: false } },
+        opencode: { driver: "opencode", enabled: false },
+      },
+    }),
+  );
+
+  // Act
+  const result = await factory.getReportingInstallations();
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.map(({ provider, instances }) => ({ provider, instances }))).toEqual([
+    { provider: "claudeAgent", instances: ["claude"] },
+  ]);
+});
+
 it("installing Cursor reporting writes the user MCP file", async (context) => {
   // Arrange
   const { factory, home } = await driverHomes(context, {
