@@ -75,6 +75,48 @@ test("Mod+, opens connection Settings without losing the composer draft", async 
   );
 });
 
+test("Tab moves from the composer prompt through Project, Flow and image attachment to Start", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await app.open("/runs/new");
+  await screen.getByLabel("Initial prompt", { exact: false }).tap();
+  // Each control that receives focus from here on is numbered in the order it was reached.
+  await browser.evaluate(`(() => {
+    let reached = 0;
+    document.addEventListener("focusin", (event) => {
+      event.target.setAttribute("data-focus-order", String(++reached));
+    });
+  })()`);
+
+  // Act
+  await browser.keyboard.press("Tab");
+  await browser.keyboard.press("Tab");
+  await browser.keyboard.press("Tab");
+  await browser.keyboard.press("Tab");
+
+  // Assert
+  await expect(screen.getByRole("button", "Start", { exact: true })).toBeFocused();
+  await expect(screen.getByRole("button", /^Select project: /)).toHaveAttribute(
+    "data-focus-order",
+    "1",
+  );
+  await expect(screen.getByRole("button", /^Select Flow: /)).toHaveAttribute(
+    "data-focus-order",
+    "2",
+  );
+  await expect(screen.getByRole("button", "Attach images", { exact: true })).toHaveAttribute(
+    "data-focus-order",
+    "3",
+  );
+  await expect(screen.getByRole("button", "Start", { exact: true })).toHaveAttribute(
+    "data-focus-order",
+    "4",
+  );
+});
+
 test("the fake desktop bridge enables Mod+N for New Run", async ({ app, screen, browser }) => {
   // Arrange
   await installDesktopBridge(browser);

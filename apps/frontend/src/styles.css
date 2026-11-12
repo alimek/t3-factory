@@ -243,8 +243,8 @@ html[data-desktop="true"] [data-studio] {
   --text-lg--line-height: 24px;
   --text-xl: 20px;
   --text-xl--line-height: 28px;
-  --text-heading: 22px; /* launch composer heading (R01) */
-  --text-heading--line-height: 28px;
+  --text-heading: 28px; /* launch composer heading */
+  --text-heading--line-height: 34px;
   --text-2xl: 24px;
   --text-2xl--line-height: 32px;
 

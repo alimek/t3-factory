@@ -24,7 +24,8 @@ import { PickerMenuContent, PickerMenuSearch } from "./picker-menu-search.tsx";
 import { Label } from "@/components/ui/label";
 import { api } from "../api.ts";
 import { useLiveLaunchChoices } from "../live/launch-choices.ts";
-import { fieldLabelClass, selectFieldClass } from "./page.tsx";
+import { cn } from "../lib/utils.ts";
+import { selectFieldClass, toolbarPillClass, toolbarStatusClass } from "./page.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
 
 const availabilityLabels: Record<FactoryProject["availability"], string> = {
@@ -147,18 +148,10 @@ function ProjectTriggerSummary({ selected }: { selected: FactoryProject | undefi
       />
       {selected ? (
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="shrink-0 truncate font-medium" title={selected.title}>
-            {selected.title}
-          </span>
-          <span
-            className="min-w-0 flex-1 truncate text-2xs tracking-label text-subtle-foreground"
-            title={selected.workspaceRoot}
-            dir="rtl"
-          >
-            <bdi dir="ltr">
-              {available ? selected.workspaceRoot : availabilityLabels[selected.availability]}
-            </bdi>
-          </span>
+          <span className="min-w-0 truncate font-medium">{selected.title}</span>
+          {!available && (
+            <span className="shrink-0 text-2xs tracking-label text-destructive">Unavailable</span>
+          )}
         </span>
       ) : (
         <span className="min-w-0 flex-1 truncate text-muted-foreground">No project selected</span>
@@ -274,6 +267,10 @@ function selectionBlocked(selected: FactoryProject | undefined, catalog: Project
   return catalog?.projects.length === 0;
 }
 
+/**
+ * The Project pill of a wrapping toolbar row: the trigger shows the title and holds the repository
+ * path as its tooltip; status lines are full-width rows after the toolbar's controls.
+ */
 export function ProjectPicker({
   state,
   selectedId,
@@ -302,79 +299,78 @@ export function ProjectPicker({
   const selected = catalog?.projects.find((p) => p.id === selectedId);
   const invalid = selectionBlocked(selected, catalog);
   return (
-    <div className="min-w-0">
-      <div className="grid min-w-0 grid-cols-1 gap-1.5">
-        <Label className={fieldLabelClass}>Project</Label>
-        <DropdownMenu
-          open={menuOpen}
-          onOpenChange={(open) => {
-            setMenuOpen(open && !busy);
-            if (open) setSearch("");
-          }}
-        >
-          <DropdownMenuTrigger asChild>
-            <Button
-              ref={triggerRef}
-              type="button"
-              variant="outline"
-              aria-disabled={busy}
-              aria-busy={busy}
-              aria-label={`Select project: ${selected?.title ?? "No project selected"}`}
-              aria-invalid={invalid || undefined}
-              className={selectFieldClass}
-            >
-              <ProjectTriggerSummary selected={selected} />
-              <ChevronsUpDownIcon
-                className="size-4 shrink-0 text-muted-foreground"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </Button>
-          </DropdownMenuTrigger>
-          <PickerMenuContent
-            className="flex max-h-[min(30rem,var(--radix-dropdown-menu-content-available-height))] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
-            searchRef={searchRef}
-            listRef={listRef}
-            searchEnabled
+    <>
+      <DropdownMenu
+        open={menuOpen}
+        onOpenChange={(open) => {
+          setMenuOpen(open && !busy);
+          if (open) setSearch("");
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="outline"
+            aria-disabled={busy}
+            aria-busy={busy}
+            aria-label={`Select project: ${selected?.title ?? "No project selected"}`}
+            aria-invalid={invalid || undefined}
+            // The pill can truncate the title, so the tooltip carries it along with the path.
+            title={selected && `${selected.title}\n${selected.workspaceRoot}`}
+            className={cn(selectFieldClass, toolbarPillClass, "w-45")}
           >
-            <PickerMenuSearch
-              ariaLabel="Search projects"
-              placeholder="Search by name or repository path…"
-              value={search}
-              onChange={setSearch}
-              inputRef={searchRef}
-              listRef={listRef}
-              firstChoiceSelector="[data-project-id]"
+            <ProjectTriggerSummary selected={selected} />
+            <ChevronsUpDownIcon
+              className="size-4 shrink-0 text-muted-foreground"
+              strokeWidth={1.5}
+              aria-hidden="true"
             />
-            <ProjectChoices
-              catalog={choices}
-              busy={busy}
-              search={search}
-              listRef={listRef}
-              onSelect={(value) => {
-                if (busy) return;
-                setMenuOpen(false);
-                const id = value || null;
-                void act(() => api.selectProject({ id })).then((success) => {
-                  if (!success) return;
-                  onSelect(value);
-                });
-              }}
-            />
-            <DropdownMenuSeparator className="m-0 shrink-0" />
-            <ProjectMutationItems
-              busy={busy}
-              onRecheck={() => {
-                void act(api.recheckProjects);
-              }}
-              onAdd={() => {
-                clearError();
-                setAddDialogOpen(true);
-              }}
-            />
-          </PickerMenuContent>
-        </DropdownMenu>
-      </div>
+          </Button>
+        </DropdownMenuTrigger>
+        <PickerMenuContent
+          className="flex max-h-[min(30rem,var(--radix-dropdown-menu-content-available-height))] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
+          searchRef={searchRef}
+          listRef={listRef}
+          searchEnabled
+        >
+          <PickerMenuSearch
+            ariaLabel="Search projects"
+            placeholder="Search by name or repository path…"
+            value={search}
+            onChange={setSearch}
+            inputRef={searchRef}
+            listRef={listRef}
+            firstChoiceSelector="[data-project-id]"
+          />
+          <ProjectChoices
+            catalog={choices}
+            busy={busy}
+            search={search}
+            listRef={listRef}
+            onSelect={(value) => {
+              if (busy) return;
+              setMenuOpen(false);
+              const id = value || null;
+              void act(() => api.selectProject({ id })).then((success) => {
+                if (!success) return;
+                onSelect(value);
+              });
+            }}
+          />
+          <DropdownMenuSeparator className="m-0 shrink-0" />
+          <ProjectMutationItems
+            busy={busy}
+            onRecheck={() => {
+              void act(api.recheckProjects);
+            }}
+            onAdd={() => {
+              clearError();
+              setAddDialogOpen(true);
+            }}
+          />
+        </PickerMenuContent>
+      </DropdownMenu>
       <ProjectAvailability selected={selected} catalog={catalog} />
       <AddRepositoryDialog
         open={addDialogOpen}
@@ -395,11 +391,11 @@ export function ProjectPicker({
         }
       />
       {error && !addDialogOpen && (
-        <Alert variant="destructive" className="mt-3">
+        <Alert variant="destructive" className={toolbarStatusClass}>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-    </div>
+    </>
   );
 }
 
@@ -414,17 +410,17 @@ function ProjectAvailability({
     <>
       {" "}
       {selected && selected.availability !== "available" && (
-        <p className="mt-1.5 text-2xs text-destructive" role="status">
+        <p className={cn(toolbarStatusClass, "text-2xs text-destructive")} role="status">
           {availabilityLabels[selected.availability]} · New Runs blocked. Choose another project.
         </p>
       )}
       {catalog && catalog.projects.length === 0 && (
-        <p className="mt-1.5 text-2xs text-destructive" role="status">
+        <p className={cn(toolbarStatusClass, "text-2xs text-destructive")} role="status">
           T3 doesn’t report any projects yet.
         </p>
       )}
       {catalog?.problem && (
-        <p className="mt-1.5 text-2xs text-muted-foreground" role="status">
+        <p className={cn(toolbarStatusClass, "text-2xs text-muted-foreground")} role="status">
           {catalog.problem}
         </p>
       )}

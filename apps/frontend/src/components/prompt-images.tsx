@@ -201,7 +201,7 @@ export function useImageDrop(enabled: boolean, onFiles: (files: File[]) => void)
 
 export function ImageDropOverlay() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-ring bg-muted/95">
+    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-ring bg-muted/95">
       <p className="text-sm font-semibold">Drop images to attach</p>
       <p className="text-2xs tracking-label text-muted-foreground">
         PNG, JPEG, GIF or WebP · up to {RUN_IMAGE_LIMIT} images
@@ -220,16 +220,22 @@ export function AttachImagesButton({
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        disabled={disabled}
-        onClick={() => input.current?.click()}
-      >
-        <ImagePlus aria-hidden />
-        Attach images
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Attach images"
+            className="shrink-0 text-muted-foreground"
+            disabled={disabled}
+            onClick={() => input.current?.click()}
+          >
+            <ImagePlus aria-hidden strokeWidth={1.5} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Attach images</TooltipContent>
+      </Tooltip>
       <Input
         ref={input}
         type="file"
