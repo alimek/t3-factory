@@ -219,6 +219,28 @@ it("provider instances disabled in T3 are neither listed nor inspected", async (
   ]);
 });
 
+it("a provider instance a T3 project enables stays listed while the machine has it disabled", async (context) => {
+  // Arrange
+  await isolatedUserHome(context);
+  const { factory, state } = await reportingFixture(context);
+  await writeFile(
+    join(state, "settings.json"),
+    JSON.stringify({
+      providerInstances: { claude: { driver: "claudeAgent", enabled: false, config: {} } },
+      projectSettingsOverrides: {
+        "project-1": { providerInstances: { claude: { enabled: true } } },
+      },
+    }),
+  );
+
+  // Act
+  const result = await factory.getReportingInstallations();
+
+  // Assert
+  assert(result.ok);
+  expect(result.value).toMatchObject([{ provider: "claudeAgent", instances: ["claude"] }]);
+});
+
 it("installing Cursor reporting writes the user MCP file", async (context) => {
   // Arrange
   const { factory, home } = await driverHomes(context, {

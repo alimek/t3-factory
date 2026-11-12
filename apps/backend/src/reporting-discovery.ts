@@ -88,19 +88,32 @@ function resolveReportingHome(
   };
 }
 
+const field = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+
 /**
- * T3 treats an explicit `false` on the instance or inside its config as disabled; the config flag
- * is where older settings files kept it. An absent flag falls back to a per-driver default that
- * T3 does not publish, so only the explicit disable hides an instance here.
+ * The provider instances T3 keeps off. An explicit `false` on the instance or inside its config
+ * (where older settings files kept it) disables it, unless a project turns it on: T3 then keeps
+ * the instance running for that project. An absent flag falls back to a per-driver default held in
+ * T3's code, so only the explicit disable hides an instance here.
  */
-function disabledInT3(raw: unknown) {
-  const instance = record(raw);
-  const config = instance.config;
-  return (
-    instance.enabled === false ||
-    (typeof config === "object" &&
-      config !== null &&
-      (config as Record<string, unknown>).enabled === false)
+function disabledInstances(settings: Record<string, unknown>): Set<string> {
+  const projectEnabled = new Set(
+    Object.values(field(settings, "projectSettingsOverrides") ?? {}).flatMap((overrides) =>
+      Object.entries(field(overrides, "providerInstances") ?? {})
+        .filter(([, override]) => field(override, "enabled") === true)
+        .map(([id]) => id),
+    ),
+  );
+  return new Set(
+    Object.entries(record(settings.providerInstances))
+      .filter(
+        ([id, instance]) =>
+          !projectEnabled.has(id) &&
+          (field(instance, "enabled") === false ||
+            field(field(instance, "config"), "enabled") === false),
+      )
+      .map(([id]) => id),
   );
 }
 
@@ -233,10 +246,9 @@ export const discoverReporting = Effect.fn(function* (
     const settings = record(
       JSON.parse(yield* boundary(() => readFile(join(stateDirectory, "settings.json"), "utf8"))),
     );
+    const disabled = disabledInstances(settings);
     const targets = yield* Effect.forEach(
-      Object.entries(record(settings.providerInstances)).filter(
-        ([, value]) => !disabledInT3(value),
-      ),
+      Object.entries(record(settings.providerInstances)).filter(([id]) => !disabled.has(id)),
       ([id, value]) => targetFor(id, value),
       { concurrency: "unbounded" },
     );

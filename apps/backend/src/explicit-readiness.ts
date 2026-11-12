@@ -26,7 +26,7 @@ export const explicitReadiness = Effect.fn(function* (
     : target?.status === "needs-attention" || target?.status === "unsupported"
       ? target.message
       : !target
-        ? "Agent reporting lists no installation for this provider; a provider disabled in T3 is not listed. Enable it in T3 and recheck, or choose another provider in Studio → Agents."
+        ? "Agent reporting lists no installation for this provider. If the provider is disabled in T3, enable it there and recheck, or choose another provider in Studio → Agents."
         : "Install Factory MCP for this provider's effective home in Settings → Agent reporting, then start a fresh session.";
   return {
     ok: true,
