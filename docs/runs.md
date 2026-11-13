@@ -175,15 +175,23 @@ fixed Human exits their old exits were mapped to.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
-- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
-- Drag the inner edge of the shell sidebar (224–480 px) or of the right panel beside the canvas (280–640 px; the context rail and
-  block details share one width) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
+- One docked **inspector** beside the canvas shows the **Run overview** while no block is selected: attention, started blocks
+  with their current visit or accepted exit, branches and pull requests, the initial prompt and block activations, with project,
+  Flow revision, workspace and work periods under a closed **Workspace & observation** section. Selecting a block shows it in the
+  same panel: its Needs input or Problem first (answers and Problem actions work here), its current visit and working report,
+  activations, exits, **Open thread in T3**, and its T3 thread and execution ids under a closed **Technical details** section.
+  **Esc** or the **Overview** breadcrumb clears the selection. Selecting never answers or clears attention, and there is no
+  editing here.
+- The inspector toggle in the top bar (default **Mod+.**, see [Keyboard shortcuts](keyboard-shortcuts.md)) shows or hides the
+  panel. The choice is kept per browser profile on this device across block selection, Runs and reload; until chosen, the
+  inspector opens from 1280 px wide. While it is hidden, pending attention shows below the canvas.
+- Drag the inner edge of the shell sidebar (224–480 px) or of the inspector (280–640 px, at most half the area beside the
+  sidebar) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
   Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
   on this device.
 - The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
-  recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
-  prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
-  checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
+  recovery is still searching and offers no replacement), **Archive Run** (until archived) and the inspector toggle. The timeline
+  starts collapsed. The inspector's **Workspace** section reads **Project checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
   **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery note. Retained Runs that queued a
   first visit on an idle worker prepared under the earlier contract still show **entered · prepared idle T3 thread**.
 - Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
@@ -246,8 +254,8 @@ several branches and PRs; the same PR linked to multiple workers counts once. Br
 workers' T3 workspace metadata, not exclusive ownership of a branch by the Run. Factory does not infer
 associations from conversation text or the project's current checkout, and it does not create or switch branches.
 
-The side preview and Run context show the full branch list with the corresponding worker names and the
-distinct PR list. The Run context links to those PRs; their states are last known in T3, not live GitHub checks.
+The side preview and the Run overview in the inspector show the full branch list with the corresponding worker names
+and the distinct PR list. The Run overview links to those PRs; their states are last known in T3, not live GitHub checks.
 Normal worker observations update the metadata; metadata-only changes affect neither the activity age nor list order. If an
 observation fails, retained metadata stays visible as Not live. Settled Runs keep their recorded metadata;
 expanding their group or hovering a row does not start background work or refresh T3. Older Runs have no

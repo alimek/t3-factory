@@ -28,6 +28,7 @@ desktop app can use.
 | Settle Run | Mod+Shift+E | Mod+Shift+E |
 | Archive Run… | Mod+Backspace | Mod+Backspace |
 | Rename Run | F2 | F2 |
+| Toggle inspector | Mod+. | Mod+. |
 | Zoom in | + (or =) | + (or =) |
 | Zoom out | − | − |
 | Fit canvas | 0 | 0 |
@@ -111,6 +112,10 @@ order, without group headers. **Open row *n*** opens the *n*th visible row (Run 
 draft). **Previous Run** and **Next Run** move among visible rows from the current
 selection **without wrap-around**. If the current selection is not visible, stepping does nothing. **Search Runs** focuses the sidebar search field.
 Back and Forward use browser history.
+
+**Toggle inspector** shows or hides the docked inspector of the Run open in detail, also
+while observations are unavailable; elsewhere it does nothing. It is not an application menu
+item on desktop.
 
 **Open Run actions** (Snooze or restore, Settle, Archive…, Rename) apply to the Run
 currently open in detail, not to a highlighted sidebar row alone. Snooze and Settle follow

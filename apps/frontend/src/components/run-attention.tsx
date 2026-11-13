@@ -119,14 +119,7 @@ function AttentionDetails({ run, blockId, observationUnavailable = false }: Atte
   const forBlock = blockId !== undefined;
   return (
     <section className="flex min-w-0 flex-col gap-3 wrap-anywhere" aria-label="Run attention">
-      {!forBlock && (
-        <div className="flex flex-col gap-1">
-          <h2 className={sectionLabelClass}>Attention</h2>
-          <p className="text-2xs tracking-label text-muted-foreground">
-            Opening this Run does not answer a question or clear a problem.
-          </p>
-        </div>
-      )}
+      {!forBlock && <h2 className={cn(sectionLabelClass, "px-2 pt-1.5 pb-1")}>Attention</h2>}
       {(!forBlock || items.some((item) => item.settledAt)) && (
         <Tabs value={tab} onValueChange={(value) => setTab(value as "pending" | "settled")}>
           <TabsList aria-label="Attention history" className="w-full">

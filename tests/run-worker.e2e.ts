@@ -110,15 +110,16 @@ test("a worktree Run shows the worktree its workers share and creates no worker 
     .toMatchObject({ state: "bound" });
   const run = await readHistoryRun(app.baseUrl, created.id);
   assert(run.workspace.mode === "worktree");
+  await screen.getByRole("button", "Workspace & observation", { exact: false }).tap();
   await expect(screen.getByRole("region", "Run workspace")).toContainText(
     `Worktree · ${run.workspace.branch} · ${run.workspace.path}`,
   );
   await app.screenshot("worktree-run-workspace");
   expect(run.threadBindings).toHaveLength(1);
   await screen.getByRole("button", "Agent Review implementation", { exact: false }).tap();
-  await expect(screen.getByRole("complementary", "Block details")).toContainText(
-    "Thread: unresolved",
-  );
+  const inspector = screen.getByRole("complementary", "Run inspector");
+  await inspector.getByRole("button", "Technical details", { exact: false }).tap();
+  await expect(inspector).toContainText("Thread: unresolved");
   await app.screenshot("worktree-run-unvisited-block");
 });
 
@@ -269,6 +270,7 @@ test("a worker discussing in T3 stays working without Needs input after reload",
   await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   expect((await readHistoryRun(app.baseUrl, run.id)).activations).toEqual(run.activations);
   await app.screenshot("worker-conversation-after-reload");
+  await screen.getByRole("button", "Workspace & observation", { exact: false }).tap();
   await screen.getByRole("heading", "Work periods", { exact: true }).scrollIntoView();
   await expect(screen.getByText(/Report: accepted working/)).toBeVisible();
   await app.screenshot("worker-conversation-work-period");
@@ -314,7 +316,7 @@ test("Request report asks a worker idle in working to assess its existing work",
   );
   await app.open(`/runs/${found.id}`);
   await screen.getByRole("button", "Agent Implement change", { exact: false }).tap();
-  const details = screen.getByRole("complementary", "Block details");
+  const details = screen.getByRole("complementary", "Run inspector");
   await expect(details).toContainText("Opened pull request #42");
   await expect(details.getByRole("listitem").getByText("working", { exact: true })).toBeVisible();
   await app.screenshot("worker-working-visit");

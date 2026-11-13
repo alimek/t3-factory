@@ -18,7 +18,6 @@ export function RootWork({ run }: { run: RunDetail }) {
       <p>
         Pending operations {root.pendingOperationCount} · pending Stop {root.pendingStopCount}
       </p>
-      <p>Operational observations are separate from Block results and Run completion.</p>
       <h3 className="font-semibold">Root work history</h3>
       {!run.rootWork.length && <p>No execution work periods observed.</p>}
       {run.rootWork.map((work) => (
@@ -37,7 +36,6 @@ export function RootWork({ run }: { run: RunDetail }) {
           </p>
         </article>
       ))}
-      <p>Observation times are approximate. Missing start and end times remain unknown.</p>
     </section>
   );
 }
