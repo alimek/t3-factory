@@ -125,28 +125,3 @@ test("the inspector breadcrumb returns from a selected Block to the Run overview
   );
   await app.screenshot("inspector-overview");
 });
-
-test("a selected Human step is answered from the docked inspector", async ({
-  app,
-  screen,
-  browser,
-}) => {
-  // Arrange
-  await browser.setViewport({ width: 1440, height: 1100 });
-  const found = await findRun(app.baseUrl, "UI worker · Waiting for your review");
-  await app.open(`/runs/${found.id}`);
-  await screen.getByRole("button", "Human step Your review", { exact: false }).tap();
-  const inspector = screen.getByRole("complementary", "Run inspector");
-  const answer = inspector.getByRole("form", "Answer Your review", { exact: true });
-  await answer.getByRole("combobox", "Exit").selectOption({ label: "Request changes" });
-  await answer.getByRole("textbox", "Requested changes").fill("Answered from the inspector.");
-
-  // Act
-  await answer.getByRole("button", "Submit answer", { exact: true }).tap();
-
-  // Assert
-  await expect
-    .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).humanOccurrences[0]?.state)
-    .toBe("answered");
-  await expect(inspector.getByRole("heading", "Your review", { exact: true })).toBeVisible();
-});

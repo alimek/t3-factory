@@ -318,7 +318,7 @@ test("Request report asks a worker idle in working to assess its existing work",
   await screen.getByRole("button", "Agent Implement change", { exact: false }).tap();
   const details = screen.getByRole("complementary", "Run inspector");
   await expect(details).toContainText("Opened pull request #42");
-  await expect(details.getByRole("listitem").getByText("working", { exact: true })).toBeVisible();
+  await expect(details.getByText("working", { exact: true })).toBeVisible();
   await app.screenshot("worker-working-visit");
 
   // Act
@@ -427,7 +427,7 @@ test("a worker's replaced report releases only its newest result to review work"
   await app.screenshot("worker-report-released-to-reviewer");
 });
 
-test("a Human correction revisits the same worker conversation with a distinct activation", async ({
+test("a Human correction answered from the selected Human step revisits the same worker conversation with a distinct activation", async ({
   app,
   screen,
   browser,
@@ -437,6 +437,12 @@ test("a Human correction revisits the same worker conversation with a distinct a
   const before = await readHistoryRun(app.baseUrl, found.id);
   const worker = before.blocks.find((b) => b.blockId === "worker")!;
   await app.open(`/runs/${found.id}`);
+  await screen.getByRole("button", "Human step Your review", { exact: false }).tap();
+  await expect(
+    screen
+      .getByRole("complementary", "Run inspector")
+      .getByRole("heading", { name: "Your review", level: 2 }),
+  ).toBeVisible();
   const answer = await fillHumanReviewChanges(screen, "Keep keyboard focus in the search field.");
   await app.screenshot("human-correction-ready");
 

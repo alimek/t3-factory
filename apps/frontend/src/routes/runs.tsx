@@ -11,6 +11,7 @@ import {
   Archive,
   CircleCheck,
   CircleHelp,
+  Ellipsis,
   Lock,
   PanelRight,
   TriangleAlert,
@@ -37,6 +38,11 @@ import { useLiveDelivery } from "../transport.ts";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 type CurrentFlowRevision = { readonly revision: number } | "missing";
@@ -357,6 +363,14 @@ function RunTopBar({
           {inspectorHint !== "Unbound" ? ` · ${inspectorHint}` : ""}
         </TooltipContent>
       </Tooltip>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="Run actions">
+            <Ellipsis aria-hidden className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" />
+      </DropdownMenu>
     </header>
   );
 }
