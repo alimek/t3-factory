@@ -4,7 +4,7 @@ import { app } from "electron";
 import electronUpdater, { type VerifyUpdateSupport } from "electron-updater";
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
 
-const checkEveryMs = 6 * 3600_000;
+const checkEveryMs = 3600_000;
 
 /** The track an installation follows until its user chooses one: the track of its own build. */
 export const buildChannel = (): UpdateChannel =>

@@ -185,7 +185,7 @@ menu bar is hidden until Alt is pressed.
 
 ## Updates
 
-Updates are checked automatically on launch and every six hours. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
+Updates are checked automatically on launch and every hour, so a running app shows a new Release or beta build in the sidebar without a manual check. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
 on-demand [beta builds](release.md#beta-builds) of main, plus newer stable Releases). Until chosen, an installation follows the channel of the build it runs. Changing the channel discards an update found on the
 previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Application settings says so. The same section shows the updater state with the last check time and a labelled update control.
 
