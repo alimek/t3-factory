@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.0](https://github.com/alimek/t3-factory/compare/v0.4.0...v0.5.0) (2026-11-13)
+
+
+### Features
+
+* Continuation blocks that prompt an earlier Agent's thread ([#234](https://github.com/alimek/t3-factory/issues/234)) ([48e2187](https://github.com/alimek/t3-factory/commit/48e21876d059c226933685dc22b3025ca20b63f2))
+* **desktop:** General settings with a menu bar icon toggle, off by default ([#268](https://github.com/alimek/t3-factory/issues/268)) ([2899cd3](https://github.com/alimek/t3-factory/commit/2899cd38ba2d4748763429760a0377043052672c))
+* follow T3 environment theme colors with Factory Light/Dark selection ([#267](https://github.com/alimek/t3-factory/issues/267)) ([bdc9ad9](https://github.com/alimek/t3-factory/commit/bdc9ad9e5637ad6d0226d1fd63f77888f027e748))
+* **frontend:** make the Run composer one focal box that scales with the window ([#278](https://github.com/alimek/t3-factory/issues/278)) ([99a7f4a](https://github.com/alimek/t3-factory/commit/99a7f4abf53823e4ef66298db272cf85c2cf11df))
+* generate and gate the development Run catalog from the seed list ([#237](https://github.com/alimek/t3-factory/issues/237)) ([3875286](https://github.com/alimek/t3-factory/commit/3875286511f13aa6868f58d77499efee230060f8))
+* manage stored Run images in Settings ([#255](https://github.com/alimek/t3-factory/issues/255)) ([0ea59f9](https://github.com/alimek/t3-factory/commit/0ea59f9e5a04d470b205d12149ced211dbf5c8ae))
+* Settle stops executing workers after confirmation and cancels a Run's automatic work ([#248](https://github.com/alimek/t3-factory/issues/248)) ([4fe3921](https://github.com/alimek/t3-factory/commit/4fe3921cb7c925a8b67ba6d8d37699e433ab6aac))
+* start Factory Runs from a T3 Code conversation through MCP ([#260](https://github.com/alimek/t3-factory/issues/260)) ([a774464](https://github.com/alimek/t3-factory/commit/a77446426d2bb9a8585df5ce6817f6a5a4dd8fc7))
+* Wait block with durable timers and Continue now ([#246](https://github.com/alimek/t3-factory/issues/246)) ([4bb7486](https://github.com/alimek/t3-factory/commit/4bb7486d61553f4d9d190b4a5722a67efcb1cbc9))
+* workers mark the tracker issues they take as in progress ([#273](https://github.com/alimek/t3-factory/issues/273)) ([7eee9fc](https://github.com/alimek/t3-factory/commit/7eee9fcde792af004fd7f47ba7b31b40101547ae))
+
+
+### Bug Fixes
+
+* Agent reporting skips provider instances disabled in T3 ([#277](https://github.com/alimek/t3-factory/issues/277)) ([740e873](https://github.com/alimek/t3-factory/commit/740e87367c8a479c215f1859cb0ccf4faee16d88))
+* **ci:** always report Quality gate after PR edits ([#249](https://github.com/alimek/t3-factory/issues/249)) ([2e8f4ab](https://github.com/alimek/t3-factory/commit/2e8f4abbfd561734a1897a0715d8695077615616))
+* close gaps in manual Settle found after [#248](https://github.com/alimek/t3-factory/issues/248) ([#259](https://github.com/alimek/t3-factory/issues/259)) ([819456a](https://github.com/alimek/t3-factory/commit/819456a82a4cc1dab164c7e6943f9835a2c4cc13))
+* **desktop:** check for updates every hour so a running app notices new builds ([#281](https://github.com/alimek/t3-factory/issues/281)) ([aaa5dc5](https://github.com/alimek/t3-factory/commit/aaa5dc59e1c2e74bfca6c3e99ee5421a6e95552a))
+
 ## [0.4.0](https://github.com/alimek/t3-factory/compare/v0.3.0...v0.4.0) (2026-11-10)
 
 
