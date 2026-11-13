@@ -26,7 +26,13 @@ export type SeedScenario = {
   | { state: "archived" | "execution failed" | "snoozed" | "woke" }
   | { state: "settlement unresolved" }
   | { state: "Run worktree bound" }
-  | { state: "working reported and idle"; message: string; repository?: Repository }
+  | {
+      state: "working reported and idle";
+      message: string;
+      repository?: Repository;
+      /** Turns the user's T3 replies ran afterwards, each observed running then completed. */
+      replies?: number;
+    }
   | { state: "missing report"; rejected: Report }
   | ({ implementation: Report; review: Report } & (
       | { state: "result released to a Human review" }
@@ -140,6 +146,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
     prompt:
       "Talk through the empty-state wording for Atlas search with me before changing anything.",
     message: "Discussing the empty-state wording in T3: tone, filters and the button label.",
+    replies: 4,
   },
   {
     key: "rejected-report",

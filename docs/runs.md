@@ -320,7 +320,10 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   read showing none records `withdrawn`; unavailable reads keep matters pending and mark the observation stale.
 - **Timeline** entries are plain sentences derived from recorded facts ("entered · new T3 thread", "handed off to Reviewer via
   Review", "finished · exit Approved", "result version 2 replaces the earlier result", "you answered", "settled by you",
-  "reported · the Run is Active again", "archived"). Every
+  "reported · the Run is Active again", "archived"). The timeline shows **Key events** by default: T3 status changes Factory
+  observed on a Block's executions collapse into one row per run of repeats, with their count, statuses and time span, which
+  opens in place; any other entry ends the run. Every other entry, including handoffs, Needs input, Problems, results and
+  lifecycle changes, is always shown. **All events** lists every recorded entry. The choice is kept per browser profile. Every
   result version keeps its exit, message and deliveries; an earlier version reads **Replaced by version N** and its cancelled
   handoffs **Cancelled**, and a same-exit update after hand-off says it was not handed off again. Activations show the current
   result, and the latest Agent visit shows the Block's current execution state. **Work periods** list each exact execution with

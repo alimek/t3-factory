@@ -125,3 +125,79 @@ test("the inspector breadcrumb returns from a selected Block to the Run overview
   );
   await app.screenshot("inspector-overview");
 });
+
+test("Key events collapses a discussing worker's repeated T3 status updates into one row", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const found = await findRun(
+    app.baseUrl,
+    "UI worker · Discussing · Agent asked about empty-state wording",
+  );
+  const run = await readHistoryRun(app.baseUrl, found.id);
+  expect(run.events.map((event) => event.kind)).toEqual([
+    "started",
+    "launch-acknowledged",
+    "working-reported",
+    ...Array(9).fill("execution-observed"),
+  ]);
+  await app.open(`/runs/${run.id}`);
+  await browser.reload();
+
+  // Act
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+
+  // Assert
+  const timeline = screen.getByRole("region", "Timeline");
+  await expect(screen.getByRole("tab", "Key events", { exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(timeline).toContainText("3 key events · 12 total");
+  await expect(timeline.getByRole("listitem")).toHaveCount(4);
+  await expect(timeline).toContainText("started");
+  await expect(timeline).toContainText("entered · new T3 thread");
+  await expect(timeline).toContainText("still working · not a final result");
+  await expect(
+    timeline.getByRole(
+      "button",
+      /^\d\d:\d\d(–\d\d:\d\d)? 9 T3 status updates from Implement change/,
+    ),
+  ).toContainText("completed ↔ running · hidden in Key events");
+  await app.screenshot("timeline-key-events");
+});
+
+test("All events shows every recorded entry and stays chosen after reload", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const found = await findRun(
+    app.baseUrl,
+    "UI worker · Discussing · Agent asked about empty-state wording",
+  );
+  await app.open(`/runs/${found.id}`);
+  await browser.reload();
+  await screen.getByRole("button", "Show timeline", { exact: true }).tap();
+
+  // Act
+  await screen.getByRole("tab", "All 12", { exact: true }).tap();
+
+  // Assert
+  const timeline = screen.getByRole("region", "Timeline");
+  await expect(timeline).toContainText("12 events");
+  await expect(timeline.getByRole("listitem")).toHaveCount(12);
+  await expect(timeline.getByText(/T3 reports · running/)).toHaveCount(4);
+  await app.screenshot("timeline-all-events");
+  await browser.reload();
+  await expect(screen.getByRole("tab", "All 12", { exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(timeline.getByRole("listitem")).toHaveCount(12);
+});
