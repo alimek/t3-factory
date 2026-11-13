@@ -175,6 +175,12 @@ fixed Human exits their old exits were mapped to.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
+- The canvas shows exceptions only. **Flow edited since Start** (or **Flow removed since Start**) appears when the Flow's
+  current revision differs from the Run's captured definitions; an open Run shows it as soon as the Flow is saved. A
+  **Not live** badge with Factory's last observation time appears exactly while the top bar shows Not live. Zoom, fit,
+  **Follow active** and **Auto-arrange** are icon buttons with tooltips; the keyboard button beside them opens the canvas
+  shortcuts with their current bindings and a link to the cheat sheet. The Flow editor keeps its labelled controls and
+  keyboard hint.
 - Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
 - Drag the inner edge of the shell sidebar (224–480 px) or of the right panel beside the canvas (280–640 px; the context rail and
   block details share one width) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.

@@ -1,4 +1,4 @@
-import { afterEach, test } from "@e2e-dev/web";
+import { afterEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type Screen } from "e2e";
 import {
   browserRequests,
@@ -24,6 +24,14 @@ const setVisibility = (state: "hidden" | "visible") => `(() => {
 async function runActionsArchive(screen: Screen) {
   await screen.getByRole("button", "Run actions", { exact: true }).tap();
   return screen.getByRole("menuitem", "Archive…", { exact: true });
+}
+
+/** A live Run shows neither Not live marker and offers Archive. */
+async function expectLiveAndWritable(screen: Screen, browser: Browser) {
+  await expect(screen.getByRole("status", "Observation freshness")).toHaveCount(0);
+  await expect(screen.getByRole("status", "Run observation")).toHaveCount(0);
+  await expect(await runActionsArchive(screen)).toBeEnabled();
+  await browser.keyboard.press("Escape");
 }
 
 afterEach(async ({ app }) => {
@@ -73,13 +81,12 @@ test("a lost live connection keeps the last Run read-only, then resynchronizes w
   await app.open("/__fixture/remote-browser");
   const run = await liveRun(app, "recovery");
   await openApproved(app, `/runs/${run}`);
-  const notLive = screen.getByRole("status", "Observation freshness");
-  await expect(notLive).toHaveCount(0);
-  await expect(await runActionsArchive(screen)).toBeEnabled();
-  await browser.keyboard.press("Escape");
+  await expectLiveAndWritable(screen, browser);
   await remoteFixture(app, "offline");
   await expect(screen.getByRole("status", "Offline")).toBeVisible({ timeout: 10_000 });
+  const notLive = screen.getByRole("status", "Observation freshness");
   await expect(notLive).toContainText("Not live · last observed");
+  await expect(screen.getByRole("status", "Run observation")).toContainText("Not live");
   await expect(await runActionsArchive(screen)).toBeDisabled();
   await browser.keyboard.press("Escape");
   await liveStates(app, "recovery", ["working reported"], "Checked the picker on narrow screens.");
@@ -105,9 +112,7 @@ test("a lost live connection keeps the last Run read-only, then resynchronizes w
     screen.getByText("Checked the picker on narrow screens.", { exact: true }).first(),
   ).toBeVisible({ timeout: 10_000 });
   await expect(screen.getByRole("status", "Synchronizing")).toHaveCount(0);
-  await expect(notLive).toHaveCount(0);
-  await expect(await runActionsArchive(screen)).toBeEnabled();
-  await browser.keyboard.press("Escape");
+  await expectLiveAndWritable(screen, browser);
   await app.screenshot("live-resynchronized");
   expect(await browserRequests(app)).not.toEqual(writes);
 });

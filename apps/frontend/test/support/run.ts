@@ -93,6 +93,7 @@ export function runDetail(): RunDetail {
       },
       agents: [],
     },
+    currentFlowRevision: 1,
     workspace: { mode: "checkout" },
     coordinationActions: { questionReplies: [] },
     runCoordinator: null,

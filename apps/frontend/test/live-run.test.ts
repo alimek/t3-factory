@@ -16,6 +16,7 @@ it("a committed Run update preserves entity order and untouched identities witho
     task: run.task,
     flowId: run.flowId,
     flowName: run.flowName,
+    currentFlowRevision: run.currentFlowRevision,
     repositories: run.repositories,
     startedAt: run.startedAt,
     input: run.input,

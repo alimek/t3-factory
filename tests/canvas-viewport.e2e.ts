@@ -8,6 +8,7 @@ import {
   runCanvasHorizontalOffset,
 } from "./support/canvas.ts";
 import { liveStates, liveRun } from "./support/live.ts";
+import { renameFlow, saveFlowCopy } from "./support/flows.ts";
 
 test("resizing the Flow editor refits a manually zoomed view", async ({ app, screen, browser }) => {
   // Arrange
@@ -184,4 +185,53 @@ test("period recenters the focused Run canvas and resumes following after a pan"
   await expect(canvas).toHaveAttribute("data-following", "true");
   await expect(screen.getByRole("button", "Follow active", { exact: true })).toBeVisible();
   await app.screenshot("follow-active-shortcut-resumed");
+});
+
+test("a healthy live Run on its current Flow revision shows icon-only canvas controls and no badges", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  const run = await liveRun(app, "exceptions-only");
+
+  // Act
+  await app.open(`/runs/${run}`);
+
+  // Assert
+  const canvas = screen.getByRole("region", "Execution canvas");
+  await expect(canvas.getByRole("button", "Zoom in", { exact: true })).toBeVisible();
+  await expect(canvas.getByRole("button", "Fit Flow", { exact: true })).toHaveText("");
+  await expect(canvas.getByRole("button", "Follow active", { exact: true })).toHaveText("");
+  await expect(canvas.getByRole("button", "Auto-arrange", { exact: true })).toHaveText("");
+  await expect(canvas.getByRole("button", "Canvas shortcuts", { exact: true })).toBeVisible();
+  await expect(canvas.getByRole("status", "Flow revision")).toHaveCount(0);
+  await expect(canvas.getByRole("status", "Run observation")).toHaveCount(0);
+  await expect(canvas.getByText(/Focus the canvas/)).toHaveCount(0);
+  await app.screenshot("run-canvas-exceptions-only");
+});
+
+test("saving a Run's Flow after Start shows the revision badge on the open Run", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  const name = "Canvas revision · Focused change";
+  const flow = await saveFlowCopy(app.baseUrl, "Demo · Focused change", name, { mode: "checkout" });
+  const run = await liveRun(app, "revision-badge", name);
+  await app.open(`/runs/${run}`);
+  const badge = screen.getByRole("status", "Flow revision");
+  await expect(screen.getByRole("button", "Canvas shortcuts", { exact: true })).toBeVisible();
+  await expect(badge).toHaveCount(0);
+
+  // Act
+  await renameFlow(app.baseUrl, flow, `${name} (edited)`);
+
+  // Assert
+  await expect(badge).toContainText("Flow edited since Start");
+  await expect(badge).toContainText("this Run keeps the revision captured");
+  await app.screenshot("run-canvas-flow-edited-since-start");
 });

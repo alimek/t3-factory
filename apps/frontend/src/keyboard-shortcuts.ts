@@ -362,6 +362,35 @@ export function formatShortcut(binding: ShortcutBinding | null | undefined) {
     .join(isMacPlatform() ? "" : "+");
 }
 
+/** One line of a shortcut group as the cheat sheet and the canvas shortcuts popover list it. */
+export type ShortcutEntry = {
+  readonly id: string;
+  readonly label: string;
+  readonly keys: readonly string[];
+};
+
+/** Fixed contextual controls listed with a registry group; they cannot be rebound. */
+const fixedGroupEntries: Partial<Record<ShortcutGroup, readonly ShortcutEntry[]>> = {
+  canvas: [{ id: "pan", label: "Pan", keys: ["←", "↑", "→", "↓"] }],
+};
+
+/** A group's registry commands with their current bindings, then its fixed controls. */
+export function shortcutGroupEntries(
+  group: ShortcutGroup,
+  bindings: ShortcutBindings,
+): readonly ShortcutEntry[] {
+  return [
+    ...shortcutDefinitions
+      .filter((command) => command.group === group)
+      .map((command) => ({
+        id: command.id,
+        label: command.label,
+        keys: [formatShortcut(bindings[command.id])],
+      })),
+    ...(fixedGroupEntries[group] ?? []),
+  ];
+}
+
 function bindingFingerprint(binding: ShortcutBinding) {
   return `${binding.mod}:${binding.alt}:${binding.shift}:${binding.key}`;
 }

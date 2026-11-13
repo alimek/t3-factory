@@ -23,10 +23,9 @@ import {
 import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
 import {
   Archive,
-  CircleCheck,
-  CircleHelp,
   Ellipsis,
   GitBranch,
+  Info,
   Lock,
   TriangleAlert,
   Unplug,
@@ -61,7 +60,7 @@ import { OpenRunKeyboardHost } from "../open-run-keyboard.tsx";
 import { useLiveNavigation } from "../live/navigation.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { capturedExits, continuedThread, exitRecipients } from "../flow-graph.ts";
-import { api, ApiError } from "../api.ts";
+import { api } from "../api.ts";
 import { useProjects } from "../use-projects.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
@@ -82,32 +81,11 @@ function elapsedSeconds(from: string, to: string) {
   return Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000).toFixed(1);
 }
 
-type CurrentFlowRevision = { readonly revision: number } | "missing";
-
 /** Run detail is live; descriptive catalogs are read once for this screen entry. */
 function useRunObservation(id: string) {
   const { value: run, error: scopeError, synchronized } = useLiveRun(id);
   const delivery = useLiveDelivery();
   const catalog = useProjects(id);
-  const [definition, setDefinition] = useState<CurrentFlowRevision>();
-  const flowId = run?.flowId;
-  useEffect(() => {
-    let active = true;
-    setDefinition(undefined);
-    if (flowId)
-      void api.getFlow(flowId).then(
-        (flow) => {
-          if (active) setDefinition({ revision: flow.revision });
-        },
-        (error: unknown) => {
-          if (active && error instanceof ApiError && error.detail.code === "not_found")
-            setDefinition("missing");
-        },
-      );
-    return () => {
-      active = false;
-    };
-  }, [id, flowId]);
   const unavailable = !!scopeError || !synchronized || delivery !== "current";
   const error =
     scopeError?.message ??
@@ -120,7 +98,6 @@ function useRunObservation(id: string) {
     unavailable,
     project: catalog?.find((item) => item.id === run?.task.projectId),
     projectsLoaded: catalog !== undefined,
-    definition,
   };
 }
 
@@ -299,25 +276,6 @@ function RunDetailView({
   );
 }
 
-function startedBlocks(run: RunDetail) {
-  return run.blocks.filter((block) => block.state !== "not-started");
-}
-
-function observationText(run: RunDetail, unavailable: boolean) {
-  if (unavailable) return "Not live · observations unavailable";
-  const started = startedBlocks(run);
-  if (started.some((block) => block.freshness === "stale")) return "Not live · last observation";
-  if (started.some((block) => block.freshness === "unknown")) return "Unknown observation";
-  if (run.runCoordinator) return `Run conversation · ${run.runCoordinator.freshness} observation`;
-  return "Bounded local observations";
-}
-
-function revisionNote(run: RunDetail, definition: CurrentFlowRevision | undefined) {
-  if (!definition) return null;
-  if (definition === "missing") return "Flow removed since";
-  return definition.revision === run.definitions.flow.revision ? null : "Flow edited since";
-}
-
 function projectIsUnavailable(project: FactoryProject | undefined, loaded: boolean) {
   return loaded && (!project || project.availability !== "available");
 }
@@ -424,78 +382,41 @@ function RunActionsMenu({
 }
 
 const canvasBadgeClass =
-  "flex h-7 items-center gap-1.5 rounded-md border bg-muted pr-2.5 pl-2.25 text-2xs leading-3 whitespace-nowrap [&>svg]:size-3 [&>svg]:shrink-0";
+  "flex h-7 items-center gap-1.5 rounded-md border border-attention/50 bg-attention/10 pr-2.5 pl-2.25 text-xs leading-4 whitespace-nowrap [&>svg]:size-3 [&>svg]:shrink-0";
 
-/** Figma Run/SnapshotBadge: the canvas renders the Flow revision captured at Start. */
-function RevisionBadge({ run, note }: { run: RunDetail; note: string | null }) {
+/** Figma RD15: shown only when the Flow changed after Start; the canvas keeps the captured revision. */
+function RevisionBadge({ run }: { run: RunDetail }) {
+  if (run.currentFlowRevision === run.definitions.flow.revision) return null;
   return (
-    <div className={canvasBadgeClass}>
-      <Lock aria-hidden strokeWidth={1.75} className="text-muted-foreground" />
-      <span className="font-semibold tracking-section text-foreground">Flow revision</span>
-      <span className="truncate tracking-label text-muted-foreground">
-        {run.definitions.flow.name} · captured at Start
+    <p role="status" aria-label="Flow revision" className={canvasBadgeClass}>
+      <Info aria-hidden strokeWidth={1.75} className="text-attention" />
+      <span className="font-medium text-attention">
+        {run.currentFlowRevision === null ? "Flow removed since Start" : "Flow edited since Start"}
       </span>
-      <span className="sr-only"> · </span>
-      <span aria-hidden className="h-3 w-px bg-border" />
-      <span className="font-medium text-subtle-foreground">read-only</span>
-      {note && (
-        <>
-          <span aria-hidden className="h-3 w-px bg-border" />
-          <span className="font-medium text-attention">{note}</span>
-        </>
-      )}
-    </div>
+      <span className="truncate text-muted-foreground">
+        · this Run keeps the revision captured {dayAndTime(run.startedAt)}
+      </span>
+    </p>
   );
 }
 
-/** When the Run last entered `kind`; Runs settled or archived by an upgrade have no such event. */
-function lifecycleAt(run: RunDetail, kind: "run-settled" | "run-archived") {
-  return run.events.findLast((event) => event.kind === kind)?.observedAt;
-}
-
-/** Figma Run/CanvasStatus: Live, Not live (last observation), Settled, or Archived history. */
-function ObservationBadge({
-  run,
-  unavailable,
-  freshness,
-}: {
-  run: RunDetail;
-  unavailable: boolean;
-  freshness: RunFreshness;
-}) {
-  const text = observationText(run, unavailable);
-  const settled = run.lifecycle === "settled";
-  const notLive = !settled && text.startsWith("Not live");
-  const last = freshness.live ? null : freshness.lastObservedAt;
-  let icon = <CircleHelp aria-hidden strokeWidth={1.75} />;
-  let label = text;
-  if (run.lifecycle === "archived") {
-    const at = lifecycleAt(run, "run-archived");
-    icon = <Archive aria-hidden strokeWidth={1.75} />;
-    label = at ? `Archived ${dayAndTime(at)} · history` : "Archived · history";
-  } else if (settled) {
-    const at = lifecycleAt(run, "run-settled");
-    icon = <CircleCheck aria-hidden strokeWidth={1.75} className="text-success" />;
-    label = at ? `Settled ${dayAndTime(at)}` : "Settled";
-  } else if (notLive) {
-    icon = <Unplug aria-hidden strokeWidth={1.75} />;
-    label = last ? `Not live · last observed ${clockTime(last)}` : text;
-  } else if (text === "Live") {
-    icon = <CircleCheck aria-hidden strokeWidth={1.75} className="text-success" />;
-    label = "Live · updated just now";
-  }
+/** Shown exactly while the header says Not live, from the same freshness. */
+function ObservationBadge({ freshness }: { freshness: RunFreshness }) {
+  if (freshness.live) return null;
   return (
     <p
       role="status"
       aria-label="Run observation"
-      className={cn(
-        canvasBadgeClass,
-        "font-medium",
-        notLive ? "border-attention/50 bg-attention/10 text-attention" : "text-muted-foreground",
-      )}
+      className={cn(canvasBadgeClass, "font-medium text-attention")}
     >
-      {icon}
-      {label}
+      <Unplug aria-hidden strokeWidth={1.75} />
+      Not live
+      <span className="font-normal text-muted-foreground">
+        ·{" "}
+        {freshness.lastObservedAt
+          ? `showing what Factory last observed at ${clockTime(freshness.lastObservedAt)}`
+          : "Factory has not observed this Run yet"}
+      </span>
     </p>
   );
 }
@@ -517,9 +438,9 @@ function CanvasOverlay({
   const projectTitle = observed.project?.title ?? "This project";
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <RevisionBadge run={run} note={revisionNote(run, observed.definition)} />
-        <ObservationBadge run={run} unavailable={observed.unavailable} freshness={freshness} />
+      <div className="flex flex-wrap items-center gap-2 empty:hidden">
+        <RevisionBadge run={run} />
+        <ObservationBadge freshness={freshness} />
       </div>
       <RunConversationNotice coordinator={run.runCoordinator} />
       {observed.error && (

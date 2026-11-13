@@ -84,8 +84,10 @@ shortcuts could not be restored. Defaults are in use.**
 ## Discovery
 
 - **Cheat sheet:** Mod+/ opens a read-only overlay grouped like Settings, showing current
-  bindings and a link to **Settings → Keyboard shortcuts**. Escape closes it; it does not
-  edit bindings.
+  bindings and a link to **Settings → Keyboard shortcuts**. Its Canvas group also lists the fixed
+  arrow-key pan. Escape closes it; it does not edit bindings.
+- **Canvas shortcuts:** the keyboard button in the Run execution canvas toolbar opens that same
+  Canvas group with current bindings and an **All keyboard shortcuts** link to the cheat sheet.
 - **Settings → Keyboard shortcuts** is the place to change bindings.
 - **Hints:** current bindings appear on the command-palette search field, footer Settings
   and Studio controls, selected palette actions (New Run, Settings, Studio), Rename in row
