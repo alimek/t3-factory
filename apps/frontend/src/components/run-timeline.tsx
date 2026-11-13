@@ -1,4 +1,4 @@
-import { RetainedResult, resultVersion } from "./run-coordination.tsx";
+import { ResultCard, resultVersion } from "./run-result.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import { capturedExits } from "../flow-graph.ts";
@@ -521,7 +521,7 @@ function TimelineEvent({
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{text}</span>{" "}
       {report && (
         <div className="w-full py-2 pl-11">
-          <RetainedResult run={run} report={report} />
+          <ResultCard run={run} report={report} />
         </div>
       )}
       {route && <RouteChip {...route} />}{" "}

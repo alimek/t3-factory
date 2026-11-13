@@ -1,11 +1,9 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ContinuationVisit, FlowBlock, RunBlock, RunDetail } from "@t3-factory/contracts";
 import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import { capturedExits, continuedThread, exitRecipients } from "../flow-graph.ts";
 import { waitDurationText } from "../wait-display.ts";
 import {
@@ -16,63 +14,11 @@ import {
 } from "./execution-canvas.tsx";
 import { clockTime, dayAndTime, StatePill } from "./execution-state.tsx";
 import { BLOCK_KINDS, exitDisplayName } from "./flow-block.tsx";
-import { sectionLabelClass } from "./page.tsx";
+import { InspectorDisclosure, InspectorSection } from "./inspector-section.tsx";
 import { pendingRecovery, RequestReport, RunAttentionDetails } from "./run-attention.tsx";
 import { CoordinatorActivations } from "./run-coordination.tsx";
+import { ResultCard } from "./run-result.tsx";
 import { WaitArrivals } from "./wait-arrivals.tsx";
-
-/** Figma inspector section: an uppercase label above its content. */
-export function InspectorSection({
-  title,
-  label,
-  children,
-}: {
-  title: string;
-  /** Accessible region name when the section is a landmark for reads and tests. */
-  label?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col gap-2.5" aria-label={label}>
-      <h3 className={cn(sectionLabelClass, "px-2 pt-1.5 pb-1")}>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-/** Figma DisclosureRow: secondary facts such as raw ids, closed until the viewer opens it. */
-export function InspectorDisclosure({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint: string;
-  children: ReactNode;
-}) {
-  return (
-    <Collapsible className="flex flex-col gap-3">
-      <CollapsibleTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="group w-full justify-start gap-1.5 px-0 has-[>svg]:px-0 hover:bg-transparent"
-        >
-          <ChevronRight
-            aria-hidden
-            className="size-3 transition-transform group-data-[state=open]:rotate-90 motion-reduce:transition-none"
-          />
-          <span className="min-w-0 flex-1 truncate text-left font-medium text-muted-foreground">
-            {label}
-          </span>
-          <span className="shrink-0 font-normal text-subtle-foreground">{hint}</span>
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="flex flex-col gap-5">{children}</CollapsibleContent>
-    </Collapsible>
-  );
-}
 
 /** Name the kind, and the Agent only where the block's name does not already say it. */
 function blockKindLine(run: RunDetail, block: FlowBlock) {
@@ -180,12 +126,34 @@ function BlockNow({
   );
 }
 
-/**
- * The block's accepted results and reports with their delivery. Kept as one piece so result
- * presentation can change without touching the rest of the block view.
- */
+/** Figma RD14 Received: the results handed off to an Agent block, read from the recipient. */
+function ReceivedResults({ run, block }: { run: RunDetail; block: FlowBlock }) {
+  if (block.kind !== "agent") return null;
+  const received = run.intents.flatMap((intent) => {
+    const report =
+      intent.blockId === block.id &&
+      intent.state !== "cancelled" &&
+      run.reports.find((item) => item.id === intent.reportId);
+    return report ? [{ intent, report }] : [];
+  });
+  if (!received.length) return null;
+  return (
+    <InspectorSection title="Received" label="Received results">
+      {received.map(({ intent, report }) => (
+        <ResultCard key={intent.id} run={run} report={report} received={intent} />
+      ))}
+    </InspectorSection>
+  );
+}
+
+/** What reached the block and the results it reported, each as a result card. */
 function BlockResults({ run, block }: { run: RunDetail; block: FlowBlock }) {
-  return <CoordinatorActivations run={run} blockId={block.id} />;
+  return (
+    <>
+      <ReceivedResults run={run} block={block} />
+      <CoordinatorActivations run={run} blockId={block.id} />
+    </>
+  );
 }
 
 function ExitRow({

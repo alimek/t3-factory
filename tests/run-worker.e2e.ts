@@ -365,9 +365,8 @@ test("a native worker reply completes the same activation without another workin
   expect(saved.threadBindings).toEqual(before.threadBindings);
   expect(saved.executions.map((e) => e.executionId)).toContain("ui-worker-reply");
   expect(saved.reports[0]?.resultMessage).toContain("Clear filters");
-  await expect(screen.getByRole("region", "Block activations")).toContainText(
-    "Completion confirmed",
-  );
+  expect(saved.reports[0]?.completionEligibleAt).not.toBe(null);
+  await expect(screen.getByRole("region", "Block activations")).toContainText("Clear filters");
   await app.screenshot("worker-answer-completed-same-visit");
 });
 

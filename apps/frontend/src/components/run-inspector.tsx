@@ -22,13 +22,8 @@ import { RootWork } from "./run-coordination-controls.tsx";
 import { BindingLink, bindingRole, CoordinatorActivations } from "./run-coordination.tsx";
 import { RunInitialPrompt } from "./run-prompt.tsx";
 import { repositorySummary, RunRepositories } from "./run-repositories.tsx";
-import {
-  activeStates,
-  currentVisitText,
-  InspectorDisclosure,
-  InspectorSection,
-  RunBlockView,
-} from "./run-block-view.tsx";
+import { InspectorDisclosure, InspectorSection } from "./inspector-section.tsx";
+import { activeStates, currentVisitText, RunBlockView } from "./run-block-view.tsx";
 
 /** Keeps the width users chose for the earlier Run side panels. */
 const inspectorBounds: PanelBounds = {

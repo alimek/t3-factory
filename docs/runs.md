@@ -179,12 +179,20 @@ fixed Human exits their old exits were mapped to.
   with their current visit or accepted exit, branches and pull requests, the initial prompt and block activations, with project,
   Flow revision, workspace and work periods under a closed **Workspace & observation** section. Selecting a block shows it in the
   same panel: its Needs input or Problem first (answers and Problem actions work here), its current visit and working report,
-  activations, exits, **Open thread in T3**, and its T3 thread and execution ids under a closed **Technical details** section.
+  the results handed off to an Agent block (**Received**), activations, exits, **Open thread in T3**, and its T3 thread and
+  execution ids under a closed **Technical details** section.
   **Esc** or the **Overview** breadcrumb clears the selection. Selecting never answers or clears attention, and there is no
   editing here.
 - The inspector toggle in the top bar (default **Mod+.**, see [Keyboard shortcuts](keyboard-shortcuts.md)) shows or hides the
   panel. The choice is kept per browser profile on this device across block selection, Runs and reload; until chosen, the
   inspector opens from 1280 px wide. While it is hidden, pending attention shows below the canvas.
+- Block results, including a completed Run's Final result, appear as **result cards** in the inspector and the timeline:
+  block, visit, exit, deliveries and acceptance time around the result rendered as Markdown (CommonMark with GitHub tables
+  and task lists), collapsed to a short preview. **Read result** opens a reader with the full result, its provenance,
+  **Copy Markdown** (the unmodified text) and **Open thread in T3**; its execution, completion and version are under
+  **Technical details**, and **Esc** returns focus to the card. Raw HTML in a result is shown as text and never runs, links open
+  outside Factory and images appear as links, so a result never loads remote content. Copying needs a secure context
+  (Factory's own window, loopback or HTTPS); over a plain-HTTP remote address the reader says copying is unavailable.
 - Drag the inner edge of the shell sidebar (224–480 px) or of the inspector (280–640 px, at most half the area beside the
   sidebar) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
   Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile

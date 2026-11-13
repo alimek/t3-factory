@@ -201,3 +201,124 @@ test("All events shows every recorded entry and stays chosen after reload", asyn
   );
   await expect(timeline.getByRole("listitem")).toHaveCount(12);
 });
+
+const settledRun = "UI worker · Settled · Clearer onboarding copy";
+const settledResultCard = "Implement change · Visit 1 · result";
+
+/** The completed Run's Final result in the inspector overview; the viewport is short enough to scroll the reader. */
+async function openSettledResultCard(app: App, screen: Screen, browser: Browser) {
+  await browser.setViewport({ width: 1440, height: 600 });
+  const found = await findRun(app.baseUrl, settledRun);
+  await app.open(`/runs/${found.id}`);
+  const card = screen
+    .getByRole("complementary", "Run inspector")
+    .getByRole("article", settledResultCard, { exact: true });
+  return { found, card, reader: screen.getByRole("dialog", settledResultCard, { exact: true }) };
+}
+
+async function openSettledResultReader(app: App, screen: Screen, browser: Browser) {
+  const opened = await openSettledResultCard(app, screen, browser);
+  await opened.card.getByRole("button", "Read result", { exact: true }).tap();
+  return opened;
+}
+
+test("a completed Run's Final result renders as collapsed Markdown in the inspector and never renders its raw HTML", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const found = await findRun(app.baseUrl, settledRun);
+  const run = await readHistoryRun(app.baseUrl, found.id);
+  expect(run.lifecycle).toBe("settled");
+  expect(run.reports.at(-1)?.resultMessage).toContain("<img");
+
+  // Act
+  await app.open(`/runs/${found.id}`);
+
+  // Assert
+  const card = screen
+    .getByRole("complementary", "Run inspector")
+    .getByRole("article", settledResultCard, { exact: true });
+  await expect(card.getByRole("heading", "Welcome copy updated", { exact: true })).toBeVisible();
+  await expect(card.getByRole("listitem")).toHaveCount(4);
+  await expect(card.getByRole("table")).toBeAttached();
+  await expect(card.getByText('const body = t("welcome.recentProjects");')).toBeAttached();
+  await expect(card.getByRole("link", "Atlas copy guide", { exact: true })).toHaveAttribute(
+    "target",
+    "_blank",
+  );
+  await expect(card).toContainText('<b>Raw HTML stays text</b> <img src="missing.png"');
+  expect(
+    await browser.evaluate(
+      `[...document.querySelectorAll('[aria-label="${settledResultCard}"]')].every(card => !card.querySelector("img, b") && card.querySelector("[data-result-preview]").scrollHeight > card.querySelector("[data-result-preview]").clientHeight) && window.resultHtmlRan === undefined`,
+    ),
+  ).toBe(true);
+  await app.screenshot("final-result-card");
+});
+
+test("Read result opens the full rendered result with its block, exit and time in a scrolling reader", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { card, reader } = await openSettledResultCard(app, screen, browser);
+
+  // Act
+  await card.getByRole("button", "Read result", { exact: true }).tap();
+
+  // Assert
+  await expect(reader).toContainText(/Report accepted · exit Done · \d\d:\d\d/);
+  await expect(reader.getByRole("heading", "Welcome copy updated", { exact: true })).toBeVisible();
+  await expect(reader.getByRole("heading", "Changes", { exact: true })).toBeVisible();
+  await expect(reader.getByRole("cell", "Your recent projects are in the sidebar.")).toBeVisible();
+  await expect(reader.getByRole("checkbox")).toHaveCount(2);
+  await expect(reader.getByRole("link", "Atlas copy guide", { exact: true })).toHaveAttribute(
+    "href",
+    "https://example.com/atlas/copy-guide",
+  );
+  await expect(reader).toContainText("<b>Raw HTML stays text</b>");
+  expect(
+    await browser.evaluate(
+      `(() => { const body = document.querySelector('[role="dialog"] [data-result-body]'); return !body.querySelector("img, b") && body.scrollHeight > body.clientHeight; })()`,
+    ),
+  ).toBe(true);
+  await app.screenshot("final-result-reader");
+});
+
+test("Copy Markdown places the result's unmodified raw text on the clipboard", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { found, reader } = await openSettledResultReader(app, screen, browser);
+  const raw = (await readHistoryRun(app.baseUrl, found.id)).reports.at(-1)?.resultMessage;
+  assert(raw);
+
+  // Act
+  await reader.getByRole("button", "Copy Markdown", { exact: true }).tap();
+
+  // Assert
+  await expect.poll(() => browser.evaluate("navigator.clipboard.readText()")).toBe(raw);
+});
+
+test("Esc closes the result reader and returns focus to the card that opened it", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { card, reader } = await openSettledResultReader(app, screen, browser);
+  await expect(reader).toBeVisible();
+
+  // Act
+  await browser.keyboard.press("Escape");
+
+  // Assert
+  await expect(reader).toHaveCount(0);
+  await expect(card.getByRole("button", "Read result", { exact: true })).toBeFocused();
+  await expect(screen.getByRole("heading", "Overview", { exact: true })).toBeVisible();
+});

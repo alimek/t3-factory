@@ -15,6 +15,8 @@ export default {
           env: { PORT: "{port}" },
           log: ".e2e/logs/fixture.log",
         },
+        // The result reader's Copy Markdown is read back from the clipboard.
+        permissions: { "clipboard-read": "grant", "clipboard-write": "grant" },
       },
     },
   ],

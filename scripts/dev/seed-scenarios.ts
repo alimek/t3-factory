@@ -76,6 +76,36 @@ const continuationContent = {
   approval: "Approved. Leave email alerts out of the first version.",
 };
 
+/** A long Markdown result as Agents write them; its raw HTML must stay inert text. */
+const settledResult = `## Welcome copy updated
+
+The first-run screen now says where recent projects live, in two short sentences.
+
+### Changes
+
+- Rewrote the heading and body in \`WelcomePanel\`.
+- Gave every action a descriptive label.
+
+### Copy
+
+| Element | Before | After |
+| --- | --- | --- |
+| Heading | Welcome! | Welcome to Atlas |
+| Body | Get started below. | Your recent projects are in the sidebar. |
+
+\`\`\`ts
+const body = t("welcome.recentProjects");
+\`\`\`
+
+### Checks
+
+- [x] Every action has an accessible name
+- [ ] Translations follow in a separate change
+
+See the [Atlas copy guide](https://example.com/atlas/copy-guide) for tone.
+
+<b>Raw HTML stays text</b> <img src="missing.png" onerror="window.resultHtmlRan = true">`;
+
 /** Stable keys, titles and creation order are shared with journeys and the scenario catalog.
  * Reading this list needs no Factory; callers supply the saved Flow ids when instantiating it. */
 export const seedScenarioList: readonly SeedScenario[] = [
@@ -95,10 +125,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
       "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
     attachments: { images: [demoImages.welcomeCopy], referenced: 1 },
     repository: { branch: "copy/welcome", pullRequests: [demoPullRequest(41, "merged")] },
-    result: {
-      exit: "Done",
-      message: "Updated the welcome text and checked that every action has a descriptive label.",
-    },
+    result: { exit: "Done", message: settledResult },
   },
   {
     key: "archived",
