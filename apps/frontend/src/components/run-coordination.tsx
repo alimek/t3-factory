@@ -2,6 +2,7 @@ import type { RunActivation, RunDetail, RunThreadBinding } from "@t3-factory/con
 import { capturedExits } from "../flow-graph.ts";
 import { SessionResult } from "./session-result.tsx";
 import { sectionLabelClass } from "./page.tsx";
+import { cn } from "../lib/utils.ts";
 
 export const bindingRole: Record<RunThreadBinding["role"], string> = {
   worker: "Worker",
@@ -30,8 +31,8 @@ export function CoordinatorActivations({ run, blockId }: { run: RunDetail; block
   const activations = run.activations.filter((a) => !blockId || a.blockId === blockId);
   if (!activations.length) return null;
   return (
-    <section aria-label="Block activations" className="flex flex-col gap-3">
-      <h2 className={sectionLabelClass}>Activations</h2>
+    <section aria-label="Block activations" className="flex flex-col gap-2.5">
+      <h2 className={cn(sectionLabelClass, "px-2 pt-1.5 pb-1")}>Activations</h2>
       {activations.map((activation) => (
         <Activation key={activation.id} run={run} activation={activation} />
       ))}

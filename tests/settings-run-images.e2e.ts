@@ -263,10 +263,10 @@ test("cancelling a filtered Delete all keeps every listed image", async ({ app, 
 });
 
 /**
- * Whether the Run view mounted behind Settings shows its image as unavailable in both the context
- * rail and the Flow input block. The Settings dialog hides that view from the accessibility tree.
+ * Whether the Run view mounted behind Settings shows its image as unavailable in both the Run
+ * inspector and the Flow input block. The Settings dialog hides that view from the accessibility tree.
  */
-const runShowsUnavailable = `() => ['[aria-label="Run context"]', '[aria-label="Flow input block"]']
+const runShowsUnavailable = `() => ['[aria-label="Run inspector"]', '[aria-label="Flow input block"]']
   .every((selector) => document.querySelector(selector)?.textContent?.includes('Image unavailable'))`;
 
 /** The seeded closed Run that attached the eligible image named `name`. */
@@ -307,7 +307,7 @@ async function previewFromRun(
   name: string,
 ) {
   await app.open(`/runs/${runId}`);
-  const context = screen.getByRole("complementary", "Run context");
+  const context = screen.getByRole("complementary", "Run inspector");
   await expect(context.getByRole("button", `Open Image 1: ${name}`)).toBeVisible();
   await expect
     .poll(() => browser.evaluate(imagesLoaded('[aria-label="Prompt images"] img')))
@@ -383,7 +383,7 @@ test("an image this client deleted shows again when its Run is revisited after a
   await confirmation(screen).getByRole("button", "Delete image").tap();
   await expect(screen.getByRole("button", "Preview welcome-copy.png")).toHaveCount(0);
   await screen.getByRole("button", "Close", { exact: true }).tap();
-  const context = screen.getByRole("complementary", "Run context");
+  const context = screen.getByRole("complementary", "Run inspector");
   await expect(context.getByText("Image unavailable", { exact: true })).toBeVisible();
   await expect(context).toContainText("Polish the first-run welcome copy");
   await app.screenshot("run-image-deleted-context");
@@ -400,12 +400,14 @@ test("an image this client deleted shows again when its Run is revisited after a
   await expect(context.getByText("Image unavailable", { exact: true })).toHaveCount(0);
   await expect
     .poll(() =>
-      browser.evaluate(imagesLoaded('[aria-label="Run context"] [aria-label="Prompt images"] img')),
+      browser.evaluate(
+        imagesLoaded('[aria-label="Run inspector"] [aria-label="Prompt images"] img'),
+      ),
     )
     .toBe(true);
   expect(
     await browser.evaluate(
-      keyedImageUrls('[aria-label="Run context"] [aria-label="Prompt images"] img'),
+      keyedImageUrls('[aria-label="Run inspector"] [aria-label="Prompt images"] img'),
     ),
   ).toBe(true);
   expect(await browser.evaluate("() => window.sameDocument === true")).toBe(true);
@@ -420,11 +422,13 @@ test("an image another client deletes shows Image unavailable when a Run viewed 
   await uploadAsAnotherClient(app, demoImages.welcomeCopy);
   const run = await closedRunWith(app, "welcome-copy.png");
   await app.open(`/runs/${run.id}`);
-  const context = screen.getByRole("complementary", "Run context");
+  const context = screen.getByRole("complementary", "Run inspector");
   await expect(context.getByRole("button", "Open Image 1: welcome-copy.png")).toBeVisible();
   await expect
     .poll(() =>
-      browser.evaluate(imagesLoaded('[aria-label="Run context"] [aria-label="Prompt images"] img')),
+      browser.evaluate(
+        imagesLoaded('[aria-label="Run inspector"] [aria-label="Prompt images"] img'),
+      ),
     )
     .toBe(true);
   await screen.getByRole("navigation", "Open Runs").getByRole("link").first().tap();

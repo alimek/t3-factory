@@ -127,7 +127,7 @@ test("a hidden window detaches live delivery and catches up when shown, keeping 
   const run = await liveRun(app, "visibility");
   await app.open(`/runs/${run}`);
   await screen.getByRole("button", "Agent Implement change", { exact: false }).tap();
-  const details = screen.getByRole("complementary", "Block details");
+  const details = screen.getByRole("complementary", "Run inspector");
   await expect(details).toBeVisible();
   const expectViewKept = await manualRunView(screen, browser);
   await expect.poll(async () => (await openLiveSockets(app)).host).toBe(1);

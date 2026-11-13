@@ -160,6 +160,10 @@ A meaningful change in a Run's work, such as an accepted Agent report, an execut
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
 
+**Run inspector**:
+The one panel docked beside the Execution canvas. With no block selected it shows the **Run overview** (Run-level facts such as attention, progress, the Flow input and work periods); with a block selected it shows that block. Whether it is shown is a per-viewer preference, independent of selection.
+_Avoid_: Run context, block details card
+
 **Run status**:
 The one status the Run detail header shows for the whole Run: Archived, Settled, Problem, Needs input, Working or Idle, the first that applies. Block execution states stay on the execution canvas.
 _Avoid_: header pills, Run state badges.

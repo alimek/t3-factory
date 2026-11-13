@@ -20,6 +20,7 @@ import {
 } from "./app-keyboard-commands.ts";
 import { getOpenRunCommandSurface } from "./open-run-keyboard.tsx";
 import { getSidebarNavigation } from "./sidebar-navigation.ts";
+import { toggleRunInspector } from "./run-inspector-preference.ts";
 import { useDesktopMenu } from "./desktop-menu.ts";
 
 const openRowIds = [
@@ -118,6 +119,7 @@ export function KeyboardCommandsProvider({ children }: { children: ReactNode }) 
         const openRun = getOpenRunCommandSurface();
         openRun.rename();
       },
+      toggleInspector: toggleRunInspector,
     };
     for (const [index, id] of openRowIds.entries()) {
       handlers[id] = () => {
