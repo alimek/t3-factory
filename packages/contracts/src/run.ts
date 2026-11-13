@@ -348,6 +348,12 @@ export interface RunDetail extends RunSummary {
   /** Every image of the initial prompt in manifest order; position + 1 is its `Image N` ordinal. */
   readonly images: readonly RunImage[];
   readonly definitions: RunDefinitions;
+  /**
+   * The latest saved revision of the Flow the Run captured, read with the Run; null once the
+   * Flow is removed. It differs from `definitions.flow.revision` when the Flow was edited after
+   * Start, which never changes this Run.
+   */
+  readonly currentFlowRevision: number | null;
   readonly workspace: RunWorkspaceDetail;
   readonly activations: readonly RunActivation[];
   readonly threadBindings: readonly RunThreadBinding[];

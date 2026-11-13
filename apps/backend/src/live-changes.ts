@@ -37,9 +37,15 @@ export function makeLiveChanges() {
         (scope) => (scope.kind === "view" && scope.navigation) || scope.kind === "launchChoices",
       );
     },
-    /** Flow and Agent definitions decide which Flows the composer offers and their readiness. */
+    /**
+     * Flow and Agent definitions decide which Flows the composer offers and their readiness, and
+     * an open Run shows whether its Flow was edited since Start.
+     */
     definitionsChanged() {
-      mark((scope) => scope.kind === "launchChoices");
+      mark(
+        (scope) =>
+          scope.kind === "launchChoices" || (scope.kind === "view" && scope.runIds.size > 0),
+      );
     },
     /** The catalog derives project availability from the current connection. */
     connectionChanged() {

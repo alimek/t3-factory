@@ -193,7 +193,7 @@ test("Settle from an editable field on open Run detail while Mod+ shortcuts stay
   await expect
     .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
     .toBe("settled");
-  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await expect(screen.getByRole("status", "Run status")).toContainText("Settled");
 });
 
 test("Settle is ignored while Settings is open", async ({ app, screen, browser }) => {
@@ -390,4 +390,38 @@ test("choosing Settle in the desktop menu settles the open Run", async ({
   await expect
     .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
     .toBe("settled");
+});
+
+test("the canvas shortcuts popover lists a customized binding and opens the cheat sheet", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1000 });
+  const openRun = await findRun(app.baseUrl, "Demo · Working · Improve the project picker");
+  await app.open(`/runs/${openRun.id}`);
+  await expectFactoryConnected(screen);
+  await openKeyboardSettings(screen, browser);
+  await screen.getByRole("group", "Zoom in").getByRole("button", "Change Zoom in").tap();
+  await browser.keyboard.press("i");
+  await screen.getByRole("button", "Save shortcut").tap();
+  await browser.keyboard.press("Escape");
+  await expect(screen.getByRole("heading", { name: "Keyboard shortcuts", level: 2 })).toBeHidden();
+  await screen.getByRole("button", "Canvas shortcuts", { exact: true }).tap();
+  const popover = screen.getByRole("dialog", "Canvas shortcuts");
+  await expect(popover).toContainText("Zoom in I");
+  await expect(popover).toContainText("Follow active .");
+  await expect(popover).toContainText("Pan ← ↑ → ↓");
+  await app.screenshot("canvas-shortcuts-popover-customized");
+
+  // Act
+  await popover.getByRole("button", "All keyboard shortcuts", { exact: true }).tap();
+
+  // Assert
+  const sheet = screen.getByRole("dialog", "Keyboard shortcuts");
+  await expect(sheet).toBeVisible();
+  await expect(popover).toBeHidden();
+  await expect(sheet).toContainText("Zoom in I");
+  await expect(sheet).toContainText("Pan ← ↑ → ↓");
 });

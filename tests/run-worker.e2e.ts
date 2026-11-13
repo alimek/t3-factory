@@ -518,7 +518,7 @@ test("Settle confirmation cancels without changes, then stops workers and settle
     screen.getByRole("navigation", "Settled Runs").getByRole("link", new RegExp(title)),
   ).toBeVisible();
   await expect(row).toHaveCount(0);
-  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await expect(screen.getByRole("status", "Run status")).toContainText("Settled");
   await app.screenshot("run-settled-from-row-menu");
 });
 
@@ -543,7 +543,7 @@ test("a late report cannot revive a manually Settled Run", async ({ app, screen 
   expect(after.lifecycle).toBe("settled");
   expect(after.reports).toEqual(before.reports);
   expect(after.activations).toEqual(before.activations);
-  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await expect(screen.getByRole("status", "Run status")).toContainText("Settled");
 });
 
 test("Retry of an unresolved settlement keeps focus on the settlement section while stopping", async ({
@@ -625,7 +625,7 @@ test("a held Stop that ends settles the Run and removes its settlement progress"
   // Assert
   await expect.poll(async () => (await readHistoryRun(app.baseUrl, id)).lifecycle).toBe("settled");
   await expect(progress).toHaveCount(0);
-  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await expect(screen.getByRole("status", "Run status")).toContainText("Settled");
   await app.screenshot("settlement-stop-finished");
 });
 
@@ -721,7 +721,7 @@ test("a Settle that finishes stopping later leaves focus on the page after the u
   expect(await browser.evaluate("document.activeElement === document.body")).toBe(true);
 });
 
-test("Archive on the Run page asks for confirmation and archives both worker branches at once", async ({
+test("Archive from the Run page's ··· menu asks for confirmation and archives both worker branches at once", async ({
   app,
   screen,
   browser,
@@ -731,7 +731,9 @@ test("Archive on the Run page asks for confirmation and archives both worker bra
   const found = await findRun(app.baseUrl, title);
   const before = await readHistoryRun(app.baseUrl, found.id);
   await app.open(`/runs/${found.id}`);
-  await screen.getByRole("button", "Archive Run", { exact: true }).tap();
+  await expect(screen.getByRole("button", "Archive Run", { exact: true })).toHaveCount(0);
+  await screen.getByRole("button", "Run actions", { exact: true }).tap();
+  await screen.getByRole("menuitem", "Archive…", { exact: true }).tap();
   const confirmation = screen.getByRole("dialog", `Archive “${title}”?`);
   await expect(confirmation).toContainText("cannot be restored");
   await app.screenshot("run-page-archive-confirmation");
@@ -749,8 +751,9 @@ test("Archive on the Run page asks for confirmation and archives both worker bra
   expect(await runsTitled(app.baseUrl, title)).toHaveLength(0);
   await app.open(`/runs/${found.id}`);
   await browser.reload();
-  await expect(screen.getByRole("status", "Run observation")).toContainText("Archived");
-  await expect(screen.getByRole("button", "Archive Run", { exact: true })).toHaveCount(0);
+  await expect(screen.getByRole("status", "Run status")).toContainText("Archived");
+  await screen.getByRole("button", "Run actions", { exact: true }).tap();
+  await expect(screen.getByRole("menuitem", "Archive…", { exact: true })).toHaveCount(0);
   await app.screenshot("archived-run-history-by-link");
 });
 

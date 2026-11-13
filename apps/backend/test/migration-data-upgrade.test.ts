@@ -41,15 +41,15 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
   expect(retiredAgent.error.code).toBe("not_found");
   expect(await factory.getRun(fixture.closed.id)).toStrictEqual({
     ok: true,
-    value: currentRun(fixture.closed, "settled"),
+    value: currentRun(fixture.closed, "settled", null),
   });
   expect(await factory.getRun(fixture.stopped.id)).toStrictEqual({
     ok: true,
-    value: currentRun(fixture.stopped, "archived"),
+    value: currentRun(fixture.stopped, "archived", fixture.flow.revision),
   });
   expect(await factory.getRun(fixture.pendingStop.id)).toStrictEqual({
     ok: true,
-    value: currentRun(fixture.pendingStop, "archived"),
+    value: currentRun(fixture.pendingStop, "archived", fixture.flow.revision),
   });
   const active = await factory.getRun(fixture.active.id);
   assert(!active.ok);

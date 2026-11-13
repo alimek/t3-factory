@@ -544,7 +544,10 @@ export function FlowCanvas({
       points={gestures.points}
       onTap={() => onSelect(null)}
       note="Global Flow · shared by all projects"
-      hint="Pan empty canvas · zoom · fit · auto-arrange. Graph coordinates stay saved."
+      controls={{
+        kind: "labelled",
+        hint: "Pan empty canvas · zoom · fit · auto-arrange. Graph coordinates stay saved.",
+      }}
     >
       {graph.blocks.length === 0 && (
         <FirstBlockHint flowInputs={flowInputPositions(graph, gestures.move.drag)} />

@@ -38,6 +38,16 @@ export async function saveFlowCopy(
   return created.id;
 }
 
+/** Saves Flow `id` again under `name` with its graph unchanged, creating its next revision. */
+export async function renameFlow(baseUrl: string | undefined, id: string, name: string) {
+  const flow = (await flowRequest(baseUrl, `/api/flows/${id}`)) as FlowDraft;
+  await flowRequest(baseUrl, `/api/flows/${id}`, {
+    method: "PUT",
+    headers: mutation,
+    body: JSON.stringify({ name, expectedRevision: flow.revision, graph: flow.graph }),
+  });
+}
+
 /** Saves a new checkout Flow whose input starts one block of the named saved Agent. */
 export async function saveSingleAgentFlow(
   baseUrl: string | undefined,

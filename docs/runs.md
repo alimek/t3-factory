@@ -175,6 +175,12 @@ fixed Human exits their old exits were mapped to.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
+- The canvas shows exceptions only. **Flow edited since Start** (or **Flow removed since Start**) appears when the Flow's
+  current revision differs from the Run's captured definitions; an open Run shows it as soon as the Flow is saved. A
+  **Not live** badge with Factory's last observation time appears exactly while the top bar shows Not live. Zoom, fit,
+  **Follow active** and **Auto-arrange** are icon buttons with tooltips; the keyboard button beside them opens the canvas
+  shortcuts with their current bindings and a link to the cheat sheet. The Flow editor keeps its labelled controls and
+  keyboard hint.
 - One docked **inspector** beside the canvas shows the **Run overview** while no block is selected: attention, started blocks
   with their current visit or accepted exit, branches and pull requests, the initial prompt and block activations, with project,
   Flow revision, workspace and work periods under a closed **Workspace & observation** section. Selecting a block shows it in the
@@ -197,9 +203,12 @@ fixed Human exits their old exits were mapped to.
   sidebar) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
   Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
   on this device.
-- The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
-  recovery is still searching and offers no replacement), **Archive Run** (until archived) and the inspector toggle. The timeline
-  starts collapsed. The inspector's **Workspace** section reads **Project checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
+- The top bar shows title, project, captured Flow revision, one Run status, each worker's **Open worker in T3** link (a pending launch says
+  recovery is still searching and offers no replacement), the inspector toggle and a ··· menu holding **Archive…** (until
+  archived). The Run status is the first that applies of **Archived**, **Settled** (each with its time), **Problem**, **Needs
+  input** (both as the Run sidebar shows them, naming their blocks), **Working** (naming the active blocks) and **Idle**; block
+  states stay on the canvas. While an Active Run's observations are stale or its live delivery is unavailable, **Not live** with
+  Factory's last observation time appears beside it; a live Run shows no freshness marker. The timeline starts collapsed. The inspector's **Workspace** section reads **Project checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
   **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery note. Retained Runs that queued a
   first visit on an idle worker prepared under the earlier contract still show **entered · prepared idle T3 thread**.
 - Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
@@ -442,7 +451,7 @@ Runs. History, input, captured definitions and events remain; no transcript or r
 
 ## Archive
 
-**Archive…** in the row menu and **Archive Run** in the Run's top bar both ask for confirmation, then end the Run for good.
+**Archive…** in the row menu and in the Run's ··· menu both ask for confirmation, then end the Run for good.
 Archiving closes the handoff gate, cancels unsent launches and handoffs, cancels pending Human steps without inventing answers,
 cancels pending Wait arrivals so no deadline forwards afterwards and clears every arrival's message, settles pending attention
 as `archived` and shows activated blocks that had not finished, including waiting Waits, as stopped. Factory then asks T3 once to

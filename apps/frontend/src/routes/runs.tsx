@@ -1,4 +1,4 @@
-import { MutationGate } from "@/client-gate";
+import { useMutationsAllowed } from "@/client-gate";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { RunConversationAction, RunConversationNotice } from "../components/run-conversation.tsx";
 import { RunSettlementSection } from "../components/settle-run.tsx";
@@ -9,9 +9,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FactoryProject, RunDetail } from "@t3-factory/contracts";
 import {
   Archive,
-  CircleCheck,
-  CircleHelp,
   Ellipsis,
+  Info,
   Lock,
   PanelRight,
   TriangleAlert,
@@ -21,9 +20,11 @@ import {
 import { RunAttentionDetails } from "../components/run-attention.tsx";
 import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
 import { RunNumber } from "../components/run-number.tsx";
+import { NotLiveMarker, RunHeaderStatus } from "../components/run-header-status.tsx";
+import { runFreshness, runStatus, type RunFreshness } from "../run-status.ts";
 import { RunTimeline } from "../components/run-timeline.tsx";
 import { ExecutionCanvas } from "../components/execution-canvas.tsx";
-import { clockTime, dayAndTime, StatePill } from "../components/execution-state.tsx";
+import { clockTime, dayAndTime } from "../components/execution-state.tsx";
 import { Notice, NoticeSettingsLink } from "../components/notice.tsx";
 import { useConnectionState } from "../connection-state.tsx";
 import { OpenRunKeyboardHost } from "../open-run-keyboard.tsx";
@@ -31,7 +32,7 @@ import { useLiveNavigation } from "../live/navigation.ts";
 import { useRunInspectorOpen, toggleRunInspector } from "../run-inspector-preference.ts";
 import { useShortcutPreferences } from "../shortcut-preferences.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, ApiError } from "../api.ts";
+import { api } from "../api.ts";
 import { useProjects } from "../use-projects.ts";
 import { useLiveRun } from "../live/run.ts";
 import { useLiveDelivery } from "../transport.ts";
@@ -41,36 +42,16 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-
-type CurrentFlowRevision = { readonly revision: number } | "missing";
 
 /** Run detail is live; descriptive catalogs are read once for this screen entry. */
 function useRunObservation(id: string) {
   const { value: run, error: scopeError, synchronized } = useLiveRun(id);
   const delivery = useLiveDelivery();
   const catalog = useProjects(id);
-  const [definition, setDefinition] = useState<CurrentFlowRevision>();
-  const flowId = run?.flowId;
-  useEffect(() => {
-    let active = true;
-    setDefinition(undefined);
-    if (flowId)
-      void api.getFlow(flowId).then(
-        (flow) => {
-          if (active) setDefinition({ revision: flow.revision });
-        },
-        (error: unknown) => {
-          if (active && error instanceof ApiError && error.detail.code === "not_found")
-            setDefinition("missing");
-        },
-      );
-    return () => {
-      active = false;
-    };
-  }, [id, flowId]);
   const unavailable = !!scopeError || !synchronized || delivery !== "current";
   const error =
     scopeError?.message ??
@@ -83,7 +64,6 @@ function useRunObservation(id: string) {
     unavailable,
     project: catalog?.find((item) => item.id === run?.task.projectId),
     projectsLoaded: catalog !== undefined,
-    definition,
   };
 }
 
@@ -188,9 +168,15 @@ function RunDetailView({
   const studio = useStudio();
   const inspectorOpen = useRunInspectorOpen();
   const unavailable = observed.unavailable;
+  const freshness = runFreshness(run, unavailable);
   return (
     <>
-      <RunTopBar run={run} observed={observed} inspectorOpen={inspectorOpen} />
+      <RunTopBar
+        run={run}
+        observed={observed}
+        freshness={freshness}
+        inspectorOpen={inspectorOpen}
+      />
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-72 flex-1">
@@ -200,7 +186,14 @@ function RunDetailView({
               selected={selected}
               observationUnavailable={unavailable}
               onSelect={onSelect}
-              overlay={<CanvasOverlay run={run} observed={observed} seenError={seenError} />}
+              overlay={
+                <CanvasOverlay
+                  run={run}
+                  observed={observed}
+                  freshness={freshness}
+                  seenError={seenError}
+                />
+              }
             />
           </div>
           {!inspectorOpen && run.attention.some((item) => !item.settledAt) && (
@@ -226,47 +219,6 @@ function RunDetailView({
   );
 }
 
-/** One header state per distinct recorded block state; untouched blocks only while nothing ran.
- * A Settled Run leads with Settled; its blocks keep their recorded states. */
-function headerStates(run: RunDetail) {
-  if (run.lifecycle === "archived") return ["archived"];
-  const states = [...new Set(run.blocks.map((block) => block.state))];
-  const started = states.filter((state) => state !== "not-started");
-  return [
-    ...(run.lifecycle === "settled" ? ["settled"] : []),
-    ...(started.length ? started : states),
-  ];
-}
-
-function startedBlocks(run: RunDetail) {
-  return run.blocks.filter((block) => block.state !== "not-started");
-}
-
-function observationText(run: RunDetail, unavailable: boolean) {
-  if (unavailable) return "Not live · observations unavailable";
-  const started = startedBlocks(run);
-  if (started.some((block) => block.freshness === "stale")) return "Not live · last observation";
-  if (started.some((block) => block.freshness === "unknown")) return "Unknown observation";
-  if (run.runCoordinator) return `Run conversation · ${run.runCoordinator.freshness} observation`;
-  return "Bounded local observations";
-}
-
-/** Latest recorded observation time across started blocks, shown with a Not live status. */
-function lastObservedAt(run: RunDetail) {
-  return startedBlocks(run)
-    .map((block) => block.observedAt)
-    .concat(run.runCoordinator?.observedAt ?? null)
-    .filter((at): at is string => !!at)
-    .sort()
-    .at(-1);
-}
-
-function revisionNote(run: RunDetail, definition: CurrentFlowRevision | undefined) {
-  if (!definition) return null;
-  if (definition === "missing") return "Flow removed since";
-  return definition.revision === run.definitions.flow.revision ? null : "Flow edited since";
-}
-
 function projectIsUnavailable(project: FactoryProject | undefined, loaded: boolean) {
   return loaded && (!project || project.availability !== "available");
 }
@@ -277,20 +229,18 @@ const metaClass = "text-2xs leading-3 text-subtle-foreground";
 function RunTopBar({
   run,
   observed,
+  freshness,
   inspectorOpen,
 }: {
   run: RunDetail;
   observed: RunObservation;
+  freshness: RunFreshness;
   inspectorOpen: boolean;
 }) {
   const { project } = observed;
   const unavailable = projectIsUnavailable(project, observed.projectsLoaded);
-  const [archiving, setArchiving] = useState(false);
   const { hint } = useShortcutPreferences();
-  const archiveHint = hint("archive");
   const inspectorHint = hint("toggleInspector");
-  const stale =
-    run.lifecycle === "active" && observationText(run, observed.unavailable).startsWith("Not live");
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-4 pl-5">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
@@ -320,30 +270,8 @@ function RunTopBar({
           <span className="tracking-label">· Started {dayAndTime(run.startedAt)}</span>
         </p>
       </div>
-      {run.lifecycle !== "archived" && (
-        <>
-          <MutationGate>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button type="button" variant="outline" onClick={() => setArchiving(true)}>
-                  <Archive aria-hidden />
-                  Archive Run
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Archive Run…{archiveHint !== "Unbound" ? ` · ${archiveHint}` : ""}
-              </TooltipContent>
-            </Tooltip>
-          </MutationGate>
-          <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />
-        </>
-      )}
-      {stale && <span className="text-2xs font-medium text-attention">Last known</span>}
-      <div role="status" aria-label="Run status" className="flex items-center gap-1.5">
-        {headerStates(run).map((state) => (
-          <StatePill key={state} state={state} />
-        ))}
-      </div>
+      <NotLiveMarker freshness={freshness} />
+      <RunHeaderStatus status={runStatus(run)} />
       <RunConversationAction run={run} />
       <Tooltip>
         <TooltipTrigger asChild>
@@ -363,83 +291,82 @@ function RunTopBar({
           {inspectorHint !== "Unbound" ? ` · ${inspectorHint}` : ""}
         </TooltipContent>
       </Tooltip>
+      <RunActionsMenu run={run} />
+    </header>
+  );
+}
+
+/** Archive is rare and final, so it waits in the ··· menu; its shortcut opens the same dialog. */
+function RunActionsMenu({ run }: { run: RunDetail }) {
+  const [archiving, setArchiving] = useState(false);
+  const mutationsAllowed = useMutationsAllowed();
+  const { hint } = useShortcutPreferences();
+  const archiveHint = hint("archive");
+  return (
+    <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button type="button" variant="ghost" size="icon-sm" aria-label="Run actions">
             <Ellipsis aria-hidden className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" />
+        <DropdownMenuContent align="end">
+          {run.lifecycle !== "archived" && (
+            <DropdownMenuItem
+              disabled={!mutationsAllowed}
+              onSelect={() => setArchiving(true)}
+              aria-keyshortcuts={archiveHint === "Unbound" ? undefined : archiveHint}
+            >
+              <Archive aria-hidden strokeWidth={1.5} />
+              Archive…
+              <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
+                {archiveHint === "Unbound" ? "" : archiveHint}
+              </span>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
       </DropdownMenu>
-    </header>
+      <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />
+    </>
   );
 }
 
 const canvasBadgeClass =
-  "flex h-7 items-center gap-1.5 rounded-md border bg-muted pr-2.5 pl-2.25 text-2xs leading-3 whitespace-nowrap [&>svg]:size-3 [&>svg]:shrink-0";
+  "flex h-7 items-center gap-1.5 rounded-md border border-attention/50 bg-attention/10 pr-2.5 pl-2.25 text-xs leading-4 whitespace-nowrap [&>svg]:size-3 [&>svg]:shrink-0";
 
-/** Figma Run/SnapshotBadge: the canvas renders the Flow revision captured at Start. */
-function RevisionBadge({ run, note }: { run: RunDetail; note: string | null }) {
+/** Figma RD15: shown only when the Flow changed after Start; the canvas keeps the captured revision. */
+function RevisionBadge({ run }: { run: RunDetail }) {
+  if (run.currentFlowRevision === run.definitions.flow.revision) return null;
   return (
-    <div className={canvasBadgeClass}>
-      <Lock aria-hidden strokeWidth={1.75} className="text-muted-foreground" />
-      <span className="font-semibold tracking-section text-foreground">Flow revision</span>
-      <span className="truncate tracking-label text-muted-foreground">
-        {run.definitions.flow.name} · captured at Start
+    <p role="status" aria-label="Flow revision" className={canvasBadgeClass}>
+      <Info aria-hidden strokeWidth={1.75} className="text-attention" />
+      <span className="font-medium text-attention">
+        {run.currentFlowRevision === null ? "Flow removed since Start" : "Flow edited since Start"}
       </span>
-      <span className="sr-only"> · </span>
-      <span aria-hidden className="h-3 w-px bg-border" />
-      <span className="font-medium text-subtle-foreground">read-only</span>
-      {note && (
-        <>
-          <span aria-hidden className="h-3 w-px bg-border" />
-          <span className="font-medium text-attention">{note}</span>
-        </>
-      )}
-    </div>
+      <span className="truncate text-muted-foreground">
+        · this Run keeps the revision captured {dayAndTime(run.startedAt)}
+      </span>
+    </p>
   );
 }
 
-/** When the Run last entered `kind`; Runs settled or archived by an upgrade have no such event. */
-function lifecycleAt(run: RunDetail, kind: "run-settled" | "run-archived") {
-  return run.events.findLast((event) => event.kind === kind)?.observedAt;
-}
-
-/** Figma Run/CanvasStatus: Live, Not live (last observation), Settled, or Archived history. */
-function ObservationBadge({ run, unavailable }: { run: RunDetail; unavailable: boolean }) {
-  const text = observationText(run, unavailable);
-  const settled = run.lifecycle === "settled";
-  const notLive = !settled && text.startsWith("Not live");
-  const last = notLive ? lastObservedAt(run) : undefined;
-  let icon = <CircleHelp aria-hidden strokeWidth={1.75} />;
-  let label = text;
-  if (run.lifecycle === "archived") {
-    const at = lifecycleAt(run, "run-archived");
-    icon = <Archive aria-hidden strokeWidth={1.75} />;
-    label = at ? `Archived ${dayAndTime(at)} · history` : "Archived · history";
-  } else if (settled) {
-    const at = lifecycleAt(run, "run-settled");
-    icon = <CircleCheck aria-hidden strokeWidth={1.75} className="text-success" />;
-    label = at ? `Settled ${dayAndTime(at)}` : "Settled";
-  } else if (notLive) {
-    icon = <Unplug aria-hidden strokeWidth={1.75} />;
-    label = last ? `Not live · last observed ${clockTime(last)}` : text;
-  } else if (text === "Live") {
-    icon = <CircleCheck aria-hidden strokeWidth={1.75} className="text-success" />;
-    label = "Live · updated just now";
-  }
+/** Shown exactly while the header says Not live, from the same freshness. */
+function ObservationBadge({ freshness }: { freshness: RunFreshness }) {
+  if (freshness.live) return null;
   return (
     <p
       role="status"
       aria-label="Run observation"
-      className={cn(
-        canvasBadgeClass,
-        "font-medium",
-        notLive ? "border-attention/50 bg-attention/10 text-attention" : "text-muted-foreground",
-      )}
+      className={cn(canvasBadgeClass, "font-medium text-attention")}
     >
-      {icon}
-      {label}
+      <Unplug aria-hidden strokeWidth={1.75} />
+      Not live
+      <span className="font-normal text-muted-foreground">
+        ·{" "}
+        {freshness.lastObservedAt
+          ? `showing what Factory last observed at ${clockTime(freshness.lastObservedAt)}`
+          : "Factory has not observed this Run yet"}
+      </span>
     </p>
   );
 }
@@ -447,10 +374,12 @@ function ObservationBadge({ run, unavailable }: { run: RunDetail; unavailable: b
 function CanvasOverlay({
   run,
   observed,
+  freshness,
   seenError,
 }: {
   run: RunDetail;
   observed: RunObservation;
+  freshness: RunFreshness;
   seenError: string;
 }) {
   // Start and live observation depend on readiness: keep it current while shown.
@@ -459,9 +388,9 @@ function CanvasOverlay({
   const projectTitle = observed.project?.title ?? "This project";
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <RevisionBadge run={run} note={revisionNote(run, observed.definition)} />
-        <ObservationBadge run={run} unavailable={observed.unavailable} />
+      <div className="flex flex-wrap items-center gap-2 empty:hidden">
+        <RevisionBadge run={run} />
+        <ObservationBadge freshness={freshness} />
       </div>
       <RunConversationNotice coordinator={run.runCoordinator} />
       {observed.error && (

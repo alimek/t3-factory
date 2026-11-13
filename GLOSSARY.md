@@ -164,6 +164,14 @@ The read-only view of the Flow revision a Run captured at Start. Each block show
 The one panel docked beside the Execution canvas. With no block selected it shows the **Run overview** (Run-level facts such as attention, progress, the Flow input and work periods); with a block selected it shows that block. Whether it is shown is a per-viewer preference, independent of selection.
 _Avoid_: Run context, block details card
 
+**Run status**:
+The one status the Run detail header shows for the whole Run: Archived, Settled, Problem, Needs input, Working or Idle, the first that applies. Block execution states stay on the execution canvas.
+_Avoid_: header pills, Run state badges.
+
+**Not live**:
+An Active Run whose observations are stale or whose live delivery is unavailable, so the screen may be out of date. It is shown with Factory's last observation time and only while it applies; it is not a Problem.
+_Avoid_: Last known as a separate marker.
+
 **Flow input**:
 The data supplied to a particular flow execution: the required prompt text entered when starting a Run, with any attached images. Every Agent block connected to the Flow input block receives the text and the same original images with its first message, each in its own independent session; image references in the text read `[Image N: name]`.
 _Avoid_: Initial input, initial prompt as a separate concept
