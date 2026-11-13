@@ -152,7 +152,7 @@ The Flow revision a Run started with and the Agent revision of every Agent that 
 _Avoid_: Run snapshot.
 
 **Run timeline**:
-The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, stopping workers for a manual settlement, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
+The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, stopping workers for a manual settlement, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads. Its default **Key events** view collapses repeated T3 status observations of a Block into one row; **All events** shows every entry.
 
 **Run activity**:
 A meaningful change in a Run's work, such as an accepted Agent report, an execution change, a new Needs input matter or an answer to a Human step. Viewing or renaming a Run and observing an unchanged state are not Run activity.
