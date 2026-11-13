@@ -277,13 +277,13 @@ it("removing an unused Agent replies with its id and the Agent then reads as not
   ).toMatchObject({ code: "not_found" });
 });
 
-it("removing an Agent a current Flow places is refused with the removal next step and keeps the Agent", async (c) => {
+it("removing an Agent two current Flows place is refused with one issue per Flow and keeps the Agent", async (c) => {
   // Arrange
   const { factory, client } = await authoringMcpClient(c);
   const agent = assertOk(await factory.createAgent(sampleAgentInput("Coder")));
-  assertOk(
-    await factory.createFlow({
-      name: "Change",
+  const placing = (name: string) =>
+    factory.createFlow({
+      name,
       graph: {
         flowInput: { targetBlockIds: ["coder"] },
         blocks: [
@@ -298,8 +298,9 @@ it("removing an Agent a current Flow places is refused with the removal next ste
         ],
         connections: [],
       },
-    }),
-  );
+    });
+  const review = assertOk(await placing("Review"));
+  const change = assertOk(await placing("Change"));
 
   // Act
   const result = await client.callTool({
@@ -312,7 +313,18 @@ it("removing an Agent a current Flow places is refused with the removal next ste
   expect(toolReply(result)).toStrictEqual({
     code: "conflict",
     message: expect.any(String),
-    issues: [],
+    issues: [
+      {
+        code: "agent_in_use",
+        path: "agentId",
+        message: `Flow "Change" (${change.id}) places this Agent.`,
+      },
+      {
+        code: "agent_in_use",
+        path: "agentId",
+        message: `Flow "Review" (${review.id}) places this Agent.`,
+      },
+    ],
     next: "Nothing was removed. Ask the user before editing or removing the Flows that place this Agent, unless they already authorized those exact changes; never rewrite Flows on your own.",
   });
   expect(assertOk(await factory.getAgent(agent.id))).toMatchObject({ revision: agent.revision });

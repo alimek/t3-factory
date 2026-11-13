@@ -40,7 +40,7 @@ import { now as currentTime } from "./time.ts";
 import { newId } from "./ids.ts";
 import {
   appendFlowRevision,
-  currentFlowsReferenceAgent,
+  currentFlowsReferencingAgent,
   readCurrentFlows,
   type FlowRevision,
 } from "./flow-revisions.ts";
@@ -456,10 +456,16 @@ export const makeDefinitions = (
                 id: string;
               }>`SELECT id FROM agents WHERE id=${id} AND removed_at IS NULL`;
               if (!agent) return { ok: true as const, value: undefined };
-              if (yield* currentFlowsReferenceAgent(sql, id))
+              const flows = yield* currentFlowsReferencingAgent(sql, id);
+              if (flows.length > 0)
                 return failure(
                   "conflict",
                   "This Agent is used in saved Flows. Remove those references before deleting it.",
+                  flows.map((flow) => ({
+                    code: "agent_in_use",
+                    path: "agentId",
+                    message: `Flow "${flow.name}" (${flow.id}) places this Agent.`,
+                  })),
                 );
               yield* sql`UPDATE agents SET removed_at=${yield* currentTime} WHERE id=${id}`;
               return { ok: true as const, value: undefined };

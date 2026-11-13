@@ -258,15 +258,15 @@ export const currentFlowRevisionNumber = Effect.fnUntraced(function* (
   return row?.revision ?? undefined;
 });
 
-/** Whether the latest revision of any non-removed Flow places the Agent in a block. */
-export const currentFlowsReferenceAgent = Effect.fnUntraced(function* (
+/** The non-removed Flows whose latest revision places the Agent in a block, by name then id. */
+export const currentFlowsReferencingAgent = Effect.fnUntraced(function* (
   sql: SqlClient.SqlClient,
   agentId: string,
 ) {
-  const rows = yield* sql`SELECT 1 FROM flows f
+  return yield* sql<{ id: string; name: string }>`SELECT f.id, r.name FROM flows f
     JOIN flow_revisions r ON r.flow_id = f.id
       AND r.revision = (SELECT max(revision) FROM flow_revisions WHERE flow_id = f.id)
-    JOIN flow_revision_blocks b ON b.flow_revision_id = r.id
-    WHERE f.removed_at IS NULL AND b.agent_id = ${agentId} LIMIT 1`;
-  return rows.length > 0;
+    WHERE f.removed_at IS NULL AND EXISTS (SELECT 1 FROM flow_revision_blocks b
+      WHERE b.flow_revision_id = r.id AND b.agent_id = ${agentId})
+    ORDER BY r.name, f.id`;
 });
