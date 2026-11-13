@@ -368,7 +368,8 @@ test("a Run waiting for an answer shows the sidebar's Needs input chip as its on
   screen,
 }) => {
   // Arrange
-  const title = "Demo · Waiting for your review";
+  // Other journeys answer or settle the Human review Run; this native question stays pending.
+  const title = "Demo · Woke · A question about keyboard shortcuts";
 
   // Act
   const { status, row } = await openSidebarRun(app, screen, title);
