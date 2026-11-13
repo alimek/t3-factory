@@ -3,6 +3,7 @@ import {
   blockExit,
   observeFor,
   controlledAgent,
+  repliesDiscussed,
   archived,
   changesRequested,
   executionFailed,
@@ -222,6 +223,17 @@ export async function settlementUnresolved(context: SeedContext, worker: Worker)
   }
 }
 
+/** The worker reported working and went idle; the user may then have replied in its T3 thread. */
+async function discussedWhileIdle(
+  context: SeedContext,
+  worker: Worker,
+  scenario: Extract<SeedScenario, { state: "working reported and idle" }>,
+) {
+  if (scenario.repository) await repositoryFactsObserved(context, worker, scenario.repository);
+  await workingReportedIdle(context, worker, scenario.message);
+  if (scenario.replies) await repliesDiscussed(context, worker, scenario.replies);
+}
+
 async function finishScenario(
   context: SeedContext,
   worker: Worker,
@@ -254,8 +266,7 @@ async function finishScenario(
       await woke(context, worker);
       break;
     case "working reported and idle":
-      if (scenario.repository) await repositoryFactsObserved(context, worker, scenario.repository);
-      await workingReportedIdle(context, worker, scenario.message);
+      await discussedWhileIdle(context, worker, scenario);
       break;
     case "missing report":
       await missingReport(context, await reportRejected(context, worker, scenario.rejected));
