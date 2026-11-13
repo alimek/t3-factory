@@ -111,7 +111,7 @@ The identifier Factory mints for an Agent Block or Continuation when a Run start
 _Avoid_: tool ref, caller correlation.
 
 **Factory MCP**:
-The MCP server a Factory server serves at `/mcp` on its host-local listener. Harnesses register it once by URL. Its Block runtime tools are `factory_get_block`, `factory_get_run`, `factory_get_run_image` and `factory_update_block`; its [authoring tools](docs/t3-integration.md#authoring-tools) list, read, create and save Agents and Flows, check Flow readiness and read Agent capabilities without a Block id, and its [Run Start tools](docs/t3-integration.md#run-start-tools) find a conversation's Project and start a text-only Run. An application update changes its tools without changing harness configuration.
+The MCP server a Factory server serves at `/mcp` on its host-local listener. Harnesses register it once by URL. Its Block runtime tools are `factory_get_block`, `factory_get_run`, `factory_get_run_image` and `factory_update_block`; its [authoring tools](docs/t3-integration.md#authoring-tools) list, read, create, save and remove Agents and Flows, check Flow readiness and read Agent capabilities without a Block id, and its [Run Start tools](docs/t3-integration.md#run-start-tools) find a conversation's Project and start a text-only Run. An application update changes its tools without changing harness configuration.
 _Avoid_: bridge (the retired stdio copy installed per harness).
 
 **Block activation**:
