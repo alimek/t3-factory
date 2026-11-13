@@ -10,10 +10,12 @@ export type AuthoringOperations = Pick<
   | "getAgent"
   | "createAgent"
   | "updateAgent"
+  | "removeAgent"
   | "listFlows"
   | "getFlow"
   | "createFlow"
   | "updateFlow"
+  | "removeFlow"
 >;
 
 const noArguments: Tool["inputSchema"] = {
@@ -127,6 +129,10 @@ const flowFields = {
   },
 };
 
+/** Confirmation and disambiguation guidance for a removal tool; the server checks none of it. */
+const removalGuidance = (kind: "Agent" | "Flow", details: string) =>
+  `First get the user's explicit confirmation naming the ${kind}, unless the request gives its id or a name that matches exactly one current ${kind} in a fresh factory_list_${kind.toLowerCase()}s. If several match or the target is inferred, ask with each name, id and ${details}; never pick among duplicates. If none matches, say so and do not call this tool. This is guidance, not a server check: success, also for an absent or already removed id, does not prove the id existed.`;
+
 /** Definition authoring for any session with the Factory MCP; no Block id. */
 export const authoringTools: Tool[] = [
   {
@@ -169,6 +175,16 @@ export const authoringTools: Tool[] = [
       type: "object",
       properties: { agentId, expectedRevision, ...agentFields },
       required: ["agentId", "expectedRevision", "name", "prompt", "execution", "exits"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "factory_remove_agent",
+    description: `Delete (remove) an Agent exactly as Studio's Delete: it leaves Studio, Flow references and Start selection with no restore, its saved revisions are kept and Runs keep the revisions they started with. Refused while the latest revision of a current Flow places it. ${removalGuidance("Agent", "its revision, last update and the Flows that place it")}`,
+    inputSchema: {
+      type: "object",
+      properties: { agentId },
+      required: ["agentId"],
       additionalProperties: false,
     },
   },
@@ -220,24 +236,42 @@ export const authoringTools: Tool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "factory_remove_flow",
+    description: `Delete (remove) a Flow exactly as Studio's Remove: it leaves Studio and the Run composer with no restore, its saved revisions are kept and Runs, including active ones, are unaffected. ${removalGuidance("Flow", "its revision and last update")}`,
+    inputSchema: {
+      type: "object",
+      properties: { flowId },
+      required: ["flowId"],
+      additionalProperties: false,
+    },
+  },
 ];
 
-type Subject = "agent" | "flow";
+type Subject = "agent" | "flow" | "agentRemoval" | "flowRemoval";
+
+const fixIssuesNext = "Fix the listed issue paths and call the tool again.";
 
 /** Static recovery steps; replies never echo the call's arguments. */
 const nextSteps: Record<Subject, Partial<Record<OperationError["code"], string>>> = {
   agent: {
-    validation: "Fix the listed issue paths and call the tool again.",
+    validation: fixIssuesNext,
     conflict:
       "Read the Agent with factory_get_agent, reapply your change and save with its revision.",
     not_found: "Find a current Agent id with factory_list_agents.",
   },
   flow: {
-    validation: "Fix the listed issue paths and call the tool again.",
+    validation: fixIssuesNext,
     conflict:
       "Read the Flow with factory_get_flow, reapply your change and save with its revision.",
     not_found: "Find a current Flow id with factory_list_flows.",
   },
+  agentRemoval: {
+    validation: fixIssuesNext,
+    conflict:
+      "Nothing was removed. Ask the user before editing or removing the Flows that place this Agent, unless they already authorized those exact changes; never rewrite Flows on your own.",
+  },
+  flowRemoval: { validation: fixIssuesNext },
 };
 const unavailableNext = "Recheck the Factory backend, then call the tool again.";
 
@@ -261,12 +295,20 @@ const withId =
           },
         });
 
+/** A removal reply names only the removed id; removing an absent or removed id succeeds too. */
+const removal = (key: "agentId" | "flowId", remove: (id: string) => Promise<Result<void>>) =>
+  withId(key, async (id) => {
+    const removed = await remove(id);
+    return removed.ok ? { ok: true, value: { [key]: id, removed: true } } : removed;
+  });
+
 const authoringCalls = (factory: AuthoringOperations): Record<string, [Subject, Call]> => ({
   factory_get_agent_capabilities: ["agent", () => factory.getAgentCapabilities()],
   factory_list_agents: ["agent", () => factory.listAgents()],
   factory_get_agent: ["agent", withId("agentId", (id) => factory.getAgent(id))],
   factory_create_agent: ["agent", (input) => factory.createAgent(input)],
   factory_save_agent: ["agent", withId("agentId", (id, input) => factory.updateAgent(id, input))],
+  factory_remove_agent: ["agentRemoval", removal("agentId", (id) => factory.removeAgent(id))],
   factory_list_flows: ["flow", () => factory.listFlows()],
   factory_get_flow: ["flow", withId("flowId", (id) => factory.getFlow(id))],
   factory_create_flow: ["flow", (input) => factory.createFlow(input)],
@@ -278,6 +320,7 @@ const authoringCalls = (factory: AuthoringOperations): Record<string, [Subject, 
       return flow.ok ? { ok: true, value: flow.value.readiness } : flow;
     }),
   ],
+  factory_remove_flow: ["flowRemoval", removal("flowId", (id) => factory.removeFlow(id))],
 });
 
 /** A Factory tool result: one JSON text item, flagged as an error when the call failed. */

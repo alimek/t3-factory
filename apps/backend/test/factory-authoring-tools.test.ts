@@ -255,3 +255,118 @@ it("an MCP-created Flow with an eight-day Wait saves with Studio's readiness gap
   });
   expect(assertOk(await factory.getFlow(flow.id))).toStrictEqual(flow);
 });
+
+it("removing an unused Agent replies with its id and the Agent then reads as not found", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const agent = assertOk(await factory.createAgent(sampleAgentInput("Coder")));
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_remove_agent",
+    arguments: { agentId: agent.id },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result)).toStrictEqual({ agentId: agent.id, removed: true });
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_get_agent", arguments: { agentId: agent.id } }),
+    ),
+  ).toMatchObject({ code: "not_found" });
+});
+
+it("removing an Agent a current Flow places is refused with the removal next step and keeps the Agent", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const agent = assertOk(await factory.createAgent(sampleAgentInput("Coder")));
+  assertOk(
+    await factory.createFlow({
+      name: "Change",
+      graph: {
+        flowInput: { targetBlockIds: ["coder"] },
+        blocks: [
+          {
+            id: "coder",
+            kind: "agent",
+            name: "Coder",
+            agentId: agent.id,
+            hiddenExitIds: [],
+            localExits: [],
+          },
+        ],
+        connections: [],
+      },
+    }),
+  );
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_remove_agent",
+    arguments: { agentId: agent.id },
+  });
+
+  // Assert
+  expect(result.isError).toBe(true);
+  expect(toolReply(result)).toStrictEqual({
+    code: "conflict",
+    message: expect.any(String),
+    issues: [],
+    next: "Nothing was removed. Ask the user before editing or removing the Flows that place this Agent, unless they already authorized those exact changes; never rewrite Flows on your own.",
+  });
+  expect(assertOk(await factory.getAgent(agent.id))).toMatchObject({ revision: agent.revision });
+});
+
+it("removing a Flow replies with its id and the Flow then reads as not found", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const flow = assertOk(await factory.createFlow({ name: "Change" }));
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_remove_flow",
+    arguments: { flowId: flow.id },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result)).toStrictEqual({ flowId: flow.id, removed: true });
+  expect(
+    toolReply(await client.callTool({ name: "factory_get_flow", arguments: { flowId: flow.id } })),
+  ).toMatchObject({ code: "not_found" });
+});
+
+it("removing a Flow that Studio already removed succeeds again", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const flow = assertOk(await factory.createFlow({ name: "Change" }));
+  assertOk(await factory.removeFlow(flow.id));
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_remove_flow",
+    arguments: { flowId: flow.id },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result)).toStrictEqual({ flowId: flow.id, removed: true });
+});
+
+it("a removal without an id is a validation error at the id path", async (c) => {
+  // Arrange
+  const { client } = await authoringMcpClient(c);
+
+  // Act
+  const result = await client.callTool({ name: "factory_remove_agent", arguments: {} });
+
+  // Assert
+  expect(result.isError).toBe(true);
+  expect(toolReply(result)).toStrictEqual({
+    code: "validation",
+    message: expect.any(String),
+    issues: [{ code: "invalid_id", path: "agentId", message: expect.any(String) }],
+    next: "Fix the listed issue paths and call the tool again.",
+  });
+});
