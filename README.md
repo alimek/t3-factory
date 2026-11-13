@@ -115,7 +115,7 @@ unavailable choices and explains what needs attention. Setup does not launch a t
 Real Runs use your configured model providers and may incur their normal charges.
 
 Ctrl+C stops the Factory backend. **Backend exit is not Archive:** agent work in T3
-may continue. Use **Archive Run** to end a Run and interrupt its workers; Archive does not undo edits.
+may continue. Use **Archive…** in the Run's ··· menu to end a Run and interrupt its workers; Archive does not undo edits.
 
 For endpoint setup, configuration and client access, see
 [installation](docs/installation.md), [T3 integration](docs/t3-integration.md) and

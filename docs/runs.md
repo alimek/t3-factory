@@ -180,8 +180,12 @@ fixed Human exits their old exits were mapped to.
   block details share one width) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
   Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
   on this device.
-- The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
-  recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
+- The top bar shows title, project, captured Flow revision, one Run status, each worker's **Open worker in T3** link (a pending launch says
+  recovery is still searching and offers no replacement) and a ··· menu holding **Archive…** (until archived). The Run status is
+  the first that applies of **Archived**, **Settled** (each with its time), **Problem**, **Needs input** (both as the Run sidebar
+  shows them, naming their blocks), **Working** (naming the active blocks) and **Idle**; block states stay on the canvas. While
+  an Active Run's observations are stale or its live delivery is unavailable, **Not live** with Factory's last observation time
+  appears beside it; a live Run shows no freshness marker. The timeline starts collapsed; the context rail (attention,
   prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
   checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
   **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery note. Retained Runs that queued a
@@ -423,7 +427,7 @@ Runs. History, input, captured definitions and events remain; no transcript or r
 
 ## Archive
 
-**Archive…** in the row menu and **Archive Run** in the Run's top bar both ask for confirmation, then end the Run for good.
+**Archive…** in the row menu and in the Run's ··· menu both ask for confirmation, then end the Run for good.
 Archiving closes the handoff gate, cancels unsent launches and handoffs, cancels pending Human steps without inventing answers,
 cancels pending Wait arrivals so no deadline forwards afterwards and clears every arrival's message, settles pending attention
 as `archived` and shows activated blocks that had not finished, including waiting Waits, as stopped. Factory then asks T3 once to

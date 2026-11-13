@@ -160,6 +160,14 @@ A meaningful change in a Run's work, such as an accepted Agent report, an execut
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
 
+**Run status**:
+The one status the Run detail header shows for the whole Run: Archived, Settled, Problem, Needs input, Working or Idle, the first that applies. Block execution states stay on the execution canvas.
+_Avoid_: header pills, Run state badges.
+
+**Not live**:
+An Active Run whose observations are stale or whose live delivery is unavailable, so the screen may be out of date. It is shown with Factory's last observation time and only while it applies; it is not a Problem.
+_Avoid_: Last known as a separate marker.
+
 **Flow input**:
 The data supplied to a particular flow execution: the required prompt text entered when starting a Run, with any attached images. Every Agent block connected to the Flow input block receives the text and the same original images with its first message, each in its own independent session; image references in the text read `[Image N: name]`.
 _Avoid_: Initial input, initial prompt as a separate concept
