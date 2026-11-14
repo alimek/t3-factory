@@ -143,15 +143,25 @@ class FactoryDiscordAdapter extends DiscordAdapter {
    * left as it is: only its moderators may unlock it.
    */
   async reopen(threadId: string): Promise<"open" | "reopened" | "locked"> {
+    const { path, metadata } = await this.threadMetadata(threadId);
+    if (!metadata?.archived) return "open";
+    if (metadata.locked) return "locked";
+    await this.discordFetch(path, "PATCH", { archived: false });
+    return "reopened";
+  }
+
+  /** Whether a fresh read shows the thread locked by its moderators. */
+  async locked(threadId: string): Promise<boolean> {
+    return (await this.threadMetadata(threadId)).metadata?.locked === true;
+  }
+
+  private async threadMetadata(threadId: string) {
     const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
     const path = `/channels/${discordThreadId ?? channelId}`;
     const channel = (await (await this.discordFetch(path, "GET")).json()) as {
       thread_metadata?: { archived?: boolean; locked?: boolean };
     };
-    if (!channel.thread_metadata?.archived) return "open";
-    if (channel.thread_metadata.locked) return "locked";
-    await this.discordFetch(path, "PATCH", { archived: false });
-    return "reopened";
+    return { path, metadata: channel.thread_metadata };
   }
 
   /** Triggers Discord's typing indicator in the thread, in a single request. */
@@ -348,6 +358,7 @@ export const makeDiscordOperation = (
           disable: (destination, messageId, customId, state) =>
             adapter.disable(encodeThreadId(destination), messageId, customId, state),
           reopen: (destination) => adapter.reopen(encodeThreadId(destination)),
+          locked: (destination) => adapter.locked(encodeThreadId(destination)),
         };
         const engine = yield* makeInterpreter({
           sql,

@@ -27,8 +27,9 @@ export interface Destination {
 /**
  * How the operating session sends Factory messages: `create` resolves with Discord's message ID
  * and asks Discord to enforce the create's `nonce`, `edit` replaces a message's text, `disable`
- * replaces a review's button with a disabled one, and `reopen` unarchives an archived thread
- * unless Discord shows it locked, which Factory never undoes.
+ * replaces a review's button with a disabled one, `reopen` unarchives an archived thread unless
+ * Discord shows it locked, which Factory never undoes, and `locked` reads whether moderators
+ * locked the thread.
  */
 export interface DiscordSender {
   readonly applicationId: string;
@@ -45,6 +46,7 @@ export interface DiscordSender {
     state: DisabledButton,
   ) => Promise<void>;
   readonly reopen: (destination: Destination) => Promise<"open" | "reopened" | "locked">;
+  readonly locked: (destination: Destination) => Promise<boolean>;
 }
 
 /**
@@ -457,6 +459,14 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
           return yield* row.sent_by_application_id === sender.applicationId
             ? attemptEdit(sender, row, request)
             : messageRetired(row);
+        // Discord accepts posts in a locked thread from a bot holding Manage Threads, but a lock
+        // stops Factory's sends until moderators lift it. An unreadable state leaves the create
+        // to classify its own refusal.
+        const lock = yield* Effect.result(request(() => sender.locked(destinationOf(row))));
+        if (lock._tag === "Success" && lock.success) {
+          yield* record(row.id, { state: "failed", problem: CORRECTIONS[DISCORD_CODES.locked]! });
+          return;
+        }
         const attempts = row.attempts + 1;
         // Intent before the create: a crash from here on leaves an unknown delivery, never a
         // silent repeat.
