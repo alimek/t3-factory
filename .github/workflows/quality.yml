@@ -1,4 +1,6 @@
 name: Quality
+run-name: >-
+  ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'Reuse code gate' || 'Full code gate' }} for PR ${{ github.event.pull_request.number || 0 }}: ${{ github.event.pull_request.base.sha || github.event.before }}..${{ github.event.pull_request.head.sha || github.sha }}
 
 on:
   pull_request:

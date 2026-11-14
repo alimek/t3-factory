@@ -52,15 +52,17 @@ is a GitHub ruleset setting; adding a workflow alone does not enable that requir
 Every Quality run reports the same **Quality gate** job name. On a title/body-only
 edit, it reads the newest full code validation for the same repository, PR, base
 and HEAD instead of installing dependencies or executing the gate. Its evidence
-is the scoped full-gate step in the original workflow run; a successful metadata
-check cannot certify another metadata check. An in-flight validation is awaited;
+is the scoped full-gate step in the original workflow run. The workflow run name
+identifies code versus metadata work and its PR/base/HEAD before jobs exist;
+a successful metadata check cannot certify another metadata check. An in-flight validation is awaited;
 a cancelled attempt stays unproven while the check waits for its retry or a
-replacement code run, even one created after the metadata edit. Later candidates
-must prove their code role so metadata checks cannot wait on each other.
+replacement code run, even one created after the metadata edit. Scope is matched
+before reading job state, so an unrelated queued run cannot hold this PR and
+metadata checks cannot wait on each other.
 A failed validation remains failed, and missing or unreadable evidence fails
 closed. Rerun the source-triggered Quality workflow when matching validation is
 missing, or retry the metadata check after a bounded wait expires. Earlier
-workflow versions without scoped evidence cannot be reused.
+workflow versions without the scoped run name and full-gate step cannot be reused.
 
 Metadata checks have a separate concurrency group, so they cannot cancel code
 validation. Source events still replace older source runs. The required job is

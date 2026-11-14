@@ -26,6 +26,7 @@ function scenario({
     head_sha: head,
     head_branch: "feature",
     head_repository: { id: 1 },
+    display_title: metadata ? marker.replace("Full code gate", "Reuse code gate") : stepName,
     html_url: "https://github.com/example/repo/actions/runs/10",
   };
   const jobs = [
@@ -47,6 +48,7 @@ function scenario({
   const older = {
     ...run,
     id: 9,
+    display_title: marker,
     status: "completed",
     conclusion: olderConclusion,
     run_started_at: olderRerun ? "2026-01-01T11:00:00Z" : "2026-01-01T09:00:00Z",
@@ -230,6 +232,42 @@ await test("a newer pending metadata run cannot create a mutual wait between met
     metadata: true,
     status: "in_progress",
     conclusion: null,
+    previous: true,
+  });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "success");
+  assert.match(result.url, /\/runs\/9$/);
+});
+
+await test("a queued replacement code run with no job steps prevents using an older success", async () => {
+  // Arrange
+  const input = scenario({
+    currentRunId: 8,
+    status: "queued",
+    conclusion: null,
+    emptySteps: true,
+    previous: true,
+    startedAt: null,
+  });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "pending");
+});
+
+await test("an unrelated in-flight PR run without job steps cannot hold this PR's metadata check", async () => {
+  // Arrange
+  const input = scenario({
+    stepName: `Full code gate for PR 43: ${base}..${head}`,
+    status: "in_progress",
+    conclusion: null,
+    emptySteps: true,
     previous: true,
   });
 
