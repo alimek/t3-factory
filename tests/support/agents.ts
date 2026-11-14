@@ -76,3 +76,27 @@ export async function updateAgentExits(
   assert(result.ok);
   return result.value;
 }
+
+/** Another client saves the Agent through the public API, appending its next revision. */
+export async function saveAgentElsewhere(
+  baseUrl: string | undefined,
+  agent: AgentDefinition,
+  change: Partial<Pick<AgentDefinition, "name" | "prompt">>,
+) {
+  const result = (await (
+    await fetch(new URL(`/api/agents/${agent.id}`, baseUrl), {
+      method: "PUT",
+      headers: { "content-type": "application/json", "X-Factory-Request": "1" },
+      body: JSON.stringify({
+        name: agent.name,
+        prompt: agent.prompt,
+        execution: agent.execution,
+        exits: agent.exits,
+        expectedRevision: agent.revision,
+        ...change,
+      }),
+    })
+  ).json()) as Result<AgentDefinition>;
+  assert(result.ok);
+  return result.value;
+}

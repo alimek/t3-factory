@@ -24,6 +24,7 @@ import type { AgentDraftModel, AgentDraftSnapshot } from "../../agent-draft.ts";
 import { editedLabel } from "../studio-list.tsx";
 import { flowUsageLabel } from "@/lib/agent-display";
 import { AgentExitsField } from "./agent-exits-field.tsx";
+import { AgentRevisionPanel } from "./agent-revision-panel.tsx";
 
 type AgentEditorProps = {
   draft: AgentDraftModel;
@@ -52,6 +53,7 @@ export function AgentEditorPane(props: AgentEditorProps) {
         }}
       >
         <AgentEditorHeader {...props} name={name} saving={saving} />
+        <AgentRevisionPanel draft={draft} state={state} />
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 md:px-8">
           <div className="@container/agent-form grid min-w-0 gap-3.5">
             <div className="grid gap-1.5">
@@ -102,7 +104,19 @@ export function AgentEditorPane(props: AgentEditorProps) {
           </div>
           {error && (
             <Alert variant="destructive" className="mt-4">
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>
+                <p>{error}</p>
+                {!state.saved && state.saveOutcome === "unknown" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => draft.allowCreateAgain()}
+                  >
+                    I checked the Agent list
+                  </Button>
+                )}
+              </AlertDescription>
             </Alert>
           )}
         </div>
@@ -187,7 +201,11 @@ function AgentEditorHeader({
           />
         )}
         <MutationGate>
-          <Button type="submit" disabled={saving}>
+          <Button
+            type="submit"
+            disabled={saving || !state.canSave}
+            title={saveBlockedReason(state)}
+          >
             {saving ? "Saving…" : saveLabel}
           </Button>
         </MutationGate>
@@ -195,6 +213,13 @@ function AgentEditorHeader({
       <p className="mt-1.5 text-2xs text-subtle-foreground">{statusLine}</p>
     </header>
   );
+}
+
+function saveBlockedReason(state: AgentDraftSnapshot): string | undefined {
+  if (state.newer || state.stale) return "Compare the latest revision before saving.";
+  if (!state.saved && state.saveOutcome === "unknown")
+    return "Check the Agent list before creating this Agent again.";
+  return undefined;
 }
 
 function agentEditorStatus(agent: AgentDefinition | null, flowUsage: number): string {

@@ -1,6 +1,4 @@
-import { vi } from "vite-plus/test";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
-import { createAgentDraft, type AgentDraftOperations } from "../../src/agent-draft.ts";
 
 export const capabilities: AgentCapabilities = {
   state: "ready",
@@ -102,45 +100,4 @@ export function savedAgent(change: Partial<AgentDefinition> = {}): AgentDefiniti
     },
     ...change,
   };
-}
-
-function memoryAgents() {
-  let latest = savedAgent();
-  return {
-    latest: () => latest,
-    createAgent: vi.fn<AgentDraftOperations["createAgent"]>(async (content) => {
-      latest = savedAgent({ ...content, revision: 1 });
-      return latest;
-    }),
-    updateAgent: vi.fn<AgentDraftOperations["updateAgent"]>(
-      async (_id, { expectedRevision, ...content }) => {
-        latest = savedAgent({ ...content, revision: expectedRevision + 1 });
-        return latest;
-      },
-    ),
-    removeAgent: vi.fn<AgentDraftOperations["removeAgent"]>(async () => undefined),
-  };
-}
-
-export function agentDraft(
-  agent: AgentDefinition | null = savedAgent(),
-  offered: AgentCapabilities | null = capabilities,
-) {
-  const factory = memoryAgents();
-  return { draft: createAgentDraft(agent, offered, factory), factory };
-}
-
-export function editedAgent() {
-  const setup = agentDraft();
-  setup.draft.edit({ name: "Edited" });
-  return setup;
-}
-
-export async function failedDelete() {
-  const setup = editedAgent();
-  setup.factory.updateAgent.mockRejectedValueOnce(new Error("Save unavailable."));
-  await setup.draft.save();
-  setup.factory.removeAgent.mockRejectedValueOnce(new Error("Agent is still used by a Flow."));
-  await setup.draft.delete();
-  return setup;
 }
