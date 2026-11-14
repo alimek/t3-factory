@@ -35,6 +35,22 @@ export interface RunReport {
   readonly pendingWaits: readonly Omit<Overview["lists"]["pendingWaits"][number], "message">[];
   readonly needsInput: Overview["lists"]["needsInput"];
   readonly problems: readonly Omit<Overview["lists"]["problems"][number], "detail">[];
+  /** When the Run became what its state shows: Settled, Archived, or Active (again). */
+  readonly lifecycleAt: string;
+}
+
+const LIFECYCLE_EVENTS: Record<RunIdentity["state"], string> = {
+  active: "run-activated",
+  snoozed: "run-activated",
+  settled: "run-settled",
+  archived: "run-archived",
+};
+
+/** The latest timeline event of the Run's current lifecycle; an Active Run never settled began at Start. */
+function lifecycleAt(identity: RunIdentity, detail: Parameters<typeof runOverview>[1]) {
+  const kind = LIFECYCLE_EVENTS[identity.state];
+  const events = detail.events.filter((event) => event.kind === kind);
+  return events.at(-1)?.observedAt ?? detail.startedAt;
 }
 
 /** A Run's report from its identity and current detail, as Read Run describes the same facts. */
@@ -53,6 +69,7 @@ function runReport(identity: RunIdentity, detail: Parameters<typeof runOverview>
     pendingWaits: lists.pendingWaits.map(({ message: _message, ...rest }) => rest),
     needsInput: lists.needsInput,
     problems: lists.problems.map(({ detail: _detail, ...rest }) => rest),
+    lifecycleAt: lifecycleAt(identity, detail),
   };
 }
 
@@ -132,7 +149,8 @@ export const makeReportCapture = (
       all
         ? sql<OriginRow>`SELECT o.* FROM chat_run_origins o JOIN runs r ON r.id=o.run_id
             LEFT JOIN chat_status_cards c ON c.run_id=o.run_id
-            WHERE r.archived_at IS NULL OR c.final IS NOT 1 ORDER BY o.recorded_at`
+            LEFT JOIN chat_run_reporting n ON n.run_id=o.run_id
+            WHERE r.archived_at IS NULL OR c.final IS NOT 1 OR n.final IS NOT 1 ORDER BY o.recorded_at`
         : sql<OriginRow>`SELECT * FROM chat_run_origins WHERE run_id IN ${sql.in(runIds)} ORDER BY recorded_at`;
 
     const run = Effect.gen(function* () {

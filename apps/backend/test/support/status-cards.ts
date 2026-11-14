@@ -40,12 +40,16 @@ export async function chatStartedRun(world: World, ordinal = 1, prompt = START_P
   return { runId, worker: workers[0]!, card };
 }
 
-/** Resolves with the card once Discord shows `card` with text matching `pattern`. */
-export async function cardShows(discord: ControlledDiscord, card: CreatedMessage, pattern: RegExp) {
+/** Resolves with the message once Discord shows `shown` (a card or notice) matching `pattern`. */
+export async function messageShows(
+  discord: ControlledDiscord,
+  shown: CreatedMessage,
+  pattern: RegExp,
+) {
   await discord.messagesWhen((messages) =>
-    messages.some((message) => message.id === card.id && pattern.test(message.content)),
+    messages.some((message) => message.id === shown.id && pattern.test(message.content)),
   );
-  return discord.created.find((message) => message.id === card.id)!;
+  return discord.created.find((message) => message.id === shown.id)!;
 }
 
 /** The Discord settings once a status card delivery problem in `state` is listed. */

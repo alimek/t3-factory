@@ -11,6 +11,7 @@ import type {
 import { newId } from "../ids.ts";
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
+import { catchUpNotices } from "./report-notices.ts";
 import { withApplicationNotice } from "./status-cards.ts";
 
 /** Where a Factory message goes: a thread and the parent channel whose Access grants it. */
@@ -100,8 +101,7 @@ const CORRECTIONS: Partial<Record<number, string>> = {
     "Factory could not reopen the archived thread: the server reached Discord's active thread limit. Archive another thread, then retry.",
 };
 
-const EDIT_UNANSWERED =
-  "Discord did not confirm the status card edit. Factory retries automatically.";
+const EDIT_UNANSWERED = "Discord did not confirm the edit. Factory retries automatically.";
 const REPLACEMENT_LOST =
   "Discord deleted this Run's replacement status card too. Factory does not create another on its own; Retry creates a new card.";
 
@@ -268,10 +268,11 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
       });
 
     /**
-     * Discord proved the card deleted. The lineage replaces it automatically once; after that a
-     * new card waits for the host's Retry. The lost message stays recorded as provenance.
+     * Discord proved the message deleted; it stays recorded as provenance. A status card's
+     * lineage replaces it automatically once; after that a new card waits for the host's Retry.
+     * A notice is never recreated: its pending matters stay on the card.
      */
-    const cardLost = (row: DeliveryRow) =>
+    const messageLost = (row: DeliveryRow) =>
       sql.withTransaction(
         Effect.gen(function* () {
           yield* sql`UPDATE chat_deliveries SET state='lost',next_attempt_at=NULL,problem=NULL,problem_at=NULL WHERE id=${row.id}`;
@@ -289,10 +290,11 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
       );
 
     /**
-     * Another application posted the card, so this one cannot edit it. Its message stays as
-     * provenance; a Run that still warrants a card gets a new one explaining the change once.
+     * Another application posted the message, so this one cannot edit it. It stays as
+     * provenance; a Run that still warrants a card gets a new one explaining the change once,
+     * while a notice's edit is simply no longer owed.
      */
-    const cardRetired = (row: DeliveryRow) =>
+    const messageRetired = (row: DeliveryRow) =>
       sql.withTransaction(
         Effect.gen(function* () {
           yield* sql`UPDATE chat_deliveries SET state='retired',next_attempt_at=NULL,problem=NULL,problem_at=NULL WHERE id=${row.id}`;
@@ -311,8 +313,8 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
       );
 
     /**
-     * Edits a known card. Discord refuses edits in an archived thread; once a fresh read shows it
-     * archived and not locked, Factory reopens it and edits again, posting nothing to wake it.
+     * Edits a known message. Discord refuses edits in an archived thread; once a fresh read shows
+     * it archived and not locked, Factory reopens it and edits again, posting nothing to wake it.
      */
     const edit = (sender: DiscordSender, row: DeliveryRow, request: Request) =>
       Effect.gen(function* (): Effect.fn.Return<{ readonly failure?: unknown }> {
@@ -331,7 +333,7 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
         return yield* once;
       });
 
-    /** One attempt to bring a known card to its current text. Edits are safe to repeat. */
+    /** One attempt to bring a known message to its current text. Edits are safe to repeat. */
     const attemptEdit = (sender: DiscordSender, row: DeliveryRow, request: Request) =>
       Effect.gen(function* () {
         const attempts = row.attempts + 1;
@@ -340,7 +342,7 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
         if (!("failure" in edited))
           return yield* delivered(row, row.message_id!, sender.applicationId);
         const { status, code } = discordError(edited.failure);
-        if (status === 404 && code === DISCORD_CODES.unknownMessage) return yield* cardLost(row);
+        if (status === 404 && code === DISCORD_CODES.unknownMessage) return yield* messageLost(row);
         if (status === undefined || status >= 500)
           return yield* later(row.id, attempts, EDIT_UNANSWERED);
         if (status === 429) return yield* later(row.id, attempts, PROBLEMS.transient);
@@ -364,7 +366,7 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
         if (row.message_id !== null)
           return yield* row.sent_by_application_id === sender.applicationId
             ? attemptEdit(sender, row, request)
-            : cardRetired(row);
+            : messageRetired(row);
         const attempts = row.attempts + 1;
         // Intent before the create: a crash from here on leaves an unknown delivery, never a
         // silent repeat.
@@ -415,6 +417,8 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
         yield* sql`UPDATE chat_deliveries SET state='owed',next_attempt_at=NULL WHERE purpose='status-card' AND state='delivered'
           AND sent_by_application_id<>${sender.applicationId}
           AND id IN (SELECT delivery_id FROM chat_status_cards WHERE reportable=1)`;
+        // Notices that accrued while no session served are posted as one catch-up per Run.
+        yield* catchUpNotices(sql, sender.applicationId);
         let signal = yield* Deferred.make<void>();
         const notify = () => Deferred.doneUnsafe(signal, Effect.void);
         wake = notify;

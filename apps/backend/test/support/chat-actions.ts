@@ -161,6 +161,8 @@ export async function runsOf(factory: Pick<Factory, "listRunNavigation">) {
 }
 
 const STATUS_CARD = /^(?:_[^\n]+_\n\n)?\*\*Run [^\n]+\*\* · (?:Active|Snoozed|Settled|Archived)\n/;
+/** A status card or notice: its first line names the Run in bold. */
+const RUN_REPORT = /^(?:_[^\n]+_\n\n)?\*\*Run [^\n]+\*\* /;
 
 /** Whether Discord shows `message` as a Run's status card: its first line names the Run. */
 export const isStatusCard = (message: Pick<CreatedMessage, "content">) =>
@@ -169,13 +171,22 @@ export const isStatusCard = (message: Pick<CreatedMessage, "content">) =>
 /** The status cards Discord shows, in creation order. */
 export const statusCardsIn = (discord: ControlledDiscord) => discord.created.filter(isStatusCard);
 
-/** Messages Factory created besides status cards (reviews, receipts, replies), in order. */
-export const besidesCards = (discord: ControlledDiscord) =>
-  discord.created.filter((message) => !isStatusCard(message));
+/** Whether Discord shows `message` as an attention, lifecycle or catch-up notice about a Run. */
+export const isNotice = (message: Pick<CreatedMessage, "content">) =>
+  RUN_REPORT.test(message.content) && !isStatusCard(message);
 
-/** Resolves once Factory created `count` messages besides status cards. */
-export const createdBesidesCards = (discord: ControlledDiscord, count: number) =>
-  discord.createdWhere((message) => !isStatusCard(message), count);
+/** The notices Discord shows, in creation order. */
+export const noticesIn = (discord: ControlledDiscord) => discord.created.filter(isNotice);
+
+const isRunReport = (message: Pick<CreatedMessage, "content">) => RUN_REPORT.test(message.content);
+
+/** Messages Factory created besides status cards and notices (reviews, receipts, replies), in order. */
+export const besidesReports = (discord: ControlledDiscord) =>
+  discord.created.filter((message) => !isRunReport(message));
+
+/** Resolves once Factory created `count` messages besides status cards and notices. */
+export const createdBesidesReports = (discord: ControlledDiscord, count: number) =>
+  discord.createdWhere((message) => !isRunReport(message), count);
 
 export const HUMAN_CONTEXT = "Review this change.\nCheck the empty state.";
 

@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_status_cards
+-- Newest applied migration: chat_report_notices
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -143,18 +143,18 @@ CREATE TABLE chat_conversations (
   PRIMARY KEY (application_id, thread_id)
 );
 
-CREATE TABLE "chat_deliveries" (
+CREATE TABLE chat_deliveries (
   id TEXT PRIMARY KEY,
-  purpose TEXT NOT NULL CHECK (purpose IN ('receipt', 'status-card')),
+  purpose TEXT NOT NULL CHECK (purpose IN ('receipt', 'status-card', 'attention', 'lifecycle', 'catch-up')),
   action_id TEXT REFERENCES chat_actions(id),
-  -- The Run a status card reports; receipts belong to their action instead.
+  -- The Run a status card or notice reports; receipts belong to their action instead.
   run_id TEXT,
   guild_id TEXT NOT NULL,
   parent_channel_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   -- The Projects the content concerns; the destination channel must still grant them.
   project_ids_json TEXT NOT NULL,
-  -- The text Discord should show: what a create sends, or what an edit brings a card to.
+  -- The text Discord should show: what a create sends, or what an edit brings a message to.
   text TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('owed', 'sending', 'delivered', 'failed', 'unknown', 'cancelled', 'lost', 'retired')),
   attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
@@ -165,8 +165,8 @@ CREATE TABLE "chat_deliveries" (
   sent_by_application_id TEXT,
   created_at TEXT NOT NULL,
   CHECK ((problem IS NULL) = (problem_at IS NULL)),
-  CHECK ((purpose = 'status-card') = (run_id IS NOT NULL)),
-  CHECK (purpose = 'status-card' OR state NOT IN ('lost', 'retired'))
+  CHECK ((purpose = 'receipt') = (run_id IS NULL)),
+  CHECK (purpose <> 'receipt' OR state NOT IN ('lost', 'retired'))
 );
 
 CREATE INDEX chat_deliveries_message ON chat_deliveries(message_id)
@@ -270,6 +270,36 @@ CREATE TABLE chat_proposals (
 CREATE INDEX chat_proposals_identity ON chat_proposals(identity, state)
 ;
 
+CREATE TABLE chat_report_matters (
+  matter_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES chat_run_origins(run_id),
+  notice_id TEXT REFERENCES chat_report_notices(delivery_id),
+  kind TEXT NOT NULL CHECK (kind IN ('human', 'native-request', 'conversation-waiting', 'missing-report', 'execution-failed', 'report-problem')),
+  block TEXT NOT NULL,
+  appeared_at TEXT NOT NULL,
+  resolved INTEGER NOT NULL DEFAULT 0 CHECK (resolved IN (0, 1))
+);
+
+CREATE INDEX chat_report_matters_notice ON chat_report_matters(notice_id)
+;
+
+CREATE INDEX chat_report_matters_run ON chat_report_matters(run_id)
+;
+
+CREATE TABLE chat_report_notices (
+  delivery_id TEXT PRIMARY KEY REFERENCES chat_deliveries(id),
+  run_id TEXT NOT NULL REFERENCES chat_run_origins(run_id),
+  lifecycle TEXT CHECK (lifecycle IN ('active', 'settled', 'archived')),
+  previous_lifecycle TEXT CHECK (previous_lifecycle IN ('active', 'settled', 'archived')),
+  lifecycle_at TEXT,
+  late INTEGER NOT NULL DEFAULT 0 CHECK (late IN (0, 1)),
+  application_notice INTEGER NOT NULL DEFAULT 0 CHECK (application_notice IN (0, 1)),
+  CHECK ((lifecycle IS NULL) = (lifecycle_at IS NULL))
+);
+
+CREATE INDEX chat_report_notices_run ON chat_report_notices(run_id)
+;
+
 CREATE TABLE chat_run_origins (
   run_id TEXT PRIMARY KEY,
   application_id TEXT NOT NULL,
@@ -278,6 +308,14 @@ CREATE TABLE chat_run_origins (
   thread_id TEXT NOT NULL,
   action_id TEXT NOT NULL UNIQUE REFERENCES chat_actions(id),
   recorded_at TEXT NOT NULL
+);
+
+CREATE TABLE chat_run_reporting (
+  run_id TEXT PRIMARY KEY REFERENCES chat_run_origins(run_id),
+  lifecycle TEXT CHECK (lifecycle IN ('active', 'settled', 'archived')),
+  reference TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  final INTEGER NOT NULL DEFAULT 0 CHECK (final IN (0, 1))
 );
 
 CREATE TABLE chat_sdk_cache (

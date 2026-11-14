@@ -3,9 +3,10 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../ids.ts";
 import { now } from "../time.ts";
 import type { ReportConsumer, ReportOrigin, RunReport } from "./run-reports.ts";
+import { runReference } from "./run-tools.ts";
 
-/** Discord's message length; a card always fits one message. */
-const MESSAGE_LIMIT = 2000;
+/** Discord's message length; a card or notice always fits one message. */
+export const MESSAGE_LIMIT = 2000;
 /** Entries each card list shows before summarizing the rest, shrunk until the card fits. */
 const LIST_LIMITS = [8, 4, 2, 1, 0] as const;
 const NAME_LIMIT = 100;
@@ -15,13 +16,23 @@ const TITLE_LIMIT = 200;
 const APPLICATION_NOTICE =
   "Factory's Discord application changed. Messages the previous bot posted in this thread are no longer updated; this card replaces its status card.";
 
-const clip = (text: string, limit: number) => {
+export const clip = (text: string, limit: number) => {
   const characters = Array.from(text);
   return characters.length <= limit ? text : `${characters.slice(0, limit - 1).join("")}…`;
 };
-const name = (text: string | null | undefined) => clip(text ?? "Unnamed Block", NAME_LIMIT);
+/**
+ * Names come from users, so a zero-width space follows every `@`: no name can read as a user,
+ * role or mass mention, independently of the allowed mentions every Factory message sends.
+ */
+const inert = (text: string) => text.replaceAll("@", "@\u200b");
+export const name = (text: string | null | undefined) =>
+  inert(clip(text ?? "Unnamed Block", NAME_LIMIT));
+const runTitle = (text: string) => inert(clip(text, TITLE_LIMIT));
+/** A card's or notice's bold Run line start: reference and title. */
+export const runHeading = (reference: string, title: string) =>
+  `**Run ${reference} · ${runTitle(title)}**`;
 /** A Discord timestamp: every reader sees it in their own time zone. */
-const at = (iso: string) => `<t:${Math.floor(Date.parse(iso) / 1000)}:f>`;
+export const at = (iso: string) => `<t:${Math.floor(Date.parse(iso) / 1000)}:f>`;
 
 const STATES: Record<RunReport["run"]["state"], string> = {
   active: "Active",
@@ -84,10 +95,10 @@ function section(title: string, lines: readonly string[], limit: number) {
  */
 function statusCardText(report: RunReport, replacedApplication: boolean) {
   const { run } = report;
-  const reference = run.number === null ? run.id : `#${run.number}`;
+  const reference = runReference(run);
   const head = [
     ...(replacedApplication ? [`_${APPLICATION_NOTICE}_`, ""] : []),
-    `**Run ${reference} · ${clip(run.title, TITLE_LIMIT)}** · ${STATES[run.state]}`,
+    `${runHeading(reference, run.title)} · ${STATES[run.state]}`,
     `Project: ${name(run.project.name)} (\`${clip(run.project.repositoryPath, TITLE_LIMIT)}\`) · Flow: ${name(run.flow)}`,
     ...(report.settlement === null
       ? []

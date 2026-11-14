@@ -592,7 +592,7 @@ const CARD = /^\*\*Run [^\n]+\*\* · /;
 const LOCKED_CORRECTION =
   "The thread is locked, and Factory never unlocks threads. Unlock it in Discord, then retry.";
 
-test("the host retries a status card Discord refused in a locked thread once a moderator unlocked it", async ({
+test("the host retries the status card and the Archived notice Discord refused in a locked thread once a moderator unlocked it", async ({
   app,
   screen,
 }) => {
@@ -609,15 +609,22 @@ test("the host retries a status card Discord refused in a locked thread once a m
   await fetch(new URL(`/__fixture/discord/thread?thread=${thread}&state=locked`, app.baseUrl), {
     method: "POST",
   });
-  // Archiving the Run changes its card, whose edit Discord refuses in the locked thread.
+  // Archiving the Run changes its card and owes an Archived notice; Discord refuses both in the
+  // locked thread.
   const archived = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/archive`, undefined);
   assert(archived.ok, JSON.stringify(archived));
   await settingsWhen<DiscordSettings>(app.baseUrl, "/api/chat-control/discord", (settings) =>
-    settings.delivery.problems.some(
-      (problem) => problem.purpose === "status-card" && problem.state === "failed",
+    ["status-card", "lifecycle"].every((purpose) =>
+      settings.delivery.problems.some(
+        (problem) => problem.purpose === purpose && problem.state === "failed",
+      ),
     ),
   );
   const card = await deliveryProblem(app, screen, "Status card, Failed", LOCKED_CORRECTION);
+  const notice = screen
+    .getByRole("region", "Delivery and actions")
+    .getByRole("listitem", "Lifecycle notice, Failed");
+  await expect(notice.getByText(LOCKED_CORRECTION)).toBeVisible();
   await app.screenshot("chat-discord-status-card-failed");
   await fetch(new URL(`/__fixture/discord/thread?thread=${thread}&state=unlocked`, app.baseUrl), {
     method: "POST",
@@ -625,18 +632,26 @@ test("the host retries a status card Discord refused in a locked thread once a m
 
   // Act
   await card.getByRole("button", "Retry").tap();
+  await notice.getByRole("button", "Retry").tap();
 
   // Assert
   await expect(screen.getByRole("region", "Delivery and actions")).toHaveCount(0);
   const messages = await messagesWhen(app.baseUrl, (created) =>
     created.some(
       (message) =>
-        message.channelId === thread && /^\*\*Run [^\n]+\*\* · Archived\n/.test(message.content),
+        message.channelId === thread &&
+        /^\*\*Run [^\n]+\*\* was Archived at /.test(message.content),
     ),
   );
   assert.strictEqual(
     messages.filter((message) => message.channelId === thread && CARD.test(message.content)).length,
     1,
+  );
+  assert(
+    messages.some(
+      (message) =>
+        message.channelId === thread && /^\*\*Run [^\n]+\*\* · Archived\n/.test(message.content),
+    ),
   );
   await app.screenshot("chat-discord-status-card-retried");
 });

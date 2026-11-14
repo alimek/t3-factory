@@ -80,6 +80,11 @@ and restricted OAuth credentials live outside project repositories.
   provenance, and adds one status card lineage per chat-started Run: its current card message, whether
   its one automatic replacement was used and the application it replaced. Existing receipts keep every
   value, and Runs without an originating thread get no card.
+  Migration `090` rebuilds the owed deliveries again so they also hold attention, lifecycle and
+  catch-up notices, keeping every existing value, and records per chat-started Run the lifecycle its
+  notices accounted for, each notice's reported lifecycle change, and each attention matter with the
+  notice that announced it. Chat-started Runs recorded before it start from their current state, so
+  the upgrade posts nothing about earlier matters or outcomes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

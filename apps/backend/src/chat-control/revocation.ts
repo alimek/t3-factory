@@ -18,7 +18,7 @@ const ungranted = (channels: Channels, parentChannelId: string, projectIdsJson: 
  * longer allowed, or whose channel is gone or no longer grants a Project they target, end for good:
  * a regrant revives nothing. Undelivered messages to a destination that no longer grants their
  * Projects are cancelled; a message already being sent may finish, and the action it reports stays
- * recorded.
+ * recorded. Notices of the affected chat-started Runs restart from a baseline after a regrant.
  */
 export const applyAccessRevocation = (
   sql: SqlClient.SqlClient,
@@ -48,6 +48,21 @@ export const applyAccessRevocation = (
     );
     if (cancelled.length > 0)
       yield* sql`UPDATE chat_deliveries SET state='cancelled',next_attempt_at=NULL WHERE id IN ${sql.in(cancelled.map((row) => row.id))}`;
+    // A chat-started Run whose originating channel loses its Project accrues no notices; after a
+    // regrant its notices start from its state then, without narrating the revoked interval.
+    const origins = yield* sql<{
+      run_id: string;
+      parent_channel_id: string;
+      project_id: string;
+    }>`SELECT o.run_id,o.parent_channel_id,t.project_id FROM chat_run_origins o
+      JOIN runs r ON r.id=o.run_id JOIN tasks t ON t.id=r.task_id`;
+    const revoked = origins.filter((row) =>
+      ungranted(access.channels, row.parent_channel_id, JSON.stringify([row.project_id])),
+    );
+    if (revoked.length > 0)
+      yield* sql`INSERT INTO chat_run_reporting (run_id,lifecycle) VALUES ${sql.csv(
+        revoked.map((row) => sql`(${row.run_id},NULL)`),
+      )} ON CONFLICT(run_id) DO UPDATE SET lifecycle=NULL,final=0`;
   });
 
 /**

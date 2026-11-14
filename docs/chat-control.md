@@ -579,6 +579,52 @@ new bot, which says once that the previous bot's messages are no longer updated;
 Archived Runs get none. The old cards stay as they are, and an old create whose outcome is unknown
 stays unknown. Rotating the same application's token keeps editing the same cards.
 
+### Attention and lifecycle notices
+
+Besides the card, Factory posts a new message in a chat-started Run's originating thread only for a
+meaningful change: an attention notice for new Needs input or Problem matters, and a lifecycle notice
+when the Run becomes Settled or Archived or returns to Active. Block starts, results, Wait progress and
+Snooze only edit the card. Attention follows the Run's own attention: a pending Human step or native T3
+question or permission is Needs input, and a missing report, an execution failure or a report problem is
+a Problem; an Agent's ordinary conversation and Waits are not attention, and a stale or not yet made
+observation is never reported as a Problem. A native T3 request is marked to be answered in T3. A Human
+notice names the Human step and when it appeared, and points to asking Factory in the thread: it has no
+answer buttons, and answering still goes through the complete review and the requester's confirmation.
+A Settled notice reports the settlement only, not results or worker completion, which the card and Read
+Run keep apart; an Archived notice makes no claim of rollback or confirmed termination.
+
+Each pending matter has exactly one notice. Matters that appear together share one notice, each on its
+own line with its Block and appearance time, up to eight per notice. When a matter resolves, Factory
+edits the notice that announced it to show that line resolved, without posting anything. Notices
+mention nobody: every Factory message allows no mentions, and an `@` in a Run title or Block name is
+followed by an invisible space so it cannot read as a user, role or mass mention.
+
+Factory captures notices with the card from the Run's committed facts, comparing the Run's pending
+matters and lifecycle with what its notices already accounted for. So a matter that appeared and
+resolved between two captures, while Off or while the backend was stopped, is never reported, and a
+lifecycle change undone before its notice was posted is dropped. What accrues while no session serves
+(Off, an outage that ended the Discord session, or the backend being stopped) is posted, once a session
+serves again, as one catch-up per Run: the matters still pending that were never announced, each on its
+own line, and the latest lifecycle outcome labelled delivered late with the time it happened. Matters
+announced earlier are not repeated, and a Run whose notices were all delivered gets nothing merely
+because Factory reconnected. A catch-up not yet posted when the session ends again is the same catch-up
+next time. An owed outcome has no age limit.
+
+While the thread's channel does not grant the Run's Project, nothing accrues and owed notices are
+cancelled. After a regrant, notices start from the Run's current state: matters pending then stay on the
+card without a notice, the lifecycle at that moment is taken as reported, and a notice already posted is
+corrected silently when one of its matters resolved meanwhile. After a different Discord application is
+verified and On, the new bot cannot edit the old bot's notices: their edits are no longer owed and
+nothing is posted again for them. A notice still owed from before the change is posted by the new bot,
+and when a quiet Run's card stays the old bot's, that Run's catch-up says once that the previous bot's
+messages are no longer updated.
+
+Notice deliveries follow the card's rules: intent is recorded before each create, edits are repeated
+with waits, an unproven create is unknown and only the warned Retry sends it again, and failures appear in
+Settings with their correction. A notice Discord proved deleted is not recreated: its pending matters
+stay on the card. A notice never created whose matters all resolved, including one that failed or whose
+create is unknown, is no longer owed and leaves Settings.
+
 ## Support limits
 
 The pinned AI SDK packages are `ai` 7.0.172, `@ai-sdk/openai-compatible` 3.0.92 and
@@ -604,8 +650,8 @@ the OpenAI-compatible wire format; no live model's tool-calling quality is quali
 the owner's responsibility. Reply-target payloads, mention suppression, multi-part replies and the
 member lookup used after an outage are not yet qualified against Discord.
 
-Reviews, confirmation buttons, their private answers, receipts, status cards and delivery failures
-are tested against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a
+Reviews, confirmation buttons, their private answers, receipts, status cards, notices and delivery
+failures are tested against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a
 message create or edit, and models deleted messages and threads and archived, locked and limited
 threads. Button payloads, ephemeral answers to button clicks, message edits, unarchiving, Discord's
 real error codes for archived, locked or deleted threads and messages, and message-create

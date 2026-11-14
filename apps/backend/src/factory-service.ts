@@ -27,6 +27,7 @@ import { makeChatActions } from "./chat-control/actions.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
 import { makeChatDeliveries } from "./chat-control/deliveries.ts";
 import { makeReportCapture } from "./chat-control/run-reports.ts";
+import { reportNotices } from "./chat-control/report-notices.ts";
 import { statusCards } from "./chat-control/status-cards.ts";
 import { archiveAction } from "./chat-control/archive-action.ts";
 import { humanAnswerAction } from "./chat-control/human-action.ts";
@@ -159,7 +160,7 @@ export const makeFactoryService = (
     const reportCapture = yield* makeReportCapture(
       sql,
       { getRun: (id) => guard(runner.getRun(id)) },
-      [statusCards(sql)],
+      [statusCards(sql), reportNotices(sql)],
       chatDeliveries.wake,
     );
     yield* changes.onRunChanged(reportCapture.changed);

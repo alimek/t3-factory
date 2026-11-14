@@ -369,7 +369,8 @@ Authorized [Chat control](chat-control.md#finding-and-reading-runs) participants
 Projects their Discord channel grants, including Runs started here. Reading in chat changes nothing about the Run, and its
 views here and on approved clients carry no Discord identifiers. A Run started through a chat confirmation also has a
 [status card](chat-control.md#status-cards) in its originating thread, which Factory keeps current from the Run's
-facts; Snooze, Settle and Archive here change only what the card shows.
+facts, and [notices](chat-control.md#attention-and-lifecycle-notices) there for new Needs input and Problems, for
+becoming Settled or Archived and for returning to Active. Snooze changes only what the card shows.
 
 ### Branches and pull requests
 

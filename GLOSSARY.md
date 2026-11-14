@@ -320,3 +320,12 @@ Run's committed facts: identity, state, active Blocks, latest results, pending W
 Problems. Ordinary Block activity edits it rather than posting; it never carries report bodies. See
 [Chat control](docs/chat-control.md#status-cards).
 _Avoid_: Progress feed or per-event notification; treating the card's text as conversation input.
+
+**Run notice**:
+A new Discord message in a chat-started Run's originating thread for a meaningful change: an attention
+notice for new Needs input or Problem matters, a lifecycle notice for becoming Settled or Archived or
+returning to Active, or one catch-up per Run for what accrued while Factory could not post. Resolving a
+matter edits the notice that announced it; notices mention nobody. See
+[Chat control](docs/chat-control.md#attention-and-lifecycle-notices).
+_Avoid_: Replaying Block transitions or matters that opened and resolved while Factory could not post;
+answer buttons on a notice.

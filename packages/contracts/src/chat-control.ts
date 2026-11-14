@@ -187,9 +187,11 @@ export interface ChatDeliveryProblem {
   readonly id: string;
   /**
    * What the message is: a receipt reports a confirmed action's actual result; a status card is a
-   * chat-started Run's maintained card in its originating thread.
+   * chat-started Run's maintained card in its originating thread; an attention or lifecycle notice
+   * announces new Needs input or Problems, or the Run becoming Settled, Archived or Active again,
+   * there; a catch-up combines what accrued while Factory could not post.
    */
-  readonly purpose: "receipt" | "status-card";
+  readonly purpose: "receipt" | "status-card" | "attention" | "lifecycle" | "catch-up";
   readonly state: "retrying" | "failed" | "unknown";
   /** The destination thread and its parent channel, as decimal Discord IDs. */
   readonly guildId: string;
