@@ -15,6 +15,14 @@ async function flowRequest(baseUrl: string | undefined, path: string, init?: Req
   return result.value;
 }
 
+/** The latest saved revision of the Flow named `name`. */
+export async function readFlowByName(baseUrl: string | undefined, name: string) {
+  const flows = (await flowRequest(baseUrl, "/api/flows")) as FlowDraft[];
+  const flow = flows.find((item) => item.name === name);
+  assert(flow);
+  return flow;
+}
+
 /** Saves a new Flow with a seeded Flow's graph and the given workspace setting. */
 export async function saveFlowCopy(
   baseUrl: string | undefined,
@@ -22,9 +30,7 @@ export async function saveFlowCopy(
   name: string,
   workspace: FlowWorkspace,
 ) {
-  const flows = (await flowRequest(baseUrl, "/api/flows")) as FlowDraft[];
-  const seeded = flows.find((flow) => flow.name === source);
-  assert(seeded);
+  const seeded = await readFlowByName(baseUrl, source);
   const created = (await flowRequest(baseUrl, "/api/flows", {
     method: "POST",
     headers: mutation,
@@ -53,7 +59,13 @@ export async function saveSingleAgentFlow(
   baseUrl: string | undefined,
   name: string,
   agentName: string,
-  block: { readonly id: string; readonly name: string; readonly x: number; readonly y: number },
+  block: {
+    readonly id: string;
+    readonly name: string;
+    readonly x: number;
+    readonly y: number;
+    readonly revisitInstruction?: string;
+  },
 ) {
   const agents = (await flowRequest(baseUrl, "/api/agents")) as AgentDefinition[];
   const agent = agents.find((item) => item.name === agentName);
@@ -74,6 +86,7 @@ export async function saveSingleAgentFlow(
             agentId: agent.id,
             hiddenExitIds: [],
             localExits: [],
+            revisitInstruction: block.revisitInstruction,
             position: { x: block.x, y: block.y },
           },
         ],

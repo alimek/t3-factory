@@ -284,7 +284,9 @@ fixed Human exits their old exits were mapped to.
   with their current visit or accepted exit, branches and pull requests, the initial prompt and block activations, with project,
   Flow revision, workspace and work periods under a closed **Workspace & observation** section. Selecting a block shows it in the
   same panel: its Needs input or Problem first (answers and Problem actions work here), its current visit and working report,
-  the results handed off to an Agent block (**Received**), activations, exits, **Open thread in T3**, and its T3 thread and
+  the results handed off to an Agent block (**Received**), activations, the Agent block's
+  [Revisit instruction](../GLOSSARY.md#revisit-instruction) as captured at Start (read-only, and only when it is non-empty;
+  the execution canvas never shows it, and the exact composed turn stays in the worker thread), exits, **Open thread in T3**, and its T3 thread and
   execution ids under a closed **Technical details** section. Pressing the Flow input's
   [Run title](#run-title-generation) line shows the Run title there instead; it selects no block.
   **Esc** or the **Overview** breadcrumb returns from the block or the Run title to the overview. Selecting never answers
