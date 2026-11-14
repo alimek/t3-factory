@@ -13,6 +13,7 @@ it("a committed Run update preserves entity order and untouched identities witho
     number: run.number,
     title: "Renamed",
     titleProvenance: "manual",
+    titleGeneration: null,
     lifecycle: "settled",
     task: run.task,
     flowId: run.flowId,

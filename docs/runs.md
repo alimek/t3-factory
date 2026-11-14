@@ -45,6 +45,8 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   renamed, manual for a renamed draft, even when its title equals the prompt's first line. A draft or pending request
   saved before provenance existed submits legacy rather than a guess, as does a request that omits it. Start rejects any
   other value, including generated, and creates nothing. Run detail and navigation expose the provenance.
+- **Title generation.** With **Generate Run titles** on, Start decides once, when it accepts a Run, whether
+  [Run title generation](#run-title-generation) applies; the decision never refuses or delays Start.
 - **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
   records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
   even after a lost response or restart, with its original title provenance; reusing the key with changed content,
@@ -93,6 +95,34 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   choosing a just-created Project or Flow waits for the delivery that lists it. Confirmed Start removes the draft and opens its Run; a confirmed
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
   survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
+
+### Run title generation
+
+**Generate Run titles** is an installation-wide setting, off on new and upgraded installations. Turning it on needs a T3
+provider instance and model, with options, that the live T3 catalog offers (a provider whose harness cannot report to
+Factory is refused); an unknown instance, model or option is rejected and the setting is unchanged. Turning it off keeps
+the chosen model. Only the Factory host changes it (`PUT /api/settings/run-titles`); approved clients read it, with its
+latest diagnostic (`GET /api/settings/run-titles`).
+
+The shared Start operation, used by the composer and by `factory_start_run`, makes the decision, so every Start path behaves
+the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and
+legacy Runs record no generation. An eligible Run captures the provider instance, model, options, built-in prompt version
+and an absolute deadline 30 seconds after acceptance, and records its generation in the acceptance transaction:
+
+- **pending** when every check passes: T3 is connected and authorized, the catalog offers the provider instance, model
+  and options, launch is supported and Factory MCP is installed for that provider (an instance disabled in T3 has no
+  [reporting installation](t3-integration.md#installation-actions), so it fails here);
+- **skipped** with that check's reason when one fails; the reason also becomes the setting's latest diagnostic, with the
+  Run, until a later failure replaces it;
+- **skipped** without a diagnostic when the prompt has no letter or digit, counting `[Image N: name]` labels as text, or
+  when the setting changed between these checks and acceptance while staying on.
+
+The checks run beside the other Start checks; their failure never refuses Start. A replayed Start returns its Run with
+the original provenance and generation and decides nothing again. A Run generates at most once and only at Start; there
+is no regenerate, and later setting changes, including turning it off, affect only future Runs. Run detail and
+navigation, including live navigation, carry the generation's state with a short reason, captured model label, deadline,
+automatic title, generated title and T3 thread link, or none. Factory does not launch title threads yet, so pending
+generations stay pending and no title is replaced.
 
 ### Starting from a conversation
 

@@ -14,8 +14,10 @@ import type {
   ProjectIcon,
   ProjectIconColor,
   Result,
+  RunTitleModel,
   StartTitleProvenance,
   UpdateAgentInput,
+  UpdateRunTitleSettingInput,
   ValidationIssue,
   WaitDuration,
   WaitUnit,
@@ -212,8 +214,12 @@ function invalid(code: string, path: string, message: string): Result<never> {
 const EXECUTION_REQUIRED = "Choose an environment, provider, model and thinking options.";
 const INVALID_OPTION = "Thinking options must use supported id and value pairs.";
 
-function parseModelOption(option: unknown, index: number): Result<AgentModelOptionValue> {
-  const path = `execution.modelOptions.${index}`;
+function parseModelOption(
+  option: unknown,
+  index: number,
+  prefix: string,
+): Result<AgentModelOptionValue> {
+  const path = `${prefix}.modelOptions.${index}`;
   if (typeof option !== "object" || option === null || !("id" in option) || !("value" in option))
     return invalid("invalid_option", path, INVALID_OPTION);
   const id = parseTrimmedString(
@@ -231,20 +237,20 @@ function parseModelOption(option: unknown, index: number): Result<AgentModelOpti
   return { ok: true, value: { id: id.value, value } };
 }
 
-function parseModelOptions(execution: object): Result<AgentModelOptionValue[]> {
+function parseModelOptions(execution: object, prefix: string): Result<AgentModelOptionValue[]> {
   if (
     "modelOptions" in execution &&
     execution.modelOptions !== undefined &&
     !Array.isArray(execution.modelOptions)
   )
-    return invalid("invalid_option", "execution.modelOptions", INVALID_OPTION);
+    return invalid("invalid_option", `${prefix}.modelOptions`, INVALID_OPTION);
   const rawOptions =
     "modelOptions" in execution && Array.isArray(execution.modelOptions)
       ? execution.modelOptions
       : [];
   const modelOptions: AgentModelOptionValue[] = [];
   for (const [index, raw] of rawOptions.entries()) {
-    const option = parseModelOption(raw, index);
+    const option = parseModelOption(raw, index, prefix);
     if (!option.ok) return option;
     modelOptions.push(option.value);
   }
@@ -256,10 +262,11 @@ function parseExecutionReference(
   field: "environmentId" | "providerInstanceId" | "modelId",
   code: string,
   message: string,
+  prefix = "execution",
 ): Result<string> {
   return parseTrimmedString(
     field in execution ? (execution as Record<string, unknown>)[field] : undefined,
-    `execution.${field}`,
+    `${prefix}.${field}`,
     512,
     code,
     message,
@@ -293,7 +300,7 @@ export function validateExecutionSettings(execution: unknown): Result<AgentExecu
   if (!providerInstanceId.ok) return providerInstanceId;
   const modelId = parseExecutionReference(execution, "modelId", "invalid_model", "Choose a model.");
   if (!modelId.ok) return modelId;
-  const modelOptions = parseModelOptions(execution);
+  const modelOptions = parseModelOptions(execution, "execution");
   if (!modelOptions.ok) return modelOptions;
   return {
     ok: true,
@@ -304,6 +311,59 @@ export function validateExecutionSettings(execution: unknown): Result<AgentExecu
       modelOptions: modelOptions.value,
     },
   };
+}
+
+function validateRunTitleModel(model: unknown): Result<RunTitleModel> {
+  if (typeof model !== "object" || model === null)
+    return invalid("run_title_model", "model", "Choose a provider instance and model.");
+  const providerInstanceId = parseExecutionReference(
+    model,
+    "providerInstanceId",
+    "invalid_provider",
+    "Choose a provider instance.",
+    "model",
+  );
+  if (!providerInstanceId.ok) return providerInstanceId;
+  const modelId = parseExecutionReference(
+    model,
+    "modelId",
+    "invalid_model",
+    "Choose a model.",
+    "model",
+  );
+  if (!modelId.ok) return modelId;
+  const modelOptions = parseModelOptions(model, "model");
+  if (!modelOptions.ok) return modelOptions;
+  return {
+    ok: true,
+    value: {
+      providerInstanceId: providerInstanceId.value,
+      modelId: modelId.value,
+      modelOptions: modelOptions.value,
+    },
+  };
+}
+
+/**
+ * The setting's shape only; whether T3 offers the model is checked against the live catalog.
+ * Turning it on needs a model, while a disabled setting may keep one or none.
+ */
+export function validateUpdateRunTitleSetting(input: unknown): Result<UpdateRunTitleSettingInput> {
+  const fields =
+    typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  if (typeof fields.enabled !== "boolean")
+    return invalid("run_title_enabled", "enabled", "Say whether Generate Run titles is on.");
+  if (fields.model === null || fields.model === undefined)
+    return fields.enabled
+      ? invalid(
+          "run_title_model",
+          "model",
+          "Choose a provider instance and model before turning on Generate Run titles.",
+        )
+      : { ok: true, value: { enabled: false, model: null } };
+  const model = validateRunTitleModel(fields.model);
+  if (!model.ok) return model;
+  return { ok: true, value: { enabled: fields.enabled, model: model.value } };
 }
 
 /** Structural save validation is deliberately separate from T3 capability availability. */
@@ -935,7 +995,7 @@ export function flowReadiness(
 
 /** Resolve saved execution identifiers against a capability catalog without substituting defaults. */
 export function resolveAgentModel(
-  execution: AgentExecutionSettings,
+  execution: Pick<AgentExecutionSettings, "providerInstanceId" | "modelId">,
   capabilities: AgentCapabilities | null,
 ) {
   const provider = capabilities?.providers.find(

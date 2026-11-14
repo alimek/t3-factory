@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { prepared } from "./support/prepared-runner.ts";
 import { factoryMcpClient, toolReply } from "./support/factory-mcp.ts";
+import { enableRunTitles } from "./support/scenarios.ts";
 
 /** factory_start_run arguments for the prepared Project and Flow. */
 const startArguments = (fixture: Awaited<ReturnType<typeof prepared>>) => ({
@@ -39,6 +40,29 @@ it("a session without a Block starts a text Run with an automatic title and rece
   assert(run.ok);
   expect(run.value.input).toBe("  \nImprove search\nKeep it accessible.  ");
   expect(run.value.titleProvenance).toBe("automatic");
+});
+
+it("a session Start while Generate Run titles is on records a pending generation for its automatic title", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const client = await factoryMcpClient(c, fixture.f);
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_start_run",
+    arguments: startArguments(fixture),
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const run = await fixture.f.getRun(toolReply(result).run.id);
+  assert(run.ok);
+  expect(run.value.titleGeneration).toMatchObject({
+    state: "pending",
+    automaticTitle: "Improve search",
+    modelLabel: "Codex · GPT 6.1 Sol",
+  });
 });
 
 it("the conversation's repository root identifies its Project while another clone stays distinct", async (c) => {

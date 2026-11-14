@@ -148,9 +148,20 @@ and global navigation entry. Its **Run number** is a global sequence assigned at
 shared with worker thread titles and worktree branches; stored history may have no number.
 Its **title provenance** records how the title was chosen: **automatic** (the prompt's first
 non-empty line), **manual** (chosen by the owner; Rename sets it), **generated** (reserved for a
-model-written title; Factory does not generate titles yet) or **legacy** (the Run or its Start
+title written by Run title generation; none is applied yet) or **legacy** (the Run or its Start
 request predates provenance). Start records the provenance it is given; it is never inferred
 by comparing title text.
+
+**Run title generation**:
+An installation-level step outside any Flow that may give a new Run a short title written by a
+T3 model; it is not a Block, worker or Flow step. The host-only setting **Generate Run titles**,
+off by default, names a T3 provider instance, model and options. Start decides once, at
+acceptance: a Run with automatic title provenance accepted while the setting is on captures the
+model, options, built-in prompt version and a deadline 30 seconds after acceptance, and its
+generation is **pending**, or **skipped** when an eligibility check fails (recorded as the setting's
+latest **diagnostic**) or the prompt has no meaningful text. Manual and legacy Runs record none.
+Later setting changes affect only future Runs, and there is no regenerate. Factory does not launch
+title threads yet, so a pending generation stays pending.
 
 **Captured definitions**:
 The Flow revision a Run started with and the Agent revision of every Agent that Flow references, frozen at Start. Every read and later activation of the Run uses them; later saves and removals affect only future Runs.

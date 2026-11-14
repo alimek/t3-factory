@@ -26,6 +26,7 @@ import { recoverOperation } from "./runner-effects.ts";
 import { makeWaitTimers } from "./runner-wait-timers.ts";
 import type { LiveChanges } from "../live-changes.ts";
 import type { RunImages } from "../run-images.ts";
+import type { PlanTitleGeneration } from "../run-titles.ts";
 
 /** One scoped Runner owner. Accepted work drains before SQL and ownership are released. */
 export const makeRunner = Effect.fn("Runner.make")(function* (
@@ -36,6 +37,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   checkAgent: RunnerOptions["checkAgent"],
   changes: LiveChanges,
   images: RunImages,
+  planTitleGeneration: PlanTitleGeneration,
 ) {
   const scope = yield* Effect.scope;
   const store = yield* openRunStore(owner, changes);
@@ -67,7 +69,14 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     images,
     waitTimers.schedule,
   );
-  const { start, startText } = openRunnerStart(store, ops, t3, lifecycle, checkAgent, images);
+  const { start, startText } = openRunnerStart(
+    store,
+    ops,
+    t3,
+    lifecycle,
+    { checkAgent, planTitleGeneration },
+    images,
+  );
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
   const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);

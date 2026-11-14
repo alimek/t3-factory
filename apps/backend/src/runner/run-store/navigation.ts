@@ -13,6 +13,7 @@ import { failure } from "../../result.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { storedProjectIcon } from "../../projects.ts";
 import { projectFaviconUrl } from "../../project-favicon.ts";
+import { readTitleGenerations } from "../../run-titles.ts";
 export function openRunNavigation(database: RunnerDatabase) {
   return {
     listRunNavigation(): Effect.Effect<Result<readonly RunNavigationEntry[]>, unknown> {
@@ -45,6 +46,10 @@ export function openRunNavigation(database: RunnerDatabase) {
           JOIN flow_revisions f ON f.id=r.flow_revision_id
           LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
           const settlements = yield* readRunSettlementStates(sql, rows);
+          const titleGenerations = yield* readTitleGenerations(
+            sql,
+            rows.map((row) => row.id),
+          );
           const blocks = yield* sql<{
             run_id: string;
             block_id: string;
@@ -109,6 +114,7 @@ export function openRunNavigation(database: RunnerDatabase) {
                 number: row.number,
                 title: row.title,
                 titleProvenance: row.title_provenance,
+                titleGeneration: titleGenerations.get(row.id) ?? null,
                 createdAt: row.created_at,
                 lastActivityAt: row.last_activity_at,
                 flowName: row.flow_name,

@@ -1,5 +1,5 @@
 /** Runs, their prompt images, Tasks, attention and Human occurrences. */
-import type { AgentDefinition, AgentExecutionSettings } from "./agent.ts";
+import type { AgentDefinition, AgentExecutionSettings, AgentModelOptionValue } from "./agent.ts";
 import type { FlowDraft } from "./flow.ts";
 import type { FactoryProject } from "./project.ts";
 import { operation, operationPath } from "./operation.ts";
@@ -65,6 +65,57 @@ export type PromptSegment =
 export type RunTitleProvenance = "automatic" | "manual" | "generated" | "legacy";
 /** A Start never claims a generated title: generation only replaces an accepted automatic one. */
 export type StartTitleProvenance = Exclude<RunTitleProvenance, "generated">;
+/**
+ * Run title generation for one Run, decided once at Start: pending until a terminal outcome.
+ * `skipped` means an eligibility check failed or the prompt had no meaningful text.
+ */
+export type RunTitleGenerationState =
+  | "pending"
+  | "applied"
+  | "dropped"
+  | "timed-out"
+  | "cancelled"
+  | "skipped"
+  | "failed";
+/** What a Run captured for title generation at Start, and how it ended. */
+export interface RunTitleGeneration {
+  readonly state: RunTitleGenerationState;
+  /** A short reason for the state; null while pending. */
+  readonly reason: string | null;
+  /** The provider and model captured at Start, as T3's catalog labelled them. */
+  readonly modelLabel: string;
+  /** Acceptance time plus 30 seconds. */
+  readonly deadlineAt: string;
+  /** The Run's title at Start: its prompt's first non-empty line. */
+  readonly automaticTitle: string;
+  readonly generatedTitle: string | null;
+  /** The title thread in T3, once known. */
+  readonly threadLink: string | null;
+}
+/** The T3 provider instance, model and options the title model runs with. */
+export interface RunTitleModel {
+  readonly providerInstanceId: string;
+  readonly modelId: string;
+  readonly modelOptions: readonly AgentModelOptionValue[];
+}
+/** The latest eligibility failure recorded at Start, kept until a later one replaces it. */
+export interface RunTitleDiagnostic {
+  readonly runId: string;
+  readonly runNumber: number | null;
+  readonly message: string;
+  readonly recordedAt: string;
+}
+/** The installation-wide Generate Run titles setting; only the Factory host changes it. */
+export interface RunTitleSetting {
+  readonly enabled: boolean;
+  readonly model: RunTitleModel | null;
+  readonly diagnostic: RunTitleDiagnostic | null;
+}
+/** Enabling needs a model the live T3 catalog offers; a disabled setting may keep its model. */
+export interface UpdateRunTitleSettingInput {
+  readonly enabled: boolean;
+  readonly model: RunTitleModel | null;
+}
 export interface StartRunInput {
   /** Also the Run's navigation `creationKey`. */
   readonly requestId: string;
@@ -292,6 +343,8 @@ export interface RunNavigationEntry {
   readonly number: number | null;
   readonly title: string;
   readonly titleProvenance: RunTitleProvenance;
+  /** Null when the Run records no title generation. */
+  readonly titleGeneration: RunTitleGeneration | null;
   readonly createdAt: string;
   readonly lastActivityAt: string;
   readonly flowName: string;
@@ -353,6 +406,8 @@ export interface RunDetail extends RunSummary {
   } | null;
   readonly title: string;
   readonly titleProvenance: RunTitleProvenance;
+  /** Null when the Run records no title generation: manual, legacy or started with the setting off. */
+  readonly titleGeneration: RunTitleGeneration | null;
   /** The worker-readable prompt frozen at Start, with `[Image N: name]` references. */
   readonly input: string;
   /** The prompt as accepted at Start; image segments name entries of `images`. */
@@ -647,6 +702,16 @@ export const runOperations = {
   listAttention: operation<never, readonly RunAttention[]>()({
     method: "GET",
     path: "/api/attention",
+  }),
+  getRunTitleSetting: operation<never, RunTitleSetting>()({
+    method: "GET",
+    path: "/api/settings/run-titles",
+  }),
+  /** Host only: approved clients read the setting but cannot change it. */
+  updateRunTitleSetting: operation<UpdateRunTitleSettingInput, RunTitleSetting>()({
+    method: "PUT",
+    path: "/api/settings/run-titles",
+    body: "json",
   }),
   getRunCreationPolicy: operation<never, RunCreationPolicy>()({
     method: "GET",

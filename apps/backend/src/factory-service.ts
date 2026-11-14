@@ -20,6 +20,7 @@ import type { acquireRunnerOwner } from "./runner-owner.ts";
 import { makeRunner } from "./runner/runner.ts";
 import { makeClientAccess } from "./client-access.ts";
 import { makeRunImages } from "./run-images.ts";
+import { makeRunTitles } from "./run-titles.ts";
 import { failure } from "./result.ts";
 import { makeLiveChanges } from "./live-changes.ts";
 import { makeLiveStreams, type LiveStreams } from "./live-streams.ts";
@@ -109,6 +110,11 @@ export const makeFactoryService = (
       ),
     );
     const setup = Context.get(setupContext, RuntimeSetup.RuntimeSetup);
+    const runTitles = yield* makeRunTitles(t3, {
+      getConnection: connection.getConnection,
+      getAgentCapabilities: definitions.getAgentCapabilities,
+      getReportingInstallations: reporting.getReportingInstallations,
+    });
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
@@ -138,6 +144,8 @@ export const makeFactoryService = (
       archiveRun: (id) => runner.archiveRun(id),
       settleRun: (id, input) => runner.settleRun(id, input),
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),
+      getRunTitleSetting: () => runTitles.getRunTitleSetting(),
+      updateRunTitleSetting: (input) => runTitles.updateRunTitleSetting(input),
       startRun: (i) => runner.startRun(i),
       getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
@@ -208,6 +216,7 @@ export const makeFactoryService = (
       (projectId, agent) => setup.recheckAgent(projectId, agent),
       changes,
       images,
+      runTitles.planTitleGeneration,
     );
     yield* runner.initialize();
     return factory;

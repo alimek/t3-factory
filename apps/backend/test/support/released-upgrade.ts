@@ -136,6 +136,8 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     ...run,
     // Migration 079 cannot tell how a released title was chosen; the title itself is kept.
     titleProvenance: "legacy",
+    // Migration 080 adds Generate Run titles off and gives released Runs no title generation.
+    titleGeneration: null,
     lifecycle,
     // Released Runs had text-only prompts.
     segments: [{ type: "text", text: run.input }],

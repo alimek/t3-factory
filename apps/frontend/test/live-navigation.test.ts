@@ -9,6 +9,7 @@ it("navigation changes replace rows, remove archived Runs and retain backend cre
     number: 1,
     title: "Older Run",
     titleProvenance: "automatic",
+    titleGeneration: null,
     createdAt: "2026-11-07T12:00:00.000Z",
     creationKey: "first",
     lastActivityAt: "2026-11-07T12:00:00.000Z",

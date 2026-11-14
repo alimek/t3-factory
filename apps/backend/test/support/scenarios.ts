@@ -49,6 +49,43 @@ export const controlledAgent = (
   environmentId: string,
   input: Omit<CreateAgentInput, "execution">,
 ): CreateAgentInput => ({ ...input, execution: controlledExecution(environmentId) });
+/** The controlled catalog's model, as the host owner picks it for Generate Run titles. */
+export const controlledTitleModel = {
+  providerInstanceId: "codex-main",
+  modelId: "gpt-6.1-sol",
+  modelOptions: [{ id: "reasoning", value: "low" }],
+};
+/** Turns Generate Run titles on with `model`, as the host owner does. */
+export async function enableRunTitles(
+  factory: Pick<FactoryOperations, "updateRunTitleSetting">,
+  model = controlledTitleModel,
+) {
+  const enabled = await factory.updateRunTitleSetting({ enabled: true, model });
+  if (!enabled.ok) throw new Error(enabled.error.message);
+  return enabled.value;
+}
+/** A cheap model the controlled catalog offers only beside the Agents' model, so T3 can withdraw
+ * it without affecting the Flow. */
+export const cheapTitleModel = {
+  providerInstanceId: "codex-main",
+  modelId: "gpt-6.1-luna",
+  modelOptions: [],
+};
+/** Turns Generate Run titles on with the cheap model; the returned call makes T3 withdraw it. */
+export async function enableRunTitlesWithCheapModel(
+  factory: Pick<FactoryOperations, "updateRunTitleSetting">,
+  t3: ControlledT3,
+) {
+  const [provider] = t3.controlledProviders;
+  t3.controlledProviders[0] = {
+    ...provider!,
+    models: [...provider!.models, { id: cheapTitleModel.modelId, label: "GPT 6.1 Luna" }],
+  };
+  await enableRunTitles(factory, cheapTitleModel);
+  return () => {
+    t3.controlledProviders[0] = provider!;
+  };
+}
 /** String targets keep test Arrange calls terse; an array allows an explicit layout. */
 export function flowInput(...targets: string[]): FlowGraph["flowInput"];
 export function flowInput(targets: readonly string[], position: Position): FlowGraph["flowInput"];

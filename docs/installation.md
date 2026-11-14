@@ -29,7 +29,8 @@ inside its own source checkout (including through symlinks), though not merely b
 | `credentials/` | OAuth files (directory 0700, files 0600) |
 | `credentials/tls/` | Host certificate authority and server keys for secure remote access (0600); never shared |
 
-The home is created with mode 0700 and `config.json` 0600; existing configuration is preserved and `host`/`port` edits need a restart. Environment overrides affect only that process:
+Installation-wide settings changed in the application, such as **Generate Run titles** ([Runs](runs.md#run-title-generation)),
+live in `factory.sqlite`, not `config.json`. The home is created with mode 0700 and `config.json` 0600; existing configuration is preserved and `host`/`port` edits need a restart. Environment overrides affect only that process:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

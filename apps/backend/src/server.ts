@@ -179,6 +179,15 @@ function runRoutes(factory: Factory): RouteEntries<typeof runOperations> {
     getRunCreationPolicy: {
       handle: () => answer(() => factory.getRunCreationPolicy()),
     },
+    getRunTitleSetting: {
+      handle: () => answer(() => factory.getRunTitleSetting()),
+    },
+    updateRunTitleSetting: {
+      // Installation-wide spending on every Run's provider: approved clients only read it.
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.updateRunTitleSetting(input)),
+    },
     listTasks: {
       handle: ({ parameters }) => answer(() => factory.listTasks(parameters.projectId)),
     },

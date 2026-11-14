@@ -47,6 +47,7 @@ export function runDetail(): RunDetail {
     number: 1,
     title: "Run",
     titleProvenance: "automatic",
+    titleGeneration: null,
     lifecycle: "active",
     task: { id: "task", title: "Task", projectId: "project" },
     flowId: "flow",

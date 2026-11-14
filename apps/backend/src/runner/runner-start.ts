@@ -32,6 +32,7 @@ import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
 import type { RunImages } from "../run-images.ts";
+import type { PlanTitleGeneration } from "../run-titles.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -204,7 +205,10 @@ export function openRunnerStart(
   ops: EffectOperations<FactoryOperations>,
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
-  checkAgent: RunnerOptions["checkAgent"],
+  {
+    checkAgent,
+    planTitleGeneration,
+  }: { checkAgent: RunnerOptions["checkAgent"]; planTitleGeneration: PlanTitleGeneration },
   images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
@@ -248,7 +252,7 @@ export function openRunnerStart(
                 message: "This Start request was accepted with other content.",
               },
             ]);
-      const checked = yield* startPreconditions(input, prompt.value.images.length);
+      const [checked, titleGeneration] = yield* startChecks(input, prompt.value);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope, workspace } = checked.value;
       const definitions: RunDefinitions = { flow, agents };
@@ -268,6 +272,7 @@ export function openRunnerStart(
         time: yield* now,
         contextId: context.id,
         retryScope,
+        titleGeneration,
       };
       const accepted = yield* store.acceptStart(plan, images.hasFile);
       if (!accepted.ok) return accepted;
@@ -302,6 +307,22 @@ export function openRunnerStart(
         createdAt: accepted?.created_at ?? (yield* now),
       });
     });
+  }
+  /**
+   * Start preconditions and, alongside them so it adds no wait of its own, the title generation
+   * decision. The decision is used only if Start accepts.
+   */
+  function startChecks(
+    input: Pick<StartRunInput, "projectId" | "flowId" | "titleProvenance">,
+    prompt: StartPrompt,
+  ) {
+    return Effect.all(
+      [
+        startPreconditions(input, prompt.images.length),
+        planTitleGeneration({ titleProvenance: input.titleProvenance, prompt }),
+      ],
+      { concurrency: "unbounded" },
+    );
   }
   /** Before Start: connection/project, Flow readiness, every referenced Agent's runtime and launch schema. */
   function startPreconditions(
