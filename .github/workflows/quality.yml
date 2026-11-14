@@ -1,4 +1,6 @@
 name: Quality
+run-name: >-
+  ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'Reuse code gate' || 'Full code gate' }} for PR ${{ github.event.pull_request.number || 0 }}: ${{ github.event.pull_request.base.sha || github.event.before }}..${{ github.event.pull_request.head.sha || github.sha }}
 
 on:
   pull_request:
@@ -8,9 +10,13 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+env:
+  RUN_CODE: ${{ github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null }}
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: quality-${{ github.ref }}${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && '-metadata' || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -24,12 +30,21 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: env.RUN_CODE == 'true'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-          cache: pnpm
+          cache: ${{ env.RUN_CODE == 'true' && 'pnpm' || '' }}
+      - name: Reuse existing code validation
+        if: env.RUN_CODE != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/reuse-quality-gate.mjs
       - name: Check Git attribution and squash input
         if: github.event_name == 'push'
         run: node scripts/check-git-attribution.mjs --event "$GITHUB_EVENT_PATH"
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - name: "Full code gate for PR ${{ github.event.pull_request.number || 0 }}: ${{ github.event.pull_request.base.sha || github.event.before }}..${{ github.event.pull_request.head.sha || github.sha }}"
+        if: env.RUN_CODE == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
