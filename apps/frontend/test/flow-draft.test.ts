@@ -608,5 +608,8 @@ it("a check against newer saved Agents is shown once Studio's source shows those
   draft.observeAgents(agentsAfter);
 
   // Assert
-  expect(draft.getSnapshot().readiness).toStrictEqual({ ready: true, issues: [] });
+  expect(draft.getSnapshot()).toMatchObject({
+    readiness: { ready: true, issues: [] },
+    agentsChanged: false,
+  });
 });

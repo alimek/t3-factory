@@ -197,6 +197,8 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
       if (generation === agentGeneration) return;
       if (agentGeneration !== null && dirty) agentsChanged = true;
       agentGeneration = generation;
+      // A check already run against exactly these Agents answers for them.
+      if (checked?.key === contentKey() && checked.generation === generation) agentsChanged = false;
       publish();
     },
     /** Any edit marks the draft unsaved; errors stay shown. Removed Flows stay editable. */
