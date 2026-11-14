@@ -279,7 +279,10 @@ function OpenedAgentEditor({
   }
   async function save() {
     const saved = await draft.save();
-    if (saved) onSaved(saved);
+    if (saved) {
+      setDuplicateError("");
+      onSaved(saved);
+    }
   }
   return (
     <>

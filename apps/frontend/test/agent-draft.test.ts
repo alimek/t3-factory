@@ -1005,3 +1005,20 @@ it("Copy as JSON recovers unfinished edits in the create shape after removal", (
     exits: [{ id: "done", name: "done", description: "", messageRequired: false }],
   });
 });
+
+it("a retained Agent stays editable while a superseded save reply is pending", () => {
+  // Arrange
+  const setup = editedAgent();
+  pendingSave(setup);
+  removedElsewhere(setup);
+
+  // Act
+  setup.draft.edit({ prompt: "Recover while the save reply is pending" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    removed: true,
+    content: { prompt: "Recover while the save reply is pending" },
+    canSave: false,
+  });
+});

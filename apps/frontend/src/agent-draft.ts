@@ -234,7 +234,7 @@ export function createAgentDraft(
     listeners.forEach((notify) => notify());
   }
   function edit(change: Partial<AgentContent>) {
-    if (snapshot.saving || deleting) return;
+    if ((snapshot.saving && !removed) || deleting) return;
     content = { ...content, ...change };
     publish();
   }

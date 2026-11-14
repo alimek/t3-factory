@@ -38,6 +38,9 @@ test("a removed Agent keeps its clean draft and asks before discarding it", asyn
     { exact: true },
   );
   await expect(guard).toBeVisible();
+  await browser.evaluate(
+    "Promise.allSettled(document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished)).then(() => null)",
+  );
   await app.screenshot("agent-removed-discard-confirmation");
   await guard.getByRole("button", "Keep editing", { exact: true }).tap();
   await expect(screen.getByLabel("Name", { exact: true })).toHaveValue(agent.name);
@@ -132,6 +135,9 @@ test("clipboard refusal shows selectable current JSON and a removed Agent shares
   const guard = screen.getByRole("dialog", "Discard the Flow and Agent drafts?", { exact: true });
   await expect(guard).toContainText("Your Flow has unsaved changes");
   await expect(guard).toContainText("This Agent was removed elsewhere");
+  await browser.evaluate(
+    "Promise.allSettled(document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished)).then(() => null)",
+  );
   await app.screenshot("agent-removed-with-hidden-flow-guard");
   await guard.getByRole("button", "Keep editing", { exact: true }).tap();
   await expect(screen.getByLabel("Prompt", { exact: true })).toHaveValue("Keep my recovery edits");

@@ -41,7 +41,7 @@ export function StudioRemovedDraft({ kind, json }: { kind: "Agent" | "Flow"; jso
               readOnly
               value={json}
               rows={8}
-              className="font-mono text-xs"
+              className="max-h-48 overflow-y-auto font-mono text-xs"
               onFocus={(event) => event.currentTarget.select()}
             />
           </div>

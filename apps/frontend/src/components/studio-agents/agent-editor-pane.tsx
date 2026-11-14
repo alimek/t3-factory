@@ -42,7 +42,7 @@ export function AgentEditorPane(props: AgentEditorProps) {
   const { capabilities, draft, state } = props;
   const { name, prompt, exits, execution } = state.content;
   const settings = { ...state.choices, ...draft, execution };
-  const saving = state.saving || props.duplicating;
+  const saving = (state.saving || props.duplicating) && !state.removed;
   const error = state.error;
   return (
     <>
@@ -169,7 +169,9 @@ function AgentEditorHeader({
   duplicating,
 }: AgentEditorProps & { name: string; saving: boolean }) {
   const { saved: agent, dirty } = state;
-  const statusLine = agentEditorStatus(agent, flowUsage);
+  const statusLine = state.removed
+    ? "Removed elsewhere · retained draft"
+    : agentEditorStatus(agent, flowUsage);
   const saveLabel = agent ? "Save" : "Create Agent";
   return (
     <header className="min-w-0 shrink-0 border-b px-4 pt-5 pb-4 sm:px-6 md:px-8">
