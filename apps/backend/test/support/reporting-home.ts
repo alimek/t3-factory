@@ -19,7 +19,8 @@ export async function writeReportingState(
   );
 }
 
-function overrideEnvironment(context: TestContext, name: string, value: string) {
+/** Sets an environment variable for this test only. */
+export function overrideEnvironment(context: TestContext, name: string, value: string) {
   const previous = process.env[name];
   process.env[name] = value;
   context.onTestFinished(() => {

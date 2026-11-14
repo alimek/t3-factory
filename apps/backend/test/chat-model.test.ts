@@ -2,11 +2,8 @@ import { assert, expect, it } from "@effect/vitest";
 import { chmod, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { factoryHarness } from "./support/factory.ts";
-import {
-  controlledModelProvider,
-  testEnvironment,
-  unreachableBaseUrl,
-} from "./support/controlled-model.ts";
+import { controlledModelProvider, unreachableBaseUrl } from "./support/controlled-model.ts";
+import { overrideEnvironment } from "./support/reporting-home.ts";
 import { chatModelSave, savedChatModel } from "./support/chat-control.ts";
 
 it("an incomplete Language model can be saved while Chat control is Off", async (c) => {
@@ -78,8 +75,8 @@ it("Test sends the saved key as a bearer credential to the saved proxy path and 
 
 it("a keyless OpenAI-compatible Test sends no credential even when the server has OpenAI credentials", async (c) => {
   // Arrange
-  testEnvironment(c, "OPENAI_API_KEY", "sk-environment");
-  testEnvironment(c, "OPENAI_BASE_URL", "http://127.0.0.1:9/v1");
+  overrideEnvironment(c, "OPENAI_API_KEY", "sk-environment");
+  overrideEnvironment(c, "OPENAI_BASE_URL", "http://127.0.0.1:9/v1");
   const provider = await controlledModelProvider(c);
   const factory = await (await factoryHarness(c)).open();
   const saved = await savedChatModel(factory, { baseUrl: provider.baseUrl() });
@@ -96,8 +93,8 @@ it("a keyless OpenAI-compatible Test sends no credential even when the server ha
 
 it("a keyless Anthropic Test goes to the saved base URL with a placeholder instead of the server's Anthropic credentials", async (c) => {
   // Arrange
-  testEnvironment(c, "ANTHROPIC_API_KEY", "sk-ant-environment");
-  testEnvironment(c, "ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1");
+  overrideEnvironment(c, "ANTHROPIC_API_KEY", "sk-ant-environment");
+  overrideEnvironment(c, "ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1");
   const provider = await controlledModelProvider(c);
   const factory = await (await factoryHarness(c)).open();
   const saved = await savedChatModel(factory, {

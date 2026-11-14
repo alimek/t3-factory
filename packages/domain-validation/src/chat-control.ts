@@ -97,6 +97,35 @@ const parseRevision = (value: unknown): Result<number> =>
     ? { ok: true, value }
     : invalid("chat_model_revision", "revision", "Name the saved revision these edits start from.");
 
+function parseProviderKind(value: unknown): Result<ChatModelProviderKind | null> {
+  if (value === null || value === undefined) return { ok: true, value: null };
+  return CHAT_MODEL_PROVIDER_KINDS.includes(value as ChatModelProviderKind)
+    ? { ok: true, value: value as ChatModelProviderKind }
+    : invalid("chat_model_provider_kind", "providerKind", "Choose OpenAI-compatible or Anthropic.");
+}
+
+function parseBaseUrl(
+  value: unknown,
+  providerKind: ChatModelProviderKind | null,
+): Result<string | null> {
+  if (value === null || value === undefined) return { ok: true, value: null };
+  return typeof value === "string"
+    ? validateChatModelBaseUrl(value, providerKind)
+    : invalid("chat_model_base_url", "baseUrl", "Enter the base URL as text.");
+}
+
+function parseModel(value: unknown): Result<string | null> {
+  if (value === null || value === undefined) return { ok: true, value: null };
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length === 0 || text.length > CHAT_MODEL_NAME_LIMIT || hasControlCharacter(text)
+    ? invalid(
+        "chat_model_name",
+        "model",
+        `Enter a model name up to ${CHAT_MODEL_NAME_LIMIT} characters.`,
+      )
+    : { ok: true, value: text };
+}
+
 /**
  * Structural validation of a Language model save. Missing required fields are permitted here;
  * whether they may be removed depends on Chat control's current state, which the backend checks.
@@ -106,38 +135,23 @@ export function validateUpdateChatModel(input: unknown): Result<UpdateChatModelI
     typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
   const revision = parseRevision(fields.revision);
   if (!revision.ok) return revision;
-  const providerKind = fields.providerKind ?? null;
-  if (providerKind !== null && !CHAT_MODEL_PROVIDER_KINDS.includes(providerKind as never))
-    return invalid(
-      "chat_model_provider_kind",
-      "providerKind",
-      "Choose OpenAI-compatible or Anthropic.",
-    );
-  const kind = providerKind as ChatModelProviderKind | null;
-  let baseUrl: string | null = null;
-  if (fields.baseUrl !== null && fields.baseUrl !== undefined) {
-    if (typeof fields.baseUrl !== "string")
-      return invalid("chat_model_base_url", "baseUrl", "Enter the base URL as text.");
-    const parsed = validateChatModelBaseUrl(fields.baseUrl, kind);
-    if (!parsed.ok) return parsed;
-    baseUrl = parsed.value;
-  }
-  let model: string | null = null;
-  if (fields.model !== null && fields.model !== undefined) {
-    const text = typeof fields.model === "string" ? fields.model.trim() : "";
-    if (text.length === 0 || text.length > CHAT_MODEL_NAME_LIMIT || hasControlCharacter(text))
-      return invalid(
-        "chat_model_name",
-        "model",
-        `Enter a model name up to ${CHAT_MODEL_NAME_LIMIT} characters.`,
-      );
-    model = text;
-  }
+  const providerKind = parseProviderKind(fields.providerKind);
+  if (!providerKind.ok) return providerKind;
+  const baseUrl = parseBaseUrl(fields.baseUrl, providerKind.value);
+  if (!baseUrl.ok) return baseUrl;
+  const model = parseModel(fields.model);
+  if (!model.ok) return model;
   const key = parseKeyChange(fields.key);
   if (!key.ok) return key;
   return {
     ok: true,
-    value: { revision: revision.value, providerKind: kind, baseUrl, model, key: key.value },
+    value: {
+      revision: revision.value,
+      providerKind: providerKind.value,
+      baseUrl: baseUrl.value,
+      model: model.value,
+      key: key.value,
+    },
   };
 }
 

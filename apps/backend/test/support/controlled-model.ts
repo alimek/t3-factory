@@ -3,7 +3,7 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 
 /** One request as the provider received it. */
-export interface ProviderRequest {
+interface ProviderRequest {
   readonly method: string;
   readonly path: string;
   readonly headers: IncomingHttpHeaders;
@@ -81,14 +81,4 @@ export async function unreachableBaseUrl() {
   const { port } = server.address() as AddressInfo;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   return `http://127.0.0.1:${port}/v1`;
-}
-
-/** Sets an environment variable for this test only. */
-export function testEnvironment(context: TestContext, name: string, value: string) {
-  const previous = process.env[name];
-  process.env[name] = value;
-  context.onTestFinished(() => {
-    if (previous === undefined) delete process.env[name];
-    else process.env[name] = previous;
-  });
 }

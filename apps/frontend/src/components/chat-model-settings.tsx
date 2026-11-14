@@ -16,7 +16,7 @@ import { fieldLabelClass } from "@/components/page";
 import { api, ApiError } from "../api.ts";
 import { MutationGate } from "../client-gate.tsx";
 import { dayAndTime } from "./execution-state.tsx";
-import { Notice } from "./notice.tsx";
+import { Notice, ReadFailure } from "./notice.tsx";
 import { SegmentedChoice } from "./segmented-choice.tsx";
 import { SettingsDraftDialog, useSettingsDraftGuard } from "./settings-draft-guard.tsx";
 
@@ -100,11 +100,8 @@ const committed = (input: UpdateChatModelInput, current: ChatModelSettings) =>
   current.configuration.baseUrl === input.baseUrl &&
   current.configuration.model === input.model;
 
-/**
- * Settings → Chat control → Language model, host only. Chat control's own connection with its
- * own Save and Discard; Test runs against the saved configuration only.
- */
-export function ChatModelSettings() {
+/** The page's saved settings and draft, with its save, Test and Discard actions. */
+function useChatModelPage() {
   const [settings, setSettings] = useState<ChatModelSettings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -130,10 +127,15 @@ export function ChatModelSettings() {
       active = false;
     };
   }, [loads]);
-  const dirty = settings !== null && draft !== null && isDirty(draft, settings);
-  const drafts = dirty ? ["Language model"] : [];
-  const decision = useSettingsDraftGuard("chat-model", drafts);
-
+  /** A lost answer is resolved by reading the host's current state, never by saving again. */
+  const recoverLostSave = async (input: UpdateChatModelInput, cause: unknown) => {
+    const current = await api.getChatModelSettings().catch(() => null);
+    if (current && committed(input, current)) adopt(current);
+    else
+      setSaveError(
+        `${errorMessage(cause, "Factory could not save the Language model settings.")} Your edits are kept; save again when Factory answers.`,
+      );
+  };
   const save = async (input: UpdateChatModelInput) => {
     setSaving(true);
     setSaveError("");
@@ -141,15 +143,7 @@ export function ChatModelSettings() {
       adopt(await api.updateChatModelSettings(input));
     } catch (cause) {
       if (cause instanceof ApiError) setSaveError(errorMessage(cause, ""));
-      else {
-        // The answer was lost: the host's current state says whether the save committed.
-        const current = await api.getChatModelSettings().catch(() => null);
-        if (current && committed(input, current)) adopt(current);
-        else
-          setSaveError(
-            `${errorMessage(cause, "Factory could not save the Language model settings.")} Your edits are kept; save again when Factory answers.`,
-          );
-      }
+      else await recoverLostSave(input, cause);
     } finally {
       setSaving(false);
     }
@@ -165,7 +159,35 @@ export function ChatModelSettings() {
       setTesting(false);
     }
   };
+  const discard = () => {
+    if (settings) setDraft(draftOf(settings));
+    setSaveError("");
+  };
+  return {
+    settings,
+    draft,
+    setDraft,
+    dirty: settings !== null && draft !== null && isDirty(draft, settings),
+    loadError,
+    reload: () => setLoads((n) => n + 1),
+    saving,
+    saveError,
+    save,
+    testing,
+    testError,
+    test,
+    discard,
+  };
+}
 
+/**
+ * Settings → Chat control → Language model, host only. Chat control's own connection with its
+ * own Save and Discard; Test runs against the saved configuration only.
+ */
+export function ChatModelSettings() {
+  const page = useChatModelPage();
+  const { settings, draft, loadError } = page;
+  const decision = useSettingsDraftGuard("chat-model", page.dirty ? ["Language model"] : []);
   return (
     <div className="grid gap-6">
       <div className="grid gap-2">
@@ -175,43 +197,26 @@ export function ChatModelSettings() {
           Agents, T3 and Run title generation, and only this Factory host can see or change it.
         </p>
       </div>
-      {loadError && (
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            {loadError}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setLoads((n) => n + 1)}
-            >
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {loadError && <ReadFailure message={loadError} onRetry={page.reload} />}
       {settings && draft ? (
         <MutationGate>
           <ChatControlState enabled={settings.chatControlEnabled} />
           <ModelForm
             settings={settings}
             draft={draft}
-            dirty={dirty}
-            saving={saving}
-            saveError={saveError}
-            onChange={setDraft}
-            onSave={(input) => void save(input)}
-            onDiscard={() => {
-              setDraft(draftOf(settings));
-              setSaveError("");
-            }}
+            dirty={page.dirty}
+            saving={page.saving}
+            saveError={page.saveError}
+            onChange={page.setDraft}
+            onSave={(input) => void page.save(input)}
+            onDiscard={page.discard}
           />
           <ModelTest
             settings={settings}
-            dirty={dirty}
-            testing={testing}
-            testError={testError}
-            onTest={(revision) => void test(revision)}
+            dirty={page.dirty}
+            testing={page.testing}
+            testError={page.testError}
+            onTest={(revision) => void page.test(revision)}
           />
         </MutationGate>
       ) : (
@@ -221,7 +226,7 @@ export function ChatModelSettings() {
           </p>
         )
       )}
-      <SettingsDraftDialog decision={decision} drafts={drafts} />
+      <SettingsDraftDialog decision={decision} />
     </div>
   );
 }
@@ -271,88 +276,141 @@ function ModelForm({
     : null;
   const baseUrlProblem = baseUrl && !baseUrl.ok ? baseUrl.error.message : "";
   const key = keyChange(draft, settings);
-  const canSave = dirty && !saving && !baseUrlProblem && key !== null;
   return (
     <section aria-label="Language model connection" className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-1.5">
-          <Label htmlFor="chat-model-provider" className={fieldLabelClass}>
-            Provider
-          </Label>
-          <ChoiceMenu
-            id="chat-model-provider"
-            label="Provider"
-            value={draft.providerKind ?? ""}
-            choices={providerChoices}
-            onChange={(id) => onChange({ ...draft, providerKind: id as ChatModelProviderKind })}
-            disabled={saving}
-            placeholder="Choose a provider"
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="chat-model-name" className={fieldLabelClass}>
-            Model
-          </Label>
-          <Input
-            id="chat-model-name"
-            value={draft.model}
-            placeholder="As the provider names it"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={saving}
-            onChange={(event) => onChange({ ...draft, model: event.target.value })}
-          />
-        </div>
-      </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor="chat-model-base-url" className={fieldLabelClass}>
-          Base URL
-        </Label>
-        <Input
-          id="chat-model-base-url"
-          value={draft.baseUrl}
-          placeholder="https://api.example.com/v1"
-          autoComplete="off"
-          spellCheck={false}
-          inputMode="url"
-          disabled={saving}
-          aria-invalid={baseUrlProblem ? true : undefined}
-          aria-describedby="chat-model-base-url-hint"
-          onChange={(event) => onChange({ ...draft, baseUrl: event.target.value })}
-        />
-        <p
-          id="chat-model-base-url-hint"
-          className={baseUrlProblem ? "text-sm text-destructive" : "text-sm text-muted-foreground"}
-        >
-          {baseUrlProblem || baseUrlHints[draft.providerKind ?? "none"]}
-        </p>
-      </div>
+      <ProviderAndModelFields draft={draft} disabled={saving} onChange={onChange} />
+      <BaseUrlField draft={draft} problem={baseUrlProblem} disabled={saving} onChange={onChange} />
       <KeyField settings={settings} draft={draft} disabled={saving} onChange={onChange} />
       {saveError && (
         <Alert variant="destructive">
           <AlertDescription>{saveError}</AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          disabled={!canSave}
-          onClick={() => key && onSave(saveInput(draft, settings, key))}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        <Button type="button" variant="outline" disabled={!dirty || saving} onClick={onDiscard}>
-          Discard
-        </Button>
-        <p className="text-sm text-muted-foreground">
-          {dirty
-            ? "Unsaved changes."
-            : settings.configuration.savedAt
-              ? `Saved ${dayAndTime(settings.configuration.savedAt)} · revision ${settings.configuration.revision}.`
-              : "Not saved yet."}
-        </p>
-      </div>
+      <SaveBar
+        settings={settings}
+        dirty={dirty}
+        saving={saving}
+        onSave={
+          dirty && !baseUrlProblem && key !== null
+            ? () => onSave(saveInput(draft, settings, key))
+            : undefined
+        }
+        onDiscard={onDiscard}
+      />
     </section>
+  );
+}
+
+function ProviderAndModelFields({
+  draft,
+  disabled,
+  onChange,
+}: {
+  draft: Draft;
+  disabled: boolean;
+  onChange: (draft: Draft) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-1.5">
+        <Label htmlFor="chat-model-provider" className={fieldLabelClass}>
+          Provider
+        </Label>
+        <ChoiceMenu
+          id="chat-model-provider"
+          label="Provider"
+          value={draft.providerKind ?? ""}
+          choices={providerChoices}
+          onChange={(id) => onChange({ ...draft, providerKind: id as ChatModelProviderKind })}
+          disabled={disabled}
+          placeholder="Choose a provider"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="chat-model-name" className={fieldLabelClass}>
+          Model
+        </Label>
+        <Input
+          id="chat-model-name"
+          value={draft.model}
+          placeholder="As the provider names it"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...draft, model: event.target.value })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BaseUrlField({
+  draft,
+  problem,
+  disabled,
+  onChange,
+}: {
+  draft: Draft;
+  problem: string;
+  disabled: boolean;
+  onChange: (draft: Draft) => void;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor="chat-model-base-url" className={fieldLabelClass}>
+        Base URL
+      </Label>
+      <Input
+        id="chat-model-base-url"
+        value={draft.baseUrl}
+        placeholder="https://api.example.com/v1"
+        autoComplete="off"
+        spellCheck={false}
+        inputMode="url"
+        disabled={disabled}
+        aria-invalid={problem ? true : undefined}
+        aria-describedby="chat-model-base-url-hint"
+        onChange={(event) => onChange({ ...draft, baseUrl: event.target.value })}
+      />
+      <p
+        id="chat-model-base-url-hint"
+        className={problem ? "text-sm text-destructive" : "text-sm text-muted-foreground"}
+      >
+        {problem || baseUrlHints[draft.providerKind ?? "none"]}
+      </p>
+    </div>
+  );
+}
+
+/** Save is offered only for a valid, decided draft; Discard for any unsaved edit. */
+function SaveBar({
+  settings: { configuration },
+  dirty,
+  saving,
+  onSave,
+  onDiscard,
+}: {
+  settings: ChatModelSettings;
+  dirty: boolean;
+  saving: boolean;
+  onSave: (() => void) | undefined;
+  onDiscard: () => void;
+}) {
+  const state = dirty
+    ? "Unsaved changes."
+    : configuration.savedAt
+      ? `Saved ${dayAndTime(configuration.savedAt)} · revision ${configuration.revision}.`
+      : "Not saved yet.";
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" disabled={!onSave || saving} onClick={onSave}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+      <Button type="button" variant="outline" disabled={!dirty || saving} onClick={onDiscard}>
+        Discard
+      </Button>
+      <p className="text-sm text-muted-foreground">{state}</p>
+    </div>
   );
 }
 
