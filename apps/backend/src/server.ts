@@ -15,6 +15,7 @@ import {
   appearanceOperations,
   connectionOperations,
   runOperations,
+  chatControlOperations,
   LIVE_PATH,
   type ProtocolDescriptor,
   type Result,
@@ -122,6 +123,7 @@ function apiRoutes(factory: Factory) {
     ...projectRoutes(factory),
     ...flowRoutes(factory),
     ...agentRoutes(factory),
+    ...chatControlRoutes(factory),
   };
 }
 
@@ -263,6 +265,59 @@ function appearanceRoutes(factory: Factory): RouteEntries<typeof appearanceOpera
     disconnectAppearance: {
       hostOnly: true,
       handle: () => answer(() => factory.disconnectAppearance()),
+    },
+  };
+}
+
+/**
+ * Chat control configuration names the host's provider destinations, Discord application,
+ * credentials and access policy, its Test may be charged, and its check and On/Off switch connect
+ * to Discord: approved clients can neither read nor change it.
+ */
+function chatControlRoutes(factory: Factory): RouteEntries<typeof chatControlOperations> {
+  return {
+    getChatModelSettings: {
+      hostOnly: true,
+      handle: () => answer(() => factory.getChatModelSettings()),
+    },
+    updateChatModelSettings: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.updateChatModelSettings(input)),
+    },
+    testChatModel: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.testChatModel(input)),
+    },
+    getDiscordSettings: {
+      hostOnly: true,
+      handle: () => answer(() => factory.getDiscordSettings()),
+    },
+    updateDiscordConnection: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.updateDiscordConnection(input)),
+    },
+    checkDiscordConnection: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.checkDiscordConnection(input)),
+    },
+    updateDiscordAccess: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.updateDiscordAccess(input)),
+    },
+    setChatControlEnabled: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.setChatControlEnabled(input)),
+    },
+    retryChatDelivery: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.retryChatDelivery(input)),
     },
   };
 }
@@ -411,7 +466,7 @@ function dispatchApi(
 
 // Known client routes use the built entry; missing assets must stay 404.
 const clientRoutePattern =
-  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/general|\/application|\/run-titles|\/run-images)?)\/?$/;
+  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/general|\/application|\/run-titles|\/run-images|\/chat-control\/(?:model|discord))?)\/?$/;
 
 function uiFile(uiDirectory: string, pathname: string): string | undefined {
   const root = resolve(uiDirectory);
@@ -602,6 +657,7 @@ export interface ServerOptions {
   readonly t3?: FactoryOptions["t3"];
   readonly connectionRetryMs?: number;
   readonly reportingStateDirectory?: string;
+  readonly discordApiUrl?: FactoryOptions["discordApiUrl"];
   /** Reported by the handshake; desktop builds pass their release, source runs say `source`. */
   readonly applicationVersion?: string;
   /** Another release's protocol range, for compatibility tests of mixed installations. */
@@ -624,6 +680,7 @@ function factoryOptions(config: Configuration, options: ServerOptions): FactoryO
     ...(options.connectionRetryMs !== undefined
       ? { connectionRetryMs: options.connectionRetryMs }
       : {}),
+    ...(options.discordApiUrl ? { discordApiUrl: options.discordApiUrl } : {}),
   };
 }
 

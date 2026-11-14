@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FactoryProject, RunDefinitions, StartRunInput } from "@t3-factory/contracts";
+import type { FactoryProject, Result, RunDefinitions, StartRunInput } from "@t3-factory/contracts";
 import type { StartPrompt } from "@t3-factory/domain-validation";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -89,6 +89,7 @@ function acceptStartRecords(
   sql: SqlClient.SqlClient,
   plan: StartPlan,
   hasFile: RunImages["hasFile"],
+  authorize?: Effect.Effect<Result<undefined>, unknown>,
 ) {
   return Effect.gen(function* () {
     const [duplicate] = yield* sql<{
@@ -109,6 +110,10 @@ function acceptStartRecords(
     if (conflict) return conflict;
     const unstaged = yield* stagedManifestProblem(sql, plan.prompt.images, hasFile);
     if (unstaged) return unstaged;
+    if (authorize) {
+      const permitted = yield* authorize;
+      if (!permitted.ok) return permitted;
+    }
     const title = plan.input.title.trim();
     yield* sql`INSERT INTO tasks(id,project_id,title,created_at) VALUES(${plan.taskId},${plan.project.id},${title},${plan.time})`;
     const project = plan.project;
@@ -161,9 +166,13 @@ export function openRunStart(database: RunnerDatabase) {
    * changed key, changed configuration or an unstaged image refuses. The staged image manifest is
    * checked and Run image records are written through the Run images module. Publishes the Run's
    * live change after the commit when accepted. */
-  const acceptStart = (plan: StartPlan, hasFile: RunImages["hasFile"]) =>
+  const acceptStart = (
+    plan: StartPlan,
+    hasFile: RunImages["hasFile"],
+    authorize?: Effect.Effect<Result<undefined>, unknown>,
+  ) =>
     database
-      .transaction((sql) => acceptStartRecords(sql, plan, hasFile))
+      .transaction((sql) => acceptStartRecords(sql, plan, hasFile, authorize))
       .pipe(
         Effect.tap((accepted) =>
           Effect.sync(() => {

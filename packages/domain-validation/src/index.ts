@@ -1062,3 +1062,19 @@ export {
   type StartPrompt,
 } from "./run-prompt.ts";
 export { parseAppearancePresentation } from "./appearance.ts";
+export {
+  CHAT_MODEL_BASE_URL_LIMIT,
+  CHAT_MODEL_KEY_LIMIT,
+  CHAT_MODEL_NAME_LIMIT,
+  CHAT_MODEL_PROVIDER_KINDS,
+  validateChatModelBaseUrl,
+  validateCheckDiscordConnection,
+  validateDiscordId,
+  validateDiscordPublicKey,
+  validateTestChatModel,
+  validateUpdateChatModel,
+  validateUpdateDiscordConnection,
+  validateUpdateDiscordAccess,
+  validateSetChatControlEnabled,
+  validateRetryChatDelivery,
+} from "./chat-control.ts";

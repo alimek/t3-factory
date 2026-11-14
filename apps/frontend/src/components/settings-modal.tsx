@@ -2,6 +2,8 @@ import { useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   AppWindow,
+  BotMessageSquare,
+  MessagesSquare,
   ImageIcon,
   Keyboard,
   MonitorSmartphone,
@@ -18,11 +20,14 @@ import { ApplicationSettings } from "./application-settings.tsx";
 import { GeneralSettings } from "./general-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
 import { RunTitleSettings } from "./run-title-settings.tsx";
+import { ChatModelSettings } from "./chat-model-settings.tsx";
+import { ChatDiscordSettings } from "./chat-discord-settings.tsx";
 import { useClientScope, useServerInheritsAppearance } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { ThemeColorsNote } from "./theme-color-settings.tsx";
 import { RuntimeSettings } from "../routes/runtime.tsx";
 import { reportingSummary, useReportingState } from "../reporting-state.tsx";
+import { useChatModelAttention, useDiscordAttention } from "../chat-control-attention.ts";
 import { SettingsPanel } from "./screen-layout.tsx";
 import { ConnectionSettingsPanel } from "../routes/connection.tsx";
 import {
@@ -43,12 +48,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { WorkspaceDialogHeader } from "./workspace-dialog-header.tsx";
 
+const settingsGroups = ["SETTINGS", "CHAT CONTROL", "STORAGE"] as const;
+type SettingsGroup = (typeof settingsGroups)[number];
+
 type SettingsSection = {
   tab: SettingsSelection["tab"];
   title: string;
   icon: LucideIcon;
   /** The nav group the section is listed under. */
-  group: "SETTINGS" | "STORAGE";
+  group: SettingsGroup;
   /** Extra words the nav search matches besides the title. */
   keywords: readonly string[];
 };
@@ -127,7 +135,51 @@ const runImagesSection: SettingsSection = {
   keywords: ["storage", "disk", "space", "screenshots", "attachments", "delete", "files"],
 };
 
-/** Approvals exist only on the host panel; General only in the desktop app. */
+const chatModelSection: SettingsSection = {
+  tab: "chat-model",
+  title: "Language model",
+  icon: BotMessageSquare,
+  group: "CHAT CONTROL",
+  keywords: [
+    "chat control",
+    "chat",
+    "bot",
+    "LLM",
+    "AI SDK",
+    "OpenAI",
+    "Anthropic",
+    "base URL",
+    "key",
+    "test",
+  ],
+};
+
+const chatDiscordSection: SettingsSection = {
+  tab: "chat-discord",
+  title: "Discord",
+  icon: MessagesSquare,
+  group: "CHAT CONTROL",
+  keywords: [
+    "chat control",
+    "chat",
+    "bot",
+    "Discord",
+    "application",
+    "token",
+    "public key",
+    "Gateway",
+    "check",
+    "invite",
+    "access",
+    "allowed users",
+    "channels",
+    "on",
+    "off",
+    "reset",
+  ],
+};
+
+/** Approvals and Chat control exist only on the host panel; General only in the desktop app. */
 function useSections(): readonly SettingsSection[] {
   const scope = useClientScope();
   return [
@@ -138,6 +190,7 @@ function useSections(): readonly SettingsSection[] {
     ...(desktopBridge() ? [generalSection] : []),
     applicationSection,
     runTitlesSection,
+    ...(scope === "host" ? [chatModelSection, chatDiscordSection] : []),
     runImagesSection,
   ];
 }
@@ -159,6 +212,8 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   application: () => <ApplicationPane />,
   "run-titles": () => <RunTitleSettings />,
   "run-images": () => <RunImageSettings />,
+  "chat-model": () => <ChatModelSettings />,
+  "chat-discord": () => <ChatDiscordSettings />,
 };
 
 function ApplicationPane() {
@@ -209,7 +264,7 @@ export function SettingsModal() {
         <WorkspaceDialogHeader
           title="Settings"
           section={current.title}
-          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, appearance, the desktop application, Run title generation and stored Run images."
+          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, appearance, the desktop application, Run title generation, Chat control and stored Run images."
           onClose={close}
         />
         <div className="flex min-h-0 flex-1 max-sm:flex-col">
@@ -247,7 +302,7 @@ function SettingsNav({
     <aside className="flex w-60 shrink-0 flex-col gap-0.5 border-r bg-sidebar px-2 py-3 max-sm:w-full max-sm:border-r-0 max-sm:border-b">
       <SettingsSearchField inputRef={searchRef} value={query} onChange={onQueryChange} />
       <nav aria-label="Settings sections" className="grid gap-0.5">
-        {(["SETTINGS", "STORAGE"] as const).map((group) => {
+        {settingsGroups.map((group) => {
           const grouped = visible.filter((section) => section.group === group);
           if (grouped.length === 0) return null;
           return (
@@ -281,20 +336,12 @@ function SettingsNav({
 
 function SettingsNavItem({ section, active }: { section: SettingsSection; active: boolean }) {
   const options = useSettingsOptions({ tab: section.tab });
-  const { presentation } = useConnectionState();
-  const status = connectionStatusLabel(presentation);
-  const reporting = reportingSummary(useReportingState());
+  const state = useNavItemState(section.tab);
   const Icon = section.icon;
   return (
     <Link
       {...options}
-      aria-label={
-        section.tab === "connection"
-          ? `${section.title}, ${status}`
-          : section.tab === "runtime" && reporting.state === "attention"
-            ? `${section.title}, ${reporting.label}`
-            : section.title
-      }
+      aria-label={state.label ? `${section.title}, ${state.label}` : section.title}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-8 items-center gap-2 rounded-md px-2 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50",
@@ -303,14 +350,34 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
     >
       <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
       <span className="min-w-0 flex-1 truncate">{section.title}</span>
-      {section.tab === "connection" && (
-        <ConnectionStateDot presentation={presentation} label={status} />
-      )}
-      {section.tab === "runtime" && reporting.state === "attention" && (
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-attention" />
-      )}
+      {state.indicator}
     </Link>
   );
+}
+
+const attentionDot = <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-attention" />;
+
+/** What a navigation item adds to its name and shows after it: a status or an attention dot. */
+function useNavItemState(tab: SettingsSelection["tab"]): { label: string; indicator: ReactNode } {
+  const { presentation } = useConnectionState();
+  const reporting = reportingSummary(useReportingState());
+  // The Chat control items exist only on the host, so only the host reads their state.
+  const discordAttention = useDiscordAttention(tab === "chat-discord");
+  const modelAttention = useChatModelAttention(tab === "chat-model");
+  if (tab === "connection") {
+    const status = connectionStatusLabel(presentation);
+    return {
+      label: status,
+      indicator: <ConnectionStateDot presentation={presentation} label={status} />,
+    };
+  }
+  if (tab === "runtime" && reporting.state === "attention")
+    return { label: reporting.label, indicator: attentionDot };
+  if (tab === "chat-discord" && discordAttention)
+    return { label: "needs attention", indicator: attentionDot };
+  if (tab === "chat-model" && modelAttention)
+    return { label: "needs attention", indicator: attentionDot };
+  return { label: "", indicator: null };
 }
 
 /** Nav search over section titles and keywords; Escape in the field clears it. */

@@ -5,8 +5,18 @@ import {
   currentRun,
   releasedUpgradeData,
 } from "./support/released-upgrade.ts";
+import {
+  ALLOWED_CHANNEL,
+  discordBot,
+  discordGuild,
+  savedChatModel,
+  savedDiscordConnection,
+  turnedOn,
+} from "./support/chat-control.ts";
+import { controlledDiscord, messageEvent, PARTICIPANT_ID } from "./support/controlled-discord.ts";
+import { controlledModelProvider } from "./support/controlled-model.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions in the project checkout, with an empty Revisit instruction on every Agent block, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run and leaves Generate Run titles off", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions in the project checkout, with an empty Revisit instruction on every Agent block, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run, leaves Generate Run titles off and starts Chat control Off with an empty Language model and Discord connection", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   expect(fixture.pendingStop.closedAt).toBeNull();
@@ -69,6 +79,43 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, with
     ok: true,
     value: { enabled: false, model: null, diagnostic: null },
   });
+  expect(await factory.getChatModelSettings()).toStrictEqual({
+    ok: true,
+    value: {
+      chatControlEnabled: false,
+      configuration: {
+        providerKind: null,
+        baseUrl: null,
+        model: null,
+        keyConfigured: false,
+        revision: 0,
+        savedAt: null,
+      },
+      latestTest: null,
+      runtimeProblem: null,
+      needsAttention: false,
+    },
+  });
+  expect(await factory.getDiscordSettings()).toStrictEqual({
+    ok: true,
+    value: {
+      chatControlEnabled: false,
+      connectionStatus: "incomplete",
+      connectionProblem: null,
+      commandSetup: null,
+      needsAttention: false,
+      configuration: {
+        publicKey: null,
+        tokenConfigured: false,
+        revision: 0,
+        savedAt: null,
+      },
+      application: null,
+      access: { users: [], channels: [], unresolvedProjectIds: [], revision: 0, savedAt: null },
+      latestCheck: null,
+      delivery: { problems: [], moreProblems: 0, reconciling: [] },
+    },
+  });
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);
   expect(tasks.value.map((task) => task.id)).toStrictEqual([
@@ -76,4 +123,42 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, with
     fixture.stopped.task.id,
     fixture.closed.task.id,
   ]);
+});
+
+it("upgraded Runs have no originating thread: with Chat control On and their Project granted, an invocation's reply is the only message Factory posts", async (c) => {
+  // Arrange
+  const fixture = await releasedUpgradeData(c);
+  const model = await controlledModelProvider(c);
+  const discord = await controlledDiscord(c);
+  discord.addBot(discordBot);
+  discord.addGuild(discordGuild);
+  const factory = await fixture.h.open({
+    t3: fixture.t3,
+    connectionRetryMs: 60_000,
+    discordApiUrl: discord.apiUrl,
+  });
+  await savedChatModel(factory, { baseUrl: model.baseUrl() });
+  await savedDiscordConnection(factory);
+  const access = await factory.updateDiscordAccess({
+    revision: 0,
+    users: [PARTICIPANT_ID],
+    channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [fixture.project.id] }],
+  });
+  assert(access.ok, JSON.stringify(access));
+  await turnedOn(factory, discord);
+
+  // Act
+  // Owed cards go out as soon as the session serves, before an invocation is answered.
+  discord.deliver(
+    messageEvent({
+      bot: discordBot,
+      guildId: discordGuild.id,
+      channelId: ALLOWED_CHANNEL,
+      id: "600000000000000001",
+    }),
+  );
+
+  // Assert
+  await discord.createdMessages(1);
+  expect(discord.created.map((message) => message.content)).toStrictEqual(["OK"]);
 });

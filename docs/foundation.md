@@ -48,6 +48,26 @@ and restricted OAuth credentials live outside project repositories.
   records when that request was sent, the thread T3 launched, when it reached its outcome and the claims for its one
   Stop and one T3 thread settlement. Migration `080` adds the setting off and gives existing Runs no generation. No
   other data changes.
+- [Chat control](chat-control.md) keeps its state in SQLite: the On/Off switch and one row per Settings section
+  (Language model, Discord connection, Access), each with its own revision so sections save independently, and
+  Test or check evidence apart from runtime health. Secrets never enter SQLite: the model key and the bot token
+  each live in an owner-only credential file the section's row names. A save stages the file durably, then
+  commits the row in one transaction, so restart never mixes a configuration with another revision's secret,
+  and files no committed row names are removed. Conversation memory, read handles and markers of handled
+  Discord events or unfinished invocations belong to a conversation generation or expire, and clearing a
+  conversation deletes them. Chat actions do not depend on conversation turns: proposals with their
+  requester-bound consent and original expiry, attempts identified by the shared operation's request identity,
+  the originating thread of each chat-started Run and owed Discord deliveries with their persisted intent and
+  outcome survive clearing, Off and restarts. Human answers and Archives record the request they were applied
+  under, so a chat action proves its own effect. Migrations `082` to `091` keep every existing row (rebuilt
+  tables copy their values), start with Chat control Off and empty sections, give existing Runs no originating
+  thread and post nothing about earlier Run activity.
+  Chat control's state also records the Discord application its operating connection authenticated as, which
+  owns the conversations, consent and messages; no Application ID is configured. Migration `092` carries a
+  formerly configured Application ID over as that recorded application, turns a stored identity-mismatch check
+  into a verified check of the application Discord reported, keeps a rejection for another application's token
+  until Retry and keeps every other value. Migration `093` records the message carrying each new review's
+  button, so its button can be shown disabled once unusable; existing proposals have none and are never edited.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

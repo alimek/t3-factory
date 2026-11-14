@@ -21,6 +21,21 @@ import { makeRunner } from "./runner/runner.ts";
 import { makeClientAccess } from "./client-access.ts";
 import { makeRunImages } from "./run-images.ts";
 import { makeRunTitles } from "./run-titles.ts";
+import { makeChatCredentials } from "./chat-control/credentials.ts";
+import { conversationalModel, makeChatModel } from "./chat-control/model.ts";
+import { makeChatActions } from "./chat-control/actions.ts";
+import { discoveryTools } from "./chat-control/chat-tools.ts";
+import { makeChatDeliveries } from "./chat-control/deliveries.ts";
+import { makeReportCapture } from "./chat-control/run-reports.ts";
+import { reportNotices } from "./chat-control/report-notices.ts";
+import { statusCards } from "./chat-control/status-cards.ts";
+import { archiveAction } from "./chat-control/archive-action.ts";
+import { humanAnswerAction } from "./chat-control/human-action.ts";
+import { startAction } from "./chat-control/start-action.ts";
+import { runTools } from "./chat-control/run-tools.ts";
+import { makeChatDiscord } from "./chat-control/discord.ts";
+import { DISCORD_API_URL, makeDiscordGateway } from "./chat-control/discord-gateway.ts";
+import { makeDiscordOperation } from "./chat-control/discord-operation.ts";
 import { failure } from "./result.ts";
 import { makeLiveChanges } from "./live-changes.ts";
 import { makeLiveStreams, type LiveStreams } from "./live-streams.ts";
@@ -71,6 +86,7 @@ export const makeFactoryService = (
   options: FactoryOptions,
   owner: Awaited<ReturnType<typeof acquireRunnerOwner>>,
   t3: T3Adapter,
+  credentialsDirectory: string,
 ) =>
   Effect.gen(function* () {
     const intervalMs = options.connectionRetryMs ?? 5_000;
@@ -119,7 +135,63 @@ export const makeFactoryService = (
       },
       changes,
     );
+    const chatCredentials = yield* makeChatCredentials(credentialsDirectory);
+    const discordGateway = yield* makeDiscordGateway(options.discordApiUrl ?? DISCORD_API_URL);
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
+    const chatStart = startAction({
+      listProjects: projects.listProjects,
+      getFlow: definitions.getFlow,
+      listFlows: definitions.listFlows,
+      getRunTitleSetting: runTitles.getRunTitleSetting,
+      startTextRun: (input, authorization) => guard(runner.startTextRun(input, authorization)),
+      acceptedStart: (requestId) => runner.acceptedStart(requestId),
+    });
+    const chatHumanAnswer = humanAnswerAction(sql, {
+      getRun: (id) => guard(runner.getRun(id)),
+      answerHumanOccurrence: (id, input, requestId) =>
+        guard(runner.answerHumanOccurrence(id, input, requestId)),
+      acceptedHumanAnswer: (requestId) => runner.acceptedHumanAnswer(requestId),
+    });
+    const chatArchive = archiveAction(sql, {
+      getRun: (id) => guard(runner.getRun(id)),
+      archiveRun: (id, requestId) => guard(runner.archiveRun(id, requestId)),
+      acceptedArchive: (requestId) => runner.acceptedArchive(requestId),
+    });
+    const chatDeliveries = yield* makeChatDeliveries(sql);
+    const reportCapture = yield* makeReportCapture(
+      sql,
+      { getRun: (id) => guard(runner.getRun(id)) },
+      [statusCards(sql), reportNotices(sql)],
+      chatDeliveries.wake,
+    );
+    yield* changes.onRunChanged(reportCapture.changed);
+    const chatActions = makeChatActions(
+      sql,
+      [chatStart.operation, chatHumanAnswer.operation, chatArchive.operation],
+      chatDeliveries,
+      reportCapture.changed,
+    );
+    const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
+      model: conversationalModel(sql, chatCredentials),
+      tools: [
+        ...discoveryTools({
+          listProjects: projects.listProjects,
+          listFlows: definitions.listFlows,
+        }),
+        ...runTools(sql, { getRun: (id) => guard(runner.getRun(id)) }),
+        chatStart.tool,
+        chatHumanAnswer.tool,
+        chatArchive.tool,
+      ],
+      actions: chatActions,
+      deliveries: chatDeliveries,
+    });
+    const chatModel = yield* makeChatModel(chatCredentials, discordOperation.modelSaved);
+    const chatDiscord = yield* makeChatDiscord(chatCredentials, discordGateway, discordOperation, {
+      actions: chatActions,
+      deliveries: chatDeliveries,
+      reportingRescan: reportCapture.rescan,
+    });
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
       (kind, input) => runner.readFactoryTool(kind, input),
@@ -151,6 +223,15 @@ export const makeFactoryService = (
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),
       getRunTitleSetting: () => runTitles.getRunTitleSetting(),
       updateRunTitleSetting: (input) => runTitles.updateRunTitleSetting(input),
+      getChatModelSettings: () => chatModel.getChatModelSettings(),
+      updateChatModelSettings: (input) => chatModel.updateChatModelSettings(input),
+      testChatModel: (input) => chatModel.testChatModel(input),
+      getDiscordSettings: () => chatDiscord.getDiscordSettings(),
+      updateDiscordConnection: (input) => chatDiscord.updateDiscordConnection(input),
+      checkDiscordConnection: (input) => chatDiscord.checkDiscordConnection(input),
+      updateDiscordAccess: (input) => chatDiscord.updateDiscordAccess(input),
+      setChatControlEnabled: (input) => chatDiscord.setChatControlEnabled(input),
+      retryChatDelivery: (input) => chatDiscord.retryChatDelivery(input),
       startRun: (i) => runner.startRun(i),
       getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
@@ -224,5 +305,9 @@ export const makeFactoryService = (
       runTitles,
     );
     yield* runner.initialize();
+    // Chat actions interrupted by a stop reconcile their Start identity once the Runner owns Runs.
+    yield* chatActions.recover;
+    // Automatic reporting reads Runs through the Runner, so it starts once the Runner owns them.
+    yield* Effect.forkScoped(reportCapture.run);
     return factory;
   });

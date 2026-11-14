@@ -1,0 +1,292 @@
+import { assert, type TestContext } from "@effect/vitest";
+import { join } from "node:path";
+import * as Effect from "effect/Effect";
+import type { Factory } from "../../src/index.ts";
+import { ALLOWED_CHANNEL, discordBot, discordGuild } from "./chat-control.ts";
+import { invocation, operatingService, THREAD } from "./chat-conversation.ts";
+import { chatWorlds, runConversation } from "./chat-runs.ts";
+import {
+  buttonEvent,
+  type ControlledDiscord,
+  type CreatedMessage,
+  type InteractionAnswer,
+} from "./controlled-discord.ts";
+import { preparedService } from "./prepared-runner.ts";
+import {
+  humanReviewFlow,
+  resultReleasedToHumanReview,
+  resultReported,
+  workerAtWork,
+  type ReadyFlowShape,
+} from "./scenarios.ts";
+
+/**
+ * An operating Chat control over a Factory that can start Runs (the prepared ready Flow of
+ * `runConversation`). `open` reopens the same home against the same external worlds.
+ */
+export async function startingWorld(c: TestContext, shape?: ReadyFlowShape) {
+  const fixture = await runConversation(c, shape);
+  const open = () =>
+    fixture.h.open({
+      t3: fixture.t3,
+      reportingStateDirectory: join(fixture.h.processHome, "reporting-state"),
+      discordApiUrl: fixture.discord.apiUrl,
+      connectionRetryMs: 60_000,
+    });
+  return { ...fixture, factory: fixture.f, harness: fixture.h, open };
+}
+
+export type StartingWorld = Pick<
+  Awaited<ReturnType<typeof startingWorld>>,
+  "model" | "discord" | "project" | "flow"
+>;
+
+/**
+ * The same operating world as `startingWorld`, built inside the test's Effect scope so TestClock
+ * drives consent expiry and every other backend deadline. Operations return Effects.
+ */
+export const clockedStartingWorld = (c: TestContext) =>
+  Effect.gen(function* () {
+    const worlds = yield* Effect.promise(() => chatWorlds(c));
+    const { factory, project, flow, t3 } = yield* preparedService(c, undefined, {
+      discordApiUrl: worlds.discord.apiUrl,
+    });
+    yield* operatingService(factory, worlds, project.id);
+    return { ...worlds, factory, project, flow, t3 };
+  });
+
+/** The model's start_run call for the world's Project and Flow with `prompt`. */
+export const startCall = (
+  world: Pick<StartingWorld, "project" | "flow">,
+  prompt: string,
+  overrides: Record<string, unknown> = {},
+) => ({
+  toolCalls: [
+    {
+      name: "start_run",
+      input: {
+        projectId: world.project.id,
+        flowId: world.flow.id,
+        prompt,
+        promptSource: "requester-message",
+        ...overrides,
+      },
+    },
+  ],
+});
+
+export const START_PROMPT = "Improve search\nKeep it accessible.";
+
+type ButtonComponent = {
+  readonly custom_id: string;
+  readonly label: string;
+  readonly disabled?: boolean;
+};
+
+/** The confirmation button a message's components show, if any. */
+const buttonIn = (components: unknown) =>
+  (components as readonly { readonly components: readonly ButtonComponent[] }[])[0]?.components[0];
+
+/** The custom ID of the confirmation button on `message`, if it carries one. */
+const buttonOf = (message: CreatedMessage) => buttonIn(message.components)?.custom_id;
+
+/**
+ * The button `customId` as Discord shows it now: its label, marked when disabled, or undefined
+ * when no message shows it.
+ */
+export const buttonShown = (discord: ControlledDiscord, customId: string) => {
+  const message = discord.created.find((entry) => buttonOf(entry) === customId);
+  const button = message && buttonIn(message.components);
+  return button && (button.disabled === true ? `${button.label} (disabled)` : button.label);
+};
+
+/** Messages Discord created so far that carry a confirmation button. */
+export const confirmations = (discord: ControlledDiscord) =>
+  discord.created.filter((message) => buttonOf(message) !== undefined);
+
+/** The model asks for one mutation tool call. */
+type MutationCall = { readonly toolCalls: readonly { name: string; input: unknown }[] };
+
+/**
+ * Delivers a participant invocation asking to start `prompt` (scripted as the model's start_run
+ * call), and returns the confirmation button's custom ID once Factory created `messages` messages
+ * in total, the last of them the button.
+ */
+export const proposedStart = (
+  world: StartingWorld,
+  id: string,
+  messages: number,
+  answer: MutationCall = startCall(world, START_PROMPT),
+  content = `start this:\n${START_PROMPT}`,
+) => proposed(world, id, messages, answer, content);
+
+/**
+ * Delivers a participant invocation with `content` whose interpretation is the model's `answer`
+ * call, and returns the confirmation button's custom ID once Factory created `messages` messages
+ * in total, the last of them the button.
+ */
+export async function proposed(
+  world: Pick<StartingWorld, "model" | "discord">,
+  id: string,
+  messages: number,
+  answer: MutationCall,
+  content: string,
+) {
+  world.model.script(answer);
+  world.discord.deliver(invocation(id, { content }));
+  await world.discord.createdMessages(messages);
+  const button = buttonOf(world.discord.created.at(-1)!);
+  assert(button !== undefined, "the last message carries the confirmation button");
+  return button;
+}
+
+/** An interaction answer as text: an ephemeral reply, or the button an update left showing. */
+const answerText = (answer: InteractionAnswer) => {
+  if (answer.kind === "ephemeral") return answer.content;
+  const button = buttonIn(answer.components)!;
+  return button.disabled === true ? `${button.label} (disabled)` : button.label;
+};
+
+/** How Factory answered clicks, in order: ephemeral texts or the button an update shows. */
+export const clickAnswers = (discord: ControlledDiscord) =>
+  discord.interactionAnswers.map(answerText);
+
+/**
+ * Delivers a click on `customId` in `THREAD` and returns Factory's answer once it is the
+ * `answers`th answer overall: the ephemeral text, or the button its message now shows.
+ */
+export async function clicked(
+  discord: ControlledDiscord,
+  customId: string,
+  id: string,
+  answers: number,
+  options: { readonly userId?: string; readonly permissions?: bigint } = {},
+) {
+  const message = discord.created.find((entry) => buttonOf(entry) === customId);
+  discord.deliver(
+    buttonEvent({
+      bot: discordBot,
+      guildId: discordGuild.id,
+      thread: { id: THREAD, parentId: ALLOWED_CHANNEL },
+      id,
+      customId,
+      ...(message ? { message } : {}),
+      ...options,
+    }),
+  );
+  await discord.answered(answers);
+  return clickAnswers(discord).at(-1)!;
+}
+
+/** Holds a confirmed Start at external preflight until the test releases it. */
+export async function pendingStart(
+  world: Pick<Awaited<ReturnType<typeof startingWorld>>, "discord" | "t3">,
+  customId: string,
+) {
+  let release = () => {};
+  let entered = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const inspecting = new Promise<void>((resolve) => (entered = resolve));
+  world.t3.beforeLaunchInspection = async () => {
+    entered();
+    await held;
+  };
+  const answer = clicked(world.discord, customId, "610000000000000090", 1);
+  await inspecting;
+  return { answer, release };
+}
+
+/** The Runs Factory shows in navigation, as identity and title. */
+export async function runsOf(factory: Pick<Factory, "listRunNavigation">) {
+  const navigation = await factory.listRunNavigation();
+  assert(navigation.ok, JSON.stringify(navigation));
+  return navigation.value.map((entry) => ({ number: entry.number, title: entry.title }));
+}
+
+const STATUS_CARD =
+  /^(?:_[^\n]+_\n\n)?\*\*Run [^\n]+\*\* · (?:🟢 Active|💤 Snoozed|✅ Settled|🗄️ Archived)\n/;
+/** A status card or notice: its first line names the Run in bold, after an emoji for notices. */
+const RUN_REPORT = /^(?:_[^\n]+_\n\n)?(?:\S+ )?\*\*Run \S+ · [^\n]+\*\* /;
+
+/** Whether Discord shows `message` as a Run's status card: its first line names the Run. */
+export const isStatusCard = (message: Pick<CreatedMessage, "content">) =>
+  STATUS_CARD.test(message.content);
+
+/** The status cards Discord shows, in creation order. */
+export const statusCardsIn = (discord: ControlledDiscord) => discord.created.filter(isStatusCard);
+
+/** Whether Discord shows `message` as an attention, lifecycle or catch-up notice about a Run. */
+export const isNotice = (message: Pick<CreatedMessage, "content">) =>
+  RUN_REPORT.test(message.content) && !isStatusCard(message);
+
+/** The notices Discord shows, in creation order. */
+export const noticesIn = (discord: ControlledDiscord) => discord.created.filter(isNotice);
+
+const isRunReport = (message: Pick<CreatedMessage, "content">) => RUN_REPORT.test(message.content);
+
+/** Messages Factory created besides status cards and notices (reviews, receipts, replies), in order. */
+export const besidesReports = (discord: ControlledDiscord) =>
+  discord.created.filter((message) => !isRunReport(message));
+
+/** Resolves once Factory created `count` messages besides status cards and notices. */
+export const createdBesidesReports = (discord: ControlledDiscord, count: number) =>
+  discord.createdWhere((message) => !isRunReport(message), count);
+
+export const HUMAN_CONTEXT = "Review this change.\nCheck the empty state.";
+
+/**
+ * An operating Chat control over a Run started in Factory (Run #1) of the Human review Flow, whose
+ * Review waits on its pending occurrence with the worker's result `context`.
+ */
+export async function answeringWorld(c: TestContext, context = HUMAN_CONTEXT) {
+  const world = await startingWorld(c, humanReviewFlow);
+  const worker = await workerAtWork(world.world, world.input);
+  await resultReported(world.world, worker, { message: context });
+  const review = await resultReleasedToHumanReview(world.world, worker);
+  return { ...world, runId: worker.runId, occurrence: review.occurrence };
+}
+
+/** The model's answer_human call for the world's pending occurrence of Run #1. */
+export const answerCall = (
+  world: { readonly occurrence: { readonly id: string } },
+  input: Record<string, unknown> = {},
+) => ({
+  toolCalls: [
+    {
+      name: "answer_human",
+      input: { run: "#1", occurrenceId: world.occurrence.id, answer: "approve", ...input },
+    },
+  ],
+});
+
+/** The occurrence `id` of the Run as Factory shows it now. */
+export async function occurrenceOf(factory: Pick<Factory, "getRun">, runId: string, id: string) {
+  const run = await factory.getRun(runId);
+  assert(run.ok, JSON.stringify(run));
+  return {
+    occurrence: run.value.humanOccurrences.find((entry) => entry.id === id)!,
+    handoffs: run.value.intents.filter((intent) => intent.occurrenceId === id),
+  };
+}
+
+/**
+ * An operating Chat control over a working Run started in Factory (Run #1 “Improve search”) whose
+ * worker thread is bound, so Archive requests its interruption.
+ */
+export async function archivingWorld(c: TestContext) {
+  const world = await startingWorld(c);
+  const worker = await workerAtWork(world.world, world.input);
+  return { ...world, runId: worker.runId };
+}
+
+/** The model's archive_run call for Run #1. */
+export const archiveCall = (input: Record<string, unknown> = {}) => ({
+  toolCalls: [{ name: "archive_run", input: { run: "#1", ...input } }],
+});
+
+/** The Run's lifecycle as Factory shows it now. */
+export async function lifecycleOf(factory: Pick<Factory, "getRun">, runId: string) {
+  const run = await factory.getRun(runId);
+  assert(run.ok, JSON.stringify(run));
+  return run.value.lifecycle;
+}

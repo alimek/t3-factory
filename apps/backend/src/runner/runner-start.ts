@@ -33,6 +33,13 @@ import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
 import type { RunImages } from "../run-images.ts";
 import type { RunnerTitleGeneration } from "../run-titles.ts";
+/** A trusted caller's authority, refreshed after preflight and fenced with local acceptance. */
+export interface StartAuthorization {
+  readonly check: Effect.Effect<Result<undefined>, unknown>;
+  /** Local state only: this runs inside the Run acceptance transaction. */
+  readonly commit: Effect.Effect<Result<undefined>, unknown>;
+}
+
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -212,7 +219,10 @@ export function openRunnerStart(
   images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
-  function start(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
+  function start(
+    rawInput: unknown,
+    authorization?: StartAuthorization,
+  ): Effect.Effect<Result<RunDetail>, unknown> {
     return Effect.gen(function* () {
       if (isClosed())
         return failure(
@@ -274,7 +284,11 @@ export function openRunnerStart(
         retryScope,
         titleGeneration,
       };
-      const accepted = yield* store.acceptStart(plan, images.hasFile);
+      if (authorization) {
+        const permitted = yield* authorization.check;
+        if (!permitted.ok) return permitted;
+      }
+      const accepted = yield* store.acceptStart(plan, images.hasFile, authorization?.commit);
       if (!accepted.ok) return accepted;
       // Deliberately detached from the response. The accepted Run survives a lost HTTP reply.
       // The title thread launches beside the Flow and never gates its dispatch.
@@ -289,7 +303,10 @@ export function openRunnerStart(
    * A text-only Start whose title and creation time are derived as the Start form derives them.
    * A retry of an accepted request reuses its stored creation time, so it keeps the same content.
    */
-  function startText(rawInput: unknown): Effect.Effect<Result<RunDetail>, unknown> {
+  function startText(
+    rawInput: unknown,
+    authorization?: StartAuthorization,
+  ): Effect.Effect<Result<RunDetail>, unknown> {
     return Effect.gen(function* () {
       const { requestId, projectId, flowId, input } = (
         rawInput && typeof rawInput === "object" ? rawInput : {}
@@ -300,16 +317,19 @@ export function openRunnerStart(
         ]);
       const accepted =
         typeof requestId === "string" ? yield* store.acceptedStart(requestId) : undefined;
-      return yield* start({
-        requestId,
-        projectId,
-        flowId,
-        segments: [{ type: "text", text: input }],
-        images: [],
-        title: promptTitle(input) ?? "",
-        titleProvenance: "automatic",
-        createdAt: accepted?.created_at ?? (yield* now),
-      });
+      return yield* start(
+        {
+          requestId,
+          projectId,
+          flowId,
+          segments: [{ type: "text", text: input }],
+          images: [],
+          title: promptTitle(input) ?? "",
+          titleProvenance: "automatic",
+          createdAt: accepted?.created_at ?? (yield* now),
+        },
+        authorization,
+      );
     });
   }
   /**

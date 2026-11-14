@@ -11,7 +11,6 @@ import type {
   UpdateRunTitleSettingInput,
 } from "@t3-factory/contracts";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ChoiceMenu, type MenuChoice } from "@/components/choice-menu";
@@ -22,7 +21,7 @@ import { MutationGate } from "../client-gate.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { dayAndTime } from "./execution-state.tsx";
 import { ModelOptionSelect } from "./execution-settings-fields.tsx";
-import { Notice } from "./notice.tsx";
+import { Notice, ReadFailure } from "./notice.tsx";
 
 const errorMessage = (cause: unknown, fallback: string) =>
   cause instanceof ApiError
@@ -101,21 +100,7 @@ export function RunTitleSettings() {
           shows the current setting and its latest diagnostic.
         </Notice>
       )}
-      {loadError && (
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            {loadError}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setLoads((n) => n + 1)}
-            >
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {loadError && <ReadFailure message={loadError} onRetry={() => setLoads((n) => n + 1)} />}
       {saveError && (
         <Alert variant="destructive">
           <AlertDescription>{saveError}</AlertDescription>

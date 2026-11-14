@@ -23,6 +23,7 @@ interface Watcher {
  */
 export function makeLiveChanges() {
   const watchers = new Set<Watcher>();
+  const runListeners = new Set<(runId: string) => void>();
   const mark = (affected: (scope: LiveScope) => boolean) => {
     for (const watcher of watchers) if (affected(watcher.scope)) watcher.dirty.openUnsafe();
   };
@@ -30,6 +31,7 @@ export function makeLiveChanges() {
     /** Every Run change may also change its navigation row. */
     runChanged(runId: string) {
       mark((scope) => scope.kind === "view" && (scope.navigation || scope.runIds.has(runId)));
+      for (const listener of runListeners) listener(runId);
     },
     /** Navigation rows and the composer's catalog show project titles and availability. */
     projectsChanged() {
@@ -54,6 +56,16 @@ export function makeLiveChanges() {
     /** Theme-color status or presentation changed; nothing else depends on it. */
     appearanceChanged() {
       mark((scope) => scope.kind === "appearance");
+    },
+    /**
+     * Calls `listener` with the ID of every Run whose committed state may have changed, whether or
+     * not any client watches it. The listener must only note the hint and read state itself.
+     */
+    onRunChanged(listener: (runId: string) => void) {
+      return Effect.acquireRelease(
+        Effect.sync(() => runListeners.add(listener)),
+        () => Effect.sync(() => runListeners.delete(listener)),
+      );
     },
     /** Registered for the caller's scope; register before reading a snapshot. */
     watch(scope: LiveScope) {

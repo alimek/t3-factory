@@ -1,0 +1,78 @@
+import * as Effect from "effect/Effect";
+import type * as SqlClient from "effect/sql/SqlClient";
+
+/** An Access save's channels and the Projects each grants. */
+type Channels = readonly { readonly channelId: string; readonly projectIds: readonly string[] }[];
+
+/** Whether `channels` no longer let `parentChannelId` reach every one of `projectIdsJson`. */
+const ungranted = (channels: Channels, parentChannelId: string, projectIdsJson: string) => {
+  const channel = channels.find((entry) => entry.channelId === parentChannelId);
+  return (
+    !channel ||
+    (JSON.parse(projectIdsJson) as string[]).some((id) => !channel.projectIds.includes(id))
+  );
+};
+
+/**
+ * What an Access save revokes, applied inside its transaction. Live proposals of a requester no
+ * longer allowed, or whose channel is gone or no longer grants a Project they target, end for good:
+ * a regrant revives nothing. Undelivered messages to a destination that no longer grants their
+ * Projects are cancelled; a message already being sent may finish, and the action it reports stays
+ * recorded. Notices of the affected chat-started Runs restart from a baseline after a regrant.
+ */
+export const applyAccessRevocation = (
+  sql: SqlClient.SqlClient,
+  access: { readonly users: readonly string[]; readonly channels: Channels },
+) =>
+  Effect.gen(function* () {
+    const live = yield* sql<{
+      id: string;
+      requester_id: string;
+      parent_channel_id: string;
+      project_ids_json: string;
+    }>`SELECT id,requester_id,parent_channel_id,project_ids_json FROM chat_proposals WHERE state IN ('preparing','presented','accepting')`;
+    const voided = live.filter(
+      (row) =>
+        !access.users.includes(row.requester_id) ||
+        ungranted(access.channels, row.parent_channel_id, row.project_ids_json),
+    );
+    // Buttons voided while Chat control is Off are never edited later: nothing is sent for Off.
+    if (voided.length > 0)
+      yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='revoked',
+          button_settled=CASE WHEN (SELECT enabled FROM chat_control_state WHERE singleton=1)=1 THEN button_settled ELSE 1 END
+        WHERE id IN ${sql.in(voided.map((row) => row.id))}`;
+    const owed = yield* sql<{
+      id: string;
+      parent_channel_id: string;
+      project_ids_json: string;
+    }>`SELECT id,parent_channel_id,project_ids_json FROM chat_deliveries WHERE state IN ('owed','failed','unknown')`;
+    const cancelled = owed.filter((row) =>
+      ungranted(access.channels, row.parent_channel_id, row.project_ids_json),
+    );
+    if (cancelled.length > 0)
+      yield* sql`UPDATE chat_deliveries SET state='cancelled',next_attempt_at=NULL WHERE id IN ${sql.in(cancelled.map((row) => row.id))}`;
+    // A chat-started Run whose originating channel loses its Project accrues no notices; after a
+    // regrant its notices start from its state then, without narrating the revoked interval.
+    const origins = yield* sql<{
+      run_id: string;
+      parent_channel_id: string;
+      project_id: string;
+    }>`SELECT o.run_id,o.parent_channel_id,t.project_id FROM chat_run_origins o
+      JOIN runs r ON r.id=o.run_id JOIN tasks t ON t.id=r.task_id`;
+    const revoked = origins.filter((row) =>
+      ungranted(access.channels, row.parent_channel_id, JSON.stringify([row.project_id])),
+    );
+    if (revoked.length > 0)
+      yield* sql`INSERT INTO chat_run_reporting (run_id,lifecycle) VALUES ${sql.csv(
+        revoked.map((row) => sql`(${row.run_id},NULL)`),
+      )} ON CONFLICT(run_id) DO UPDATE SET lifecycle=NULL,final=0`;
+  });
+
+/**
+ * Retires the live proposals of an application being replaced: its buttons can never confirm
+ * again, even if that application operates again later. Owed receipts stay owed. Call inside the
+ * transaction that records the replacing application.
+ */
+export const retireApplicationProposals = (sql: SqlClient.SqlClient, applicationId: string) =>
+  sql`UPDATE chat_proposals SET state='ended',ended_reason='application'
+    WHERE application_id=${applicationId} AND state IN ('preparing','presented','accepting')`;

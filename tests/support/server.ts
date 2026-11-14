@@ -40,6 +40,13 @@ import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-ac
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
+import {
+  buttonEvent,
+  messageEvent,
+  startControlledDiscord,
+  type CreatedMessage,
+  type MessageFault,
+} from "../../apps/backend/test/support/controlled-discord.ts";
 import { upstreamPublishedTheme } from "../../apps/backend/test/support/t3-theme-fixture.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
 import { seedDevelopment, seedScenarios, settlementUnresolved } from "../../scripts/dev/seed.ts";
@@ -59,6 +66,21 @@ const config = await loadConfiguration({
   FACTORY_REMOTE_PORT: "0",
 });
 const t3 = new PersistentT3(home, false);
+// Chat control reaches this controlled Discord instead of discord.com; it knows one bot.
+const discord = await startControlledDiscord();
+const discordBot = { token: "ui-journey-bot-token", applicationId: "112233445566778899" };
+/** The confirmation button a message Discord created carries, if any. */
+const buttonOf = (message: CreatedMessage) =>
+  (message.components as { components: { custom_id: string }[] }[])[0]?.components[0];
+discord.addBot(discordBot);
+// The bot's server, with the channel UI journeys allow in Access.
+const discordGuild = {
+  id: "400000000000000001",
+  name: "Team",
+  channels: [{ id: "400000000000000002", name: "factory" }],
+};
+discord.addGuild(discordGuild);
+let discordInvocations = 0;
 // Use the real pending-approval simulation for remote connection journeys.
 t3.authorize = ControlledT3.prototype.authorize.bind(t3);
 // The desktop server's updater holding a downloaded beta; approved clients' requests are recorded.
@@ -69,6 +91,7 @@ const server = await startServer(
     t3,
     connectionRetryMs: 1000,
     reportingStateDirectory: join(home, "reporting-t3-state"),
+    discordApiUrl: discord.apiUrl,
     applicationUpdates: {
       status: () => ({
         channel: "beta",
@@ -486,6 +509,73 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
         undefined,
         { titlePrefix: "", keyNamespace: "ui-live:" },
       ),
+    );
+  },
+  /** The bot the controlled Discord knows, and the tokens of the Gateway sessions it saw. */
+  "/__fixture/discord": () => ({
+    bot: discordBot,
+    sessions: discord.sessions.map(({ token, ready, closed }) => ({ token, ready, closed })),
+  }),
+  /** External application permissions determine whether command registration succeeds. */
+  "/__fixture/discord/commands": (query) => {
+    discord.setCommandsAvailable(query.get("available") === "true");
+  },
+  /**
+   * An allowed participant mentions the bot in the allowed channel: one new invocation, with the
+   * given `content` or the default request. Factory answers in a new thread with the message's ID.
+   */
+  "/__fixture/discord/invoke": (query) => {
+    discordInvocations += 1;
+    const id = String(300000000000000000n + BigInt(discordInvocations));
+    discord.deliver(
+      messageEvent({
+        bot: discordBot,
+        guildId: discordGuild.id,
+        channelId: discordGuild.channels[0]!.id,
+        id,
+        ...(query.get("content") ? { content: query.get("content")! } : {}),
+      }),
+    );
+    return { id };
+  },
+  /** The messages Discord created so far: text and any confirmation button's custom ID. */
+  "/__fixture/discord/messages": () =>
+    discord.created.map((message) => ({
+      channelId: message.channelId,
+      content: message.content,
+      customId: buttonOf(message)?.custom_id ?? null,
+    })),
+  /** Discord meets the next message creates with these faults, in order. */
+  "/__fixture/discord/fault": (query) => {
+    discord.faultMessages(...(query.getAll("fault") as MessageFault[]));
+  },
+  /** Discord's nonce uniqueness window passed: a repeated nonce creates a new message again. */
+  "/__fixture/discord/nonce-window": () => {
+    discord.nonceWindowPassed();
+  },
+  /**
+   * A moderator changes thread `thread`: `state=locked` archives and locks it, `state=unlocked`
+   * unlocks it, leaving it archived.
+   */
+  "/__fixture/discord/thread": (query) => {
+    const thread = query.get("thread")!;
+    if (query.get("state") === "locked") discord.archiveThread(thread, { locked: true });
+    else discord.unlockThread(thread);
+  },
+  /** The participant clicks the confirmation button `customId` in thread `thread`. */
+  "/__fixture/discord/click": (query) => {
+    discordInvocations += 1;
+    discord.deliver(
+      buttonEvent({
+        bot: discordBot,
+        guildId: discordGuild.id,
+        thread: { id: query.get("thread")!, parentId: discordGuild.channels[0]!.id },
+        id: String(310000000000000000n + BigInt(discordInvocations)),
+        customId: query.get("customId")!,
+        message: discord.created.find(
+          (message) => buttonOf(message)?.custom_id === query.get("customId"),
+        )!,
+      }),
     );
   },
   "/__fixture/live/requests/reset": () => {

@@ -615,6 +615,8 @@ export const makeAppearance = (
         }
         problem = null;
         refusedEnvironment = null;
+        // The grant follows this connection now; a late hint for it needs no second reconcile.
+        binding = JSON.stringify(current);
         yield* apply(yield* install(stream.value, environment), snapshot);
         yield* publish;
         return { ok: true as const, value: status };

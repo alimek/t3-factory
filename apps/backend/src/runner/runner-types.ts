@@ -83,6 +83,7 @@ export type HumanRow = {
   settled_at: string | null;
   exit_id: string | null;
   answer_fingerprint: string | null;
+  answer_request_id: string | null;
 };
 
 export type TaskRunRow = {

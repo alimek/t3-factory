@@ -14,6 +14,7 @@ New here? Start with the [project overview and demo](../README.md),
 - [Studio: Agent definitions, Flow authoring and validation](studio.md)
 - [Starting and observing Runs](runs.md)
 - [Desktop and approved clients](desktop-and-clients.md)
+- [Chat control](chat-control.md)
 - [Keyboard shortcuts](keyboard-shortcuts.md)
 
 ## Contracts and contribution

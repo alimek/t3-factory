@@ -441,7 +441,9 @@ names the new exit and so conflicts instead of repeating.
 Answering atomically records the answer, settles only that occurrence and creates every
 outgoing handoff, which carries the answer and the [worker provenance](#worker-provenance) of the occurrence's own incoming
 delivery. Identical retries return current detail; changed or competing answers
-conflict. Pending context is cleared after settlement. A Human Block stays waiting while
+conflict. An answer attributed to a request (Chat control's action identity) records that request
+in the same transaction; only a retry of that request is acknowledged, and an occurrence settled by
+anyone else, even with the same answer, conflicts for it. Pending context is cleared after settlement. A Human Block stays waiting while
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
 
@@ -627,7 +629,10 @@ gate, records the Run Archived, cancels pending launches, handoffs, Human occurr
 arrivals and a pending [Run title generation](#run-title-generations), clears pending delivery text and every Wait arrival's message (keeping its outcome, deadline and identity), settles pending attention as `archived`, marks activated Blocks
 that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
 replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
-uncertain operations keep their recorded state.
+uncertain operations keep their recorded state. Archiving an Archived Run changes nothing and
+succeeds, except for an Archive attributed to a request (Chat control's action identity): the
+transaction records that request, only its own retry is acknowledged, and a Run archived by anyone
+else conflicts for it. Only the call that archived the Run requests interruption.
 
 After the transaction, in the background and only under the Run's authorization context,
 Factory sends one `t3_thread_interrupt` with `stop: true` to every bound worker thread, with a

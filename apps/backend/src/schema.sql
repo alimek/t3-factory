@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: revisit_instructions
+-- Newest applied migration: chat_confirmation_buttons
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -55,6 +55,287 @@ CREATE TABLE appearance_snapshot (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   endpoint TEXT NOT NULL,
   presentation TEXT NOT NULL
+);
+
+CREATE TABLE chat_access_channel_projects (
+  channel_id TEXT NOT NULL REFERENCES chat_access_channels(channel_id),
+  project_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (channel_id, project_id)
+);
+
+CREATE TABLE chat_access_channels (
+  channel_id TEXT PRIMARY KEY,
+  position INTEGER NOT NULL
+);
+
+CREATE TABLE chat_access_settings (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision INTEGER NOT NULL DEFAULT 0,
+  saved_at TEXT,
+  CHECK ((revision = 0) = (saved_at IS NULL))
+);
+
+CREATE TABLE chat_access_users (
+  user_id TEXT PRIMARY KEY,
+  position INTEGER NOT NULL
+);
+
+CREATE TABLE chat_actions (
+  id TEXT PRIMARY KEY,
+  proposal_id TEXT NOT NULL UNIQUE REFERENCES chat_proposals(id),
+  state TEXT NOT NULL CHECK (state IN ('accepting', 'accepted', 'rejected')),
+  started_at TEXT NOT NULL,
+  decided_at TEXT,
+  outcome_json TEXT,
+  CHECK ((state = 'accepting') = (decided_at IS NULL AND outcome_json IS NULL))
+);
+
+CREATE TABLE "chat_control_state" (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  -- The application the latest operating session authenticated as; null until one did.
+  application_id TEXT,
+  rejected_outcome TEXT CHECK (
+    rejected_outcome IN ('token-rejected', 'intent-disallowed', 'failed')
+  ),
+  rejected_message TEXT,
+  rejected_at TEXT
+);
+
+CREATE TABLE chat_conversation_handles (
+  application_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  message_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('run-search', 'run-read')),
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (application_id, thread_id, handle),
+  FOREIGN KEY (application_id, thread_id) REFERENCES chat_conversations(application_id, thread_id)
+);
+
+CREATE TABLE chat_conversation_turns (
+  application_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  turn INTEGER NOT NULL,
+  message_id TEXT NOT NULL,
+  author_id TEXT NOT NULL,
+  input TEXT NOT NULL,
+  quote_author_id TEXT,
+  quote TEXT,
+  facts_json TEXT NOT NULL,
+  reply TEXT NOT NULL,
+  text_bytes INTEGER NOT NULL CHECK (text_bytes >= 0),
+  CHECK ((quote_author_id IS NULL) = (quote IS NULL)),
+  PRIMARY KEY (application_id, thread_id, turn),
+  FOREIGN KEY (application_id, thread_id) REFERENCES chat_conversations(application_id, thread_id)
+);
+
+CREATE TABLE chat_conversations (
+  application_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 1),
+  generation_started_at TEXT NOT NULL, last_admitted_at TEXT, notice TEXT CHECK (notice IN ('cleared', 'evicted')),
+  PRIMARY KEY (application_id, thread_id)
+);
+
+CREATE TABLE chat_deliveries (
+  id TEXT PRIMARY KEY,
+  purpose TEXT NOT NULL CHECK (purpose IN ('receipt', 'status-card', 'attention', 'lifecycle', 'catch-up')),
+  action_id TEXT REFERENCES chat_actions(id),
+  -- The Run a status card or notice reports; receipts belong to their action instead.
+  run_id TEXT,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  -- The Projects the content concerns; the destination channel must still grant them.
+  project_ids_json TEXT NOT NULL,
+  -- The text Discord should show: what a create sends, or what an edit brings a message to.
+  text TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('owed', 'sending', 'delivered', 'failed', 'unknown', 'cancelled', 'lost', 'retired')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at TEXT,
+  problem TEXT,
+  problem_at TEXT,
+  message_id TEXT,
+  sent_by_application_id TEXT,
+  created_at TEXT NOT NULL,
+  CHECK ((problem IS NULL) = (problem_at IS NULL)),
+  CHECK ((purpose = 'receipt') = (run_id IS NULL)),
+  CHECK (purpose <> 'receipt' OR state NOT IN ('lost', 'retired'))
+);
+
+CREATE INDEX chat_deliveries_message ON chat_deliveries(message_id)
+;
+
+CREATE INDEX chat_deliveries_state ON chat_deliveries(state)
+;
+
+CREATE TABLE "chat_discord_connection" (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  public_key TEXT,
+  token_stage TEXT,
+  revision INTEGER NOT NULL DEFAULT 0,
+  saved_at TEXT,
+  check_revision INTEGER,
+  check_at TEXT,
+  check_outcome TEXT CHECK (
+    check_outcome IN (
+      'verified',
+      'token-rejected',
+      'intent-disallowed',
+      'unreachable',
+      'timed-out',
+      'failed'
+    )
+  ),
+  check_application_id TEXT,
+  check_message TEXT,
+  CHECK ((revision = 0) = (saved_at IS NULL)),
+  CHECK ((check_revision IS NULL) = (check_at IS NULL)),
+  CHECK ((check_revision IS NULL) = (check_outcome IS NULL)),
+  CHECK ((check_revision IS NULL) = (check_message IS NULL)),
+  CHECK ((check_outcome IS 'verified') = (check_application_id IS NOT NULL))
+);
+
+CREATE TABLE chat_ingress_events (
+  application_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  PRIMARY KEY (application_id, event_id)
+);
+
+CREATE INDEX chat_ingress_events_received ON chat_ingress_events (received_at)
+;
+
+CREATE TABLE chat_model_settings (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  provider_kind TEXT CHECK (provider_kind IN ('openai-compatible', 'anthropic')),
+  base_url TEXT,
+  model TEXT,
+  key_stage TEXT,
+  revision INTEGER NOT NULL DEFAULT 0,
+  saved_at TEXT,
+  test_revision INTEGER,
+  test_at TEXT,
+  test_outcome TEXT CHECK (test_outcome IN ('succeeded', 'failed')),
+  test_message TEXT, runtime_failure_revision INTEGER, runtime_failure_at TEXT, runtime_failure_message TEXT,
+  CHECK ((revision = 0) = (saved_at IS NULL)),
+  CHECK ((test_revision IS NULL) = (test_at IS NULL)),
+  CHECK ((test_revision IS NULL) = (test_outcome IS NULL)),
+  CHECK ((test_revision IS NULL) = (test_message IS NULL))
+);
+
+CREATE TABLE chat_pending_admissions (
+  application_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  requester_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  admitted_at TEXT NOT NULL,
+  interrupted TEXT CHECK (interrupted IN ('interrupted', 'model-failed', 'timed-out')),
+  PRIMARY KEY (application_id, message_id)
+);
+
+CREATE TABLE chat_proposals (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  requester_id TEXT NOT NULL,
+  operation TEXT NOT NULL CHECK (operation IN ('start', 'human-answer', 'archive')),
+  parameters_json TEXT NOT NULL,
+  -- Requester, context, operation and exact parameters; an identical pending proposal is reused.
+  identity TEXT NOT NULL,
+  -- The Projects the operation targets; revoking any of them in the context voids the proposal.
+  project_ids_json TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  message_id TEXT NOT NULL,
+  tool_call_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('preparing', 'presented', 'accepting', 'consumed', 'ended')),
+  ended_reason TEXT CHECK (ended_reason IN ('failed', 'superseded', 'revoked', 'application')),
+  created_at TEXT NOT NULL,
+  expires_at TEXT, button_message_id TEXT, button_settled INTEGER NOT NULL DEFAULT 0
+  CHECK (button_settled IN (0, 1)),
+  CHECK ((state = 'ended') = (ended_reason IS NOT NULL)),
+  CHECK (state = 'preparing' OR state = 'ended' OR expires_at IS NOT NULL)
+);
+
+CREATE INDEX chat_proposals_identity ON chat_proposals(identity, state)
+;
+
+CREATE TABLE chat_report_matters (
+  matter_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES chat_run_origins(run_id),
+  notice_id TEXT REFERENCES chat_report_notices(delivery_id),
+  kind TEXT NOT NULL CHECK (kind IN ('human', 'native-request', 'conversation-waiting', 'missing-report', 'execution-failed', 'report-problem')),
+  block TEXT NOT NULL,
+  appeared_at TEXT NOT NULL,
+  resolved INTEGER NOT NULL DEFAULT 0 CHECK (resolved IN (0, 1))
+);
+
+CREATE INDEX chat_report_matters_notice ON chat_report_matters(notice_id)
+;
+
+CREATE INDEX chat_report_matters_run ON chat_report_matters(run_id)
+;
+
+CREATE TABLE chat_report_notices (
+  delivery_id TEXT PRIMARY KEY REFERENCES chat_deliveries(id),
+  run_id TEXT NOT NULL REFERENCES chat_run_origins(run_id),
+  lifecycle TEXT CHECK (lifecycle IN ('active', 'settled', 'archived')),
+  previous_lifecycle TEXT CHECK (previous_lifecycle IN ('active', 'settled', 'archived')),
+  lifecycle_at TEXT,
+  late INTEGER NOT NULL DEFAULT 0 CHECK (late IN (0, 1)),
+  application_notice INTEGER NOT NULL DEFAULT 0 CHECK (application_notice IN (0, 1)),
+  CHECK ((lifecycle IS NULL) = (lifecycle_at IS NULL))
+);
+
+CREATE INDEX chat_report_notices_run ON chat_report_notices(run_id)
+;
+
+CREATE TABLE chat_run_origins (
+  run_id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  action_id TEXT NOT NULL UNIQUE REFERENCES chat_actions(id),
+  recorded_at TEXT NOT NULL
+);
+
+CREATE TABLE chat_run_reporting (
+  run_id TEXT PRIMARY KEY REFERENCES chat_run_origins(run_id),
+  lifecycle TEXT CHECK (lifecycle IN ('active', 'settled', 'archived')),
+  reference TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  final INTEGER NOT NULL DEFAULT 0 CHECK (final IN (0, 1))
+);
+
+CREATE TABLE chat_sdk_cache (
+  cache_key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  expires_at INTEGER
+);
+
+CREATE TABLE chat_sdk_subscriptions (
+  thread_id TEXT PRIMARY KEY
+);
+
+CREATE TABLE chat_status_cards (
+  run_id TEXT PRIMARY KEY REFERENCES chat_run_origins(run_id),
+  delivery_id TEXT NOT NULL UNIQUE REFERENCES chat_deliveries(id),
+  reportable INTEGER NOT NULL CHECK (reportable IN (0, 1)),
+  replacement_used INTEGER NOT NULL DEFAULT 0 CHECK (replacement_used IN (0, 1)),
+  replaced_application_id TEXT,
+  final INTEGER NOT NULL DEFAULT 0 CHECK (final IN (0, 1))
 );
 
 CREATE TABLE client_grants (
@@ -242,9 +523,13 @@ CREATE TABLE human_occurrences (
   appeared_at TEXT NOT NULL,
   settled_at TEXT,
   exit_id TEXT,
-  answer_fingerprint TEXT,
+  answer_fingerprint TEXT, answer_request_id TEXT,
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
+
+CREATE UNIQUE INDEX human_occurrences_answer_request ON human_occurrences(answer_request_id)
+  WHERE answer_request_id IS NOT NULL
+;
 
 CREATE TABLE operation_intents (
   id TEXT PRIMARY KEY,
@@ -663,7 +948,11 @@ CREATE TABLE runs (
   creation_key TEXT NOT NULL DEFAULT '',
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id)
 , settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT, title_provenance TEXT NOT NULL DEFAULT 'legacy'
-  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')));
+  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')), archive_request_id TEXT);
+
+CREATE UNIQUE INDEX runs_archive_request ON runs(archive_request_id)
+  WHERE archive_request_id IS NOT NULL
+;
 
 CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL
 ;

@@ -300,3 +300,36 @@ report or one whose latest report is a Working report. A durable recovery link
 connects that new execution to the idle run it assesses and to the missing-report
 obligation pending for that run, if any. Successful recovery settles the obligation
 without fabricating an earlier report or erasing an engine failure.
+
+**Chat control**:
+The host-administered capability that lets explicitly allowed Discord users control Factory by
+mentioning or replying to Factory's bot in allowed channels and their threads. Factory, not the
+language model, decides who may act and which Projects are in scope; the model only interprets
+requests through Factory's own tools. Each thread has one shared, bounded and disposable
+conversation. It is Off by default, works only while the Factory backend runs, and connects to
+Discord and the model provider outbound only. See [Chat control](docs/chat-control.md).
+_Avoid_: Chat bot as a separate service; treating chat messages or model output as authorization.
+
+**Originating thread**:
+The Discord thread a Run was requested in through a confirmed Chat control Start, recorded when Factory
+accepts the Run. It is where Factory reports on that Run, not ownership: any allowed participant may act
+on any Run in a permitted Project, and an action's receipt goes to the thread it was requested in. Runs
+started any other way have none, and reading or acting on a Run never adds one. See
+[Chat control](docs/chat-control.md#originating-thread).
+_Avoid_: Run owner; assigning an origin to a Run read or acted on from chat.
+
+**Status card**:
+The one Discord message Factory maintains in a chat-started Run's originating thread and edits from the
+Run's committed facts: identity, state, active Blocks, latest results, pending Waits, Needs input and
+Problems. Ordinary Block activity edits it rather than posting; it never carries report bodies. See
+[Chat control](docs/chat-control.md#status-cards).
+_Avoid_: Progress feed or per-event notification; treating the card's text as conversation input.
+
+**Run notice**:
+A new Discord message in a chat-started Run's originating thread for a meaningful change: an attention
+notice for new Needs input or Problem matters, a lifecycle notice for becoming Settled or Archived or
+returning to Active, or one catch-up per Run for what accrued while Factory could not post. Resolving a
+matter edits the notice that announced it; notices mention nobody. See
+[Chat control](docs/chat-control.md#attention-and-lifecycle-notices).
+_Avoid_: Replaying Block transitions or matters that opened and resolved while Factory could not post;
+answer buttons on a notice.

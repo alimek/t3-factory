@@ -62,10 +62,19 @@ async function readyFlow(
 
 /** A ready Flow (the single-worker Flow in `shape`'s variant, or a ready Flow shape), with Factory
  * reporting installed beside the bridge. */
-export async function prepared(c: TestContext, shape?: SingleWorkerVariant | ReadyFlowShape) {
+export async function prepared(
+  c: TestContext,
+  shape?: SingleWorkerVariant | ReadyFlowShape,
+  { discordApiUrl }: { readonly discordApiUrl?: string } = {},
+) {
   const h = await factoryHarness(c);
   const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
-  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
+  const f = await h.open({
+    t3,
+    reportingStateDirectory,
+    connectionRetryMs: 60_000,
+    ...(discordApiUrl ? { discordApiUrl } : {}),
+  });
   c.onTestFinished(() => f.close());
   return { h, f, t3, ...(await readyFlow(f, t3, root, shape)) };
 }
@@ -79,7 +88,10 @@ export async function prepared(c: TestContext, shape?: SingleWorkerVariant | Rea
 export function preparedService(
   c: TestContext,
   shape?: SingleWorkerVariant | ReadyFlowShape,
-  { connectionRetryMs = 60_000 }: { readonly connectionRetryMs?: number } = {},
+  {
+    connectionRetryMs = 60_000,
+    discordApiUrl,
+  }: { readonly connectionRetryMs?: number; readonly discordApiUrl?: string } = {},
 ) {
   return Effect.gen(function* () {
     const h = yield* Effect.promise(() => factoryHarness(c));
@@ -92,7 +104,12 @@ export function preparedService(
     const open = Effect.gen(function* () {
       const scope = yield* Scope.fork(testScope);
       const service = yield* h
-        .service({ t3, reportingStateDirectory, connectionRetryMs })
+        .service({
+          t3,
+          reportingStateDirectory,
+          connectionRetryMs,
+          ...(discordApiUrl === undefined ? {} : { discordApiUrl }),
+        })
         .pipe(Scope.provide(scope));
       return { factory: service, close: Scope.close(scope, Exit.void) };
     });
