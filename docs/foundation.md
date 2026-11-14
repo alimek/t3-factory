@@ -121,7 +121,9 @@ project reconcile, whose own publications would otherwise leave that read not cu
 Subscription registration precedes the snapshot read. A relevant hint during that read
 triggers a fresh read, up to three reads. A delivery is current only when no relevant
 change arrived while it was read and no later read failed; a scope counts as synchronized,
-and mutations are enabled, only while its latest applied delivery is current. A snapshot
+and new commands are enabled, only while its latest applied delivery is current. A command
+admitted then, such as Start with its image uploads, is not cancelled halfway by a later
+catch-up, but sends nothing once the client is offline. A snapshot
 or a later read raced by another commit stays unsynchronized until its catch-up arrives, and
 a failed re-read keeps the last value, marks the scope unsynchronized and retries. An unknown
 Run is final for that Run only, as is a Run beyond the view's capacity of 20 Runs per window;

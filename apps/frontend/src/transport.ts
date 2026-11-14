@@ -56,8 +56,10 @@ export const transport = {
     liveDelivery = next;
     notify();
   },
-  /** Mutations are sent only while reachable and every live scope reflects the current state. */
+  /** A new command is sent only while reachable and every live scope reflects the current state. */
   acceptsMutations: () => state.kind === "online" && liveDelivery === "current",
+  /** A command admitted while current keeps sending its own requests through a later catch-up. */
+  acceptsAdmittedRequests: () => state.kind === "online",
 };
 
 export function useTransport(): TransportState {

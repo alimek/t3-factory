@@ -18,7 +18,8 @@ import {
 } from "@t3-factory/domain-validation";
 import { randomId } from "./lib/ids.ts";
 import { useNavigate } from "@tanstack/react-router";
-import { api, ApiError } from "./api.ts";
+import { admittedStart, api, ApiError } from "./api.ts";
+import { transport } from "./transport.ts";
 import {
   indexedDbImages,
   readImageFile,
@@ -300,7 +301,7 @@ function confirmedRejection(error: unknown): error is ApiError {
 const apiUploads: ImageUploads = {
   has: (image) => api.hasRunImage(image.sha256),
   upload: async (image, data) => {
-    await api.stageRunImage(image.sha256, data);
+    await admittedStart.stageRunImage(image.sha256, data);
   },
 };
 
@@ -317,7 +318,7 @@ const missingImagesOutcome =
   "Factory still lacks some images of this request. Check the same request to upload them again.";
 
 export function createRunDraft(
-  startRun: (submission: StartRunInput) => Promise<{ id: string }> = api.startRun,
+  startRun: (submission: StartRunInput) => Promise<{ id: string }> = admittedStart.startRun,
   images: { store: DraftImageStore; uploads: ImageUploads } = {
     store: indexedDbImages,
     uploads: apiUploads,
@@ -592,6 +593,8 @@ export function createRunDraft(
     const requestServer = server;
     const saved = find(currentId);
     if (requestServer === undefined || !saved || inFlight.has(saved.id)) return;
+    // Start is admitted once, while the view is current; its uploads and request then follow.
+    if (!transport.acceptsMutations()) return;
     const { id } = saved;
     const request =
       saved.submission ??

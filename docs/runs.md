@@ -91,7 +91,8 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   reopens that draft instead. If storage is blocked the composer says the draft lasts only while the window is open.
   **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
   Flow editor's **Start Run** does the same with its Flow. Project and Flow choices update live; while they are
-  synchronizing or offline the last choices stay visible, the draft is kept and Start is disabled. A selected Project or Flow
+  synchronizing or offline the last choices stay visible, the draft is kept and Start is disabled. A Start issued while
+  current still sends its image uploads and request if a catch-up begins meanwhile; going offline stops it. A selected Project or Flow
   is cleared only when a current live delivery no longer lists it; a non-current or failed delivery changes nothing, and
   choosing a just-created Project or Flow waits for the delivery that lists it. Confirmed Start removes the draft and opens its Run; a confirmed
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title

@@ -37,19 +37,21 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 }
 
 /** Adds the Factory protocol and mutation headers; refuses a mutation the view cannot send now. */
-function factoryRequest(path: string, init?: RequestInit): Promise<Response> {
+function factoryRequest(path: string, init?: RequestInit, admitted = false): Promise<Response> {
   const headers = new Headers(init?.headers);
   const mutation = !["GET", "HEAD"].includes(init?.method ?? "GET");
   if (mutation) headers.set("X-Factory-Request", "1");
   for (const [name, value] of Object.entries(protocolHeaders)) headers.set(name, value);
   // A disconnected or synchronizing client never sends or queues a new command; the user
-  // retries deliberately once the view is current.
-  if (mutation && !transport.acceptsMutations()) throw new OfflineError("not-sent");
+  // retries deliberately once the view is current. A command admitted while current is not
+  // cancelled halfway by a later catch-up, but none of its requests is sent while offline.
+  const accepted = admitted ? transport.acceptsAdmittedRequests() : transport.acceptsMutations();
+  if (mutation && !accepted) throw new OfflineError("not-sent");
   return send(path, { ...init, headers });
 }
 
-async function request<A>(path: string, init?: RequestInit): Promise<A> {
-  const response = await factoryRequest(path, init);
+async function request<A>(path: string, init?: RequestInit, admitted = false): Promise<A> {
+  const response = await factoryRequest(path, init, admitted);
   const result = (await response.json().catch(() => undefined)) as Result<A> | undefined;
   if (!result) {
     transport.unreachable();
@@ -93,6 +95,7 @@ function requestInit(definition: OperationDefinition, input: unknown): RequestIn
 /** The HTTP calls of a definition set, named after the definitions. */
 function operationCalls<Definitions extends Record<string, OperationDefinition>>(
   definitions: Definitions,
+  admitted = false,
 ): OperationCalls<Definitions> {
   const calls: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   for (const [name, definition] of Object.entries(definitions)) {
@@ -104,6 +107,7 @@ function operationCalls<Definitions extends Record<string, OperationDefinition>>
       return request(
         path,
         requestInit(definition, definition.body === "none" ? undefined : args.at(-1)),
+        admitted,
       );
     };
   }
@@ -129,4 +133,15 @@ export const api = {
     if (response.ok) return true;
     throw new Error("Factory could not check the image.");
   },
+};
+
+const admittedRunCalls = operationCalls(runOperations, true);
+
+/**
+ * The requests of a Start the user issued while mutations were accepted: its image uploads and
+ * the Start itself are sent through a later catch-up, never while offline.
+ */
+export const admittedStart = {
+  stageRunImage: admittedRunCalls.stageRunImage,
+  startRun: admittedRunCalls.startRun,
 };
