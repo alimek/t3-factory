@@ -62,10 +62,19 @@ async function readyFlow(
 
 /** A ready Flow (the single-worker Flow in `shape`'s variant, or a ready Flow shape), with Factory
  * reporting installed beside the bridge. */
-export async function prepared(c: TestContext, shape?: SingleWorkerVariant | ReadyFlowShape) {
+export async function prepared(
+  c: TestContext,
+  shape?: SingleWorkerVariant | ReadyFlowShape,
+  { discordApiUrl }: { readonly discordApiUrl?: string } = {},
+) {
   const h = await factoryHarness(c);
   const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
-  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
+  const f = await h.open({
+    t3,
+    reportingStateDirectory,
+    connectionRetryMs: 60_000,
+    ...(discordApiUrl ? { discordApiUrl } : {}),
+  });
   c.onTestFinished(() => f.close());
   return { h, f, t3, ...(await readyFlow(f, t3, root, shape)) };
 }

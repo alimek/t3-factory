@@ -29,7 +29,8 @@ export const COLLABORATOR_ID = "200000000000000002";
 
 const COMMANDS = /^\/api\/v10\/applications\/\d+\/commands$/;
 
-function addThreads(discord: ControlledDiscord) {
+/** Adds the public threads `THREAD` and `OTHER_THREAD` of the allowed channel. */
+export function addThreads(discord: ControlledDiscord) {
   for (const id of [THREAD, OTHER_THREAD])
     discord.addThread({
       id,
