@@ -296,3 +296,12 @@ report or one whose latest report is a Working report. A durable recovery link
 connects that new execution to the idle run it assesses and to the missing-report
 obligation pending for that run, if any. Successful recovery settles the obligation
 without fabricating an earlier report or erasing an engine failure.
+
+**Chat control**:
+The host-administered capability that lets explicitly allowed Discord users control Factory by
+mentioning or replying to Factory's bot in allowed channels and their threads. Factory, not the
+language model, decides who may act and which Projects are in scope; the model only interprets
+requests through Factory's own tools. Each thread has one shared, bounded and disposable
+conversation. It is Off by default, works only while the Factory backend runs, and connects to
+Discord and the model provider outbound only. See [Chat control](docs/chat-control.md).
+_Avoid_: Chat bot as a separate service; treating chat messages or model output as authorization.

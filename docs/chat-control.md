@@ -71,6 +71,16 @@ provider's response body or the request URL. A Test is dated evidence for one sa
 a later save leaves it as evidence for its own, earlier revision. It does not report whether Chat
 control conversations work, and a failed Test does not turn Chat control off.
 
+### Conversation failures
+
+An actual conversation whose model request fails (an HTTP error, an unreachable provider, no answer
+within 60 seconds or an answer Factory cannot read) records a runtime problem with the configuration
+revision it used, its time and Factory's own description. The page shows it, and while Chat control
+is On the **Language model** navigation item shows an indicator. Only a later successful
+conversational model request clears it. A Test neither sets nor clears it, and a later save leaves it
+dated to its earlier revision. Factory's own capacity and time limits are not provider failures and
+record nothing here.
+
 ## Discord
 
 Chat control uses one Discord application per Factory installation, reached with the Chat SDK
@@ -176,8 +186,8 @@ repeated delivery, also after a restart, admits nothing twice. Every admitted in
 one shared conversation per thread of the configured application in this installation, and work on
 it is serialized per conversation. Before Factory publishes anything for an invocation it checks
 again that Chat control is On, the evidence is current, Access still allows the author there and
-the conversation has not been reset. Conversational answers are a later slice: today an admitted
-invocation receives a fixed acknowledgement.
+the conversation has not been reset. The [conversation](#conversations) section describes how an
+admitted invocation is answered.
 
 ### /factory reset
 
@@ -225,6 +235,109 @@ The page explains the setup the owner performs in the Discord Developer Portal:
 5. Keep the Factory backend running. Factory registers `/factory reset` itself when Chat control
    turns On.
 
+## Conversations
+
+### Interpretation
+
+Factory answers an admitted invocation with the saved Language model through a bounded AI SDK tool
+loop. Fixed system instructions state the bot's role, the tools, the exact-text and ambiguity rules
+and that a proposal is neither consent nor acceptance; Factory adds the requester and the Projects
+the thread permits from the Discord event and Access. Message text, selected replies, names and tool
+results reach the model as untrusted data in JSON envelopes, never as instructions or authority.
+
+The tools run in-process over Factory's own operations, and only read:
+
+| Tool | Returns |
+| --- | --- |
+| List Projects | The Projects the thread's parent channel grants the requester: stable ID, name, repository path and availability |
+| List Flows | Saved global Flows: stable ID, name, workspace setting and readiness with its first reasons |
+
+Both return pages of 20 entries with the page count, so every entry stays reachable. The model is
+told to list candidates and ask when several could match, and never to pick the first match or
+substitute a missing one. Before every model request, tool call and publication Factory checks
+again that Chat control is On, Access still allows the requester in that channel, the conversation
+was not cleared, the requester's evidence is current and the Language model configuration is
+unchanged. Replies mention nobody, whatever the model wrote, and a reply longer than one Discord
+message goes out completely as ordered parts. Starting Runs, answering Human steps and archiving are
+not available in chat yet.
+
+### Shared conversation
+
+Each thread of the configured application has one shared conversation; nothing is shared between
+threads and there are no personal profiles, inferred preferences or automatic summaries. A completed
+turn keeps the admitted message exactly as it arrived with its author's Discord ID, the reply
+Discord accepted and compact Factory facts from its tool calls (identities and names, not the raw
+results). Discord edits and deletions change neither the kept copy nor invoke the bot; only a reset
+or the retention rules below remove it, and neither recalls what was already sent to the provider or
+posted in Discord. A failed or discarded interpretation keeps nothing.
+
+An invoker can select a human message by replying to it in the same thread, including another
+author's or one from before a reset; Factory takes its text from the event itself. A reply target
+Discord did not supply, a message outside the thread (including a parent-channel starter) or a
+message by a bot, webhook or the system is passed to the model only as unusable, so it asks for the
+exact text. Factory fetches no messages or links, imports no bot prose and reads no attachments,
+previews or worker conversations.
+
+### Retention and clearing
+
+| Bound | Limit |
+| --- | --- |
+| Inactivity | Cleared 72 hours after the last admitted invocation |
+| Generation age | Cleared 14 days after the conversation's generation started |
+| Retained turns | 40 |
+| Retained conversational text | 24 KiB UTF-8 of messages, selected replies and replies |
+
+Clearing deletes the conversation's turns and starts its next generation. Exceeding the turn or text
+bound evicts the oldest whole turns, and so does a model request over its 64 KiB budget. The next
+reply then starts with a short notice that earlier context was cleared or no longer retained,
+without naming what was removed; `/factory reset` is acknowledged at once instead. Receipts and
+reports do not refresh retention, and the clocks continue while Chat control is Off.
+
+A Language model save that changes the provider kind or base URL clears every conversation, and so
+does connecting a different Discord application; switching back revives nothing. Changing the model
+name or key, rotating the same application's token or editing the Public Key keeps them. An Access
+save that removes a channel or one of its Projects clears that channel's whole conversations; adding
+Projects keeps them and a regrant restores nothing. Removing a user stops their unfinished and later
+work but keeps what they contributed for the remaining participants.
+
+### Bounds and queue
+
+| Bound | Limit |
+| --- | --- |
+| Current message and selected reply | Each at most 8,000 Unicode characters and 16 KiB UTF-8 |
+| Model requests per invocation | 8 |
+| Tool calls per invocation | 16 |
+| Each model request | 60 seconds |
+| Interpretation resource budget | 180 seconds spent in model requests and tool calls |
+| Model request content | 64 KiB including instructions, tools, history, input and tool results |
+| Queue per conversation | One active and three waiting invocations, in admission order |
+| Queue wait | Five minutes from admission |
+| Recovery | Five minutes from the first model request |
+| Entire interpretation | Ten minutes from admission |
+| Transport-only hold | Five minutes from a Gateway disconnect, within the bounds above |
+| Resend notice | Sent within fifteen minutes of admission |
+
+A message over its size limit, or input that cannot fit one request with the required instructions,
+gets a clear refusal without a model request; Factory never shortens it. Needing more model requests
+or tool calls ends the interpretation with an explanation. A fifth message while four wait gets a
+fixed busy reply and is not kept. Each invocation is answered on its own, with its own requester.
+Factory's byte bound does not prove a provider's token window.
+
+### Interruptions
+
+A backend restart, a session that ends, Off, a committed Language model save and a model failure
+discard unfinished interpretation without replaying it, and late model output or tool calls are
+fenced. A model failure also discards the invocations waiting behind it. During a Gateway outage
+while the backend runs, Factory dispatches nothing new and holds finished output, within the bounds
+above; once the connection resumes it rechecks On, Access, the configuration and the requester's
+access (with a targeted Discord lookup, since the outage made earlier evidence stale) before
+continuing. Timed-out work frees its place at once without waiting for the provider to stop.
+
+Interrupted work owes its thread one content-free notice to send the request again, coalesced per
+thread and sent only within fifteen minutes of admission while the requester is still allowed there.
+Content-free markers of unfinished invocations make this possible after a restart. Off sends no
+notice and deletes the markers, so turning On again revives none; a reset or clearing sends none.
+
 ## Support limits
 
 The pinned AI SDK packages are `ai` 7.0.172, `@ai-sdk/openai-compatible` 3.0.92 and
@@ -244,3 +357,8 @@ invocations and `/factory reset` against a loopback stand-in for Discord's REST 
 Gateway identity, readiness and intent behavior, authorization before thread creation, permission
 evidence and its invalidation (private threads included), command registration, interaction
 acknowledgement and private replies are not yet qualified against Discord.
+
+Conversations are tested against a loopback model stand-in that scripts answers and tool calls in
+the OpenAI-compatible wire format; no live model's tool-calling quality is qualified, which remains
+the owner's responsibility. Reply-target payloads, mention suppression, multi-part replies and the
+member lookup used after an outage are not yet qualified against Discord.
