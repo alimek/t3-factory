@@ -292,6 +292,7 @@ export function openRunQueries(database: RunnerDatabase) {
             id: runRow.id,
             number: runRow.number,
             title: runRow.title,
+            titleProvenance: runRow.title_provenance,
             task: { id: runRow.task_id, title: runRow.task_title, projectId: runRow.project_id },
             input: runRow.input,
             segments: JSON.parse(saved.prompt_segments_json) as RunDetail["segments"],

@@ -178,6 +178,7 @@ it("navigation and the open Run share one view and apply one commit together", (
     id: run.id,
     number: run.number,
     title: run.title,
+    titleProvenance: run.titleProvenance,
     createdAt: run.startedAt,
     creationKey: "key",
     lastActivityAt: run.startedAt,

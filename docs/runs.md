@@ -41,10 +41,15 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
   title (after trimming) or a creation time not in `Date.toISOString()` form (for example `2026-11-07T08:00:00.000Z`),
   and creates nothing.
+- **Title provenance.** Start also carries how the title was chosen, and the Run keeps it: automatic for a draft never
+  renamed, manual for a renamed draft, even when its title equals the prompt's first line. A draft or pending request
+  saved before provenance existed submits legacy rather than a guess, as does a request that omits it. Start rejects any
+  other value, including generated, and creates nothing. Run detail and navigation expose the provenance.
 - **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
   records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
-  even after a lost response or restart; reusing the key with changed content, including title, creation time or the
-  images' bytes, order, names or positions, conflicts. An unknown response keeps the
+  even after a lost response or restart, with its original title provenance; reusing the key with changed content,
+  including title, title provenance, creation time or the images' bytes, order, names or positions, conflicts. A legacy
+  request keeps the identity it had before provenance existed, so a pending request saved then still recovers its Run. An unknown response keeps the
   submitted fields and images read-only (previews still open) and offers **Check same request**, which uploads missing
   images again and repeats the same request; only confirmed success clears the prompt and opens the Run. If Factory
   reports an image missing at acceptance, the composer uploads it again and retries once automatically; a further
@@ -91,7 +96,7 @@ levels of evidence. A configuration check alone proves neither execution nor rep
 
 ### Starting from a conversation
 
-A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-skills). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
+A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-skills). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line with automatic provenance and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
 
 ## Live viewing
 
@@ -223,7 +228,8 @@ menu items never opens a row preview.
   A Settle still stopping workers focuses the row; when the Run settles later, focus moves to the destination only if it is
   still on that row, on that Run's detail settlement section, or was lost because the row left; focus the user moved elsewhere,
   including to the page, stays. A detail **Retry** that starts stopping moves focus to the settlement section as the button disappears.
-- **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
+- **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters) and makes its title provenance
+  manual; renaming never moves a row.
   The same shadcn/Radix row menu serves desktop and browser clients. Right click opens it at the pointer;
   Shift+F10 and the context-menu key anchor it below the focused row. Touch devices retain a ⋯ button;
   mouse layouts omit it. Closing the menu or Rename/Archive dialogs returns focus to the row when it remains visible. Rename

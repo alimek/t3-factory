@@ -12,7 +12,7 @@ const startArguments = (fixture: Awaited<ReturnType<typeof prepared>>) => ({
   input: "  \nImprove search\nKeep it accessible.  ",
 });
 
-it("a session without a Block starts a text Run and receives the accepted Run's identity", async (c) => {
+it("a session without a Block starts a text Run with an automatic title and receives the accepted Run's identity", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   const client = await factoryMcpClient(c, fixture.f);
@@ -38,6 +38,7 @@ it("a session without a Block starts a text Run and receives the accepted Run's 
   const run = await fixture.f.getRun(reply.run.id);
   assert(run.ok);
   expect(run.value.input).toBe("  \nImprove search\nKeep it accessible.  ");
+  expect(run.value.titleProvenance).toBe("automatic");
 });
 
 it("the conversation's repository root identifies its Project while another clone stays distinct", async (c) => {
@@ -142,7 +143,7 @@ it("a rejected Start explains its problem and creates no Run", async (c) => {
   expect(navigation.value).toStrictEqual([]);
 });
 
-it("a Start whose reply was lost returns the same Run when retried after restart, without another worker launch", async (c) => {
+it("a Start whose reply was lost returns the same Run with its title provenance when retried after restart, without another worker launch", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   const lossy = await factoryMcpClient(c, fixture.f, { loseCallResponses: true });
@@ -165,6 +166,9 @@ it("a Start whose reply was lost returns the same Run when retried after restart
   // Assert
   expect(result.isError).toBe(false);
   expect(toolReply(result).run.id).toBe(navigation.value[0]!.id);
+  const run = await restored.getRun(navigation.value[0]!.id);
+  assert(run.ok);
+  expect(run.value.titleProvenance).toBe("automatic");
   expect(fixture.t3.launches.size).toBe(1);
 });
 

@@ -25,7 +25,7 @@ const savedBeforeImages = {
   ],
 };
 
-it("a pending Start saved before images is checked again as one text segment under the same identity", async (context) => {
+it("a pending Start saved before images and title provenance is checked again as one text segment and legacy under the same identity", async (context) => {
   // Arrange
   const setup = composer(context);
   setup.storage.setItem("factory-run-drafts:server-a", JSON.stringify(savedBeforeImages));
@@ -43,6 +43,7 @@ it("a pending Start saved before images is checked again as one text segment und
     segments: [{ type: "text", text: "Fix the header" }],
     images: [],
     title: "Fix the header",
+    titleProvenance: "legacy",
     createdAt: "2026-11-06T08:00:00.000Z",
   });
 });

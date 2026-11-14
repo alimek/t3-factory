@@ -16,6 +16,7 @@ import type {
 import {
   flowReadiness,
   isCanonicalTimestamp,
+  isStartTitleProvenance,
   promptText,
   promptTitle,
   TASK_TITLE_LIMIT,
@@ -44,22 +45,40 @@ function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments"
 /**
  * The accepted key's content. A text-only prompt keeps the earlier `[project, Flow, input, title,
  * creation time]` form, so a request accepted before images still recovers its Run; images add the
- * ordered segments and every manifest field.
+ * ordered segments and every manifest field. Legacy provenance adds nothing, so a request stored
+ * before provenance keeps its historical identity; any other provenance is appended.
  */
 function startFingerprint(
-  input: Pick<StartRunInput, "projectId" | "flowId" | "title" | "createdAt">,
+  input: Pick<StartRunInput, "projectId" | "flowId" | "title" | "titleProvenance" | "createdAt">,
   prompt: StartPrompt,
 ) {
   const text = promptText(prompt.segments);
   const content: unknown[] = [input.projectId, input.flowId, text, input.title, input.createdAt];
   if (prompt.images.length) content.push(prompt.segments, prompt.images);
+  if (input.titleProvenance !== "legacy") content.push({ titleProvenance: input.titleProvenance });
   return fingerprint(JSON.stringify(content));
 }
+/**
+ * A request sent before provenance existed, such as a composer's stored pending Start, has no
+ * `titleProvenance`; it is legacy and never guessed from its title.
+ */
+function startTitleProvenance(input: object) {
+  return "titleProvenance" in input ? input.titleProvenance : "legacy";
+}
 function startPresentationIssues(
-  input: Pick<StartRunInput, "title" | "createdAt">,
+  input: Pick<StartRunInput, "title" | "titleProvenance" | "createdAt">,
 ): ValidationIssue[] {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   return [
+    ...(isStartTitleProvenance(input.titleProvenance)
+      ? []
+      : [
+          {
+            code: "run_title_provenance",
+            path: "titleProvenance",
+            message: "Title provenance must be automatic, manual or legacy.",
+          },
+        ]),
     ...(title && title.length <= TASK_TITLE_LIMIT
       ? []
       : [
@@ -204,14 +223,17 @@ export function openRunnerStart(
             message: "Project, Flow and a stable Start request ID are required.",
           },
         ]);
-      const input = rawInput as typeof rawInput & Pick<StartRunInput, "title" | "createdAt">;
+      const input = {
+        ...(rawInput as typeof rawInput & Pick<StartRunInput, "title" | "createdAt">),
+        titleProvenance: startTitleProvenance(rawInput) as StartRunInput["titleProvenance"],
+      };
       const prompt = validateStartPrompt(rawInput);
       if (!prompt.ok) return prompt;
       const presentationIssues = startPresentationIssues(input);
       if (presentationIssues.length)
         return failure(
           "validation",
-          "Give the Run a title and a valid creation time.",
+          "Give the Run a title, its title provenance and a valid creation time.",
           presentationIssues,
         );
       const content = startFingerprint(input, prompt.value);
@@ -276,6 +298,7 @@ export function openRunnerStart(
         segments: [{ type: "text", text: input }],
         images: [],
         title: promptTitle(input) ?? "",
+        titleProvenance: "automatic",
         createdAt: accepted?.created_at ?? (yield* now),
       });
     });

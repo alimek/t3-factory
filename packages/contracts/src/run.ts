@@ -57,6 +57,14 @@ export interface RunImageDeletion {
 export type PromptSegment =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "image"; readonly imageId: string };
+/**
+ * How a Run's title was chosen: the prompt's first line (`automatic`), the owner's own title
+ * (`manual`), a title model's (`generated`), or unknown because the Run or its request predates
+ * provenance (`legacy`). It is recorded explicitly, never inferred from the title text.
+ */
+export type RunTitleProvenance = "automatic" | "manual" | "generated" | "legacy";
+/** A Start never claims a generated title: generation only replaces an accepted automatic one. */
+export type StartTitleProvenance = Exclude<RunTitleProvenance, "generated">;
 export interface StartRunInput {
   /** Also the Run's navigation `creationKey`. */
   readonly requestId: string;
@@ -67,6 +75,8 @@ export interface StartRunInput {
   readonly images: readonly RunImage[];
   /** The draft's chosen title; stored trimmed as the Run title. */
   readonly title: string;
+  /** How the draft's title was chosen; part of the request identity. */
+  readonly titleProvenance: StartTitleProvenance;
   /** When the draft was created, as `Date.toISOString()` output; it orders Run navigation. */
   readonly createdAt: string;
 }
@@ -281,6 +291,7 @@ export interface RunNavigationEntry {
   readonly id: string;
   readonly number: number | null;
   readonly title: string;
+  readonly titleProvenance: RunTitleProvenance;
   readonly createdAt: string;
   readonly lastActivityAt: string;
   readonly flowName: string;
@@ -341,6 +352,7 @@ export interface RunDetail extends RunSummary {
     readonly problem: string | null;
   } | null;
   readonly title: string;
+  readonly titleProvenance: RunTitleProvenance;
   /** The worker-readable prompt frozen at Start, with `[Image N: name]` references. */
   readonly input: string;
   /** The prompt as accepted at Start; image segments name entries of `images`. */

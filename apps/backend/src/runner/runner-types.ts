@@ -5,6 +5,7 @@ import type {
   RunBlock,
   RunDetail,
   RunDefinitions,
+  RunTitleProvenance,
   RuntimeReadiness,
 } from "@t3-factory/contracts";
 import type { T3Target } from "../adapters/t3.ts";
@@ -17,6 +18,7 @@ export type RunRow = {
   task_title: string;
   project_id: string;
   title: string;
+  title_provenance: RunTitleProvenance;
   input: string;
   request_fingerprint: string;
   flow_revision_id: string;

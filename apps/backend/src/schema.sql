@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: appearance_snapshot
+-- Newest applied migration: run_title_provenance
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -620,7 +620,8 @@ CREATE TABLE runs (
   created_at TEXT NOT NULL DEFAULT '',
   creation_key TEXT NOT NULL DEFAULT '',
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id)
-, settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT);
+, settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT, title_provenance TEXT NOT NULL DEFAULT 'legacy'
+  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')));
 
 CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL
 ;

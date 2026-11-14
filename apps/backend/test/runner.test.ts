@@ -247,6 +247,20 @@ it("reusing a Start request key with a different draft title is a conflict", asy
   expect(result.error.code).toBe("conflict");
 });
 
+it("reusing a Start request key with the same content but another title provenance is a conflict", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+  assert((await f.startRun(input)).ok);
+
+  // Act
+  const result = await f.startRun({ ...input, titleProvenance: "manual" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("conflict");
+  expect(result.error.issues.map((issue) => issue.code)).toStrictEqual(["start_key_conflict"]);
+});
+
 it("Start reports all blocked later Agents while the entry Agent is ready and creates no Run", async (c) => {
   // Arrange
   const { f, t3, input, agent, project } = await prepared(c, blockedLaterFlow);

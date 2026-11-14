@@ -6,7 +6,7 @@ import {
   releasedUpgradeData,
 } from "./support/released-upgrade.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and removes the open Run", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and titles as legacy, and removes the open Run", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   expect(fixture.pendingStop.closedAt).toBeNull();
@@ -56,9 +56,14 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
   expect(active.error.code).toBe("not_found");
   const navigation = await factory.listRunNavigation();
   assert(navigation.ok);
-  expect(navigation.value.map((entry) => [entry.id, entry.lifecycle])).toStrictEqual([
-    [fixture.closed.id, "settled"],
-  ]);
+  expect(
+    navigation.value.map((entry) => [
+      entry.id,
+      entry.lifecycle,
+      entry.title,
+      entry.titleProvenance,
+    ]),
+  ).toStrictEqual([[fixture.closed.id, "settled", fixture.closed.title, "legacy"]]);
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);
   expect(tasks.value.map((task) => task.id)).toStrictEqual([

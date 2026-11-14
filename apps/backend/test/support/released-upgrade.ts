@@ -134,6 +134,8 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
   const { controlRecoveries: _controls, ...actions } = coordinationActions;
   return {
     ...run,
+    // Migration 079 cannot tell how a released title was chosen; the title itself is kept.
+    titleProvenance: "legacy",
     lifecycle,
     // Released Runs had text-only prompts.
     segments: [{ type: "text", text: run.input }],

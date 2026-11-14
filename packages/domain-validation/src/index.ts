@@ -14,6 +14,7 @@ import type {
   ProjectIcon,
   ProjectIconColor,
   Result,
+  StartTitleProvenance,
   UpdateAgentInput,
   ValidationIssue,
   WaitDuration,
@@ -41,6 +42,16 @@ export function promptTitle(text: string): string | undefined {
     .map((line) => line.trim())
     .find(Boolean);
   return firstLine?.slice(0, TASK_TITLE_LIMIT);
+}
+
+const START_TITLE_PROVENANCES: readonly unknown[] = [
+  "automatic",
+  "manual",
+  "legacy",
+] satisfies StartTitleProvenance[];
+
+export function isStartTitleProvenance(value: unknown): value is StartTitleProvenance {
+  return START_TITLE_PROVENANCES.includes(value);
 }
 
 /** Run navigation compares creation times as text, so only `Date.toISOString()` output is valid. */

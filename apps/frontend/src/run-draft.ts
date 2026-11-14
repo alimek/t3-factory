@@ -3,11 +3,13 @@ import type {
   PromptSegment,
   RunImage,
   StartRunInput,
+  StartTitleProvenance,
   ValidationIssue,
 } from "@t3-factory/contracts";
 import {
   isCanonicalTimestamp,
   isSha256Hex,
+  isStartTitleProvenance,
   promptText,
   promptTitle,
   RUN_IMAGE_LIMIT,
@@ -37,6 +39,11 @@ export interface SavedRunDraft {
   readonly flowId: string;
   /** A title chosen by the user; absent while the title follows the prompt. */
   readonly manualTitle?: string;
+  /**
+   * Automatic until the user renames the draft, then manual. A draft saved before provenance
+   * existed is legacy: whether its title was chosen is never guessed.
+   */
+  readonly titleProvenance: StartTitleProvenance;
   readonly createdAt: string;
   /** Run navigation shows the draft once the user has left its composition. */
   readonly listed: boolean;
@@ -187,15 +194,30 @@ function readPrompt(value: Record<string, unknown>) {
   return segments && images ? { segments, images } : undefined;
 }
 
+/** Drafts and submissions saved before provenance carry none; they are legacy. */
+function readTitleProvenance(value: unknown) {
+  if (value === undefined) return "legacy";
+  return isStartTitleProvenance(value) ? value : undefined;
+}
+
 function readSubmission(value: unknown): StartRunInput | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const fields = value as Record<string, unknown>;
   const { requestId, projectId, flowId, title, createdAt } = fields;
   const prompt = readPrompt(fields);
+  const titleProvenance = readTitleProvenance(fields.titleProvenance);
   if (!filled(requestId) || !filled(projectId) || !filled(flowId) || !prompt) return undefined;
   if (!filled(promptText(prompt.segments))) return undefined;
-  if (!filled(title) || !isCanonicalTimestamp(createdAt)) return undefined;
-  return Object.freeze({ requestId, projectId, flowId, ...prompt, title, createdAt });
+  if (!filled(title) || !titleProvenance || !isCanonicalTimestamp(createdAt)) return undefined;
+  return Object.freeze({
+    requestId,
+    projectId,
+    flowId,
+    ...prompt,
+    title,
+    titleProvenance,
+    createdAt,
+  });
 }
 
 /** A draft exists while it has prompt text or an image. */
@@ -207,11 +229,13 @@ function readDraft(value: unknown): SavedRunDraft | undefined {
   const fields = value as Record<string, unknown>;
   const { id, projectId, flowId, manualTitle, createdAt, listed, submission } = fields;
   const prompt = readPrompt(fields);
+  const titleProvenance = readTitleProvenance(fields.titleProvenance);
   if (!filled(id) || !prompt || !retained(prompt) || typeof projectId !== "string")
     return undefined;
   if (typeof flowId !== "string" || typeof listed !== "boolean") return undefined;
   if (!isCanonicalTimestamp(createdAt)) return undefined;
   if (manualTitle !== undefined && !filled(manualTitle)) return undefined;
+  if (!titleProvenance) return undefined;
   const request = readSubmission(submission);
   if (submission !== undefined && !request) return undefined;
   return {
@@ -220,6 +244,7 @@ function readDraft(value: unknown): SavedRunDraft | undefined {
     projectId,
     flowId,
     ...(manualTitle === undefined ? {} : { manualTitle }),
+    titleProvenance,
     createdAt,
     listed,
     ...(request ? { submission: request } : {}),
@@ -464,7 +489,12 @@ export function createRunDraft(
     currentId = id;
     const { projectId, flowId } = current;
     commit(server, id, (saved) => ({
-      ...(saved ?? { id, createdAt: new Date().toISOString(), listed: false }),
+      ...(saved ?? {
+        id,
+        titleProvenance: "automatic",
+        createdAt: new Date().toISOString(),
+        listed: false,
+      }),
       projectId,
       flowId,
       ...prompt,
@@ -520,7 +550,11 @@ export function createRunDraft(
     const saved = find(id);
     if (server === undefined || !saved || saved.submission) return false;
     if (!manualTitle || manualTitle.length > TASK_TITLE_LIMIT) return false;
-    commit(server, id, (latest = saved) => ({ ...latest, manualTitle }));
+    commit(server, id, (latest = saved) => ({
+      ...latest,
+      manualTitle,
+      titleProvenance: "manual",
+    }));
     publish();
     return true;
   }
@@ -569,6 +603,7 @@ export function createRunDraft(
         segments: saved.segments,
         images: saved.images,
         title: draftTitle(saved),
+        titleProvenance: saved.titleProvenance,
         createdAt: saved.createdAt,
       });
     inFlight.add(id);
