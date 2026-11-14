@@ -7,6 +7,7 @@ import { fingerprint, intactPayload } from "../runner-utils.ts";
 import { launchStrategy, type RunWorkspace } from "../run-workspace.ts";
 import { now } from "../../time.ts";
 import {
+  agentRevisitMessage,
   workerLaunchPayload,
   workerRevisitPayload,
   type LaunchImage,
@@ -189,7 +190,7 @@ export function openRunActivations(database: RunnerDatabase) {
                 target,
                 previousVisit.thread_id,
                 handoff.request_key,
-                message,
+                agentRevisitMessage(current.definitions, handoff.block_id, message),
                 block!.public_id,
               )
             : launched,

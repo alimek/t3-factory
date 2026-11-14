@@ -19,6 +19,7 @@ export function geometryGraph(): CanvasGraph {
         agentId: null,
         hiddenExitIds: [],
         localExits: [{ id: "done", name: "Done", description: "", messageRequired: false }],
+        revisitInstruction: "",
         position: { x: 0, y: 0 },
         exits: [
           { id: "done", name: "Done", description: "", messageRequired: false, source: "local" },

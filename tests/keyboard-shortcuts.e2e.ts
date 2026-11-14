@@ -377,7 +377,7 @@ test("choosing Settle in the desktop menu settles the open Run", async ({
 }) => {
   // Arrange
   await installDesktopBridge(browser);
-  const found = await findRun(app.baseUrl, "Demo · Applying your requested changes");
+  const found = await findRun(app.baseUrl, "Demo · Corrections back in review");
   await app.open(`/runs/${found.id}`);
   await expectFactoryConnected(screen);
   await expect.poll(() => browser.evaluate("window.__desktopMenu.settle.enabled")).toBe(true);

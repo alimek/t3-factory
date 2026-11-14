@@ -2,6 +2,7 @@ import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
 import { promptAnswered, promptOn, promptSent, responseForwarded } from "./support/continuation.ts";
 import {
+  REVISIT_INSTRUCTION,
   agentBlock,
   allTurnsEnd,
   chainedContinuationFlow,
@@ -11,6 +12,7 @@ import {
   continuationStep,
   flowInput,
   humanContinuationFlow,
+  instructedContinuationFlow,
   observeFor,
   queuedContinuationFlow,
   report,
@@ -271,6 +273,27 @@ it("after a Human step the prompt goes to the worker before it, followed by the 
   expect(prompt.message).toContain(
     'Write the spec from what we agreed.\n\nReply from the Human step "Review" (Approve):\nShip it without SMS login.',
   );
+});
+
+it("a prompt sent into a worker whose block has a Revisit instruction does not carry the instruction", async (c) => {
+  // Arrange
+  const f = await prepared(c, instructedContinuationFlow);
+  const worker = await workerAtWork(f.world, f.input);
+  await resultReported(f.world, worker);
+
+  // Act
+  await observeFor(
+    "observe the prompt",
+    f.world,
+    worker.runId,
+    (detail) => blockState(detail, "spec") === "sent",
+  );
+
+  // Assert
+  const prompt = promptOn(f.world, worker);
+  expect(prompt.message).toContain("Write the spec from what we agreed.");
+  expect(prompt.message).not.toContain("Revisit instruction");
+  expect(prompt.message).not.toContain(REVISIT_INSTRUCTION);
 });
 
 it("restart neither resends a sent prompt nor forgets it", async (c) => {
