@@ -15,6 +15,7 @@ import {
 } from "./support/chat-actions.ts";
 import {
   ALLOWED_CHANNEL,
+  discordBot,
   discordConnectionSave,
   discordSettingsWhen,
   servingAgain,
@@ -325,6 +326,26 @@ it("consent survives turning Chat control Off and On again within its lifetime",
   const button = await proposedStart(world, "600000000000000001", 4);
   assert((await world.factory.setChatControlEnabled({ enabled: false })).ok);
   await turnedOn(world.factory, world.discord, 2);
+
+  // Act
+  const answer = await clicked(world.discord, button, "610000000000000001", 1);
+
+  // Assert
+  expect(answer).toBe(ANSWERS.accepted);
+  expect(await runsOf(world.factory)).toHaveLength(1);
+});
+
+it("rotating the same application's bot token while On keeps the waiting review confirmable", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000000001", 4);
+  const rotated = "rotated-bot-token.discord.secret";
+  world.discord.addBot({ token: rotated, applicationId: discordBot.applicationId });
+  const saved = await world.factory.updateDiscordConnection(
+    discordConnectionSave({ revision: 1, token: { kind: "replace", value: rotated } }),
+  );
+  assert(saved.ok, JSON.stringify(saved));
+  await servingAgain(world.discord, 2);
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000001", 1);
