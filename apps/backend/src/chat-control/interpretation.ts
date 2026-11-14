@@ -437,9 +437,9 @@ export const makeInterpreter = (session: InterpreterSession) =>
         : interrupted(stop === "reconfigured" ? "interrupted" : "timed-out");
 
     /**
-     * Publishes `text` as ordered parts after a final checkpoint, then runs `afterwards` once every
-     * part went out. From the first part on, the slot is committed: interruption waits until its
-     * reply and turn are complete, so no reply is cut short or published without its turn.
+     * Publishes ordered parts only while each dispatch is still permitted, then retains the turn
+     * once all parts went out. Interruption lets an in-flight send finish; it does not authorize
+     * another part after revocation or reset.
      */
     const publish = (
       slot: Slot,
@@ -449,13 +449,18 @@ export const makeInterpreter = (session: InterpreterSession) =>
       afterwards: Effect.Effect<unknown, unknown> = Effect.void,
     ) =>
       Effect.gen(function* (): Effect.fn.Return<Stop | undefined, unknown> {
-        const stop = yield* checkpoint(slot, deadline, revision);
+        let stop = yield* checkpoint(slot, deadline, revision);
         if (stop) return stop;
         slot.committed = true;
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             let published = true;
             for (const part of messageParts(text)) {
+              stop = yield* checkpoint(slot, deadline, revision);
+              if (stop) {
+                published = false;
+                break;
+              }
               const sent = yield* Effect.result(
                 Effect.tryPromise(() => session.post(slot.invocation.conversation, part)),
               );
@@ -469,7 +474,7 @@ export const makeInterpreter = (session: InterpreterSession) =>
             yield* markers.settle(slot.invocation.messageId);
           }),
         );
-        return undefined;
+        return stop;
       });
 
     /** A deterministic Factory reply that ends the interpretation without retaining a turn. */

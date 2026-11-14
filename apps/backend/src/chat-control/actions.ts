@@ -4,6 +4,8 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { ChatActionOperation, ChatActionReconciliation } from "@t3-factory/contracts";
+import type { StartAuthorization } from "../runner/runner-start.ts";
+import { failure } from "../result.ts";
 import { newId } from "../ids.ts";
 import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
@@ -83,6 +85,7 @@ export interface ChatOperation {
   readonly execute: (
     actionId: string,
     parameters: JSONValue,
+    authorization: StartAuthorization,
   ) => Effect.Effect<ActionOutcome, unknown>;
   readonly reconcile: (
     actionId: string,
@@ -292,6 +295,11 @@ export function makeChatActions(
       (at) => row.expires_at !== null && at >= Date.parse(row.expires_at),
     );
 
+  const scopeGranted = (row: ProposalRow) =>
+    Effect.map(grantedProjects(sql, row.requester_id, row.parent_channel_id), (granted) =>
+      (JSON.parse(row.project_ids_json) as string[]).every((id) => granted.includes(id)),
+    );
+
   /**
    * Records a proposal, or finds the identical one still waiting for this requester here: same
    * requester, context, operation and exact parameters keep their identity and expiry. Otherwise
@@ -424,7 +432,7 @@ export function makeChatActions(
           yield* sql`UPDATE chat_actions SET state=${outcome.kind},decided_at=${decidedAt},outcome_json=${JSON.stringify(outcome.facts)}
               WHERE id=${actionId} AND state='accepting'`;
           // The click that decided it, if any, disables the button in place.
-          yield* sql`UPDATE chat_proposals SET state='consumed',button_settled=1 WHERE id=${row.id}`;
+          yield* sql`UPDATE chat_proposals SET state='consumed',ended_reason=NULL,button_settled=1 WHERE id=${row.id}`;
           if (outcome.kind === "accepted" && outcome.originRunId !== undefined)
             yield* sql`INSERT INTO chat_run_origins (run_id,application_id,guild_id,parent_channel_id,thread_id,action_id,recorded_at)
                 VALUES (${outcome.originRunId},${row.application_id},${row.guild_id},${row.parent_channel_id},${row.thread_id},${actionId},${decidedAt})
@@ -443,13 +451,50 @@ export function makeChatActions(
       if (outcome.kind === "accepted" || outcome.kind === "rejected") yield* deliveries.wake;
     });
 
+  /** Shared Start may wait on external preflight; taking a click is not Run acceptance. */
+  const acceptance = (row: ProposalRow, click: ConfirmationClick): StartAuthorization => ({
+    check: Effect.gen(function* () {
+      if (!click.operating())
+        return failure("conflict", "Chat control is Off. Nothing was started.");
+      const access = yield* click.access;
+      if (access === "unavailable")
+        return failure("conflict", "Discord access could not be confirmed. Nothing was started.");
+      if (access === "denied")
+        return failure("validation", "Discord no longer permits this confirmation.");
+      return { ok: true, value: undefined };
+    }),
+    commit: Effect.gen(function* () {
+      const current = (yield* proposal(row.id))!;
+      if (current.state !== "accepting")
+        return failure("validation", "This confirmation is no longer valid.");
+      if (yield* expired(current))
+        return failure("validation", "This review expired before Factory accepted the Start.");
+      const [state] = yield* sql<{
+        enabled: number;
+        application_id: string | null;
+      }>`SELECT enabled,application_id FROM chat_control_state WHERE singleton=1`;
+      if (!state!.enabled || !click.operating())
+        return failure("conflict", "Chat control is Off. Nothing was started.");
+      if (state!.application_id !== current.application_id)
+        return failure(
+          "validation",
+          "The Discord application changed before Factory accepted the Start.",
+        );
+      if (!(yield* scopeGranted(current)))
+        return failure("validation", "Access no longer permits this Start.");
+      return { ok: true, value: undefined };
+    }),
+  });
+
   /** Performs a consumed proposal under its action identity, outside any transaction. */
-  const perform = (row: ProposalRow, actionId: string) =>
+  const perform = (row: ProposalRow, actionId: string, click: ConfirmationClick) =>
     Effect.gen(function* () {
       performing.add(actionId);
       const operation = byName.get(row.operation)!;
       const parameters = JSON.parse(row.parameters_json) as JSONValue;
-      const executed = yield* Effect.result(operation.execute(actionId, parameters));
+      const executed = yield* Effect.result(
+        operation.execute(actionId, parameters, acceptance(row, click)),
+      );
       const outcome: ActionOutcome =
         executed._tag === "Success"
           ? executed.success
@@ -511,13 +556,7 @@ export function makeChatActions(
           return { refused: "confirming" };
         if (current.state !== "presented") return { refused: "invalid" };
         if (yield* expired(current)) return { refused: "expired" };
-        const granted = yield* grantedProjects(
-          sql,
-          current.requester_id,
-          current.parent_channel_id,
-        );
-        if ((JSON.parse(current.project_ids_json) as string[]).some((id) => !granted.includes(id)))
-          return { refused: "denied" };
+        if (!(yield* scopeGranted(current))) return { refused: "denied" };
         const [operating] = yield* sql<{
           application_id: string | null;
         }>`SELECT application_id FROM chat_control_state WHERE singleton=1`;
@@ -547,7 +586,7 @@ export function makeChatActions(
       if (!click.operating()) return ephemeral(REPLIES.notNow);
       const taken = yield* take(row!);
       if (!("refused" in taken))
-        return outcomeAnswer(row!.id, (yield* perform(row!, taken.actionId)).kind);
+        return outcomeAnswer(row!.id, (yield* perform(row!, taken.actionId, click)).kind);
       return taken.refused === "confirming"
         ? yield* repeatedClick(row!, click)
         : ephemeral(REPLIES[taken.refused]);

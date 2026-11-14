@@ -186,8 +186,8 @@ type Created =
  * Creates one message under its intent's nonce. When no answer proves whether Discord created it,
  * Factory asks again with the same nonce, which Discord enforces: it returns the message the
  * earlier request created instead of creating another. At most two re-attempts, within one minute
- * of the first request; once a request was unproven, only a message ID or a definite refusal ends
- * the series, and anything else leaves it unknown. Re-attempts stop when the session is released,
+ * of the first request. Once any request was unproven, only a message ID reconciles its outcome;
+ * a later refusal still leaves that earlier create unknown. Re-attempts stop when the session is released,
  * so another session never repeats an unproven create on its own.
  */
 export const createDeduplicated = (
@@ -209,7 +209,7 @@ export const createDeduplicated = (
       if (sent._tag === "Success") return { messageId: sent.success };
       const failure = sendFailure(sent.failure.cause);
       if (failure === "rejected" || (failure === "transient" && !unproven))
-        return { failure, cause: sent.failure.cause };
+        return { failure: unproven ? "unknown" : failure, cause: sent.failure.cause };
       unproven = true;
       const elapsed = (yield* Clock.currentTimeMillis) - firstAt;
       if (requests >= DEDUPLICATED_REQUESTS || elapsed >= DEDUPLICATION_WINDOW_MS)

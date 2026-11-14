@@ -48,11 +48,11 @@ export type StartingWorld = Pick<
 export const clockedStartingWorld = (c: TestContext) =>
   Effect.gen(function* () {
     const worlds = yield* Effect.promise(() => chatWorlds(c));
-    const { factory, project, flow } = yield* preparedService(c, undefined, {
+    const { factory, project, flow, t3 } = yield* preparedService(c, undefined, {
       discordApiUrl: worlds.discord.apiUrl,
     });
     yield* operatingService(factory, worlds, project.id);
-    return { ...worlds, factory, project, flow };
+    return { ...worlds, factory, project, flow, t3 };
   });
 
 /** The model's start_run call for the world's Project and Flow with `prompt`. */
@@ -176,6 +176,24 @@ export async function clicked(
   );
   await discord.answered(answers);
   return clickAnswers(discord).at(-1)!;
+}
+
+/** Holds a confirmed Start at external preflight until the test releases it. */
+export async function pendingStart(
+  world: Pick<Awaited<ReturnType<typeof startingWorld>>, "discord" | "t3">,
+  customId: string,
+) {
+  let release = () => {};
+  let entered = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const inspecting = new Promise<void>((resolve) => (entered = resolve));
+  world.t3.beforeLaunchInspection = async () => {
+    entered();
+    await held;
+  };
+  const answer = clicked(world.discord, customId, "610000000000000090", 1);
+  await inspecting;
+  return { answer, release };
 }
 
 /** The Runs Factory shows in navigation, as identity and title. */

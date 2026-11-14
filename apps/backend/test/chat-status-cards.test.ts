@@ -438,6 +438,36 @@ it("the warned Retry of an unknown card create posts it once more with the curre
   await discordSettingsWhen(world.factory, (current) => current.delivery.problems.length === 0);
 });
 
+it("Retry still requires duplicate-risk acceptance after a lost create response followed by a definite refusal", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000091010", 2);
+  world.discord.faultMessages("delivered", "lost", "refused");
+  await clicked(world.discord, button, "610000000000091010", 1);
+  const settings = await discordSettingsWhen(
+    world.factory,
+    (current) => current.delivery.problems.length > 0,
+  );
+  const [problem] = settings.delivery.problems;
+  world.discord.nonceWindowPassed();
+
+  // Act
+  const retried = await world.factory.retryChatDelivery({
+    deliveryId: problem!.id,
+    duplicateRiskAccepted: false,
+  });
+
+  // Assert
+  assert(!retried.ok);
+  expect(retried.error.code).toBe("validation");
+  expect(problem).toMatchObject({
+    purpose: "status-card",
+    state: "unknown",
+    message: CORRECTIONS.unknown,
+  });
+  expect(statusCardsIn(world.discord)).toHaveLength(1);
+});
+
 it("a deleted thread is not taken as a deleted card: no replacement or other destination, and the failure stays listed after Archive", async (c) => {
   // Arrange
   const world = await startingWorld(c);

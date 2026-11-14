@@ -18,7 +18,7 @@ import { openRunnerWaits } from "./runner-waits.ts";
 import { openRunnerObservation } from "./runner-observation.ts";
 import { openRunnerQueries } from "./runner-queries.ts";
 import { openRunnerReports } from "./runner-reports.ts";
-import { openRunnerStart } from "./runner-start.ts";
+import { openRunnerStart, type StartAuthorization } from "./runner-start.ts";
 import { openRunnerArchive } from "./runner-archive.ts";
 import { openRunnerSettle } from "./runner-settle.ts";
 import { makeRunLanes } from "./runner-lanes.ts";
@@ -235,8 +235,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     getRunCreationPolicy: () =>
       Effect.succeed({ ok: true as const, value: { ready: true as const } }),
     startRun: (input: unknown) => starts.withPermit(start(input)).pipe(Effect.uninterruptible),
-    startTextRun: (input: unknown) =>
-      starts.withPermit(startText(input)).pipe(Effect.uninterruptible),
+    startTextRun: (input: unknown, authorization?: StartAuthorization) =>
+      starts.withPermit(startText(input, authorization)).pipe(Effect.uninterruptible),
     /** The Run a Start request ID was accepted as; undefined when it was never accepted. */
     acceptedStart: (requestId: string) =>
       Effect.gen(function* () {

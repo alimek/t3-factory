@@ -184,18 +184,20 @@ nothing.
 
 Requester evidence comes from Discord itself: posting a message shows the author can see the
 channel, and for a command Discord states the member's permissions in that channel. A private thread
-also needs membership, which Factory remembers from the author's own messages there, from membership
-events and from a targeted lookup. A connection gap forgets all remembered evidence, and membership,
-channel, thread, role or server changes forget what they could affect; stale, absent or ambiguous
-evidence denies. Factory requests no Server Members intent, so it hears about other people leaving a
-private thread only after a gap or when Discord announces it.
+also needs membership. Factory requests no Server Members intent, so other-user removal events
+cannot keep a membership cache current. Instead, it asks Discord directly for private-thread
+membership before each dispatch or publication and on each command or confirmation. A connection
+gap or observed permission change invalidates the remaining permission evidence; stale, absent or
+ambiguous evidence denies.
 
 Each Discord message or command is taken once: a content-free marker of its ID is kept, so a
 repeated delivery, also after a restart, admits nothing twice. Every admitted invocation belongs to
 one shared conversation per thread of the operating application in this installation, and work on
 it is serialized per conversation. Before Factory publishes anything for an invocation it checks
 again that Chat control is On, the evidence is current, Access still allows the author there and
-the conversation has not been reset. The [conversation](#conversations) section describes how an
+the conversation has not been reset. Multipart conversational replies repeat this check before each
+part: an already dispatched send may finish, but revocation or reset stops later parts and prevents
+retaining the incomplete turn. The [conversation](#conversations) section describes how an
 admitted invocation is answered.
 
 ### /factory reset
@@ -218,7 +220,8 @@ become ready, reads the application Discord authenticated, and disconnects. It a
 posts nothing, registers no command and makes no model request; messages arriving meanwhile are not
 serviced. Only one Gateway session exists at a time, so a check while another runs is refused, and
 closing Factory ends a running check's session. While Chat control is On there is no separate check:
-the page reports the running connection and offers **Retry connection** instead.
+the page reports the running connection and offers **Retry connection** instead. A failed command
+setup can be retried here even while the Gateway is connected, after correcting its cause in Discord.
 
 The result is recorded with the checked revision and its time, using Factory's own description:
 verified with the authenticated application, a token Discord rejects, a missing Message Content
@@ -276,7 +279,7 @@ substitute a missing one. Before every model request, tool call and publication 
 again that Chat control is On, Access still allows the requester in that channel, the conversation
 was not cleared, the requester's evidence is current and the Language model configuration is
 unchanged. Replies mention nobody, whatever the model wrote, and a reply longer than one Discord
-message goes out completely as ordered parts. Chat control adds no Stop, manual Settle, Wait
+message goes out as ordered parts while these checks still pass. Chat control adds no Stop, manual Settle, Wait
 **Continue now** or worker control: the model is told that a request to stop a Run means Archive.
 
 While an admitted invocation is actively interpreted, not while it waits in the queue, the bot shows
@@ -513,7 +516,10 @@ button was pressed earlier.
 
 The Start uses the shared Start operation with the action's own identity as its request ID, so the
 same validation, readiness checks and current-definition acceptance apply and a repeated attempt can
-only recover the same Run. A definitive rejection, which proves nothing was started, uses the
+only recover the same Run. External preflight is not acceptance: after it, Factory refreshes Discord
+access and checks the live consent, expiry, On state, application and Project grants inside the Run
+acceptance transaction. Revocation permanently fences a pending acceptance even if access is later
+regranted; work already accepted remains attributable and recoverable. A definitive rejection, which proves nothing was started, uses the
 consent up. A duplicate or racing click, a lost answer and a restart reconcile that same request: an
 attempt left without a recorded outcome is looked up by its request ID when Factory starts, and
 returns its consent (still bound to the original expiry) only when no Run was accepted. A repeated
@@ -566,7 +572,8 @@ nonce that stays the same for that message, and Factory asks Discord to enforce 
 returns the message an earlier create with the same nonce made, for a few minutes, instead of creating
 another. When the connection dropped or Discord answered with a server error, so the outcome is
 unproven, Factory asks again with the same nonce at most twice, within one minute of the first
-request. The outcome then becomes definite: Discord's message, or a definite refusal. Beyond that
+request. A returned message ID reconciles that create. A refusal after an earlier unproven attempt
+leaves the earlier create unknown and still requires the duplicate warning on host Retry. Beyond that
 window, when the session ends meanwhile or after Factory stopped while sending, the create is unknown
 and never repeated automatically; identical text or a missing copy is never taken as proof. Settings → Chat control → Discord lists
 these current problems, with their destination and time, and confirmed actions whose outcome is

@@ -143,7 +143,7 @@ export const makeFactoryService = (
       getFlow: definitions.getFlow,
       listFlows: definitions.listFlows,
       getRunTitleSetting: runTitles.getRunTitleSetting,
-      startTextRun: (input) => guard(runner.startTextRun(input)),
+      startTextRun: (input, authorization) => guard(runner.startTextRun(input, authorization)),
       acceptedStart: (requestId) => runner.acceptedStart(requestId),
     });
     const chatHumanAnswer = humanAnswerAction(sql, {

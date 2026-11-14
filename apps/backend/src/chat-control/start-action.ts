@@ -8,6 +8,7 @@ import type {
   RunDetail,
   RunTitleSetting,
 } from "@t3-factory/contracts";
+import type { StartAuthorization } from "../runner/runner-start.ts";
 import { promptTitle } from "@t3-factory/domain-validation";
 import {
   exceedsReviewLimit,
@@ -39,7 +40,10 @@ export interface StartOperations {
   readonly listFlows: () => Effect.Effect<Result<readonly FlowDraft[]>, unknown>;
   readonly getRunTitleSetting: () => Effect.Effect<Result<RunTitleSetting>, unknown>;
   /** Factory MCP's shared text Start; the request ID is the Start's identity. */
-  readonly startTextRun: (input: unknown) => Effect.Effect<Result<RunDetail>, unknown>;
+  readonly startTextRun: (
+    input: unknown,
+    authorization: StartAuthorization,
+  ) => Effect.Effect<Result<RunDetail>, unknown>;
   /** The Run a Start request ID was accepted as, if it was; read only. */
   readonly acceptedStart: (
     requestId: string,
@@ -182,15 +186,18 @@ export function startAction(operations: StartOperations) {
 
   const operation: ChatOperation = {
     name: "start",
-    execute: (actionId, parameters) =>
+    execute: (actionId, parameters, authorization) =>
       Effect.gen(function* (): Effect.fn.Return<ActionOutcome, unknown> {
         const { projectId, flowId, prompt } = parameters as unknown as StartParameters;
-        const result = yield* operations.startTextRun({
-          requestId: actionId,
-          projectId,
-          flowId,
-          input: prompt,
-        });
+        const result = yield* operations.startTextRun(
+          {
+            requestId: actionId,
+            projectId,
+            flowId,
+            input: prompt,
+          },
+          authorization,
+        );
         if (result.ok) return yield* accepted(result.value);
         const { code, message, issues } = result.error;
         // Start refuses these before accepting anything: a definitive rejection with no effect.

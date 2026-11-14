@@ -194,19 +194,14 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
     Effect.map(grantedProjects(sql, userId, parentChannelId), (projects) => projects.length > 0);
 
   /** Whether a private thread's member list includes the user, asked of Discord directly. */
-  const privateThreadMember = (thread: ThreadChannel, userId: string, guildId: string) =>
+  const privateThreadMember = (thread: ThreadChannel, userId: string) =>
     Effect.gen(function* (): Effect.fn.Return<Access, unknown> {
-      if (evidence.isMember(thread.id, userId)) return "permitted";
-      const token = evidence.token(guildId);
       const member = yield* Effect.result(
         Effect.tryPromise(() =>
           thread.members.fetch({ member: userId, force: true, cache: false }),
         ),
       );
-      if (member._tag === "Success") {
-        if (evidence.isCurrent(token)) evidence.joined(guildId, thread.id, userId);
-        return "permitted";
-      }
+      if (member._tag === "Success") return "permitted";
       return unknownMember(member.failure.cause) ? "denied" : "unavailable";
     });
 
@@ -232,31 +227,37 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
       if (!thread.permissionsFor(member.success)?.has(PermissionFlagsBits.ViewChannel))
         return "denied";
       return thread.type === ChannelType.PrivateThread
-        ? yield* privateThreadMember(thread, userId, conversation.guildId)
+        ? yield* privateThreadMember(thread, userId)
         : "permitted";
     });
 
   /**
    * Whether admitted work may still dispatch or publish: On, current policy and generation, and
-   * current evidence of the requester's access, refreshed once Factory saw a gap or change.
+   * current evidence of the requester's access. Private-thread membership is refreshed on every
+   * check: without Server Members intent, other-user removal events are not reliable evidence.
    */
   const permitted = (
     conversation: ConversationKey,
     requesterId: string,
     generation: number,
     initial: EvidenceToken,
+    privateThread: boolean,
   ) => {
     let token = initial;
     return Effect.gen(function* () {
       if (!session.operating()) return false;
       if (!(yield* permittedProjects(requesterId, conversation.parentChannelId))) return false;
       if (!(yield* generations.isCurrent(conversation, generation))) return false;
-      if (evidence.isCurrent(token)) return true;
+      if (evidence.isCurrent(token) && !privateThread) return true;
       const refreshed = evidence.token(conversation.guildId);
       if ((yield* refreshedAccess(conversation, requesterId)) !== "permitted") return false;
       if (!evidence.isCurrent(refreshed)) return false;
       token = refreshed;
-      return true;
+      return (
+        session.operating() &&
+        (yield* permittedProjects(requesterId, conversation.parentChannelId)) &&
+        (yield* generations.isCurrent(conversation, generation))
+      );
     });
   };
 
@@ -329,7 +330,13 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
         text: message.content,
         replyTarget: yield* replyTarget(message, threadId),
         admittedAt: yield* Clock.currentTimeMillis,
-        permitted: permitted(conversation, message.author.id, generation, token),
+        permitted: permitted(
+          conversation,
+          message.author.id,
+          generation,
+          token,
+          thread?.type === ChannelType.PrivateThread,
+        ),
       };
       pending.set(message.id, { invocation, reservation: yield* interpreter.reserve(invocation) });
       return invocation;
@@ -348,7 +355,14 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
       // Discord computes these for the channel the command was used in, including overwrites.
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ViewChannel)) return "denied";
       if (thread.type !== ChannelType.PrivateThread) return "permitted";
-      return yield* privateThreadMember(thread, userId, interaction.guildId);
+      const token = evidence.token(interaction.guildId);
+      const membership = yield* privateThreadMember(thread, userId);
+      if (membership !== "permitted") return membership;
+      return evidence.isCurrent(token) &&
+        session.operating() &&
+        (yield* permittedProjects(userId, thread.parentId))
+        ? "permitted"
+        : "denied";
     });
 
   /**
@@ -449,9 +463,6 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
         const place = explicitInvocation(message, botUserId);
         if (!place) return;
         const { thread, parentId } = place;
-        // Discord let the author post here, which shows they can see this private thread.
-        if (thread?.type === ChannelType.PrivateThread)
-          evidence.joined(message.guildId, thread.id, message.author.id);
         const invocation = yield* gate.withPermits(1)(admitMessage(message, thread, parentId));
         if (!invocation) return;
         yield* Effect.promise(() =>

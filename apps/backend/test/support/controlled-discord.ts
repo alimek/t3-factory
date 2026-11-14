@@ -247,6 +247,7 @@ export async function startControlledDiscord() {
   const departed = new Set<string>();
   let gatewayAvailable = true;
   let typingAvailable = true;
+  let commandsAvailable = true;
   const messageFaults: MessageFault[] = [];
   const editFaults: MessageFault[] = [];
   const created: CreatedMessage[] = [];
@@ -406,6 +407,8 @@ export async function startControlledDiscord() {
       /^\/api\/v10\/applications\/(\d+)\/commands$/,
       ({ match, body }) => {
         // Discord creates the command or updates the one with the same name; others stay.
+        if (!commandsAvailable)
+          return { status: 403, body: { message: "Missing Access", code: 50001 } };
         const command = body as Record<string, unknown>;
         const existing = commands.get(match[1]!) ?? [];
         const kept = existing.filter((other) => other.name !== command.name);
@@ -765,6 +768,10 @@ export async function startControlledDiscord() {
     requests,
     sessions,
     commands,
+    /** Command registration is refused until the owner corrects application permissions. */
+    setCommandsAvailable(available: boolean) {
+      commandsAvailable = available;
+    },
     trafficOnReady,
     addBot(bot: ControlledDiscordBot) {
       bots.set(bot.token, { messageContentIntent: true, manageThreads: true, ...bot });

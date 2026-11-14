@@ -394,11 +394,12 @@ it("a reset in a private thread is refused when Discord cannot confirm the membe
   expect(await resetReply(discord)).toContain("could not confirm your access");
 });
 
-it("posting in a private thread is membership evidence for a later reset there", async (c) => {
+it("a later reset refreshes private-thread membership even after the requester posted there", async (c) => {
   // Arrange
   const { discord } = await operating(c);
   discord.deliver(invocation("300000000000000023", { channelId: PRIVATE_THREAD }));
   await discord.request("POST", POSTS);
+  const lookups = discord.requested("GET", MEMBER_LOOKUP).length;
 
   // Act
   discord.deliver(
@@ -409,7 +410,7 @@ it("posting in a private thread is membership evidence for a later reset there",
 
   // Assert
   expect(await resetReply(discord)).toContain("cleared");
-  expect(discord.requested("GET", MEMBER_LOOKUP)).toHaveLength(0);
+  expect(discord.requested("GET", MEMBER_LOOKUP).length).toBeGreaterThan(lookups);
 });
 
 it("a membership removal Discord announces invalidates remembered private-thread evidence", async (c) => {

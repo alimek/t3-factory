@@ -279,6 +279,32 @@ it("retrying a rejected connection while On reconnects through the same supervis
   });
 });
 
+it("Retry connection recovers failed command setup after Discord permissions are corrected while connected", async (c) => {
+  // Arrange
+  const { discord, factory } = await chatControlWorld(c);
+  discord.setCommandsAvailable(false);
+  await turnedOn(factory, discord);
+  const before = await discordSettingsWhen(factory, statusIs("connected"));
+  expect(before).toMatchObject({ commandSetup: { outcome: "failed" }, needsAttention: true });
+  discord.setCommandsAvailable(true);
+
+  // Act
+  const retried = await factory.checkDiscordConnection({ revision: 1 });
+
+  // Assert
+  assert(retried.ok);
+  expect(
+    await discordSettingsWhen(
+      factory,
+      (settings) => settings.commandSetup?.outcome === "registered",
+    ),
+  ).toMatchObject({ connectionStatus: "connected", needsAttention: false, latestCheck: null });
+  expect(discord.requested("POST", COMMANDS)).toHaveLength(2);
+  expect(openSessions(discord)).toHaveLength(1);
+  expect(discord.sessions).toHaveLength(2);
+  expect(discord.sessions[0]?.closed).toBe(true);
+});
+
 it("checking while On inspects the running connection without opening another session", async (c) => {
   // Arrange
   const world = await chatControlWorld(c);

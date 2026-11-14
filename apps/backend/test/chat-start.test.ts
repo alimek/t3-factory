@@ -11,6 +11,7 @@ import {
   clickAnswers,
   isStatusCard,
   proposedStart,
+  pendingStart,
   runsOf,
   START_PROMPT,
   startCall,
@@ -250,6 +251,39 @@ it("a Start proposed for another Project leaves the earlier Start's review confi
   expect(await runsOf(world.factory)).toStrictEqual([{ number: 1, title: "Improve search" }]);
 });
 
+it("completing Start preflight after access revocation accepts no Run", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000000001", 2);
+  const pending = await pendingStart(world, button);
+  await savedAccess(world.factory, [], []);
+
+  // Act
+  pending.release();
+
+  // Assert
+  expect(await pending.answer).toBe(ANSWERS.rejected);
+  expect(await runsOf(world.factory)).toStrictEqual([]);
+  expect(world.t3.launchCalls).toBe(0);
+});
+
+it("completing Start preflight after revocation and regrant starts nothing", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000000001", 2);
+  const pending = await pendingStart(world, button);
+  await savedAccess(world.factory, [], []);
+  await savedAccess(world.factory, [PARTICIPANT_ID, COLLABORATOR_ID], [world.project.id]);
+
+  // Act
+  pending.release();
+
+  // Assert
+  expect(await pending.answer).toBe(ANSWERS.rejected);
+  expect(await runsOf(world.factory)).toStrictEqual([]);
+  expect(world.t3.launchCalls).toBe(0);
+});
+
 it("a prompt that is not exact text from the requester's message gets no review, and the model is told to copy it exactly", async (c) => {
   // Arrange
   const world = await startingWorld(c);
@@ -324,6 +358,27 @@ it.effect("a click after the review's five-minute lifetime starts nothing", (c) 
     const navigation = yield* world.factory.listRunNavigation();
     assert(navigation.ok);
     expect(navigation.value).toStrictEqual([]);
+  }),
+);
+
+it.effect("a Start first reaching acceptance after its review expires starts nothing", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const world = yield* clockedStartingWorld(c);
+    const button = yield* until(() => proposedStart(world, "600000000000000001", 2));
+    const pending = yield* until(() => pendingStart(world, button));
+    yield* TestClock.adjust(5 * 60_000);
+
+    // Act
+    pending.release();
+
+    // Assert
+    const answer = yield* until(() => pending.answer);
+    expect(answer).toBe(ANSWERS.rejected);
+    const navigation = yield* world.factory.listRunNavigation();
+    assert(navigation.ok);
+    expect(navigation.value).toStrictEqual([]);
+    expect(world.t3.launchCalls).toBe(0);
   }),
 );
 

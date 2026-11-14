@@ -512,6 +512,10 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     bot: discordBot,
     sessions: discord.sessions.map(({ token, ready, closed }) => ({ token, ready, closed })),
   }),
+  /** External application permissions determine whether command registration succeeds. */
+  "/__fixture/discord/commands": (query) => {
+    discord.setCommandsAvailable(query.get("available") === "true");
+  },
   /**
    * An allowed participant mentions the bot in the allowed channel: one new invocation, with the
    * given `content` or the default request. Factory answers in a new thread with the message's ID.

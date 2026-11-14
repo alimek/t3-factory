@@ -42,6 +42,81 @@ const STEPS =
   "Factory stopped this request because answering it needed more than 8 model requests or 16 tool calls. Nothing from it was kept; ask a narrower question.";
 const listProjects = { toolCalls: [{ name: "list_projects", input: {} }] };
 
+it("requester revocation stops the remaining parts of an in-flight reply", async (c) => {
+  // Arrange
+  const { discord, model, factory, project } = await conversing(c);
+  model.script({ text: "A".repeat(2100) });
+  discord.faultMessages("paused");
+  discord.deliver(invocation("300000000000091001"));
+  await discord.request("POST", /channels\/\d+\/messages$/);
+  await savedAccess(factory, [COLLABORATOR_ID], [project.id]);
+  discord.deliver(invocation("300000000000091002", { authorId: COLLABORATOR_ID }));
+
+  // Act
+  discord.releaseMessages();
+
+  // Assert
+  await discord.createdMessages(2);
+  expect(discord.created.map((message) => message.content)).toStrictEqual(["A".repeat(2000), "OK"]);
+  expect(userEnvelopes(model, 1)).toHaveLength(1);
+});
+
+it("reset stops the remaining parts of an in-flight reply and fences its context", async (c) => {
+  // Arrange
+  const { discord, model } = await conversing(c);
+  model.script({ text: "B".repeat(2100) });
+  discord.faultMessages("paused");
+  discord.deliver(invocation("300000000000091003"));
+  await discord.request("POST", /channels\/\d+\/messages$/);
+  discord.deliver(
+    resetCommandEvent({
+      bot: discordBot,
+      guildId: discordGuild.id,
+      channel: { id: THREAD, parentId: ALLOWED_CHANNEL, private: false },
+      id: "600000000000091003",
+    }),
+  );
+  await discord.request("PATCH", /\/messages\/%40original$/);
+  discord.deliver(invocation("300000000000091004"));
+
+  // Act
+  discord.releaseMessages();
+
+  // Assert
+  await discord.createdMessages(2);
+  expect(discord.created.map((message) => message.content)).toStrictEqual(["B".repeat(2000), "OK"]);
+  expect(userEnvelopes(model, 1)).toHaveLength(1);
+});
+
+it("a private-thread membership lost during interpretation stops publication without a Gateway update", async (c) => {
+  // Arrange
+  const { discord, model } = await conversing(c);
+  const threadId = "500000000000091005";
+  discord.addThread({
+    id: threadId,
+    guildId: discordGuild.id,
+    parentId: ALLOWED_CHANNEL,
+    name: "private work",
+    private: true,
+    members: [PARTICIPANT_ID, COLLABORATOR_ID],
+  });
+  const late = model.held();
+  discord.deliver(invocation("300000000000091005", { channelId: threadId }));
+  await model.requested(1);
+  discord.removeThreadMember(threadId, PARTICIPANT_ID);
+  discord.deliver(
+    invocation("300000000000091006", { channelId: threadId, authorId: COLLABORATOR_ID }),
+  );
+
+  // Act
+  late.release({ text: "private response for the removed member" });
+
+  // Assert
+  await discord.createdMessages(1);
+  expect(discord.created.map((message) => message.content)).toStrictEqual(["OK"]);
+  expect(userEnvelopes(model, 1)).toHaveLength(1);
+});
+
 it("a request over 8,000 characters is refused without a model request", async (c) => {
   // Arrange
   const { discord, model } = await conversing(c);

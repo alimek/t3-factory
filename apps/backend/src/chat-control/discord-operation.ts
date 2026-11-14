@@ -441,9 +441,8 @@ export const makeDiscordOperation = (
         // discord.js drops removals of members it never cached, so the raw dispatch is read instead.
         client.on(Events.Raw, (packet: { t?: string; d?: ThreadMembersUpdate }) => {
           if (packet.t !== "THREAD_MEMBERS_UPDATE" || !packet.d) return;
-          const { id, guild_id, added_members = [], removed_member_ids = [] } = packet.d;
-          if (removed_member_ids.length > 0) evidence.left(guild_id, id, removed_member_ids);
-          for (const member of added_members) evidence.joined(guild_id, id, member.user_id);
+          const { guild_id, added_members = [], removed_member_ids = [] } = packet.d;
+          if (removed_member_ids.length > 0 || added_members.length > 0) changed(guild_id);
         });
         adapter.listen(client, released);
         const commandSetup = yield* registerCommands(client, applicationId);

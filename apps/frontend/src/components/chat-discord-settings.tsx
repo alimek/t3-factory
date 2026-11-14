@@ -607,7 +607,9 @@ function RunningConnection({
   onRetry: () => void;
 }) {
   const retryable =
-    settings.connectionStatus === "rejected" || settings.connectionStatus === "reconnecting";
+    settings.connectionStatus === "rejected" ||
+    settings.connectionStatus === "reconnecting" ||
+    settings.commandSetup?.outcome === "failed";
   return (
     <section aria-label="Discord connection check" className="grid gap-3 border-t pt-5">
       <div className="grid gap-1">

@@ -93,6 +93,9 @@ afterEach(async ({ app }) => {
   }
   const off = await hostCall(app.baseUrl, "PUT", "/api/chat-control/enabled", { enabled: false });
   assert(off.ok, JSON.stringify(off));
+  await fetch(new URL("/__fixture/discord/commands?available=true", app.baseUrl), {
+    method: "POST",
+  });
   await provider.close();
 });
 
@@ -355,6 +358,45 @@ test("the host turns Chat control On and sees the Gateway connection and command
   const { sessions } = await controlledDiscord(app.baseUrl);
   assert.strictEqual(sessions.filter((session) => !session.closed).length, 1);
   await app.screenshot("chat-discord-on");
+});
+
+test("the host retries failed command setup while the Gateway is connected", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await completeChatControl(app.baseUrl);
+  await fetch(new URL("/__fixture/discord/commands?available=false", app.baseUrl), {
+    method: "POST",
+  });
+  const on = await hostCall(app.baseUrl, "PUT", "/api/chat-control/enabled", { enabled: true });
+  assert(on.ok);
+  await settingsWhen<DiscordSettings>(
+    app.baseUrl,
+    "/api/chat-control/discord",
+    (settings) =>
+      settings.connectionStatus === "connected" && settings.commandSetup?.outcome === "failed",
+  );
+  await app.open("/settings/chat-control/discord");
+  const state = screen.getByRole("region", "Chat control state");
+  await expect(state.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(state.getByText(/Discord answered HTTP 403/)).toBeVisible();
+  const connection = screen.getByRole("region", "Discord connection check");
+  await connection.scrollIntoView();
+  await app.screenshot("chat-discord-command-failed");
+  await fetch(new URL("/__fixture/discord/commands?available=true", app.baseUrl), {
+    method: "POST",
+  });
+
+  // Act
+  await connection.getByRole("button", "Retry connection").tap();
+
+  // Assert
+  await expect(state.getByText("/factory reset registered")).toBeVisible();
+  const { sessions } = await controlledDiscord(app.baseUrl);
+  assert.strictEqual(sessions.filter((session) => !session.closed).length, 1);
+  await state.scrollIntoView();
+  await app.screenshot("chat-discord-command-retried");
 });
 
 test("an approved client's Settings has no Chat control group or search entry", async ({

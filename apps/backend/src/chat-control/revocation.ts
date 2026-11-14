@@ -30,7 +30,7 @@ export const applyAccessRevocation = (
       requester_id: string;
       parent_channel_id: string;
       project_ids_json: string;
-    }>`SELECT id,requester_id,parent_channel_id,project_ids_json FROM chat_proposals WHERE state IN ('preparing','presented')`;
+    }>`SELECT id,requester_id,parent_channel_id,project_ids_json FROM chat_proposals WHERE state IN ('preparing','presented','accepting')`;
     const voided = live.filter(
       (row) =>
         !access.users.includes(row.requester_id) ||
@@ -75,4 +75,4 @@ export const applyAccessRevocation = (
  */
 export const retireApplicationProposals = (sql: SqlClient.SqlClient, applicationId: string) =>
   sql`UPDATE chat_proposals SET state='ended',ended_reason='application'
-    WHERE application_id=${applicationId} AND state IN ('preparing','presented')`;
+    WHERE application_id=${applicationId} AND state IN ('preparing','presented','accepting')`;

@@ -223,8 +223,8 @@ export const makeChatDiscord = (
      * While Off, one owner-requested connection-only session with the saved configuration at
      * `revision`, recorded as dated evidence for that revision with the application Discord
      * authenticated; it never changes the configuration or the application Factory operates as.
-     * While On, the running connection is inspected instead and retried when it is not connected,
-     * so no second Gateway session opens.
+     * While On, the running connection is inspected instead and retried when disconnected or
+     * command setup failed, so no second Gateway session opens.
      */
     const checkDiscordConnection = (input: unknown) =>
       Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
@@ -233,8 +233,12 @@ export const makeChatDiscord = (
         const connection = yield* savedConnection(validated.value.revision);
         if (!connection.ok) return connection;
         if (connection.value === "operating") {
-          const { connectionStatus } = yield* operation.status;
-          if (connectionStatus === "rejected" || connectionStatus === "reconnecting")
+          const { connectionStatus, commandSetup } = yield* operation.status;
+          if (
+            connectionStatus === "rejected" ||
+            connectionStatus === "reconnecting" ||
+            commandSetup?.outcome === "failed"
+          )
             yield* operation.start;
           return yield* getDiscordSettings();
         }
