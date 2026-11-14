@@ -88,10 +88,18 @@ The editor has a block library on the left (**Human step**, **Wait**, **Continua
 input and are selected. Drag a block's header or edit its X/Y fields; wires follow live and the draft changes once, on drop. Escape cancels any drag.
 
 Selecting a block (click, or focus + Enter) opens **Block configuration**, a panel floating over the canvas's right edge. It renames the block, chooses its saved Agent, lists its exits
-read-only and links to the Agent definition. Prompts, execution settings and exits belong to the Agent; blocks have no overrides (create or duplicate an Agent for a variant), and two blocks
-may share a definition. Clicking empty canvas, **Close block configuration** or Escape closes the panel. Blocks show kind, Agent, an input port and one port per exit, each marked **Agent**,
+read-only and links to the Agent definition. Prompts, execution settings and exits belong to the Agent, and two blocks may share a definition. Besides Flow-local and hidden exits, a block's
+one override is its optional [Revisit instruction](../GLOSSARY.md#revisit-instruction): two blocks sharing a reviewer Agent can play different loop roles, such as a single check and a
+correction loop, without duplicating the Agent and letting the copies drift apart. It is deliberately narrow: there is no first-visit block prompt and no execution, model or exit-definition
+override, so any other variant is a new or duplicated Agent. Clicking empty canvas, **Close block configuration** or Escape closes the panel. Blocks show kind, Agent, an input port and one port per exit, each marked **Agent**,
 **local** or **fixed** and with **message** when it requires one; wires carry `exit → recipient` labels in one neutral style, and multiple incoming connections each anchor to their own
 input port (Flow input first, at least 18 px apart).
+
+An Agent block's panel always shows the optional **Revisit instruction** plain-text field, edited like a Continuation's prompt (up to 120,000 characters; surrounding whitespace is
+dropped on save, and whitespace alone saves as empty). The field never cuts input short: longer text stays in the draft and Save reports the error at the block's field. Its helper text says it is sent on every visit to the block after the first, with the incoming message; the Agent prompt still applies;
+and the instruction decides that visit's scope but never waives the Agent's criteria, a required check or a defect with evidence. Edits are unsaved draft changes like any other. A block with a
+non-empty instruction shows a small neutral **Revisit instruction** tag in its canvas header, never the text and never styled as an execution state. New Agent blocks start empty, and swapping
+the block's Agent or copying the Flow's graph keeps the value. Delivery is described in the [Runner](runner.md#revisit-instructions).
 
 A **Continuation** block is configured with only a name and a required **Prompt**; it has no Agent, settings or exits to configure. Its canvas block reads
 **continues *Agent*'s thread**, naming the nearest Agent on its incoming paths (walking back through Human steps, Waits and Continuations), or **the incoming Agent's thread** when
@@ -174,7 +182,9 @@ issues use `workspace.*` paths. A save that omits `workspace` keeps the saved se
 
 Blocks have stable IDs, position and name. On create or save, positions are optional for every block and the Flow input. If any position is omitted, the backend arranges the whole graph with the same ELK layout as [Auto-arrange](#automatic-layout-and-canvas-view), replacing even the supplied positions. Fully positioned graphs are saved as given. Saved graphs always include all positions; Studio sends them all, so its saves preserve the draft's layout.
 
-An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides) and `localExits`; a Human block has
+An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides), `localExits` and `revisitInstruction`, its
+[Revisit instruction](../GLOSSARY.md#revisit-instruction): plain text up to 120,000 characters, optional on create and save, stored trimmed,
+and empty when omitted or whitespace-only. Readiness never requires it or warns about it, even on a block that cannot be revisited. A Human block has
 no exit fields. A Wait block adds `duration`: `{amount, unit}` with any finite number as `amount` and `unit` `minutes`,
 `hours` or `days`, or `null` while the draft has none; a Continuation adds `prompt` (stored trimmed, up to 120,000 characters, empty only in a draft). Each has one fixed, unnamed exit with ID `output`. An exit is `{id, name, description, messageRequired}`, with IDs scoped to their block; runtime consumers enforce a non-empty message when
 `messageRequired` is true. Connections identify source block, exit ID and target block: a Human block's exit is `approve` or `request-changes`, a Wait's or Continuation's is `output`, and an Agent block's
@@ -187,7 +197,7 @@ Every graph carries exactly one `flowInput`: a canvas `position` and the `target
 ### Validation
 
 Structural failures return `Result` errors with `code`, `path` and `message`: invalid or duplicate IDs and names,
-positions, Flow input targets, dangling or duplicate edges, a Human or Wait connection from another exit, malformed exits, hide entries or Wait durations (an amount that is not a finite number, an unknown unit) and unknown block, exit, graph or Flow input fields, including Agent fields on a Wait. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
+positions, Flow input targets, dangling or duplicate edges, a Human or Wait connection from another exit, malformed exits, hide entries or Wait durations (an amount that is not a finite number, an unknown unit) and unknown block, exit, graph or Flow input fields, including Agent fields on a Wait. A `revisitInstruction` that is not a string, is longer than 120,000 characters after trimming, or is on a block other than an Agent block is refused at that block's `revisitInstruction` path. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
 
 Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name or ID collisions and wires from hidden or removed exits can be saved.
 Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `continuation_prompt_required`; `exit_name_conflict`, `exit_id_conflict`, `exit_hidden`, `exit_missing`), a Wait

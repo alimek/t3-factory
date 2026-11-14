@@ -29,6 +29,10 @@ export type RuntimeReply = {
   readonly reason?: string;
   /** A Continuation's prompt, the task its worker answers. */
   readonly prompt?: string;
+  /** An Agent block's captured Revisit instruction, on visits after the first when it is set. */
+  readonly revisitInstruction?: string;
+  /** How the Revisit instruction relates to the Agent's requirements; given with it. */
+  readonly revisitRule?: string;
   readonly exits?: readonly BlockExit[];
   readonly inputs?: {
     readonly input: string;

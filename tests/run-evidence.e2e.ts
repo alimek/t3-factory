@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { beforeEach, test, type Browser } from "@e2e-dev/web";
 import { expect, type App, type Screen } from "e2e";
+import { saveSingleAgentFlow } from "./support/flows.ts";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
-import { prepareScenarios } from "./support/scenarios.ts";
+import { prepareScenarios, scenarioFixture } from "./support/scenarios.ts";
 
 beforeEach(async ({ app }) => {
   await prepareScenarios(app.baseUrl);
@@ -74,6 +75,48 @@ test("a worker whose own turn ended while its subagents still run stays working 
   await expect(activations.getByRole("link", "Open worker in T3", { exact: true })).toBeVisible();
   await expect(screen.getByRole("region", "Problem")).toHaveCount(0);
   await app.screenshot("working-delegated-subagents");
+});
+
+test("a selected Agent block shows its captured Revisit instruction read-only, and its execution canvas block does not", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const instruction =
+    "On a return, verify the corrections and the newly affected scope; keep earlier dispositions.";
+  await saveSingleAgentFlow(
+    app.baseUrl,
+    "UI revisit · Verify corrections",
+    "Demo · Product engineer",
+    {
+      id: "worker",
+      name: "Review change",
+      x: 320,
+      y: 180,
+      revisitInstruction: instruction,
+    },
+  );
+  const started = await scenarioFixture(app.baseUrl, "ensure", {
+    key: "revisit",
+    flow: "UI revisit · Verify corrections",
+  });
+  const { id } = (await started.json()) as { id: string };
+  await app.open(`/runs/${id}`);
+  const block = screen.getByRole("article", "Block Review change", { exact: true });
+
+  // Act
+  await block.tap();
+
+  // Assert
+  const captured = screen
+    .getByRole("complementary", "Run inspector")
+    .getByRole("region", "Revisit instruction", { exact: true });
+  await expect(captured).toContainText(instruction);
+  await expect(captured.getByRole("textbox")).toHaveCount(0);
+  await expect(block).not.toContainText("Revisit instruction");
+  await app.screenshot("run-inspector-revisit-instruction");
 });
 
 async function openWorkingRunInspector(app: App, screen: Screen, browser: Browser) {
