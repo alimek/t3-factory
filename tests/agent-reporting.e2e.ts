@@ -7,6 +7,7 @@ import { remoteFixture } from "./support/remote-access.ts";
 // Later journeys share the fixture's T3 connection.
 afterEach(async ({ app }) => {
   await remoteFixture(app, "t3-available");
+  await remoteFixture(app, "reporting/optional-skill");
 });
 
 test("reporting problems are visible before Start and clear after repairing the provider", async ({
@@ -57,6 +58,12 @@ test("reporting problems are visible before Start and clear after repairing the 
   await app.open(`/studio/agents/${worker.id}`);
   await screen.getByRole("link", "Open Agent reporting").tap();
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
+  await expect(screen.getByRole("group", "Codex", { exact: true }).getByRole("status")).toHaveText(
+    "Needs attention",
+  );
+  await expect(
+    screen.getByRole("link", "Agent reporting, Needs attention", { exact: true }),
+  ).toBeVisible();
   await repairCodexReporting(screen);
 
   // Assert
@@ -95,6 +102,76 @@ test("a failed reporting inspection warns instead of showing green Connected", a
   await screen.getByRole("link", "Settings, Reporting status unavailable", { exact: true }).tap();
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
   await expect(screen.getByRole("alert")).toContainText("Factory could not check Agent reporting");
+});
+
+test("the Agent reporting attention dot clears once every harness is installed", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const codex = {
+    id: "codex-home",
+    provider: "codex",
+    instances: ["codex-main"],
+    path: "/home/factory/.codex/config.toml",
+    message: "Configuration installed.",
+    launchSkill: "current",
+    runtimeEvidence: "UNVERIFIED",
+  };
+  let targets = [
+    {
+      ...codex,
+      status: "not-installed",
+      actions: { install: true, repair: false, reinstall: false },
+    },
+  ];
+  await browser.route("**/api/reporting", (route) =>
+    route.fulfill({ json: { ok: true, value: targets } }),
+  );
+  await app.open("/settings/agent-reporting");
+  await expect(
+    screen.getByRole("link", "Agent reporting, Needs attention", { exact: true }),
+  ).toBeVisible();
+  targets = [
+    { ...codex, status: "installed", actions: { install: false, repair: false, reinstall: true } },
+  ];
+
+  // Act
+  await screen.getByRole("button", "Check again", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("group", "Codex", { exact: true }).getByRole("status")).toHaveText(
+    "Installed",
+  );
+  await expect(screen.getByRole("link", "Agent reporting", { exact: true })).toBeVisible();
+});
+
+test("installed reporting shows the file and manual remedy for a linked optional skill", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  const linked = await remoteFixture(app, "reporting/optional-skill?linked=1");
+  assert(linked.ok);
+  const { path } = (await linked.json()) as { path: string };
+
+  // Act
+  await app.open("/settings/agent-reporting");
+
+  // Assert
+  const codex = screen.getByRole("group", "Codex", { exact: true });
+  await expect(codex.getByRole("status")).toHaveText("Installed");
+  await expect
+    .poll(() =>
+      browser.evaluate(`getComputedStyle(document.querySelector('[role="dialog"]')).opacity`),
+    )
+    .toBe("1");
+  await app.screenshot("reporting-optional-skill-diagnostic");
+  await expect(codex).toContainText(path);
+  await expect(codex).toContainText("Replace or remove it manually, then Reinstall.");
 });
 
 test("a disconnected T3 connection takes precedence over reporting warnings", async ({

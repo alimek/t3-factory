@@ -409,9 +409,10 @@ function dispatchApi(
   });
 }
 
-// Known client routes use the built entry; missing assets must stay 404.
+// Known client routes use the built entry; missing assets must stay 404. Any Settings section
+// path does, so the client opens removed or unknown sections at the default one.
 const clientRoutePattern =
-  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/general|\/application|\/run-titles|\/run-images)?)\/?$/;
+  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/[^/]+)?)\/?$/;
 
 function uiFile(uiDirectory: string, pathname: string): string | undefined {
   const root = resolve(uiDirectory);

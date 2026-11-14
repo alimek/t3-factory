@@ -132,7 +132,7 @@ function AgentReportingNotice({ providerId }: { providerId: string }) {
           <p>This provider cannot start a Run until reporting is configured.</p>
         )}
         {status.state !== "checking" && (
-          <SettingsLink selection={{ tab: "runtime" }}>Open Agent reporting</SettingsLink>
+          <SettingsLink selection={{ tab: "agent-reporting" }}>Open Agent reporting</SettingsLink>
         )}
       </AlertDescription>
     </Alert>

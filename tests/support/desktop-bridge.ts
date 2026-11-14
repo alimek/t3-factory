@@ -6,8 +6,8 @@ import {
 } from "../../packages/contracts/src/desktop-bridge.ts";
 
 export const desktopBridgeOptions = (
-  role: "client" | null = null,
-  update: "available" | "downloaded" | "downloading" = "downloaded",
+  role: "client" | "server" | null = null,
+  update: DesktopState["update"]["state"] = "downloaded",
   releaseNotes:
     | string
     | null = "<ul><li>Reopen authorization from an approved client.</li><li>Review client and server upgrades together.</li></ul>",
@@ -38,7 +38,7 @@ export function desktopBridgeScript({
     launchAtLogin: false,
     menuBarIcon: false,
     updateChannel: "stable",
-    backend: { state: "stopped", message: null },
+    backend: { state: role === "server" ? "running" : "stopped", message: null },
     minimized: false,
     update: {
       state: update,

@@ -45,27 +45,30 @@ test("the host turns on Generate Run titles with a provider instance and model f
 }) => {
   // Arrange
   await app.open("/settings/run-titles");
-  const section = screen.getByRole("region", "Generate Run titles");
-  await expect(screen.getByText(/^The title model runs in the Project checkout/)).toBeVisible();
-  await section.getByRole("button", /^Provider instance: /).tap();
+  const generation = screen.getByRole("region", "Generation");
+  await expect(screen.getByRole("button", /^How it works/)).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await generation.getByRole("button", /^Provider instance: /).tap();
   await screen.getByRole("menuitemradio", "Codex", { exact: true }).tap();
-  await section.getByRole("button", /^Model: /).tap();
+  await generation.getByRole("button", /^Model: /).tap();
   await screen.getByRole("menuitemradio", "GPT 6 Astra", { exact: true }).tap();
-  await expect(section.getByRole("button", "Model: GPT 6 Astra")).toBeEnabled();
+  await expect(generation.getByRole("button", "Model: GPT 6 Astra")).toBeEnabled();
 
   // Act
-  await section.getByRole("checkbox", "Generate Run titles").tap();
+  await generation.getByRole("switch", "Generate Run titles").tap();
 
   // Assert
-  await expect(section.getByRole("checkbox", "Generate Run titles")).toBeChecked();
-  await expect(section).toContainText("On · Codex · GPT 6 Astra");
+  await expect(generation.getByRole("switch", "Generate Run titles")).toBeChecked();
+  await expect(generation).toContainText("On · applies to Runs started from now on.");
   expect(await runTitleSetting(app.baseUrl)).toMatchObject({
     enabled: true,
     model: { providerInstanceId: "codex-main", modelId: "gpt-6-astra" },
   });
   await browser.reload();
   await expect(
-    screen.getByRole("region", "Generate Run titles").getByRole("checkbox", "Generate Run titles"),
+    screen.getByRole("region", "Generation").getByRole("switch", "Generate Run titles"),
   ).toBeChecked();
   await app.screenshot("run-titles-host-on");
 });
@@ -158,12 +161,14 @@ test("an approved client sees Generate Run titles and its latest diagnostic read
 
   // Assert
   await expect(screen.getByText("Managed on the Factory host")).toBeVisible();
-  const section = screen.getByRole("region", "Generate Run titles");
-  await expect(section.getByRole("checkbox", "Generate Run titles")).toBeChecked();
-  await expect(section.getByRole("checkbox", "Generate Run titles")).toBeDisabled();
-  await expect(section.getByRole("button", /^Provider instance: /)).toBeDisabled();
-  await expect(section.getByRole("button", /^Model: /)).toBeDisabled();
-  await expect(screen.getByText(/^Latest title generation skipped · Run #\d+/)).toBeVisible();
-  await expect(screen.getByText(/T3 does not offer gpt-6\.1-luna for Codex\./)).toBeVisible();
+  const generation = screen.getByRole("region", "Generation");
+  await expect(generation.getByRole("switch", "Generate Run titles")).toBeChecked();
+  await expect(generation.getByRole("switch", "Generate Run titles")).toBeDisabled();
+  await expect(generation.getByRole("button", /^Provider instance: /)).toBeDisabled();
+  await expect(generation.getByRole("button", /^Model: /)).toBeDisabled();
+  const latest = screen.getByRole("region", "Latest result");
+  await expect(latest.getByText(/^Skipped$/)).toBeVisible();
+  await expect(latest.getByText(/^Run #\d+ · /)).toBeVisible();
+  await expect(latest.getByText(/T3 does not offer gpt-6\.1-luna for Codex\./)).toBeVisible();
   await app.screenshot("run-titles-approved-client");
 });

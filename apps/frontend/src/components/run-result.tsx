@@ -1,6 +1,6 @@
 import { createElement, useEffect, useRef, useState, type ReactNode } from "react";
 import type { RunDetail } from "@t3-factory/contracts";
-import { Check, Copy, Maximize2, X } from "lucide-react";
+import { Maximize2, X } from "lucide-react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { capturedExits } from "../flow-graph.ts";
 import { clockTime } from "./execution-state.tsx";
 import { InspectorDisclosure } from "./inspector-section.tsx";
+import { CopyButton } from "./copy-button.tsx";
 
 type RunReport = RunDetail["reports"][number];
 type Density = "card" | "reader";
@@ -266,46 +267,6 @@ export function ResultCard({
   );
 }
 
-function CopyResult({ text }: { text: string }) {
-  const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied("copied");
-    } catch {
-      // Browsers withhold the clipboard outside secure contexts, such as a plain-HTTP remote URL.
-      setCopied("failed");
-    }
-  }
-  const tip =
-    copied === "copied"
-      ? "Copied"
-      : copied === "failed"
-        ? "Copy unavailable here"
-        : "Copy Markdown";
-  return (
-    <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Copy Markdown"
-            onClick={() => void copy()}
-          >
-            {copied === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{tip}</TooltipContent>
-      </Tooltip>
-      <span role="status" className="sr-only">
-        {copied && tip}
-      </span>
-    </>
-  );
-}
-
 /** Figma RD16: the full rendered result with its provenance; raw ids stay in Technical details. */
 function ResultReader({
   run,
@@ -344,7 +305,7 @@ function ResultReader({
               {provenance.filter(Boolean).join(" · ")}
             </DialogDescription>
           </div>
-          <CopyResult text={report.resultMessage ?? ""} />
+          <CopyButton text={report.resultMessage ?? ""} label="Copy Markdown" />
           {link && (
             <Button asChild variant="outline">
               <a href={link} target="_blank" rel="noreferrer">

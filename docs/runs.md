@@ -91,7 +91,8 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   reopens that draft instead. If storage is blocked the composer says the draft lasts only while the window is open.
   **New Run** (button, shortcut or palette) opens an empty prompt with the remembered choices and keeps earlier drafts; the
   Flow editor's **Start Run** does the same with its Flow. Project and Flow choices update live; while they are
-  synchronizing or offline the last choices stay visible, the draft is kept and Start is disabled. A selected Project or Flow
+  synchronizing or offline the last choices stay visible, the draft is kept and Start is disabled. A Start issued while
+  current still sends its image uploads and request if a catch-up begins meanwhile; going offline stops it. A selected Project or Flow
   is cleared only when a current live delivery no longer lists it; a non-current or failed delivery changes nothing, and
   choosing a just-created Project or Flow waits for the delivery that lists it. Confirmed Start removes the draft and opens its Run; a confirmed
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
@@ -108,11 +109,11 @@ latest diagnostic (`GET /api/settings/run-titles`).
 **Settings → Run titles** holds the setting. On the host it offers the on/off choice and the provider instance, model and
 options from the live T3 catalog, and saves each change at once; choosing a provider instance takes its first model, and
 the switch stays unavailable until a provider instance and model are chosen. A saved choice the catalog no longer
-offers stays visible as unavailable. The section discloses that the title model runs in the Project checkout with the
-owner's T3 permissions and that its prompt forbids reading or editing files without Factory enforcing it, and shows the
-latest diagnostic with its outcome, Run and time in the neutral notice style, never the error color. An approved client sees
-the same fields read-only under **Managed on the Factory host**. The section reads the setting when it opens; changes
-are not delivered live.
+offers stays visible as unavailable. The latest diagnostic follows the setting with its outcome, Run and time in a neutral
+status pill, never the error color. A closed **How it works** disclosure explains generation and that the title model runs
+in the Project checkout with the owner's T3 permissions, its prompt forbidding reading or editing files without Factory
+enforcing it. An approved client sees the same fields read-only with the **Managed on the Factory host** chip. The section
+reads the setting when it opens; changes are not delivered live.
 
 The shared Start operation, used by the composer and by `factory_start_run`, makes the decision, so every Start path behaves
 the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and

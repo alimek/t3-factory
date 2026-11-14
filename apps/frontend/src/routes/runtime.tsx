@@ -1,16 +1,25 @@
 import { LaunchSkillStatus } from "../components/launch-skill-status.tsx";
 import { MutationGate } from "@/client-gate";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import type { ReportingInstallation } from "@t3-factory/contracts";
 import { api } from "../api.ts";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useReportingState } from "../reporting-state.tsx";
+import {
+  SettingsDisclosure,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+  StatusPill,
+  type StatusTone,
+} from "../components/settings-page.tsx";
+import { targetNeedsAttention, useReportingState } from "../reporting-state.tsx";
 
-const labels: Record<ReportingInstallation["status"], string> = {
-  "not-installed": "Not installed",
-  installed: "Installed",
-  "needs-attention": "Needs attention",
-  unsupported: "Reporting not available yet",
+const statuses: Record<ReportingInstallation["status"], { label: string; tone: StatusTone }> = {
+  "not-installed": { label: "Not installed", tone: "neutral" },
+  installed: { label: "Installed", tone: "success" },
+  "needs-attention": { label: "Needs attention", tone: "attention" },
+  unsupported: { label: "Not available", tone: "neutral" },
 };
 const providerNames: Record<string, string> = {
   claudeAgent: "Claude",
@@ -18,6 +27,16 @@ const providerNames: Record<string, string> = {
   cursor: "Cursor",
   grok: "Grok",
 };
+
+/** The one action a target offers; the backend never offers more than one at a time. */
+function targetAction({ actions }: ReportingInstallation) {
+  if (actions.install) return { label: "Install", variant: "default" } as const;
+  if (actions.repair) return { label: "Repair", variant: "default" } as const;
+  if (actions.reinstall) return { label: "Reinstall", variant: "outline" } as const;
+  return null;
+}
+
+/** Settings → Agent reporting: one row per harness configuration home Factory MCP installs into. */
 export function RuntimeSettings() {
   const { targets, refresh: refreshReporting, error: readError } = useReportingState();
   const [busy, setBusy] = useState(true);
@@ -43,66 +62,113 @@ export function RuntimeSettings() {
       setBusy(false);
     }
   };
+  const attention = targets?.filter(targetNeedsAttention).length ?? 0;
   return (
-    <section className="space-y-5">
-      <h2 className="text-title font-semibold">Agent reporting</h2>
-      <p className="text-sm text-muted-foreground">
-        Install Factory MCP on the server computer once per harness home for all Projects, worktrees
-        and Agents. Installed configuration does not prove that live reporting works in the harness
-        today. New Runs require MCP reporting; existing Runs keep their saved reporting protocol.
-      </p>
-      <Button variant="outline" disabled={busy} onClick={() => void refresh()}>
-        Recheck installation
-      </Button>
+    <SettingsPage
+      title="Agent reporting"
+      description="Factory MCP lets Agents report progress to Factory. Install it once per harness on the host; new Runs require it."
+      badge={
+        attention > 0 && (
+          <StatusPill tone="attention">
+            {attention} {attention === 1 ? "needs" : "need"} attention
+          </StatusPill>
+        )
+      }
+      action={
+        <Button variant="outline" disabled={busy} onClick={() => void refresh()}>
+          Check again
+        </Button>
+      }
+    >
       {(error || readError) && (
-        <p role="alert" className="text-sm text-destructive">
-          {error || readError}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{error || readError}</AlertDescription>
+        </Alert>
       )}
-      {targets?.map((target) => (
-        <article key={target.id} className="space-y-3 rounded-lg border p-4">
-          <h3 className="font-medium">{providerNames[target.provider] ?? target.provider}</h3>
-          <p role="status" className="text-sm font-medium">
-            {labels[target.status]}
-          </p>
-          <LaunchSkillStatus state={target.launchSkill} />
-          {target.status !== "unsupported" && (
-            <p className="break-all text-xs text-muted-foreground">
-              {target.path ?? "Configuration target unavailable"}
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground">{target.instances.join(", ")}</p>
-          <p className="text-sm">{target.message}</p>
-          <div className="flex flex-wrap gap-2">
-            {target.actions.install && (
+      {targets && targets.length > 0 && (
+        <SettingsGroup label="Harnesses">
+          {targets.map((target) => (
+            <TargetRow
+              key={target.id}
+              target={target}
+              busy={busy}
+              onInstall={() => void install(target.id)}
+            />
+          ))}
+        </SettingsGroup>
+      )}
+      <SettingsDisclosure label="How it works" hint="Start a fresh T3 session after installing">
+        <p>
+          Install, Repair and Reinstall write Factory’s own entry into the harness configuration on
+          the server computer, once per harness home, for all Projects, worktrees and Agents. New
+          Runs require MCP reporting; existing Runs keep their saved reporting protocol.
+        </p>
+        <p>
+          Installed configuration does not prove that live reporting works in the harness today.
+          Start a fresh T3 session after installation and review native tool permissions in your
+          harness: managed policy, project overrides and disabled MCP servers may prevent
+          visibility. Factory does not change trust policy, restart sessions or launch diagnostic
+          work.
+        </p>
+      </SettingsDisclosure>
+    </SettingsPage>
+  );
+}
+
+function TargetRow({
+  target,
+  busy,
+  onInstall,
+}: {
+  target: ReportingInstallation;
+  busy: boolean;
+  onInstall: () => void;
+}) {
+  const actionId = useId();
+  const name = providerNames[target.provider] ?? target.provider;
+  const status = statuses[target.status];
+  const action = targetAction(target);
+  return (
+    <div role="group" aria-label={name}>
+      <SettingsRow
+        title={name}
+        description={
+          <>
+            {target.status !== "unsupported" && (
+              <span className="block font-mono text-label break-all">
+                {target.path ?? "Configuration target unavailable"}
+              </span>
+            )}
+            {/* The T3 instances tell apart rows of one provider, including unsupported ones without a path. */}
+            <span className="block">{target.instances.join(", ")}</span>
+            {/* Healthy installed rows keep the generic caveat in "How it works". */}
+            {(target.status !== "installed" || target.launchSkill !== "current") && (
+              <span className="block">{target.message}</span>
+            )}
+            {target.launchSkill !== "current" && <LaunchSkillStatus state={target.launchSkill} />}
+          </>
+        }
+        control={(text) => (
+          <>
+            <span role="status">
+              <StatusPill tone={status.tone}>{status.label}</StatusPill>
+            </span>
+            {action && (
               <MutationGate>
-                <Button disabled={busy} onClick={() => void install(target.id)}>
-                  Install Factory MCP
+                <Button
+                  id={actionId}
+                  variant={action.variant}
+                  aria-labelledby={`${actionId} ${text.title}`}
+                  disabled={busy}
+                  onClick={onInstall}
+                >
+                  {action.label}
                 </Button>
               </MutationGate>
             )}
-            {target.actions.repair && (
-              <MutationGate>
-                <Button disabled={busy} onClick={() => void install(target.id)}>
-                  Repair installation
-                </Button>
-              </MutationGate>
-            )}
-            {target.actions.reinstall && (
-              <MutationGate>
-                <Button variant="secondary" disabled={busy} onClick={() => void install(target.id)}>
-                  Reinstall Factory MCP
-                </Button>
-              </MutationGate>
-            )}
-          </div>
-        </article>
-      ))}
-      <p className="text-sm text-muted-foreground">
-        Start a fresh T3 session after installation. Review native tool permissions in your harness.
-        Managed policy, project overrides and disabled MCP servers may prevent visibility. Factory
-        does not change trust policy, restart sessions or launch diagnostic work.
-      </p>
-    </section>
+          </>
+        )}
+      />
+    </div>
   );
 }

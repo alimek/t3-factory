@@ -6,7 +6,7 @@ parallel stylesheets, global element styling or per-screen color palettes.
 
 ## Light and Dark
 
-**Settings → Application → Appearance** offers exactly **Light** and **Dark**; Dark is the
+**Settings → Appearance** offers exactly **Light** and **Dark**; Dark is the
 default and there is no System mode. The choice is local to the client, never sent to the
 server, and available on every connection gate and while offline; see
 [Desktop and approved clients](desktop-and-clients.md#appearance).
@@ -78,6 +78,12 @@ tooltip. Preserve meaningful accessible names used by the UI verification journe
 Unavailable choices in Agent execution settings stay visible and disabled, with their reason.
 Long menus must stay within the viewport and scroll their choices without hiding search
 or actions.
+
+Settings sections share one page template instead of styling their own headers and
+footnotes: a header with the title, a one-line description and optionally a status pill, the
+"Managed on the Factory host" chip and one primary action; then labelled cards of rows, each
+ending in one control; label/value rows for read-only facts; and closed disclosures for
+explanations and diagnostics. On/off settings use the switch, named by their row's title.
 
 Settings and Studio use the same dialog conventions. The Run shell stays mounted behind
 them, while hidden content is inert. Unsaved-change guards and keyboard behavior are

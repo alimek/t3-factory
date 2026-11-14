@@ -8,7 +8,7 @@ import {
   useConnectionState,
   type ConnectionPresentation,
 } from "../connection-state.tsx";
-import { Link, useMatchRoute } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
   useSettings,
   useSettingsOptions,
@@ -38,14 +38,13 @@ function settingsIndicator(
     label: reporting.label,
     text: reporting.message,
     dotClass: needsAttention ? "bg-attention" : "bg-muted-foreground/60",
-    tab: needsAttention ? ("runtime" as const) : ("connection" as const),
+    tab: needsAttention ? ("agent-reporting" as const) : ("connection" as const),
   };
 }
 
 export function SidebarFooter() {
   const { hint } = useShortcutPreferences();
   const settings = useSettings();
-  const matchRoute = useMatchRoute();
   const studio = useStudio();
   const studioOptions = useStudioOptions({ tab: "flows" });
   const { presentation } = useConnectionState();
@@ -61,7 +60,7 @@ export function SidebarFooter() {
       <FooterIcon
         label={`Settings, ${statusLabel}`}
         shortcut={hint("settings")}
-        active={!!settings || !!matchRoute({ to: "/settings/runtime" })}
+        active={!!settings}
       >
         <Link {...settingsOptions} aria-label={`Settings, ${statusLabel}`}>
           <Settings aria-hidden className="size-4" strokeWidth={1.5} />

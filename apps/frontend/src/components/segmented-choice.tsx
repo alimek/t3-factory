@@ -1,7 +1,7 @@
 import { RadioGroup } from "radix-ui";
 import { cn } from "@/lib/utils";
 
-/** A short exclusive choice shown as side-by-side segments, with radio semantics. */
+/** Figma Settings v2/Segmented: a short exclusive choice in one bordered track, with radio semantics. */
 export function SegmentedChoice<Value extends string>({
   labelledBy,
   value,
@@ -21,15 +21,15 @@ export function SegmentedChoice<Value extends string>({
         const option = options.find(([candidate]) => candidate === next);
         if (option) onChange(option[0]);
       }}
-      className="flex gap-2"
+      className="flex w-fit gap-0.5 rounded-md border bg-background p-0.5"
     >
       {options.map(([option, title]) => (
         <RadioGroup.Item
           key={option}
           value={option}
           className={cn(
-            "h-8 rounded-md border bg-muted px-3 text-sm text-foreground outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            "data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+            "h-6.5 rounded-sm px-3 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "data-[state=checked]:bg-sidebar-accent data-[state=checked]:text-foreground",
             // Forced colors drop the fill; system highlight colors keep the selection visible.
             "forced-colors:data-[state=checked]:bg-[Highlight] forced-colors:data-[state=checked]:text-[HighlightText] forced-colors:data-[state=checked]:forced-color-adjust-none",
           )}

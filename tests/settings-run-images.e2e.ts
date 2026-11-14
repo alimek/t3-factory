@@ -68,7 +68,7 @@ test("Settings lists only images whose every Run is Settled or Archived", async 
 
   // Assert
   await expect(screen.getByRole("heading", "Run images", { exact: true })).toBeVisible();
-  await expect(screen.getByRole("group", "STORAGE").getByRole("link", "Run images")).toBeVisible();
+  await expect(screen.getByRole("group", "Runs").getByRole("link", "Run images")).toBeVisible();
   await expect(cards(screen).first()).toBeVisible();
   const card = screen.getByRole("button", "Preview compact-navigation.png");
   await expect(card).toContainText("Archived");
@@ -313,7 +313,7 @@ async function previewFromRun(
     .poll(() => browser.evaluate(imagesLoaded('[aria-label="Prompt images"] img')))
     .toBe(true);
   await screen.getByRole("link", /^Settings, /).tap();
-  await screen.getByRole("group", "STORAGE").getByRole("link", "Run images").tap();
+  await screen.getByRole("group", "Runs").getByRole("link", "Run images").tap();
   await screen.getByRole("button", `Preview ${name}`).tap();
   const preview = screen.getByRole("region", `Preview of ${name}`);
   await expect(preview.getByRole("image", name)).toBeVisible();

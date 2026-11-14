@@ -1,4 +1,4 @@
-import { LocalApplicationControls } from "./application-settings.tsx";
+import { LocalApplicationControls } from "./desktop-app-settings.tsx";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { DesktopTitlebar } from "./desktop-titlebar.tsx";

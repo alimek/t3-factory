@@ -40,10 +40,16 @@ red when disconnected. The sidebar Settings dot also checks reporting configurat
 while Connected, a missing, outdated, unsupported or unreadable installation makes it amber with a labelled warning and
 opens **Agent reporting**. Unused providers do not raise this warning. Reporting inspection is neutral while loading;
 connection problems take precedence. The footer names problems, so status never relies on color. The
-pane shows the address, T3 version, authorization, environment and last-check time with T3's explanation, **Check again**
-for non-connected states and **Edit address** (open by default when no endpoint is saved). Settings has a search field,
-nav sections (T3 connection, Agent reporting, [Keyboard shortcuts](keyboard-shortcuts.md)) and closes with Esc; below
-640 px the nav stacks above the pane. Agent definitions are authored in [Studio](studio.md).
+T3 connection pane header carries the status badge and **Check again** in every state; a notice explains any state
+other than Connected. Its Connection group lists the address with **Edit** (the address form is open by default when no
+endpoint is saved), T3 version, authorization with **Authorize on backend host**, **Reauthorize** or **Start new
+authorization** when authorization applies, and the last-check time. The environment ID and inspected tool schemas sit
+under the closed **Diagnostics** disclosure. Only the Factory host edits the address or authorizes. Settings groups its
+sections by scope: **Factory** (T3 connection, Agent reporting, Devices & access), **Runs** (Run titles, Run images)
+and **This device** (Appearance, [Keyboard shortcuts](keyboard-shortcuts.md), Desktop app). Sections that do not apply
+are not listed: Desktop app only in the desktop app, Devices & access only on the Factory host. On other clients Run
+titles carries a lock because only the host changes it. A search field filters sections by name; Esc clears it, then
+closes Settings. Below 640 px the nav stacks above the pane. Agent definitions are authored in [Studio](studio.md).
 
 Connection status refreshes automatically while the application is visible, so approval
 on the host can turn a waiting remote view Connected without another click. **Check again**
@@ -75,7 +81,7 @@ environment (`t3 theme set`), not the theme an individual T3 window shows. Each 
 [Light or Dark choice](desktop-and-clients.md#appearance) and shows that mode's half of the palette.
 T3 keeps owning theme selection and editing; Factory has no theme catalog or editor.
 
-**Pairing (host only).** **Settings → T3 connection → Theme colors** explains before pairing that the grant
+**Pairing (host only).** **Settings → Appearance → Theme colors** on the host explains before pairing that the grant
 uses T3's `orchestration:read` scope, which also reads T3 conversations, threads and settings, that T3 ends it
 after its session lifetime (30 days by default) and that it can be revoked in T3 at any time. The owner creates
 pairing material on the T3 computer with `t3 auth pairing create --scope orchestration:read --json` (paste its
@@ -84,8 +90,9 @@ connection's T3 address). Without `--scope`, a T3 pairing carries T3's full defa
 requests exactly `orchestration:read` in the token exchange and discards any other grant. Pairing needs an
 authorized T3 connection: the first configuration snapshot must report the environment id of the connection's
 authorization context, otherwise Factory discards the grant and refuses. It also refuses, and discards the
-grant, when the saved endpoint or its environment changed while T3 answered. Approved remote clients see the status
-and diagnostics; pairing and **Disconnect theme colors** answer `host_only` for them.
+grant, when the saved endpoint or its environment changed while T3 answered. Approved remote clients see, under
+**Settings → Appearance**, what their mode shows and why; pairing and **Disconnect theme colors** answer
+`host_only` for them.
 
 **Grant and credentials.** The appearance grant is a separate T3 session, never the MCP OAuth credential, which
 T3 refuses outside `/mcp`. Its token lives in `credentials/t3-appearance-<endpoint SHA-256>.json` with the same
@@ -173,9 +180,12 @@ files. The worker's first message starts with `$factory-block` followed by a `Fa
 
 ### Installation actions
 
-**Settings → Agent reporting** shows Not installed, Installed or Needs attention for each
-discovered configuration home, with a global **Recheck installation**. Codex, Claude, Cursor and
-Grok are those homes. Every other provider instance is listed as **Reporting not available yet**,
+**Settings → Agent reporting** lists each discovered configuration home as one row with its path,
+a Not installed, Installed or Needs attention status and the one action that applies, with a
+global **Check again**. While any home is Not installed or Needs attention, or the inspection
+fails, the Agent reporting navigation item carries an attention dot; unlike the sidebar Settings
+dot, it counts homes no saved Agent uses. Codex, Claude, Cursor and
+Grok are those homes. Every other provider instance is listed as **Not available**,
 with the `factory-runtime` MCP URL to add by hand and no install action. Agent capabilities
 publish the same per-provider `reporting` status, and Start blocks an unsupported provider with
 `harness_unsupported` pointing to Studio → Agents. A provider instance disabled in T3 is left out:
@@ -184,8 +194,8 @@ enabled instance stays listed for that instance. An Agent saved on a disabled pr
 **Reporting not configured** and Start stays blocked until the provider is enabled in T3 or the
 Agent uses another one.
 
-- **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
-  Factory's own entry. **Repair installation** appears only when Factory can repair what it owns:
+- **Install** (Not installed) and **Reinstall** (Installed) write only
+  Factory's own entry. **Repair** appears only when Factory can repair what it owns:
   a missing or outdated `$factory-block` skill, or Factory's entry pointing at another backend
   address (a changed `port` or `FACTORY_PORT`). An application upgrade needs Repair only when it
   changes the skill; a fresh harness session sees the new tools. Any other `factory-runtime`

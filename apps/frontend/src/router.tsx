@@ -11,6 +11,7 @@ import { RunComposer } from "./routes/run-composer.tsx";
 import { runDraft } from "./run-draft.ts";
 import {
   settingsMask,
+  settingsTab,
   studioMask,
   validateAppSearch,
   type SettingsSelection,
@@ -109,11 +110,6 @@ const settingsRoute = createRoute({
   path: "settings",
   beforeLoad: () => openSettings({ tab: "connection" }, { to: "/settings" }),
 });
-const connectionRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/connection",
-  beforeLoad: () => openSettings({ tab: "connection" }),
-});
 const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "settings/agents",
@@ -124,41 +120,12 @@ const agentRoute = createRoute({
   path: "settings/agents/$agentId",
   beforeLoad: ({ params }) => openStudio({ tab: "agents", agentId: params.agentId }),
 });
-const runtimeRoute = createRoute({
-  staticData: { settingsBackground: true },
+// Removed and unknown sections (such as the former runtime, access, general and application
+// paths) open the default section instead of a not-found page.
+const settingsSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "settings/runtime",
-  beforeLoad: () => openSettings({ tab: "runtime" }),
-});
-const keyboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/keyboard",
-  beforeLoad: () => openSettings({ tab: "keyboard" }),
-});
-const accessRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/access",
-  beforeLoad: () => openSettings({ tab: "access" }),
-});
-const generalRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/general",
-  beforeLoad: () => openSettings({ tab: "general" }),
-});
-const applicationRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/application",
-  beforeLoad: () => openSettings({ tab: "application" }),
-});
-const runTitlesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/run-titles",
-  beforeLoad: () => openSettings({ tab: "run-titles" }),
-});
-const runImagesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "settings/run-images",
-  beforeLoad: () => openSettings({ tab: "run-images" }),
+  path: "settings/$",
+  beforeLoad: ({ params }) => openSettings({ tab: settingsTab(params._splat) ?? "connection" }),
 });
 const skillsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -180,16 +147,9 @@ const routeTree = rootRoute.addChildren([
   newRunRoute,
   runRoute,
   settingsRoute,
-  connectionRoute,
   agentsRoute,
   agentRoute,
-  runtimeRoute,
-  keyboardRoute,
-  accessRoute,
-  generalRoute,
-  applicationRoute,
-  runTitlesRoute,
-  runImagesRoute,
+  settingsSectionRoute,
   skillsRoute,
 ]);
 export const router = createRouter({ routeTree });

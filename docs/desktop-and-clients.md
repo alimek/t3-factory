@@ -6,7 +6,7 @@ semantics are unchanged; see [Runs](runs.md). Packaging and release qualificatio
 ## Installation roles
 
 Each installation has exactly one role, chosen on first launch and changeable in
-**Settings → Application**:
+**Settings → Desktop app**:
 
 | Role | What runs on this computer | Data |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ same conflict in the other direction.
 
 - Closing the last window leaves the server (and its Runs) running. The Dock icon and
   launching the app again reopen the panel.
-- **Settings → General → Show Factory in the menu bar** (desktop only) is off by
+- **Settings → Desktop app → Show Factory in the menu bar** (desktop only) is off by
   default. When enabled, a menu-bar icon shows the installation's role and status with
   **Open Factory** and **Quit Factory**. The choice is stored per installation and
   applies immediately, without a restart.
@@ -53,12 +53,12 @@ refused.
 
 A desktop client enters the address (`https://<LAN or Tailscale address>:4312`). The
 app checks the server's handshake, shows the certificate fingerprint and asks the user
-to compare it with the host panel. Pasting the panel's **Desktop connection link** (the
+to compare it with the host panel. Pasting the panel's **Desktop link** (the
 address followed by `#sha256=<fingerprint>`) verifies the certificate automatically. Confirming pins that certificate authority; the client then requests
 access under a device name.
 
 A browser profile opens the same HTTPS address. Trust the host's certificate on that
-device first (**Download certificate** on the host panel, or the `/factory-ca.pem` it
+device first (**Browser certificate → Download** on the host panel, or the `/factory-ca.pem` it
 serves, after comparing fingerprints). Installing the Factory CA grants system-wide
 issuer trust to the execution host and processes using its account; use it only for
 a host you trust at that level. Alternatively configure a publicly trusted certificate such
@@ -66,15 +66,16 @@ as one from `tailscale cert` (see [transport security](#transport-security)).
 
 Knowing or reaching the address grants nothing. Every desktop installation and browser
 profile is approved individually on the host panel, where each request shows its
-device name, kind and six-digit verification code. Approve only a request whose code
-matches the requesting screen. Approved clients have full normal Factory access: Flows,
+device name, kind and six-digit verification code. Waiting requests are listed first, and
+the **Devices & access** navigation item shows an attention dot while one waits. Approve only
+a request whose code matches the requesting screen. Approved clients have full normal Factory access: Flows,
 Agents, Runs, Human answers, attention, history and Run operations, with the existing
 revision-conflict behavior. They can also install, repair and reinstall Factory MCP in
 **Settings → Agent reporting**. Clients control the authoritative server remotely:
 commands execute on the server and reporting setup changes the server's harness files.
 Keeping files and credentials on the server does not by itself restrict an operation
 to its local panel. The T3 endpoint and host reauthorization remain host-only: remote
-clients see their status and a "Managed on the Factory host" notice.
+clients see their status and the "Managed on the Factory host" chip.
 When T3 needs approval, a remote client may choose **Open authorization on
 server** to reopen or start consent in the host's browser for the saved endpoint; see
 [T3 connection](t3-integration.md#authorizing). Lifecycle and approvals are host-local
@@ -113,7 +114,7 @@ outside the draggable region, fullscreen and window controls stay native, and th
 ## Appearance
 
 Each desktop installation, and each browser profile per Factory address, has its own
-**Light** or **Dark** appearance, chosen in **Settings → Application → Appearance**. It is
+**Light** or **Dark** appearance, chosen in **Settings → Appearance**. It is
 Dark until chosen. The choice is never sent to or synchronized through the Factory server,
 so clients of the same server can use different modes, and changing the server, role, T3
 endpoint or authorization does not reset it. Every connection and startup gate keeps its
@@ -185,9 +186,9 @@ menu bar is hidden until Alt is pressed.
 
 ## Updates
 
-Updates are checked automatically on launch and every hour, so a running app shows a new Release or beta build in the sidebar without a manual check. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
+Updates are checked automatically on launch and every hour, so a running app shows a new Release or beta build in the sidebar without a manual check. **Settings → Desktop app → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
 on-demand [beta builds](release.md#beta-builds) of main, plus newer stable Releases). Until chosen, an installation follows the channel of the build it runs. Changing the channel discards an update found on the
-previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Application settings says so. The same section shows the updater state with the last check time and a labelled update control.
+previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Desktop app settings says so. The same section shows the updater state with the last check time and a labelled update control.
 
 One control at the right of the Run sidebar footer drives the lifecycle for every installation this window can replace: the desktop app itself, and the server when the window talks to one through its update
 API (a desktop client's remote server, or the server a browser profile uses). A desktop server is one target. Its states:

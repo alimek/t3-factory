@@ -1,9 +1,10 @@
 import { beforeEach, test } from "@e2e-dev/web";
-import { expect } from "e2e";
+import { expect, type Screen } from "e2e";
 import { desktopBridgeOptions, desktopBridgeScript } from "./support/desktop-bridge.ts";
 import {
   approvedBrowser,
   expectServerInstallRequested,
+  openHostDevices,
   openIncompatibleApplicationSettings,
   openApproved,
   openUpgradeReview,
@@ -14,6 +15,69 @@ import {
 beforeEach(async ({ app }) => {
   await remoteFixture(app, "compatible");
   await app.open("/__fixture/remote-browser");
+});
+
+const settingsSections = (screen: Screen) => screen.getByRole("navigation", "Settings sections");
+
+test("the host approves a pending device listed first, which clears the Devices & access attention dot", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openHostDevices(app, browser, "Review tablet");
+  await expect(
+    screen.getByRole("switch", "Allow approved devices on my LAN or tailnet"),
+  ).toBeChecked();
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access, 1 device waiting for approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const devices = screen.getByRole("region", "Devices");
+  await expect(devices.getByRole("group").first()).toContainText("Review tablet");
+  await app.screenshot("host-devices-pending");
+
+  // Act
+  await devices
+    .getByRole("group", "Review tablet, Pending", { exact: true })
+    .getByRole("button", "Approve")
+    .tap();
+
+  // Assert
+  await expect(
+    devices.getByRole("group", "Review tablet, Approved", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access", { exact: true }),
+  ).toBeVisible();
+});
+
+test("the host denies a pending device, which clears the Devices & access attention dot", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openHostDevices(app, browser, "Unknown kiosk");
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access, 1 device waiting for approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const devices = screen.getByRole("region", "Devices");
+
+  // Act
+  await devices
+    .getByRole("group", "Unknown kiosk, Pending", { exact: true })
+    .getByRole("button", "Deny")
+    .tap();
+
+  // Assert
+  await expect(devices.getByRole("group", "Unknown kiosk, Denied", { exact: true })).toBeVisible();
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access", { exact: true }),
+  ).toBeVisible();
 });
 
 test("a new browser profile waits for host approval, then operates the server's shared Flows", async ({
@@ -64,20 +128,20 @@ test("an approved browser installs Factory MCP on the server and retains it afte
   // Arrange
   await browser.setViewport({ width: 1600, height: 1000 });
   await remoteFixture(app, "reporting/remove-registration");
-  await openApproved(app, "/settings/runtime");
-  const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
+  await openApproved(app, "/settings/agent-reporting");
+  const codex = screen.getByRole("group", "Codex", { exact: true });
   await expect(codex.getByRole("status")).toHaveText("Not installed");
-  await expect(codex.getByRole("button", "Install Factory MCP", { exact: true })).toBeEnabled();
+  await expect(codex.getByRole("button", "Install Codex", { exact: true })).toBeEnabled();
   await app.screenshot("remote-reporting-install-available");
 
   // Act
-  await codex.getByRole("button", "Install Factory MCP", { exact: true }).tap();
+  await codex.getByRole("button", "Install Codex", { exact: true }).tap();
 
   // Assert
   await expect(codex.getByRole("status")).toHaveText("Installed");
   await browser.reload();
   await expect(codex.getByRole("status")).toHaveText("Installed");
-  await expect(codex.getByRole("button", "Reinstall Factory MCP")).toBeEnabled();
+  await expect(codex.getByRole("button", "Reinstall Codex", { exact: true })).toBeEnabled();
   await app.screenshot("remote-reporting-installed");
 });
 
@@ -87,12 +151,12 @@ test("an approved browser repairs the server's Factory MCP installation", async 
 }) => {
   // Arrange
   await remoteFixture(app, "reporting/break");
-  await openApproved(app, "/settings/runtime");
-  const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
+  await openApproved(app, "/settings/agent-reporting");
+  const codex = screen.getByRole("group", "Codex", { exact: true });
   await expect(codex.getByRole("status")).toHaveText("Needs attention");
 
   // Act
-  await codex.getByRole("button", "Repair installation", { exact: true }).tap();
+  await codex.getByRole("button", "Repair Codex", { exact: true }).tap();
 
   // Assert
   await expect(codex.getByRole("status")).toHaveText("Installed");
@@ -141,6 +205,31 @@ test("a failed access request can be retried after automatic reconnection", asyn
   // Assert
   await expect(screen.getByLabel("Verification code")).toBeVisible();
   await app.screenshot("access-request-reconnected");
+});
+
+test("an incompatible desktop client can read its installed version even without an available update", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1280, height: 800 });
+  await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client", "idle"));
+
+  // Act
+  await openIncompatibleApplicationSettings(app, screen);
+
+  // Assert
+  const settings = screen.getByRole("dialog", "Local application settings");
+  await expect
+    .poll(() =>
+      browser.evaluate(`getComputedStyle(document.querySelector('[role="dialog"]')).opacity`),
+    )
+    .toBe("1");
+  await app.screenshot("local-installed-version");
+  await expect(
+    settings.getByText("Version 0.1.0 for macOS (Apple Silicon).", { exact: true }),
+  ).toBeVisible();
 });
 
 test("an incompatible desktop client can upgrade itself from local application settings", async ({
