@@ -20,6 +20,9 @@ import {
   type RunLiveMessage,
   type RunNavigationEntry,
   type RunViewLiveMessage,
+  type StudioDefinitions,
+  type StudioListChanges,
+  type StudioLiveMessage,
   type T3Appearance,
   type T3Connection,
 } from "@t3-factory/contracts";
@@ -41,6 +44,8 @@ export interface LiveStreams {
     LiveEnvelope<LaunchChoicesLiveMessage>,
     OperationError
   >;
+  /** Studio's saved Agents with their settings status and Flows with their readiness. */
+  readonly watchStudio: () => Stream.Stream<LiveEnvelope<StudioLiveMessage>, OperationError>;
   /** Theme-color status and the inherited presentation, for approved clients only. */
   readonly watchAppearance: () => Stream.Stream<
     LiveEnvelope<AppearanceLiveMessage>,
@@ -289,6 +294,26 @@ function launchChoicesDiff(
   return messages;
 }
 
+/** Complete replacements and removals of one list by stable id; undefined when nothing changed. */
+function listChanges<A extends { readonly id: string }>(
+  sent: readonly A[],
+  current: readonly A[],
+): StudioListChanges<A> | undefined {
+  const previous = new Map(sent.map((entity) => [entity.id, entity]));
+  const upserts = current.filter((entity) => !Equal.equals(previous.get(entity.id), entity));
+  const present = new Set(current.map((entity) => entity.id));
+  const removals = sent.filter((entity) => !present.has(entity.id)).map((entity) => entity.id);
+  return upserts.length || removals.length ? { upserts, removals } : undefined;
+}
+
+function studioDiff(sent: StudioDefinitions, current: StudioDefinitions): StudioLiveMessage[] {
+  const agents = listChanges(sent.agents, current.agents);
+  const flows = listChanges(sent.flows, current.flows);
+  return agents || flows
+    ? [{ _tag: "changed", ...(agents ? { agents } : {}), ...(flows ? { flows } : {}) }]
+    : [];
+}
+
 type RunState = RunDetail | OperationError;
 type RunView = {
   readonly navigation: readonly RunNavigationEntry[] | null;
@@ -336,6 +361,8 @@ export function makeLiveStreams(
     readonly getRun: (id: string) => Read<RunDetail>;
     readonly readProjectCatalog: () => Read<ProjectCatalog>;
     readonly listFlows: () => Read<readonly FlowDraft[]>;
+    /** One read transaction of both lists. */
+    readonly readStudio: () => Read<StudioDefinitions>;
     readonly getAppearance: () => Effect.Effect<T3Appearance>;
   },
   /** One read transaction, so a view's navigation and Runs describe the same committed state. */
@@ -385,6 +412,14 @@ export function makeLiveStreams(
         ),
         (choices) => [{ _tag: "snapshot", choices }],
         launchChoicesDiff,
+      ),
+    watchStudio: () =>
+      watch(
+        changes,
+        { kind: "studio" },
+        settled(reads.readStudio()),
+        (studio) => [{ _tag: "snapshot", studio }],
+        studioDiff,
       ),
     watchAppearance: () =>
       watch(

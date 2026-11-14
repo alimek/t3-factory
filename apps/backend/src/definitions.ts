@@ -15,6 +15,7 @@ import type {
   FlowGraph,
   FlowGraphInput,
   Result,
+  StudioDefinitions,
 } from "@t3-factory/contracts";
 import {
   CANVAS_COORD_MESSAGE,
@@ -474,7 +475,27 @@ export const makeDefinitions = (
         );
       },
     };
+    /**
+     * Both lists from one read transaction, so every Flow's readiness matches the Agents read
+     * with it. Capabilities load first, outside the transaction, as for the Agent list.
+     */
+    const readStudio = (): Effect.Effect<Result<StudioDefinitions>, unknown> =>
+      agentOperation((sql, capabilities) =>
+        Effect.gen(function* () {
+          const agents = yield* readCurrentAgents(sql);
+          const flows = yield* readCurrentFlows(sql);
+          const readiness = yield* readinessAgents;
+          return {
+            ok: true as const,
+            value: {
+              agents: agents.map((agent) => toAgent(agent, capabilities)),
+              flows: flows.map((flow) => toDraft(flow, readiness)),
+            },
+          };
+        }),
+      ).pipe(Effect.withSpan("Definitions.readStudio"));
     return {
+      readStudio,
       createFlow: (...args: Parameters<typeof operations.createFlow>) =>
         Effect.suspend(() => operations.createFlow(...args)).pipe(
           publishOnSuccess,

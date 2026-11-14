@@ -12,15 +12,19 @@ import { WebSocket } from "@effect/platform-node/NodeWS";
 import {
   LIVE_PATH,
   applyRunChange,
+  applyStudioChange,
   type LiveEnvelope,
   type NavigationLiveMessage,
   type RunDetail,
   type RunViewLiveMessage,
   type RunLiveMessage,
+  type StudioDefinitions,
+  type StudioLiveMessage,
 } from "@t3-factory/contracts";
 import { FactoryLive } from "@t3-factory/contracts/live-rpc";
 import type { Factory } from "../../src/index.ts";
 import type { LiveStreams, makeLiveStreams } from "../../src/live-streams.ts";
+import { assertOk } from "./domain-setup.ts";
 
 /**
  * A running subscription to a live stream, as one window consumes it: every envelope and the
@@ -101,6 +105,23 @@ export function appliedRun(messages: readonly RunLiveMessage[]): RunDetail | und
   return run;
 }
 
+/** Studio's definitions as a client holds them after applying `messages` in order. */
+export function appliedStudio(
+  messages: readonly StudioLiveMessage[],
+): StudioDefinitions | undefined {
+  let studio: StudioDefinitions | undefined;
+  for (const message of messages)
+    studio =
+      message._tag === "snapshot" ? message.studio : studio && applyStudioChange(studio, message);
+  return studio;
+}
+
+/** Studio's definitions as the public Agent and Flow list reads return them. */
+export const publicStudio = async (factory: Factory): Promise<StudioDefinitions> => ({
+  agents: assertOk(await factory.listAgents()),
+  flows: assertOk(await factory.listFlows()),
+});
+
 /** Live delivery never sends the internal concurrency generation after the snapshot. */
 export const withoutGeneration = (run: RunDetail | undefined) => run && { ...run, generation: 0 };
 
@@ -165,6 +186,8 @@ export const liveReads = (factory: Factory): Parameters<typeof makeLiveStreams>[
   getRun: (id) => Effect.promise(() => factory.getRun(id)),
   readProjectCatalog: () => Effect.promise(() => factory.listProjects()),
   listFlows: () => Effect.promise(() => factory.listFlows()),
+  readStudio: () =>
+    Effect.promise(async () => ({ ok: true as const, value: await publicStudio(factory) })),
   getAppearance: () => Effect.die(new Error("Replaced-read live streams serve no appearance.")),
 });
 

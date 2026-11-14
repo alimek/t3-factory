@@ -1,3 +1,4 @@
+import type { AgentDefinition } from "./agent.ts";
 import type { FlowDraft } from "./flow.ts";
 import type { OperationError } from "./result.ts";
 import type { ProjectCatalog } from "./project.ts";
@@ -213,3 +214,75 @@ export type LaunchChoicesLiveMessage =
       readonly _tag: "observed";
       readonly projects: readonly { readonly id: string; readonly observedAt: string }[];
     };
+
+/**
+ * Studio's saved definitions, read in one transaction: each Flow's readiness was resolved against
+ * exactly the Agents delivered with it. Agent usage is derived from the Flows.
+ */
+export interface StudioDefinitions {
+  /** Ordered by `updatedAt` descending, then ascending `id`. */
+  readonly agents: readonly AgentDefinition[];
+  /** Ordered by `createdAt` descending, then ascending `id`. */
+  readonly flows: readonly FlowDraft[];
+}
+
+/** Complete replacement entities and removed ids of one Studio list. */
+export interface StudioListChanges<A> {
+  readonly upserts: readonly A[];
+  readonly removals: readonly string[];
+}
+
+/** Protocol 12. */
+export type StudioLiveMessage =
+  | { readonly _tag: "snapshot"; readonly studio: StudioDefinitions }
+  /**
+   * One committed change set; clients apply both lists together. A Flow may change only its
+   * readiness, without a new revision, when an Agent it places changes.
+   */
+  | {
+      readonly _tag: "changed";
+      readonly agents?: StudioListChanges<AgentDefinition>;
+      readonly flows?: StudioListChanges<FlowDraft>;
+    };
+
+function applyListChanges<A extends { readonly id: string }>(
+  list: readonly A[],
+  changes: StudioListChanges<A> | undefined,
+  after: (a: A, b: A) => boolean,
+): readonly A[] {
+  if (!changes) return list;
+  const upserts = new Map(changes.upserts.map((entity) => [entity.id, entity]));
+  const removals = new Set(changes.removals);
+  const kept = list
+    .filter((entity) => !removals.has(entity.id) && !upserts.has(entity.id))
+    .concat(changes.upserts);
+  // Code-unit comparison, as the backend's SQLite ordering compares these text columns.
+  return kept.sort((a, b) => (after(a, b) ? 1 : after(b, a) ? -1 : 0));
+}
+
+const newerFirst =
+  <A extends { readonly id: string }>(time: (entity: A) => string) =>
+  (a: A, b: A) =>
+    time(a) < time(b) || (time(a) === time(b) && a.id > b.id);
+
+/**
+ * Folds one committed change into the definitions a client holds, in the backend's order.
+ * Untouched entities keep their identity.
+ */
+export function applyStudioChange(
+  studio: StudioDefinitions,
+  message: Exclude<StudioLiveMessage, { readonly _tag: "snapshot" }>,
+): StudioDefinitions {
+  return {
+    agents: applyListChanges(
+      studio.agents,
+      message.agents,
+      newerFirst((agent) => agent.updatedAt),
+    ),
+    flows: applyListChanges(
+      studio.flows,
+      message.flows,
+      newerFirst((flow) => flow.createdAt),
+    ),
+  };
+}
