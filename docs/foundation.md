@@ -62,7 +62,10 @@ and restricted OAuth credentials live outside project repositories.
   (admitted message, selected reply, compact facts and published reply, deleted when the conversation is
   cleared), content-free markers of unfinished invocations for resend notices, and the Language model's
   runtime problem columns, which Test never writes. Existing conversations keep their generation and no
-  other data changes.
+  other data changes. Migration `085` adds the read handles Chat control's Run tools issue: each names a
+  search position or the section versions of one Run read, belongs to a conversation generation and the
+  invocation that issued it, and is deleted with that turn or when the conversation is cleared. It starts
+  empty and no other data changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
