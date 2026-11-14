@@ -103,3 +103,18 @@ export async function createStudioFlow(
   await screen.getByLabel("Flow name").fill(name);
   await screen.getByRole("button", "Create Flow").tap();
 }
+
+/** Another client creates an empty Flow and returns its id. */
+export async function createFlowElsewhere(baseUrl: string | undefined, name: string) {
+  const created = (await flowRequest(baseUrl, "/api/flows", {
+    method: "POST",
+    headers: mutation,
+    body: JSON.stringify({ name }),
+  })) as FlowDraft;
+  return created.id;
+}
+
+/** Another client removes Flow `id`. */
+export async function removeFlowElsewhere(baseUrl: string | undefined, id: string) {
+  await flowRequest(baseUrl, `/api/flows/${id}`, { method: "DELETE", headers: mutation });
+}

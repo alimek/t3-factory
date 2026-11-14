@@ -12,12 +12,28 @@ definition count. Studio and Settings share a short opacity-only transition that
 The current Flow draft survives navigation to the lists and Agents; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
 rule; reload uses the browser's leave warning). Agent edits are guarded independently of a retained Flow draft.
 
-Studio re-reads its Flow and Agent lists after its own writes, on navigation and on retry. Toward a protocol 12 server it also follows
-[live delivery](foundation.md#live-delivery) of which definitions are saved and their revisions, so a create, save or removal from
-[Factory MCP](t3-integration.md#authoring-tools) or another window appears in open lists without navigation. An open editor without unsaved changes
-takes a revision saved elsewhere; with unsaved changes it keeps them and reports the conflict (a Flow offers
-[Compare latest revision](#saving-and-readiness)). An editor whose Flow or Agent was removed elsewhere says so and keeps its draft for copying; a save
-from it still errors and never recreates the definition. Older servers refresh only on Studio's own reads.
+### Live saved definitions
+
+Studio's lists, sidebar counts, the block library, canvas Agent resolution and both editors read saved definitions from one source. Toward a protocol 12 server it is
+[live delivery](foundation.md#live-delivery): a create, save or removal through [Factory MCP](t3-integration.md#authoring-tools), the API, another window or another
+device appears as soon as it is committed, with no navigation or retry. Toward a protocol 9–11 server Studio re-reads after its own writes, on navigation and on retry,
+and says **Live Studio refresh requires a server update**; stale saves and saves to removed definitions are refused there as well. While the live source is
+unsynchronized, Studio writes are disabled like any other live view's and drafts stay editable.
+
+An editor without unsaved changes takes a revision saved elsewhere and briefly says **Updated to revision N**; a Flow waits until a drag, wire, Auto-arrange or text
+composition ends, keeping the view and closing a selection whose target is gone. An editor with unsaved changes keeps them and shows **Revision N was saved
+elsewhere** with **Compare latest revision**, which shows the draft beside saved revision N: a Flow can **Use latest saved Flow** or **Keep local draft against
+revision N**; an Agent can **Load latest revision** (after confirmation) or **Keep my edits against revision N**. Keeping rebinds the draft without saving. A
+newer revision moves the comparison and closes an open confirmation, and an action names the revision it applies. A stale save opens the same comparison. This
+editor's own save never reports itself as saved elsewhere; a revision saved elsewhere meanwhile applies after the reply, a removal wins over a late success, and a
+lost reply shows **Save outcome unknown** with the draft kept and nothing retried.
+
+An editor whose Flow or Agent was removed elsewhere stays open with **This Flow/Agent was removed elsewhere** and its editable draft. Save, Start Run, Duplicate and
+Remove/Delete are disabled and an unsubmitted confirmation closes; a save that still reaches the removed id is rejected and never recreates it. **Copy as JSON**
+copies the draft in the shape `POST /api/flows` / `factory_create_flow` or `POST /api/agents` / `factory_create_agent` accept (name, graph and workspace; or
+name, prompt, execution and exits), or shows it in a selectable box when the clipboard is unavailable. Leaving that editor, opening another Flow or closing Studio
+asks **This Flow/Agent was removed elsewhere. Discard the retained draft?**, also when the draft is clean or the Flow draft is hidden behind another page. A fresh
+link to an absent definition shows **Flow not found** or **Agent not found** with **Back to list**; a failed read stays retryable.
 
 | Destination | Browser URL |
 | --- | --- |
@@ -79,7 +95,7 @@ A save response arriving after leaving refreshes the list without reopening the 
 **Removing.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
 rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at removal time even if the usage count is stale, while removed Flows and Runs never block
 removal. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Runs keep the Agent revision they started with, and removing an absent or removed Agent succeeds.
-Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; an open Studio [follows it live](#shell).
+Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; an open Studio [follows it live](#live-saved-definitions).
 
 See [T3 integration](t3-integration.md) for authorization and capability reads.
 
@@ -151,21 +167,24 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 ### Saving and readiness
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
-validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
+validates the draft through the backend without saving and is cleared by any change. A clean draft shows the readiness delivered with the saved Flow and its Agents;
+an unsaved draft's result applies only to the content, saved revision and saved Agents it checked, so a changed Agent clears it and shows **Agents changed — check
+readiness again**. Readiness is unknown, and Start Run unavailable, while the source is unsynchronized or a newer revision waits. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
 issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit sharing a name or ID with any current Agent exit, including hidden exits (also when
 the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, a Continuation without a prompt and unreachable blocks. Each names the block, the exit and the problem, and selecting one
 inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
 are separate Start gates ([Runs](runs.md)).
 
-A stale save returns a conflict and keeps local work. **Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against
-revision N** (another explicit save, which can conflict again). There is no automatic merge or silent overwrite.
+A stale save or a revision saved elsewhere keeps local work and offers **Compare latest revision** ([live saved definitions](#live-saved-definitions)): choose the
+latest saved Flow to discard local changes, or reconcile and **Keep local draft against revision N** (another explicit save, which can conflict again). There is no
+automatic merge or silent overwrite.
 
 ### Removing a Flow
 
 **Remove** in Flow details removes the editable definition from Studio and the Run composer after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
 the Flow list, also when another view already removed it: removing an absent or removed Flow succeeds. Runs, their captured revisions, shared Agents and T3 threads are unaffected: active Runs continue, Run canvases show the revision each Run started with, and
 removal is not Archive. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
-Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; an open Studio [follows it live](#shell).
+Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; an open Studio [follows it live](#live-saved-definitions).
 
 ## Validation contract
 

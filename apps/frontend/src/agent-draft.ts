@@ -8,13 +8,24 @@ import type {
   AgentEnvironment,
   AgentProviderCapability,
   AgentModelCapability,
+  CreateAgentInput,
 } from "@t3-factory/contracts";
 import { validateCreateAgent, validateUpdateAgent } from "@t3-factory/domain-validation";
-import { api, ApiError } from "./api.ts";
+import { api } from "./api.ts";
+import type { Retained } from "./draft-guard.ts";
 import { randomId } from "./lib/ids.ts";
+import {
+  createSavedDefinitionSync,
+  retainedDraft,
+  type Presence,
+  type SavedView,
+} from "./saved-definition-sync.ts";
 
 /** Factory writes used by one Agent draft; the HTTP client in the app, fakes in Node tests. */
-export type AgentDraftOperations = Pick<typeof api, "createAgent" | "updateAgent" | "removeAgent">;
+export type AgentDraftOperations = Pick<
+  typeof api,
+  "createAgent" | "updateAgent" | "removeAgent" | "getAgent"
+>;
 export type AgentContent = Pick<AgentDefinition, "name" | "prompt" | "execution" | "exits">;
 
 export function optionValue(
@@ -83,7 +94,25 @@ function saveRequest(
   return { save: () => operations.createAgent(input) };
 }
 
+/** The environments, providers and models T3 offers for these worker settings. */
+function workerChoices(
+  execution: AgentExecutionSettings,
+  capabilities: AgentCapabilities | null,
+): AgentDraftSnapshot["choices"] {
+  const environments = capabilities?.environments ?? [];
+  const providers = environments.some((entry) => entry.environmentId === execution.environmentId)
+    ? (capabilities?.providers ?? [])
+    : [];
+  const selectedProvider = providers.find(
+    (entry) => entry.providerInstanceId === execution.providerInstanceId,
+  );
+  const selectedModel = selectedProvider?.models.find((entry) => entry.id === execution.modelId);
+  return { environments, providers, selectedProvider, selectedModel };
+}
+
 export interface AgentDraftSnapshot {
+  readonly presence: Presence;
+  /** The saved Agent whose revision the next save expects; null for a new Agent. */
   readonly saved: AgentDefinition | null;
   readonly content: AgentContent;
   readonly choices: {
@@ -93,57 +122,89 @@ export interface AgentDraftSnapshot {
     readonly selectedModel: AgentModelCapability | undefined;
   };
   readonly dirty: boolean;
+  /** What Studio asks about before discarding this draft. */
+  readonly retained: Retained;
   readonly saving: boolean;
   readonly error: string;
-  readonly conflict: string;
+  /** A newer saved revision than the draft's, or a stale save refused before one was shown. */
+  readonly conflict: { readonly revision: number | null } | null;
+  /** The saved revision shown beside the draft for comparison. */
+  readonly compared: AgentDefinition | null;
+  readonly comparing: boolean;
+  readonly saveOutcomeUnknown: boolean;
+  /** A clean draft took this revision saved elsewhere. */
+  readonly updatedTo: number | null;
   readonly deleting: boolean;
   readonly deleteError: string;
+  readonly canSave: boolean;
+  readonly canDuplicate: boolean;
+  readonly canDelete: boolean;
 }
 
-/** One opened Agent: editable content, worker choices, revision baseline and write outcomes. */
+/**
+ * One opened Agent, or a new one when `id` is null: editable content, worker choices, the saved
+ * Agent Studio's source delivers, write outcomes, revision comparison and removal. A new Agent
+ * follows the source only after its own create.
+ */
 export function createAgentDraft(
-  agent: AgentDefinition | null,
+  id: string | null,
   capabilities: AgentCapabilities | null,
   operations: AgentDraftOperations = api,
 ) {
-  let saved = agent;
-  let content: AgentContent = agent
-    ? contentOf(agent)
-    : {
-        name: "",
-        prompt: "",
-        execution: initialExecution(capabilities),
-        exits: [{ id: randomId(), name: "done", description: "", messageRequired: false }],
-      };
+  let content: AgentContent = {
+    name: "",
+    prompt: "",
+    execution: initialExecution(capabilities),
+    exits: [{ id: randomId(), name: "done", description: "", messageRequired: false }],
+  };
   let baseline = content;
-  let saving = false;
   let error = "";
-  let conflict = "";
   let deleting = false;
   let deleteError = "";
-  let snapshot = current();
   const listeners = new Set<() => void>();
+  const isDirty = () => JSON.stringify(content) !== JSON.stringify(baseline);
+  const sync = createSavedDefinitionSync<AgentDefinition>({
+    dirty: isDirty,
+    adopt(agent) {
+      content = contentOf(agent);
+      baseline = content;
+      error = "";
+    },
+    rebind(agent) {
+      baseline = contentOf(agent);
+      error = "";
+    },
+    readLatest: () => operations.getAgent(id ?? ""),
+    publish,
+  });
+  let snapshot = current();
 
   function current(): AgentDraftSnapshot {
-    const { environmentId, providerInstanceId, modelId } = content.execution;
-    const environments = capabilities?.environments ?? [];
-    const providers = environments.some((entry) => entry.environmentId === environmentId)
-      ? (capabilities?.providers ?? [])
-      : [];
-    const selectedProvider = providers.find(
-      (entry) => entry.providerInstanceId === providerInstanceId,
-    );
-    const selectedModel = selectedProvider?.models.find((entry) => entry.id === modelId);
+    const state = sync.state();
+    const dirty = isDirty();
+    const creating = id === null && state.baseline === null;
+    const present = state.presence === "present";
+    const { conflict } = state;
+    const idle = !state.saving && !deleting;
     return {
-      saved,
+      presence: state.presence,
+      saved: state.baseline,
       content,
-      saving,
+      saving: state.saving,
       error,
       conflict,
+      compared: state.compared,
+      comparing: state.comparing,
+      saveOutcomeUnknown: state.saveOutcomeUnknown,
+      updatedTo: state.updatedTo,
       deleting,
       deleteError,
-      choices: { environments, providers, selectedProvider, selectedModel },
-      dirty: JSON.stringify(content) !== JSON.stringify(baseline),
+      choices: workerChoices(content.execution, capabilities),
+      dirty,
+      retained: retainedDraft(state, dirty),
+      canSave: (creating || present) && idle && !conflict,
+      canDuplicate: present && idle && !dirty,
+      canDelete: present && idle,
     };
   }
   function publish() {
@@ -151,8 +212,11 @@ export function createAgentDraft(
     listeners.forEach((notify) => notify());
   }
   function edit(change: Partial<AgentContent>) {
-    if (saving || deleting) return;
+    const { presence, saving } = sync.state();
+    const editable = id === null || presence === "present" || presence === "removed";
+    if (!editable || saving || deleting) return;
     content = { ...content, ...change };
+    sync.edited();
     publish();
   }
   return {
@@ -163,40 +227,38 @@ export function createAgentDraft(
         listeners.delete(notify);
       };
     },
-    edit,
-    setEnvironmentId(id: string) {
-      edit({ execution: { ...content.execution, environmentId: id } });
+    /** Studio's source view of this Agent; a new Agent ignores it until its own create. */
+    observe(view: SavedView<AgentDefinition>) {
+      if (id === null) return;
+      sync.observe(view);
     },
-    /**
-     * Studio read this Agent again. A newer revision saved elsewhere replaces a clean draft; unsaved
-     * changes stay as they are and show that saving them will report the conflict.
-     */
-    reportSaved(latest: AgentDefinition) {
-      if (!saved || saving || deleting || latest.revision <= saved.revision) return;
-      if (snapshot.dirty)
-        conflict = `This Agent was saved elsewhere as revision ${latest.revision}. Your edits are still here; saving them reports a conflict.`;
-      else {
-        saved = latest;
-        content = contentOf(latest);
-        baseline = content;
-        conflict = "";
-      }
+    /** This editor's Agent as a create or duplicate reply returned it, before the source shows it. */
+    acknowledge(agent: AgentDefinition) {
+      sync.acknowledge(agent);
       publish();
+    },
+    edit,
+    setEnvironmentId(environmentId: string) {
+      edit({ execution: { ...content.execution, environmentId } });
     },
     clearDeleteError() {
       deleteError = "";
       publish();
     },
     async delete() {
-      if (!saved || saving || deleting) return false;
+      const saved = sync.state().baseline;
+      if (!saved || !snapshot.canDelete) return false;
       deleting = true;
       deleteError = "";
+      sync.beginRemove();
       publish();
       try {
         await operations.removeAgent(saved.id);
+        sync.removeSettled(true);
         baseline = content;
         return true;
       } catch (cause) {
+        sync.removeSettled(false);
         deleteError =
           cause instanceof Error ? cause.message : "Factory could not delete this Agent.";
         return false;
@@ -206,33 +268,50 @@ export function createAgentDraft(
       }
     },
     async save() {
-      if (saving || deleting) return;
-      const request = saveRequest(saved, content, operations);
+      if (!snapshot.canSave) return;
+      const request = saveRequest(sync.state().baseline, content, operations);
       if ("error" in request) {
         error = request.error;
         publish();
         return;
       }
-      saving = true;
+      sync.beginSave();
       error = "";
       publish();
       try {
-        saved = await request.save();
-        content = contentOf(saved);
-        baseline = content;
-        conflict = "";
-        return saved;
+        const saved = await request.save();
+        sync.saveSucceeded(saved);
+        return sync.state().presence === "present" ? saved : undefined;
       } catch (cause) {
-        error =
-          cause instanceof Error
-            ? cause.message
-            : "Could not save this Agent. Your edits are still here.";
-        if (cause instanceof ApiError && cause.detail.code === "conflict") conflict = error;
+        if (sync.saveFailed(cause) !== "unknown")
+          error =
+            cause instanceof Error
+              ? cause.message
+              : "Could not save this Agent. Your edits are still here.";
         return undefined;
       } finally {
-        saving = false;
         publish();
       }
+    },
+    /** Shows the newest saved revision beside the local draft, which stays as it is. */
+    async compareLatest() {
+      if (await sync.compare()) return;
+      error = "Could not load the latest revision. Try again.";
+      publish();
+    },
+    closeComparison: () => sync.closeComparison(),
+    /** Replaces the local draft with revision `revision`, if it is still the newest. */
+    takeLatest: (revision: number) => sync.takeLatest(revision),
+    /** Keeps the local edits, unsaved, against revision `revision` for another explicit save. */
+    keepMine: (revision: number) => sync.keepMine(revision),
+    /** The local draft as `factory_create_agent` and `POST /api/agents` accept it. */
+    createInput(): CreateAgentInput {
+      return {
+        name: content.name,
+        prompt: content.prompt,
+        execution: content.execution,
+        exits: content.exits,
+      };
     },
     setOption(id: string, value: AgentModelOptionValue["value"]) {
       edit({

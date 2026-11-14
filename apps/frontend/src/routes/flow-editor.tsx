@@ -1,5 +1,5 @@
 import { MutationGate } from "@/client-gate";
-import { useDraftGuard } from "../draft-guard.ts";
+import { useDraftGuard, type Retained } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
@@ -46,18 +46,28 @@ import {
   type FlowDraftSnapshot,
 } from "../flow-draft.ts";
 import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
+import {
+  DefinitionUnavailable,
+  RemovedElsewhereNotice,
+  RevisionComparePanel,
+  SaveOutcomeUnknownNotice,
+  UpdatedToNotice,
+} from "../components/definition-reconciliation.tsx";
+
+/** The saved Agents' identity and revisions, which Flow readiness depends on. */
+const agentGeneration = (agents: readonly AgentDefinition[]) =>
+  agents.map((agent) => `${agent.id}:${agent.revision}`).join(",");
 
 /**
- * This editor's Flow draft, saved and removed through Studio's definitions and told when the
- * editor is shown or hidden and when Studio's saved Flows or Agents were read again. Studio's guard learns
- * of changes to unsaved changes from the draft's notification itself, before any render, and only
+ * This editor's Flow draft, saved and removed through Studio's definitions and fed by its
+ * saved-definition source, also while hidden behind another Studio page. Studio's guard learns
+ * of what the draft retains from the draft's notification itself, before any render, and only
  * when that fact changes.
  */
 function useOpenedFlowDraft(
   id: string,
   definitions: StudioDefinitions,
-  active: boolean,
-  reportDraft: (id: string, dirty: boolean) => void,
+  reportDraft: (id: string, retained: Retained) => void,
 ) {
   const [draft] = useState(() =>
     createFlowDraft(id, {
@@ -68,24 +78,44 @@ function useOpenedFlowDraft(
     }),
   );
   useEffect(() => {
-    draft.reportVisibility(active);
-    // An editor that is no longer mounted is hidden, so late answers start no readiness read.
-    return () => draft.reportVisibility(false);
-  }, [draft, active]);
-  useEffect(() => {
-    let { agents, flows } = definitions.getSnapshot();
-    return definitions.subscribe(() => {
-      const next = definitions.getSnapshot();
-      if (next.flows.value !== flows.value) {
-        const latest = next.flows.value?.find((flow) => flow.id === id);
-        if (latest) draft.reportSaved(latest);
-      }
-      if (next.agents.value !== agents.value) draft.reportAgentsRefreshed();
-      ({ agents, flows } = next);
-    });
+    const follow = () => {
+      const agents = definitions.getSnapshot().agents.value;
+      if (agents) draft.observeAgents(agentGeneration(agents));
+      draft.observe(definitions.view("flows", id));
+    };
+    follow();
+    return definitions.subscribe(follow);
   }, [definitions, draft, id]);
   useDraftGuard(draft, id, reportDraft);
   return { draft, state: useFlowDraftSnapshot(draft) };
+}
+
+/**
+ * Pointer gestures (moving a block, drawing a wire, dragging from the library), Auto-arrange and
+ * text composition defer adopting a revision saved elsewhere until they end.
+ */
+function useInteractionDeferral(draft: FlowDraftModel) {
+  const onArranging = useCallback(
+    (arranging: boolean) => (arranging ? draft.beginInteraction() : draft.endInteraction()),
+    [draft],
+  );
+  return {
+    onArranging,
+    handlers: {
+      onPointerDownCapture() {
+        draft.beginInteraction();
+        const end = () => {
+          window.removeEventListener("pointerup", end, true);
+          window.removeEventListener("pointercancel", end, true);
+          draft.endInteraction();
+        };
+        window.addEventListener("pointerup", end, true);
+        window.addEventListener("pointercancel", end, true);
+      },
+      onCompositionStartCapture: draft.beginInteraction,
+      onCompositionEndCapture: draft.endInteraction,
+    },
+  };
 }
 
 /** Keeps the last selected block rendered while the floating panel plays its close motion. */
@@ -206,26 +236,6 @@ function useLibraryAgents(definitions: StudioDefinitions) {
   };
 }
 
-/** Shown once a read that answered after the latest change this Studio knows of omits Flow `id`. */
-function RemovedElsewhereNotice({
-  definitions,
-  id,
-}: {
-  definitions: StudioDefinitions;
-  id: string;
-}) {
-  const { value, synchronized } = useStudioRead(definitions, "flows");
-  if (!synchronized || value === null || value.some((flow) => flow.id === id)) return null;
-  return (
-    <Alert variant="attention" role="status" className="rounded-none border-x-0 border-t-0">
-      <AlertTitle>This Flow was removed elsewhere.</AlertTitle>
-      <AlertDescription>
-        Your draft stays here for copying; saving it will not recreate the Flow.
-      </AlertDescription>
-    </Alert>
-  );
-}
-
 const PANEL_WIDTH = 344;
 /** Matches `--duration-panel-out`; the reduced-motion fade is shorter and ends first. */
 const PANEL_CLOSE_MS = 140;
@@ -241,14 +251,15 @@ export function FlowDetail({
   definitions: StudioDefinitions;
   active: boolean;
   registerEscape: (handler: () => void) => () => void;
-  reportDraft: (id: string, dirty: boolean) => void;
+  reportDraft: (id: string, retained: Retained) => void;
 }) {
   const canvas = useRef<HTMLElement>(null);
   const placement = useRef<DropAt | null>(null);
-  const { draft, state } = useOpenedFlowDraft(id, definitions, active, reportDraft);
+  const { draft, state } = useOpenedFlowDraft(id, definitions, reportDraft);
+  const deferral = useInteractionDeferral(draft);
   const { agents, agentError } = useLibraryAgents(definitions);
   const [libraryOpen, setLibraryOpen] = useState(true);
-  const { saved, error, readiness } = state;
+  const { saved, readiness } = state;
   const { graph, name } = state.content;
   const change = (next: FlowGraph) => draft.edit({ graph: next });
   const editBlock = (next: FlowBlock) => change(replaceBlock(graph, next));
@@ -267,21 +278,13 @@ export function FlowDetail({
     select(next.id);
   }
   const dropAt: DropAt = (x, y, grab) => placement.current?.(x, y, grab) ?? null;
-  if (!saved)
-    return (
-      <Page>
-        <p role={error ? "alert" : "status"} className="text-sm text-muted-foreground">
-          {error || "Opening Flow…"}
-        </p>
-      </Page>
-    );
+  if (!saved) return <FlowUnavailable definitions={definitions} state={state} />;
   return (
     <CanvasLayout>
       <h1 className="sr-only">{name}</h1>
       <EditorToolbar draft={draft} state={state} revision={saved.revision} flowId={id} />
-      <RemovedElsewhereNotice definitions={definitions} id={id} />
       <DraftProblems draft={draft} state={state} onSelect={select} />
-      <div inert={state.busy} className="flex min-h-0 flex-1">
+      <div inert={state.busy} className="flex min-h-0 flex-1" {...deferral.handlers}>
         <BlockLibrary
           open={libraryOpen}
           onOpenChange={setLibraryOpen}
@@ -301,6 +304,7 @@ export function FlowDetail({
             scope={id}
             savedGraph={saved.id === id ? saved.graph : undefined}
             busy={state.busy}
+            onArranging={deferral.onArranging}
             placementRef={placement}
             onSelect={select}
             onSelectWire={selectWire}
@@ -321,6 +325,34 @@ export function FlowDetail({
         </div>
       </div>
     </CanvasLayout>
+  );
+}
+
+/** Opening, a fresh link to an absent Flow, or a failed read of Studio's Flows. */
+function FlowUnavailable({
+  definitions,
+  state,
+}: {
+  definitions: StudioDefinitions;
+  state: FlowDraftSnapshot;
+}) {
+  const navigate = useStudioNavigation();
+  const { error } = useStudioRead(definitions, "flows");
+  if (state.presence === "loading" && !error)
+    return (
+      <Page>
+        <p role="status" className="text-sm text-muted-foreground">
+          Opening Flow…
+        </p>
+      </Page>
+    );
+  return (
+    <DefinitionUnavailable
+      noun="Flow"
+      failed={state.presence === "loading"}
+      onBack={() => void navigate({ tab: "flows" })}
+      onRetry={definitions.source === "manual" ? definitions.refresh : undefined}
+    />
   );
 }
 
@@ -416,7 +448,15 @@ function EditorToolbar({
         <ListChecks aria-hidden /> Check readiness
       </Button>
       <MutationGate>
-        <Button disabled={!state.canSave} onClick={() => void draft.save()}>
+        <Button
+          disabled={!state.canSave}
+          title={
+            state.presence === "removed"
+              ? "Save is unavailable: this Flow was removed elsewhere."
+              : undefined
+          }
+          onClick={() => void draft.save()}
+        >
           <Save aria-hidden /> Save Flow
         </Button>
       </MutationGate>
@@ -433,7 +473,9 @@ function EditorToolbar({
 function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: FlowDraftSnapshot }) {
   const navigate = useStudioNavigation();
   const [open, setOpen] = useState(false);
-  const { removing, removalError, busy, dirty, content } = state;
+  const { removing, removalError, dirty, content } = state;
+  // A removal elsewhere closes an unsubmitted confirmation; a submitted removal completes.
+  if (open && !removing && state.presence === "removed") setOpen(false);
   async function confirmRemove() {
     if (!(await draft.remove())) return;
     setOpen(false);
@@ -445,7 +487,7 @@ function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: Flow
         <Button
           type="button"
           variant="outline"
-          disabled={busy || removing}
+          disabled={!state.canRemove}
           className="text-destructive hover:text-destructive"
           onClick={() => {
             draft.clearRemovalError();
@@ -519,8 +561,17 @@ function DraftProblems({
   onSelect: (blockId: string | null) => void;
 }) {
   const { conflict } = state;
+  if (state.presence === "removed")
+    return <RemovedElsewhereNotice noun="Flow" createInput={draft.createInput} />;
   return (
     <>
+      {state.saveOutcomeUnknown && <SaveOutcomeUnknownNotice noun="Flow" />}
+      {state.agentsChanged && (
+        <Alert variant="attention" role="status" className="rounded-none border-x-0 border-t-0">
+          <AlertTitle>Agents changed — check readiness again</AlertTitle>
+        </Alert>
+      )}
+      <UpdatedToNotice revision={state.updatedTo} />
       {state.error && (
         <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
           <AlertTitle>{state.error}</AlertTitle>
@@ -536,17 +587,32 @@ function DraftProblems({
         </Alert>
       )}
       {conflict.status !== "none" && (
-        <ConflictPanel
+        <RevisionComparePanel
+          noun="Flow"
+          revision={conflict.status === "compared" ? conflict.latest.revision : conflict.revision}
           local={state.content}
-          latest={conflict.status === "compared" ? conflict.latest : null}
-          onCompare={draft.compareLatest}
-          onTakeLatest={draft.takeLatest}
-          onKeepLocal={draft.keepLocal}
+          compared={
+            conflict.status === "compared"
+              ? { revision: conflict.latest.revision, content: flowContentOf(conflict.latest) }
+              : null
+          }
+          takeLabel="Use latest saved Flow"
+          keepLabel={(revision) => `Keep local draft against revision ${revision}`}
+          confirmTake={false}
+          onCompare={() => void draft.compareLatest()}
+          onTake={draft.takeLatest}
+          onKeep={draft.keepLocal}
         />
       )}
     </>
   );
 }
+
+const flowContentOf = (flow: FlowDraft): FlowContent => ({
+  name: flow.name,
+  workspace: flow.workspace,
+  graph: flow.graph,
+});
 
 const PANEL_BADGES: Record<FlowBlock["kind"], string> = {
   agent: "AGENT BLOCK",
@@ -623,70 +689,5 @@ function BlockPanel({
         />
       </div>
     </aside>
-  );
-}
-
-function ConflictPanel({
-  local,
-  latest,
-  onCompare,
-  onTakeLatest,
-  onKeepLocal,
-}: {
-  local: FlowContent;
-  latest: FlowDraft | null;
-  onCompare: () => Promise<void>;
-  onTakeLatest: () => void;
-  onKeepLocal: () => void;
-}) {
-  return (
-    <section
-      aria-label="Reconcile Flow"
-      className="grid gap-3 border-b border-attention/40 bg-attention/5 px-4 py-3"
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-foreground">
-          Your local draft is preserved. Load the latest revision to compare before choosing what to
-          save.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => void onCompare()}>
-          Compare latest revision
-        </Button>
-      </div>
-      {latest && (
-        <>
-          <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
-            <div className="min-w-0">
-              <h3 className="mb-1.5 text-base font-semibold">Your local draft</h3>
-              <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify(local, null, 2)}
-              </pre>
-            </div>
-            <div className="min-w-0">
-              <h3 className="mb-1.5 text-base font-semibold">Saved revision {latest.revision}</h3>
-              <pre className="max-h-64 overflow-auto rounded-md border bg-muted p-2 font-mono text-2xs">
-                {JSON.stringify(
-                  { name: latest.name, workspace: latest.workspace, graph: latest.graph },
-                  null,
-                  2,
-                )}
-              </pre>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onTakeLatest}>
-              Use latest saved Flow
-            </Button>
-            <Button variant="outline" size="sm" onClick={onKeepLocal}>
-              Keep local draft against revision {latest.revision}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Keeping your draft requires another explicit Save Flow. Reconcile any differences
-              first.
-            </p>
-          </div>
-        </>
-      )}
-    </section>
   );
 }

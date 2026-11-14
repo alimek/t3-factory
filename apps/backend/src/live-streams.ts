@@ -6,8 +6,9 @@ import {
   runEntityKeys,
   type AppearanceLiveMessage,
   type ConnectionLiveMessage,
+  type AgentDefinition,
+  type DefinitionChanges,
   type DefinitionsLiveMessage,
-  type DefinitionVersions,
   type FlowDraft,
   type LaunchChoices,
   type LaunchChoicesLiveMessage,
@@ -22,6 +23,7 @@ import {
   type RunLiveMessage,
   type RunNavigationEntry,
   type RunViewLiveMessage,
+  type StudioDefinitions,
   type T3Appearance,
   type T3Connection,
 } from "@t3-factory/contracts";
@@ -43,7 +45,7 @@ export interface LiveStreams {
     LiveEnvelope<LaunchChoicesLiveMessage>,
     OperationError
   >;
-  /** Which Flows and Agents are saved and their latest revisions, for Studio. */
+  /** Studio's saved Agents with settings status and Flows with readiness. */
   readonly watchDefinitions: () => Stream.Stream<
     LiveEnvelope<DefinitionsLiveMessage>,
     OperationError
@@ -125,11 +127,27 @@ function connectionDiff(sent: T3Connection, current: T3Connection): ConnectionLi
     : [{ _tag: "changed", connection: current }];
 }
 
-const definitionsDiff = (
-  sent: DefinitionVersions,
-  current: DefinitionVersions,
-): DefinitionsLiveMessage[] =>
-  Equal.equals(sent, current) ? [] : [{ _tag: "changed", versions: current }];
+/** Replacements and removals of definitions by stable id, or nothing when none changed. */
+function definitionChanges<T extends { readonly id: string }>(
+  sent: readonly T[],
+  current: readonly T[],
+): DefinitionChanges<T> | undefined {
+  const previous = new Map(sent.map((entity) => [entity.id, entity]));
+  const upserts = current.filter((entity) => !Equal.equals(previous.get(entity.id), entity));
+  const present = new Set(current.map((entity) => entity.id));
+  const removals = sent.filter((entity) => !present.has(entity.id)).map((entity) => entity.id);
+  return upserts.length || removals.length ? { upserts, removals } : undefined;
+}
+
+function definitionsDiff(
+  sent: StudioDefinitions,
+  current: StudioDefinitions,
+): DefinitionsLiveMessage[] {
+  const agents = definitionChanges<AgentDefinition>(sent.agents, current.agents);
+  const flows = definitionChanges<FlowDraft>(sent.flows, current.flows);
+  if (!agents && !flows) return [];
+  return [{ _tag: "changed", ...(agents ? { agents } : {}), ...(flows ? { flows } : {}) }];
+}
 
 const appearanceDiff = (sent: T3Appearance, current: T3Appearance): AppearanceLiveMessage[] =>
   Equal.equals(sent, current) ? [] : [{ _tag: "changed", appearance: current }];
@@ -349,7 +367,7 @@ export function makeLiveStreams(
     readonly getRun: (id: string) => Read<RunDetail>;
     readonly readProjectCatalog: () => Read<ProjectCatalog>;
     readonly listFlows: () => Read<readonly FlowDraft[]>;
-    readonly readDefinitionVersions: () => Read<DefinitionVersions>;
+    readonly readStudioDefinitions: () => Read<StudioDefinitions>;
     readonly getAppearance: () => Effect.Effect<T3Appearance>;
   },
   /** One read transaction, so a view's navigation and Runs describe the same committed state. */
@@ -404,8 +422,8 @@ export function makeLiveStreams(
       watch(
         changes,
         { kind: "definitions" },
-        settled(reads.readDefinitionVersions()),
-        (versions) => [{ _tag: "snapshot", versions }],
+        settled(reads.readStudioDefinitions()),
+        (definitions) => [{ _tag: "snapshot", definitions }],
         definitionsDiff,
       ),
     watchAppearance: () =>

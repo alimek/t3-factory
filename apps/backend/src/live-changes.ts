@@ -7,7 +7,7 @@ export type LiveScope =
   | { readonly kind: "view"; readonly navigation: boolean; readonly runIds: ReadonlySet<string> }
   /** The Run composer's Project catalog and Flows. */
   | { readonly kind: "launchChoices" }
-  /** Studio's saved Flows and Agents. */
+  /** Studio's saved Agents and Flows. */
   | { readonly kind: "definitions" }
   | { readonly kind: "appearance" };
 

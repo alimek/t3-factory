@@ -1,10 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useRouter } from "@tanstack/react-router";
+import type { Retained } from "./draft-guard.ts";
 import { validateAppSearch, type StudioSelection } from "./settings-navigation.ts";
 
-export type StudioDraft =
-  | { kind: "flow"; id: string; dirty: boolean }
-  | { kind: "agent"; id: string; dirty: boolean };
+/** A draft Studio asks about before discarding: unsaved, or retained after a removal elsewhere. */
+export type StudioDraft = {
+  kind: "flow" | "agent";
+  id: string;
+  retained: Exclude<Retained, null>;
+};
 
 export type StudioDraftGuardInput = {
   flow?: StudioDraft | undefined;
@@ -49,7 +53,7 @@ function staysWithDraft(studio: StudioSelection | undefined, draft: StudioDraft)
 function liveDrafts(input: StudioDraftGuardInput): StudioDraft[] {
   const flow = input.flowRef ? input.flowRef.current : input.flow;
   const agent = input.agentRef ? input.agentRef.current : input.agent;
-  return [flow, agent].filter((draft): draft is StudioDraft => !!draft?.dirty);
+  return [flow, agent].filter((draft): draft is StudioDraft => !!draft);
 }
 
 export function useStudioDraftGuard(input: StudioDraftGuardInput) {
@@ -60,7 +64,7 @@ export function useStudioDraftGuard(input: StudioDraftGuardInput) {
     inputRef.current = input;
   }, [input]);
   const [decision, setDecision] = useState<Decision>({ status: "idle" });
-  const dirty = !!(input.flow?.dirty || input.agent?.dirty);
+  const dirty = !!(input.flow || input.agent);
   useEffect(() => {
     const unblock = router.history.block({
       enableBeforeUnload: dirty,

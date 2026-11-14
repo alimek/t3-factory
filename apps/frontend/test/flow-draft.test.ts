@@ -1,16 +1,17 @@
 import { expect, it } from "vite-plus/test";
+import { OfflineError } from "../src/transport.ts";
 import {
+  agentsAfter,
   comparedFlow,
   conflictedFlow,
+  deliver,
   editedFlow,
   flowDraft,
   held,
-  hiddenFlow,
-  memoryFactory,
   notReady,
   openedFlow,
   rejection,
-  settled,
+  savedElsewhere,
 } from "./support/flow-draft.ts";
 
 it("a save sends the edited Flow against the saved revision and adopts the accepted revision", async () => {
@@ -101,7 +102,7 @@ it("taking the latest saved Flow discards local edits and leaves a clean draft a
   const { draft } = await comparedFlow();
 
   // Act
-  draft.takeLatest();
+  draft.takeLatest(2);
 
   // Assert
   expect(draft.getSnapshot()).toMatchObject({
@@ -117,7 +118,7 @@ it("taking the latest saved Flow discards local edits and leaves a clean draft a
 it("after keeping the local draft, another client's save makes the next save conflict again", async () => {
   // Arrange
   const { draft, factory } = await comparedFlow();
-  draft.keepLocal();
+  draft.keepLocal(2);
   factory.saveElsewhere("Theirs again");
 
   // Act
@@ -152,162 +153,277 @@ it("a failed comparison keeps the conflict and reports the failure", async () =>
   });
 });
 
-it("a clean Flow shown again takes Factory's current readiness but not another client's revision", async () => {
+it("a comparison moves to a newer revision, and taking the revision it showed before does nothing", async () => {
   // Arrange
-  const { draft, factory } = await hiddenFlow();
-  factory.saveElsewhere("Theirs", notReady);
+  const setup = await editedFlow("Mine");
+  savedElsewhere(setup, "Second");
+  await setup.draft.compareLatest();
+  savedElsewhere(setup, "Third");
 
   // Act
-  draft.reportVisibility(true);
-  await settled();
+  const taken = setup.draft.takeLatest(2);
 
   // Assert
-  expect(draft.getSnapshot()).toMatchObject({
+  expect(taken).toBe(false);
+  expect(setup.draft.getSnapshot()).toMatchObject({
     saved: { revision: 1 },
-    content: { name: "Review" },
-    dirty: false,
-    readiness: notReady,
+    content: { name: "Mine" },
+    conflict: { status: "compared", latest: { revision: 3, name: "Third" } },
   });
 });
 
-it("refreshed saved Agents re-read readiness for a visible clean Flow", async () => {
+it("a newer revision delivered by Studio's source replaces a clean draft", async () => {
   // Arrange
-  const { draft, factory } = await openedFlow();
-  factory.saveElsewhere("Theirs", notReady);
+  const setup = await openedFlow();
 
   // Act
-  draft.reportAgentsRefreshed();
-  await settled();
+  savedElsewhere(setup, "Theirs");
 
   // Assert
-  expect(draft.getSnapshot()).toMatchObject({ content: { name: "Review" }, readiness: notReady });
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 2, name: "Theirs" },
+    content: { name: "Theirs" },
+    dirty: false,
+    updatedTo: 2,
+    conflict: { status: "none" },
+  });
 });
 
-it("refreshed saved Agents start no read for a hidden Flow", async () => {
+it("a newer revision delivered by Studio's source keeps unsaved edits and names that revision", async () => {
   // Arrange
-  const { draft, factory } = await hiddenFlow();
-  const reads = factory.getFlow.mock.calls.length;
+  const setup = await editedFlow("Mine");
 
   // Act
-  draft.reportAgentsRefreshed();
-  await settled();
+  savedElsewhere(setup, "Theirs");
 
   // Assert
-  expect(factory.getFlow).toHaveBeenCalledTimes(reads);
-  expect(draft.getSnapshot().readiness).toBeNull();
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 1 },
+    content: { name: "Mine" },
+    dirty: true,
+    conflict: { status: "detected", revision: 2 },
+    canSave: false,
+  });
 });
 
-it("refreshed saved Agents make an unsaved draft's readiness unknown without reading saved readiness", async () => {
+it("a newer revision delivered during an interaction is adopted when it ends with the draft still clean", async () => {
   // Arrange
-  const { draft, factory } = await editedFlow();
-  const reads = factory.getFlow.mock.calls.length;
+  const setup = await openedFlow();
+  setup.draft.beginInteraction();
+  savedElsewhere(setup, "Theirs");
 
   // Act
-  draft.reportAgentsRefreshed();
-  await settled();
+  setup.draft.endInteraction();
 
   // Assert
-  expect(factory.getFlow).toHaveBeenCalledTimes(reads);
-  expect(draft.getSnapshot()).toMatchObject({ content: { name: "Edited" }, readiness: null });
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 2 },
+    content: { name: "Theirs" },
+    dirty: false,
+  });
 });
 
-it("a failed readiness refresh leaves readiness unknown and reports the error", async () => {
+it("an edit made during an interaction keeps the draft and names the newer revision when it ends", async () => {
   // Arrange
-  const { draft, factory } = await openedFlow();
-  factory.getFlow.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  const setup = await openedFlow();
+  setup.draft.beginInteraction();
+  savedElsewhere(setup, "Theirs");
+  setup.draft.edit({ name: "Mine" });
 
   // Act
-  draft.reportAgentsRefreshed();
-  await settled();
+  setup.draft.endInteraction();
 
   // Assert
-  expect(draft.getSnapshot()).toMatchObject({
-    readiness: null,
-    error: "Failed to fetch",
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 1 },
+    content: { name: "Mine" },
+    conflict: { status: "detected", revision: 2 },
+  });
+});
+
+it("a clean Flow shows the readiness Studio's source delivers with its Agents at the same revision", async () => {
+  // Arrange
+  const setup = await openedFlow();
+
+  // Act
+  deliver(setup, { ...setup.factory.latest(), readiness: notReady });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 1 },
+    content: { name: "Review" },
+    readiness: notReady,
     canStartRun: false,
   });
 });
 
-it("a readiness answer requested before an edit is dropped", async () => {
+it("changed saved Agents make a checked unsaved draft's readiness unknown and ask for another check", async () => {
   // Arrange
-  const { draft, factory } = await openedFlow();
-  const refresh = held(factory.getFlow);
-  draft.reportAgentsRefreshed();
-  draft.edit({ name: "Edited" });
+  const { draft } = await editedFlow();
+  await draft.check();
 
   // Act
-  refresh.answer(factory.latest());
-  await settled();
+  draft.observeAgents(agentsAfter);
 
   // Assert
-  expect(draft.getSnapshot()).toMatchObject({ dirty: true, readiness: null });
+  expect(draft.getSnapshot()).toMatchObject({ readiness: null, agentsChanged: true });
 });
 
-it("a readiness answer requested before a save is dropped", async () => {
+it("a readiness check answering after the saved Agents changed is not shown", async () => {
   // Arrange
-  const { draft, factory } = await openedFlow();
-  const refresh = held(factory.getFlow);
-  draft.reportAgentsRefreshed();
-  factory.updateFlow.mockRejectedValueOnce(rejection());
+  const { draft, factory } = await editedFlow();
+  const check = held(factory.validateFlow);
+  const checking = draft.check();
+  draft.observeAgents(agentsAfter);
+
+  // Act
+  check.answer({ ready: true, issues: [] });
+  await checking;
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ readiness: null, agentsChanged: true });
+});
+
+it("an unsynchronized source makes readiness unknown and Start Run unavailable", async () => {
+  // Arrange
+  const setup = await openedFlow();
+
+  // Act
+  setup.draft.observe({ definition: setup.factory.latest(), synchronized: false });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({ readiness: null, canStartRun: false });
+});
+
+it("a fresh link to an absent Flow is not found rather than removed", () => {
+  // Arrange
+  const setup = flowDraft();
+
+  // Act
+  deliver(setup, null);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    presence: "missing",
+    saved: null,
+    retained: null,
+    canSave: false,
+  });
+});
+
+it("a Flow removed elsewhere keeps its draft editable, disables its actions and is retained for discard", async () => {
+  // Arrange
+  const setup = await openedFlow();
+
+  // Act
+  deliver(setup, null);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    presence: "removed",
+    content: { name: "Review" },
+    dirty: false,
+    retained: "removed",
+    canSave: false,
+    canStartRun: false,
+    canRemove: false,
+  });
+});
+
+it("a removed Flow's draft is copied in the shape Flow creation accepts", async () => {
+  // Arrange
+  const setup = await openedFlow();
+  deliver(setup, null);
+  setup.draft.edit({ name: "Recovered" });
+
+  // Act
+  const input = setup.draft.createInput();
+
+  // Assert
+  expect(input).toStrictEqual({
+    name: "Recovered",
+    graph: setup.factory.latest().graph,
+    workspace: setup.factory.latest().workspace,
+  });
+});
+
+it("this editor's save delivered before its reply raises no saved-elsewhere notice", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  const reply = held(setup.factory.updateFlow);
+  const saving = setup.draft.save();
+  const mine = { ...setup.factory.latest(), name: "Mine", revision: 2 };
+  deliver(setup, mine);
+
+  // Act
+  reply.answer(mine);
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 2 },
+    dirty: false,
+    updatedTo: null,
+    conflict: { status: "none" },
+  });
+});
+
+it("a revision saved elsewhere while this editor's save is pending is adopted after its reply", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  const reply = held(setup.factory.updateFlow);
+  const saving = setup.draft.save();
+  deliver(setup, { ...setup.factory.latest(), name: "Theirs", revision: 3 });
+
+  // Act
+  reply.answer({ ...setup.factory.latest(), name: "Mine", revision: 2 });
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3, name: "Theirs" },
+    content: { name: "Theirs" },
+    dirty: false,
+    updatedTo: 3,
+  });
+});
+
+it("a removal elsewhere beats this editor's late save success", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  const reply = held(setup.factory.updateFlow);
+  const saving = setup.draft.save();
+  deliver(setup, null);
+
+  // Act
+  reply.answer({ ...setup.factory.latest(), name: "Mine", revision: 2 });
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    presence: "removed",
+    content: { name: "Mine" },
+    retained: "removed",
+    canSave: false,
+  });
+});
+
+it("a save whose reply is lost reports an unknown outcome, keeps the draft and sends nothing more", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow("Mine");
+  factory.updateFlow.mockRejectedValueOnce(new OfflineError());
+
+  // Act
   await draft.save();
 
-  // Act
-  refresh.answer(factory.latest());
-  await settled();
-
   // Assert
-  expect(draft.getSnapshot().readiness).toBeNull();
-});
-
-it("a readiness answer requested before the editor was hidden is dropped", async () => {
-  // Arrange
-  const { draft, factory } = await openedFlow();
-  const refresh = held(factory.getFlow);
-  draft.reportAgentsRefreshed();
-  draft.reportVisibility(false);
-
-  // Act
-  refresh.answer(factory.latest());
-  await settled();
-
-  // Assert
-  expect(draft.getSnapshot().readiness).toBeNull();
-});
-
-it("a readiness answer arriving after a newer request's answer is dropped", async () => {
-  // Arrange
-  const { draft, factory } = await openedFlow();
-  const older = held(factory.getFlow);
-  draft.reportAgentsRefreshed();
-  factory.saveElsewhere("Theirs", notReady);
-  draft.reportAgentsRefreshed();
-  await settled();
-
-  // Act
-  older.answer({ ...factory.latest(), readiness: { ready: true, issues: [] } });
-  await settled();
-
-  // Assert
-  expect(draft.getSnapshot().readiness).toStrictEqual(notReady);
-});
-
-it("a failed load reports the failure and offers no editable draft", async () => {
-  // Arrange
-  const factory = memoryFactory();
-  factory.getFlow.mockRejectedValueOnce(
-    rejection({ code: "not_found", message: "Flow not found." }),
-  );
-
-  // Act
-  const { draft } = flowDraft(factory);
-  await settled();
-
-  // Assert
+  expect(factory.updateFlow).toHaveBeenCalledTimes(1);
   expect(draft.getSnapshot()).toMatchObject({
-    status: "failed",
-    saved: null,
-    error: "Flow not found.",
-    canSave: false,
+    content: { name: "Mine" },
+    dirty: true,
+    busy: false,
+    saveOutcomeUnknown: true,
+    error: "",
   });
 });
 
@@ -332,6 +448,21 @@ it("an accepted Flow removal clears unsaved changes before its caller navigates"
     { dirty: false, removing: false },
   ]);
   unsubscribe();
+});
+
+it("this editor's removal delivered before its reply leaves no retained draft to discard", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  const reply = held(setup.factory.removeFlow);
+  const removing = setup.draft.remove();
+  deliver(setup, null);
+
+  // Act
+  reply.answer(undefined);
+  await removing;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({ presence: "removed", retained: null });
 });
 
 it("a failed Flow removal keeps the local draft unsaved and reports a separate removal error", async () => {
@@ -375,65 +506,13 @@ it("a save reaching a removed Flow keeps the local draft and reports the rejecti
   });
 });
 
-it("a readiness check failing after the editor was hidden reports nothing", async () => {
-  // Arrange
-  const { draft, factory } = await openedFlow();
-  const check = held(factory.validateFlow);
-  const checking = draft.check();
-  draft.reportVisibility(false);
-
-  // Act
-  check.fail(rejection({ message: "Validation failed." }));
-  await checking;
-
-  // Assert
-  expect(draft.getSnapshot().error).toBe("");
-});
-
-it("refreshed saved Agents keep an unresolved revision conflict and its refused save", async () => {
+it("changed saved Agents keep an unresolved revision conflict and its refused save", async () => {
   // Arrange
   const { draft } = await conflictedFlow();
 
   // Act
-  draft.reportAgentsRefreshed();
-  await settled();
+  draft.observeAgents(agentsAfter);
 
   // Assert
   expect(draft.getSnapshot()).toMatchObject({ conflict: { status: "detected" }, canSave: false });
-});
-
-it("a newer revision Studio read elsewhere replaces a clean draft", async () => {
-  // Arrange
-  const { draft, factory } = await openedFlow();
-  const theirs = factory.saveElsewhere("Theirs");
-
-  // Act
-  draft.reportSaved(theirs);
-
-  // Assert
-  expect(draft.getSnapshot()).toMatchObject({
-    saved: { revision: 2, name: "Theirs" },
-    content: { name: "Theirs" },
-    dirty: false,
-    conflict: { status: "none" },
-  });
-});
-
-it("a newer revision Studio read elsewhere keeps unsaved edits and enters the revision conflict", async () => {
-  // Arrange
-  const { draft, factory } = await editedFlow("Mine");
-  const theirs = factory.saveElsewhere("Theirs");
-
-  // Act
-  draft.reportSaved(theirs);
-
-  // Assert
-  expect(draft.getSnapshot()).toMatchObject({
-    saved: { revision: 1 },
-    content: { name: "Mine" },
-    dirty: true,
-    conflict: { status: "detected" },
-    error: "A newer revision 2 of this Flow was saved elsewhere.",
-    canSave: false,
-  });
 });

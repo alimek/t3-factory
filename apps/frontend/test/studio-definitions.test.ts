@@ -2,6 +2,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { held, settled } from "./support/flow-draft.ts";
 import { savedAgent } from "./support/agent-draft.ts";
 import {
+  liveStudio,
   openedStudio,
   savedFlow,
   studioFactory,
@@ -84,41 +85,39 @@ it("a read requested before an accepted write cannot synchronize a list after th
   });
 });
 
-it("versions followed during a pending read re-read both lists once that read shows another revision", async () => {
+it("a live source shows what live delivery holds and never reads over HTTP", () => {
   // Arrange
-  const { definitions, factory } = await openedStudio();
-  const beforeSave = held(factory.listAgents);
-  definitions.refresh();
-  const review = savedFlow("Review");
-  definitions.follow({
-    flows: [{ id: review.id, revision: review.revision }],
-    agents: [{ id: "agent", revision: 4 }],
-  });
+  const { definitions, factory } = liveStudio();
 
   // Act
-  beforeSave.answer([savedAgent()]);
-  await settled();
+  definitions.receive({
+    value: { agents: [savedAgent()], flows: [savedFlow("Live")] },
+    synchronized: true,
+    error: null,
+  });
 
   // Assert
-  expect(factory.listFlows).toHaveBeenCalledTimes(3);
-  expect(factory.listAgents).toHaveBeenCalledTimes(3);
+  expect(definitions.getSnapshot()).toStrictEqual({
+    flows: { value: [savedFlow("Live")], synchronized: true, error: null },
+    agents: { value: [savedAgent()], synchronized: true, error: null },
+  });
+  expect(factory.listFlows).not.toHaveBeenCalled();
+  expect(factory.listAgents).not.toHaveBeenCalled();
 });
 
-it("followed versions the answered lists already show read neither list again", async () => {
+it("an Agent this Studio created is current before live delivery shows it", async () => {
   // Arrange
-  const { definitions, factory } = await openedStudio();
-  const review = savedFlow("Review");
+  const { definitions } = liveStudio();
+  definitions.receive({ value: { agents: [], flows: [] }, synchronized: true, error: null });
 
   // Act
-  definitions.follow({
-    flows: [{ id: review.id, revision: review.revision }],
-    agents: [{ id: "agent", revision: 3 }],
-  });
-  await settled();
+  const created = await definitions.createAgent({ ...savedAgent(), name: "Created" });
 
   // Assert
-  expect(factory.listFlows).toHaveBeenCalledTimes(1);
-  expect(factory.listAgents).toHaveBeenCalledTimes(1);
+  expect(definitions.view("agents", created.id)).toStrictEqual({
+    definition: created,
+    synchronized: true,
+  });
 });
 
 it("a failed re-read keeps the last value, unsynchronized, with its error", async () => {

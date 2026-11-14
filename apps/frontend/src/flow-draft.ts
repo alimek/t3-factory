@@ -1,6 +1,18 @@
 import { useSyncExternalStore } from "react";
-import type { FlowDraft, FlowReadiness, ValidationIssue } from "@t3-factory/contracts";
+import type {
+  CreateFlowInput,
+  FlowDraft,
+  FlowReadiness,
+  ValidationIssue,
+} from "@t3-factory/contracts";
 import { api, ApiError } from "./api.ts";
+import type { Retained } from "./draft-guard.ts";
+import {
+  createSavedDefinitionSync,
+  retainedDraft,
+  type Presence,
+  type SavedView,
+} from "./saved-definition-sync.ts";
 
 /** The part of a Flow its editor changes: what a save writes and a revision conflict compares. */
 export type FlowContent = Pick<FlowDraft, "name" | "workspace" | "graph">;
@@ -11,150 +23,148 @@ export type FlowDraftOperations = Pick<
   "getFlow" | "updateFlow" | "validateFlow" | "removeFlow"
 >;
 
-/** A save refused because Factory holds a newer revision, and that revision once compared. */
+/** A newer saved revision than the draft's, and that revision while it is compared. */
 export type FlowConflict =
   | { readonly status: "none" }
-  | { readonly status: "detected" }
+  | { readonly status: "detected"; readonly revision: number | null }
   | { readonly status: "compared"; readonly latest: FlowDraft };
 
 export interface FlowDraftSnapshot {
-  readonly status: "loading" | "failed" | "loaded";
+  readonly presence: Presence;
   /** The saved Flow whose revision the next save expects; null until the Flow loads. */
   readonly saved: FlowDraft | null;
-  /** After a load, an accepted save or taking the latest Flow, its graph is `saved.graph`. */
   readonly content: FlowContent;
   readonly dirty: boolean;
+  /** What Studio asks about before discarding this draft. */
+  readonly retained: Retained;
   /** A save or readiness check is in flight; edits wait for it. */
   readonly busy: boolean;
   readonly removing: boolean;
   readonly removalError: string;
   readonly error: string;
   readonly issues: readonly ValidationIssue[];
-  /** Null while readiness is unknown. */
+  /** Null while readiness is unknown for the content, revision and Agents shown. */
   readonly readiness: FlowReadiness | null;
+  /** Saved Agents changed since an unsaved draft's readiness was known. */
+  readonly agentsChanged: boolean;
   readonly conflict: FlowConflict;
+  readonly saveOutcomeUnknown: boolean;
+  /** A clean draft took this revision saved elsewhere. */
+  readonly updatedTo: number | null;
   readonly canSave: boolean;
   readonly canStartRun: boolean;
+  readonly canRemove: boolean;
 }
 
-const noConflict: FlowConflict = { status: "none" };
+const emptyContent: FlowContent = {
+  name: "",
+  workspace: { mode: "checkout" },
+  graph: {
+    blocks: [],
+    connections: [],
+    flowInput: { position: { x: 40, y: 50 }, targetBlockIds: [] },
+  },
+};
 
 const failure = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
 
+const contentOf = (flow: FlowDraft): FlowContent => ({
+  name: flow.name,
+  workspace: flow.workspace,
+  graph: flow.graph,
+});
+
 /**
- * One opened Flow: its saved revision, local edits, save and revision-conflict resolution, and
- * readiness. Opening loads the Flow once; the editor reports its visibility and refreshed saved
- * Agents, and the draft decides when readiness is read again.
+ * One opened Flow: its local draft beside the saved Flow Studio's source delivers, saving,
+ * revision comparison, removal and readiness. Readiness is known only for the exact content,
+ * saved revision and saved-Agent generation it describes: a clean draft shows the source's
+ * readiness, an unsaved one the result of its own check.
  */
 export function createFlowDraft(id: string, operations: FlowDraftOperations = api) {
-  let status: FlowDraftSnapshot["status"] = "loading";
-  let saved: FlowDraft | null = null;
-  let content: FlowContent = {
-    name: "",
-    workspace: { mode: "checkout" },
-    graph: {
-      blocks: [],
-      connections: [],
-      flowInput: { position: { x: 40, y: 50 }, targetBlockIds: [] },
-    },
-  };
+  let content = emptyContent;
   let dirty = false;
   let busy = false;
   let removing = false;
   let removalError = "";
   let error = "";
   let issues: readonly ValidationIssue[] = [];
-  let readiness: FlowReadiness | null = null;
-  let conflict = noConflict;
-  let visible = false;
-  /** Advances whenever a pending readiness answer must no longer apply. */
-  let readinessRequest = 0;
-  let snapshot: FlowDraftSnapshot = current();
+  let synchronized = false;
+  let agentGeneration: string | null = null;
+  let agentsChanged = false;
+  let checked: { readonly key: string; readonly readiness: FlowReadiness } | null = null;
   const listeners = new Set<() => void>();
 
+  const sync = createSavedDefinitionSync<FlowDraft>({
+    dirty: () => dirty,
+    adopt(flow) {
+      content = contentOf(flow);
+      dirty = false;
+      error = "";
+      issues = [];
+      checked = null;
+      agentsChanged = false;
+    },
+    rebind() {
+      dirty = true;
+      error = "";
+      issues = [];
+    },
+    readLatest: () => operations.getFlow(id),
+    publish,
+  });
+  let snapshot: FlowDraftSnapshot = current();
+
+  /** What a readiness result describes: the content, its saved revision and the saved Agents. */
+  function readinessKey() {
+    return JSON.stringify([content, sync.state().baseline?.revision ?? null, agentGeneration]);
+  }
+
+  function shownReadiness(): FlowReadiness | null {
+    const state = sync.state();
+    if (!synchronized || state.presence !== "present" || state.savedElsewhere !== null) return null;
+    if (!dirty) return state.baseline?.readiness ?? null;
+    return checked?.key === readinessKey() ? checked.readiness : null;
+  }
+
   function current(): FlowDraftSnapshot {
-    const loaded = status === "loaded";
+    const state = sync.state();
+    const present = state.presence === "present";
+    const conflict: FlowConflict = state.compared
+      ? { status: "compared", latest: state.compared }
+      : state.conflict
+        ? { status: "detected", revision: state.conflict.revision }
+        : { status: "none" };
+    const readiness = shownReadiness();
     return {
-      status,
-      saved,
+      presence: state.presence,
+      saved: state.baseline,
       content,
       dirty,
+      retained: retainedDraft(state, dirty),
       busy,
       removing,
       removalError,
       error,
       issues,
       readiness,
+      agentsChanged: dirty && agentsChanged,
       conflict,
-      canSave: loaded && !busy && conflict.status === "none",
-      canStartRun: loaded && !busy && !dirty && !!readiness?.ready,
+      saveOutcomeUnknown: state.saveOutcomeUnknown,
+      updatedTo: state.updatedTo,
+      canSave: present && !busy && conflict.status === "none",
+      canStartRun: present && !busy && !dirty && !!readiness?.ready,
+      canRemove: present && !busy && !removing,
     };
   }
   function publish() {
     snapshot = current();
     listeners.forEach((notify) => notify());
   }
-  /** Readiness becomes unknown; a visible, loaded, clean draft re-reads only its readiness. */
-  function refreshReadiness() {
-    readiness = null;
-    const request = ++readinessRequest;
-    if (!visible || status !== "loaded" || dirty) return;
-    operations.getFlow(id).then(
-      (flow) => {
-        if (request !== readinessRequest) return;
-        readiness = flow.readiness;
-        publish();
-      },
-      (cause: unknown) => {
-        if (request !== readinessRequest) return;
-        error = failure(cause, "Could not load Flow.");
-        publish();
-      },
-    );
-  }
-  /** The saved Flow replaces the draft, which is clean and shows no conflict or error. */
-  function adopt(flow: FlowDraft) {
-    status = "loaded";
-    saved = flow;
-    content = { name: flow.name, workspace: flow.workspace, graph: flow.graph };
-    dirty = false;
-    conflict = noConflict;
-    error = "";
-    issues = [];
-    refreshReadiness();
-  }
-  /** Runs one save or check: edits and further requests wait until it answers. */
-  async function run(operation: () => Promise<void>) {
-    busy = true;
-    error = "";
-    issues = [];
-    ++readinessRequest;
-    publish();
-    try {
-      await operation();
-    } finally {
-      busy = false;
-      publish();
-    }
-  }
-  const unresolved = () => conflict.status !== "none";
   function reject(cause: unknown, fallback: string) {
     error = failure(cause, fallback);
     if (cause instanceof ApiError) issues = cause.detail.issues;
   }
-
-  operations.getFlow(id).then(
-    (flow) => {
-      adopt(flow);
-      publish();
-    },
-    (cause: unknown) => {
-      status = "failed";
-      error = failure(cause, "Could not load Flow.");
-      publish();
-    },
-  );
 
   return {
     getSnapshot: () => snapshot,
@@ -164,43 +174,62 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
         listeners.delete(notify);
       };
     },
-    /** Any edit marks the draft unsaved and makes readiness unknown; errors stay shown. */
+    /** Studio's source view of this Flow; an unsynchronized view makes readiness unknown. */
+    observe(view: SavedView<FlowDraft>) {
+      synchronized = view.synchronized;
+      sync.observe(view);
+      publish();
+    },
+    /** The saved Agents' identity and revisions; a change makes unsaved readiness unknown. */
+    observeAgents(generation: string) {
+      if (generation === agentGeneration) return;
+      if (agentGeneration !== null && dirty) agentsChanged = true;
+      agentGeneration = generation;
+      publish();
+    },
+    /** Any edit marks the draft unsaved; errors stay shown. Removed Flows stay editable. */
     edit(change: Partial<FlowContent>) {
-      if (status !== "loaded" || busy) return;
+      const { presence } = sync.state();
+      if ((presence !== "present" && presence !== "removed") || busy) return;
       content = { ...content, ...change };
       dirty = true;
-      refreshReadiness();
+      sync.edited();
       publish();
     },
     /** Saves the content against the saved revision; a stale revision enters the conflict. */
     async save() {
-      const against = saved;
+      const against = sync.state().baseline;
       if (!against || !snapshot.canSave) return;
-      await run(async () => {
-        try {
-          adopt(
-            await operations.updateFlow(id, { ...content, expectedRevision: against.revision }),
-          );
-        } catch (cause) {
-          reject(cause, "Could not save Flow.");
-          if (cause instanceof ApiError && cause.detail.code === "conflict")
-            conflict = { status: "detected" };
-        }
-      });
+      busy = true;
+      error = "";
+      issues = [];
+      sync.beginSave();
+      publish();
+      try {
+        sync.saveSucceeded(
+          await operations.updateFlow(id, { ...content, expectedRevision: against.revision }),
+        );
+      } catch (cause) {
+        if (sync.saveFailed(cause) !== "unknown") reject(cause, "Could not save Flow.");
+      } finally {
+        busy = false;
+        publish();
+      }
     },
     /** Accepted removal clears the guard before the caller navigates away. */
     async remove() {
-      if (!saved || busy || removing) return false;
+      if (!snapshot.canRemove) return false;
       removing = true;
       removalError = "";
+      sync.beginRemove();
       publish();
       try {
         await operations.removeFlow(id);
+        sync.removeSettled(true);
         dirty = false;
-        readiness = null;
-        ++readinessRequest;
         return true;
       } catch (cause) {
+        sync.removeSettled(false);
         removalError = failure(cause, "Could not remove Flow.");
         return false;
       } finally {
@@ -212,77 +241,44 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
       removalError = "";
       publish();
     },
-    /** Validates the content without saving it. */
+    /** Validates the content without saving it; the result applies only to what it checked. */
     async check() {
-      const against = saved;
-      if (!against || busy) return;
-      await run(async () => {
-        const asked = readinessRequest;
-        try {
-          const checked = await operations.validateFlow({
-            ...content,
-            expectedRevision: against.revision,
-          });
-          if (asked === readinessRequest) readiness = checked;
-        } catch (cause) {
-          if (asked === readinessRequest) reject(cause, "Could not check Flow.");
-        }
-      });
-    },
-    reportVisibility(next: boolean) {
-      if (next === visible) return;
-      visible = next;
-      refreshReadiness();
-      publish();
-    },
-    /**
-     * Studio read this Flow again. A newer revision saved elsewhere replaces a clean draft and
-     * enters the revision conflict for unsaved changes, which stay as they are.
-     */
-    reportSaved(latest: FlowDraft) {
-      if (!saved || busy || removing || latest.revision <= saved.revision || unresolved()) return;
-      if (dirty) {
-        conflict = { status: "detected" };
-        error = `A newer revision ${latest.revision} of this Flow was saved elsewhere.`;
-      } else adopt(latest);
-      publish();
-    },
-    /** The editor's saved Agents were read again, which can change this Flow's readiness. */
-    reportAgentsRefreshed() {
-      refreshReadiness();
-      publish();
-    },
-    /** Loads the latest saved Flow beside the local draft, which stays as it is. */
-    async compareLatest() {
-      if (!unresolved() || busy) return;
-      const comparing = conflict;
-      try {
-        const latest = await operations.getFlow(id);
-        // Another comparison, resolution or later conflict may have replaced this one meanwhile.
-        if (conflict === comparing) conflict = { status: "compared", latest };
-      } catch {
-        // A readiness check started meanwhile reports its own outcome.
-        if (conflict === comparing && !busy)
-          error = "Could not load the latest revision. Try again.";
-      }
-      publish();
-    },
-    /** Replaces the local draft with the compared Flow. */
-    takeLatest() {
-      if (conflict.status !== "compared") return;
-      adopt(conflict.latest);
-      publish();
-    },
-    /** Keeps the local content, unsaved, against the compared revision for another explicit save. */
-    keepLocal() {
-      if (conflict.status !== "compared") return;
-      saved = conflict.latest;
-      conflict = noConflict;
+      const against = sync.state().baseline;
+      if (!against || busy || sync.state().presence !== "present") return;
+      busy = true;
       error = "";
       issues = [];
-      dirty = true;
-      refreshReadiness();
+      const key = readinessKey();
       publish();
+      try {
+        const readiness = await operations.validateFlow({
+          ...content,
+          expectedRevision: against.revision,
+        });
+        checked = { key, readiness };
+        if (key === readinessKey()) agentsChanged = false;
+      } catch (cause) {
+        if (key === readinessKey()) reject(cause, "Could not check Flow.");
+      } finally {
+        busy = false;
+        publish();
+      }
+    },
+    beginInteraction: sync.beginInteraction,
+    endInteraction: sync.endInteraction,
+    /** Shows the newest saved revision beside the local draft, which stays as it is. */
+    async compareLatest() {
+      if (await sync.compare()) return;
+      error = "Could not load the latest revision. Try again.";
+      publish();
+    },
+    /** Replaces the local draft with revision `revision`, if it is still the newest. */
+    takeLatest: (revision: number) => sync.takeLatest(revision),
+    /** Keeps the local content, unsaved, against revision `revision` for another explicit save. */
+    keepLocal: (revision: number) => sync.keepMine(revision),
+    /** The local draft as `factory_create_flow` and `POST /api/flows` accept it. */
+    createInput(): CreateFlowInput {
+      return { name: content.name, graph: content.graph, workspace: content.workspace };
     },
   };
 }

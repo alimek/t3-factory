@@ -36,7 +36,11 @@ import type {
   RunDetail,
 } from "../../packages/contracts/src/index.ts";
 import { effectiveExits } from "../../packages/domain-validation/src/index.ts";
-import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-access.ts";
+import {
+  FACTORY_DEFINITIONS_PROTOCOL,
+  FACTORY_MINIMUM_PEER_PROTOCOL,
+  FACTORY_PROTOCOL,
+} from "../../packages/domain-validation/src/client-access.ts";
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
@@ -287,6 +291,11 @@ async function remoteFactory(protocol?: { protocol: number; minimumPeerProtocol:
 
 const current = { home, server, t3, anchor: server.remoteAccess.trustAnchor()! };
 const older = await remoteFactory({ protocol: 1, minimumPeerProtocol: 1 });
+// A compatible server from before live Studio delivery: clients keep Studio's manual refresh.
+const beforeLiveStudio = await remoteFactory({
+  protocol: FACTORY_DEFINITIONS_PROTOCOL - 1,
+  minimumPeerProtocol: FACTORY_MINIMUM_PEER_PROTOCOL,
+});
 // A server a release ahead that no longer accepts this client's protocol.
 const newer = await remoteFactory({
   protocol: FACTORY_PROTOCOL + 1,
@@ -307,8 +316,9 @@ const dropRemoteLiveSockets = () => {
   remoteLiveSockets.clear();
 };
 
+/** The host panel of the server remote clients currently reach. */
 async function host<A>(path: string, method = "GET"): Promise<Result<A>> {
-  const response = await fetch(`http://127.0.0.1:${current.server.address.port}${path}`, {
+  const response = await fetch(`http://127.0.0.1:${target.server.address.port}${path}`, {
     method,
     headers: method === "GET" ? {} : { "X-Factory-Request": "1" },
   });
@@ -536,6 +546,10 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     target = older;
     dropRemoteLiveSockets();
   },
+  "/__fixture/before-live-studio": () => {
+    target = beforeLiveStudio;
+    dropRemoteLiveSockets();
+  },
   "/__fixture/incompatible": () => {
     target = newer;
     dropRemoteLiveSockets();
@@ -671,9 +685,14 @@ async function shutdown() {
   clearInterval(timer);
   proxy.close();
   await advancing;
-  await Promise.all([server.close(), newer.server.close(), older.server.close()]);
+  await Promise.all([
+    server.close(),
+    newer.server.close(),
+    older.server.close(),
+    beforeLiveStudio.server.close(),
+  ]);
   await Promise.all(
-    [home, newer.home, older.home].map((directory) =>
+    [home, newer.home, older.home, beforeLiveStudio.home].map((directory) =>
       rm(directory, { recursive: true, force: true }),
     ),
   );

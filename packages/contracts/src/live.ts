@@ -1,3 +1,4 @@
+import type { AgentDefinition } from "./agent.ts";
 import type { FlowDraft } from "./flow.ts";
 import type { OperationError } from "./result.ts";
 import type { ProjectCatalog } from "./project.ts";
@@ -214,22 +215,28 @@ export type LaunchChoicesLiveMessage =
       readonly projects: readonly { readonly id: string; readonly observedAt: string }[];
     };
 
-/** A saved definition's identity and latest revision. */
-export interface DefinitionVersion {
-  readonly id: string;
-  readonly revision: number;
+/** Studio's saved definitions: every current Agent with its settings status and every Flow with its readiness. */
+export interface StudioDefinitions {
+  /** Ordered by the backend: most recently saved first. */
+  readonly agents: readonly AgentDefinition[];
+  /** Ordered by `createdAt` descending, then `id`. */
+  readonly flows: readonly FlowDraft[];
+}
+
+/** Complete replacement entities by stable id and removed ids, applied atomically. */
+export interface DefinitionChanges<T> {
+  readonly upserts: readonly T[];
+  readonly removals: readonly string[];
 }
 
 /**
- * Which Flows and Agents are saved, each with its latest revision, ordered by `id`. A change
- * tells Studio to read its definition lists again; the lists themselves stay HTTP reads because
- * Agent settings availability depends on live T3 capabilities.
+ * Agents and Flows of one read transaction. A change carries whole entities: an Agent change can
+ * change a Flow's readiness without changing the Flow's revision.
  */
-export interface DefinitionVersions {
-  readonly flows: readonly DefinitionVersion[];
-  readonly agents: readonly DefinitionVersion[];
-}
-
 export type DefinitionsLiveMessage =
-  | { readonly _tag: "snapshot"; readonly versions: DefinitionVersions }
-  | { readonly _tag: "changed"; readonly versions: DefinitionVersions };
+  | { readonly _tag: "snapshot"; readonly definitions: StudioDefinitions }
+  | {
+      readonly _tag: "changed";
+      readonly agents?: DefinitionChanges<AgentDefinition>;
+      readonly flows?: DefinitionChanges<FlowDraft>;
+    };

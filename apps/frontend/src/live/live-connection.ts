@@ -90,5 +90,5 @@ export const useLiveConnectionStatus = () => useLiveScope(connectionScope);
 /** Theme-color status and presentation; mount only for servers that serve it. */
 export const useLiveAppearance = () => useLiveScope(appearanceScope);
 
-/** Which Flows and Agents are saved and their revisions; mount only for servers that serve it. */
+/** Studio's saved Agents and Flows; mount only for servers that serve them. */
 export const useLiveDefinitions = () => useLiveScope(definitionsScope);

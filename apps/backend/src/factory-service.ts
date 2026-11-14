@@ -205,7 +205,7 @@ export const makeFactoryService = (
         {
           ...guarded,
           readProjectCatalog: () => guard(projects.readCatalog()),
-          readDefinitionVersions: () => guard(definitions.readDefinitionVersions()),
+          readStudioDefinitions: () => guard(definitions.readStudioDefinitions()),
           getAppearance: appearance.getAppearance,
         },
         (read) =>

@@ -148,7 +148,7 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
     }),
   });
   expect(concurrent.status).toBe(200);
-  await expect(screen.getByRole("alert")).toContainText("newer revision");
+  await expect(screen.getByText("Revision 4 was saved elsewhere.", { exact: false })).toBeVisible();
   await expect(screen.getByRole("button", "Save Flow")).toBeDisabled();
   await expect(screen.getByLabel("Flow name")).toHaveValue("My preserved draft");
   await screen.getByRole("button", "Compare latest revision").tap();
