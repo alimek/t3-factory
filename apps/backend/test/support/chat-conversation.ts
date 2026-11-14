@@ -189,7 +189,7 @@ export const operatingService = (
     });
     assert(access.ok, JSON.stringify(access));
     yield* factory.setChatControlEnabled({ enabled: true });
-    yield* Effect.promise(() => discord.request("PUT", COMMANDS));
+    yield* Effect.promise(() => discord.request("POST", COMMANDS));
   });
 
 /** Waits for a promise inside an Effect test. */

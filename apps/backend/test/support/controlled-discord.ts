@@ -219,8 +219,8 @@ export async function startControlledDiscord() {
   const requests: DiscordRestRequest[] = [];
   const sessions: GatewaySession[] = [];
   const sockets = new Map<GatewaySession, WebSocket>();
-  /** Command registrations by application, as the last bulk overwrite set them. */
-  const commands = new Map<string, unknown>();
+  /** Each application's global commands, as bulk overwrites and single-command upserts left them. */
+  const commands = new Map<string, Record<string, unknown>[]>();
   const changed = barriers();
   /** Events each session receives right after it becomes ready. */
   const trafficOnReady: GatewayEvent[] = [];
@@ -359,7 +359,7 @@ export async function startControlledDiscord() {
       "PUT",
       /^\/api\/v10\/applications\/(\d+)\/commands$/,
       ({ match, body }) => {
-        commands.set(match[1]!, body);
+        commands.set(match[1]!, body as Record<string, unknown>[]);
         return {
           status: 200,
           body: (body as Record<string, unknown>[]).map((command) => ({
@@ -368,6 +368,21 @@ export async function startControlledDiscord() {
             application_id: match[1],
             version: "1",
           })),
+        };
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/v10\/applications\/(\d+)\/commands$/,
+      ({ match, body }) => {
+        // Discord creates the command or updates the one with the same name; others stay.
+        const command = body as Record<string, unknown>;
+        const existing = commands.get(match[1]!) ?? [];
+        const kept = existing.filter((other) => other.name !== command.name);
+        commands.set(match[1]!, [...kept, command]);
+        return {
+          status: kept.length === existing.length ? 201 : 200,
+          body: { ...command, id: mintId(), application_id: match[1], version: "1" },
         };
       },
     ],

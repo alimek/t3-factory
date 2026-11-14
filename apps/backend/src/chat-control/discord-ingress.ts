@@ -89,30 +89,31 @@ const RESET_REPLIES = {
     "Factory could not confirm your access to this thread, so nothing was cleared. Try again.",
 } as const;
 
-/** The only command Factory registers. Registration replaces every other command of the application. */
-const FACTORY_COMMANDS = [
-  {
-    name: "factory",
-    description: "Factory Chat control",
-    type: ApplicationCommandType.ChatInput,
-    contexts: [InteractionContextType.Guild],
-    integration_types: [ApplicationIntegrationType.GuildInstall],
-    options: [
-      {
-        type: ApplicationCommandOptionType.Subcommand,
-        name: "reset",
-        description: "Clear this thread's shared Chat control conversation",
-      },
-    ],
-  },
-];
+/**
+ * The only command Factory registers. Discord creates or updates it by name and leaves the
+ * application's other commands untouched, since the application may also serve other software.
+ */
+const FACTORY_COMMAND = {
+  name: "factory",
+  description: "Factory Chat control",
+  type: ApplicationCommandType.ChatInput,
+  contexts: [InteractionContextType.Guild],
+  integration_types: [ApplicationIntegrationType.GuildInstall],
+  options: [
+    {
+      type: ApplicationCommandOptionType.Subcommand,
+      name: "reset",
+      description: "Clear this thread's shared Chat control conversation",
+    },
+  ],
+};
 
 /** Registers `/factory reset` for the verified application through Discord's REST API. */
 export const registerCommands = (client: Client<true>, applicationId: string) =>
   Effect.gen(function* () {
     const registered = yield* Effect.result(
       Effect.tryPromise(() =>
-        client.rest.put(Routes.applicationCommands(applicationId), { body: FACTORY_COMMANDS }),
+        client.rest.post(Routes.applicationCommands(applicationId), { body: FACTORY_COMMAND }),
       ),
     );
     const occurredAt = yield* now;

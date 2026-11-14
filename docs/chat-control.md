@@ -200,8 +200,9 @@ admitted invocation is answered.
 
 ### /factory reset
 
-When the connection is authenticated, Factory registers `/factory reset` as the application's only
-command, replacing any others; it is available in servers only. An allowed participant can use it
+When the connection is authenticated, Factory creates or updates its one `/factory` command (with the
+`reset` subcommand) by name and leaves the application's other commands untouched; it is available in
+servers only. An allowed participant can use it
 inside a thread of an allowed channel. Factory acknowledges it at once, privately to the invoker,
 checks access as for invocations (including private-thread membership) and clears the thread's
 shared conversation by starting its next generation; unfinished work admitted before the reset can

@@ -124,7 +124,7 @@ it("Chat control turns On with a keyless model, no passed tests and empty Access
   // Assert
   assert(on.ok);
   expect(on.value.chatControlEnabled).toBe(true);
-  await discord.request("PUT", COMMANDS);
+  await discord.request("POST", COMMANDS);
   expect(await discordSettingsWhen(factory, statusIs("connected"))).toMatchObject({
     connectionProblem: null,
     commandSetup: { outcome: "registered" },
@@ -161,6 +161,21 @@ it("the operating connection registers only /factory reset, for the application 
   ]);
 });
 
+it("registering /factory reset keeps the commands other software registered for the same application", async (c) => {
+  // Arrange
+  const { discord, factory } = await chatControlWorld(c);
+  const other = { name: "status", description: "Another bot's command", type: 1 };
+  discord.commands.set(discordBot.applicationId, [other]);
+
+  // Act
+  await turnedOn(factory, discord);
+
+  // Assert
+  expect(
+    discord.commands.get(discordBot.applicationId)?.map((command) => command.name),
+  ).toStrictEqual([other.name, "factory"]);
+});
+
 it("a token of another application saved while On makes Factory operate as that application", async (c) => {
   // Arrange
   const { discord, factory } = await chatControlWorld(c);
@@ -177,7 +192,7 @@ it("a token of another application saved while On makes Factory operate as that 
 
   // Assert
   assert(replaced.ok, JSON.stringify(replaced));
-  await discord.request("PUT", COMMANDS, 2);
+  await discord.request("POST", COMMANDS, 2);
   expect(discord.commands.get("987654321098765432")).toHaveLength(1);
   expect(await discordSettingsWhen(factory, statusIs("connected"))).toMatchObject({
     application: "987654321098765432",
@@ -257,7 +272,7 @@ it("retrying a rejected connection while On reconnects through the same supervis
 
   // Assert
   assert(retried.ok);
-  await world.discord.request("PUT", COMMANDS);
+  await world.discord.request("POST", COMMANDS);
   expect(openSessions(world.discord)).toHaveLength(1);
   expect(await discordSettingsWhen(world.factory, statusIs("connected"))).toMatchObject({
     latestCheck: null,
@@ -290,7 +305,7 @@ it("a Discord outage while On keeps retrying and connects once Discord is reacha
   discord.setGatewayAvailable(true);
 
   // Assert
-  await discord.request("PUT", COMMANDS);
+  await discord.request("POST", COMMANDS);
   expect(await discordSettingsWhen(factory, statusIs("connected"))).toMatchObject({
     connectionProblem: null,
     needsAttention: false,
@@ -325,7 +340,7 @@ it("replacing the bot token of the same application while On reconnects with the
 
   // Assert
   assert(rotated.ok);
-  await world.discord.request("PUT", COMMANDS, 2);
+  await world.discord.request("POST", COMMANDS, 2);
   expect(openSessions(world.discord).map((session) => session.token)).toStrictEqual([
     "rotated-bot-token",
   ]);

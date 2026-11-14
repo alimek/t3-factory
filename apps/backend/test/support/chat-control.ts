@@ -126,12 +126,12 @@ export async function turnedOn(
 ) {
   const on = await factory.setChatControlEnabled({ enabled: true });
   assert(on.ok, JSON.stringify(on));
-  await discord.request("PUT", COMMANDS, registrations);
+  await discord.request("POST", COMMANDS, registrations);
 }
 
 /** Waits until a reopened Factory with a persisted On state serves traffic again. */
 export const servingAgain = (discord: ControlledDiscord, registrations: number) =>
-  discord.request("PUT", COMMANDS, registrations);
+  discord.request("POST", COMMANDS, registrations);
 
 export const THREADS = /^\/api\/v10\/channels\/\d+\/messages\/\d+\/threads$/;
 export const POSTS = /^\/api\/v10\/channels\/\d+\/messages$/;
