@@ -40,9 +40,10 @@ and restricted OAuth credentials live outside project repositories.
   Migration `079` marks every existing Run legacy and changes no title.
 - The installation-wide **Generate Run titles** setting is one SQLite row holding its on/off state, the chosen T3 model
   and options, a revision and the latest eligibility diagnostic. Start acceptance records at most one title generation
-  per Run in the same transaction as the Run, with its captured model, options, prompt version and deadline, so the intent
-  is durable before any dispatch. Migration `080` adds the setting off and gives existing Runs no generation; no other
-  data changes.
+  per Run in the same transaction as the Run, with its captured model, options, prompt version and deadline, and for a
+  pending one the title thread's launch request, so the intent is durable before any dispatch. The generation later
+  records when that request was sent and the thread T3 launched. Migration `080` adds the setting off and gives existing
+  Runs no generation; migration `081` adds the launch request, sent time and thread columns. No other data changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

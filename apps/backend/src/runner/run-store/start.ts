@@ -122,8 +122,11 @@ function acceptStartRecords(
     yield* attachRunImages(sql, plan.runId, images);
     yield* recordTitleGeneration(sql, plan.titleGeneration, {
       id: plan.runId,
+      number,
       title,
       time: plan.time,
+      prompt: plan.prompt,
+      project,
     });
     for (const agent of agents)
       yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;

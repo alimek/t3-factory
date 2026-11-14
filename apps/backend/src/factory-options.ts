@@ -8,4 +8,10 @@ export interface FactoryOptions {
   readonly credentialsDirectory?: string;
   readonly t3?: T3Adapter;
   readonly connectionRetryMs?: number;
+  /**
+   * Temporary: lets pending Run title generations launch their title threads. Off by default, so
+   * the product launches none until the deadline, cancellation, cleanup and restart safeguards
+   * ship (#307, which removes this option); tests turn it on.
+   */
+  readonly launchTitleThreads?: boolean;
 }

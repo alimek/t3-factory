@@ -147,8 +147,8 @@ One execution of a selected flow for a task in a project, with its own editable 
 and global navigation entry. Its **Run number** is a global sequence assigned at Start,
 shared with worker thread titles and worktree branches; stored history may have no number.
 Its **title provenance** records how the title was chosen: **automatic** (the prompt's first
-non-empty line), **manual** (chosen by the owner; Rename sets it), **generated** (reserved for a
-title written by Run title generation; none is applied yet) or **legacy** (the Run or its Start
+non-empty line), **manual** (chosen by the owner; Rename sets it), **generated** (a
+**generated title** was applied) or **legacy** (the Run or its Start
 request predates provenance). Start records the provenance it is given; it is never inferred
 by comparing title text.
 
@@ -160,8 +160,16 @@ acceptance: a Run with automatic title provenance accepted while the setting is 
 model, options, built-in prompt version and a deadline 30 seconds after acceptance, and its
 generation is **pending**, or **skipped** when an eligibility check fails (recorded as the setting's
 latest **diagnostic**) or the prompt has no meaningful text. Manual and legacy Runs record none.
-Later setting changes affect only future Runs, and there is no regenerate. Factory does not launch
-title threads yet, so a pending generation stays pending.
+Later setting changes affect only future Runs, and there is no regenerate. A pending generation
+launches one top-level **title thread** in the Project checkout beside the Flow, never gating it,
+after rechecking eligibility; a Rename while it is pending drops it. Title thread launches are
+not enabled in the product yet, so a pending generation stays pending.
+
+**Generated title**:
+The Run title a title thread submits through `factory_set_run_title` with its generation's opaque
+capability: one trimmed line of at most 120 code points without control characters, never
+shortened. The first valid one while the Run's title provenance is still automatic is applied,
+makes the provenance generated and is final; it is not Run activity.
 
 **Captured definitions**:
 The Flow revision a Run started with and the Agent revision of every Agent that Flow references, frozen at Start. Every read and later activation of the Run uses them; later saves and removals affect only future Runs.

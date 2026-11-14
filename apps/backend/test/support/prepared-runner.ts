@@ -3,7 +3,7 @@ import { assert, type TestContext } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
-import type { Factory } from "../../src/index.ts";
+import type { Factory, FactoryOptions } from "../../src/index.ts";
 import { loadConfiguration } from "../../src/config.ts";
 import { startServer } from "../../src/server.ts";
 import { writeReportingState } from "./reporting-home.ts";
@@ -61,11 +61,16 @@ async function readyFlow(
 }
 
 /** A ready Flow (the single-worker Flow in `shape`'s variant, or a ready Flow shape), with Factory
- * reporting installed beside the bridge. */
-export async function prepared(c: TestContext, shape?: SingleWorkerVariant | ReadyFlowShape) {
+ * reporting installed beside the bridge. `options.launchTitleThreads` lets pending title
+ * generations launch their title threads. */
+export async function prepared(
+  c: TestContext,
+  shape?: SingleWorkerVariant | ReadyFlowShape,
+  options: Pick<FactoryOptions, "launchTitleThreads"> = {},
+) {
   const h = await factoryHarness(c);
   const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
-  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
+  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000, ...options });
   c.onTestFinished(() => f.close());
   return { h, f, t3, ...(await readyFlow(f, t3, root, shape)) };
 }

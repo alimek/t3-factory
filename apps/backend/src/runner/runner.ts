@@ -26,7 +26,7 @@ import { recoverOperation } from "./runner-effects.ts";
 import { makeWaitTimers } from "./runner-wait-timers.ts";
 import type { LiveChanges } from "../live-changes.ts";
 import type { RunImages } from "../run-images.ts";
-import type { PlanTitleGeneration } from "../run-titles.ts";
+import type { StartTitleGeneration } from "../run-titles.ts";
 
 /** One scoped Runner owner. Accepted work drains before SQL and ownership are released. */
 export const makeRunner = Effect.fn("Runner.make")(function* (
@@ -37,7 +37,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   checkAgent: RunnerOptions["checkAgent"],
   changes: LiveChanges,
   images: RunImages,
-  planTitleGeneration: PlanTitleGeneration,
+  titles: StartTitleGeneration,
 ) {
   const scope = yield* Effect.scope;
   const store = yield* openRunStore(owner, changes);
@@ -74,7 +74,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     ops,
     t3,
     lifecycle,
-    { checkAgent, planTitleGeneration },
+    checkAgent,
+    titles,
     images,
   );
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);

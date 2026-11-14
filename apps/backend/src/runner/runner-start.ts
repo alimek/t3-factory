@@ -32,7 +32,7 @@ import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
 import type { RunImages } from "../run-images.ts";
-import type { PlanTitleGeneration } from "../run-titles.ts";
+import type { StartTitleGeneration } from "../run-titles.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -205,10 +205,8 @@ export function openRunnerStart(
   ops: EffectOperations<FactoryOperations>,
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
-  {
-    checkAgent,
-    planTitleGeneration,
-  }: { checkAgent: RunnerOptions["checkAgent"]; planTitleGeneration: PlanTitleGeneration },
+  checkAgent: RunnerOptions["checkAgent"],
+  { planTitleGeneration, dispatchTitleGeneration }: StartTitleGeneration,
   images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
@@ -277,7 +275,11 @@ export function openRunnerStart(
       const accepted = yield* store.acceptStart(plan, images.hasFile);
       if (!accepted.ok) return accepted;
       // Deliberately detached from the response. The accepted Run survives a lost HTTP reply.
-      if (!isClosed()) yield* lifecycle.fork(drive(accepted.value));
+      // The title thread launches beside the Flow and never gates its dispatch.
+      if (!isClosed()) {
+        yield* lifecycle.fork(drive(accepted.value));
+        yield* lifecycle.fork(dispatchTitleGeneration(accepted.value));
+      }
       return yield* getRun(accepted.value);
     });
   }

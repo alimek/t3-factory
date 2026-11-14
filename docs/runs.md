@@ -121,8 +121,25 @@ The checks run beside the other Start checks; their failure never refuses Start.
 the original provenance and generation and decides nothing again. A Run generates at most once and only at Start; there
 is no regenerate, and later setting changes, including turning it off, affect only future Runs. Run detail and
 navigation, including live navigation, carry the generation's state with a short reason, captured model label, deadline,
-automatic title, generated title and T3 thread link, or none. Factory does not launch title threads yet, so pending
-generations stay pending and no title is replaced.
+automatic title, generated title and T3 thread link, or none.
+
+A pending generation launches one [title thread](t3-integration.md#title-threads) beside the Flow: the Flow input
+targets dispatch as they would without it, and the title thread never gates or delays them. Just before the launch
+Factory runs the eligibility checks again; a failure records **skipped** with that check's reason as the setting's
+diagnostic and launches nothing. The model submits a title with `factory_set_run_title`, and the generation ends with
+one outcome:
+
+- **applied** when the first valid title arrives while the title provenance is still automatic: the Run takes it and
+  its provenance becomes generated;
+- **dropped** when the Run is renamed first, even to its automatic title; the owner's title stays and later
+  submissions are refused;
+- **failed** when T3 definitively rejects the title thread's launch; the automatic title stays.
+
+Applying a generated title is like Rename: it is not Run activity, adds no timeline event and moves no row. The title
+thread is not a Block or worker: it never counts toward settlement, Needs input, attention, Problems, missing reports or
+Block readiness, so a Run can settle while its title is still pending. Title thread launches are not enabled in the
+product yet: until the deadline, Archive cancellation, cleanup and restart recovery ship, pending generations stay
+pending and no title is replaced.
 
 ### Starting from a conversation
 
@@ -259,7 +276,7 @@ menu items never opens a row preview.
   still on that row, on that Run's detail settlement section, or was lost because the row left; focus the user moved elsewhere,
   including to the page, stays. A detail **Retry** that starts stopping moves focus to the settlement section as the button disappears.
 - **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters) and makes its title provenance
-  manual; renaming never moves a row.
+  manual, dropping a pending [title generation](#run-title-generation); renaming never moves a row.
   The same shadcn/Radix row menu serves desktop and browser clients. Right click opens it at the pointer;
   Shift+F10 and the context-menu key anchor it below the focused row. Touch devices retain a ⋯ button;
   mouse layouts omit it. Closing the menu or Rename/Archive dialogs returns focus to the row when it remains visible. Rename

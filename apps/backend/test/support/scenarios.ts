@@ -86,6 +86,75 @@ export async function enableRunTitlesWithCheapModel(
     t3.controlledProviders[0] = provider!;
   };
 }
+/**
+ * T3 withdraws the cheap title model while Start's title eligibility check inspects launch
+ * support, which it does after finding the model in the catalog; only the check just before the
+ * title thread's dispatch sees the model gone.
+ */
+export function withdrawTitleModelAfterStartCheck(t3: ControlledT3, withdraw: () => void) {
+  t3.beforeLaunchInspection = (target) => {
+    // The Flow's own launch checks name a project; the title eligibility check names only T3.
+    if ("projectId" in target) return;
+    delete t3.beforeLaunchInspection;
+    withdraw();
+  };
+}
+/** T3 holds the title thread's launch request until the returned call releases it. */
+export function holdTitleThreadLaunch(t3: ControlledT3) {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  t3.beforeLaunch = async (payload) => {
+    if (payload.title.startsWith("Factory title · ")) await held;
+  };
+  return release;
+}
+/** The title thread's launch request T3 recorded; Flow workers are titled `Factory #<n> · …`. */
+const titleThreadLaunch = (t3: ControlledT3) =>
+  [...t3.launches.values()].find((launch) => launch.payload.title.startsWith("Factory title · "))
+    ?.payload;
+/** Resolves once T3 has recorded the title thread's launch request, also a rejected one. */
+export async function titleThreadLaunchRecorded(t3: ControlledT3) {
+  let launch = titleThreadLaunch(t3);
+  while (!launch) {
+    await t3.nextLaunch();
+    launch = titleThreadLaunch(t3);
+  }
+  return launch;
+}
+/** Factory launched the Run's title thread and bound it: T3 recorded the launch and the Run read
+ * shows the thread link. Returns the launch request T3 received. */
+export function titleGenerationLaunched(world: ScenarioWorld, runId: string) {
+  return reach("title generation launched", async () => {
+    const launch = await titleThreadLaunchRecorded(world.t3);
+    await observeFor("observe the title thread", world, runId, (run) =>
+      Boolean(run.titleGeneration?.threadLink),
+    );
+    return launch;
+  });
+}
+/** Factory accepted the Start and launched the Run's title thread, which holds the returned
+ * capability; the title is still pending. */
+export function titleThreadLaunched(world: ScenarioWorld, start: unknown) {
+  return reach("title thread launched", async () => {
+    const started = stepResult("start a Run", await world.factory.startRun(start));
+    const launch = await titleGenerationLaunched(world, started.id);
+    return { runId: started.id, titleGenerationId: capabilityFromLaunchPrompt(launch) };
+  });
+}
+/** Factory recorded an outcome for the Run's title generation; it is no longer pending. */
+export function titleGenerationEnded(world: ScenarioWorld, runId: string) {
+  return reach("title generation ended", () =>
+    observeFor("observe the title outcome", world, runId, (run) =>
+      Boolean(run.titleGeneration && run.titleGeneration.state !== "pending"),
+    ),
+  );
+}
+/** The opaque titleGenerationId the title thread's launch prompt carries. */
+export function capabilityFromLaunchPrompt(launch: { readonly message: string }) {
+  const id = /titleGenerationId "([^"]+)"/.exec(launch.message)?.[1];
+  if (!id) stepFailed("read the capability", "The launch prompt carries no titleGenerationId.");
+  return id;
+}
 /** String targets keep test Arrange calls terse; an array allows an explicit layout. */
 export function flowInput(...targets: string[]): FlowGraph["flowInput"];
 export function flowInput(targets: readonly string[], position: Position): FlowGraph["flowInput"];

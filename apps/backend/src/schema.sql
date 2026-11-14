@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: run_title_generation
+-- Newest applied migration: run_title_launch
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -599,7 +599,7 @@ CREATE TABLE run_title_generations (
   generated_title TEXT,
   thread_link TEXT,
   created_at TEXT NOT NULL
-);
+, launch_payload_json TEXT, launch_sent_at TEXT, thread_id TEXT);
 
 CREATE TABLE run_title_settings (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),

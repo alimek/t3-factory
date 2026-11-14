@@ -13,7 +13,7 @@ import { failure } from "../../result.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { storedProjectIcon } from "../../projects.ts";
 import { projectFaviconUrl } from "../../project-favicon.ts";
-import { readTitleGenerations } from "../../run-titles.ts";
+import { dropTitleGeneration, readTitleGenerations } from "../../run-titles.ts";
 export function openRunNavigation(database: RunnerDatabase) {
   return {
     listRunNavigation(): Effect.Effect<Result<readonly RunNavigationEntry[]>, unknown> {
@@ -154,6 +154,7 @@ export function openRunNavigation(database: RunnerDatabase) {
           Effect.gen(function* () {
             const rows =
               yield* sql`UPDATE runs SET title=${title},title_provenance='manual' WHERE id=${id} RETURNING id`;
+            yield* dropTitleGeneration(sql, id);
             return rows.length > 0;
           }),
         );

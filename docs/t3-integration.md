@@ -357,6 +357,7 @@ Alongside the [authoring tools](#authoring-tools), its Block runtime tools are
 read-only `factory_get_run_image({ blockId, imageId })` and
 `factory_update_block({ blockId, to, exit?, message? })`, where `to` is `working` or `finished`.
 A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED` and current guidance.
+[Title threads](#title-threads) call `factory_set_run_title({ titleGenerationId, title })` instead.
 `factory_report` and `factory_context` are not exposed.
 
 - **Block id.** Start mints one opaque id per Agent Block and Continuation of the Run, and every launch, visit, Continuation prompt
@@ -413,6 +414,37 @@ Any harness session with Factory MCP registered can start a text-only Run withou
 Success is an acceptance receipt: the Run id, number, title, Project and Flow. It does not show that workers started or finished, waits for neither and carries no link. One submission keeps one `requestId`: retrying it with identical arguments returns the same Run, also after a lost reply or a backend restart, because Factory reuses the accepted request's creation time; changed content under that `requestId` conflicts. A new Run, even with the same prompt, needs a new `requestId`. Images and attachments are not accepted here.
 
 **Direct Start authority.** `factory_start_run` starts a Run as soon as it is called. The user-invoked [`factory-start-run` skill](installation.md#optional-skills) asks for review and explicit confirmation first, but that gate exists only in the skill's instructions: any local caller of Factory MCP can start Runs, launch workers and spend provider budget without it. The host-local boundary [above](#factory-mcp-and-block-ids) is unchanged; reaching Factory from a phone works by driving a T3 conversation on the Factory host, never by exposing Factory MCP remotely.
+
+## Title threads
+
+[Run title generation](runs.md#run-title-generation) launches one title thread per pending generation, beside the
+Flow. Title thread launches are not enabled in the product yet; this is the contract they follow.
+
+- **Launch.** A top-level thread in the Project checkout (`root` strategy, also for a worktree Run) with the provider
+  instance, model and options captured at Start, `interactionMode: "default"` and no `runtimeMode`, like a worker. Its
+  title is `Factory title · Run #<n> · <generation id>`, which never matches a worker's
+  `Factory #<n> · <position> <name>`. The request, with its key, is recorded when Start accepts the Run. Just before
+  dispatch Factory rechecks eligibility, marks the request sent and calls `t3_thread_launch` once. A definitive
+  rejection fails the generation; a lost reply leaves it pending with no thread bound.
+- **Prompt.** The first message is the fixed built-in prompt (version 1). It asks for a title in the prompt's language
+  of at most 120 code points, treats the Run prompt only as text to title, forbids reading, searching or editing files,
+  running commands and delegating, and carries the generation's opaque `titleGenerationId`. The Run prompt follows as
+  text with `[Image N: name]` labels; image bytes and attachments are never sent. The prohibitions are instructions,
+  not enforcement: the model runs in the Project checkout with the user's T3 permissions.
+- **`factory_set_run_title`.** Possession of the `titleGenerationId` scopes the call to one Run's generation, the same
+  possession model as the Block id; Factory does not check which thread calls. Factory trims surrounding whitespace and
+  requires one non-empty line of at most 120 code points without control characters; it never shortens a title.
+  Replies:
+  - `TITLE_APPLIED` with the title for the first valid submission while the generation is pending; an identical
+    submission afterwards returns the same success and writes nothing, also after a Rename;
+  - `INVALID_TITLE` with the reason; the generation stays pending, so the model can correct and resubmit;
+  - `TITLE_ALREADY_APPLIED` for a different title after one was applied;
+  - `TITLE_GENERATION_CLOSED` once the generation was dropped, failed or skipped; the outcome is unchanged;
+  - `UNKNOWN_TITLE_GENERATION` for an id Factory never issued, including a Block id, and `TITLE_GENERATION_ID_REQUIRED`
+    or `INVALID_ARGUMENT` for malformed calls, each with a static `reason` and `next` step in the Block tools' style.
+
+The title thread has no thread binding, observation, report or attention: Factory never reads or settles it as a
+worker.
 
 ## Reporting authority
 

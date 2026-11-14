@@ -110,15 +110,21 @@ export const makeFactoryService = (
       ),
     );
     const setup = Context.get(setupContext, RuntimeSetup.RuntimeSetup);
-    const runTitles = yield* makeRunTitles(t3, {
-      getConnection: connection.getConnection,
-      getAgentCapabilities: definitions.getAgentCapabilities,
-      getReportingInstallations: reporting.getReportingInstallations,
-    });
+    const runTitles = yield* makeRunTitles(
+      t3,
+      {
+        getConnection: connection.getConnection,
+        getAgentCapabilities: definitions.getAgentCapabilities,
+        getReportingInstallations: reporting.getReportingInstallations,
+      },
+      changes,
+      { launchTitleThreads: options.launchTitleThreads === true },
+    );
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
       (kind, input) => runner.readFactoryTool(kind, input),
+      runTitles.setRunTitle,
     );
     // A literal without spreads: guardOperations and the Promise facade expose exactly these keys.
     const operations: FactoryEffectOperations = {
@@ -216,7 +222,7 @@ export const makeFactoryService = (
       (projectId, agent) => setup.recheckAgent(projectId, agent),
       changes,
       images,
-      runTitles.planTitleGeneration,
+      runTitles,
     );
     yield* runner.initialize();
     return factory;
