@@ -47,6 +47,10 @@ import { requireSuccess, demoStart } from "../../scripts/dev/seed-support.ts";
 import { proxyFixture, proxyFixtureUpgrade } from "./proxy.ts";
 
 const home = await mkdtemp(join(tmpdir(), "factory-e2e-"));
+// Harness homes and T3 state default to os.homedir() or the developer's T3 state override; keep
+// them inside the disposable home so journeys never read or write real configuration.
+process.env.HOME = home;
+delete process.env.FACTORY_T3_STATE_DIRECTORY;
 const config = await loadConfiguration({
   FACTORY_HOME: home,
   FACTORY_PORT: process.env.PORT,
