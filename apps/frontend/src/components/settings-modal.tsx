@@ -256,22 +256,26 @@ function SettingsNav({
   );
 }
 
+/** Why a section needs action, from data Settings already reads; undefined when it does not. */
+function useSectionAttention(tab: SettingsSection["tab"]) {
+  const reporting = reportingSummary(useReportingState());
+  const pendingDevices = usePendingDeviceCount();
+  if (tab === "agent-reporting" && reporting.state === "attention") return reporting.label;
+  if (tab === "devices" && pendingDevices > 0)
+    return `${pendingDevices} ${pendingDevices === 1 ? "device" : "devices"} waiting for approval`;
+  return undefined;
+}
+
 function SettingsNavItem({ section, active }: { section: SettingsSection; active: boolean }) {
   const options = useSettingsOptions({ tab: section.tab });
   const { presentation } = useConnectionState();
   const status = connectionStatusLabel(presentation);
-  const reporting = reportingSummary(useReportingState());
+  const attention = useSectionAttention(section.tab);
   const scope = useClientScope();
   const locked = section.managedOnHost === true && scope === "remote";
-  const reportingAttention = section.tab === "agent-reporting" && reporting.state === "attention";
-  const pendingDevices = usePendingDeviceCount();
-  const devicesAttention = section.tab === "devices" && pendingDevices > 0;
-  let marker: string | undefined;
+  let marker = attention;
   if (section.tab === "connection") marker = status;
-  else if (reportingAttention) marker = reporting.label;
-  else if (devicesAttention)
-    marker = `${pendingDevices} ${pendingDevices === 1 ? "device" : "devices"} waiting for approval`;
-  else if (locked) marker = "Managed on the Factory host";
+  else if (!attention && locked) marker = "Managed on the Factory host";
   const Icon = section.icon;
   return (
     <Link
@@ -288,9 +292,7 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
       {section.tab === "connection" && (
         <ConnectionStateDot presentation={presentation} label={status} />
       )}
-      {(reportingAttention || devicesAttention) && (
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-attention" />
-      )}
+      {attention && <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-attention" />}
       {locked && (
         <Lock aria-hidden className="size-3.5 shrink-0 text-subtle-foreground" strokeWidth={1.5} />
       )}

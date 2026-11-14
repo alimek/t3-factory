@@ -20,7 +20,7 @@ test("the desktop host lists every Settings section under Factory, Runs and This
   const factory = sections(screen).getByRole("group", "Factory");
   await expect(factory.getByRole("link", /^T3 connection, /)).toBeVisible();
   await expect(factory.getByRole("link", /^Agent reporting/)).toBeVisible();
-  await expect(factory.getByRole("link", "Devices & access", { exact: true })).toBeVisible();
+  await expect(factory.getByRole("link", /^Devices & access/)).toBeVisible();
   const runs = sections(screen).getByRole("group", "Runs");
   await expect(runs.getByRole("link", "Run titles", { exact: true })).toBeVisible();
   await expect(runs.getByRole("link", "Run images", { exact: true })).toBeVisible();
@@ -36,7 +36,7 @@ test("a browser on the Factory host lists no Desktop app section", async ({ app,
   await app.open("/settings/connection");
 
   // Assert
-  await expect(sections(screen).getByRole("link", "Devices & access")).toBeVisible();
+  await expect(sections(screen).getByRole("link", /^Devices & access/)).toBeVisible();
   await expect(sections(screen).getByRole("link", "Appearance")).toBeVisible();
   await expect(sections(screen).getByRole("link", "Desktop app")).toHaveCount(0);
 });
@@ -57,7 +57,7 @@ test("a remote client lists neither Devices & access nor Desktop app and locks R
     sections(screen).getByRole("link", "Run titles, Managed on the Factory host", { exact: true }),
   ).toBeVisible();
   await expect(sections(screen).getByRole("link", "Appearance")).toBeVisible();
-  await expect(sections(screen).getByRole("link", "Devices & access")).toHaveCount(0);
+  await expect(sections(screen).getByRole("link", /^Devices & access/)).toHaveCount(0);
   await expect(sections(screen).getByRole("link", "Desktop app")).toHaveCount(0);
   await app.screenshot("settings-navigation-remote-client");
 });
