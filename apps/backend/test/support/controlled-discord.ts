@@ -65,9 +65,10 @@ type Answer = {
 /**
  * How Discord treats one later message create or edit: `delivered` proceeds normally,
  * `refused` answers 403 Missing Access,
- * `rate-limited` answers 429, `lost` creates the message and drops the connection before
- * answering, `failed` answers 500 after creating nothing, `held` never answers and creates
- * nothing, and `paused` (creates only) waits until `releaseMessages` and then proceeds normally.
+ * `rate-limited` answers 429, `lost` creates the message (or finds the one its enforced nonce
+ * names) and drops the connection before answering, `failed` answers 500 after creating nothing,
+ * `held` never answers and creates nothing, and `paused` (creates only) waits until
+ * `releaseMessages` and then proceeds normally.
  */
 export type MessageFault =
   | "delivered"
@@ -77,6 +78,12 @@ export type MessageFault =
   | "failed"
   | "held"
   | "paused";
+
+/**
+ * Faults that leave one create unproven on Factory's first request and on both re-attempts it
+ * makes with the same enforced nonce, so its outcome stays unknown.
+ */
+export const unproven = (fault: "lost" | "failed"): MessageFault[] => [fault, fault, fault];
 
 /** A message Discord created, with its components, as it shows it now. */
 export interface CreatedMessage {
@@ -228,6 +235,8 @@ export async function startControlledDiscord() {
   const messageFaults: MessageFault[] = [];
   const editFaults: MessageFault[] = [];
   const created: CreatedMessage[] = [];
+  /** Messages by their author's application and the nonce Discord enforced for them. */
+  const nonces = new Map<string, CreatedMessage>();
   /** Answers paused creates once `releaseMessages` is called. */
   const pausedCreates: (() => void)[] = [];
   /** Every edit Discord applied, in order. */
@@ -289,6 +298,40 @@ export async function startControlledDiscord() {
     pinned: false,
     ...extra,
   });
+
+  /** The key Discord remembers an enforced nonce under: per authoring application. */
+  const enforcedNonce = (fields: Fields, bot: ControlledDiscordBot) =>
+    fields.enforce_nonce === true && typeof fields.nonce === "string"
+      ? `${bot.applicationId}\n${fields.nonce}`
+      : undefined;
+
+  /**
+   * The message a create makes in `channelId`. An enforced nonce the same author used recently
+   * returns that earlier message instead, creating nothing.
+   */
+  const createdOnce = (channelId: string, fields: Fields, bot: ControlledDiscordBot) => {
+    const nonce = enforcedNonce(fields, bot);
+    const earlier = nonce === undefined ? undefined : nonces.get(nonce);
+    if (earlier)
+      return sentMessage(earlier.channelId, botUser(bot), fields, {
+        id: earlier.id,
+        components: earlier.components,
+      });
+    const message = sentMessage(channelId, botUser(bot), fields, {
+      components: fields.components ?? [],
+    });
+    const entry: CreatedMessage = {
+      id: message.id,
+      channelId,
+      content: typeof fields.content === "string" ? fields.content : "",
+      components: fields.components ?? [],
+      applicationId: bot.applicationId,
+      deleted: false,
+    };
+    created.push(entry);
+    if (nonce !== undefined) nonces.set(nonce, entry);
+    return message;
+  };
 
   /** Each bot-authorized REST route Factory uses: method, path and Discord's answer. */
   const routes: readonly (readonly [string, RegExp, (request: RouteRequest) => Answer])[] = [
@@ -360,18 +403,7 @@ export async function startControlledDiscord() {
         if (thread?.locked) return locked;
         // Posting in an archived thread that is not locked reopens it.
         if (thread) thread.archived = false;
-        const message = sentMessage(match[1]!, botUser(bot), fields, {
-          components: fields.components ?? [],
-        });
-        created.push({
-          id: message.id,
-          channelId: match[1]!,
-          content: typeof fields.content === "string" ? fields.content : "",
-          components: fields.components ?? [],
-          applicationId: bot.applicationId,
-          deleted: false,
-        });
-        return { status: 200, body: message, lost: fault === "lost" };
+        return { status: 200, body: createdOnce(match[1]!, fields, bot), lost: fault === "lost" };
       },
     ],
     [
@@ -658,6 +690,10 @@ export async function startControlledDiscord() {
     /** Discord handles and answers every paused create now. */
     releaseMessages() {
       for (const answer of pausedCreates.splice(0)) answer();
+    },
+    /** Discord's few-minute nonce uniqueness window passed: earlier nonces return nothing. */
+    nonceWindowPassed() {
+      nonces.clear();
     },
     /** Resolves once Discord created `count` messages in total. */
     createdMessages(count: number) {

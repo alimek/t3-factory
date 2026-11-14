@@ -9,9 +9,11 @@ import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
 import type { ConversationKey } from "./conversations.ts";
 import {
+  createDeduplicated,
+  nonceOf,
   oweDelivery,
-  sendFailure,
   type ChatDeliveries,
+  type ConfirmationButton,
   type Destination,
   type DiscordSender,
 } from "./deliveries.ts";
@@ -336,20 +338,17 @@ export function makeChatActions(
     permitted: Effect.Effect<boolean, unknown>,
   ) =>
     Effect.gen(function* (): Effect.fn.Return<"presented" | "failed" | "withdrawn", unknown> {
+      const create = (text: string, nonce: string, button?: ConfirmationButton) =>
+        createDeduplicated(sender, destination, text, nonceOf("review", id, nonce), button);
       const failed = Effect.gen(function* () {
         yield* fail(id);
-        yield* Effect.ignore(
-          Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
-        );
+        yield* create(PREPARATION_FAILED, "failed");
         return "failed" as const;
       });
       const withdrawn = Effect.as(fail(id), "withdrawn" as const);
-      for (const part of proposed.review) {
+      for (const [index, part] of proposed.review.entries()) {
         if (!((yield* stillPreparing(id, proposed)) && (yield* permitted))) return yield* withdrawn;
-        const sent = yield* Effect.result(
-          Effect.tryPromise(() => sender.create(destination, part)),
-        );
-        if (sent._tag === "Failure") return yield* failed;
+        if (!("messageId" in (yield* create(part, `part ${index}`)))) return yield* failed;
       }
       if (!(yield* permitted)) return yield* withdrawn;
       const expiresAt = new Date((yield* Clock.currentTimeMillis) + CONSENT_MS).toISOString();
@@ -361,18 +360,13 @@ export function makeChatActions(
         }),
       );
       if (!usable) return yield* withdrawn;
-      const button = yield* Effect.result(
-        Effect.tryPromise(() =>
-          sender.create(destination, proposed.confirmation.text, {
-            customId: `${BUTTON_PREFIX}${id}`,
-            label: proposed.confirmation.label,
-          }),
-        ),
-      );
-      if (button._tag === "Failure" && sendFailure(button.failure.cause) !== "unknown")
-        return yield* failed;
+      const button = yield* create(proposed.confirmation.text, "button", {
+        customId: `${BUTTON_PREFIX}${id}`,
+        label: proposed.confirmation.label,
+      });
+      if ("failure" in button && button.failure !== "unknown") return yield* failed;
       return "presented";
-    });
+    }).pipe(Effect.onInterrupt(() => fail(id)));
 
   /** Commits a decided outcome: consumption, the action's result, origin and owed receipt. */
   const decide = (row: ProposalRow, actionId: string, outcome: ActionOutcome) =>

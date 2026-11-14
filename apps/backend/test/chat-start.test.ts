@@ -33,7 +33,7 @@ import {
   until,
 } from "./support/chat-conversation.ts";
 import { addedProject } from "./support/chat-runs.ts";
-import { PARTICIPANT_ID } from "./support/controlled-discord.ts";
+import { PARTICIPANT_ID, unproven } from "./support/controlled-discord.ts";
 
 const ANSWERS = {
   accepted: "Confirmed. Factory accepted it; the receipt follows in this thread.",
@@ -512,11 +512,54 @@ it("a UI-started Run gets no status card, while a chat-started Run in the same P
 const owedReceipt = (world: Awaited<ReturnType<typeof startingWorld>>) =>
   discordSettingsWhen(world.factory, (settings) => settings.delivery.problems.length > 0);
 
-it("a receipt create Discord may already have performed is not repeated and is shown in Settings as unknown", async (c) => {
+it("a receipt create Discord performed without answering is asked again under its enforced nonce and shows once", async (c) => {
   // Arrange
   const world = await startingWorld(c);
   const button = await proposedStart(world, "600000000000000001", 4);
   world.discord.faultMessages("lost");
+
+  // Act
+  await clicked(world.discord, button, "610000000000000001", 1);
+
+  // Assert
+  await world.discord.createdWhere(isStatusCard, 1);
+  expect(
+    besidesReports(world.discord)
+      .slice(4)
+      .map((message) => message.content),
+  ).toStrictEqual([expect.stringMatching(/^\*\*Start accepted\.\*\*/)]);
+  const creates = world.discord
+    .requested("POST", MESSAGE_CREATES)
+    .map((request) => request.body as { nonce: string; enforce_nonce: boolean; content: string })
+    .filter((create) => create.content.startsWith("**Start accepted.**"));
+  expect(creates).toHaveLength(2);
+  expect(creates[1]!.nonce).toBe(creates[0]!.nonce);
+  expect(creates.map((create) => create.enforce_nonce)).toStrictEqual([true, true]);
+  const settings = await world.factory.getDiscordSettings();
+  assert(settings.ok);
+  expect(settings.value.delivery.problems).toStrictEqual([]);
+});
+
+it("a confirmation button whose create failed without proof is asked again under its nonce, shows once and confirms", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  world.discord.faultMessages("delivered", "delivered", "delivered", "failed");
+  const button = await proposedStart(world, "600000000000000001", 4);
+
+  // Act
+  const answer = await clicked(world.discord, button, "610000000000000001", 1);
+
+  // Assert
+  expect(answer).toBe(ANSWERS.accepted);
+  expect(confirmations(world.discord)).toHaveLength(1);
+  expect(await runsOf(world.factory)).toHaveLength(1);
+});
+
+it("a receipt create still unproven after its re-attempts under the nonce is not repeated and is shown in Settings as unknown", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000000001", 4);
+  world.discord.faultMessages(...unproven("lost"));
 
   // Act
   await clicked(world.discord, button, "610000000000000001", 1);
@@ -542,9 +585,10 @@ it("the warned Retry sends an unknown receipt once more and never starts another
   // Arrange
   const world = await startingWorld(c);
   const button = await proposedStart(world, "600000000000000001", 4);
-  world.discord.faultMessages("lost");
+  world.discord.faultMessages(...unproven("lost"));
   await clicked(world.discord, button, "610000000000000001", 1);
   const [problem] = (await owedReceipt(world)).delivery.problems;
+  world.discord.nonceWindowPassed();
 
   // Act
   const retried = await world.factory.retryChatDelivery({
@@ -568,7 +612,7 @@ it("Retry of an unknown receipt is refused until the owner accepts a possible du
   // Arrange
   const world = await startingWorld(c);
   const button = await proposedStart(world, "600000000000000001", 4);
-  world.discord.faultMessages("lost");
+  world.discord.faultMessages(...unproven("lost"));
   await clicked(world.discord, button, "610000000000000001", 1);
   const [problem] = (await owedReceipt(world)).delivery.problems;
 

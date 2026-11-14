@@ -3,7 +3,7 @@ import { isStatusCard, noticesIn, runsOf, startingWorld } from "./support/chat-a
 import { discordConnectionSave, discordSettingsWhen, turnedOn } from "./support/chat-control.ts";
 import { COLLABORATOR_ID, savedAccess, THREAD } from "./support/chat-conversation.ts";
 import { addedProject } from "./support/chat-runs.ts";
-import { PARTICIPANT_ID } from "./support/controlled-discord.ts";
+import { PARTICIPANT_ID, unproven } from "./support/controlled-discord.ts";
 import {
   nativeRequestAnswered,
   nativeRequestShown,
@@ -419,7 +419,7 @@ it("a notice whose create Discord may have performed leaves Settings without a R
   // Arrange
   const world = await startingWorld(c);
   const { worker } = await chatStartedRun(world);
-  world.discord.faultMessages("lost");
+  world.discord.faultMessages(...unproven("lost"));
   await nativeRequestShown(world.world, worker);
   await discordSettingsWhen(world.factory, (settings) =>
     settings.delivery.problems.some(
@@ -443,7 +443,7 @@ it("the warned Retry of a Settled notice Discord may not have created posts it o
   // Arrange
   const world = await startingWorld(c);
   const { worker } = await chatStartedRun(world);
-  world.discord.faultMessages("failed");
+  world.discord.faultMessages(...unproven("failed"));
   await finished(world, worker);
   const settings = await discordSettingsWhen(world.factory, (current) =>
     current.delivery.problems.some(

@@ -508,17 +508,19 @@ async function receiptRunId(baseUrl: string | undefined, thread: string) {
 
 /**
  * A participant's Start, confirmed with its button, whose receipt create Discord performed but
- * whose answer was lost: Factory owes a receipt it cannot prove either way.
+ * whose answers were lost, also for both re-attempts under its nonce: Factory owes a receipt it
+ * cannot prove either way. Afterwards Discord's nonce uniqueness window passes.
  */
 async function unknownReceipt(baseUrl: string | undefined) {
   const { thread, before } = await confirmedStart(
     baseUrl,
     "UI receipt journey · Tidy the project picker",
-    ["lost"],
+    ["lost", "lost", "lost"],
   );
   await settingsWhen<DiscordSettings>(baseUrl, "/api/chat-control/discord", (settings) =>
     settings.delivery.problems.some((problem) => problem.state === "unknown"),
   );
+  await fetch(new URL("/__fixture/discord/nonce-window", baseUrl), { method: "POST" });
   return { before, runId: await receiptRunId(baseUrl, thread) };
 }
 
