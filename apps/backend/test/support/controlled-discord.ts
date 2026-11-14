@@ -58,15 +58,25 @@ type Answer = {
   readonly lost?: boolean;
   /** No answer arrives until the server closes. */
   readonly held?: boolean;
+  /** No answer arrives until `releaseMessages`; then Discord handles the request normally. */
+  readonly paused?: boolean;
 };
 
 /**
  * How Discord treats one later message create or edit: `delivered` proceeds normally,
  * `refused` answers 403 Missing Access,
  * `rate-limited` answers 429, `lost` creates the message and drops the connection before
- * answering, `failed` answers 500 after creating nothing, `held` never answers and creates nothing.
+ * answering, `failed` answers 500 after creating nothing, `held` never answers and creates
+ * nothing, and `paused` (creates only) waits until `releaseMessages` and then proceeds normally.
  */
-export type MessageFault = "delivered" | "refused" | "rate-limited" | "lost" | "failed" | "held";
+export type MessageFault =
+  | "delivered"
+  | "refused"
+  | "rate-limited"
+  | "lost"
+  | "failed"
+  | "held"
+  | "paused";
 
 /** A message Discord created, with its components, as it shows it now. */
 export interface CreatedMessage {
@@ -87,6 +97,8 @@ interface RouteRequest {
   readonly fields: Fields;
   readonly body: unknown;
   readonly bot: ControlledDiscordBot;
+  /** A paused request Discord now handles; its fault was already taken. */
+  readonly resumed: boolean;
 }
 
 export interface GatewayEvent {
@@ -216,6 +228,8 @@ export async function startControlledDiscord() {
   const messageFaults: MessageFault[] = [];
   const editFaults: MessageFault[] = [];
   const created: CreatedMessage[] = [];
+  /** Answers paused creates once `releaseMessages` is called. */
+  const pausedCreates: (() => void)[] = [];
   /** Every edit Discord applied, in order. */
   const edits: { readonly messageId: string; readonly content: string }[] = [];
   const deletedThreads = new Set<string>();
@@ -336,8 +350,9 @@ export async function startControlledDiscord() {
     [
       "POST",
       /^\/api\/v10\/channels\/(\d+)\/messages$/,
-      ({ match, fields, bot }) => {
-        const fault = messageFaults.shift();
+      ({ match, fields, bot, resumed }) => {
+        const fault = resumed ? undefined : messageFaults.shift();
+        if (fault === "paused") return { status: 0, paused: true };
         const faulted = faultAnswer(fault);
         if (faulted) return faulted;
         if (deletedThreads.has(match[1]!)) return unknownChannel;
@@ -452,7 +467,7 @@ export async function startControlledDiscord() {
   const interactionRoutes: readonly (readonly [
     string,
     RegExp,
-    (request: Omit<RouteRequest, "bot">) => Answer,
+    (request: Omit<RouteRequest, "bot" | "resumed">) => Answer,
   ])[] = [
     ["POST", /^\/api\/v10\/interactions\/\d+\/[^/]+\/callback$/, () => ({ status: 204 })],
     [
@@ -469,7 +484,13 @@ export async function startControlledDiscord() {
     ],
   ];
 
-  const route = (method: string, path: string, token: string, body: unknown): Answer => {
+  const route = (
+    method: string,
+    path: string,
+    token: string,
+    body: unknown,
+    resumed = false,
+  ): Answer => {
     const bot = bots.get(token);
     const fields = (typeof body === "object" && body !== null ? body : {}) as Fields;
     for (const [routeMethod, pattern, answer] of interactionRoutes) {
@@ -480,7 +501,7 @@ export async function startControlledDiscord() {
       const match = routeMethod === method ? pattern.exec(path) : null;
       if (!match) continue;
       if (!bot) return { status: 401, body: { message: "401: Unauthorized", code: 0 } };
-      return answer({ match, fields, body, bot });
+      return answer({ match, fields, body, bot, resumed });
     }
     return { status: 404, body: { message: "404: Not Found", code: 0 } };
   };
@@ -500,14 +521,19 @@ export async function startControlledDiscord() {
         body,
       });
       const token = request.headers.authorization?.replace(/^Bot /, "") ?? "";
+      const respond = (answer: Answer) => {
+        if (answer.held) return changed.notify();
+        if (answer.lost) response.destroy();
+        else if (answer.body === undefined) response.writeHead(answer.status).end();
+        else {
+          response.writeHead(answer.status, { "content-type": "application/json" });
+          response.end(JSON.stringify(answer.body));
+        }
+        changed.notify();
+      };
       const answer = route(request.method ?? "", path, token, body);
-      if (answer.held) return changed.notify();
-      if (answer.lost) response.destroy();
-      else if (answer.body === undefined) response.writeHead(answer.status).end();
-      else {
-        response.writeHead(answer.status, { "content-type": "application/json" });
-        response.end(JSON.stringify(answer.body));
-      }
+      if (!answer.paused) return respond(answer);
+      pausedCreates.push(() => respond(route(request.method ?? "", path, token, body, true)));
       changed.notify();
     });
   });
@@ -628,6 +654,10 @@ export async function startControlledDiscord() {
     /** Later message creates meet these faults in order, one each. */
     faultMessages(...faults: MessageFault[]) {
       messageFaults.push(...faults);
+    },
+    /** Discord handles and answers every paused create now. */
+    releaseMessages() {
+      for (const answer of pausedCreates.splice(0)) answer();
     },
     /** Resolves once Discord created `count` messages in total. */
     createdMessages(count: number) {

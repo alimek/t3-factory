@@ -449,7 +449,11 @@ and the exact prompt in full. It discloses that the Flow's and its Agents' curre
 and workspace setting are resolved at confirmation without another review. A review is at most 32,000
 Unicode characters and goes out as fully visible ordered messages; only after every part was
 delivered does Factory post the last message with one **Confirm** button. A part that fails, or a
-button Discord definitely refused, leaves nothing to confirm and Factory says so.
+button Discord definitely refused, leaves nothing to confirm and Factory says so. Before each part
+and before the button, Factory checks again that the proposal is still pending, Chat control is On,
+Access still allows the requester and the targeted Projects in that channel, the requester's Discord
+access is current and the conversation was not reset; otherwise it stops posting the review, posts
+no button and the proposal is not presented.
 
 The consent is bound to the requester, the configured application, the thread, the exact operation
 and parameters and the model's call that proposed it. The button's first dispatch fixes its lifetime

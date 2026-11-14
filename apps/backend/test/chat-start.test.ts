@@ -46,6 +46,8 @@ const ANSWERS = {
   rejected: "Confirmed, but Factory did not accept it; the receipt in this thread explains why.",
 } as const;
 
+const MESSAGE_CREATES = /^\/api\/v10\/channels\/\d+\/messages$/;
+
 it("a Start proposal posts Factory's complete review in ordered parts with one requester button last, and starts nothing", async (c) => {
   // Arrange
   const world = await startingWorld(c);
@@ -313,6 +315,31 @@ it("revoking the requester voids their waiting review for good, even after the g
   // Assert
   expect(answer).toBe(ANSWERS.invalid);
   expect(await runsOf(world.factory)).toStrictEqual([]);
+});
+
+it("revoking the requester while their multipart review is being posted stops it before the next part, so no button appears", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  world.discord.faultMessages("paused");
+  world.model.script(startCall(world, START_PROMPT));
+  world.discord.deliver(
+    invocation("600000000000000001", { content: `start this:\n${START_PROMPT}` }),
+  );
+  await world.discord.request("POST", MESSAGE_CREATES, 1);
+  // A collaborator's message in the same thread is interpreted only after the review ends.
+  world.discord.deliver(invocation("600000000000000002", { authorId: COLLABORATOR_ID }));
+  await savedAccess(world.factory, [COLLABORATOR_ID], [world.project.id]);
+
+  // Act
+  world.discord.releaseMessages();
+
+  // Assert
+  await world.discord.createdMessages(2);
+  expect(world.discord.created.map((message) => message.content)).toStrictEqual([
+    expect.stringContaining(`**Flow:** ${world.flow.name}`),
+    "OK",
+  ]);
+  expect(confirmations(world.discord)).toStrictEqual([]);
 });
 
 it("replacing the Discord application retires its waiting reviews, even after switching back", async (c) => {

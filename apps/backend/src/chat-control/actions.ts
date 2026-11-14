@@ -310,8 +310,20 @@ export function makeChatActions(
   const fail = (id: string) =>
     sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE id=${id} AND state IN ('preparing','presented')`;
 
+  /** Whether the proposal is still being prepared and current Access still grants its targets. */
+  const stillPreparing = (id: string, proposed: Proposed) =>
+    Effect.gen(function* () {
+      const row = yield* proposal(id);
+      if (row?.state !== "preparing") return false;
+      const granted = yield* grantedProjects(sql, row.requester_id, row.parent_channel_id);
+      return proposed.projectIds.every((projectId) => granted.includes(projectId));
+    });
+
   /**
-   * Publishes a new proposal's complete review: every part in order, then the button. Consent
+   * Publishes a new proposal's complete review: every part in order, then the button. Before
+   * each part and before the button, the proposal must still be preparing, current Access must
+   * grant its targets and `permitted` (Chat control On, the requester's access and the
+   * conversation generation) must hold; otherwise publication stops without a button. Consent
    * becomes usable only once every preceding part was delivered; the button's first dispatch
    * fixes the expiry even if its own delivery stays uncertain. A part that fails, or a button
    * Discord definitely refused, leaves no usable consent.
@@ -321,22 +333,34 @@ export function makeChatActions(
     proposed: Proposed,
     sender: DiscordSender,
     destination: Destination,
+    permitted: Effect.Effect<boolean, unknown>,
   ) =>
-    Effect.gen(function* (): Effect.fn.Return<"presented" | "failed", unknown> {
+    Effect.gen(function* (): Effect.fn.Return<"presented" | "failed" | "withdrawn", unknown> {
+      const failed = Effect.gen(function* () {
+        yield* fail(id);
+        yield* Effect.ignore(
+          Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
+        );
+        return "failed" as const;
+      });
+      const withdrawn = Effect.as(fail(id), "withdrawn" as const);
       for (const part of proposed.review) {
+        if (!((yield* stillPreparing(id, proposed)) && (yield* permitted))) return yield* withdrawn;
         const sent = yield* Effect.result(
           Effect.tryPromise(() => sender.create(destination, part)),
         );
-        if (sent._tag === "Failure") {
-          yield* fail(id);
-          yield* Effect.ignore(
-            Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
-          );
-          return "failed";
-        }
+        if (sent._tag === "Failure") return yield* failed;
       }
+      if (!(yield* permitted)) return yield* withdrawn;
       const expiresAt = new Date((yield* Clock.currentTimeMillis) + CONSENT_MS).toISOString();
-      yield* sql`UPDATE chat_proposals SET state='presented',expires_at=${expiresAt} WHERE id=${id} AND state='preparing'`;
+      const usable = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          if (!(yield* stillPreparing(id, proposed))) return false;
+          yield* sql`UPDATE chat_proposals SET state='presented',expires_at=${expiresAt} WHERE id=${id}`;
+          return true;
+        }),
+      );
+      if (!usable) return yield* withdrawn;
       const button = yield* Effect.result(
         Effect.tryPromise(() =>
           sender.create(destination, proposed.confirmation.text, {
@@ -345,13 +369,8 @@ export function makeChatActions(
           }),
         ),
       );
-      if (button._tag === "Failure" && sendFailure(button.failure.cause) !== "unknown") {
-        yield* fail(id);
-        yield* Effect.ignore(
-          Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
-        );
-        return "failed";
-      }
+      if (button._tag === "Failure" && sendFailure(button.failure.cause) !== "unknown")
+        return yield* failed;
       return "presented";
     });
 
