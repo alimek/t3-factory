@@ -99,7 +99,7 @@ An Agent block's panel always shows the optional **Revisit instruction** plain-t
 dropped on save, and whitespace alone saves as empty). Its helper text says it is sent on every visit to the block after the first, with the incoming message; the Agent prompt still applies;
 and the instruction decides that visit's scope but never waives the Agent's criteria, a required check or a defect with evidence. Edits are unsaved draft changes like any other. A block with a
 non-empty instruction shows a small neutral **Revisit instruction** tag in its canvas header, never the text and never styled as an execution state. New Agent blocks start empty, and swapping
-the block's Agent or copying the Flow's graph keeps the value. Delivery is described in the [Runner](runner.md).
+the block's Agent or copying the Flow's graph keeps the value. Delivery is described in the [Runner](runner.md#revisit-instructions).
 
 A **Continuation** block is configured with only a name and a required **Prompt**; it has no Agent, settings or exits to configure. Its canvas block reads
 **continues *Agent*'s thread**, naming the nearest Agent on its incoming paths (walking back through Human steps, Waits and Continuations), or **the incoming Agent's thread** when

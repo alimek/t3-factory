@@ -20,6 +20,7 @@ import {
   resultsReleasedToWait,
   resultReplacedBeforeRelease,
   resultReported,
+  resultReturnedToEarlierWorker,
   reviewApproved,
   settled,
   snoozed,
@@ -300,7 +301,7 @@ async function finishScenario(
       await missingReport(context, await reportRejected(context, worker, scenario.rejected));
       break;
     case "result released to a Human review":
-    case "changes requested": {
+    case "corrections back in review": {
       const reviewer = await resultReleasedToSecondWorker(
         context,
         await resultReported(context, worker, scenario.implementation),
@@ -309,8 +310,11 @@ async function finishScenario(
         context,
         await resultReported(context, reviewer, scenario.review),
       );
-      if (scenario.state === "changes requested")
-        await changesRequested(context, review, worker, scenario.correction);
+      if (scenario.state === "corrections back in review") {
+        const correcting = await changesRequested(context, review, worker, scenario.correction);
+        await resultReported(context, correcting, scenario.corrected);
+        await resultReturnedToEarlierWorker(context, reviewer);
+      }
       break;
     }
     case "result released to two workers":

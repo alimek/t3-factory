@@ -38,7 +38,8 @@ export type SeedScenario = {
   | { state: "missing report"; rejected: Report }
   | ({ implementation: Report; review: Report } & (
       | { state: "result released to a Human review" }
-      | { state: "changes requested"; correction: string }
+      /** The worker applied the requested changes and its result is back with the reviewer. */
+      | { state: "corrections back in review"; correction: string; corrected: Report }
     ))
   | { state: "result released to two workers"; first: Report; final: Report }
   | { state: "two workers started from one prompt"; repositories: readonly Repository[] }
@@ -199,10 +200,15 @@ export const seedScenarioList: readonly SeedScenario[] = [
     key: "correction",
     title: "Applying your requested changes",
     flow: "review",
-    state: "changes requested",
+    state: "corrections back in review",
     ...reviewContent,
     correction:
       "Rename Reset filters to Clear filters and keep keyboard focus in the search field.",
+    corrected: {
+      exit: "Ready for review",
+      message:
+        "Renamed Reset filters to Clear filters; focus now stays in the search field after clearing. Ready for another review.",
+    },
   },
   {
     key: "parallel",

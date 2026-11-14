@@ -1496,16 +1496,28 @@ export function changesRequested(
         (intent) => intent.occurrenceId === review.occurrence.id && intent.state === "acknowledged",
       ),
     );
-    const run = await observeFor(
-      "observe the later visit",
-      world,
-      review.runId,
-      (detail) =>
-        detail.activations.filter((activation) => activation.blockId === worker.flowBlockId)
-          .length === 2 && workerBlock(detail, worker)?.executionId !== worker.executionId,
-    );
-    return { ...worker, executionId: workerBlock(run, worker)!.executionId! };
+    return secondVisitStarted(world, worker);
   });
+}
+
+/** Factory activated `worker`'s Block a second time on a new T3 run; the handle is on that run. */
+async function secondVisitStarted(world: ScenarioWorld, worker: WorkerHandle) {
+  const run = await observeFor(
+    "observe the later visit",
+    world,
+    worker.runId,
+    (detail) =>
+      detail.activations.filter((activation) => activation.blockId === worker.flowBlockId)
+        .length === 2 && workerBlock(detail, worker)?.executionId !== worker.executionId,
+  );
+  return { ...worker, executionId: workerBlock(run, worker)!.executionId! };
+}
+
+/** From a result reported on an exit that returns to `earlier`, a worker whose first visit has
+ * ended: Factory observed it and sent the result to `earlier` as the second visit of its Block;
+ * the returned handle is on that visit's T3 run. */
+export function resultReturnedToEarlierWorker(world: ScenarioWorld, earlier: WorkerHandle) {
+  return reach("result returned to an earlier worker", () => secondVisitStarted(world, earlier));
 }
 
 /** From a review approved towards a worker whose result returns to `first`: Factory launched that
