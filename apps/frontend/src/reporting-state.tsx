@@ -111,6 +111,20 @@ export function useReportingState() {
   return value;
 }
 
+/** A harness configuration that needs Install or Repair, whether or not an Agent uses it yet. */
+export function targetNeedsAttention(target: ReportingInstallation) {
+  return target.status === "not-installed" || target.status === "needs-attention";
+}
+
+/** The Agent reporting nav marker: a failed read or any target needing install or repair. */
+export function reportingTargetsMarker({
+  targets,
+  error,
+}: Pick<ReportingReads, "targets" | "error">): string | undefined {
+  if (error) return agentReportingStatus("", { targets, error }).label;
+  return targets?.some(targetNeedsAttention) ? "Needs attention" : undefined;
+}
+
 export function reportingSummary(reads: ReportingReads): ReportingStatus {
   if (reads.error || !reads.targets || !reads.agents) return agentReportingStatus("", reads);
   const needsAttention = reads.agents.some(

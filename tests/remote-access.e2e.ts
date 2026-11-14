@@ -129,19 +129,19 @@ test("an approved browser installs Factory MCP on the server and retains it afte
   await browser.setViewport({ width: 1600, height: 1000 });
   await remoteFixture(app, "reporting/remove-registration");
   await openApproved(app, "/settings/agent-reporting");
-  const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
+  const codex = screen.getByRole("group", "Codex", { exact: true });
   await expect(codex.getByRole("status")).toHaveText("Not installed");
-  await expect(codex.getByRole("button", "Install Factory MCP", { exact: true })).toBeEnabled();
+  await expect(codex.getByRole("button", "Install Codex", { exact: true })).toBeEnabled();
   await app.screenshot("remote-reporting-install-available");
 
   // Act
-  await codex.getByRole("button", "Install Factory MCP", { exact: true }).tap();
+  await codex.getByRole("button", "Install Codex", { exact: true }).tap();
 
   // Assert
   await expect(codex.getByRole("status")).toHaveText("Installed");
   await browser.reload();
   await expect(codex.getByRole("status")).toHaveText("Installed");
-  await expect(codex.getByRole("button", "Reinstall Factory MCP")).toBeEnabled();
+  await expect(codex.getByRole("button", "Reinstall Codex", { exact: true })).toBeEnabled();
   await app.screenshot("remote-reporting-installed");
 });
 
@@ -152,11 +152,11 @@ test("an approved browser repairs the server's Factory MCP installation", async 
   // Arrange
   await remoteFixture(app, "reporting/break");
   await openApproved(app, "/settings/agent-reporting");
-  const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
+  const codex = screen.getByRole("group", "Codex", { exact: true });
   await expect(codex.getByRole("status")).toHaveText("Needs attention");
 
   // Act
-  await codex.getByRole("button", "Repair installation", { exact: true }).tap();
+  await codex.getByRole("button", "Repair Codex", { exact: true }).tap();
 
   // Assert
   await expect(codex.getByRole("status")).toHaveText("Installed");

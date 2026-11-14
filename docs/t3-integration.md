@@ -177,9 +177,12 @@ files. The worker's first message starts with `$factory-block` followed by a `Fa
 
 ### Installation actions
 
-**Settings → Agent reporting** shows Not installed, Installed or Needs attention for each
-discovered configuration home, with a global **Recheck installation**. Codex, Claude, Cursor and
-Grok are those homes. Every other provider instance is listed as **Reporting not available yet**,
+**Settings → Agent reporting** lists each discovered configuration home as one row with its path,
+a Not installed, Installed or Needs attention status and the one action that applies, with a
+global **Check again**. While any home is Not installed or Needs attention, or the inspection
+fails, the Agent reporting navigation item carries an attention dot; unlike the sidebar Settings
+dot, it counts homes no saved Agent uses. Codex, Claude, Cursor and
+Grok are those homes. Every other provider instance is listed as **Not available**,
 with the `factory-runtime` MCP URL to add by hand and no install action. Agent capabilities
 publish the same per-provider `reporting` status, and Start blocks an unsupported provider with
 `harness_unsupported` pointing to Studio → Agents. A provider instance disabled in T3 is left out:
@@ -188,8 +191,8 @@ enabled instance stays listed for that instance. An Agent saved on a disabled pr
 **Reporting not configured** and Start stays blocked until the provider is enabled in T3 or the
 Agent uses another one.
 
-- **Install Factory MCP** (Not installed) and **Reinstall Factory MCP** (Installed) write only
-  Factory's own entry. **Repair installation** appears only when Factory can repair what it owns:
+- **Install** (Not installed) and **Reinstall** (Installed) write only
+  Factory's own entry. **Repair** appears only when Factory can repair what it owns:
   a missing or outdated `$factory-block` skill, or Factory's entry pointing at another backend
   address (a changed `port` or `FACTORY_PORT`). An application upgrade needs Repair only when it
   changes the skill; a fresh harness session sees the new tools. Any other `factory-runtime`

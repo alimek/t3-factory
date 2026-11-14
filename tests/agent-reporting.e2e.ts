@@ -57,6 +57,12 @@ test("reporting problems are visible before Start and clear after repairing the 
   await app.open(`/studio/agents/${worker.id}`);
   await screen.getByRole("link", "Open Agent reporting").tap();
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
+  await expect(screen.getByRole("group", "Codex", { exact: true }).getByRole("status")).toHaveText(
+    "Needs attention",
+  );
+  await expect(
+    screen.getByRole("link", "Agent reporting, Needs attention", { exact: true }),
+  ).toBeVisible();
   await repairCodexReporting(screen);
 
   // Assert
@@ -95,6 +101,49 @@ test("a failed reporting inspection warns instead of showing green Connected", a
   await screen.getByRole("link", "Settings, Reporting status unavailable", { exact: true }).tap();
   await expect(screen.getByRole("heading", "Agent reporting", { exact: true })).toBeVisible();
   await expect(screen.getByRole("alert")).toContainText("Factory could not check Agent reporting");
+});
+
+test("the Agent reporting attention dot clears once every harness is installed", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const codex = {
+    id: "codex-home",
+    provider: "codex",
+    instances: ["codex-main"],
+    path: "/home/factory/.codex/config.toml",
+    message: "Configuration installed.",
+    launchSkill: "current",
+    runtimeEvidence: "UNVERIFIED",
+  };
+  let targets = [
+    {
+      ...codex,
+      status: "not-installed",
+      actions: { install: true, repair: false, reinstall: false },
+    },
+  ];
+  await browser.route("**/api/reporting", (route) =>
+    route.fulfill({ json: { ok: true, value: targets } }),
+  );
+  await app.open("/settings/agent-reporting");
+  await expect(
+    screen.getByRole("link", "Agent reporting, Needs attention", { exact: true }),
+  ).toBeVisible();
+  targets = [
+    { ...codex, status: "installed", actions: { install: false, repair: false, reinstall: true } },
+  ];
+
+  // Act
+  await screen.getByRole("button", "Check again", { exact: true }).tap();
+
+  // Assert
+  await expect(screen.getByRole("group", "Codex", { exact: true }).getByRole("status")).toHaveText(
+    "Installed",
+  );
+  await expect(screen.getByRole("link", "Agent reporting", { exact: true })).toBeVisible();
 });
 
 test("a disconnected T3 connection takes precedence over reporting warnings", async ({

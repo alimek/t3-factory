@@ -24,7 +24,7 @@ import { StudioLink } from "./app-link.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
-import { reportingSummary, useReportingState } from "../reporting-state.tsx";
+import { reportingTargetsMarker, useReportingState } from "../reporting-state.tsx";
 import { SettingsPanel } from "./screen-layout.tsx";
 import { ConnectionSettingsPanel } from "../routes/connection.tsx";
 import {
@@ -258,9 +258,9 @@ function SettingsNav({
 
 /** Why a section needs action, from data Settings already reads; undefined when it does not. */
 function useSectionAttention(tab: SettingsSection["tab"]) {
-  const reporting = reportingSummary(useReportingState());
+  const reportingMarker = reportingTargetsMarker(useReportingState());
   const pendingDevices = usePendingDeviceCount();
-  if (tab === "agent-reporting" && reporting.state === "attention") return reporting.label;
+  if (tab === "agent-reporting") return reportingMarker;
   if (tab === "devices" && pendingDevices > 0)
     return `${pendingDevices} ${pendingDevices === 1 ? "device" : "devices"} waiting for approval`;
   return undefined;
