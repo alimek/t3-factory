@@ -76,6 +76,8 @@ async function controlledProvider() {
 }
 
 let provider: Awaited<ReturnType<typeof controlledProvider>>;
+/** Runs a journey started through chat and leaves for teardown to archive. */
+const startedRuns: string[] = [];
 
 beforeEach(async ({ browser }) => {
   await browser.setViewport({ width: 1440, height: 1000 });
@@ -83,7 +85,12 @@ beforeEach(async ({ browser }) => {
 });
 
 afterEach(async ({ app }) => {
-  // Journeys share one fixture; a later journey must start with Chat control Off.
+  // Journeys share one fixture; a later journey must start with Chat control Off and without
+  // this journey's Runs.
+  for (const runId of startedRuns.splice(0)) {
+    const archived = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/archive`, undefined);
+    assert(archived.ok, JSON.stringify(archived));
+  }
   const off = await hostCall(app.baseUrl, "PUT", "/api/chat-control/enabled", { enabled: false });
   assert(off.ok, JSON.stringify(off));
   await provider.close();
@@ -549,6 +556,7 @@ test("the host retries an owed receipt Discord may already show only after a dup
 }) => {
   // Arrange
   const { before, runId } = await unknownReceipt(app.baseUrl);
+  startedRuns.push(runId);
   const receipt = await deliveryProblem(
     app,
     screen,
@@ -586,15 +594,13 @@ test("the host retries an owed receipt Discord may already show only after a dup
     [runId],
   );
   await app.screenshot("chat-discord-delivery-retried");
-  const archived = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/archive`, undefined);
-  assert(archived.ok, JSON.stringify(archived));
 });
 
 const CARD = /^\*\*Run [^\n]+\*\* · /;
 const LOCKED_CORRECTION =
   "The thread is locked, and Factory never unlocks threads. Unlock it in Discord, then retry.";
 
-test("the host retries the status card and the Archived notice Discord refused in a locked thread once a moderator unlocked it", async ({
+test("the host retries the status card Discord refused in a locked thread once a moderator unlocked it, while the Archived notice waits for its own Retry", async ({
   app,
   screen,
 }) => {
@@ -634,26 +640,19 @@ test("the host retries the status card and the Archived notice Discord refused i
 
   // Act
   await card.getByRole("button", "Retry").tap();
-  await notice.getByRole("button", "Retry").tap();
 
   // Assert
-  await expect(screen.getByRole("region", "Delivery and actions")).toHaveCount(0);
+  await expect(card).toHaveCount(0);
+  await expect(notice.getByText(LOCKED_CORRECTION)).toBeVisible();
   const messages = await messagesWhen(app.baseUrl, (created) =>
     created.some(
       (message) =>
-        message.channelId === thread &&
-        /^\*\*Run [^\n]+\*\* was Archived at /.test(message.content),
+        message.channelId === thread && /^\*\*Run [^\n]+\*\* · Archived\n/.test(message.content),
     ),
   );
   assert.strictEqual(
     messages.filter((message) => message.channelId === thread && CARD.test(message.content)).length,
     1,
-  );
-  assert(
-    messages.some(
-      (message) =>
-        message.channelId === thread && /^\*\*Run [^\n]+\*\* · Archived\n/.test(message.content),
-    ),
   );
   await app.screenshot("chat-discord-status-card-retried");
 });
