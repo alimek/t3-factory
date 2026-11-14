@@ -13,7 +13,7 @@ import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 
 /** Disposable T3 state and harness home for a controlled, approved T3. */
-async function preparedHomes(processHome: string) {
+export async function preparedHomes(processHome: string) {
   const root = join(processHome, "neutral");
   await mkdir(root);
   const t3 = new ControlledT3();
@@ -28,7 +28,7 @@ async function preparedHomes(processHome: string) {
 
 /** Connects T3, installs reporting, adds the project and saves the ready Flow: the single-worker
  * Flow in `shape`'s variant, or the one the ready Flow shape `shape` saves. */
-async function readyFlow(
+export async function readyFlow(
   f: Factory,
   t3: ControlledT3,
   root: string,
@@ -79,7 +79,10 @@ export async function prepared(c: TestContext, shape?: SingleWorkerVariant | Rea
 export function preparedService(
   c: TestContext,
   shape?: SingleWorkerVariant | ReadyFlowShape,
-  { connectionRetryMs = 60_000 }: { readonly connectionRetryMs?: number } = {},
+  {
+    connectionRetryMs = 60_000,
+    discordApiUrl,
+  }: { readonly connectionRetryMs?: number; readonly discordApiUrl?: string } = {},
 ) {
   return Effect.gen(function* () {
     const h = yield* Effect.promise(() => factoryHarness(c));
@@ -92,7 +95,12 @@ export function preparedService(
     const open = Effect.gen(function* () {
       const scope = yield* Scope.fork(testScope);
       const service = yield* h
-        .service({ t3, reportingStateDirectory, connectionRetryMs })
+        .service({
+          t3,
+          reportingStateDirectory,
+          connectionRetryMs,
+          ...(discordApiUrl === undefined ? {} : { discordApiUrl }),
+        })
         .pipe(Scope.provide(scope));
       return { factory: service, close: Scope.close(scope, Exit.void) };
     });

@@ -5,6 +5,7 @@ import {
   currentRun,
   releasedUpgradeData,
 } from "./support/released-upgrade.ts";
+import { originatingThread } from "./support/chat-actions.ts";
 
 it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run, leaves Generate Run titles off and starts Chat control Off with an empty Language model and Discord connection", async (c) => {
   // Arrange
@@ -103,8 +104,11 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
       },
       access: { users: [], channels: [], unresolvedProjectIds: [], revision: 0, savedAt: null },
       latestCheck: null,
+      delivery: { problems: [], moreProblems: 0, reconciling: [] },
     },
   });
+  expect(originatingThread(fixture.h.databasePath, fixture.closed.id)).toBeNull();
+  expect(originatingThread(fixture.h.databasePath, fixture.stopped.id)).toBeNull();
   const tasks = await factory.listTasks(fixture.project.id);
   assert(tasks.ok);
   expect(tasks.value.map((task) => task.id)).toStrictEqual([

@@ -9,6 +9,7 @@ import type {
 } from "@t3-factory/contracts";
 import {
   validateCheckDiscordConnection,
+  validateRetryChatDelivery,
   validateSetChatControlEnabled,
   validateUpdateDiscordAccess,
   validateUpdateDiscordConnection,
@@ -16,8 +17,10 @@ import {
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
 import { readAccess, updateAccess } from "./access.ts";
+import { retireApplicationProposals, type ChatActions } from "./actions.ts";
 import { clearConversations } from "./conversations.ts";
 import type { ChatCredentials } from "./credentials.ts";
+import type { ChatDeliveries } from "./deliveries.ts";
 import type { DiscordConnection, DiscordGateway } from "./discord-gateway.ts";
 import type { DiscordOperation, OperationStatus } from "./discord-operation.ts";
 import { forgetPendingAdmissions } from "./pending-admissions.ts";
@@ -49,6 +52,7 @@ const settings = (
   checking: boolean,
   operating: OperationStatus | null,
   access: DiscordSettings["access"],
+  delivery: DiscordSettings["delivery"],
 ): DiscordSettings => ({
   chatControlEnabled: operating !== null,
   ...(operating ?? {
@@ -60,8 +64,11 @@ const settings = (
     operating !== null &&
     (operating.connectionStatus === "rejected" ||
       operating.connectionStatus === "reconnecting" ||
-      operating.commandSetup?.outcome === "failed"),
+      operating.commandSetup?.outcome === "failed" ||
+      delivery.problems.length > 0 ||
+      delivery.reconciling.length > 0),
   access,
+  delivery,
   configuration: {
     applicationId: row.application_id,
     publicKey: row.public_key,
@@ -155,6 +162,7 @@ export const makeChatDiscord = (
   credentials: ChatCredentials,
   gateway: DiscordGateway,
   operation: DiscordOperation,
+  recovery: { readonly actions: ChatActions; readonly deliveries: ChatDeliveries },
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -163,7 +171,14 @@ export const makeChatDiscord = (
         const row = yield* readRow(sql);
         const operating = row.chat_control_enabled === 1 ? yield* operation.status : null;
         const access = yield* readAccess(sql);
-        return { ok: true, value: settings(row, gateway.isChecking(), operating, access) };
+        const delivery = {
+          ...(yield* recovery.deliveries.diagnostics),
+          reconciling: yield* recovery.actions.reconciling,
+        };
+        return {
+          ok: true,
+          value: settings(row, gateway.isChecking(), operating, access, delivery),
+        };
       });
 
     /**
@@ -184,14 +199,16 @@ export const makeChatDiscord = (
             Effect.gen(function* () {
               const tokenStage = next.token.kind === "remove" ? null : (staged ?? row.token_stage);
               yield* sql`UPDATE chat_discord_connection SET application_id=${next.applicationId},public_key=${next.publicKey},token_stage=${tokenStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
-              // Another application is another identity: it inherits no conversation history, and
-              // switching back later revives none.
+              // Another application is another identity: it inherits no conversation history or
+              // consent, and switching back later revives none. Owed receipts stay owed.
               if (
                 row.application_id !== null &&
                 next.applicationId !== null &&
                 row.application_id !== next.applicationId
-              )
+              ) {
                 yield* clearConversations(sql, "all");
+                yield* retireApplicationProposals(sql, row.application_id);
+              }
             }),
         });
         if (refused) return refused;
@@ -314,8 +331,26 @@ export const makeChatDiscord = (
         return yield* getDiscordSettings();
       });
 
+    /**
+     * The host's explicit Retry of one owed message: a refused one after correction, or one
+     * Discord may already show once the owner accepted a possible duplicate. One attempt; the
+     * action the message reports is never performed again.
+     */
+    const retryChatDelivery = (input: unknown) =>
+      Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
+        const validated = validateRetryChatDelivery(input);
+        if (!validated.ok) return validated;
+        const row = yield* readRow(sql);
+        const retried = yield* recovery.deliveries.retry(
+          validated.value,
+          row.chat_control_enabled === 1,
+        );
+        return retried.ok ? yield* getDiscordSettings() : retried;
+      });
+
     return {
       getDiscordSettings,
+      retryChatDelivery,
       updateDiscordConnection,
       checkDiscordConnection,
       updateDiscordAccess,

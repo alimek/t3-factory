@@ -1051,4 +1051,5 @@ export {
   validateUpdateDiscordConnection,
   validateUpdateDiscordAccess,
   validateSetChatControlEnabled,
+  validateRetryChatDelivery,
 } from "./chat-control.ts";

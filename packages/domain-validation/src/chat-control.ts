@@ -8,6 +8,7 @@ import type {
   ChatModelKeyChange,
   ChatModelProviderKind,
   Result,
+  RetryChatDeliveryInput,
   TestChatModelInput,
   UpdateChatModelInput,
 } from "@t3-factory/contracts";
@@ -392,4 +393,20 @@ export function validateSetChatControlEnabled(input: unknown): Result<SetChatCon
   return typeof enabled === "boolean"
     ? { ok: true, value: { enabled } }
     : invalid("chat_control_enabled", "enabled", "Say whether Chat control is On or Off.");
+}
+
+/** A Retry names one delivery and, for a possibly created message, the duplicate-risk choice. */
+export function validateRetryChatDelivery(input: unknown): Result<RetryChatDeliveryInput> {
+  const fields =
+    typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  const { deliveryId, duplicateRiskAccepted } = fields;
+  if (typeof deliveryId !== "string" || deliveryId.length === 0 || deliveryId.length > 64)
+    return invalid("chat_delivery", "deliveryId", "Choose the delivery to retry.");
+  if (typeof duplicateRiskAccepted !== "boolean")
+    return invalid(
+      "chat_delivery_duplicate_risk",
+      "duplicateRiskAccepted",
+      "Say whether a possible duplicate message is acceptable.",
+    );
+  return { ok: true, value: { deliveryId, duplicateRiskAccepted } };
 }

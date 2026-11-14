@@ -1,6 +1,13 @@
 import { DiscordAdapter } from "@chat-adapter/discord";
 import { Message as ChatMessage, type Chat, type Thread } from "chat";
-import { Events, type Client, type Interaction, type Message } from "discord.js";
+import {
+  ButtonStyle,
+  ComponentType,
+  Events,
+  type Client,
+  type Interaction,
+  type Message,
+} from "discord.js";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -25,7 +32,9 @@ import {
   type DiscordGateway,
   type GatewayResult,
 } from "./discord-gateway.ts";
+import type { ChatActions } from "./actions.ts";
 import type { ChatTool } from "./chat-tools.ts";
+import type { ChatDeliveries, ConfirmationButton, DiscordSender } from "./deliveries.ts";
 import { makeIngress, registerCommands, type ReferencedMessage } from "./discord-ingress.ts";
 import { makeInterpreter, type InterpretationEngine } from "./interpretation.ts";
 import type { ConversationalModelAccess } from "./model.ts";
@@ -88,6 +97,41 @@ class FactoryDiscordAdapter extends DiscordAdapter {
   /** Posts Factory's own text exactly as given, without Markdown conversion. */
   post(threadId: string, text: string) {
     return this.postMessage(threadId, { raw: text });
+  }
+
+  /**
+   * Creates one Factory message, optionally with a confirmation button, in a single request and
+   * resolves with Discord's message ID. Failures keep the adapter's error, whose status tells
+   * a definite refusal from an unproven outcome.
+   */
+  async create(threadId: string, text: string, button?: ConfirmationButton) {
+    const { payload } = this.buildMessagePayload({ raw: text });
+    const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
+    const response = await this.discordFetch(
+      `/channels/${discordThreadId ?? channelId}/messages`,
+      "POST",
+      {
+        ...payload,
+        ...(button
+          ? {
+              components: [
+                {
+                  type: ComponentType.ActionRow,
+                  components: [
+                    {
+                      type: ComponentType.Button,
+                      style: ButtonStyle.Primary,
+                      label: button.label,
+                      custom_id: button.customId,
+                    },
+                  ],
+                },
+              ],
+            }
+          : {}),
+      },
+    );
+    return ((await response.json()) as { id: string }).id;
   }
 
   listen(client: Client, isShuttingDown: () => boolean) {
@@ -190,7 +234,12 @@ const RECONNECTING: Omit<DiscordConnectionProblem, "occurredAt"> = {
 export const makeDiscordOperation = (
   gateway: DiscordGateway,
   credentials: ChatCredentials,
-  conversation: { readonly model: ConversationalModelAccess; readonly tools: readonly ChatTool[] },
+  conversation: {
+    readonly model: ConversationalModelAccess;
+    readonly tools: readonly ChatTool[];
+    readonly actions: ChatActions;
+    readonly deliveries: ChatDeliveries;
+  },
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -249,6 +298,11 @@ export const makeDiscordOperation = (
           });
         const post = (key: Parameters<typeof encodeThreadId>[0], text: string) =>
           adapter.post(encodeThreadId(key), text);
+        const sender: DiscordSender = {
+          applicationId: connection.applicationId,
+          create: (destination, text, button) =>
+            adapter.create(encodeThreadId(destination), text, button),
+        };
         const engine = yield* makeInterpreter({
           sql,
           applicationId: connection.applicationId,
@@ -257,6 +311,8 @@ export const makeDiscordOperation = (
           tools: conversation.tools,
           operating: () => !released(),
           post,
+          sender,
+          actions: conversation.actions,
         });
         // The reply target a MESSAGE_CREATE carried, kept until admission takes it.
         const references = new Map<string, ReferencedMessage>();
@@ -281,6 +337,7 @@ export const makeDiscordOperation = (
             handOff: (threadId, message) => adapter.handOff(threadId, message),
             encodeThreadId,
             post,
+            confirm: conversation.actions.confirm,
             referenced: (messageId) => {
               const reference = references.get(messageId);
               references.delete(messageId);
@@ -339,6 +396,8 @@ export const makeDiscordOperation = (
           }),
         );
         yield* engine.started;
+        // Owed receipts go out only from a verified, serving session.
+        yield* Effect.forkScoped(conversation.deliveries.serve(sender));
         return yield* Effect.callback<GatewayResult>((resume) => {
           client.once(Events.ShardDisconnect, ({ code }) =>
             resume(Effect.succeed(closeResult(code))),

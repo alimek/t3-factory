@@ -177,6 +177,44 @@ export interface DiscordAccessConfiguration {
   readonly savedAt: string | null;
 }
 
+/**
+ * An owed Chat control message Factory could not deliver on its own yet: `retrying` after a
+ * definite transient rejection, `failed` when Discord definitely refused it (the destination or
+ * the bot's permissions need correction), `unknown` when Factory cannot tell whether Discord
+ * created it, which only a warned host Retry may send again.
+ */
+export interface ChatDeliveryProblem {
+  readonly id: string;
+  /** What the message is; receipts report a confirmed action's actual result. */
+  readonly purpose: "receipt";
+  readonly state: "retrying" | "failed" | "unknown";
+  /** The destination thread and its parent channel, as decimal Discord IDs. */
+  readonly guildId: string;
+  readonly parentChannelId: string;
+  readonly threadId: string;
+  /** Factory's own description of the latest attempt; never Discord's response body. */
+  readonly message: string;
+  readonly occurredAt: string;
+  /** The next automatic attempt while `retrying`; null otherwise. */
+  readonly nextAttemptAt: string | null;
+}
+
+/** A confirmed action whose local outcome Factory has not reconciled yet. */
+export interface ChatActionReconciliation {
+  readonly id: string;
+  readonly operation: "start";
+  readonly startedAt: string;
+}
+
+/** Current delivery and action recovery facts; bounded, without chat content. */
+export interface ChatDeliveryDiagnostics {
+  /** The newest problems, at most 20. */
+  readonly problems: readonly ChatDeliveryProblem[];
+  /** How many more current problems exist beyond `problems`. */
+  readonly moreProblems: number;
+  readonly reconciling: readonly ChatActionReconciliation[];
+}
+
 /** Settings → Chat control → Discord, readable only on the Factory host. */
 export interface DiscordSettings {
   /** Chat control's persisted On/Off state. Every installation starts Off. */
@@ -191,6 +229,7 @@ export interface DiscordSettings {
   readonly configuration: DiscordConnectionConfiguration;
   readonly access: DiscordAccessConfiguration;
   readonly latestCheck: DiscordCheckEvidence | null;
+  readonly delivery: ChatDeliveryDiagnostics;
 }
 
 export interface UpdateDiscordConnectionInput {
@@ -225,6 +264,15 @@ export interface UpdateDiscordAccessInput {
 export interface SetChatControlEnabledInput {
   /** On needs a complete saved Discord connection and Language model; Off always succeeds. */
   readonly enabled: boolean;
+}
+
+export interface RetryChatDeliveryInput {
+  readonly deliveryId: string;
+  /**
+   * The owner's acknowledgement that Discord may already show the message, so Retry can post a
+   * duplicate. Required for an `unknown` delivery and ignored otherwise.
+   */
+  readonly duplicateRiskAccepted: boolean;
 }
 
 /** Host-only Chat control administration; approved clients get `host_only`. */
@@ -265,6 +313,11 @@ export const chatControlOperations = {
   setChatControlEnabled: operation<SetChatControlEnabledInput, DiscordSettings>()({
     method: "PUT",
     path: "/api/chat-control/enabled",
+    body: "json",
+  }),
+  retryChatDelivery: operation<RetryChatDeliveryInput, DiscordSettings>()({
+    method: "POST",
+    path: "/api/chat-control/deliveries/retry",
     body: "json",
   }),
 };

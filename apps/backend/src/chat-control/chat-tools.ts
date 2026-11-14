@@ -1,6 +1,7 @@
 import { jsonSchema, tool, type JSONSchema7, type JSONValue, type ToolSet } from "ai";
 import * as Effect from "effect/Effect";
 import type { FactoryProject, FlowDraft, ProjectCatalog, Result } from "@t3-factory/contracts";
+import type { Proposed } from "./actions.ts";
 import type { ConversationKey } from "./conversations.ts";
 
 /**
@@ -12,6 +13,8 @@ export interface ChatToolScope {
   readonly conversation: ConversationKey;
   /** The Projects the thread's parent channel grants the requester now, in Access order. */
   readonly projectIds: readonly string[];
+  /** The current invocation's admitted text and the reply it selected, as exact-text sources. */
+  readonly source: { readonly message: string; readonly selectedReply: string | null };
 }
 
 /** A tool's answer to the model, and the compact fact a completed turn retains of it. */
@@ -22,11 +25,8 @@ export interface ChatToolOutcome {
   readonly fact: JSONValue;
 }
 
-/**
- * One in-process Factory operation offered to the model. Every tool here only reads; a mutating
- * tool needs a deterministic review and requester confirmation before it may be offered.
- */
-export interface ChatTool {
+/** One in-process Factory read offered to the model. */
+export interface ReadTool {
   readonly name: string;
   /** Written for a chat model; arguments are untrusted and validated by `execute`. */
   readonly description: string;
@@ -37,11 +37,31 @@ export interface ChatTool {
   ) => Effect.Effect<ChatToolOutcome, unknown>;
 }
 
+/**
+ * A Factory mutation offered to the model. It never executes from the tool loop: `propose`
+ * validates the call into an exact proposal with its complete review, or answers why it cannot
+ * (an outcome for the model), and only the requester's confirmation performs it.
+ */
+export interface MutationTool {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: JSONSchema7;
+  readonly approval: "requester-confirmation";
+  readonly propose: (
+    input: unknown,
+    scope: ChatToolScope,
+  ) => Effect.Effect<Proposed | ChatToolOutcome, unknown>;
+}
+
+export type ChatTool = ReadTool | MutationTool;
+
 /** The Factory operations the read-only discovery tools use. */
 export interface DiscoveryOperations {
   readonly listProjects: () => Effect.Effect<Result<ProjectCatalog>, unknown>;
   readonly listFlows: () => Effect.Effect<Result<readonly FlowDraft[]>, unknown>;
 }
+
+export const isMutation = (entry: ChatTool): entry is MutationTool => "approval" in entry;
 
 const PAGE_SIZE = 20;
 const MAX_FACT_HANDLES = 20;
@@ -59,7 +79,7 @@ const pageSchema: JSONSchema7 = {
   additionalProperties: false,
 };
 
-const invalid = (message: string): ChatToolOutcome => ({
+export const invalid = (message: string): ChatToolOutcome => ({
   output: { error: "invalid_arguments", message },
   fact: { error: "invalid_arguments" },
 });
@@ -92,7 +112,7 @@ const unavailable = (what: string): ChatToolOutcome => ({
   fact: { error: "unavailable" },
 });
 
-const listProjects = (operations: DiscoveryOperations): ChatTool => ({
+const listProjects = (operations: DiscoveryOperations): ReadTool => ({
   name: "list_projects",
   description:
     "List the Factory Projects this thread permits, with stable ID, name, repository path and availability. Independent clones can share a name; tell them apart by repository path.",
@@ -129,7 +149,7 @@ const listProjects = (operations: DiscoveryOperations): ChatTool => ({
     }),
 });
 
-const listFlows = (operations: DiscoveryOperations): ChatTool => ({
+const listFlows = (operations: DiscoveryOperations): ReadTool => ({
   name: "list_flows",
   description:
     "List Factory's saved global Flows with stable ID, name, workspace setting and readiness. A Flow that is not ready lists the reasons; Flows can share a name, so tell them apart by ID and workspace setting.",

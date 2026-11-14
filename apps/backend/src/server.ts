@@ -314,6 +314,11 @@ function chatControlRoutes(factory: Factory): RouteEntries<typeof chatControlOpe
       body: standardBody,
       handle: ({ input }) => answer(() => factory.setChatControlEnabled(input)),
     },
+    retryChatDelivery: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.retryChatDelivery(input)),
+    },
   };
 }
 

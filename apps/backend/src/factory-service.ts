@@ -23,7 +23,10 @@ import { makeRunImages } from "./run-images.ts";
 import { makeRunTitles } from "./run-titles.ts";
 import { makeChatCredentials } from "./chat-control/credentials.ts";
 import { conversationalModel, makeChatModel } from "./chat-control/model.ts";
+import { makeChatActions } from "./chat-control/actions.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
+import { makeChatDeliveries } from "./chat-control/deliveries.ts";
+import { startAction } from "./chat-control/start-action.ts";
 import { makeChatDiscord } from "./chat-control/discord.ts";
 import { DISCORD_API_URL, makeDiscordGateway } from "./chat-control/discord-gateway.ts";
 import { makeDiscordOperation } from "./chat-control/discord-operation.ts";
@@ -128,16 +131,33 @@ export const makeFactoryService = (
     );
     const chatCredentials = yield* makeChatCredentials(credentialsDirectory);
     const discordGateway = yield* makeDiscordGateway(options.discordApiUrl ?? DISCORD_API_URL);
+    let runner: Effect.Success<ReturnType<typeof makeRunner>>;
+    const chatStart = startAction({
+      listProjects: projects.listProjects,
+      getFlow: definitions.getFlow,
+      getRunTitleSetting: runTitles.getRunTitleSetting,
+      startTextRun: (input) => guard(runner.startTextRun(input)),
+      acceptedStart: (requestId) => runner.acceptedStart(requestId),
+    });
+    const chatDeliveries = yield* makeChatDeliveries(sql);
+    const chatActions = yield* makeChatActions(sql, [chatStart.operation], chatDeliveries);
     const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
       model: conversationalModel(sql, chatCredentials),
-      tools: discoveryTools({
-        listProjects: projects.listProjects,
-        listFlows: definitions.listFlows,
-      }),
+      tools: [
+        ...discoveryTools({
+          listProjects: projects.listProjects,
+          listFlows: definitions.listFlows,
+        }),
+        chatStart.tool,
+      ],
+      actions: chatActions,
+      deliveries: chatDeliveries,
     });
     const chatModel = yield* makeChatModel(chatCredentials, discordOperation.modelSaved);
-    const chatDiscord = yield* makeChatDiscord(chatCredentials, discordGateway, discordOperation);
-    let runner: Effect.Success<ReturnType<typeof makeRunner>>;
+    const chatDiscord = yield* makeChatDiscord(chatCredentials, discordGateway, discordOperation, {
+      actions: chatActions,
+      deliveries: chatDeliveries,
+    });
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
       (kind, input) => runner.readFactoryTool(kind, input),
@@ -177,6 +197,7 @@ export const makeFactoryService = (
       checkDiscordConnection: (input) => chatDiscord.checkDiscordConnection(input),
       updateDiscordAccess: (input) => chatDiscord.updateDiscordAccess(input),
       setChatControlEnabled: (input) => chatDiscord.setChatControlEnabled(input),
+      retryChatDelivery: (input) => chatDiscord.retryChatDelivery(input),
       startRun: (i) => runner.startRun(i),
       getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
@@ -250,5 +271,7 @@ export const makeFactoryService = (
       runTitles,
     );
     yield* runner.initialize();
+    // Chat actions interrupted by a stop reconcile their Start identity once the Runner owns Runs.
+    yield* chatActions.recover;
     return factory;
   });

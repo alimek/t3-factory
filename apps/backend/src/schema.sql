@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_conversation_memory
+-- Newest applied migration: chat_actions
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -81,6 +81,16 @@ CREATE TABLE chat_access_users (
   position INTEGER NOT NULL
 );
 
+CREATE TABLE chat_actions (
+  id TEXT PRIMARY KEY,
+  proposal_id TEXT NOT NULL UNIQUE REFERENCES chat_proposals(id),
+  state TEXT NOT NULL CHECK (state IN ('accepting', 'accepted', 'rejected')),
+  started_at TEXT NOT NULL,
+  decided_at TEXT,
+  outcome_json TEXT,
+  CHECK ((state = 'accepting') = (decided_at IS NULL AND outcome_json IS NULL))
+);
+
 CREATE TABLE chat_control_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1))
@@ -120,6 +130,30 @@ CREATE TABLE chat_conversations (
   generation_started_at TEXT NOT NULL, last_admitted_at TEXT, notice TEXT CHECK (notice IN ('cleared', 'evicted')),
   PRIMARY KEY (application_id, thread_id)
 );
+
+CREATE TABLE chat_deliveries (
+  id TEXT PRIMARY KEY,
+  purpose TEXT NOT NULL CHECK (purpose IN ('receipt')),
+  action_id TEXT REFERENCES chat_actions(id),
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  -- The Projects the content concerns; the destination channel must still grant them.
+  project_ids_json TEXT NOT NULL,
+  text TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('owed', 'sending', 'delivered', 'failed', 'unknown', 'cancelled')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at TEXT,
+  problem TEXT,
+  problem_at TEXT,
+  message_id TEXT,
+  sent_by_application_id TEXT,
+  created_at TEXT NOT NULL,
+  CHECK ((problem IS NULL) = (problem_at IS NULL))
+);
+
+CREATE INDEX chat_deliveries_state ON chat_deliveries(state)
+;
 
 CREATE TABLE chat_discord_connection (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -187,6 +221,43 @@ CREATE TABLE chat_pending_admissions (
   admitted_at TEXT NOT NULL,
   interrupted TEXT CHECK (interrupted IN ('interrupted', 'model-failed', 'timed-out')),
   PRIMARY KEY (application_id, message_id)
+);
+
+CREATE TABLE chat_proposals (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  requester_id TEXT NOT NULL,
+  operation TEXT NOT NULL CHECK (operation IN ('start')),
+  parameters_json TEXT NOT NULL,
+  -- Requester, context, operation and exact parameters; an identical pending proposal is reused.
+  identity TEXT NOT NULL,
+  -- The Projects the operation targets; revoking any of them in the context voids the proposal.
+  project_ids_json TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  message_id TEXT NOT NULL,
+  tool_call_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('preparing', 'presented', 'accepting', 'consumed', 'ended')),
+  ended_reason TEXT CHECK (ended_reason IN ('failed', 'superseded', 'revoked', 'application')),
+  created_at TEXT NOT NULL,
+  expires_at TEXT,
+  CHECK ((state = 'ended') = (ended_reason IS NOT NULL)),
+  CHECK (state = 'preparing' OR state = 'ended' OR expires_at IS NOT NULL)
+);
+
+CREATE INDEX chat_proposals_identity ON chat_proposals(identity, state)
+;
+
+CREATE TABLE chat_run_origins (
+  run_id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  action_id TEXT NOT NULL UNIQUE REFERENCES chat_actions(id),
+  recorded_at TEXT NOT NULL
 );
 
 CREATE TABLE chat_sdk_cache (

@@ -49,7 +49,29 @@ export interface GatewaySession {
   closed: boolean;
 }
 
-type Answer = { readonly status: number; readonly body?: unknown };
+type Answer = {
+  readonly status: number;
+  readonly body?: unknown;
+  /** The connection drops after Discord acted on the request, so no answer arrives. */
+  readonly lost?: boolean;
+  /** No answer arrives until the server closes. */
+  readonly held?: boolean;
+};
+
+/**
+ * How Discord treats one later message create: `refused` answers 403 Missing Access,
+ * `rate-limited` answers 429, `lost` creates the message and drops the connection before
+ * answering, `failed` answers 500 after creating nothing, `held` never answers and creates nothing.
+ */
+export type MessageFault = "refused" | "rate-limited" | "lost" | "failed" | "held";
+
+/** A message Discord created, with its components. */
+export interface CreatedMessage {
+  readonly id: string;
+  readonly channelId: string;
+  readonly content: string;
+  readonly components: unknown;
+}
 type Fields = Record<string, unknown>;
 
 /** A REST request matched to a route, with its parsed body and the bot its token belongs to. */
@@ -184,6 +206,8 @@ export async function startControlledDiscord() {
   /** Users who left every server; Discord answers Unknown Member for them. */
   const departed = new Set<string>();
   let gatewayAvailable = true;
+  const messageFaults: MessageFault[] = [];
+  const created: CreatedMessage[] = [];
   let sequence = 0;
   let nextId = 900000000000000000n;
   const mintId = () => String(++nextId);
@@ -284,10 +308,28 @@ export async function startControlledDiscord() {
     [
       "POST",
       /^\/api\/v10\/channels\/(\d+)\/messages$/,
-      ({ match, fields, bot }) => ({
-        status: 200,
-        body: sentMessage(match[1]!, botUser(bot), fields),
-      }),
+      ({ match, fields, bot }) => {
+        const fault = messageFaults.shift();
+        if (fault === "refused")
+          return { status: 403, body: { message: "Missing Access", code: 50001 } };
+        if (fault === "rate-limited")
+          return {
+            status: 429,
+            body: { message: "You are being rate limited.", retry_after: 0.01, global: false },
+          };
+        if (fault === "failed") return { status: 500, body: { message: "Internal", code: 0 } };
+        if (fault === "held") return { status: 0, held: true };
+        const message = sentMessage(match[1]!, botUser(bot), fields, {
+          components: fields.components ?? [],
+        });
+        created.push({
+          id: message.id,
+          channelId: match[1]!,
+          content: String(message.content),
+          components: fields.components ?? [],
+        });
+        return { status: 200, body: message, lost: fault === "lost" };
+      },
     ],
     [
       "GET",
@@ -385,7 +427,9 @@ export async function startControlledDiscord() {
       });
       const token = request.headers.authorization?.replace(/^Bot /, "") ?? "";
       const answer = route(request.method ?? "", path, token, body);
-      if (answer.body === undefined) response.writeHead(answer.status).end();
+      if (answer.held) return changed.notify();
+      if (answer.lost) response.destroy();
+      else if (answer.body === undefined) response.writeHead(answer.status).end();
       else {
         response.writeHead(answer.status, { "content-type": "application/json" });
         response.end(JSON.stringify(answer.body));
@@ -505,6 +549,16 @@ export async function startControlledDiscord() {
           },
         });
     },
+    /** Messages Discord created, in order. */
+    created,
+    /** Later message creates meet these faults in order, one each. */
+    faultMessages(...faults: MessageFault[]) {
+      messageFaults.push(...faults);
+    },
+    /** Resolves once Discord created `count` messages in total. */
+    createdMessages(count: number) {
+      return changed.wait(() => created.length >= count);
+    },
     /** Makes Gateway discovery fail as a Discord outage does. */
     setGatewayAvailable(available: boolean) {
       gatewayAvailable = available;
@@ -572,6 +626,7 @@ export async function startControlledDiscord() {
       return changed.wait(() => sessions.every((session) => session.closed));
     },
     async close() {
+      server.closeAllConnections();
       for (const client of gateway.clients) client.terminate();
       await new Promise<void>((resolve) => gateway.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -753,6 +808,85 @@ export function resetCommandEvent(options: {
         type: 1,
         options: [{ name: "reset", type: 1, options: [] }],
       },
+    },
+  };
+}
+
+/** The member payload interactions carry: the user and what Discord computed in the channel. */
+const interactionMember = (userId: string, permissions: bigint) => ({
+  user: user(userId, "participant", false),
+  roles: [],
+  joined_at: new Date(0).toISOString(),
+  deaf: false,
+  mute: false,
+  flags: 0,
+  permissions: String(permissions),
+});
+
+/** An INTERACTION_CREATE for a click on a message button with `customId` in a thread. */
+export function buttonEvent(options: {
+  readonly bot: ControlledDiscordBot;
+  readonly guildId: string;
+  readonly thread: { readonly id: string; readonly parentId: string; readonly private?: boolean };
+  readonly id: string;
+  readonly customId: string;
+  readonly userId?: string;
+  /** What Discord computed for the member in this channel, overwrites included. */
+  readonly permissions?: bigint;
+}): GatewayEvent {
+  const botUser = user(
+    options.bot.userId ?? options.bot.applicationId,
+    options.bot.username ?? "Factory bot",
+    true,
+  );
+  const channel = threadPayload({
+    id: options.thread.id,
+    guildId: options.guildId,
+    parentId: options.thread.parentId,
+    name: "thread",
+    private: options.thread.private ?? false,
+    members: new Set(),
+  });
+  return {
+    t: "INTERACTION_CREATE",
+    d: {
+      id: options.id,
+      application_id: options.bot.applicationId,
+      type: 3,
+      token: `interaction-token-${options.id}`,
+      version: 1,
+      guild_id: options.guildId,
+      channel_id: options.thread.id,
+      channel,
+      member: interactionMember(
+        options.userId ?? PARTICIPANT_ID,
+        options.permissions ?? MEMBER_PERMISSIONS,
+      ),
+      app_permissions: String(MEMBER_PERMISSIONS),
+      locale: "en-US",
+      guild_locale: "en-US",
+      entitlements: [],
+      authorizing_integration_owners: { "0": options.guildId },
+      context: 0,
+      message: {
+        id: "800000000000000002",
+        type: 0,
+        channel_id: options.thread.id,
+        content: "Confirm",
+        author: botUser,
+        timestamp: new Date(0).toISOString(),
+        edited_timestamp: null,
+        tts: false,
+        mention_everyone: false,
+        mentions: [],
+        mention_roles: [],
+        attachments: [],
+        embeds: [],
+        pinned: false,
+        components: [],
+        flags: 0,
+      },
+      data: { custom_id: options.customId, component_type: 2 },
     },
   };
 }

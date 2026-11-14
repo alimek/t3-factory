@@ -156,3 +156,20 @@ it("an approved client cannot turn the host's Chat control On", async (c) => {
   expect(read.value.chatControlEnabled).toBe(false);
   expect(discord.requests).toHaveLength(0);
 });
+
+it("an approved client cannot retry the host's Chat control deliveries", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const laptop = await server.approved("Laptop");
+
+  // Act
+  const reply = await laptop.send("POST", "/api/chat-control/deliveries/retry", {
+    deliveryId: "delivery-1",
+    duplicateRiskAccepted: true,
+  });
+
+  // Assert
+  expect(reply.status).toBe(403);
+  assert(!reply.body.ok);
+  expect(reply.body.error.code).toBe("host_only");
+});

@@ -237,6 +237,12 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     startRun: (input: unknown) => starts.withPermit(start(input)).pipe(Effect.uninterruptible),
     startTextRun: (input: unknown) =>
       starts.withPermit(startText(input)).pipe(Effect.uninterruptible),
+    /** The Run a Start request ID was accepted as; undefined when it was never accepted. */
+    acceptedStart: (requestId: string) =>
+      Effect.gen(function* () {
+        const accepted = yield* store.acceptedStart(requestId);
+        return accepted ? yield* getRun(accepted.id) : undefined;
+      }),
     listRuns: (projectId: string) =>
       Effect.gen(function* () {
         const list = yield* listTasks(projectId);

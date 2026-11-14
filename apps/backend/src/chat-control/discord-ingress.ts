@@ -10,6 +10,7 @@ import {
   PermissionFlagsBits,
   RESTJSONErrorCodes,
   Routes,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
   type Client,
   type Interaction,
@@ -23,6 +24,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type { DiscordCommandSetup } from "@t3-factory/contracts";
 import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
+import { isConfirmation, type ConfirmationClick } from "./actions.ts";
 import type { ConversationGenerations, ConversationKey } from "./conversations.ts";
 import {
   BUSY_REPLY,
@@ -66,6 +68,8 @@ interface IngressSession {
   readonly post: (key: ConversationKey, text: string) => Promise<unknown>;
   /** The reply target the current MESSAGE_CREATE payload carried, taken once. */
   readonly referenced: (messageId: string) => ReferencedMessage | undefined;
+  /** Decides a confirmation button click; the ephemeral answer for the clicker. */
+  readonly confirm: (click: ConfirmationClick) => Effect.Effect<string, unknown>;
 }
 
 const RESET_REPLIES = {
@@ -304,7 +308,9 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
 
   /** Whether the requester may act in `thread` now, from the interaction and maintained evidence. */
   const requesterAccess = (
-    interaction: ChatInputCommandInteraction<"cached" | "raw">,
+    interaction:
+      | ChatInputCommandInteraction<"cached" | "raw">
+      | ButtonInteraction<"cached" | "raw">,
     thread: ThreadChannel,
   ) =>
     Effect.gen(function* (): Effect.fn.Return<Access, unknown> {
@@ -341,6 +347,30 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
       yield* Effect.ignore(Effect.tryPromise(() => interaction.editReply(RESET_REPLIES[reply])));
     });
 
+  /**
+   * A confirmation button click: acknowledged at once and ephemerally, then decided outside the
+   * gate, since performing an action may take longer than later events should wait.
+   */
+  const confirmation = (interaction: ButtonInteraction<"cached" | "raw">) =>
+    Effect.gen(function* () {
+      if (!(yield* gate.withPermits(1)(firstDelivery(interaction.id)))) return;
+      const deferred = yield* Effect.option(
+        Effect.tryPromise(() => interaction.deferReply({ flags: MessageFlags.Ephemeral })),
+      );
+      if (deferred._tag === "None") return;
+      const channel = interaction.channel;
+      const thread = channel?.isThread() ? channel : null;
+      const reply = yield* session.confirm({
+        customId: interaction.customId,
+        userId: interaction.user.id,
+        threadId: interaction.channelId,
+        applicationId,
+        operating: session.operating,
+        access: thread ? requesterAccess(interaction, thread) : Effect.succeed("unavailable"),
+      });
+      yield* Effect.ignore(Effect.tryPromise(() => interaction.editReply(reply)));
+    });
+
   // Events pass the gate one at a time in delivery order, so a repeated delivery meets the
   // marker its first delivery left and later events see every earlier decision.
   // Queue places are taken here too, so each conversation's queue follows admission order.
@@ -367,12 +397,17 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
         // Chat SDK did not hand the message to Factory's handler; its queue place is released.
         if (handled && handled.reservation !== "busy") yield* handled.reservation.cancel;
       }),
-    /** A Discord interaction; only `/factory reset` of this application is handled. */
+    /**
+     * A Discord interaction; only `/factory reset` and confirmation buttons of this application
+     * are handled.
+     */
     interaction: (interaction: Interaction) =>
       Effect.gen(function* () {
         if (!session.operating() || !interaction.inGuild()) return;
-        if (!interaction.isChatInputCommand() || interaction.applicationId !== applicationId)
-          return;
+        if (interaction.applicationId !== applicationId) return;
+        if (interaction.isButton() && isConfirmation(interaction.customId))
+          return yield* confirmation(interaction);
+        if (!interaction.isChatInputCommand()) return;
         if (interaction.commandName !== "factory") return;
         if (interaction.options.getSubcommand(false) !== "reset") return;
         yield* gate.withPermits(1)(reset(interaction));
