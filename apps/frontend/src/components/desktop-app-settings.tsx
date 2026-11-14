@@ -111,6 +111,7 @@ function DesktopAppControls({ local }: { local: boolean }) {
 /** Local controls stay available even when no server or compatible product UI is available. */
 export function LocalApplicationControls() {
   const [open, setOpen] = useState(false);
+  const state = useDesktopState();
   return (
     <>
       <Button className="justify-self-start" variant="secondary" onClick={() => setOpen(true)}>
@@ -125,6 +126,11 @@ export function LocalApplicationControls() {
               : "Settings for this browser, available independently of the server."}
           </DialogDescription>
           <div className="grid gap-5">
+            {state && (
+              <p className="text-sm text-muted-foreground">
+                Version {state.version} for macOS (Apple Silicon).
+              </p>
+            )}
             <AppearanceChoice />
             <DesktopAppControls local />
           </div>

@@ -207,6 +207,31 @@ test("a failed access request can be retried after automatic reconnection", asyn
   await app.screenshot("access-request-reconnected");
 });
 
+test("an incompatible desktop client can read its installed version even without an available update", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1280, height: 800 });
+  await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client", "idle"));
+
+  // Act
+  await openIncompatibleApplicationSettings(app, screen);
+
+  // Assert
+  const settings = screen.getByRole("dialog", "Local application settings");
+  await expect
+    .poll(() =>
+      browser.evaluate(`getComputedStyle(document.querySelector('[role="dialog"]')).opacity`),
+    )
+    .toBe("1");
+  await app.screenshot("local-installed-version");
+  await expect(
+    settings.getByText("Version 0.1.0 for macOS (Apple Silicon).", { exact: true }),
+  ).toBeVisible();
+});
+
 test("an incompatible desktop client can upgrade itself from local application settings", async ({
   app,
   screen,

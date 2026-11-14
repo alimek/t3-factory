@@ -7,7 +7,7 @@ import {
 
 export const desktopBridgeOptions = (
   role: "client" | "server" | null = null,
-  update: "available" | "downloaded" | "downloading" = "downloaded",
+  update: DesktopState["update"]["state"] = "downloaded",
   releaseNotes:
     | string
     | null = "<ul><li>Reopen authorization from an approved client.</li><li>Review client and server upgrades together.</li></ul>",
