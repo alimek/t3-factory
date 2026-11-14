@@ -219,12 +219,7 @@ it("after the Discord application is replaced, only the Active Run gets a new ca
   world.discord.addBot(otherBot);
   assert((await world.factory.setChatControlEnabled({ enabled: false })).ok);
   const replaced = await world.factory.updateDiscordConnection(
-    discordConnectionSave({
-      revision: 1,
-      applicationId: otherBot.applicationId,
-      token: { kind: "replace", value: otherBot.token },
-      applicationChangeConfirmed: true,
-    }),
+    discordConnectionSave({ revision: 1, token: { kind: "replace", value: otherBot.token } }),
   );
   assert(replaced.ok, JSON.stringify(replaced));
   const oldCards = statusCardsIn(world.discord).map((card) => card.content);

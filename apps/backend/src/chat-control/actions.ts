@@ -441,10 +441,10 @@ export function makeChatActions(
         );
         if ((JSON.parse(current.project_ids_json) as string[]).some((id) => !granted.includes(id)))
           return { refused: "denied" };
-        const [configured] = yield* sql<{
+        const [operating] = yield* sql<{
           application_id: string | null;
-        }>`SELECT application_id FROM chat_discord_connection WHERE singleton=1`;
-        if (configured?.application_id !== current.application_id) return { refused: "invalid" };
+        }>`SELECT application_id FROM chat_control_state WHERE singleton=1`;
+        if (operating?.application_id !== current.application_id) return { refused: "invalid" };
         const actionId = yield* newId;
         const startedAt = yield* now;
         yield* sql`UPDATE chat_proposals SET state='accepting' WHERE id=${current.id} AND state='presented'`;

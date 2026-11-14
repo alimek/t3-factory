@@ -5,10 +5,9 @@ import type {
   DiscordTokenChange,
   UpdateDiscordConnectionInput,
 } from "@t3-factory/contracts";
-import { validateDiscordId, validateDiscordPublicKey } from "@t3-factory/domain-validation";
+import { validateDiscordPublicKey } from "@t3-factory/domain-validation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldLabelClass } from "@/components/page";
@@ -30,31 +29,27 @@ import {
 type TokenChoice = "keep" | "replace" | "remove";
 
 interface ConnectionDraft {
-  readonly applicationId: string;
   readonly publicKey: string;
   readonly tokenChoice: TokenChoice;
   /** A new token; held only in memory and never prefilled. */
   readonly tokenValue: string;
-  readonly applicationChangeConfirmed: boolean;
 }
 
 const draftOf = ({ configuration }: DiscordSettings): ConnectionDraft => ({
-  applicationId: configuration.applicationId ?? "",
   publicKey: configuration.publicKey ?? "",
   tokenChoice: "keep",
   tokenValue: "",
-  applicationChangeConfirmed: false,
 });
 
-const applicationIdOf = (draft: ConnectionDraft) => draft.applicationId.trim() || null;
 // The backend stores the Public Key in lowercase; compare drafts the same way.
 const publicKeyOf = (draft: ConnectionDraft) => draft.publicKey.trim().toLowerCase() || null;
 
-/** Whether the draft replaces a saved Application ID with a different one. */
-const applicationChanged = (draft: ConnectionDraft, { configuration }: DiscordSettings) =>
-  configuration.applicationId !== null &&
-  applicationIdOf(draft) !== null &&
-  applicationIdOf(draft) !== configuration.applicationId;
+/** Whether the draft saves a new token in place of the one Factory operated with. */
+const replacesToken = (draft: ConnectionDraft, settings: DiscordSettings) =>
+  settings.application !== null &&
+  (settings.configuration.tokenConfigured
+    ? draft.tokenChoice === "replace"
+    : draft.tokenValue.trim() !== "");
 
 /** The token change this draft asks for, or null while a replacement has no value yet. */
 function tokenChange(draft: ConnectionDraft, settings: DiscordSettings): DiscordTokenChange | null {
@@ -67,7 +62,6 @@ function tokenChange(draft: ConnectionDraft, settings: DiscordSettings): Discord
 
 function isDirty(draft: ConnectionDraft, { configuration }: DiscordSettings) {
   return (
-    applicationIdOf(draft) !== configuration.applicationId ||
     publicKeyOf(draft) !== configuration.publicKey ||
     draft.tokenValue.trim() !== "" ||
     draft.tokenChoice !== "keep"
@@ -80,16 +74,13 @@ const saveInput = (
   token: DiscordTokenChange,
 ): UpdateDiscordConnectionInput => ({
   revision: settings.configuration.revision,
-  applicationId: applicationIdOf(draft),
   publicKey: publicKeyOf(draft),
   token,
-  applicationChangeConfirmed: draft.applicationChangeConfirmed,
 });
 
 /** Whether the host already holds exactly this save, so a lost acknowledgement was a success. */
 const committed = (input: UpdateDiscordConnectionInput, current: DiscordSettings) =>
   current.configuration.revision === input.revision + 1 &&
-  current.configuration.applicationId === input.applicationId &&
   current.configuration.publicKey === input.publicKey;
 
 // While On, the running connection's state changes without any action on this page.
@@ -269,15 +260,15 @@ function ChatControlSwitch({
       {on ? (
         <Notice tone="info" icon={Power} title="Chat control is On" action={action}>
           Factory answers allowed users who mention the bot or reply to it in allowed channels. The
-          Application ID, Public Key and bot token are required while Chat control is On. Turning it
-          Off disconnects from Discord and keeps the configuration, conversations and accepted work.
+          Public Key and bot token are required while Chat control is On. Turning it Off disconnects
+          from Discord and keeps the configuration, conversations and accepted work.
         </Notice>
       ) : (
         <Notice tone="neutral" icon={Power} title="Chat control is Off" action={action}>
           Factory answers no Discord messages, buttons or commands. It connects to Discord only when
           you check the saved connection, and you can save an incomplete connection. Turning On
-          needs the saved Application ID, Public Key and bot token and the Language model&apos;s
-          provider, base URL and model; a key, passed tests and Access entries are not required.
+          needs the saved Public Key and bot token and the Language model&apos;s provider, base URL
+          and model; a key, passed tests and Access entries are not required.
         </Notice>
       )}
       {switchError && (
@@ -314,7 +305,7 @@ function OperatingDiagnostics({ settings }: { settings: DiscordSettings }) {
             {` · ${dayAndTime(commandSetup.occurredAt)} · ${commandSetup.message}`}
           </>
         ) : (
-          "Registered after Discord verifies the application."
+          "Registered after Discord authenticates the application."
         )}
       </dd>
     </dl>
@@ -324,34 +315,13 @@ function OperatingDiagnostics({ settings }: { settings: DiscordSettings }) {
 const problemOf = (result: { ok: true } | { ok: false; error: { message: string } } | null) =>
   result && !result.ok ? result.error.message : "";
 
-/** The draft's field problems, its token change and whether it may be saved as it stands. */
+/** The draft's field problem, its token change and whether it may be saved as it stands. */
 function draftCheck(draft: ConnectionDraft, settings: DiscordSettings) {
-  const applicationIdProblem = problemOf(
-    draft.applicationId.trim()
-      ? validateDiscordId(
-          draft.applicationId,
-          "discord_application_id",
-          "applicationId",
-          "Application ID",
-        )
-      : null,
-  );
   const publicKeyProblem = problemOf(
     draft.publicKey.trim() ? validateDiscordPublicKey(draft.publicKey) : null,
   );
   const token = tokenChange(draft, settings);
-  const changed = applicationChanged(draft, settings);
-  return {
-    applicationIdProblem,
-    publicKeyProblem,
-    token,
-    changed,
-    ready:
-      !applicationIdProblem &&
-      !publicKeyProblem &&
-      token !== null &&
-      (!changed || draft.applicationChangeConfirmed),
-  };
+  return { publicKeyProblem, token, ready: !publicKeyProblem && token !== null };
 }
 
 function ConnectionForm({
@@ -373,52 +343,33 @@ function ConnectionForm({
   onSave: (input: UpdateDiscordConnectionInput) => void;
   onDiscard: () => void;
 }) {
-  const { applicationIdProblem, publicKeyProblem, token, changed, ready } = draftCheck(
-    draft,
-    settings,
-  );
+  const { publicKeyProblem, token, ready } = draftCheck(draft, settings);
   return (
     <section aria-label="Discord connection" className="grid gap-4">
       <div className="grid gap-1">
         <h3 className="text-sm font-semibold text-foreground">Connection</h3>
         <p className="text-sm text-muted-foreground">
-          From the application in the Discord Developer Portal. Factory checks the token against the
-          Application ID rather than reading the ID from the token.
+          From the application in the Discord Developer Portal. Factory operates as the application
+          Discord reports for the saved token when it connects; it never reads the application from
+          the token itself.
+          {settings.application !== null &&
+            ` Factory currently operates as application ${settings.application}.`}
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TextField
-          id="discord-application-id"
-          label="Application ID"
-          value={draft.applicationId}
-          placeholder="General Information → Application ID"
-          hint="The decimal ID Discord shows for the application."
-          problem={applicationIdProblem}
-          disabled={saving}
-          inputMode="numeric"
-          onChange={(value) =>
-            onChange({ ...draft, applicationId: value, applicationChangeConfirmed: false })
-          }
-        />
-        <TextField
-          id="discord-public-key"
-          label="Public Key"
-          value={draft.publicKey}
-          placeholder="General Information → Public Key"
-          hint="Not a secret. Factory does not use it to verify anything during a check."
-          problem={publicKeyProblem}
-          disabled={saving}
-          onChange={(value) => onChange({ ...draft, publicKey: value })}
-        />
-      </div>
-      {changed && (
-        <ApplicationChangeNotice
-          enabled={settings.chatControlEnabled}
-          confirmed={draft.applicationChangeConfirmed}
-          onConfirm={(confirmed) => onChange({ ...draft, applicationChangeConfirmed: confirmed })}
-        />
-      )}
+      <TextField
+        id="discord-public-key"
+        label="Public Key"
+        value={draft.publicKey}
+        placeholder="General Information → Public Key"
+        hint="Not a secret. Factory does not use it to verify anything during a check."
+        problem={publicKeyProblem}
+        disabled={saving}
+        onChange={(value) => onChange({ ...draft, publicKey: value })}
+      />
       <TokenField settings={settings} draft={draft} disabled={saving} onChange={onChange} />
+      {replacesToken(draft, settings) && (
+        <ApplicationReplacementNotice application={settings.application!} />
+      )}
       {saveError && (
         <Alert variant="destructive">
           <AlertDescription>{saveError}</AlertDescription>
@@ -445,7 +396,6 @@ function TextField({
   hint,
   problem,
   disabled,
-  inputMode,
   onChange,
 }: {
   id: string;
@@ -455,7 +405,6 @@ function TextField({
   hint: string;
   problem: string;
   disabled: boolean;
-  inputMode?: "numeric";
   onChange: (value: string) => void;
 }) {
   return (
@@ -469,7 +418,6 @@ function TextField({
         placeholder={placeholder}
         autoComplete="off"
         spellCheck={false}
-        inputMode={inputMode}
         disabled={disabled}
         aria-invalid={problem ? true : undefined}
         aria-describedby={`${id}-hint`}
@@ -485,34 +433,20 @@ function TextField({
   );
 }
 
-function ApplicationChangeNotice({
-  enabled,
-  confirmed,
-  onConfirm,
-}: {
-  enabled: boolean;
-  confirmed: boolean;
-  onConfirm: (confirmed: boolean) => void;
-}) {
+/** A token of another application replaces the application Factory operates as, once it connects. */
+function ApplicationReplacementNotice({ application }: { application: string }) {
   return (
     <Notice
       tone="attention"
       icon={TriangleAlert}
-      title="A different Application ID connects a different bot"
-      action={
-        <label className="flex items-center gap-2 text-sm text-foreground">
-          <Checkbox
-            checked={confirmed}
-            onCheckedChange={(checked) => onConfirm(checked === true)}
-          />
-          I understand; use the new application.
-        </label>
-      }
+      title="A token of another application replaces the bot"
     >
-      Factory treats it as a new identity: nothing of the old bot carries over, including its
-      conversations, reviews and buttons, and its earlier messages are no longer updated. The saved
-      token must belong to the new application; check the connection after saving.
-      {enabled && " Turn Chat control Off before saving a different application."}
+      Factory operates as application {application}. If the new token belongs to another Discord
+      application, Factory treats it as an application replacement when it next connects: the shared
+      conversations are cleared, the old bot&apos;s waiting reviews and buttons can never confirm
+      again, even if you switch back, and its earlier messages are no longer updated. Runs that still
+      need reporting get one new card from the new bot. A new token of the same application keeps
+      everything.
     </Notice>
   );
 }
@@ -605,8 +539,8 @@ function ConnectionCheck({
         <h3 className="text-sm font-semibold text-foreground">Check the saved connection</h3>
         <p className="text-sm text-muted-foreground">
           Connects to the Discord Gateway with the saved token, confirms the session becomes ready
-          as the configured application, then disconnects, within 30 seconds. During the check
-          Factory answers no messages, buttons or commands and posts nothing.
+          and reports the application Discord authenticated, then disconnects, within 30 seconds.
+          During the check Factory answers no messages, buttons or commands and posts nothing.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -622,7 +556,7 @@ function ConnectionCheck({
           <p className="text-sm text-muted-foreground">
             {dirty
               ? "Save or discard your edits to check."
-              : "Save the Application ID, Public Key and bot token to check."}
+              : "Save the Public Key and bot token to check."}
           </p>
         )}
       </div>
@@ -638,6 +572,10 @@ function ConnectionCheck({
           title={`Latest check ${latestCheck.outcome === "verified" ? "verified" : "failed"} · ${dayAndTime(latestCheck.checkedAt)} · revision ${latestCheck.revision}`}
         >
           {latestCheck.message}
+          {latestCheck.applicationId !== null &&
+            settings.application !== null &&
+            latestCheck.applicationId !== settings.application &&
+            ` Factory operates as application ${settings.application}; turning Chat control On with this token replaces it.`}
           {latestCheck.revision !== configuration.revision &&
             ` This check was for an earlier configuration; revision ${configuration.revision} is unchecked.`}
         </Notice>
@@ -645,9 +583,9 @@ function ConnectionCheck({
       <p className="flex items-start gap-2 text-sm text-muted-foreground">
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
         <span>
-          A passing check shows that Discord accepted the token for this application. It does not
-          show that the bot can read or post in your channels, that messages are delivered, that
-          commands are set up or that the Public Key is correct.
+          A passing check shows that Discord accepted the token and which application it belongs to.
+          It does not show that the bot can read or post in your channels, that messages are
+          delivered, that commands are set up or that the Public Key is correct.
         </span>
       </p>
     </section>
@@ -719,10 +657,10 @@ function SetupGuide() {
       <h3 className="text-sm font-semibold text-foreground">Set up the Discord application</h3>
       <ol className="grid list-decimal gap-2 pl-5 text-sm text-muted-foreground">
         <li>
-          In the Discord Developer Portal, create an application. Copy its{" "}
-          <strong className="font-medium text-foreground">Application ID</strong> and{" "}
+          In the Discord Developer Portal, create an application and copy its{" "}
           <strong className="font-medium text-foreground">Public Key</strong> from General
-          Information.
+          Information. Factory learns the application from Discord when it connects, so no
+          Application ID is needed.
         </li>
         <li>
           On the Bot page, reset and copy the token, and turn on{" "}

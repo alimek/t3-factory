@@ -1,4 +1,4 @@
-import { DiscordAdapter, type DiscordAdapterConfig } from "@chat-adapter/discord";
+import type { DiscordAdapter, DiscordAdapterConfig } from "@chat-adapter/discord";
 import { Chat, ConsoleLogger, type StateAdapter } from "chat";
 import {
   Client,
@@ -24,7 +24,6 @@ const READY_TIMEOUT = Duration.seconds(30);
 
 /** One complete saved connection with its resolved token. */
 export interface DiscordConnection {
-  readonly applicationId: string;
   readonly publicKey: string;
   readonly token: string;
 }
@@ -34,6 +33,21 @@ export interface GatewayResult {
   readonly outcome: DiscordCheckOutcome;
   readonly message: string;
   readonly transient: boolean;
+}
+
+/**
+ * A login's outcome: a ready session of the application Discord authenticated the token as, or
+ * why there is none.
+ */
+export type Readiness =
+  | { readonly ready: true; readonly applicationId: string }
+  | { readonly ready: false; readonly result: GatewayResult };
+
+/** The latest connection-only check's evidence. */
+export interface CheckResult {
+  readonly outcome: DiscordCheckOutcome;
+  readonly applicationId: string | null;
+  readonly message: string;
 }
 
 // The intents the adapter's own Gateway listener requests. The check asks for the same ones, so a
@@ -48,34 +62,6 @@ const GATEWAY_INTENTS = [
 ];
 
 const silent = new ConsoleLogger("silent");
-
-const refuse = () =>
-  Promise.reject(new Error("A connection-only Discord session keeps no conversation state."));
-
-/**
- * Chat SDK state for a session that admits nothing. Every data operation fails, so a handler that
- * somehow ran during a check could not subscribe, lock, deduplicate or queue anything.
- */
-const connectionOnlyState: StateAdapter = {
-  connect: () => Promise.resolve(),
-  disconnect: () => Promise.resolve(),
-  subscribe: refuse,
-  unsubscribe: refuse,
-  isSubscribed: refuse,
-  acquireLock: refuse,
-  extendLock: refuse,
-  releaseLock: refuse,
-  forceReleaseLock: refuse,
-  get: refuse,
-  set: refuse,
-  delete: refuse,
-  setIfNotExists: refuse,
-  appendToList: refuse,
-  getList: refuse,
-  enqueue: refuse,
-  dequeue: refuse,
-  queueDepth: refuse,
-};
 
 const result = (
   outcome: DiscordCheckOutcome,
@@ -117,59 +103,28 @@ function loginResult(error: unknown): GatewayResult {
   return result("unreachable", "Factory could not reach Discord.");
 }
 
-/** The authenticated application's identity compared with the configured Application ID. */
-function identityResult(expected: string, actual: string): GatewayResult {
-  if (actual !== expected)
-    return result(
-      "identity-mismatch",
-      `The token belongs to Discord application ${actual}, not the configured Application ID ${expected}. Factory will not operate another application's bot.`,
-    );
-  return result(
-    "verified",
-    `Discord accepted the token for application ${actual} and the Gateway session became ready. Factory disconnected after the check.`,
-  );
-}
+const failed = (gatewayResult: GatewayResult): Readiness => ({
+  ready: false,
+  result: gatewayResult,
+});
 
-/** What a session runs with besides the connection: its Chat SDK state and adapter. */
+/** What an operating session runs with besides the connection: its Chat SDK state and adapter. */
 interface SessionParts<Adapter extends DiscordAdapter> {
   readonly state: StateAdapter;
   readonly adapter: (config: DiscordAdapterConfig) => Adapter;
 }
 
 /**
- * The Chat SDK instance with the pinned Discord adapter and the discord.js Gateway client that
- * carries its listener. Release destroys the client, which ends the Gateway listener, and then shuts
- * Chat SDK down: Chat SDK shutdown alone leaves this adapter's Gateway open.
+ * The discord.js Gateway client of one session. Release destroys it, which ends the Gateway
+ * listener, and then shuts down the Chat SDK instance an operating session attached: Chat SDK
+ * shutdown alone leaves the adapter's Gateway open.
  */
-const gatewaySession = <Adapter extends DiscordAdapter>(
-  connection: DiscordConnection,
-  apiUrl: string,
-  parts: SessionParts<Adapter>,
-) =>
+const gatewayClient = (apiUrl: string) =>
   Effect.acquireRelease(
-    Effect.promise(async () => {
-      // Every option is explicit, so the adapter never falls back to DISCORD_* environment values.
-      const adapter = parts.adapter({
-        apiUrl: `${apiUrl}/v10`,
-        applicationId: connection.applicationId,
-        botToken: connection.token,
-        publicKey: connection.publicKey,
-        mentionRoleIds: [],
-        respondToChannelIds: [],
-        respondToGlobalMentions: false,
-        logger: silent,
-      });
-      // Factory serializes conversations itself; see chat-state.ts.
-      const chat = new Chat({
-        userName: "factory",
-        adapters: { discord: adapter },
-        state: parts.state,
-        concurrency: "concurrent",
-        logger: silent,
-      });
-      await chat.initialize();
+    Effect.sync(() => {
       // Set before the client is destroyed, so a login still in progress opens nothing afterwards.
       let released = false;
+      let chat: Chat | undefined;
       const client = new Client({
         intents: GATEWAY_INTENTS,
         partials: [Partials.Channel],
@@ -178,47 +133,100 @@ const gatewaySession = <Adapter extends DiscordAdapter>(
       });
       // An emitted "error" without a listener would throw; failures are classified elsewhere.
       client.on(Events.Error, () => undefined);
-      return { adapter, chat, client, released: () => released, release: () => (released = true) };
+      return {
+        client,
+        released: () => released,
+        release: () => (released = true),
+        attach: (attached: Chat) => (chat = attached),
+        chat: () => chat,
+      };
     }),
-    ({ chat, client, release }) =>
+    ({ client, release, chat }) =>
       Effect.promise(async () => {
         release();
         await client.destroy();
-        await chat.shutdown();
+        await chat()?.shutdown();
       }),
   );
 
 /**
  * Logs in with exactly the saved token and waits for actual Gateway readiness. The adapter's own
  * listener swallows login failures, so readiness and failure are observed on the client directly.
+ * The application is the one Discord reports for the authenticated session; the token is never
+ * decoded.
  */
-const establish = (client: Client, connection: DiscordConnection) =>
-  Effect.callback<GatewayResult>((resume) => {
+const establish = (client: Client, token: string) =>
+  Effect.callback<Readiness>((resume) => {
     client.once(Events.ClientReady, (ready) =>
-      resume(Effect.succeed(identityResult(connection.applicationId, ready.application.id))),
+      resume(Effect.succeed({ ready: true, applicationId: ready.application.id })),
     );
-    client.once(Events.ShardDisconnect, ({ code }) => resume(Effect.succeed(closeResult(code))));
-    client.login(connection.token).catch((error: unknown) => {
-      resume(Effect.succeed(loginResult(error)));
+    client.once(Events.ShardDisconnect, ({ code }) =>
+      resume(Effect.succeed(failed(closeResult(code)))),
+    );
+    client.login(token).catch((error: unknown) => {
+      resume(Effect.succeed(failed(loginResult(error))));
     });
   });
 
-/** Logs in and waits at most 30 seconds for a ready Gateway session of the configured application. */
-export const ready = (client: Client, connection: DiscordConnection) =>
-  Effect.map(
-    establish(client, connection).pipe(Effect.timeoutOption(READY_TIMEOUT)),
-    (established) =>
-      Option.getOrElse(established, () =>
+/** Logs in and waits at most 30 seconds for a ready Gateway session. */
+const ready = (client: Client, token: string) =>
+  Effect.map(establish(client, token).pipe(Effect.timeoutOption(READY_TIMEOUT)), (established) =>
+    Option.getOrElse(established, () =>
+      failed(
         result(
           "timed-out",
           `The Gateway session did not become ready within ${Duration.toSeconds(READY_TIMEOUT)} seconds.`,
         ),
       ),
+    ),
   );
 
-type GatewaySession<Adapter extends DiscordAdapter> = Effect.Success<
-  ReturnType<typeof gatewaySession<Adapter>>
->;
+/**
+ * The Chat SDK instance with the pinned Discord adapter for the authenticated application. Every
+ * option is explicit, so the adapter never falls back to DISCORD_* environment values.
+ */
+const chatFor = async <Adapter extends DiscordAdapter>(
+  connection: DiscordConnection,
+  applicationId: string,
+  apiUrl: string,
+  parts: SessionParts<Adapter>,
+) => {
+  const adapter = parts.adapter({
+    apiUrl: `${apiUrl}/v10`,
+    applicationId,
+    botToken: connection.token,
+    publicKey: connection.publicKey,
+    mentionRoleIds: [],
+    respondToChannelIds: [],
+    respondToGlobalMentions: false,
+    logger: silent,
+  });
+  // Factory serializes conversations itself; see chat-state.ts.
+  const chat = new Chat({
+    userName: "factory",
+    adapters: { discord: adapter },
+    state: parts.state,
+    concurrency: "concurrent",
+    logger: silent,
+  });
+  await chat.initialize();
+  return { adapter, chat };
+};
+
+/** An operating session whose application Discord authenticated, before any handler is attached. */
+export interface OperatingSession<Adapter extends DiscordAdapter> {
+  readonly applicationId: string;
+  readonly adapter: Adapter;
+  readonly chat: Chat;
+  readonly client: Client<true>;
+  readonly released: () => boolean;
+}
+
+/** How an operating session ended; `served` tells whether it became ready and was used. */
+export interface OperatingResult {
+  readonly result: GatewayResult;
+  readonly served: boolean;
+}
 
 /**
  * The single owner of Chat control's Discord Gateway listener. Every session holds the one listener
@@ -228,23 +236,27 @@ type GatewaySession<Adapter extends DiscordAdapter> = Effect.Success<
  */
 export const makeDiscordGateway = (apiUrl: string) =>
   Effect.gen(function* () {
-    const sessions = yield* FiberSet.make<Option.Option<GatewayResult>>();
+    const sessions = yield* FiberSet.make<Option.Option<CheckResult>>();
     const listener = yield* Semaphore.make(1);
     let checking = false;
 
     /**
-     * A bounded connection-only session: it verifies readiness and the authenticated application,
-     * then disconnects. No conversation handler is attached, so it handles no message, interaction
-     * or command and sends nothing to Discord beyond the login itself.
+     * A bounded connection-only session: it verifies readiness and reports the authenticated
+     * application, then disconnects. It has no Chat SDK instance or handler, so it handles no
+     * message, interaction or command and sends nothing to Discord beyond the login itself.
      */
     const runCheck = (connection: DiscordConnection) =>
       Effect.scoped(
-        Effect.gen(function* () {
-          const { client } = yield* gatewaySession(connection, apiUrl, {
-            state: connectionOnlyState,
-            adapter: (config) => new DiscordAdapter(config),
-          });
-          return yield* ready(client, connection);
+        Effect.gen(function* (): Effect.fn.Return<CheckResult, never, Scope.Scope> {
+          const { client } = yield* gatewayClient(apiUrl);
+          const readiness = yield* ready(client, connection.token);
+          if (!readiness.ready)
+            return { outcome: readiness.result.outcome, applicationId: null, message: readiness.result.message };
+          return {
+            outcome: "verified",
+            applicationId: readiness.applicationId,
+            message: `Discord accepted the token for application ${readiness.applicationId} and the Gateway session became ready. Factory disconnected after the check.`,
+          };
         }),
       );
 
@@ -268,15 +280,41 @@ export const makeDiscordGateway = (apiUrl: string) =>
 
     /**
      * Runs `use` with an operating session once the listener is free, waiting for a running check
-     * to end first. The session is released when `use` ends or is interrupted.
+     * to end first. Nothing of the session is built beyond the bare client until Discord has
+     * authenticated it and reported its application. The session is released when `use` ends or
+     * is interrupted.
      */
-    const operate = <Adapter extends DiscordAdapter, A, E>(
+    const operate = <Adapter extends DiscordAdapter, E>(
       connection: DiscordConnection,
       parts: SessionParts<Adapter>,
-      use: (session: GatewaySession<Adapter>) => Effect.Effect<A, E, Scope.Scope>,
+      use: (session: OperatingSession<Adapter>) => Effect.Effect<GatewayResult, E, Scope.Scope>,
     ) =>
       listener.withPermits(1)(
-        Effect.scoped(Effect.flatMap(gatewaySession(connection, apiUrl, parts), use)),
+        Effect.scoped(
+          Effect.gen(function* (): Effect.fn.Return<OperatingResult, E, Scope.Scope> {
+            const session = yield* gatewayClient(apiUrl);
+            const readiness = yield* ready(session.client, connection.token);
+            if (!readiness.ready) return { result: readiness.result, served: false };
+            // Attached in one uninterruptible step, so the session's release always shuts it down.
+            const { adapter, chat } = yield* Effect.uninterruptible(
+              Effect.map(
+                Effect.promise(() => chatFor(connection, readiness.applicationId, apiUrl, parts)),
+                (built) => {
+                  session.attach(built.chat);
+                  return built;
+                },
+              ),
+            );
+            const result = yield* use({
+              applicationId: readiness.applicationId,
+              adapter,
+              chat,
+              client: session.client as Client<true>,
+              released: session.released,
+            });
+            return { result, served: true };
+          }),
+        ),
       );
 
     return { check, operate, isChecking: () => checking };

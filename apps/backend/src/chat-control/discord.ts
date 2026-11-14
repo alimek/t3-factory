@@ -18,16 +18,13 @@ import { failure } from "../result.ts";
 import { now } from "../time.ts";
 import { readAccess, updateAccess } from "./access.ts";
 import type { ChatActions } from "./actions.ts";
-import { clearConversations } from "./conversations.ts";
 import type { ChatCredentials } from "./credentials.ts";
 import type { ChatDeliveries } from "./deliveries.ts";
-import { retireApplicationProposals } from "./revocation.ts";
 import type { DiscordConnection, DiscordGateway } from "./discord-gateway.ts";
 import type { DiscordOperation, OperationStatus } from "./discord-operation.ts";
 import { forgetPendingAdmissions } from "./pending-admissions.ts";
 
 type ConnectionRow = {
-  application_id: string | null;
   public_key: string | null;
   token_stage: string | null;
   revision: number;
@@ -35,18 +32,20 @@ type ConnectionRow = {
   check_revision: number | null;
   check_at: string | null;
   check_outcome: DiscordCheckOutcome | null;
+  check_application_id: string | null;
   check_message: string | null;
   chat_control_enabled: number;
+  /** The application Chat control operates as, recorded by the operating connection. */
+  application_id: string | null;
 };
 
 const readRow = (sql: SqlClient.SqlClient) =>
   Effect.map(
-    sql<ConnectionRow>`SELECT d.*,c.enabled AS chat_control_enabled FROM chat_discord_connection d, chat_control_state c WHERE d.singleton=1 AND c.singleton=1`,
+    sql<ConnectionRow>`SELECT d.*,c.enabled AS chat_control_enabled,c.application_id FROM chat_discord_connection d, chat_control_state c WHERE d.singleton=1 AND c.singleton=1`,
     ([row]) => row!,
   );
 
-const complete = (row: ConnectionRow) =>
-  row.application_id !== null && row.public_key !== null && row.token_stage !== null;
+const complete = (row: ConnectionRow) => row.public_key !== null && row.token_stage !== null;
 
 const settings = (
   row: ConnectionRow,
@@ -71,18 +70,19 @@ const settings = (
   access,
   delivery,
   configuration: {
-    applicationId: row.application_id,
     publicKey: row.public_key,
     tokenConfigured: row.token_stage !== null,
     revision: row.revision,
     savedAt: row.saved_at,
   },
+  application: row.application_id,
   latestCheck:
     row.check_revision !== null && row.check_at && row.check_outcome && row.check_message
       ? {
           revision: row.check_revision,
           checkedAt: row.check_at,
           outcome: row.check_outcome,
+          applicationId: row.check_application_id,
           message: row.check_message,
         }
       : null,
@@ -99,9 +99,6 @@ function commitProblem(
   if (row.revision !== input.revision) return failure("conflict", STALE_EDIT);
   const enabled = row.chat_control_enabled === 1;
   const removed = [
-    ...(input.applicationId === null
-      ? [{ path: "applicationId", message: "Enter the Application ID." }]
-      : []),
     ...(input.publicKey === null ? [{ path: "publicKey", message: "Enter the Public Key." }] : []),
     ...(input.token.kind === "remove" || (input.token.kind === "keep" && row.token_stage === null)
       ? [{ path: "token", message: "Keep or replace the bot token." }]
@@ -110,32 +107,9 @@ function commitProblem(
   if (enabled && removed.length > 0)
     return failure(
       "validation",
-      "Turn Chat control off before removing the Application ID, Public Key or bot token.",
+      "Turn Chat control off before removing the Public Key or bot token.",
       removed.map((issue) => ({ code: "discord_required", ...issue })),
     );
-  const applicationChanged =
-    row.application_id !== null &&
-    input.applicationId !== null &&
-    row.application_id !== input.applicationId;
-  if (applicationChanged && enabled)
-    return failure(
-      "validation",
-      "Turn Chat control off before connecting a different Discord application.",
-      [
-        {
-          code: "discord_application_change",
-          path: "applicationId",
-          message: "Turn Chat control off before changing the Application ID.",
-        },
-      ],
-    );
-  if (applicationChanged && !input.applicationChangeConfirmed) {
-    const message =
-      "A different Application ID connects a different bot. Confirm that you understand the consequences before saving.";
-    return failure("validation", message, [
-      { code: "discord_application_change", path: "applicationChangeConfirmed", message },
-    ]);
-  }
   return undefined;
 }
 
@@ -146,7 +120,6 @@ function missingForOn(connection: ConnectionRow, model: ModelRow) {
   const missing = (value: unknown, path: string, message: string) =>
     value === null ? [{ code: "chat_control_incomplete", path, message }] : [];
   return [
-    ...missing(connection.application_id, "discord.applicationId", "Save the Application ID."),
     ...missing(connection.public_key, "discord.publicKey", "Save the Public Key."),
     ...missing(connection.token_stage, "discord.token", "Save the bot token."),
     ...missing(model.provider_kind, "model.providerKind", "Save the Language model provider."),
@@ -189,7 +162,8 @@ export const makeChatDiscord = (
 
     /**
      * Commits the whole section as one revision: a replacement token is staged first, and the row
-     * naming it commits only when the edits still apply. Saving never contacts Discord.
+     * naming it commits only when the edits still apply. Saving never contacts Discord; which
+     * application a token belongs to is known only once Discord authenticates it.
      */
     const updateDiscordConnection = (input: unknown) =>
       Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
@@ -201,24 +175,14 @@ export const makeChatDiscord = (
           secret: next.token.kind === "replace" ? next.token.value : undefined,
           read: readRow(sql),
           problem: (row) => commitProblem(row, next),
-          write: (row, staged, savedAt) =>
-            Effect.gen(function* () {
-              const tokenStage = next.token.kind === "remove" ? null : (staged ?? row.token_stage);
-              yield* sql`UPDATE chat_discord_connection SET application_id=${next.applicationId},public_key=${next.publicKey},token_stage=${tokenStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
-              // Another application is another identity: it inherits no conversation history or
-              // consent, and switching back later revives none. Owed receipts stay owed.
-              if (
-                row.application_id !== null &&
-                next.applicationId !== null &&
-                row.application_id !== next.applicationId
-              ) {
-                yield* clearConversations(sql, "all");
-                yield* retireApplicationProposals(sql, row.application_id);
-              }
-            }),
+          write: (row, staged, savedAt) => {
+            const tokenStage = next.token.kind === "remove" ? null : (staged ?? row.token_stage);
+            return sql`UPDATE chat_discord_connection SET public_key=${next.publicKey},token_stage=${tokenStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
+          },
         });
         if (refused) return refused;
-        // While On, the running connection reconnects and verifies the newly saved configuration.
+        // While On, the running connection reconnects with the newly saved configuration; a token
+        // of another application then replaces the application Factory operates as.
         if ((yield* readRow(sql)).chat_control_enabled === 1) yield* operation.start;
         return yield* getDiscordSettings();
       });
@@ -240,10 +204,10 @@ export const makeChatDiscord = (
               "Save or discard your edits, then check the saved connection.",
             );
           if (row.chat_control_enabled === 1) return { ok: true, value: "operating" };
-          if (!row.application_id || !row.public_key || !row.token_stage)
+          if (!row.public_key || !row.token_stage)
             return failure(
               "validation",
-              "Save the Application ID, Public Key and bot token before checking the connection.",
+              "Save the Public Key and bot token before checking the connection.",
             );
           const token = yield* credentials.secret(row.token_stage, "discord-token");
           if (token === null)
@@ -251,16 +215,14 @@ export const makeChatDiscord = (
               "conflict",
               "The saved bot token is missing from the host's protected credentials. Replace it, then check again.",
             );
-          return {
-            ok: true,
-            value: { applicationId: row.application_id, publicKey: row.public_key, token },
-          };
+          return { ok: true, value: { publicKey: row.public_key, token } };
         }),
       );
 
     /**
      * While Off, one owner-requested connection-only session with the saved configuration at
-     * `revision`, recorded as dated evidence for that revision; it never changes the configuration.
+     * `revision`, recorded as dated evidence for that revision with the application Discord
+     * authenticated; it never changes the configuration or the application Factory operates as.
      * While On, the running connection is inspected instead and retried when it is not connected,
      * so no second Gateway session opens.
      */
@@ -283,7 +245,7 @@ export const makeChatDiscord = (
             "A Discord connection check is already running. Wait for it to finish.",
           );
         const checkedAt = yield* now;
-        yield* sql`UPDATE chat_discord_connection SET check_revision=${validated.value.revision},check_at=${checkedAt},check_outcome=${checked.value.outcome},check_message=${checked.value.message} WHERE singleton=1`;
+        yield* sql`UPDATE chat_discord_connection SET check_revision=${validated.value.revision},check_at=${checkedAt},check_outcome=${checked.value.outcome},check_application_id=${checked.value.applicationId},check_message=${checked.value.message} WHERE singleton=1`;
         return yield* getDiscordSettings();
       });
 

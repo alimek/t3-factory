@@ -132,7 +132,7 @@ it("Chat control turns On with a keyless model, no passed tests and empty Access
   });
 });
 
-it("the operating connection registers only /factory reset, after Discord verified the application", async (c) => {
+it("the operating connection registers only /factory reset, for the application Discord authenticated", async (c) => {
   // Arrange
   const { discord, factory } = await chatControlWorld(c);
 
@@ -140,6 +140,9 @@ it("the operating connection registers only /factory reset, after Discord verifi
   await turnedOn(factory, discord);
 
   // Assert
+  expect(await discordSettingsWhen(factory, statusIs("connected"))).toMatchObject({
+    application: discordBot.applicationId,
+  });
   expect(discord.commands.get(discordBot.applicationId)).toStrictEqual([
     {
       name: "factory",
@@ -158,27 +161,28 @@ it("the operating connection registers only /factory reset, after Discord verifi
   ]);
 });
 
-it("a token of another application is rejected while On and registers no command", async (c) => {
+it("a token of another application saved while On makes Factory operate as that application", async (c) => {
   // Arrange
   const { discord, factory } = await chatControlWorld(c);
+  await turnedOn(factory, discord);
   discord.addBot({ token: "other-application-token", applicationId: "987654321098765432" });
+
+  // Act
   const replaced = await factory.updateDiscordConnection(
     discordConnectionSave({
       revision: 1,
       token: { kind: "replace", value: "other-application-token" },
     }),
   );
-  assert(replaced.ok);
-
-  // Act
-  await factory.setChatControlEnabled({ enabled: true });
 
   // Assert
-  expect(await discordSettingsWhen(factory, statusIs("rejected"))).toMatchObject({
-    connectionProblem: { outcome: "identity-mismatch" },
-    needsAttention: true,
+  assert(replaced.ok, JSON.stringify(replaced));
+  await discord.request("PUT", COMMANDS, 2);
+  expect(discord.commands.get("987654321098765432")).toHaveLength(1);
+  expect(await discordSettingsWhen(factory, statusIs("connected"))).toMatchObject({
+    application: "987654321098765432",
+    connectionProblem: null,
   });
-  expect(discord.requested("PUT", COMMANDS)).toHaveLength(0);
 });
 
 it("On persists through a restart and the reopened Factory reconnects by itself", async (c) => {
@@ -355,28 +359,6 @@ it("removing the bot token while On is refused", async (c) => {
   // Assert
   assert(!saved.ok);
   expect(saved.error.issues).toMatchObject([{ code: "discord_required", path: "token" }]);
-});
-
-it("changing the Application ID while On is refused even with the consequence confirmed", async (c) => {
-  // Arrange
-  const { discord, factory } = await chatControlWorld(c);
-  await turnedOn(factory, discord);
-
-  // Act
-  const saved = await factory.updateDiscordConnection(
-    discordConnectionSave({
-      revision: 1,
-      applicationId: "987654321098765432",
-      token: { kind: "keep" },
-      applicationChangeConfirmed: true,
-    }),
-  );
-
-  // Assert
-  assert(!saved.ok);
-  expect(saved.error.issues).toMatchObject([
-    { code: "discord_application_change", path: "applicationId" },
-  ]);
 });
 
 it("Access for a second channel saves while the connection keeps its own revision", async (c) => {

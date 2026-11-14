@@ -67,8 +67,8 @@ export const applyAccessRevocation = (
 
 /**
  * Retires the live proposals of an application being replaced: its buttons can never confirm
- * again, even if that application is configured again later. Owed receipts stay owed. Call inside
- * the connection save.
+ * again, even if that application operates again later. Owed receipts stay owed. Call inside the
+ * transaction that records the replacing application.
  */
 export const retireApplicationProposals = (sql: SqlClient.SqlClient, applicationId: string) =>
   sql`UPDATE chat_proposals SET state='ended',ended_reason='application'

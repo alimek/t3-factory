@@ -4,7 +4,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
 import { now } from "../time.ts";
 
-/** One shared conversation: a Discord thread of the configured application in this installation. */
+/** One shared conversation: a Discord thread of the operating application in this installation. */
 export interface ConversationKey {
   readonly applicationId: string;
   readonly guildId: string;

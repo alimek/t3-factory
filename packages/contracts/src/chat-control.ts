@@ -89,8 +89,6 @@ export type DiscordTokenChange =
 
 /** The saved Discord connection section. The token itself never leaves the host's credential files. */
 export interface DiscordConnectionConfiguration {
-  /** The expected Application ID, a decimal Discord ID kept as text; null until supplied. */
-  readonly applicationId: string | null;
   /** The application's non-secret Public Key, 64 lowercase hexadecimal characters. */
   readonly publicKey: string | null;
   /** Whether a bot token is saved. */
@@ -103,11 +101,10 @@ export interface DiscordConnectionConfiguration {
 
 /**
  * How the latest connection-only check ended. Only `verified` means Discord authenticated the
- * saved token as the configured application over a ready Gateway session.
+ * saved token over a ready Gateway session and reported its application.
  */
 export type DiscordCheckOutcome =
   | "verified"
-  | "identity-mismatch"
   | "token-rejected"
   | "intent-disallowed"
   | "unreachable"
@@ -120,6 +117,11 @@ export interface DiscordCheckEvidence {
   readonly revision: number;
   readonly checkedAt: string;
   readonly outcome: DiscordCheckOutcome;
+  /**
+   * The application Discord reported for the authenticated session, a decimal Discord ID kept as
+   * text; set exactly when the check is `verified`. Factory never reads it from the token.
+   */
+  readonly applicationId: string | null;
   /** Factory's own description; never a Discord-supplied body. */
   readonly message: string;
 }
@@ -235,6 +237,12 @@ export interface DiscordSettings {
   /** Whether a current unresolved failure warrants the Settings navigation indicator; never while Off. */
   readonly needsAttention: boolean;
   readonly configuration: DiscordConnectionConfiguration;
+  /**
+   * The Discord application Factory operates as: the one its latest operating session
+   * authenticated as, which owns the conversations, consent and messages. Null until a session
+   * first authenticated. A session of another application replaces it.
+   */
+  readonly application: string | null;
   readonly access: DiscordAccessConfiguration;
   readonly latestCheck: DiscordCheckEvidence | null;
   readonly delivery: ChatDeliveryDiagnostics;
@@ -243,14 +251,8 @@ export interface DiscordSettings {
 export interface UpdateDiscordConnectionInput {
   /** The revision the edits started from; a different current revision is a conflict. */
   readonly revision: number;
-  readonly applicationId: string | null;
   readonly publicKey: string | null;
   readonly token: DiscordTokenChange;
-  /**
-   * The owner's acknowledgement that replacing a saved Application ID with another one connects a
-   * different bot. Required for that change and ignored otherwise.
-   */
-  readonly applicationChangeConfirmed: boolean;
 }
 
 export interface CheckDiscordConnectionInput {

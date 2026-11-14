@@ -185,7 +185,6 @@ test("the host saves the Discord connection, checks it over the Gateway and neve
   await app.open("/settings/chat-control/discord");
   await expect(screen.getByText("Chat control is Off")).toBeVisible();
   const connection = screen.getByRole("region", "Discord connection");
-  await connection.getByLabel("Application ID").fill(bot.applicationId);
   await connection.getByLabel("Public Key").fill("ab".repeat(32));
   await connection.getByLabel("Bot token").fill(bot.token);
   await connection.getByRole("button", "Save", { exact: true }).tap();
@@ -200,6 +199,11 @@ test("the host saves the Discord connection, checks it over the Gateway and neve
 
   // Assert
   await expect(screen.getByText(/^Latest check verified · /)).toBeVisible();
+  await expect(
+    screen.getByText(`Discord accepted the token for application ${bot.applicationId}`, {
+      exact: false,
+    }),
+  ).toBeVisible();
   const discord = await controlledDiscord(app.baseUrl);
   assert.deepStrictEqual(discord.sessions, [{ token: bot.token, ready: true, closed: true }]);
   await screen.getByText(/^A passing check shows that Discord accepted the token/).scrollIntoView();
@@ -209,7 +213,10 @@ test("the host saves the Discord connection, checks it over the Gateway and neve
   const settings = await discordSettings(app.baseUrl);
   expect(settings).toMatchObject({
     ok: true,
-    value: { configuration: { applicationId: bot.applicationId, tokenConfigured: true } },
+    value: {
+      configuration: { tokenConfigured: true },
+      latestCheck: { outcome: "verified", applicationId: bot.applicationId },
+    },
   });
   assert(!JSON.stringify(settings).includes(bot.token));
 });
@@ -266,10 +273,8 @@ async function completeChatControl(baseUrl: string | undefined) {
   assert(discord.ok && model.ok);
   const connection = await hostCall(baseUrl, "PUT", "/api/chat-control/discord/connection", {
     revision: discord.value.configuration.revision,
-    applicationId: bot.applicationId,
     publicKey: "ab".repeat(32),
     token: { kind: "replace", value: bot.token },
-    applicationChangeConfirmed: false,
   });
   assert(connection.ok, JSON.stringify(connection));
   const saved = await hostCall(baseUrl, "PUT", "/api/chat-control/model", {
@@ -403,6 +408,33 @@ async function operatingChatControl(baseUrl: string | undefined) {
     (settings) => settings.commandSetup?.outcome === "registered",
   );
 }
+
+test("replacing the bot token after Chat control operated warns that another application's token replaces the bot", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await operatingChatControl(app.baseUrl);
+  const { bot } = await controlledDiscord(app.baseUrl);
+  await app.open("/settings/chat-control/discord");
+  const connection = screen.getByRole("region", "Discord connection");
+  await expect(
+    connection.getByText(`Factory currently operates as application ${bot.applicationId}.`, {
+      exact: false,
+    }),
+  ).toBeVisible();
+
+  // Act
+  await connection.getByRole("radio", "Replace token").tap();
+
+  // Assert
+  await expect(
+    connection.getByText("A token of another application replaces the bot"),
+  ).toBeVisible();
+  await expect(connection.getByLabel("Replacement token")).toBeVisible();
+  await connection.getByText("A token of another application replaces the bot").scrollIntoView();
+  await app.screenshot("chat-discord-token-replacement");
+});
 
 test("an actual conversation failure shows on the Language model page and marks its navigation item", async ({
   app,

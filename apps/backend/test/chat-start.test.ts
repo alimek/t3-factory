@@ -300,21 +300,16 @@ it("replacing the Discord application retires its waiting reviews, even after sw
   const button = await proposedStart(world, "600000000000000001", 4);
   const other = { token: "other-bot-token.discord.secret", applicationId: "123456789012345679" };
   world.discord.addBot(other);
-  assert((await world.factory.setChatControlEnabled({ enabled: false })).ok);
   const replaced = await world.factory.updateDiscordConnection(
-    discordConnectionSave({
-      revision: 1,
-      applicationId: other.applicationId,
-      token: { kind: "replace", value: other.token },
-      applicationChangeConfirmed: true,
-    }),
+    discordConnectionSave({ revision: 1, token: { kind: "replace", value: other.token } }),
   );
   assert(replaced.ok, JSON.stringify(replaced));
+  await servingAgain(world.discord, 2);
   const restored = await world.factory.updateDiscordConnection(
-    discordConnectionSave({ revision: 2, applicationChangeConfirmed: true }),
+    discordConnectionSave({ revision: 2 }),
   );
   assert(restored.ok, JSON.stringify(restored));
-  await turnedOn(world.factory, world.discord, 2);
+  await servingAgain(world.discord, 3);
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000001", 1);

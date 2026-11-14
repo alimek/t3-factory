@@ -1,5 +1,5 @@
 import { DiscordAdapter } from "@chat-adapter/discord";
-import { Message as ChatMessage, type Chat, type Thread } from "chat";
+import { Message as ChatMessage, type Thread } from "chat";
 import {
   ButtonStyle,
   ComponentType,
@@ -23,14 +23,14 @@ import type {
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
 import { sqliteChatState } from "./chat-state.ts";
-import { conversationGenerations } from "./conversations.ts";
+import { clearConversations, conversationGenerations } from "./conversations.ts";
 import type { ChatCredentials } from "./credentials.ts";
 import {
   closeResult,
-  ready,
   type DiscordConnection,
   type DiscordGateway,
   type GatewayResult,
+  type OperatingSession,
 } from "./discord-gateway.ts";
 import type { ChatActions } from "./actions.ts";
 import type { ChatTool } from "./chat-tools.ts";
@@ -39,6 +39,7 @@ import { makeIngress, registerCommands, type ReferencedMessage } from "./discord
 import { makeInterpreter, type InterpretationEngine } from "./interpretation.ts";
 import type { ConversationalModelAccess } from "./model.ts";
 import { makeRequesterEvidence } from "./requester-evidence.ts";
+import { retireApplicationProposals } from "./revocation.ts";
 import { publishedRun } from "./status-cards.ts";
 
 type Run = <A>(effect: Effect.Effect<A, unknown>) => Promise<A>;
@@ -239,23 +240,36 @@ const backoff = (failures: number) =>
 const UNEXPECTED_STOP =
   "Chat control's Discord connection stopped unexpectedly. Retry to reconnect.";
 
-/** An operating Gateway session with Factory's adapter and verified client. */
-interface Session {
-  readonly adapter: FactoryDiscordAdapter;
-  readonly chat: Chat;
-  readonly client: Client<true>;
-  readonly released: () => boolean;
-}
-
 const RECONNECTING: Omit<DiscordConnectionProblem, "occurredAt"> = {
   outcome: "unreachable",
   message: "Discord closed the Gateway connection. Factory is reconnecting.",
 };
 
 /**
+ * Records the application an operating session authenticated as. Another application than the
+ * recorded one is an application replacement: it inherits no conversation history or consent, and
+ * switching back later revives none. Owed messages stay owed; the deliveries of the serving
+ * application retire the old application's edits and replace its cards.
+ */
+const adoptApplication = (sql: SqlClient.SqlClient, applicationId: string) =>
+  sql.withTransaction(
+    Effect.gen(function* () {
+      const [state] = yield* sql<{
+        application_id: string | null;
+      }>`SELECT application_id FROM chat_control_state WHERE singleton=1`;
+      const recorded = state!.application_id;
+      if (recorded === applicationId) return;
+      yield* sql`UPDATE chat_control_state SET application_id=${applicationId} WHERE singleton=1`;
+      if (recorded === null) return;
+      yield* clearConversations(sql, "all");
+      yield* retireApplicationProposals(sql, recorded);
+    }),
+  );
+
+/**
  * Chat control's operating Discord connection. While On, one supervisor fiber in the backend's
- * scope runs one Gateway session at a time through the gateway's single listener, verifies the
- * authenticated application before attaching any handler or registering the command, backs off
+ * scope runs one Gateway session at a time through the gateway's single listener, records the
+ * application Discord authenticated before attaching any handler or registering the command, backs off
  * after transient failures and stops after failures that need correction, recording them so a
  * restart does not reconnect until the owner retries.
  */
@@ -288,27 +302,29 @@ export const makeDiscordOperation = (
     const savedConnection = credentials.read(
       Effect.gen(function* (): Effect.fn.Return<Result<DiscordConnection>, unknown> {
         const [row] = yield* sql<{
-          application_id: string | null;
           public_key: string | null;
           token_stage: string | null;
-        }>`SELECT application_id,public_key,token_stage FROM chat_discord_connection WHERE singleton=1`;
+        }>`SELECT public_key,token_stage FROM chat_discord_connection WHERE singleton=1`;
         const token = row!.token_stage
           ? yield* credentials.secret(row!.token_stage, "discord-token")
           : null;
-        if (!row!.application_id || !row!.public_key || token === null)
+        if (!row!.public_key || token === null)
           return failure(
             "conflict",
             "The saved bot token is missing from the host's protected credentials. Replace it, then retry.",
           );
-        return {
-          ok: true,
-          value: { applicationId: row!.application_id, publicKey: row!.public_key, token },
-        };
+        return { ok: true, value: { publicKey: row!.public_key, token } };
       }),
     );
 
-    /** Serves one verified session until Discord ends it for good. */
-    const serve = ({ adapter, chat, client, released }: Session, connection: DiscordConnection) =>
+    /** Serves one authenticated session until Discord ends it for good. */
+    const serve = ({
+      applicationId,
+      adapter,
+      chat,
+      client,
+      released,
+    }: OperatingSession<FactoryDiscordAdapter>) =>
       Effect.gen(function* () {
         const runPromise = yield* FiberSet.makeRuntimePromise<never>();
         // Handlers belong to the session: releasing it interrupts them, which is not a failure.
@@ -327,7 +343,7 @@ export const makeDiscordOperation = (
         const post = (key: Parameters<typeof encodeThreadId>[0], text: string) =>
           adapter.post(encodeThreadId(key), text);
         const sender: DiscordSender = {
-          applicationId: connection.applicationId,
+          applicationId,
           create: (destination, text, button) =>
             adapter.create(encodeThreadId(destination), text, button),
           edit: (destination, messageId, text) =>
@@ -336,7 +352,7 @@ export const makeDiscordOperation = (
         };
         const engine = yield* makeInterpreter({
           sql,
-          applicationId: connection.applicationId,
+          applicationId,
           generations,
           model: conversation.model,
           tools: conversation.tools,
@@ -360,7 +376,7 @@ export const makeDiscordOperation = (
           {
             sql,
             client,
-            applicationId: connection.applicationId,
+            applicationId,
             evidence,
             generations,
             operating: () => !released(),
@@ -374,7 +390,7 @@ export const makeDiscordOperation = (
               references.delete(messageId);
               return reference;
             },
-            publishedRun: publishedRun(sql, connection.applicationId),
+            publishedRun: publishedRun(sql, applicationId),
           },
           engine,
         );
@@ -419,7 +435,7 @@ export const makeDiscordOperation = (
           for (const member of added_members) evidence.joined(guild_id, id, member.user_id);
         });
         adapter.listen(client, released);
-        const commandSetup = yield* registerCommands(client, connection.applicationId);
+        const commandSetup = yield* registerCommands(client, applicationId);
         current = { connectionStatus: "connected", connectionProblem: null, commandSetup };
         interpreter = engine;
         yield* Effect.addFinalizer(() =>
@@ -455,15 +471,7 @@ export const makeDiscordOperation = (
           adapter: (config) => new FactoryDiscordAdapter(config),
         },
         (session) =>
-          Effect.gen(function* () {
-            const established = yield* ready(session.client, connection);
-            if (established.outcome !== "verified") return { result: established, served: false };
-            const result = yield* serve(
-              { ...session, client: session.client as Client<true> },
-              connection,
-            );
-            return { result, served: true };
-          }),
+          Effect.andThen(adoptApplication(sql, session.applicationId), serve(session)),
       );
 
     const supervise = Effect.gen(function* () {

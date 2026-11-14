@@ -28,55 +28,15 @@ it("an incomplete Discord connection can be saved while Chat control is Off", as
   const factory = await (await factoryHarness(c)).open();
 
   // Act
-  const saved = await factory.updateDiscordConnection(
-    discordConnectionSave({ publicKey: null, token: { kind: "keep" } }),
-  );
+  const saved = await factory.updateDiscordConnection(discordConnectionSave({ publicKey: null }));
 
   // Assert
   assert(saved.ok);
   expect(saved.value).toMatchObject({
     chatControlEnabled: false,
     connectionStatus: "incomplete",
-    configuration: {
-      applicationId: discordBot.applicationId,
-      publicKey: null,
-      tokenConfigured: false,
-      revision: 1,
-    },
+    configuration: { publicKey: null, tokenConfigured: true, revision: 1 },
   });
-});
-
-it("an Application ID beyond JavaScript's exact integer range is saved exactly as entered", async (c) => {
-  // Arrange
-  const factory = await (await factoryHarness(c)).open();
-
-  // Act
-  const saved = await factory.updateDiscordConnection(
-    discordConnectionSave({ applicationId: " 18446744073709551615 " }),
-  );
-
-  // Assert
-  assert(saved.ok);
-  expect(saved.value.configuration.applicationId).toBe("18446744073709551615");
-});
-
-it("a malformed Application ID is rejected and the saved connection stays unchanged", async (c) => {
-  // Arrange
-  const factory = await (await factoryHarness(c)).open();
-  const before = await factory.getDiscordSettings();
-
-  // Act
-  const saved = await factory.updateDiscordConnection(
-    discordConnectionSave({ applicationId: "1.23456789012345e17" }),
-  );
-
-  // Assert
-  assert(!saved.ok);
-  expect(saved.error.issues[0]).toMatchObject({
-    code: "discord_application_id",
-    path: "applicationId",
-  });
-  expect(await factory.getDiscordSettings()).toStrictEqual(before);
 });
 
 it("a Public Key that is not 64 hexadecimal characters is rejected", async (c) => {
@@ -105,11 +65,7 @@ it("the settings read reports a saved bot token without returning it", async (c)
   assert(read.ok);
   expect(read.value).toMatchObject({
     connectionStatus: "off",
-    configuration: {
-      applicationId: discordBot.applicationId,
-      publicKey: DISCORD_PUBLIC_KEY,
-      tokenConfigured: true,
-    },
+    configuration: { publicKey: DISCORD_PUBLIC_KEY, tokenConfigured: true },
   });
   expect(JSON.stringify(read)).not.toContain(discordBot.token);
 });
@@ -167,53 +123,6 @@ it("removing the saved token while Off leaves the connection incomplete", async 
   expect(removed.value.configuration.tokenConfigured).toBe(false);
 });
 
-it("replacing the saved Application ID with another is refused until the owner confirms the consequences", async (c) => {
-  // Arrange
-  const factory = await (await factoryHarness(c)).open();
-  const saved = await savedDiscordConnection(factory);
-
-  // Act
-  const changed = await factory.updateDiscordConnection(
-    discordConnectionSave({
-      revision: 1,
-      applicationId: "876543210987654321",
-      token: { kind: "keep" },
-    }),
-  );
-
-  // Assert
-  assert(!changed.ok);
-  expect(changed.error.issues[0]).toMatchObject({
-    code: "discord_application_change",
-    path: "applicationChangeConfirmed",
-  });
-  expect(await factory.getDiscordSettings()).toStrictEqual({ ok: true, value: saved });
-});
-
-it("a confirmed Application ID change is saved as the next revision", async (c) => {
-  // Arrange
-  const factory = await (await factoryHarness(c)).open();
-  await savedDiscordConnection(factory);
-
-  // Act
-  const changed = await factory.updateDiscordConnection(
-    discordConnectionSave({
-      revision: 1,
-      applicationId: "876543210987654321",
-      token: { kind: "keep" },
-      applicationChangeConfirmed: true,
-    }),
-  );
-
-  // Assert
-  assert(changed.ok);
-  expect(changed.value.configuration).toMatchObject({
-    applicationId: "876543210987654321",
-    tokenConfigured: true,
-    revision: 2,
-  });
-});
-
 it("a save refused as stale after staging its token leaves the committed token in use across restart", async (c) => {
   // Arrange
   const { discord, factory, open } = await discordFactory(c);
@@ -259,7 +168,7 @@ it("a replacement token that cannot be stored keeps the previous connection and 
   expect(await factory.getDiscordSettings()).toStrictEqual({ ok: true, value: saved });
 });
 
-it("a replacement token of another application fails the check as an identity mismatch without trying the earlier token", async (c) => {
+it("a check reports the application Discord authenticated for a replacement token, without trying the earlier token or adopting that application", async (c) => {
   // Arrange
   const { discord, factory } = await discordFactory(c);
   discord.addBot({ token: "other-application-token", applicationId: "876543210987654321" });
@@ -277,10 +186,14 @@ it("a replacement token of another application fails the check as an identity mi
 
   // Assert
   assert(checked.ok);
-  expect(checked.value.latestCheck).toMatchObject({
-    revision: 2,
-    outcome: "identity-mismatch",
-    message: expect.stringContaining("876543210987654321"),
+  expect(checked.value).toMatchObject({
+    application: null,
+    latestCheck: {
+      revision: 2,
+      outcome: "verified",
+      applicationId: "876543210987654321",
+      message: expect.stringContaining("876543210987654321"),
+    },
   });
   await discord.disconnected();
   expect(discord.sessions.map((session) => session.token)).toStrictEqual([

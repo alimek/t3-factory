@@ -66,17 +66,12 @@ async function mattersWhileOff(world: World) {
   return { runId, entry, second };
 }
 
-/** Replaces the Discord connection with `otherBot`'s application while Chat control is Off. */
+/** Saves `otherBot`'s token while Chat control is Off, so the next session replaces the application. */
 async function applicationReplaced(world: World) {
   world.discord.addBot(otherBot);
   await turnedOff(world);
   const replaced = await world.factory.updateDiscordConnection(
-    discordConnectionSave({
-      revision: 1,
-      applicationId: otherBot.applicationId,
-      token: { kind: "replace", value: otherBot.token },
-      applicationChangeConfirmed: true,
-    }),
+    discordConnectionSave({ revision: 1, token: { kind: "replace", value: otherBot.token } }),
   );
   assert(replaced.ok, JSON.stringify(replaced));
 }

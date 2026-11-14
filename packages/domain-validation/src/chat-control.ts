@@ -237,12 +237,6 @@ export function validateUpdateDiscordConnection(
     typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
   const revision = parseRevision(fields.revision, "discord_revision");
   if (!revision.ok) return revision;
-  const applicationId = parseOptionalText(
-    fields.applicationId,
-    (text) => validateDiscordId(text, "discord_application_id", "applicationId", "Application ID"),
-    invalid("discord_application_id", "applicationId", "Enter the Application ID as text."),
-  );
-  if (!applicationId.ok) return applicationId;
   const publicKey = parseOptionalText(
     fields.publicKey,
     validateDiscordPublicKey,
@@ -255,10 +249,8 @@ export function validateUpdateDiscordConnection(
     ok: true,
     value: {
       revision: revision.value,
-      applicationId: applicationId.value,
       publicKey: publicKey.value,
       token: token.value,
-      applicationChangeConfirmed: fields.applicationChangeConfirmed === true,
     },
   };
 }

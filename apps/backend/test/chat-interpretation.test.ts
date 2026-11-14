@@ -419,25 +419,20 @@ it("connecting another application and back revives no conversation", async (c) 
   const other = { token: "other-bot-token.discord.secret", applicationId: "123456789012345679" };
   discord.addBot(other);
   await answered(discord, "300000000000000240", 1, { content: "old identity" });
-  await factory.setChatControlEnabled({ enabled: false });
   const away = await factory.updateDiscordConnection({
     revision: 1,
-    applicationId: other.applicationId,
-    publicKey: "b".repeat(64),
+    publicKey: "a".repeat(64),
     token: { kind: "replace", value: other.token },
-    applicationChangeConfirmed: true,
   });
   assert(away.ok, JSON.stringify(away));
+  await servingAgain(discord, 2);
   const back = await factory.updateDiscordConnection({
     revision: 2,
-    applicationId: discordBot.applicationId,
     publicKey: "a".repeat(64),
     token: { kind: "replace", value: discordBot.token },
-    applicationChangeConfirmed: true,
   });
   assert(back.ok, JSON.stringify(back));
-  await factory.setChatControlEnabled({ enabled: true });
-  await servingAgain(discord, 2);
+  await servingAgain(discord, 3);
 
   // Act
   await answered(discord, "300000000000000241", 2);

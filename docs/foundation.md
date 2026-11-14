@@ -85,6 +85,12 @@ and restricted OAuth credentials live outside project repositories.
   notices accounted for, each notice's reported lifecycle change, and each attention matter with the
   notice that announced it. Chat-started Runs recorded before it start from their current state, so
   the upgrade posts nothing about earlier matters or outcomes.
+  Migration `092` removes the configured Application ID. The connection row keeps the Public Key and
+  token; a check records the application Discord authenticated; Chat control's state records the
+  application its operating connection authenticated as, starting from the formerly configured one,
+  because existing conversations, consent and messages belong to it. A stored identity-mismatch check
+  reached a ready session and becomes a verified check of the application it reported, and an On state
+  rejected for another application's token stays rejected until the owner retries.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

@@ -90,47 +90,56 @@ a Factory MCP client. The bot works only while the Factory backend runs.
 
 ### Connection
 
-The **Connection** section saves three values with its own **Save** and **Discard**, independently
+The **Connection** section saves two values with its own **Save** and **Discard**, independently
 of the Language model:
 
 | Value | Rule |
 | --- | --- |
-| Application ID | The expected application, a Discord ID kept as a trimmed decimal string of 17 to 20 digits, never as a number |
 | Public Key | The application's non-secret Public Key, 64 hexadecimal characters, stored in lowercase |
 | Bot token | Secret; stored like the model key |
 
 While Chat control is Off the owner may save an incomplete section; malformed supplied values are
-always refused. While Chat control is On, removing the Application ID, Public Key or token is
-refused, and so is replacing the Application ID. Replacing a saved Application ID with a different
-one also needs the owner's explicit confirmation of the consequence: a different application is a
-different bot, and nothing of the old bot carries over. Saving never contacts Discord.
+always refused. While Chat control is On, removing the Public Key or token is refused. Saving never
+contacts Discord.
 
 The token follows the [key](#key) rules: reads report only whether one is saved, a blank field keeps
 it, **Replace token** and **Remove token** are explicit, and it is stored outside SQLite in an
 owner-only file under `credentials/chat-control/` that the committed section names. Saves name the
 revision their edits started from, conflicts keep the page's edits, a lost answer is resolved by
-reading the current settings, and unsaved edits are guarded as on the Language model page. Factory
-never reads the application's identity from the token itself.
+reading the current settings, and unsaved edits are guarded as on the Language model page.
+
+No Application ID is configured. Factory's application is the one Discord reports for the
+authenticated Gateway session; Factory never reads it from the token itself. Factory records the
+application its operating connection authenticated as and shows it on the page. When a newly
+authenticated session reports another application, that is an **application replacement**: the
+shared conversations are cleared, the previous application's waiting consent ends for good, its
+messages are no longer edited and eligible Runs get new status cards from the new bot (see
+[Confirmation](#confirmation), [Status cards](#status-cards) and
+[Attention and lifecycle notices](#attention-and-lifecycle-notices)). A new token of the same
+application keeps everything. When the owner replaces the token, the page says that a token of
+another application is treated this way.
 
 ### On and Off
 
 The Discord page holds Chat control's one persisted **On/Off** switch; the Language model has no
-switch of its own. Turning On needs the saved Application ID, Public Key and bot token and the
+switch of its own. Turning On needs the saved Public Key and bot token and the
 Language model's provider, base URL and model. A model key, a passed Test or check and any Access
 entry are not required; empty Access is explained on the page and admits nobody. Turning On uses
 only saved configuration.
 
 On is persisted: after a restart Factory reconnects by itself. While On, Factory runs exactly one
-Gateway connection. It logs in with the saved token, waits for a ready session and compares the
-authenticated application with the Application ID before it attaches any handler or registers its
-command. A transient failure (Discord unreachable, a timeout, HTTP 429 or a 5xx answer) shows the
+Gateway connection. It logs in with the saved token and waits for a ready session; only once
+Discord has authenticated the session and reported its application, and Factory has recorded it
+(applying an application replacement when it differs), does Factory attach any handler, register
+its command or post anything. There is no fallback to an earlier token or another application. A
+transient failure (Discord unreachable, a timeout, HTTP 429 or a 5xx answer) shows the
 connection as **Reconnecting** and is retried after a wait that starts at one second and doubles up
-to five minutes. A failure that needs correction (a rejected token, a token of another application,
-a missing Message Content intent or another refusal) shows **Rejected** with Factory's description
+to five minutes. A failure that needs correction (a rejected token, a missing Message Content intent
+or another refusal) shows **Rejected** with Factory's description
 and stops connecting; the rejection is persisted, so a restart does not retry it. **Retry
 connection** on the page, which replaces the check while On, restarts the same connection; saving
-the connection section while On also reconnects and verifies the newly saved values, which is how
-a same-application token rotation takes effect. Neither opens a second session.
+the connection section while On also reconnects with the newly saved values, which is how a token
+rotation takes effect. Neither opens a second session.
 
 Turning Off stops admitting messages and commands and disconnects; it returns once the Gateway
 session is released. Configuration, Access, conversations and accepted Factory work are kept, and
@@ -183,7 +192,7 @@ private thread only after a gap or when Discord announces it.
 
 Each Discord message or command is taken once: a content-free marker of its ID is kept, so a
 repeated delivery, also after a restart, admits nothing twice. Every admitted invocation belongs to
-one shared conversation per thread of the configured application in this installation, and work on
+one shared conversation per thread of the operating application in this installation, and work on
 it is serialized per conversation. Before Factory publishes anything for an invocation it checks
 again that Chat control is On, the evidence is current, Access still allows the author there and
 the conversation has not been reset. The [conversation](#conversations) section describes how an
@@ -191,7 +200,7 @@ admitted invocation is answered.
 
 ### /factory reset
 
-When the connection is verified, Factory registers `/factory reset` as the application's only
+When the connection is authenticated, Factory registers `/factory reset` as the application's only
 command, replacing any others; it is available in servers only. An allowed participant can use it
 inside a thread of an allowed channel. Factory acknowledges it at once, privately to the invoker,
 checks access as for invocations (including private-thread membership) and clears the thread's
@@ -204,26 +213,27 @@ confirmed, it clears nothing and says so privately. There is no message-text fal
 
 While Chat control is Off, **Check saved connection** opens one bounded connection-only Gateway
 session with the saved token at the saved revision. It waits at most 30 seconds for the session to
-become ready, compares the application Discord authenticated with the configured Application ID,
-and disconnects. It attaches no conversation handler: it answers no message, button or command,
+become ready, reads the application Discord authenticated, and disconnects. It attaches no conversation handler: it answers no message, button or command,
 posts nothing, registers no command and makes no model request; messages arriving meanwhile are not
 serviced. Only one Gateway session exists at a time, so a check while another runs is refused, and
 closing Factory ends a running check's session. While Chat control is On there is no separate check:
 the page reports the running connection and offers **Retry connection** instead.
 
 The result is recorded with the checked revision and its time, using Factory's own description:
-verified, a token of another application, a token Discord rejects, a missing Message Content
+verified with the authenticated application, a token Discord rejects, a missing Message Content
 intent, Discord unreachable, timed out, or another Gateway failure. Discord's error bodies and the
-token never appear in it. A mismatched or unverified identity is never replaced by another token or
-an earlier one. A later save leaves the result as evidence for its earlier revision. A passing check
-shows only that Discord accepted the token for the configured application; it does not show channel
-permissions, message delivery, command setup or that the Public Key is correct.
+token never appear in it. A failed check never tries another token or an earlier one. The check
+changes neither the configuration nor the recorded application; when the authenticated application
+differs from the recorded one, the page says that turning On with this token replaces it. A later
+save leaves the result as evidence for its earlier revision. A passing check shows only that Discord
+accepted the token and which application it belongs to; it does not show channel permissions,
+message delivery, command setup or that the Public Key is correct.
 
 ### Setting up the application
 
 The page explains the setup the owner performs in the Discord Developer Portal:
 
-1. Create an application and copy its Application ID and Public Key.
+1. Create an application and copy its Public Key. No Application ID is entered.
 2. On the Bot page, reset and copy the token and turn on **Message Content Intent**; the adapter
    requests it and Discord refuses a connection without it. Other privileged intents are not needed.
 3. Leave **Interactions Endpoint URL** empty. With a URL set, Discord sends interactions there
@@ -309,7 +319,7 @@ longer retains is reported unavailable.
 Continuation and read handles are opaque names Factory stores with the conversation. They grant
 nothing: each use rechecks access and the source. A handle works only in the thread and conversation
 generation that issued it and only while the turn that issued it is retained, so a reset, expiry,
-clearing (including Access, provider or application changes) or eviction of that turn makes it
+clearing (including Access, provider or application replacement) or eviction of that turn makes it
 unusable and the model searches or reads again. Handles hold search parameters and section versions,
 never Run content. Because a turn keeps its newest compact facts first, the latest handles of a turn
 survive into the next invocation, so a search or read that needs more tool calls than one invocation
@@ -321,7 +331,7 @@ bot message adds nothing to the request.
 
 ### Shared conversation
 
-Each thread of the configured application has one shared conversation; nothing is shared between
+Each thread of the operating application has one shared conversation; nothing is shared between
 threads and there are no personal profiles, inferred preferences or automatic summaries. A completed
 turn keeps the admitted message exactly as it arrived with its author's Discord ID, the reply
 Discord accepted and compact Factory facts from its tool calls (identities, names and read handles,
@@ -352,7 +362,7 @@ without naming what was removed; `/factory reset` is acknowledged at once instea
 reports do not refresh retention, and the clocks continue while Chat control is Off.
 
 A Language model save that changes the provider kind or base URL clears every conversation, and so
-does connecting a different Discord application; switching back revives nothing. Changing the model
+does an application replacement; switching back revives nothing. Changing the model
 name or key, rotating the same application's token or editing the Public Key keeps them. An Access
 save that removes a channel or one of its Projects clears that channel's whole conversations; adding
 Projects keeps them and a regrant restores nothing. Removing a user stops their unfinished and later
@@ -451,7 +461,7 @@ Unicode characters and goes out as fully visible ordered messages; only after ev
 delivered does Factory post the last message with one **Confirm** button. A part that fails, or a
 button Discord definitely refused, leaves nothing to confirm and Factory says so.
 
-The consent is bound to the requester, the configured application, the thread, the exact operation
+The consent is bound to the requester, the operating application, the thread, the exact operation
 and parameters and the model's call that proposed it. The button's first dispatch fixes its lifetime
 at five minutes; nothing renews it, including an uncertain delivery or a restart. Asking again for the
 identical action while its review waits points to the existing button instead of posting another; a
@@ -466,7 +476,7 @@ place in the conversation's queue, and a reset or clearing removes the conversat
 Only the requester's click within the lifetime, in the review's thread, confirms. Factory answers
 each click privately (an ephemeral reply). It checks again that Chat control is On, Access still
 allows the requester in that channel with the targeted Project, the application is still the
-configured one and the requester's Discord access is current, then takes the consent and performs the
+one Factory operates as and the requester's Discord access is current, then takes the consent and performs the
 action with no model request and outside any database transaction. A click by someone else, a denied
 or unconfirmed Discord access check and a click that arrives while Factory is momentarily unable to
 decide all leave the consent usable until it expires; a click after expiry does nothing, even if the
@@ -496,8 +506,7 @@ repeated click, restart or reconciliation never archives or interrupts again.
 Consent survives restarts, Gateway outages, Off and On, Language model saves and the same
 application's token rotation, but only until it expires, and Off stops new confirmations. An Access
 save that removes the requester, the channel or the targeted Project voids matching consent for good;
-connecting a different Discord application voids the previous application's, including after
-switching back.
+an application replacement voids the previous application's, including after switching back.
 
 ### Receipts and delivery
 
@@ -509,7 +518,7 @@ originating thread and the owed receipt commit together. The receipt goes to the
 action was requested and depends on that channel still granting the Project and on the bot's access
 there, not on the requester remaining allowed; an Access save that revokes the destination cancels
 the owed receipt and keeps the accepted Run. After an application replacement, owed receipts go out
-from the new bot once it is verified and On.
+from the new bot once it is authenticated and On.
 
 Factory records its intent before creating a message. Discord's rate limiting is retried with
 waits from one second doubling to five minutes. A definite refusal (for example a deleted or locked
@@ -573,7 +582,7 @@ unproven create is unknown and only the warned Retry sends it again, while an ed
 and is retried with waits. A request already sent when a session is released (Off, a token rotation or a
 stop) is allowed to finish for up to ten seconds, so its answer is recorded.
 
-After a different Discord application is verified and On, the new bot cannot edit the old bot's cards.
+After an application replacement, the new bot cannot edit the old bot's cards.
 Each Run that is Active or Snoozed or has pending Needs input or Problems gets one new card from the
 new bot, which says once that the previous bot's messages are no longer updated; quiet Settled or
 Archived Runs get none. The old cards stay as they are, and an old create whose outcome is unknown
@@ -613,8 +622,8 @@ next time. An owed outcome has no age limit.
 While the thread's channel does not grant the Run's Project, nothing accrues and owed notices are
 cancelled. After a regrant, notices start from the Run's current state: matters pending then stay on the
 card without a notice, the lifecycle at that moment is taken as reported, and a notice already posted is
-corrected silently when one of its matters resolved meanwhile. After a different Discord application is
-verified and On, the new bot cannot edit the old bot's notices: their edits are no longer owed and
+corrected silently when one of its matters resolved meanwhile. After an application replacement,
+the new bot cannot edit the old bot's notices: their edits are no longer owed and
 nothing is posted again for them. A notice still owed from before the change is posted by the new bot,
 and when a quiet Run's card stays the old bot's, that Run's catch-up says once that the previous bot's
 messages are no longer updated.

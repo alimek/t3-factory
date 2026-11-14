@@ -53,10 +53,8 @@ export const DISCORD_PUBLIC_KEY = "a".repeat(64);
 export const discordConnectionSave = (overrides: Partial<UpdateDiscordConnectionInput> = {}) =>
   ({
     revision: 0,
-    applicationId: discordBot.applicationId,
     publicKey: DISCORD_PUBLIC_KEY,
     token: { kind: "replace", value: discordBot.token },
-    applicationChangeConfirmed: false,
     ...overrides,
   }) satisfies UpdateDiscordConnectionInput;
 

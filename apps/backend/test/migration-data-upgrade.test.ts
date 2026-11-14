@@ -105,12 +105,12 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
       commandSetup: null,
       needsAttention: false,
       configuration: {
-        applicationId: null,
         publicKey: null,
         tokenConfigured: false,
         revision: 0,
         savedAt: null,
       },
+      application: null,
       access: { users: [], channels: [], unresolvedProjectIds: [], revision: 0, savedAt: null },
       latestCheck: null,
       delivery: { problems: [], moreProblems: 0, reconciling: [] },

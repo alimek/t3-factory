@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_report_notices
+-- Newest applied migration: chat_authenticated_application
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -91,17 +91,17 @@ CREATE TABLE chat_actions (
   CHECK ((state = 'accepting') = (decided_at IS NULL AND outcome_json IS NULL))
 );
 
-CREATE TABLE chat_control_state (
+CREATE TABLE "chat_control_state" (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1))
-, rejected_outcome TEXT CHECK (
-  rejected_outcome IN (
-    'identity-mismatch',
-    'token-rejected',
-    'intent-disallowed',
-    'failed'
-  )
-), rejected_message TEXT, rejected_at TEXT);
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  -- The application the latest operating session authenticated as; null until one did.
+  application_id TEXT,
+  rejected_outcome TEXT CHECK (
+    rejected_outcome IN ('token-rejected', 'intent-disallowed', 'failed')
+  ),
+  rejected_message TEXT,
+  rejected_at TEXT
+);
 
 CREATE TABLE chat_conversation_handles (
   application_id TEXT NOT NULL,
@@ -175,9 +175,8 @@ CREATE INDEX chat_deliveries_message ON chat_deliveries(message_id)
 CREATE INDEX chat_deliveries_state ON chat_deliveries(state)
 ;
 
-CREATE TABLE chat_discord_connection (
+CREATE TABLE "chat_discord_connection" (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  application_id TEXT,
   public_key TEXT,
   token_stage TEXT,
   revision INTEGER NOT NULL DEFAULT 0,
@@ -187,7 +186,6 @@ CREATE TABLE chat_discord_connection (
   check_outcome TEXT CHECK (
     check_outcome IN (
       'verified',
-      'identity-mismatch',
       'token-rejected',
       'intent-disallowed',
       'unreachable',
@@ -195,11 +193,13 @@ CREATE TABLE chat_discord_connection (
       'failed'
     )
   ),
+  check_application_id TEXT,
   check_message TEXT,
   CHECK ((revision = 0) = (saved_at IS NULL)),
   CHECK ((check_revision IS NULL) = (check_at IS NULL)),
   CHECK ((check_revision IS NULL) = (check_outcome IS NULL)),
-  CHECK ((check_revision IS NULL) = (check_message IS NULL))
+  CHECK ((check_revision IS NULL) = (check_message IS NULL)),
+  CHECK ((check_outcome IS 'verified') = (check_application_id IS NOT NULL))
 );
 
 CREATE TABLE chat_ingress_events (
