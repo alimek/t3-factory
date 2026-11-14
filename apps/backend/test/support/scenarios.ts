@@ -184,6 +184,29 @@ export function titleGenerationEnded(world: ScenarioWorld, runId: string) {
     ),
   );
 }
+/** The Run's title thread submitted `title` through `factory_set_run_title` and Factory applied it:
+ * the Run carries the generated title and the title thread's link. */
+export function generatedTitleApplied(world: ScenarioWorld, runId: string, title: string) {
+  return reach("generated title applied", async () => {
+    const launch = await titleGenerationLaunched(world, runId);
+    const reply = await world.factory.runtime.title({
+      arguments: { titleGenerationId: capabilityFromLaunchPrompt(launch), title },
+    });
+    if (reply.code !== "TITLE_APPLIED")
+      stepFailed("submit the title", `Factory answered ${reply.code}.`);
+    return observeFor(
+      "observe the applied title",
+      world,
+      runId,
+      (run) => run.titleGeneration?.state === "applied",
+    );
+  });
+}
+/** The Run's title generation timeline events in order, with the Block each names. */
+export const titleEvents = (run: RunDetail) =>
+  run.events
+    .filter((event) => event.kind.startsWith("title-generation-"))
+    .map(({ kind, blockId }) => ({ kind, blockId }));
 /** The opaque titleGenerationId the title thread's launch prompt carries. */
 export function capabilityFromLaunchPrompt(launch: { readonly message: string }) {
   const id = /titleGenerationId "([^"]+)"/.exec(launch.message)?.[1];
@@ -285,7 +308,10 @@ export interface ScenarioWorld {
     | "answerHumanOccurrence"
     | "continueWaitArrival"
   > & {
-    readonly runtime: { submit(input: unknown): Promise<{ readonly code: string }> };
+    readonly runtime: {
+      submit(input: unknown): Promise<{ readonly code: string }>;
+      title(input: unknown): Promise<{ readonly code: string }>;
+    };
   };
   readonly t3: ControlledT3;
 }

@@ -19,6 +19,7 @@ import {
   type FlowBlock,
   type RunBlock,
   type RunDetail,
+  type RunTitleGeneration,
 } from "@t3-factory/contracts";
 import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
 import {
@@ -40,6 +41,12 @@ import {
 } from "../components/run-attention.tsx";
 import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
 import { RunNumber } from "../components/run-number.tsx";
+import {
+  GeneratingTitle,
+  TitleMark,
+  TitleStatePill,
+  titleStateLabel,
+} from "../components/run-title-generation.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
 import {
   blockVisits,
@@ -182,15 +189,18 @@ function wideViewport() {
   return window.matchMedia("(min-width: 1280px)").matches;
 }
 
+/** What the side details show: a selected Block, or the Run title, which is not a Block. */
+type Inspected = { readonly blockId: string } | "run-title" | null;
+
 export function RunScreen({ id }: { id: string }) {
   const observed = useRunObservation(id);
   const { value: runs } = useLiveNavigation();
   const navigationRun = runs?.find((run) => run.id === id);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [inspected, setInspected] = useState<Inspected>(null);
   const [contextOpen, setContextOpen] = useState(wideViewport);
-  const deselect = useCallback(() => setSelected(null), []);
+  const deselect = useCallback(() => setInspected(null), []);
   const seenError = useRunOpened(id, !observed.unavailable);
-  useEscapeToDeselect(selected !== null, deselect);
+  useEscapeToDeselect(inspected !== null, deselect);
   const { run, error } = observed;
   return (
     <CanvasLayout>
@@ -204,9 +214,9 @@ export function RunScreen({ id }: { id: string }) {
           observed={observed}
           run={run}
           seenError={seenError}
-          selected={selected}
+          inspected={inspected}
           contextOpen={contextOpen}
-          onSelect={setSelected}
+          onInspect={setInspected}
           onToggleContext={() => setContextOpen((open) => !open)}
         />
       ) : (
@@ -227,21 +237,24 @@ function RunDetailView({
   observed,
   run,
   seenError,
-  selected,
+  inspected,
   contextOpen,
-  onSelect,
+  onInspect,
   onToggleContext,
 }: {
   observed: RunObservation;
   run: RunDetail;
   seenError: string;
-  selected: string | null;
+  inspected: Inspected;
   contextOpen: boolean;
-  onSelect: (blockId: string | null) => void;
+  onInspect: (inspected: Inspected) => void;
   onToggleContext: () => void;
 }) {
   const settings = useSettings();
   const studio = useStudio();
+  const selected = inspected !== null && inspected !== "run-title" ? inspected.blockId : null;
+  const onSelect = (blockId: string | null) => onInspect(blockId === null ? null : { blockId });
+  const inspectedTitle = inspected === "run-title" ? run.titleGeneration : null;
   const graphBlock = run.definitions.flow.graph.blocks.find((block) => block.id === selected);
   const recorded = run.blocks.find((block) => block.blockId === selected);
   const unavailable = observed.unavailable;
@@ -262,8 +275,15 @@ function RunDetailView({
               selected={selected}
               observationUnavailable={unavailable}
               onSelect={onSelect}
+              title={{
+                inspected: inspectedTitle !== null,
+                onInspect: () => onInspect("run-title"),
+              }}
               overlay={<CanvasOverlay run={run} observed={observed} seenError={seenError} />}
             />
+            {inspectedTitle && (
+              <RunTitleDetails generation={inspectedTitle} onClose={() => onInspect(null)} />
+            )}
             {graphBlock && recorded && (
               <BlockDetails
                 run={run}
@@ -273,7 +293,7 @@ function RunDetailView({
               />
             )}
           </div>
-          {!contextOpen && !selected && run.attention.some((item) => !item.settledAt) && (
+          {!contextOpen && !inspected && run.attention.some((item) => !item.settledAt) && (
             <div className="max-h-60 shrink-0 overflow-auto border-t px-4 py-3">
               <RunAttentionDetails run={run} observationUnavailable={unavailable} />
             </div>
@@ -281,7 +301,7 @@ function RunDetailView({
           {run.settlement && <RunSettlementSection id={run.id} settlement={run.settlement} />}
           <RunTimeline run={run} selectedBlockId={selected} />
         </div>
-        {contextOpen && !selected && (
+        {contextOpen && !inspected && (
           <RunContext run={run} observed={observed} observationUnavailable={unavailable} />
         )}
       </div>
@@ -358,9 +378,12 @@ function RunTopBar({
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-4 pl-5">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
-        <h1 className="truncate text-base leading-4 font-semibold tracking-[-0.26px]">
-          {run.title}
-        </h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-base leading-4 font-semibold tracking-[-0.26px]">
+            {run.title}
+          </h1>
+          <GeneratingTitle generation={run.titleGeneration} />
+        </div>
         <p className={cn(metaClass, "flex min-w-0 items-center gap-1.5 whitespace-nowrap")}>
           {run.number !== null && (
             <>
@@ -896,6 +919,102 @@ function ContinuationRecipients({ run, blockId }: { run: RunDetail; blockId: str
 }
 
 /** Figma RD01b: block details float over the canvas; selection never answers or settles attention. */
+/** Block and Run-title details float over the canvas at the shared side-panel width. */
+const sidePanelClass =
+  "absolute top-3 right-3 bottom-3 z-20 flex w-[var(--factory-run-panel-width,21.25rem)] max-w-[calc(100%-1.5rem)] flex-col rounded-xl border bg-card shadow-panel outline-none";
+const threadLinkClass =
+  "inline-flex h-8 shrink-0 items-center rounded-md border bg-background px-3 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+/** A deadline is 30 seconds after Start, so it reads to the second. */
+function secondsTime(at: string) {
+  return new Date(at).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
+/**
+ * The Run-title view: how the Run's title generation went. It is not a Block selection, so Block
+ * timeline rows stay unhighlighted and following is unchanged.
+ */
+function RunTitleDetails({
+  generation,
+  onClose,
+}: {
+  generation: RunTitleGeneration;
+  onClose: () => void;
+}) {
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.focus();
+  }, []);
+  const { state, reason, threadLink } = generation;
+  return (
+    <aside ref={panel} tabIndex={-1} aria-label="Run title details" className={sidePanelClass}>
+      <header className="flex items-start gap-2.5 px-4 pt-4 pb-3">
+        <TitleMark className="mt-0.5 size-3.5 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base leading-4 font-semibold">Run title</h2>
+          <p className="mt-0.5 truncate text-2xs tracking-label text-subtle-foreground">
+            Beside the Flow · not a Block
+          </p>
+        </div>
+        <TitleStatePill state={state} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Close Run title details"
+          onClick={onClose}
+        >
+          <X aria-hidden />
+        </Button>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-4 pb-4">
+        <DetailSection title="Generation">
+          <dl className="flex flex-col gap-2">
+            <DetailRow label="State">
+              {titleStateLabel(state)}
+              {reason && <span className="block text-muted-foreground">{reason}</span>}
+            </DetailRow>
+            <DetailRow label="Model">{generation.modelLabel}</DetailRow>
+            <DetailRow label="Deadline">{secondsTime(generation.deadlineAt)}</DetailRow>
+          </dl>
+        </DetailSection>
+        <DetailSection title="Titles">
+          <dl className="flex flex-col gap-2">
+            <DetailRow label="Automatic">{generation.automaticTitle}</DetailRow>
+            <DetailRow label="Generated">
+              {generation.generatedTitle ?? (
+                <span className="text-muted-foreground">
+                  {state === "pending" ? "not yet" : "none"}
+                </span>
+              )}
+            </DetailRow>
+          </dl>
+        </DetailSection>
+      </div>
+      <footer className="mx-4 flex items-center gap-3 border-t py-4">
+        {threadLink ? (
+          <a className={threadLinkClass} href={threadLink} target="_blank" rel="noreferrer">
+            Open title thread in T3
+          </a>
+        ) : (
+          <span className="shrink-0 text-2xs tracking-label text-subtle-foreground">
+            {state === "skipped" ? "Nothing was launched" : "No T3 thread known"}
+          </span>
+        )}
+        <p className="text-2xs tracking-label text-subtle-foreground">
+          Runs beside the Flow · never blocks or settles the Run
+        </p>
+      </footer>
+      <PanelResizeHandle label="Resize Run title details" side="left" bounds={sidePanelBounds} />
+    </aside>
+  );
+}
+
 function BlockDetails({
   run,
   block,
@@ -921,12 +1040,7 @@ function BlockDetails({
   const link = recorded.link ?? promptBinding?.link ?? null;
   const threadId = recorded.threadId ?? promptBinding?.threadId;
   return (
-    <aside
-      ref={panel}
-      tabIndex={-1}
-      aria-label="Block details"
-      className="absolute top-3 right-3 bottom-3 z-20 flex w-[var(--factory-run-panel-width,21.25rem)] max-w-[calc(100%-1.5rem)] flex-col rounded-xl border bg-card shadow-panel outline-none"
-    >
+    <aside ref={panel} tabIndex={-1} aria-label="Block details" className={sidePanelClass}>
       <header className="flex items-start gap-2.5 px-4 pt-4 pb-3">
         <KindIcon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -976,12 +1090,7 @@ function BlockDetails({
       </div>
       <footer className="mx-4 flex items-center gap-3 border-t py-4">
         {link ? (
-          <a
-            className="inline-flex h-8 shrink-0 items-center rounded-md border bg-background px-3 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className={threadLinkClass} href={link} target="_blank" rel="noreferrer">
             Open thread in T3
           </a>
         ) : (

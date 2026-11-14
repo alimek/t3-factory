@@ -20,6 +20,7 @@ export const EXECUTION_DIMENSIONS: CanvasDimensions = {
     anchorBorder: 1,
     promptLine: 26,
     promptImages: 108,
+    statusLine: 26,
   },
   port: { size: 10, outset: 6, handle: 10, highlight: 10 },
 };

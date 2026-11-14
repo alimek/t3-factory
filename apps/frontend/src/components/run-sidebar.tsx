@@ -45,6 +45,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { ActivityAge, SidebarRow, SidebarRowsProvider } from "./sidebar-row.tsx";
 import { ProjectIcon } from "./project-icon.tsx";
 import { RunNumber } from "./run-number.tsx";
+import { GeneratingTitle } from "./run-title-generation.tsx";
 import { repositorySummary, RunRepositories } from "./run-repositories.tsx";
 import { cn } from "../lib/utils.ts";
 
@@ -834,13 +835,16 @@ function RunRow({
         </span>
       )}
       {compact && <RunNumber number={run.number} aria-hidden />}
-      <span
-        className={cn(
-          "block min-w-0 truncate text-sm leading-tight font-medium",
-          muted ? "text-muted-foreground" : "text-foreground",
-        )}
-      >
-        {run.title}
+      <span className="flex min-w-0 items-center gap-2">
+        <span
+          className={cn(
+            "block min-w-0 truncate text-sm leading-tight font-medium",
+            muted ? "text-muted-foreground" : "text-foreground",
+          )}
+        >
+          {run.title}
+        </span>
+        <GeneratingTitle generation={run.titleGeneration} />
       </span>
       {!compact && hasMetadata && (
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-muted-foreground">

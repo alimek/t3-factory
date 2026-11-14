@@ -25,6 +25,8 @@ export type SeedScenario = {
   | { state: "settled"; repository: Repository; result: Report }
   | { state: "archived" | "execution failed" | "snoozed" | "woke" }
   | { state: "settlement unresolved" }
+  /** Generate Run titles was on for this Start only; the title thread's title was applied. */
+  | { state: "generated title applied"; generatedTitle: string }
   | { state: "Run worktree bound" }
   | { state: "working reported and idle"; message: string; repository?: Repository }
   | { state: "missing report"; rejected: Report }
@@ -304,5 +306,15 @@ export const seedScenarioList: readonly SeedScenario[] = [
       pullRequests: [],
     },
     delegations: 2,
+  },
+  {
+    key: "generated-title",
+    title:
+      "Generated title · Rank exact project-name matches above partial matches when someone searches Atlas",
+    flow: "simple",
+    state: "generated title applied",
+    prompt:
+      "Rank exact project-name matches above partial matches in Atlas search, and keep the current order for everything else.",
+    generatedTitle: "Generated title · Exact matches first in search",
   },
 ];

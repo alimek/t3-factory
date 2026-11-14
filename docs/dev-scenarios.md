@@ -45,6 +45,7 @@ of the [quality gate](quality-gates.md), rejects stale rows and missing or malfo
 - `continuation-sent`: Demo · Continuation · Spec prompt sent to the planning thread
 - `continuation-forwarded`: Demo · Continuation · Spec passed on to Tickets
 - `working`: Demo · Working · Improve the project picker
+- `generated-title`: Demo · Generated title · Rank exact project-name matches above partial matches when someone searches Atlas
 
 <!-- scenario-catalog:end -->
 
@@ -54,6 +55,9 @@ of the [quality gate](quality-gates.md), rejects stale rows and missing or malfo
   persistent demo does not model T3 reply turns.
 - Native T3 links, thread settlement, delegated waits and repository branch/PR facts in simulated Runs are fixture state. They do not prove real threads, T3 list organization, native settlement or reopen,
   real delegated-work settlement, Git changes or live GitHub state. A seeded Problem is deliberate; reset restores it.
+- The `generated-title` Run turns **Generate Run titles** on only for its own Start, so the setting stays off for other
+  seeded Runs and new demo Runs. Its title thread is simulated and the seed submits the generated title through
+  `factory_set_run_title` itself; it proves no title model or live T3 launch.
 - A worktree Run reports a fixture path: the simulator resolves **Default branch** to `origin/main` and creates no Git worktree, so real worktree creation needs live qualification.
 - A repository added through **Add repository** gets no explicit icon; supplied emoji and repository images are covered by controlled fixtures, not the seed.
 - The demo does not simulate connection loss, TLS or revocation; controlled transport and UI fixtures cover those boundaries.

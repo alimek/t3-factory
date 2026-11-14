@@ -5,6 +5,7 @@ import { factoryMcpClient, setRunTitle, toolReply } from "./support/factory-mcp.
 import {
   enableRunTitles,
   titleGenerationLaunched,
+  titleEvents,
   titleThreadLaunched,
   workerLaunched,
 } from "./support/scenarios.ts";
@@ -42,13 +43,11 @@ it("the first valid title applies to the Run with generated provenance, trimmed 
   });
 });
 
-it("applying a generated title is not Run activity and adds no timeline event", async (c) => {
+it("applying a generated title records the Run's title events after its launch but is not Run activity", async (c) => {
   // Arrange
   const f = await titleThreadAtWork(c);
   const before = await f.f.listRunNavigation();
   assert(before.ok);
-  const events = await f.f.getRun(f.runId);
-  assert(events.ok);
 
   // Act
   const result = await setRunTitle(f.client, f.titleGenerationId, "Search ranking");
@@ -61,7 +60,10 @@ it("applying a generated title is not Run activity and adds no timeline event", 
   expect(after.value[0]?.lastActivityAt).toBe(before.value[0]?.lastActivityAt);
   const run = await f.f.getRun(f.runId);
   assert(run.ok);
-  expect(run.value.events).toStrictEqual(events.value.events);
+  expect(titleEvents(run.value)).toStrictEqual([
+    { kind: "title-generation-started", blockId: null },
+    { kind: "title-generation-applied", blockId: null },
+  ]);
 });
 
 it("a title of two lines is rejected with a reason and the generation stays pending", async (c) => {

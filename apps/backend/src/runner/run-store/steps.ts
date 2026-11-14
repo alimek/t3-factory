@@ -1,3 +1,4 @@
+import type { RunTitleGenerationState } from "@t3-factory/contracts";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { newId } from "../../ids.ts";
@@ -96,6 +97,12 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
       readonly executionId: string;
       readonly bindingId: string;
       readonly engineStatus: string;
+    }
+  /** The Run's title generation dispatched its title thread's launch, or reached its outcome. The
+   * Run is the actor: a title generation is not a Block. */
+  | {
+      readonly kind: `title-generation-${"started" | Exclude<RunTitleGenerationState, "pending">}`;
+      readonly generationId: string;
     }
 );
 
@@ -229,9 +236,23 @@ function storedLifecycleEvent(event: LifecycleEvent) {
   });
 }
 
+/** A Run generates its title at most once, so its outcome key admits exactly one outcome event. */
+const storedTitleEvent = (
+  event: Extract<TimelineEvent, { readonly generationId: string }>,
+): StoredEvent => ({
+  blockId: null,
+  executionId: null,
+  sourceKey:
+    event.kind === "title-generation-started"
+      ? "title-generation-started"
+      : "title-generation-outcome",
+  causeId: event.generationId,
+});
+
 function stored(event: Exclude<TimelineEvent, WaitEvent>) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
     if ("intentId" in event) return yield* storedDeliveryEvent(event);
+    if ("generationId" in event) return storedTitleEvent(event);
     if (isLifecycleEvent(event)) return yield* storedLifecycleEvent(event);
     switch (event.kind) {
       case "started":

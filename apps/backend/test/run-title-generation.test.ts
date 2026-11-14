@@ -13,6 +13,7 @@ import {
   loseTitleThreadLaunchReply,
   resultReported,
   titleGenerationEnded,
+  titleEvents,
   titleGenerationLaunched,
   titleThreadEnds,
   titleThreadLaunched,
@@ -111,6 +112,9 @@ it("a title model T3 no longer offers skips generation with a diagnostic on the 
     reason: "T3 does not offer gpt-6.1-luna for Codex.",
     modelLabel: "Codex · gpt-6.1-luna",
   });
+  expect(titleEvents(started.value)).toStrictEqual([
+    { kind: "title-generation-skipped", blockId: null },
+  ]);
   expect(await fixture.f.getRunTitleSetting()).toStrictEqual({
     ok: true,
     value: {
@@ -448,6 +452,10 @@ it("Archive cancels a pending title generation in its transaction and requests o
     state: "cancelled",
     reason: "The Run was archived before a generated title arrived.",
   });
+  expect(titleEvents(archived.value)).toStrictEqual([
+    { kind: "title-generation-started", blockId: null },
+    { kind: "title-generation-cancelled", blockId: null },
+  ]);
   expect(await stopped).toStrictEqual({
     threadId: titleThreadReference(fixture.t3).threadId,
     clientRequestId: expect.any(String),
@@ -513,6 +521,10 @@ it("a title thread that finishes without a valid title records failed quietly, k
     state: "failed",
     reason: "The title thread finished without submitting a valid title.",
   });
+  expect(titleEvents(run.value)).toStrictEqual([
+    { kind: "title-generation-started", blockId: null },
+    { kind: "title-generation-failed", blockId: null },
+  ]);
   expect(run.value.title).toBe("Improve search");
   expect(run.value.titleProvenance).toBe("automatic");
   expect(run.value.attention).toStrictEqual([]);
