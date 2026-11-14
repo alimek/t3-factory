@@ -17,10 +17,11 @@ import {
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
 import { readAccess, updateAccess } from "./access.ts";
-import { retireApplicationProposals, type ChatActions } from "./actions.ts";
+import type { ChatActions } from "./actions.ts";
 import { clearConversations } from "./conversations.ts";
 import type { ChatCredentials } from "./credentials.ts";
 import type { ChatDeliveries } from "./deliveries.ts";
+import { retireApplicationProposals } from "./revocation.ts";
 import type { DiscordConnection, DiscordGateway } from "./discord-gateway.ts";
 import type { DiscordOperation, OperationStatus } from "./discord-operation.ts";
 import { forgetPendingAdmissions } from "./pending-admissions.ts";

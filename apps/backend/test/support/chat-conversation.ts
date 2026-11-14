@@ -2,7 +2,7 @@ import { assert, type TestContext } from "@effect/vitest";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
-import type { Factory } from "../../src/index.ts";
+import type { Factory, FactoryService } from "../../src/index.ts";
 import {
   ALLOWED_CHANNEL,
   chatControlWorld,
@@ -165,17 +165,31 @@ export const clockedConversation = (c: TestContext) =>
     yield* factory.configureConnection({ endpoint: "http://127.0.0.1:3773/mcp" });
     const project = yield* factory.addRepository({ path: root });
     assert(project.ok, JSON.stringify(project));
+    yield* operatingService(factory, { model, discord }, project.value.id);
+    return { model, discord, factory, project: project.value };
+  });
+
+/**
+ * Inside the test's Effect scope: saves the Language model on `model` and the connection, allows
+ * the participant and collaborator for `projectId` in the allowed channel and turns Chat control
+ * On, returning once the session serves traffic.
+ */
+export const operatingService = (
+  factory: FactoryService["Service"],
+  { model, discord }: { readonly model: ControlledModel; readonly discord: ControlledDiscord },
+  projectId: string,
+) =>
+  Effect.gen(function* () {
     yield* factory.updateChatModelSettings(chatModelSave({ baseUrl: model.baseUrl() }));
     yield* factory.updateDiscordConnection(discordConnectionSave());
     const access = yield* factory.updateDiscordAccess({
       revision: 0,
       users: [PARTICIPANT_ID, COLLABORATOR_ID],
-      channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [project.value.id] }],
+      channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [projectId] }],
     });
     assert(access.ok, JSON.stringify(access));
     yield* factory.setChatControlEnabled({ enabled: true });
     yield* Effect.promise(() => discord.request("PUT", COMMANDS));
-    return { model, discord, factory, project: project.value };
   });
 
 /** Waits for a promise inside an Effect test. */

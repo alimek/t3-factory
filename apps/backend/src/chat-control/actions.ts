@@ -78,7 +78,7 @@ export interface ChatOperation {
 }
 
 /** Where and for whom a proposal was made, from the admitted invocation. */
-export interface ProposalContext {
+interface ProposalContext {
   readonly conversation: ConversationKey;
   readonly requesterId: string;
   readonly generation: number;
@@ -172,46 +172,54 @@ const destinationOf = (row: ProposalRow): Destination => ({
   threadId: row.thread_id,
 });
 
-/**
- * Voids the live proposals an Access save revokes: their requester is no longer allowed, their
- * channel is gone or no longer grants a Project they target. Voiding is permanent; a regrant
- * revives nothing. Call inside the Access transaction.
- */
-export const voidRevokedProposals = (
-  sql: SqlClient.SqlClient,
-  access: {
-    readonly users: readonly string[];
-    readonly channels: readonly {
-      readonly channelId: string;
-      readonly projectIds: readonly string[];
-    }[];
-  },
-) =>
-  Effect.gen(function* () {
-    const live = yield* sql<
-      Pick<ProposalRow, "id" | "requester_id" | "parent_channel_id" | "project_ids_json">
-    >`SELECT id,requester_id,parent_channel_id,project_ids_json FROM chat_proposals WHERE state IN ('preparing','presented')`;
-    const revoked = live.filter((row) => {
-      const channel = access.channels.find((entry) => entry.channelId === row.parent_channel_id);
-      return (
-        !access.users.includes(row.requester_id) ||
-        !channel ||
-        (JSON.parse(row.project_ids_json) as string[]).some(
-          (id) => !channel.projectIds.includes(id),
-        )
-      );
-    });
-    if (revoked.length > 0)
-      yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='revoked' WHERE id IN ${sql.in(revoked.map((row) => row.id))}`;
-  });
+/** The clicker's answer for each way performing a confirmed action can end. */
+const OUTCOME_REPLIES: Record<ActionOutcome["kind"], string> = {
+  accepted: REPLIES.accepted,
+  rejected: REPLIES.rejected,
+  unavailable: REPLIES.notNow,
+  unknown: REPLIES.unknown,
+};
 
 /**
- * Retires the live proposals of an application being replaced: its buttons can never confirm
- * again, even if that application is configured again later. Call inside the connection save.
+ * Why a click cannot take this proposal's consent, before any check that needs Discord:
+ * `repeated` when the proposal was already confirmed, so the requester gets its result.
  */
-export const retireApplicationProposals = (sql: SqlClient.SqlClient, applicationId: string) =>
-  sql`UPDATE chat_proposals SET state='ended',ended_reason='application'
-    WHERE application_id=${applicationId} AND state IN ('preparing','presented')`;
+function clickRefusal(
+  row: ProposalRow | undefined,
+  click: ConfirmationClick,
+): keyof typeof REPLIES | "repeated" | undefined {
+  if (!row || row.application_id !== click.applicationId || row.thread_id !== click.threadId)
+    return "invalid";
+  if (row.requester_id !== click.userId) return "notYours";
+  if (row.state === "accepting" || row.state === "consumed") return "repeated";
+  return row.state === "presented" ? undefined : "invalid";
+}
+
+type StatusRow = ProposalRow & {
+  action_state: ActionRow["state"] | null;
+  outcome_json: string | null;
+};
+
+/** A proposal's state for later turns at epoch milliseconds `at`. */
+function statusOf(row: StatusRow, at: number): ProposalStatus {
+  switch (row.state) {
+    case "consumed":
+      return {
+        state: row.action_state as "accepted" | "rejected",
+        outcome: JSON.parse(row.outcome_json!) as JSONValue,
+      };
+    case "accepting":
+      return { state: "confirming" };
+    case "ended":
+      return { state: row.ended_reason === "failed" ? "not-presented" : "no-longer-valid" };
+    case "preparing":
+      return { state: "not-presented" };
+    case "presented":
+      return at >= Date.parse(row.expires_at!)
+        ? { state: "expired" }
+        : { state: "awaiting-confirmation", expiresAt: row.expires_at! };
+  }
+}
 
 /**
  * Chat control's shared review, consent, action and receipt path for every mutation kind.
@@ -223,320 +231,283 @@ export const retireApplicationProposals = (sql: SqlClient.SqlClient, application
  * transaction. The decided outcome, the Run's originating thread and the owed receipt commit
  * together; an interrupted attempt reconciles the same identity and is never performed again.
  */
-export const makeChatActions = (
+export function makeChatActions(
   sql: SqlClient.SqlClient,
   operations: readonly ChatOperation[],
   deliveries: ChatDeliveries,
-) =>
-  Effect.gen(function* () {
-    const byName = new Map(operations.map((operation) => [operation.name, operation]));
-    /** Actions this process is performing right now. */
-    const performing = new Set<string>();
+) {
+  const byName = new Map(operations.map((operation) => [operation.name, operation]));
+  /** Actions this process is performing right now. */
+  const performing = new Set<string>();
 
-    const proposal = (id: string) =>
-      Effect.map(sql<ProposalRow>`SELECT * FROM chat_proposals WHERE id=${id}`, ([row]) => row);
-    const actionOf = (proposalId: string) =>
-      Effect.map(
-        sql<ActionRow>`SELECT * FROM chat_actions WHERE proposal_id=${proposalId}`,
-        ([row]) => row,
-      );
-    const expired = (row: ProposalRow) =>
-      Effect.map(
-        Clock.currentTimeMillis,
-        (at) => row.expires_at !== null && at >= Date.parse(row.expires_at),
-      );
+  const proposal = (id: string) =>
+    Effect.map(sql<ProposalRow>`SELECT * FROM chat_proposals WHERE id=${id}`, ([row]) => row);
+  const actionOf = (proposalId: string) =>
+    Effect.map(
+      sql<ActionRow>`SELECT * FROM chat_actions WHERE proposal_id=${proposalId}`,
+      ([row]) => row,
+    );
+  const expired = (row: ProposalRow) =>
+    Effect.map(
+      Clock.currentTimeMillis,
+      (at) => row.expires_at !== null && at >= Date.parse(row.expires_at),
+    );
 
-    /**
-     * Records a proposal, or finds the identical one still waiting for this requester here: same
-     * requester, context, operation and exact parameters keep their identity and expiry. A
-     * correction ends the pending proposal it supersedes.
-     */
-    const open = (proposed: Proposed, context: ProposalContext) =>
-      sql.withTransaction(
-        Effect.gen(function* (): Effect.fn.Return<
-          | { readonly kind: "new"; readonly id: string }
-          | { readonly kind: "pending"; readonly id: string; readonly expiresAt: string },
-          unknown
-        > {
-          const identity = identityOf(context, proposed);
-          const at = yield* now;
-          const [pending] = yield* sql<{
-            id: string;
-            expires_at: string;
-          }>`SELECT id,expires_at FROM chat_proposals WHERE identity=${identity}
+  /**
+   * Records a proposal, or finds the identical one still waiting for this requester here: same
+   * requester, context, operation and exact parameters keep their identity and expiry. A
+   * correction ends the pending proposal it supersedes.
+   */
+  const open = (proposed: Proposed, context: ProposalContext) =>
+    sql.withTransaction(
+      Effect.gen(function* (): Effect.fn.Return<
+        | { readonly kind: "new"; readonly id: string }
+        | { readonly kind: "pending"; readonly id: string; readonly expiresAt: string },
+        unknown
+      > {
+        const identity = identityOf(context, proposed);
+        const at = yield* now;
+        const [pending] = yield* sql<{
+          id: string;
+          expires_at: string;
+        }>`SELECT id,expires_at FROM chat_proposals WHERE identity=${identity}
             AND state IN ('presented','accepting') AND expires_at>${at} ORDER BY expires_at DESC LIMIT 1`;
-          if (pending) return { kind: "pending", id: pending.id, expiresAt: pending.expires_at };
-          const { conversation } = context;
-          if (proposed.supersedes !== undefined)
-            yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded'
+        if (pending) return { kind: "pending", id: pending.id, expiresAt: pending.expires_at };
+        const { conversation } = context;
+        if (proposed.supersedes !== undefined)
+          yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded'
               WHERE id=${proposed.supersedes} AND application_id=${conversation.applicationId}
                 AND thread_id=${conversation.threadId} AND requester_id=${context.requesterId}
                 AND operation=${proposed.operation} AND state IN ('preparing','presented')`;
-          const id = yield* newId;
-          yield* sql`INSERT INTO chat_proposals (id,application_id,guild_id,parent_channel_id,thread_id,requester_id,operation,parameters_json,identity,project_ids_json,generation,message_id,tool_call_id,state,created_at)
+        const id = yield* newId;
+        yield* sql`INSERT INTO chat_proposals (id,application_id,guild_id,parent_channel_id,thread_id,requester_id,operation,parameters_json,identity,project_ids_json,generation,message_id,tool_call_id,state,created_at)
             VALUES (${id},${conversation.applicationId},${conversation.guildId},${conversation.parentChannelId},${conversation.threadId},${context.requesterId},
               ${proposed.operation},${JSON.stringify(proposed.parameters)},${identity},${JSON.stringify(proposed.projectIds)},
               ${context.generation},${context.messageId},${context.toolCallId},'preparing',${at})`;
-          return { kind: "new", id };
-        }),
-      );
+        return { kind: "new", id };
+      }),
+    );
 
-    const fail = (id: string) =>
-      sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE id=${id} AND state IN ('preparing','presented')`;
+  const fail = (id: string) =>
+    sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE id=${id} AND state IN ('preparing','presented')`;
 
-    /**
-     * Publishes a new proposal's complete review: every part in order, then the button. Consent
-     * becomes usable only once every preceding part was delivered; the button's first dispatch
-     * fixes the expiry even if its own delivery stays uncertain. A part that fails, or a button
-     * Discord definitely refused, leaves no usable consent.
-     */
-    const present = (
-      id: string,
-      proposed: Proposed,
-      sender: DiscordSender,
-      destination: Destination,
-    ) =>
-      Effect.gen(function* (): Effect.fn.Return<"presented" | "failed", unknown> {
-        for (const part of proposed.review) {
-          const sent = yield* Effect.result(
-            Effect.tryPromise(() => sender.create(destination, part)),
-          );
-          if (sent._tag === "Failure") {
-            yield* fail(id);
-            yield* Effect.ignore(
-              Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
-            );
-            return "failed";
-          }
-        }
-        const expiresAt = new Date((yield* Clock.currentTimeMillis) + CONSENT_MS).toISOString();
-        yield* sql`UPDATE chat_proposals SET state='presented',expires_at=${expiresAt} WHERE id=${id} AND state='preparing'`;
-        const button = yield* Effect.result(
-          Effect.tryPromise(() =>
-            sender.create(destination, proposed.confirmation.text, {
-              customId: `${BUTTON_PREFIX}${id}`,
-              label: proposed.confirmation.label,
-            }),
-          ),
+  /**
+   * Publishes a new proposal's complete review: every part in order, then the button. Consent
+   * becomes usable only once every preceding part was delivered; the button's first dispatch
+   * fixes the expiry even if its own delivery stays uncertain. A part that fails, or a button
+   * Discord definitely refused, leaves no usable consent.
+   */
+  const present = (
+    id: string,
+    proposed: Proposed,
+    sender: DiscordSender,
+    destination: Destination,
+  ) =>
+    Effect.gen(function* (): Effect.fn.Return<"presented" | "failed", unknown> {
+      for (const part of proposed.review) {
+        const sent = yield* Effect.result(
+          Effect.tryPromise(() => sender.create(destination, part)),
         );
-        if (button._tag === "Failure" && sendFailure(button.failure.cause) !== "unknown") {
+        if (sent._tag === "Failure") {
           yield* fail(id);
           yield* Effect.ignore(
             Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
           );
           return "failed";
         }
-        return "presented";
-      });
-
-    /** Commits a decided outcome: consumption, the action's result, origin and owed receipt. */
-    const decide = (row: ProposalRow, actionId: string, outcome: ActionOutcome) =>
-      Effect.gen(function* () {
-        const operation = byName.get(row.operation)!;
-        const parameters = JSON.parse(row.parameters_json) as JSONValue;
-        yield* sql.withTransaction(
-          Effect.gen(function* () {
-            const decidedAt = yield* now;
-            if (outcome.kind === "unavailable") {
-              yield* sql`DELETE FROM chat_actions WHERE id=${actionId} AND state='accepting'`;
-              yield* sql`UPDATE chat_proposals SET state='presented' WHERE id=${row.id} AND state='accepting'`;
-              return;
-            }
-            if (outcome.kind === "unknown") return;
-            yield* sql`UPDATE chat_actions SET state=${outcome.kind},decided_at=${decidedAt},outcome_json=${JSON.stringify(outcome.facts)}
-              WHERE id=${actionId} AND state='accepting'`;
-            yield* sql`UPDATE chat_proposals SET state='consumed' WHERE id=${row.id}`;
-            if (outcome.kind === "accepted" && outcome.originRunId !== undefined)
-              yield* sql`INSERT INTO chat_run_origins (run_id,application_id,guild_id,parent_channel_id,thread_id,action_id,recorded_at)
-                VALUES (${outcome.originRunId},${row.application_id},${row.guild_id},${row.parent_channel_id},${row.thread_id},${actionId},${decidedAt})
-                ON CONFLICT DO NOTHING`;
-            yield* oweDelivery(sql, {
-              purpose: "receipt",
-              actionId,
-              destination: destinationOf(row),
-              projectIds: JSON.parse(row.project_ids_json) as string[],
-              text: operation.receipt(outcome, parameters),
-            });
-          }),
-        );
-        if (outcome.kind === "accepted" || outcome.kind === "rejected") yield* deliveries.wake;
-      });
-
-    /** Performs a consumed proposal under its action identity, outside any transaction. */
-    const perform = (row: ProposalRow, actionId: string) =>
-      Effect.gen(function* () {
-        performing.add(actionId);
-        const operation = byName.get(row.operation)!;
-        const parameters = JSON.parse(row.parameters_json) as JSONValue;
-        const executed = yield* Effect.result(operation.execute(actionId, parameters));
-        const outcome: ActionOutcome =
-          executed._tag === "Success"
-            ? executed.success
-            : yield* Effect.orElseSucceed(operation.reconcile(actionId, parameters), () => ({
-                kind: "unknown" as const,
-              }));
-        yield* decide(row, actionId, outcome);
-        return outcome;
-      }).pipe(
-        Effect.uninterruptible,
-        Effect.ensuring(Effect.sync(() => performing.delete(actionId))),
-      );
-
-    /** Reconciles an attempt whose outcome this process does not know, by its identity alone. */
-    const reconcileAction = (row: ProposalRow, action: ActionRow) =>
-      Effect.gen(function* () {
-        const operation = byName.get(row.operation)!;
-        const outcome = yield* Effect.orElseSucceed(
-          operation.reconcile(action.id, JSON.parse(row.parameters_json) as JSONValue),
-          () => ({ kind: "unknown" as const }),
-        );
-        yield* decide(row, action.id, outcome);
-        return outcome;
-      });
-
-    const repeatedClick = (row: ProposalRow, click: ConfirmationClick) =>
-      Effect.gen(function* () {
-        const action = yield* actionOf(row.id);
-        if (!action) return REPLIES.invalid;
-        if (action.state === "accepting") {
-          if (performing.has(action.id)) return REPLIES.confirming;
-          const outcome = yield* reconcileAction(row, action);
-          return outcome.kind === "accepted"
-            ? REPLIES.accepted
-            : outcome.kind === "unavailable"
-              ? REPLIES.notNow
-              : REPLIES.unknown;
-        }
-        // The decided result is shown only to its requester, here, with current access.
-        if ((yield* click.access) !== "permitted") return REPLIES.denied;
-        const operation = byName.get(row.operation)!;
-        return `You already confirmed this review. ${operation.summary({
-          kind: action.state,
-          facts: JSON.parse(action.outcome_json!) as JSONValue,
-        })}`;
-      });
-
-    /** Takes the consent for one attempt, if it is still live and its scope still holds. */
-    const take = (row: ProposalRow) =>
-      sql.withTransaction(
-        Effect.gen(function* (): Effect.fn.Return<
-          { readonly actionId: string } | { readonly refused: keyof typeof REPLIES },
-          unknown
-        > {
-          const current = (yield* proposal(row.id))!;
-          if (current.state === "accepting" || current.state === "consumed")
-            return { refused: "confirming" };
-          if (current.state !== "presented") return { refused: "invalid" };
-          if (yield* expired(current)) return { refused: "expired" };
-          const granted = yield* grantedProjects(
-            sql,
-            current.requester_id,
-            current.parent_channel_id,
-          );
-          if (
-            (JSON.parse(current.project_ids_json) as string[]).some((id) => !granted.includes(id))
-          )
-            return { refused: "denied" };
-          const [configured] = yield* sql<{
-            application_id: string | null;
-          }>`SELECT application_id FROM chat_discord_connection WHERE singleton=1`;
-          if (configured?.application_id !== current.application_id) return { refused: "invalid" };
-          const actionId = yield* newId;
-          const startedAt = yield* now;
-          yield* sql`UPDATE chat_proposals SET state='accepting' WHERE id=${current.id} AND state='presented'`;
-          yield* sql`INSERT INTO chat_actions (id,proposal_id,state,started_at) VALUES (${actionId},${current.id},'accepting',${startedAt})`;
-          return { actionId };
-        }),
-      );
-
-    /**
-     * A confirmation button click; the ephemeral answer for the clicker. Wrong requester, wrong
-     * context, denied or unavailable access never consume live consent.
-     */
-    const confirm = (click: ConfirmationClick) =>
-      Effect.gen(function* (): Effect.fn.Return<string, unknown> {
-        const row = yield* proposal(click.customId.slice(BUTTON_PREFIX.length));
-        if (!row || row.application_id !== click.applicationId || row.thread_id !== click.threadId)
-          return REPLIES.invalid;
-        if (row.requester_id !== click.userId) return REPLIES.notYours;
-        if (row.state === "accepting" || row.state === "consumed")
-          return yield* repeatedClick(row, click);
-        if (row.state !== "presented") return REPLIES.invalid;
-        if (yield* expired(row)) return REPLIES.expired;
-        const access = yield* click.access;
-        if (access !== "permitted") return REPLIES[access];
-        // Chat control turned Off meanwhile: nothing is consumed and the consent stays live.
-        if (!click.operating()) return REPLIES.notNow;
-        const taken = yield* take(row);
-        if ("refused" in taken)
-          return taken.refused === "confirming"
-            ? yield* repeatedClick(row, click)
-            : REPLIES[taken.refused];
-        const outcome = yield* perform(row, taken.actionId);
-        return outcome.kind === "accepted"
-          ? REPLIES.accepted
-          : outcome.kind === "rejected"
-            ? REPLIES.rejected
-            : outcome.kind === "unavailable"
-              ? REPLIES.notNow
-              : REPLIES.unknown;
-      });
-
-    /**
-     * Startup recovery: a review interrupted before its button was dispatched never becomes
-     * usable, and every attempt left without an outcome reconciles its identity. An attempt proven
-     * not accepted returns its consent, which still expires at its original time.
-     */
-    const recover = Effect.gen(function* () {
-      yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE state='preparing'`;
-      const open = yield* sql<ActionRow>`SELECT * FROM chat_actions WHERE state='accepting'`;
-      for (const action of open) {
-        const row = (yield* proposal(action.proposal_id))!;
-        yield* reconcileAction(row, action);
       }
+      const expiresAt = new Date((yield* Clock.currentTimeMillis) + CONSENT_MS).toISOString();
+      yield* sql`UPDATE chat_proposals SET state='presented',expires_at=${expiresAt} WHERE id=${id} AND state='preparing'`;
+      const button = yield* Effect.result(
+        Effect.tryPromise(() =>
+          sender.create(destination, proposed.confirmation.text, {
+            customId: `${BUTTON_PREFIX}${id}`,
+            label: proposed.confirmation.label,
+          }),
+        ),
+      );
+      if (button._tag === "Failure" && sendFailure(button.failure.cause) !== "unknown") {
+        yield* fail(id);
+        yield* Effect.ignore(
+          Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
+        );
+        return "failed";
+      }
+      return "presented";
     });
 
-    /** The current state of proposals later turns refer to. */
-    const statuses = (ids: readonly string[]) =>
-      Effect.gen(function* () {
-        const statusOf = new Map<string, ProposalStatus>();
-        if (ids.length === 0) return statusOf;
-        const rows = yield* sql<
-          ProposalRow & { action_state: ActionRow["state"] | null; outcome_json: string | null }
-        >`SELECT p.*,a.state AS action_state,a.outcome_json FROM chat_proposals p
-          LEFT JOIN chat_actions a ON a.proposal_id=p.id WHERE p.id IN ${sql.in(ids)}`;
-        for (const row of rows)
-          statusOf.set(
-            row.id,
-            row.state === "consumed"
-              ? {
-                  state: row.action_state as "accepted" | "rejected",
-                  outcome: JSON.parse(row.outcome_json!) as JSONValue,
-                }
-              : row.state === "accepting"
-                ? { state: "confirming" }
-                : row.state === "ended"
-                  ? { state: row.ended_reason === "failed" ? "not-presented" : "no-longer-valid" }
-                  : row.state === "preparing"
-                    ? { state: "not-presented" }
-                    : (yield* expired(row))
-                      ? { state: "expired" }
-                      : { state: "awaiting-confirmation", expiresAt: row.expires_at! },
-          );
-        return statusOf;
-      });
+  /** Commits a decided outcome: consumption, the action's result, origin and owed receipt. */
+  const decide = (row: ProposalRow, actionId: string, outcome: ActionOutcome) =>
+    Effect.gen(function* () {
+      const operation = byName.get(row.operation)!;
+      const parameters = JSON.parse(row.parameters_json) as JSONValue;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const decidedAt = yield* now;
+          if (outcome.kind === "unavailable") {
+            yield* sql`DELETE FROM chat_actions WHERE id=${actionId} AND state='accepting'`;
+            yield* sql`UPDATE chat_proposals SET state='presented' WHERE id=${row.id} AND state='accepting'`;
+            return;
+          }
+          if (outcome.kind === "unknown") return;
+          yield* sql`UPDATE chat_actions SET state=${outcome.kind},decided_at=${decidedAt},outcome_json=${JSON.stringify(outcome.facts)}
+              WHERE id=${actionId} AND state='accepting'`;
+          yield* sql`UPDATE chat_proposals SET state='consumed' WHERE id=${row.id}`;
+          if (outcome.kind === "accepted" && outcome.originRunId !== undefined)
+            yield* sql`INSERT INTO chat_run_origins (run_id,application_id,guild_id,parent_channel_id,thread_id,action_id,recorded_at)
+                VALUES (${outcome.originRunId},${row.application_id},${row.guild_id},${row.parent_channel_id},${row.thread_id},${actionId},${decidedAt})
+                ON CONFLICT DO NOTHING`;
+          yield* oweDelivery(sql, {
+            purpose: "receipt",
+            actionId,
+            destination: destinationOf(row),
+            projectIds: JSON.parse(row.project_ids_json) as string[],
+            text: operation.receipt(outcome, parameters),
+          });
+        }),
+      );
+      if (outcome.kind === "accepted" || outcome.kind === "rejected") yield* deliveries.wake;
+    });
 
-    /** Attempts whose outcome is still being reconciled, for Settings. */
-    const reconciling = Effect.map(
-      sql<ActionRow & { operation: ChatOperationName }>`SELECT a.*,p.operation FROM chat_actions a
-        JOIN chat_proposals p ON p.id=a.proposal_id WHERE a.state='accepting' ORDER BY a.started_at`,
-      (rows): ChatActionReconciliation[] =>
-        rows
-          .filter((row) => !performing.has(row.id))
-          .map((row) => ({ id: row.id, operation: row.operation, startedAt: row.started_at })),
+  /** Performs a consumed proposal under its action identity, outside any transaction. */
+  const perform = (row: ProposalRow, actionId: string) =>
+    Effect.gen(function* () {
+      performing.add(actionId);
+      const operation = byName.get(row.operation)!;
+      const parameters = JSON.parse(row.parameters_json) as JSONValue;
+      const executed = yield* Effect.result(operation.execute(actionId, parameters));
+      const outcome: ActionOutcome =
+        executed._tag === "Success"
+          ? executed.success
+          : yield* Effect.orElseSucceed(operation.reconcile(actionId, parameters), () => ({
+              kind: "unknown" as const,
+            }));
+      yield* decide(row, actionId, outcome);
+      return outcome;
+    }).pipe(
+      Effect.uninterruptible,
+      Effect.ensuring(Effect.sync(() => performing.delete(actionId))),
     );
 
-    return { open, present, fail, confirm, recover, statuses, reconciling };
+  /** Reconciles an attempt whose outcome this process does not know, by its identity alone. */
+  const reconcileAction = (row: ProposalRow, action: ActionRow) =>
+    Effect.gen(function* () {
+      const operation = byName.get(row.operation)!;
+      const outcome = yield* Effect.orElseSucceed(
+        operation.reconcile(action.id, JSON.parse(row.parameters_json) as JSONValue),
+        () => ({ kind: "unknown" as const }),
+      );
+      yield* decide(row, action.id, outcome);
+      return outcome;
+    });
+
+  const repeatedClick = (row: ProposalRow, click: ConfirmationClick) =>
+    Effect.gen(function* () {
+      const action = yield* actionOf(row.id);
+      if (!action) return REPLIES.invalid;
+      if (action.state === "accepting") {
+        if (performing.has(action.id)) return REPLIES.confirming;
+        return OUTCOME_REPLIES[(yield* reconcileAction(row, action)).kind];
+      }
+      // The decided result is shown only to its requester, here, with current access.
+      if ((yield* click.access) !== "permitted") return REPLIES.denied;
+      const operation = byName.get(row.operation)!;
+      return `You already confirmed this review. ${operation.summary({
+        kind: action.state,
+        facts: JSON.parse(action.outcome_json!) as JSONValue,
+      })}`;
+    });
+
+  /** Takes the consent for one attempt, if it is still live and its scope still holds. */
+  const take = (row: ProposalRow) =>
+    sql.withTransaction(
+      Effect.gen(function* (): Effect.fn.Return<
+        { readonly actionId: string } | { readonly refused: keyof typeof REPLIES },
+        unknown
+      > {
+        const current = (yield* proposal(row.id))!;
+        if (current.state === "accepting" || current.state === "consumed")
+          return { refused: "confirming" };
+        if (current.state !== "presented") return { refused: "invalid" };
+        if (yield* expired(current)) return { refused: "expired" };
+        const granted = yield* grantedProjects(
+          sql,
+          current.requester_id,
+          current.parent_channel_id,
+        );
+        if ((JSON.parse(current.project_ids_json) as string[]).some((id) => !granted.includes(id)))
+          return { refused: "denied" };
+        const [configured] = yield* sql<{
+          application_id: string | null;
+        }>`SELECT application_id FROM chat_discord_connection WHERE singleton=1`;
+        if (configured?.application_id !== current.application_id) return { refused: "invalid" };
+        const actionId = yield* newId;
+        const startedAt = yield* now;
+        yield* sql`UPDATE chat_proposals SET state='accepting' WHERE id=${current.id} AND state='presented'`;
+        yield* sql`INSERT INTO chat_actions (id,proposal_id,state,started_at) VALUES (${actionId},${current.id},'accepting',${startedAt})`;
+        return { actionId };
+      }),
+    );
+
+  /**
+   * A confirmation button click; the ephemeral answer for the clicker. Wrong requester, wrong
+   * context, denied or unavailable access never consume live consent.
+   */
+  const confirm = (click: ConfirmationClick) =>
+    Effect.gen(function* (): Effect.fn.Return<string, unknown> {
+      const row = yield* proposal(click.customId.slice(BUTTON_PREFIX.length));
+      const refused = clickRefusal(row, click);
+      if (refused === "repeated") return yield* repeatedClick(row!, click);
+      if (refused) return REPLIES[refused];
+      if (yield* expired(row!)) return REPLIES.expired;
+      const access = yield* click.access;
+      if (access !== "permitted") return REPLIES[access];
+      // Chat control turned Off meanwhile: nothing is consumed and the consent stays live.
+      if (!click.operating()) return REPLIES.notNow;
+      const taken = yield* take(row!);
+      if (!("refused" in taken))
+        return OUTCOME_REPLIES[(yield* perform(row!, taken.actionId)).kind];
+      return taken.refused === "confirming"
+        ? yield* repeatedClick(row!, click)
+        : REPLIES[taken.refused];
+    });
+
+  /**
+   * Startup recovery: a review interrupted before its button was dispatched never becomes
+   * usable, and every attempt left without an outcome reconciles its identity. An attempt proven
+   * not accepted returns its consent, which still expires at its original time.
+   */
+  const recover = Effect.gen(function* () {
+    yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE state='preparing'`;
+    const open = yield* sql<ActionRow>`SELECT * FROM chat_actions WHERE state='accepting'`;
+    for (const action of open) {
+      const row = (yield* proposal(action.proposal_id))!;
+      yield* reconcileAction(row, action);
+    }
   });
 
-export type ChatActions = Effect.Success<ReturnType<typeof makeChatActions>>;
+  /** The current state of proposals later turns refer to. */
+  const statuses = (ids: readonly string[]) =>
+    Effect.gen(function* () {
+      if (ids.length === 0) return new Map<string, ProposalStatus>();
+      const at = yield* Clock.currentTimeMillis;
+      const rows =
+        yield* sql<StatusRow>`SELECT p.*,a.state AS action_state,a.outcome_json FROM chat_proposals p
+          LEFT JOIN chat_actions a ON a.proposal_id=p.id WHERE p.id IN ${sql.in(ids)}`;
+      return new Map(rows.map((row) => [row.id, statusOf(row, at)]));
+    });
+
+  /** Attempts whose outcome is still being reconciled, for Settings. */
+  const reconciling = Effect.map(
+    sql<ActionRow & { operation: ChatOperationName }>`SELECT a.*,p.operation FROM chat_actions a
+        JOIN chat_proposals p ON p.id=a.proposal_id WHERE a.state='accepting' ORDER BY a.started_at`,
+    (rows): ChatActionReconciliation[] =>
+      rows
+        .filter((row) => !performing.has(row.id))
+        .map((row) => ({ id: row.id, operation: row.operation, startedAt: row.started_at })),
+  );
+
+  return { open, present, fail, confirm, recover, statuses, reconciling };
+}
+
+export type ChatActions = ReturnType<typeof makeChatActions>;

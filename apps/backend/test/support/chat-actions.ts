@@ -3,21 +3,10 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import * as Effect from "effect/Effect";
 import type { Factory } from "../../src/index.ts";
-import {
-  ALLOWED_CHANNEL,
-  chatModelSave,
-  discordBot,
-  discordConnectionSave,
-  discordGuild,
-} from "./chat-control.ts";
-import { COLLABORATOR_ID, invocation, THREAD } from "./chat-conversation.ts";
+import { ALLOWED_CHANNEL, discordBot, discordGuild } from "./chat-control.ts";
+import { invocation, operatingService, THREAD } from "./chat-conversation.ts";
 import { chatWorlds, runConversation } from "./chat-runs.ts";
-import {
-  buttonEvent,
-  PARTICIPANT_ID,
-  type ControlledDiscord,
-  type CreatedMessage,
-} from "./controlled-discord.ts";
+import { buttonEvent, type ControlledDiscord, type CreatedMessage } from "./controlled-discord.ts";
 import { preparedService } from "./prepared-runner.ts";
 
 /**
@@ -41,28 +30,18 @@ export type StartingWorld = Pick<
   "model" | "discord" | "project" | "flow"
 >;
 
-const COMMANDS = /^\/api\/v10\/applications\/\d+\/commands$/;
-
 /**
  * The same operating world as `startingWorld`, built inside the test's Effect scope so TestClock
  * drives consent expiry and every other backend deadline. Operations return Effects.
  */
 export const clockedStartingWorld = (c: TestContext) =>
   Effect.gen(function* () {
-    const { model, discord } = yield* Effect.promise(() => chatWorlds(c));
-    const fixture = yield* preparedService(c, undefined, { discordApiUrl: discord.apiUrl });
-    const { factory, project, flow } = fixture;
-    yield* factory.updateChatModelSettings(chatModelSave({ baseUrl: model.baseUrl() }));
-    yield* factory.updateDiscordConnection(discordConnectionSave());
-    const access = yield* factory.updateDiscordAccess({
-      revision: 0,
-      users: [PARTICIPANT_ID, COLLABORATOR_ID],
-      channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [project.id] }],
+    const worlds = yield* Effect.promise(() => chatWorlds(c));
+    const { factory, project, flow } = yield* preparedService(c, undefined, {
+      discordApiUrl: worlds.discord.apiUrl,
     });
-    assert(access.ok, JSON.stringify(access));
-    yield* factory.setChatControlEnabled({ enabled: true });
-    yield* Effect.promise(() => discord.request("PUT", COMMANDS));
-    return { model, discord, factory, project, flow };
+    yield* operatingService(factory, worlds, project.id);
+    return { ...worlds, factory, project, flow };
   });
 
 /** The model's start_run call for the world's Project and Flow with `prompt`. */

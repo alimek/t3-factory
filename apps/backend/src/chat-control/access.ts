@@ -7,9 +7,8 @@ import type {
 } from "@t3-factory/contracts";
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
-import { voidRevokedProposals } from "./actions.ts";
 import { clearConversations } from "./conversations.ts";
-import { cancelRevokedDeliveries } from "./deliveries.ts";
+import { applyAccessRevocation } from "./revocation.ts";
 
 type AccessRow = { revision: number; saved_at: string | null };
 type GrantRow = { channel_id: string; project_id: string | null; known: number | null };
@@ -110,8 +109,7 @@ export const updateAccess = (sql: SqlClient.SqlClient, input: UpdateDiscordAcces
         }),
       });
       // Revoked consent never returns, and a revoked destination's owed messages are cancelled.
-      yield* voidRevokedProposals(sql, input);
-      yield* cancelRevokedDeliveries(sql, input.channels);
+      yield* applyAccessRevocation(sql, input);
       const savedAt = yield* now;
       yield* sql`DELETE FROM chat_access_channel_projects`;
       yield* sql`DELETE FROM chat_access_channels`;

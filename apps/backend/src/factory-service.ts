@@ -141,7 +141,7 @@ export const makeFactoryService = (
       acceptedStart: (requestId) => runner.acceptedStart(requestId),
     });
     const chatDeliveries = yield* makeChatDeliveries(sql);
-    const chatActions = yield* makeChatActions(sql, [chatStart.operation], chatDeliveries);
+    const chatActions = makeChatActions(sql, [chatStart.operation], chatDeliveries);
     const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
       model: conversationalModel(sql, chatCredentials),
       tools: [

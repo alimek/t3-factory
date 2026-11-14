@@ -157,7 +157,7 @@ Runtime (supplied by Factory for this request):
 
 const utf8 = (text: string) => Buffer.byteLength(text, "utf8");
 /** Unicode characters (code points), not UTF-16 units. */
-function characters(text: string) {
+export function characters(text: string) {
   let count = 0;
   for (const _ of text) count += 1;
   return count;
@@ -268,13 +268,6 @@ type Ending =
 
 const settled: Ending = { kind: "settled" };
 const interrupted = (reason: Interruption): Ending => ({ kind: "interrupted", reason });
-
-/** A mutation call Factory validated into a proposal; the tool loop ends with its review. */
-interface Proposal {
-  readonly kind: "proposal";
-  readonly call: ProposedCall;
-  readonly proposed: Proposed;
-}
 
 /** Why a checkpoint stops the interpretation. */
 type Stop = "denied" | "reconfigured" | "held-too-long";
@@ -578,7 +571,7 @@ export const makeInterpreter = (session: InterpreterSession) =>
 
     /** Runs the tool calls the model asked for and adds their results to the work; or how it ends. */
     const runTools = (state: Progress, calls: readonly ProposedCall[]) =>
-      Effect.gen(function* (): Effect.fn.Return<Ending | Proposal | undefined, unknown> {
+      Effect.gen(function* (): Effect.fn.Return<Ending | undefined, unknown> {
         const results: ToolResultPart[] = [];
         for (const call of calls) {
           // The SDK already answered a call it could not parse or match to a tool.
@@ -598,8 +591,7 @@ export const makeInterpreter = (session: InterpreterSession) =>
           );
           if (Option.isNone(outcome)) return interrupted("timed-out");
           // A valid mutation never runs here: its review ends the tool loop.
-          if ("operation" in outcome.value)
-            return { kind: "proposal", call, proposed: outcome.value };
+          if ("operation" in outcome.value) return yield* propose(state, call, outcome.value);
           results.push({
             type: "tool-result",
             toolCallId: call.toolCallId,
@@ -650,11 +642,10 @@ export const makeInterpreter = (session: InterpreterSession) =>
      * or points to the identical proposal still waiting; the turn retains the compact proposal
      * fact. Consent outlives this interpretation: discarding work never touches it.
      */
-    const propose = (state: Progress, proposal: Proposal) =>
+    const propose = (state: Progress, call: ProposedCall, proposed: Proposed) =>
       Effect.gen(function* (): Effect.fn.Return<Ending, unknown> {
         const { slot, configuration, history } = state;
         const { invocation } = slot;
-        const { call, proposed } = proposal;
         const stop = yield* checkpoint(slot, deadline(state), configuration.revision);
         if (stop) return stopped(stop);
         const opened = yield* proposals.open(proposed, {
@@ -735,7 +726,7 @@ export const makeInterpreter = (session: InterpreterSession) =>
             const status: ProposalStatus | undefined = statuses.get(proposalOf(fact) ?? "");
             return status === undefined
               ? fact
-              : { ...fact, fact: { ...(fact.fact as object), current: status } as JSONValue };
+              : { ...fact, fact: { ...(fact.fact as object), current: status } };
           }),
         }));
       });
@@ -776,7 +767,6 @@ export const makeInterpreter = (session: InterpreterSession) =>
             return yield* refuse(slot, REFUSALS.steps, deadline(state), configuration.revision);
           state.work.push(...answer.response.messages);
           const ended = yield* runTools(state, answer.toolCalls);
-          if (ended?.kind === "proposal") return yield* propose(state, ended);
           if (ended) return ended;
         }
       });

@@ -121,32 +121,6 @@ const destinationPermitted = (sql: SqlClient.SqlClient, row: DeliveryRow) =>
     (JSON.parse(row.project_ids_json) as string[]).every((id) => granted.has(id)),
   );
 
-/**
- * Cancels the undelivered debt of destinations an Access save no longer permits: their channel
- * is gone or no longer grants a Project the message concerns. Call inside the Access transaction.
- * A message already being sent may finish; the action it reports stays recorded.
- */
-export const cancelRevokedDeliveries = (
-  sql: SqlClient.SqlClient,
-  channels: readonly { readonly channelId: string; readonly projectIds: readonly string[] }[],
-) =>
-  Effect.gen(function* () {
-    const open = yield* sql<
-      Pick<DeliveryRow, "id" | "parent_channel_id" | "project_ids_json">
-    >`SELECT id,parent_channel_id,project_ids_json FROM chat_deliveries WHERE state IN ('owed','failed','unknown')`;
-    const revoked = open.filter((row) => {
-      const channel = channels.find((entry) => entry.channelId === row.parent_channel_id);
-      return (
-        !channel ||
-        (JSON.parse(row.project_ids_json) as string[]).some(
-          (id) => !channel.projectIds.includes(id),
-        )
-      );
-    });
-    if (revoked.length > 0)
-      yield* sql`UPDATE chat_deliveries SET state='cancelled',next_attempt_at=NULL WHERE id IN ${sql.in(revoked.map((row) => row.id))}`;
-  });
-
 const problemOf = (row: DeliveryRow): ChatDeliveryProblem => ({
   id: row.id,
   purpose: row.purpose,

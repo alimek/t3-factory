@@ -349,16 +349,33 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
       return yield* privateThreadMember(thread, userId, interaction.guildId);
     });
 
+  /**
+   * Acknowledges an interaction privately at once, since the acknowledgement is due within three
+   * seconds and access checks may need Discord itself; its channel and thread, or nothing when
+   * Discord refused the acknowledgement.
+   */
+  const acknowledged = (
+    interaction:
+      | ChatInputCommandInteraction<"cached" | "raw">
+      | ButtonInteraction<"cached" | "raw">,
+  ) =>
+    Effect.map(
+      Effect.option(
+        Effect.tryPromise(() => interaction.deferReply({ flags: MessageFlags.Ephemeral })),
+      ),
+      (deferred) => {
+        if (deferred._tag === "None") return undefined;
+        const channel = interaction.channel;
+        return { channel, thread: channel?.isThread() ? channel : null };
+      },
+    );
+
   const reset = (interaction: ChatInputCommandInteraction<"cached" | "raw">) =>
     Effect.gen(function* () {
       if (!(yield* firstDelivery(interaction.id))) return;
-      // The acknowledgement is due within three seconds; access checks may need Discord itself.
-      const deferred = yield* Effect.option(
-        Effect.tryPromise(() => interaction.deferReply({ flags: MessageFlags.Ephemeral })),
-      );
-      if (deferred._tag === "None") return;
-      const channel = interaction.channel;
-      const thread = channel?.isThread() ? channel : null;
+      const place = yield* acknowledged(interaction);
+      if (!place) return;
+      const { channel, thread } = place;
       let reply: keyof typeof RESET_REPLIES = channel ? "not-thread" : "unavailable";
       if (thread) {
         const access = yield* requesterAccess(interaction, thread);
@@ -381,12 +398,9 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
   const confirmation = (interaction: ButtonInteraction<"cached" | "raw">) =>
     Effect.gen(function* () {
       if (!(yield* gate.withPermits(1)(firstDelivery(interaction.id)))) return;
-      const deferred = yield* Effect.option(
-        Effect.tryPromise(() => interaction.deferReply({ flags: MessageFlags.Ephemeral })),
-      );
-      if (deferred._tag === "None") return;
-      const channel = interaction.channel;
-      const thread = channel?.isThread() ? channel : null;
+      const place = yield* acknowledged(interaction);
+      if (!place) return;
+      const { thread } = place;
       const reply = yield* session.confirm({
         customId: interaction.customId,
         userId: interaction.user.id,

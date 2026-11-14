@@ -1,6 +1,7 @@
 import type { JSONSchema7, JSONValue } from "ai";
 import * as Effect from "effect/Effect";
 import type {
+  FactoryProject,
   FlowDraft,
   ProjectCatalog,
   Result,
@@ -14,8 +15,13 @@ import {
   type ChatOperation,
   type Proposed,
 } from "./actions.ts";
-import { invalid, type ChatToolOutcome, type MutationTool } from "./chat-tools.ts";
-import { messageParts } from "./interpretation.ts";
+import {
+  invalid,
+  type ChatToolOutcome,
+  type ChatToolScope,
+  type MutationTool,
+} from "./chat-tools.ts";
+import { characters, messageParts } from "./interpretation.ts";
 
 /** The Factory operations a chat Start uses: the shared text Start and its reads. */
 export interface StartOperations {
@@ -46,8 +52,6 @@ const PROMPT_CHARACTERS = 8000;
 const PROMPT_BYTES = 16 * 1024;
 const MESSAGE_LENGTH = 2000;
 const FENCE = "```";
-
-const characters = (text: string) => [...text].length;
 
 const inputSchema: JSONSchema7 = {
   type: "object",
@@ -94,7 +98,7 @@ function startArguments(input: unknown) {
     return "supersedes must be a proposal ID.";
   return {
     parameters: { projectId, flowId, prompt, source: promptSource as PromptSource },
-    supersedes: supersedes as string | undefined,
+    supersedes,
   };
 }
 
@@ -148,7 +152,11 @@ const DISCLOSURE = [
 ].join("\n");
 
 const clip = (text: string, limit: number) =>
-  characters(text) <= limit ? text : `${[...text].slice(0, limit - 1).join("")}…`;
+  characters(text) <= limit
+    ? text
+    : `${Array.from(text)
+        .slice(0, limit - 1)
+        .join("")}…`;
 
 type AcceptedFacts = {
   runId: string;
@@ -162,6 +170,45 @@ type AcceptedFacts = {
 type RejectedFacts = { message: string; issues: string[] };
 
 const MAX_ISSUES = 5;
+
+/** Why the prompt cannot be proposed: too long, or not exact text from its stated source. */
+function promptProblem(
+  { prompt, source }: StartParameters,
+  scope: ChatToolScope,
+): ChatToolOutcome | undefined {
+  if (characters(prompt) > PROMPT_CHARACTERS || Buffer.byteLength(prompt) > PROMPT_BYTES)
+    return refused(
+      "prompt_too_long",
+      "The task text is longer than Chat control accepts (8,000 characters and 16 KiB). Ask the requester for shorter text or to use Factory; never shorten it yourself.",
+    );
+  if (source === "composed") return undefined;
+  const origin = source === "selected-reply" ? scope.source.selectedReply : scope.source.message;
+  if (origin?.includes(prompt)) return undefined;
+  return refused(
+    "prompt_not_exact",
+    `The prompt is not exact text from the ${source === "selected-reply" ? "selected reply" : "requester's message"}. Copy it character for character, or mark it composed so Factory labels it.`,
+  );
+}
+
+/** The complete review of a Start, as ordered Discord messages. */
+function startReview(
+  { prompt, source }: StartParameters,
+  { project, flow }: { readonly project: FactoryProject; readonly flow: FlowDraft },
+  title: string,
+  setting: Result<RunTitleSetting>,
+) {
+  const header = [
+    "**Review: start a Run**",
+    `**Project:** ${project.title} — \`${project.workspaceRoot}\``,
+    `**Flow:** ${flow.name} (\`${flow.id}\`)`,
+    `**Workspace:** ${workspaceLine(flow)}`,
+    `**Run title:** ${title}`,
+    "Factory derives this automatic title from the prompt's first non-empty line.",
+    titlePolicy(setting),
+    `**Prompt** (${characters(prompt).toLocaleString("en-US")} characters), ${SOURCE_LINES[source]}:`,
+  ].join("\n");
+  return [...messageParts(header), ...promptBlocks(prompt), DISCLOSURE];
+}
 
 /** The chat Start: proposal validation and review, and its binding to the shared text Start. */
 export function startAction(operations: StartOperations) {
@@ -245,6 +292,40 @@ export function startAction(operations: StartOperations) {
     },
   };
 
+  /** The permitted, available Project and the ready saved Flow, or why they cannot be used. */
+  const startTargets = (parameters: StartParameters, scope: ChatToolScope) =>
+    Effect.gen(function* (): Effect.fn.Return<
+      { readonly project: FactoryProject; readonly flow: FlowDraft } | ChatToolOutcome,
+      unknown
+    > {
+      if (!scope.projectIds.includes(parameters.projectId))
+        return refused(
+          "project_not_permitted",
+          "This thread does not permit that Project. Use a Project ID from list_projects.",
+        );
+      const catalog = yield* operations.listProjects();
+      const project = catalog.ok
+        ? catalog.value.projects.find((entry) => entry.id === parameters.projectId)
+        : undefined;
+      if (project?.availability !== "available")
+        return refused(
+          "project_unavailable",
+          "Factory cannot start work in that Project now: its repository is unavailable. Say so; do not choose another Project.",
+        );
+      const flow = yield* operations.getFlow(parameters.flowId);
+      if (!flow.ok)
+        return refused("flow_not_found", "Factory has no saved Flow with that ID. Use list_flows.");
+      if (!flow.value.readiness.ready)
+        return refused(
+          "flow_not_ready",
+          `That Flow is not ready to start: ${flow.value.readiness.issues
+            .slice(0, MAX_ISSUES)
+            .map((issue) => issue.message)
+            .join(" ")}`,
+        );
+      return { project, flow: flow.value };
+    });
+
   const tool: MutationTool = {
     name: "start_run",
     description:
@@ -256,76 +337,26 @@ export function startAction(operations: StartOperations) {
         const parsed = startArguments(input);
         if (typeof parsed === "string") return invalid(parsed);
         const { parameters, supersedes } = parsed;
-        const { prompt, source } = parameters;
-        if (characters(prompt) > PROMPT_CHARACTERS || Buffer.byteLength(prompt) > PROMPT_BYTES)
-          return refused(
-            "prompt_too_long",
-            "The task text is longer than Chat control accepts (8,000 characters and 16 KiB). Ask the requester for shorter text or to use Factory; never shorten it yourself.",
-          );
-        const origin =
-          source === "requester-message"
-            ? scope.source.message
-            : source === "selected-reply"
-              ? scope.source.selectedReply
-              : undefined;
-        if (source !== "composed" && (origin === null || !origin!.includes(prompt)))
-          return refused(
-            "prompt_not_exact",
-            `The prompt is not exact text from the ${source === "selected-reply" ? "selected reply" : "requester's message"}. Copy it character for character, or mark it composed so Factory labels it.`,
-          );
-        if (!scope.projectIds.includes(parameters.projectId))
-          return refused(
-            "project_not_permitted",
-            "This thread does not permit that Project. Use a Project ID from list_projects.",
-          );
-        const catalog = yield* operations.listProjects();
-        const project = catalog.ok
-          ? catalog.value.projects.find((entry) => entry.id === parameters.projectId)
-          : undefined;
-        if (!project || project.availability !== "available")
-          return refused(
-            "project_unavailable",
-            "Factory cannot start work in that Project now: its repository is unavailable. Say so; do not choose another Project.",
-          );
-        const flow = yield* operations.getFlow(parameters.flowId);
-        if (!flow.ok)
-          return refused(
-            "flow_not_found",
-            "Factory has no saved Flow with that ID. Use list_flows.",
-          );
-        if (!flow.value.readiness.ready)
-          return refused(
-            "flow_not_ready",
-            `That Flow is not ready to start: ${flow.value.readiness.issues
-              .slice(0, MAX_ISSUES)
-              .map((issue) => issue.message)
-              .join(" ")}`,
-          );
-        const title = promptTitle(prompt)!;
-        const setting = yield* operations.getRunTitleSetting();
-        const header = [
-          "**Review: start a Run**",
-          `**Project:** ${project.title} — \`${project.workspaceRoot}\``,
-          `**Flow:** ${flow.value.name} (\`${flow.value.id}\`)`,
-          `**Workspace:** ${workspaceLine(flow.value)}`,
-          `**Run title:** ${title}`,
-          "Factory derives this automatic title from the prompt's first non-empty line.",
-          titlePolicy(setting),
-          `**Prompt** (${characters(prompt).toLocaleString("en-US")} characters), ${SOURCE_LINES[source]}:`,
-        ].join("\n");
-        const review = [...messageParts(header), ...promptBlocks(prompt), DISCLOSURE];
+        const inexact = promptProblem(parameters, scope);
+        if (inexact) return inexact;
+        const targets = yield* startTargets(parameters, scope);
+        if ("output" in targets) return targets;
+        const { project, flow } = targets;
+        const title = promptTitle(parameters.prompt)!;
+        const review = startReview(
+          parameters,
+          targets,
+          title,
+          yield* operations.getRunTitleSetting(),
+        );
         const confirmation = {
           label: "Confirm Start",
           text: clip(
-            `Confirm this Start: Run “${title}” in ${project.title} with Flow ${flow.value.name}.`,
+            `Confirm this Start: Run “${title}” in ${project.title} with Flow ${flow.name}.`,
             MESSAGE_LENGTH,
           ),
         };
-        const length = [...review, confirmation.text].reduce(
-          (total, part) => total + characters(part),
-          0,
-        );
-        if (length > REVIEW_CHARACTER_LIMIT)
+        if (characters([...review, confirmation.text].join("")) > REVIEW_CHARACTER_LIMIT)
           return refused(
             "review_too_long",
             "Factory's complete review of this Start would exceed 32,000 characters, so it cannot be confirmed in chat. Suggest using Factory.",
@@ -339,10 +370,10 @@ export function startAction(operations: StartOperations) {
           targets: {
             projectId: project.id,
             projectName: project.title,
-            flowId: flow.value.id,
-            flowName: flow.value.name,
+            flowId: flow.id,
+            flowName: flow.name,
             title,
-            promptSource: source,
+            promptSource: parameters.source,
           },
           supersedes,
         } satisfies Proposed;

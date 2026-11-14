@@ -325,7 +325,7 @@ export async function startControlledDiscord() {
         created.push({
           id: message.id,
           channelId: match[1]!,
-          content: String(message.content),
+          content: typeof fields.content === "string" ? fields.content : "",
           components: fields.components ?? [],
         });
         return { status: 200, body: message, lost: fault === "lost" };
