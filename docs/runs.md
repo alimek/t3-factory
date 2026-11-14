@@ -365,6 +365,10 @@ menu items never opens a row preview.
   never reopened or relaunched. To work on the matter again otherwise, start a **New Run**: it uses the current saved Flow and Agent definitions, not an earlier
   Run's captured revisions.
 
+Authorized [Chat control](chat-control.md#finding-and-reading-runs) participants can also find and read any Run of the
+Projects their Discord channel grants, including Runs started here. Reading in chat changes nothing about the Run, and its
+views here and on approved clients carry no Discord identifiers.
+
 ### Branches and pull requests
 
 Repository information is last known metadata from the Run's bound worker threads in T3. A Run can have

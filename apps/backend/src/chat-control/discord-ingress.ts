@@ -70,6 +70,14 @@ interface IngressSession {
   readonly referenced: (messageId: string) => ReferencedMessage | undefined;
   /** Decides a confirmation button click; the ephemeral answer for the clicker. */
   readonly confirm: (click: ConfirmationClick) => Effect.Effect<string, unknown>;
+  /**
+   * The Run a message this application published in `threadId` identifies, if Factory recorded
+   * one for it. Only the identity is returned: the message's content is never imported.
+   */
+  readonly publishedRun: (
+    threadId: string,
+    messageId: string,
+  ) => Effect.Effect<string | undefined, unknown>;
 }
 
 const RESET_REPLIES = {
@@ -250,15 +258,34 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
     });
   };
 
-  /** The human message the invoker selected by replying to it, as the event supplied it. */
-  const replyTarget = (message: Message<true>, threadId: string): ReplyTarget => {
-    const reference = session.referenced(message.id);
-    if (message.type !== MessageType.Reply || !reference || reference.referenceType !== 0)
-      return { kind: "none" };
-    const target = reference.message;
-    if (!target) return { kind: "unusable" };
-    // Replying to the bot is how it was invoked; bot prose is never imported as a quote.
-    if (target.author.id === botUserId) return { kind: "none" };
+  /**
+   * The human message the invoker selected by replying to it, as the event supplied it, or the
+   * Run a replied-to Factory message identifies.
+   */
+  const replyTarget = (message: Message<true>, threadId: string) =>
+    Effect.gen(function* (): Effect.fn.Return<ReplyTarget, unknown> {
+      const reference = session.referenced(message.id);
+      if (message.type !== MessageType.Reply || !reference || reference.referenceType !== 0)
+        return { kind: "none" };
+      const target = reference.message;
+      if (!target) return { kind: "unusable" };
+      // Replying to the bot is how it was invoked; bot prose is never imported as a quote. A
+      // Factory message of this thread may identify a Run, which is then read afresh.
+      if (target.author.id === botUserId) {
+        const ordinary =
+          target.channel_id === threadId &&
+          target.webhook_id === undefined &&
+          (target.type === MessageType.Default || target.type === MessageType.Reply);
+        const runId = ordinary ? yield* session.publishedRun(threadId, target.id) : undefined;
+        return runId === undefined ? { kind: "none" } : { kind: "run", runId };
+      }
+      return selectedReply(target, threadId);
+    });
+
+  const selectedReply = (
+    target: NonNullable<ReferencedMessage["message"]>,
+    threadId: string,
+  ): ReplyTarget => {
     if (
       target.channel_id !== threadId ||
       target.author.bot === true ||
@@ -298,7 +325,7 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
         requesterId: message.author.id,
         messageId: message.id,
         text: message.content,
-        replyTarget: replyTarget(message, threadId),
+        replyTarget: yield* replyTarget(message, threadId),
         admittedAt: yield* Clock.currentTimeMillis,
         permitted: permitted(conversation, message.author.id, generation, token),
       };

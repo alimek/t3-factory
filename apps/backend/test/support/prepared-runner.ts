@@ -13,7 +13,7 @@ import { factoryHarness } from "./factory.ts";
 import { ControlledT3 } from "./controlled-t3.ts";
 
 /** Disposable T3 state and harness home for a controlled, approved T3. */
-export async function preparedHomes(processHome: string) {
+async function preparedHomes(processHome: string) {
   const root = join(processHome, "neutral");
   await mkdir(root);
   const t3 = new ControlledT3();
@@ -28,7 +28,7 @@ export async function preparedHomes(processHome: string) {
 
 /** Connects T3, installs reporting, adds the project and saves the ready Flow: the single-worker
  * Flow in `shape`'s variant, or the one the ready Flow shape `shape` saves. */
-export async function readyFlow(
+async function readyFlow(
   f: Factory,
   t3: ControlledT3,
   root: string,
@@ -62,10 +62,19 @@ export async function readyFlow(
 
 /** A ready Flow (the single-worker Flow in `shape`'s variant, or a ready Flow shape), with Factory
  * reporting installed beside the bridge. */
-export async function prepared(c: TestContext, shape?: SingleWorkerVariant | ReadyFlowShape) {
+export async function prepared(
+  c: TestContext,
+  shape?: SingleWorkerVariant | ReadyFlowShape,
+  { discordApiUrl }: { readonly discordApiUrl?: string } = {},
+) {
   const h = await factoryHarness(c);
   const { root, t3, reportingStateDirectory } = await preparedHomes(h.processHome);
-  const f = await h.open({ t3, reportingStateDirectory, connectionRetryMs: 60_000 });
+  const f = await h.open({
+    t3,
+    reportingStateDirectory,
+    connectionRetryMs: 60_000,
+    ...(discordApiUrl ? { discordApiUrl } : {}),
+  });
   c.onTestFinished(() => f.close());
   return { h, f, t3, ...(await readyFlow(f, t3, root, shape)) };
 }

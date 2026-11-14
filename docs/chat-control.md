@@ -252,9 +252,12 @@ only proposes, and Factory itself reviews and performs it (see [Actions](#action
 | --- | --- |
 | List Projects | The Projects the thread's parent channel grants the requester: stable ID, name, repository path and availability |
 | List Flows | Saved global Flows: stable ID, name, workspace setting and readiness with its first reasons |
+| Find Runs | Runs of those Projects: ID, Run number, title, Project name and repository path, Flow and state |
+| Read Run | One such Run as Factory has it now, by its captured definitions, in an overview with readable sections |
 | Start Run | Nothing to perform: a validated proposal whose review Factory posts, or why it cannot be proposed |
 
-Both return pages of 20 entries with the page count, so every entry stays reachable. The model is
+List Projects and List Flows return pages of 20 entries with the page count, so every entry stays
+reachable; [Finding and reading Runs](#finding-and-reading-runs) describes the Run tools. The model is
 told to list candidates and ask when several could match, and never to pick the first match or
 substitute a missing one. Before every model request, tool call and publication Factory checks
 again that Chat control is On, Access still allows the requester in that channel, the conversation
@@ -263,13 +266,64 @@ unchanged. Replies mention nobody, whatever the model wrote, and a reply longer 
 message goes out completely as ordered parts. Answering Human steps and archiving are not available in
 chat yet.
 
+### Finding and reading Runs
+
+A participant can find and read every Run of the Projects the thread's parent channel grants, whoever
+started it and wherever: in Factory, from a T3 conversation or by another participant. Nothing else
+limits it; there is no per-person ownership. A Run of another Project is not found, even by its exact
+ID or number, and the answer is the same as for a Run that does not exist. Every call reads Factory's
+current state and the Access policy afresh, and reading changes nothing: it creates no reporting
+destination for the Run and records no Discord identifier with it.
+
+**Find Runs** searches by words, each of which must appear in the Run title, the Project name or
+repository path, or the Flow name, optionally within one Project; without words it lists recent Runs.
+Results come newest created first, ten per page, with the number of Runs matching now. Active,
+Snoozed and Settled Runs are included; Archived Runs only when the requester asks for them. An exact
+Run ID or number (`12` or `#12`) finds that one Run in any state, Archived included. Runs of
+independent clones can share a title and a Project name; the number and repository path tell them
+apart, and the model asks instead of choosing.
+
+A page with more results carries a continuation handle. Continuing follows a fixed order of the Runs
+that existed, so it never skips one that already matched, however many Runs start meanwhile; a fresh
+search includes them.
+
+**Read Run** gives an overview of one Run: its identity, state (with any settlement in progress),
+captured Flow revision beside the latest saved one, workspace, and lists of its Blocks (state,
+observation freshness, Problem and working message), latest results (exit, acceptance, whether the
+worker's completion is confirmed, and each handoff as held, released without confirmed delivery,
+delivered or cancelled), Needs input, Problems, pending Human occurrences with the arrival that brought
+each (source Block and exit), and pending Wait arrivals with their deadlines. Names and exits come from
+the definitions the Run captured at Start, so later Flow edits do not change the reading. A stale or
+unknown observation is reported as such, not as a Problem, and Native T3 requests are marked as
+answered in T3. Lists longer than ten entries continue on further overview pages.
+
+Long texts are sections that the overview lists with their size: the prompt, each latest result, each
+working message, each pending Human occurrence's context and each pending Wait message. Each is read
+in pages of 4,000 characters, so text of any length, including Human context beyond the 32,000
+characters a chat review will allow, stays readable. A section whose text changed since the overview
+listed it is reported stale instead of being mixed with the earlier version, and text Factory no
+longer retains is reported unavailable.
+
+Continuation and read handles are opaque names Factory stores with the conversation. They grant
+nothing: each use rechecks access and the source. A handle works only in the thread and conversation
+generation that issued it and only while the turn that issued it is retained, so a reset, expiry,
+clearing (including Access, provider or application changes) or eviction of that turn makes it
+unusable and the model searches or reads again. Handles hold search parameters and section versions,
+never Run content. Because a turn keeps its newest compact facts first, the latest handles of a turn
+survive into the next invocation, so a search or read that needs more tool calls than one invocation
+allows continues in the next one.
+
+A reply to a Factory message that identifies a Run will give the model only that Run's ID for a fresh
+read, never the message's content. No message Factory publishes identifies a Run yet, so replying to a
+bot message adds nothing to the request.
+
 ### Shared conversation
 
 Each thread of the configured application has one shared conversation; nothing is shared between
 threads and there are no personal profiles, inferred preferences or automatic summaries. A completed
 turn keeps the admitted message exactly as it arrived with its author's Discord ID, the reply
-Discord accepted and compact Factory facts from its tool calls (identities and names, not the raw
-results). Discord edits and deletions change neither the kept copy nor invoke the bot; only a reset
+Discord accepted and compact Factory facts from its tool calls (identities, names and read handles,
+not the raw results; the newest within 2 KiB). Discord edits and deletions change neither the kept copy nor invoke the bot; only a reset
 or the retention rules below remove it, and neither recalls what was already sent to the provider or
 posted in Discord. A failed or discarded interpretation keeps nothing.
 

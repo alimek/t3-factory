@@ -27,6 +27,7 @@ import { makeChatActions } from "./chat-control/actions.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
 import { makeChatDeliveries } from "./chat-control/deliveries.ts";
 import { startAction } from "./chat-control/start-action.ts";
+import { runTools } from "./chat-control/run-tools.ts";
 import { makeChatDiscord } from "./chat-control/discord.ts";
 import { DISCORD_API_URL, makeDiscordGateway } from "./chat-control/discord-gateway.ts";
 import { makeDiscordOperation } from "./chat-control/discord-operation.ts";
@@ -148,6 +149,7 @@ export const makeFactoryService = (
           listProjects: projects.listProjects,
           listFlows: definitions.listFlows,
         }),
+        ...runTools(sql, { getRun: (id) => guard(runner.getRun(id)) }),
         chatStart.tool,
       ],
       actions: chatActions,

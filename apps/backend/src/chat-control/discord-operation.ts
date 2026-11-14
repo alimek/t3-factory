@@ -343,6 +343,8 @@ export const makeDiscordOperation = (
               references.delete(messageId);
               return reference;
             },
+            // No message Factory publishes identifies a Run yet; status cards will resolve theirs.
+            publishedRun: () => Effect.succeed(undefined),
           },
           engine,
         );

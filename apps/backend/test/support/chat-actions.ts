@@ -1,61 +1,39 @@
 import { assert, type TestContext } from "@effect/vitest";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import * as Effect from "effect/Effect";
 import type { Factory } from "../../src/index.ts";
 import {
   ALLOWED_CHANNEL,
-  discordBot,
-  discordGuild,
   chatModelSave,
+  discordBot,
   discordConnectionSave,
-  savedChatModel,
-  savedDiscordConnection,
-  turnedOn,
+  discordGuild,
 } from "./chat-control.ts";
-import { addThreads, COLLABORATOR_ID, invocation, THREAD } from "./chat-conversation.ts";
+import { COLLABORATOR_ID, invocation, THREAD } from "./chat-conversation.ts";
+import { chatWorlds, runConversation } from "./chat-runs.ts";
 import {
   buttonEvent,
-  controlledDiscord,
   PARTICIPANT_ID,
   type ControlledDiscord,
   type CreatedMessage,
 } from "./controlled-discord.ts";
-import { controlledModelProvider } from "./controlled-model.ts";
-import { factoryHarness } from "./factory.ts";
-import { preparedHomes, preparedService, readyFlow } from "./prepared-runner.ts";
+import { preparedService } from "./prepared-runner.ts";
 
 /**
- * An operating Chat control over a Factory that can start Runs: T3 connected with reporting, one
- * Project and a ready single-worker Flow, the participant and a collaborator allowed in the allowed
- * channel with two public threads. `open` reopens the same home against the same external worlds.
+ * An operating Chat control over a Factory that can start Runs (the prepared ready Flow of
+ * `runConversation`). `open` reopens the same home against the same external worlds.
  */
 export async function startingWorld(c: TestContext) {
-  const model = await controlledModelProvider(c);
-  const discord = await controlledDiscord(c);
-  discord.addBot(discordBot);
-  discord.addGuild(discordGuild);
-  addThreads(discord);
-  const harness = await factoryHarness(c);
-  const { root, t3, reportingStateDirectory } = await preparedHomes(harness.processHome);
+  const fixture = await runConversation(c);
   const open = () =>
-    harness.open({
-      t3,
-      reportingStateDirectory,
-      discordApiUrl: discord.apiUrl,
+    fixture.h.open({
+      t3: fixture.t3,
+      reportingStateDirectory: join(fixture.h.processHome, "reporting-state"),
+      discordApiUrl: fixture.discord.apiUrl,
       connectionRetryMs: 60_000,
     });
-  const factory = await open();
-  const { project, flow } = await readyFlow(factory, t3, root);
-  await savedChatModel(factory, { baseUrl: model.baseUrl() });
-  await savedDiscordConnection(factory);
-  const access = await factory.updateDiscordAccess({
-    revision: 0,
-    users: [PARTICIPANT_ID, COLLABORATOR_ID],
-    channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [project.id] }],
-  });
-  assert(access.ok, JSON.stringify(access));
-  await turnedOn(factory, discord);
-  return { model, discord, harness, open, factory, t3, project, flow };
+  return { ...fixture, factory: fixture.f, harness: fixture.h, open };
 }
 
 export type StartingWorld = Pick<
@@ -71,11 +49,7 @@ const COMMANDS = /^\/api\/v10\/applications\/\d+\/commands$/;
  */
 export const clockedStartingWorld = (c: TestContext) =>
   Effect.gen(function* () {
-    const model = yield* Effect.promise(() => controlledModelProvider(c));
-    const discord = yield* Effect.promise(() => controlledDiscord(c));
-    discord.addBot(discordBot);
-    discord.addGuild(discordGuild);
-    addThreads(discord);
+    const { model, discord } = yield* Effect.promise(() => chatWorlds(c));
     const fixture = yield* preparedService(c, undefined, { discordApiUrl: discord.apiUrl });
     const { factory, project, flow } = fixture;
     yield* factory.updateChatModelSettings(chatModelSave({ baseUrl: model.baseUrl() }));

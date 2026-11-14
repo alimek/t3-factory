@@ -103,6 +103,18 @@ CREATE TABLE chat_control_state (
   )
 ), rejected_message TEXT, rejected_at TEXT);
 
+CREATE TABLE chat_conversation_handles (
+  application_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  message_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('run-search', 'run-read')),
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (application_id, thread_id, handle),
+  FOREIGN KEY (application_id, thread_id) REFERENCES chat_conversations(application_id, thread_id)
+);
+
 CREATE TABLE chat_conversation_turns (
   application_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
