@@ -39,12 +39,12 @@ export interface GatewayResult {
  * A login's outcome: a ready session of the application Discord authenticated the token as, or
  * why there is none.
  */
-export type Readiness =
+type Readiness =
   | { readonly ready: true; readonly applicationId: string }
   | { readonly ready: false; readonly result: GatewayResult };
 
 /** The latest connection-only check's evidence. */
-export interface CheckResult {
+interface CheckResult {
   readonly outcome: DiscordCheckOutcome;
   readonly applicationId: string | null;
   readonly message: string;
@@ -223,7 +223,7 @@ export interface OperatingSession<Adapter extends DiscordAdapter> {
 }
 
 /** How an operating session ended; `served` tells whether it became ready and was used. */
-export interface OperatingResult {
+interface OperatingResult {
   readonly result: GatewayResult;
   readonly served: boolean;
 }
