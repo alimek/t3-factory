@@ -645,7 +645,9 @@ T3 Settled is separate from Factory attention. When native settle is supported, 
 best-effort settles a Block's bound worker thread while the Run is still in progress when that
 Block's current report is an accepted `finished` result, the [completion rule](#worker-thread-completion)
 confirms the worker thread is done, no execution-failed attention is pending on the Block, and
-the Run is not [Archived](#archive). A current `working` report, a missing-report Problem, or
+the Run is not [Archived](#archive). A [Continuation](#continuations)'s result settles the
+thread its prompt ran on, for the prompt's T3 run, under the same conditions once its response is
+released. A current `working` report, a missing-report Problem, or
 open execution-failed attention leaves the thread unsettled. The sweep runs in each
 reconciliation pass for Active, Snoozed and [Settled](#settled-runs) Runs that still owe
 operations—handoff Blocks, terminal activations and long-running Flows alike.
