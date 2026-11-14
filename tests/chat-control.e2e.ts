@@ -12,11 +12,15 @@ import { openApproved, remoteFixture } from "./support/remote-access.ts";
 
 /**
  * A chat-completions provider on loopback that records the headers of each request and answers
- * "OK", or `failure` with an empty body once a journey sets it.
+ * "OK", or `failure` with an empty body once a journey sets it, or once the tool call a journey
+ * set.
  */
 async function controlledProvider() {
   const requests: IncomingHttpHeaders[] = [];
-  const state: { failure: number | null } = { failure: null };
+  const state: {
+    failure: number | null;
+    toolCall: { name: string; input: unknown } | null;
+  } = { failure: null, toolCall: null };
   const server = createServer((request, response) => {
     request.resume();
     request.on("end", () => {
@@ -26,6 +30,8 @@ async function controlledProvider() {
         response.end("{}");
         return;
       }
+      const toolCall = state.toolCall;
+      state.toolCall = null;
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
@@ -34,7 +40,26 @@ async function controlledProvider() {
           created: 0,
           model: "ui-model",
           choices: [
-            { index: 0, message: { role: "assistant", content: "OK" }, finish_reason: "stop" },
+            toolCall
+              ? {
+                  index: 0,
+                  message: {
+                    role: "assistant",
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: "call-ui",
+                        type: "function",
+                        function: {
+                          name: toolCall.name,
+                          arguments: JSON.stringify(toolCall.input),
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: "tool_calls",
+                }
+              : { index: 0, message: { role: "assistant", content: "OK" }, finish_reason: "stop" },
           ],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         }),
@@ -409,4 +434,122 @@ test("an actual conversation failure shows on the Language model page and marks 
   ).toBeVisible();
   await conversations.scrollIntoView();
   await app.screenshot("chat-model-runtime-problem");
+});
+
+type FixtureMessage = { channelId: string; content: string; customId: string | null };
+
+/** The messages the controlled Discord created once `until` holds, read again after short pauses. */
+async function messagesWhen(
+  baseUrl: string | undefined,
+  until: (messages: FixtureMessage[]) => boolean,
+) {
+  for (let attempt = 0; attempt < OBSERVATION_ATTEMPTS; attempt++) {
+    const response = await fetch(new URL("/__fixture/discord/messages", baseUrl), {
+      method: "POST",
+    });
+    const messages = (await response.json()) as FixtureMessage[];
+    if (until(messages)) return messages;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("The controlled Discord did not create the expected messages.");
+}
+
+const RECEIPT = "**Start accepted.**";
+const receipts = (messages: FixtureMessage[]) =>
+  messages.filter((message) => message.content.startsWith(RECEIPT));
+
+/**
+ * A participant's Start, confirmed with its button, whose receipt create Discord performed but
+ * whose answer was lost: Factory owes a receipt it cannot prove either way.
+ */
+async function unknownReceipt(baseUrl: string | undefined) {
+  const project = await firstProject(baseUrl);
+  const flows = (await (await fetch(new URL("/api/flows", baseUrl))).json()) as Result<
+    { id: string; name: string; readiness: { ready: boolean } }[]
+  >;
+  assert(flows.ok);
+  const flow = flows.value.find((entry) => entry.name === "Demo · Focused change")!;
+  await operatingChatControl(baseUrl);
+  const prompt = "UI receipt journey · Tidy the project picker";
+  provider.state.toolCall = {
+    name: "start_run",
+    input: { projectId: project.id, flowId: flow.id, prompt, promptSource: "requester-message" },
+  };
+  const invoked = await fetch(
+    new URL(`/__fixture/discord/invoke?content=${encodeURIComponent(`start: ${prompt}`)}`, baseUrl),
+    { method: "POST" },
+  );
+  const { id: thread } = (await invoked.json()) as { id: string };
+  const messages = await messagesWhen(baseUrl, (created) =>
+    created.some((message) => message.channelId === thread && message.customId !== null),
+  );
+  const { customId } = messages.find((message) => message.customId !== null)!;
+  const before = receipts(messages).length;
+  await fetch(new URL("/__fixture/discord/fault?fault=lost", baseUrl), { method: "POST" });
+  await fetch(new URL(`/__fixture/discord/click?thread=${thread}&customId=${customId}`, baseUrl), {
+    method: "POST",
+  });
+  await settingsWhen<DiscordSettings>(baseUrl, "/api/chat-control/discord", (settings) =>
+    settings.delivery.problems.some((problem) => problem.state === "unknown"),
+  );
+  const runId = /Run ID: `([^`]+)`/.exec(
+    receipts(await messagesWhen(baseUrl, () => true)).at(-1)!.content,
+  )![1]!;
+  return { before, runId };
+}
+
+test("the host retries an owed receipt Discord may already show only after a duplicate warning, and the Start is not repeated", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { before, runId } = await unknownReceipt(app.baseUrl);
+  await app.open("/settings/chat-control/discord");
+  const delivery = screen.getByRole("region", "Delivery and actions");
+  const receipt = delivery.getByRole("listitem", "Action receipt, Unknown");
+  await expect(
+    receipt.getByText(
+      "Factory cannot tell whether Discord created the message. Retrying may post it twice.",
+    ),
+  ).toBeVisible();
+  await expect(
+    screen
+      .getByRole("navigation", "Settings sections")
+      .getByRole("link", "Discord, needs attention", { exact: true }),
+  ).toBeVisible();
+  await delivery.scrollIntoView();
+  await app.screenshot("chat-discord-delivery-unknown");
+  await receipt.getByRole("button", "Retry").tap();
+  const warning = screen.getByRole("alertdialog", "Retry a message Discord may already show?");
+  await expect(warning.getByText(/the thread may show it twice/)).toBeVisible();
+  // The dialog fades in; the Run sidebar's progress indicators never settle.
+  await browser.evaluate(
+    "Promise.all([...document.querySelectorAll('[role=alertdialog]')].flatMap((element) => element.getAnimations()).map((animation) => animation.finished))",
+  );
+  await app.screenshot("chat-discord-delivery-retry-warning");
+
+  // Act
+  await warning.getByRole("button", "Retry anyway").tap();
+
+  // Assert
+  await expect(screen.getByRole("region", "Delivery and actions")).toHaveCount(0);
+  const messages = await messagesWhen(
+    app.baseUrl,
+    (created) => receipts(created).length >= before + 2,
+  );
+  assert.strictEqual(receipts(messages).at(-1)!.content, receipts(messages).at(-2)!.content);
+  const navigation = (await (
+    await fetch(new URL("/api/run-navigation", app.baseUrl))
+  ).json()) as Result<{ id: string; title: string }[]>;
+  assert(navigation.ok);
+  assert.deepStrictEqual(
+    navigation.value
+      .filter((entry) => entry.title === "UI receipt journey · Tidy the project picker")
+      .map((entry) => entry.id),
+    [runId],
+  );
+  await app.screenshot("chat-discord-delivery-retried");
+  const archived = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/archive`, undefined);
+  assert(archived.ok, JSON.stringify(archived));
 });

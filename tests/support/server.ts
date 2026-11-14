@@ -41,8 +41,10 @@ import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
 import {
+  buttonEvent,
   messageEvent,
   startControlledDiscord,
+  type MessageFault,
 } from "../../apps/backend/test/support/controlled-discord.ts";
 import { upstreamPublishedTheme } from "../../apps/backend/test/support/t3-theme-fixture.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
@@ -506,8 +508,11 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     bot: discordBot,
     sessions: discord.sessions.map(({ token, ready, closed }) => ({ token, ready, closed })),
   }),
-  /** An allowed participant mentions the bot in the allowed channel: one new invocation. */
-  "/__fixture/discord/invoke": () => {
+  /**
+   * An allowed participant mentions the bot in the allowed channel: one new invocation, with the
+   * given `content` or the default request. Factory answers in a new thread with the message's ID.
+   */
+  "/__fixture/discord/invoke": (query) => {
     discordInvocations += 1;
     const id = String(300000000000000000n + BigInt(discordInvocations));
     discord.deliver(
@@ -516,9 +521,36 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
         guildId: discordGuild.id,
         channelId: discordGuild.channels[0]!.id,
         id,
+        ...(query.get("content") ? { content: query.get("content")! } : {}),
       }),
     );
     return { id };
+  },
+  /** The messages Discord created so far: text and any confirmation button's custom ID. */
+  "/__fixture/discord/messages": () =>
+    discord.created.map((message) => ({
+      channelId: message.channelId,
+      content: message.content,
+      customId:
+        (message.components as { components: { custom_id: string }[] }[])[0]?.components[0]
+          ?.custom_id ?? null,
+    })),
+  /** Discord meets the next message creates with these faults, in order. */
+  "/__fixture/discord/fault": (query) => {
+    discord.faultMessages(...(query.getAll("fault") as MessageFault[]));
+  },
+  /** The participant clicks the confirmation button `customId` in thread `thread`. */
+  "/__fixture/discord/click": (query) => {
+    discordInvocations += 1;
+    discord.deliver(
+      buttonEvent({
+        bot: discordBot,
+        guildId: discordGuild.id,
+        thread: { id: query.get("thread")!, parentId: discordGuild.channels[0]!.id },
+        id: String(310000000000000000n + BigInt(discordInvocations)),
+        customId: query.get("customId")!,
+      }),
+    );
   },
   "/__fixture/live/requests/reset": () => {
     browserRequests = [];

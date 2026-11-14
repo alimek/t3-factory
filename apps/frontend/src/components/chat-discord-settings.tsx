@@ -15,6 +15,7 @@ import { fieldLabelClass } from "@/components/page";
 import { api } from "../api.ts";
 import { reportDiscordSettings } from "../chat-control-attention.ts";
 import { AccessForm, useAccessSection } from "./chat-discord-access.tsx";
+import { DeliveryDiagnostics } from "./chat-discord-delivery.tsx";
 import { dayAndTime } from "./execution-state.tsx";
 import { Notice } from "./notice.tsx";
 import { SegmentedChoice } from "./segmented-choice.tsx";
@@ -161,8 +162,9 @@ function useDiscordPage() {
 }
 
 /**
- * Settings → Chat control → Discord, host only: the On/Off switch, then the Discord connection and
- * Access, each with its own Save and Discard, and the check of the saved connection.
+ * Settings → Chat control → Discord, host only: the On/Off switch and current delivery and action
+ * recovery facts, then the Discord connection and Access, each with its own Save and Discard, and
+ * the check of the saved connection.
  */
 export function ChatDiscordSettings() {
   const page = useDiscordPage();
@@ -191,6 +193,7 @@ export function ChatDiscordSettings() {
             switchError={page.switchError}
             onTurn={(on) => void page.turn(on)}
           />
+          <DeliveryDiagnostics settings={settings} onSettings={page.setSettings} />
           <ConnectionForm
             settings={settings}
             draft={draft}
