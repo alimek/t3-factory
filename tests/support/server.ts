@@ -516,6 +516,12 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   "/__fixture/appearance/revoke": () => {
     t3.appearance.sessionValid = false;
   },
+  /** A device's access request, made through host operations like the approved journey browser. */
+  async "/__fixture/request-access"(query) {
+    const label = query.get("label");
+    assert(label, "A device label is required");
+    requireSuccess(await factory.requestClientAccess({ label, kind: "browser" }));
+  },
   "/__fixture/approve": () => decideAll("pending", "approve"),
   "/__fixture/revoke": () => decideAll("approved", "revoke"),
   "/__fixture/offline": () => {

@@ -53,12 +53,12 @@ refused.
 
 A desktop client enters the address (`https://<LAN or Tailscale address>:4312`). The
 app checks the server's handshake, shows the certificate fingerprint and asks the user
-to compare it with the host panel. Pasting the panel's **Desktop connection link** (the
+to compare it with the host panel. Pasting the panel's **Desktop link** (the
 address followed by `#sha256=<fingerprint>`) verifies the certificate automatically. Confirming pins that certificate authority; the client then requests
 access under a device name.
 
 A browser profile opens the same HTTPS address. Trust the host's certificate on that
-device first (**Download certificate** on the host panel, or the `/factory-ca.pem` it
+device first (**Browser certificate → Download** on the host panel, or the `/factory-ca.pem` it
 serves, after comparing fingerprints). Installing the Factory CA grants system-wide
 issuer trust to the execution host and processes using its account; use it only for
 a host you trust at that level. Alternatively configure a publicly trusted certificate such
@@ -66,8 +66,9 @@ as one from `tailscale cert` (see [transport security](#transport-security)).
 
 Knowing or reaching the address grants nothing. Every desktop installation and browser
 profile is approved individually on the host panel, where each request shows its
-device name, kind and six-digit verification code. Approve only a request whose code
-matches the requesting screen. Approved clients have full normal Factory access: Flows,
+device name, kind and six-digit verification code. Waiting requests are listed first, and
+the **Devices & access** navigation item shows an attention dot while one waits. Approve only
+a request whose code matches the requesting screen. Approved clients have full normal Factory access: Flows,
 Agents, Runs, Human answers, attention, history and Run operations, with the existing
 revision-conflict behavior. They can also install, repair and reinstall Factory MCP in
 **Settings → Agent reporting**. Clients control the authoritative server remotely:

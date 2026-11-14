@@ -1,9 +1,10 @@
 import { beforeEach, test } from "@e2e-dev/web";
-import { expect } from "e2e";
+import { expect, type Screen } from "e2e";
 import { desktopBridgeOptions, desktopBridgeScript } from "./support/desktop-bridge.ts";
 import {
   approvedBrowser,
   expectServerInstallRequested,
+  openHostDevices,
   openIncompatibleApplicationSettings,
   openApproved,
   openUpgradeReview,
@@ -14,6 +15,69 @@ import {
 beforeEach(async ({ app }) => {
   await remoteFixture(app, "compatible");
   await app.open("/__fixture/remote-browser");
+});
+
+const settingsSections = (screen: Screen) => screen.getByRole("navigation", "Settings sections");
+
+test("the host approves a pending device listed first, which clears the Devices & access attention dot", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openHostDevices(app, browser, "Review tablet");
+  await expect(
+    screen.getByRole("switch", "Allow approved devices on my LAN or tailnet"),
+  ).toBeChecked();
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access, 1 device waiting for approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const devices = screen.getByRole("region", "Devices");
+  await expect(devices.getByRole("group").first()).toContainText("Review tablet");
+  await app.screenshot("host-devices-pending");
+
+  // Act
+  await devices
+    .getByRole("group", "Review tablet, Pending", { exact: true })
+    .getByRole("button", "Approve")
+    .tap();
+
+  // Assert
+  await expect(
+    devices.getByRole("group", "Review tablet, Approved", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access", { exact: true }),
+  ).toBeVisible();
+});
+
+test("the host denies a pending device, which clears the Devices & access attention dot", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openHostDevices(app, browser, "Unknown kiosk");
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access, 1 device waiting for approval", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const devices = screen.getByRole("region", "Devices");
+
+  // Act
+  await devices
+    .getByRole("group", "Unknown kiosk, Pending", { exact: true })
+    .getByRole("button", "Deny")
+    .tap();
+
+  // Assert
+  await expect(devices.getByRole("group", "Unknown kiosk, Denied", { exact: true })).toBeVisible();
+  await expect(
+    settingsSections(screen).getByRole("link", "Devices & access", { exact: true }),
+  ).toBeVisible();
 });
 
 test("a new browser profile waits for host approval, then operates the server's shared Flows", async ({

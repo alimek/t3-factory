@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { KeyboardSettings } from "./keyboard-settings.tsx";
-import { AccessSettings } from "./access-settings.tsx";
+import { AccessSettings, DeviceAccessProvider, usePendingDeviceCount } from "./access-settings.tsx";
 import { AppearanceSettings } from "./appearance-settings.tsx";
 import { DesktopAppSettings } from "./desktop-app-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
@@ -153,7 +153,7 @@ export function SettingsModal() {
   const content = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const close = () => void openSettings(undefined);
-  return (
+  const dialog = (
     <Dialog
       open
       onOpenChange={(open) => {
@@ -198,6 +198,7 @@ export function SettingsModal() {
       </DialogContent>
     </Dialog>
   );
+  return scope === "host" ? <DeviceAccessProvider>{dialog}</DeviceAccessProvider> : dialog;
 }
 
 function SettingsNav({
@@ -263,9 +264,13 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
   const scope = useClientScope();
   const locked = section.managedOnHost === true && scope === "remote";
   const reportingAttention = section.tab === "agent-reporting" && reporting.state === "attention";
+  const pendingDevices = usePendingDeviceCount();
+  const devicesAttention = section.tab === "devices" && pendingDevices > 0;
   let marker: string | undefined;
   if (section.tab === "connection") marker = status;
   else if (reportingAttention) marker = reporting.label;
+  else if (devicesAttention)
+    marker = `${pendingDevices} ${pendingDevices === 1 ? "device" : "devices"} waiting for approval`;
   else if (locked) marker = "Managed on the Factory host";
   const Icon = section.icon;
   return (
@@ -283,7 +288,7 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
       {section.tab === "connection" && (
         <ConnectionStateDot presentation={presentation} label={status} />
       )}
-      {reportingAttention && (
+      {(reportingAttention || devicesAttention) && (
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-attention" />
       )}
       {locked && (

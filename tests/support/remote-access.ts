@@ -70,6 +70,22 @@ export async function openIncompatibleApplicationSettings(app: FixtureApp, scree
   await screen.getByRole("button", "Application settings").tap();
 }
 
+/**
+ * The host's own Devices & access page with one approved device and, requested after it, the
+ * pending device `label`. Leaves the remote browser profile the file's journeys start from.
+ */
+export async function openHostDevices(
+  app: FixtureApp,
+  browser: { clearCookies(filter: { name: string }): Promise<unknown> },
+  label: string,
+) {
+  await remoteFixture(app, `request-access?label=${encodeURIComponent(`Approved · ${label}`)}`);
+  await remoteFixture(app, "approve");
+  await remoteFixture(app, `request-access?label=${encodeURIComponent(label)}`);
+  await browser.clearCookies({ name: "fixture_remote" });
+  await app.open("/settings/devices");
+}
+
 /** Opens `path` as a browser profile the host already approved, without an access request. */
 export const openApproved = (app: FixtureApp, path: string) =>
   app.open(`/__fixture/approved-browser?next=${encodeURIComponent(path)}`);
