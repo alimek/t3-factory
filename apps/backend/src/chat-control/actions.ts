@@ -37,10 +37,12 @@ const REVIEW_CHARACTER_LIMIT = 32_000;
 const confirmationText = (expiresAt: string) =>
   `🔒 Only the person who asked can confirm · expires ${at(expiresAt)}`;
 
+/** The latest expiry whose Discord timestamp has as many digits as any expiry Factory posts. */
+const LONGEST_EXPIRY = new Date(9_999_999_999_000).toISOString();
+
 /** Whether a complete review, its button message included, exceeds what chat may present. */
 export const exceedsReviewLimit = (review: readonly string[]) =>
-  characters([...review, confirmationText(new Date(0).toISOString())].join("")) >
-  REVIEW_CHARACTER_LIMIT;
+  characters([...review, confirmationText(LONGEST_EXPIRY)].join("")) > REVIEW_CHARACTER_LIMIT;
 
 /**
  * A mutation call Factory validated into an exact proposal: what would be performed, which

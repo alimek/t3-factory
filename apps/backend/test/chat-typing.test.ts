@@ -39,13 +39,13 @@ it("traffic from a user Access does not allow shows no typing", async (c) => {
   // Arrange
   const { discord, model } = await conversing(c);
   model.held();
-
-  // Act
   discord.deliver(invocation("300000000000000401", { authorId: UNLISTED_USER }));
 
-  // Assert
-  // Events pass the ingress in delivery order, so a later allowed invocation's typing comes after.
+  // Act
+  // Events pass the ingress in delivery order, so this allowed invocation's typing comes after.
   discord.deliver(invocation("300000000000000402", { channelId: OTHER_THREAD }));
+
+  // Assert
   await discord.request("POST", TYPING);
   expect(typingIn(discord)).toStrictEqual([OTHER_THREAD]);
 });
@@ -89,13 +89,14 @@ it.effect("no typing refresh follows a published reply", (c) =>
     const { discord, model } = yield* clockedConversation(c);
     yield* until(() => answered(discord, "300000000000000405", 1));
     yield* until(() => discord.request("POST", TYPING));
+    yield* TestClock.adjust(REFRESH_MS);
+    model.held();
 
     // Act
-    yield* TestClock.adjust(REFRESH_MS);
+    // A later invocation's typing follows any refresh that time already triggered.
+    discord.deliver(invocation("300000000000000406", { channelId: OTHER_THREAD }));
 
     // Assert
-    model.held();
-    discord.deliver(invocation("300000000000000406", { channelId: OTHER_THREAD }));
     yield* until(() => discord.request("POST", TYPING, 2));
     expect(typingIn(discord)).toStrictEqual([THREAD, OTHER_THREAD]);
   }),
@@ -117,13 +118,14 @@ it.effect("a reset during interpretation ends typing in the thread before the ne
       }),
     );
     yield* until(() => discord.request("PATCH", /\/messages\/%40original$/));
+    yield* TestClock.adjust(REFRESH_MS);
+    model.held();
 
     // Act
-    yield* TestClock.adjust(REFRESH_MS);
+    // A later invocation's typing follows any refresh that time already triggered.
+    discord.deliver(invocation("300000000000000409", { channelId: OTHER_THREAD }));
 
     // Assert
-    model.held();
-    discord.deliver(invocation("300000000000000409", { channelId: OTHER_THREAD }));
     yield* until(() => discord.request("POST", TYPING, 2));
     expect(typingIn(discord)).toStrictEqual([THREAD, OTHER_THREAD]);
   }),
