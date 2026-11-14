@@ -9,6 +9,7 @@ import {
 } from "../agent-draft.ts";
 import { api } from "../api.ts";
 import {
+  useStudioDelivery,
   useStudioRead,
   type StudioDefinitions,
   type StudioDefinitionsSnapshot,
@@ -21,22 +22,21 @@ import { flowUsageCount } from "@/lib/agent-display";
 import { useReportingState } from "../reporting-state.tsx";
 
 type ShownLists = {
-  readonly [K in keyof StudioDefinitionsSnapshot]: NonNullable<
-    StudioDefinitionsSnapshot[K]["value"]
-  >;
+  readonly [K in "agents" | "flows"]: NonNullable<StudioDefinitionsSnapshot[K]["value"]>;
 };
 
 /**
  * Studio's saved Agents and Flows as the Agents page shows them: entering the page waits until
- * both were read for this visit, then later refreshes keep the shown rows. Both lists are shown
- * together, only once both reads of a refresh have answered, so Agents never appear beside
- * another refresh's Flow usage.
+ * both were delivered or read for this visit, then later updates keep the shown rows. Both lists
+ * are shown together, only once both are synchronized, so Agents never appear beside another
+ * delivery's or refresh's Flow usage.
  */
 function useShownLists(definitions: StudioDefinitions) {
   const agentsRead = useStudioRead(definitions, "agents");
   const flowsRead = useStudioRead(definitions, "flows");
-  const visitAgents = useVisitValue(agentsRead);
-  const visitFlows = useVisitValue(flowsRead);
+  const delivery = useStudioDelivery(definitions);
+  const visitAgents = useVisitValue(agentsRead, delivery);
+  const visitFlows = useVisitValue(flowsRead, delivery);
   const [shown, setShown] = useState<ShownLists | null>(null);
   const answered = agentsRead.synchronized && flowsRead.synchronized;
   if (

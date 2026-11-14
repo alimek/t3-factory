@@ -30,6 +30,7 @@ use older/newer peers owned and cleaned up by the same fixture process.
 | Report diagnostics | `tests/report-diagnostics.e2e.ts` | Rejection reason alongside the missing accepted result; one explicit assessment request retained after reload |
 | Remote access | `tests/remote-access.e2e.ts` | Approval, revocation, offline state, compatibility and the client + server upgrade review |
 | Remote connection | `tests/remote-connection.e2e.ts` | Host authorization and automatic connection status |
+| Studio live refresh | `tests/studio-live.e2e.ts` | Flow and Agent lists, sidebar counts, Agent usage and the Flow editor's Agent library following definitions saved through the public API while Studio stays open, without list reads; an approved client of a compatible protocol 9–11 server showing **Live Studio refresh requires a server update.** and re-reading after its own write; that server upgraded in place turning live refresh on while the unsaved Flow draft stays |
 
 Use `pnpm exec e2e run <spec> --trace on --video on --output .e2e/proof/<change>`.
 Live MCP sessions use the same fixture, including seeded Run attention and Human answers.

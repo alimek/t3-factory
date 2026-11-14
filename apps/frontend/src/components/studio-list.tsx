@@ -3,14 +3,16 @@ import { useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import type { StudioRead } from "../studio-definitions.ts";
+import type { StudioDelivery, StudioRead } from "../studio-definitions.ts";
 
 /**
- * A Studio list read's value once a read answered after this page was entered, so entering a
- * page never shows rows read before that visit. Later refreshes keep the shown rows.
+ * A Studio list read's value as a page shows it. A live list is the delivered state. A refreshed
+ * list shows a value only once a read answered after this page was entered, so entering a page
+ * never shows rows read before that visit; later refreshes keep the shown rows.
  */
-export function useVisitValue<V>(read: StudioRead<V>) {
+export function useVisitValue<V>(read: StudioRead<V>, delivery: StudioDelivery) {
   const [entered] = useState(read.value);
+  if (delivery === "live") return read.value;
   return read.value === entered ? null : read.value;
 }
 

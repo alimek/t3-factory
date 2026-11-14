@@ -82,6 +82,21 @@ it("repeated failures to open the socket classify access through the handshake",
   expect(live.delivery()).toBe("offline");
 });
 
+it("a socket that reconnects asks to renegotiate the server protocol; the first connection does not", () => {
+  // Arrange
+  const live = liveHarness();
+  live.owner.acquire(connectionScope);
+  live.sessions[0]?.connected();
+  live.sessions[0]?.disconnected();
+  live.elapse();
+
+  // Act
+  live.sessions[1]?.connected();
+
+  // Assert
+  expect(live.renegotiated).toStrictEqual([2]);
+});
+
 it("hiding and showing the window repeatedly keeps at most one socket open", () => {
   // Arrange
   const live = liveHarness();

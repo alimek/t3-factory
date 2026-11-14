@@ -79,14 +79,20 @@ async function evaluate(): Promise<Gate> {
   }
 }
 
+/** The mounted gate's way to adopt the protocol a recheck found; unset while none is mounted. */
+let adoptProtocol: ((protocol: number) => void) | undefined;
+
 /**
  * A live socket that cannot open says nothing about why; the handshake does. Incompatible or
- * unapproved results hand the window to this gate, which re-evaluates and shows its screen.
+ * unapproved results hand the window to this gate, which re-evaluates and shows its screen. A
+ * compatible server may speak another protocol than before (an upgrade or downgrade behind the
+ * same address); product screens then follow the protocol it now declares, without remounting.
  */
 export async function recheckAccess() {
   const gate = await evaluate();
   if (gate.kind === "incompatible") transport.incompatible(gate.message);
   if (gate.kind === "request" || gate.kind === "pending") transport.accessLost();
+  if (gate.kind === "ready") adoptProtocol?.(gate.serverProtocol);
 }
 
 const recheckMs = 2000;
@@ -105,6 +111,17 @@ export function ClientGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void check();
   }, [check]);
+  useEffect(() => {
+    adoptProtocol = (serverProtocol) =>
+      setGate((previous) =>
+        previous.kind === "ready" && previous.serverProtocol !== serverProtocol
+          ? { ...previous, serverProtocol }
+          : previous,
+      );
+    return () => {
+      adoptProtocol = undefined;
+    };
+  }, []);
   useEffect(() => {
     if (current.kind === "access-lost" || current.kind === "incompatible") void check();
   }, [current.kind, check]);

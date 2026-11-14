@@ -109,7 +109,13 @@ subscription carrying navigation and its open Runs, and, while the composer is s
 launch-choices subscription carrying the Project catalog and Flows with their readiness.
 Protocol 12 servers also serve a Studio subscription carrying every current Agent with its
 settings status and every current Flow with its readiness; Agent usage is derived from those
-Flows. Each read of a view covers navigation and those Runs in one
+Flows. A window holds it only while Studio is open and releases it when Studio closes. Like
+every held scope it gates the window's mutations, so Studio writes, and other product writes,
+wait while it is unsynchronized; drafts stay editable. Toward protocol 9–11 servers Studio
+holds no subscription and re-reads its lists over HTTP instead (see
+[Studio](studio.md#shell)), so that unsupported scope never disables mutations; a server that
+declares protocol 12 and refuses or fails the subscription stays synchronizing, with no HTTP
+fallback, and HTTP answers never mark the scope synchronized. Each read of a view covers navigation and those Runs in one
 read transaction, and its changes travel in one delivery that the window applies at once,
 so one commit's lifecycle, attention and report changes appear together in Run detail and
 the sidebar. Opening or leaving a Run resubscribes the view with a fresh joint snapshot.
@@ -155,6 +161,10 @@ this is not a fixed byte limit on a Run or a durable delivery log.
 
 Every reconnect or visibility gap starts fresh snapshots for active scopes. There is no
 replay cursor or polling fallback for these consumers, and reconnect never replays commands.
+Each later socket connection also repeats the protocol handshake, because a server upgraded or
+downgraded behind the same address may now declare another protocol. Product screens follow the
+renegotiated protocol without remounting: Studio retires its live subscription or its HTTP
+refresh and starts the other, keeping its shown lists, drafts, selection and canvas view.
 Obsolete subscriptions cannot replace the current view. Runner observation, dispatch,
 recovery and handoff scheduling belong to the server: zero subscribers stop no execution,
 and additional subscribers create no additional Runner schedules. See [Run viewing](runs.md#live-viewing)

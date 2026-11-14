@@ -9,6 +9,13 @@ Studio is an almost full-window dialog with a Settings-style header (**Studio / 
 it for native window controls and 16 px elsewhere; browsers use 16 px margins (8 px when narrow). The 192 px sidebar (144 px narrow) has an **AUTHOR** group with **Flows** and **Agents**, each with its
 definition count. Studio and Settings share a short opacity-only transition that reduced motion disables; the underlying sidebar title area stays mounted.
 
+While Studio is open on a protocol 12 server, its Flow and Agent lists, the Agents' runtime summaries
+and saved-Flow usage counts, the sidebar counts and the Flow editor's Agent library follow every
+committed create, save, duplicate and removal live, whichever client or Factory MCP made it, with
+no navigation or retry. On a protocol 9–11 server Studio keeps re-reading these lists after its
+own accepted writes, on navigation and on retry, and shows **Live Studio refresh requires a server
+update.** under its header. Open editors still load their definition once when opened.
+
 The current Flow draft survives navigation to the lists and Agents; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
 rule; reload uses the browser's leave warning). Agent edits are guarded independently of a retained Flow draft.
 
@@ -72,7 +79,7 @@ A save response arriving after leaving refreshes the list without reopening the 
 **Removing.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
 rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at removal time even if the usage count is stale, while removed Flows and Runs never block
 removal. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Runs keep the Agent revision they started with, and removing an absent or removed Agent succeeds.
-Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; an open Studio view shows it after navigation or retry.
+Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; open Studio lists drop it at once on protocol 12 servers and after navigation or retry on older ones.
 
 See [T3 integration](t3-integration.md) for authorization and capability reads.
 
@@ -158,7 +165,7 @@ revision N** (another explicit save, which can conflict again). There is no auto
 **Remove** in Flow details removes the editable definition from Studio and the Run composer after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
 the Flow list, also when another view already removed it: removing an absent or removed Flow succeeds. Runs, their captured revisions, shared Agents and T3 threads are unaffected: active Runs continue, Run canvases show the revision each Run started with, and
 removal is not Archive. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
-Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; an open Studio view shows it after navigation or retry.
+Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; open Studio lists drop it at once on protocol 12 servers and after navigation or retry on older ones.
 
 ## Validation contract
 

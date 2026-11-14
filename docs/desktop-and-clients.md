@@ -314,7 +314,11 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 The current protocol is **12**, and both sides require at least **9**. Protocol 12 added the
 Studio live subscription (`WatchStudio`), which servers declaring an older protocol do not
-serve. Protocol 11 added the Flow's
+serve. Clients subscribe only when the handshake declares at least 12; toward a protocol 9–11
+server Studio re-reads its lists after writes, navigation and retry and shows **Live Studio
+refresh requires a server update.** A client repeats the handshake whenever its live socket
+reconnects, so an upgraded or downgraded server's protocol takes effect without a reload.
+Protocol 11 added the Flow's
 current revision to Run detail; a client shows that a Flow changed since Start only when the
 server's handshake declares at least 11, so a protocol 9 or 10 server's Runs show no revision
 notice. Protocol 10 added the
