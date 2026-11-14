@@ -301,10 +301,22 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
         if (bound.length) changes.runChanged(generation.run_id);
       });
 
+    /** T3 effects on the title thread happen only under the Run's authorization context. */
+    const contextLive = (generation: ReconcileRow) =>
+      Effect.map(
+        ops.getConnection(),
+        (connection) =>
+          connection.ok &&
+          connection.value.state === "ready" &&
+          connection.value.authorizationContext?.id === generation.context_id,
+      );
+
     /**
      * Launches the pending title thread once, beside the Flow: eligibility is checked again, the
      * launch is marked sent, then T3 is asked once. A lost reply leaves the launch uncertain; a
-     * definitive rejection fails the generation.
+     * definitive rejection fails the generation. Like every operation intent, the launch is sent
+     * only under the authorization context it was recorded with: after reauthorization it stays
+     * unsent and times out at its deadline.
      */
     const dispatch = (generation: ReconcileRow) =>
       Effect.gen(function* () {
@@ -320,6 +332,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
         );
         if (problem !== undefined)
           return yield* skipBeforeLaunch(generation.run_id, generation.id, problem);
+        if (!(yield* contextLive(generation))) return;
         const time = yield* now;
         const sent = yield* sql.withTransaction(
           Effect.gen(function* () {
@@ -343,16 +356,6 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
         if (launched.threadId) yield* bindThread(generation, launched.threadId);
         else if (launched.rejected) yield* endPending(generation, "failed", LAUNCH_REJECTED);
       });
-
-    /** T3 effects on the title thread happen only under the Run's authorization context. */
-    const contextLive = (generation: ReconcileRow) =>
-      Effect.map(
-        ops.getConnection(),
-        (connection) =>
-          connection.ok &&
-          connection.value.state === "ready" &&
-          connection.value.authorizationContext?.id === generation.context_id,
-      );
 
     /** The title thread under the worker thread completion rule, read in the Project checkout;
      * null when T3 cannot show it there. */

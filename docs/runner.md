@@ -452,9 +452,9 @@ outcome stays final.
   nothing. A generation whose deadline already passed records the timeout instead. Automatic settlement and turning the
   setting off cancel nothing.
 - **Restart.** Startup and each sweep reconcile every pending generation against its original deadline: an unsent
-  launch is dispatched once, a sent launch without a bound thread is searched for by uniquely verified provenance as
-  an [uncertain worker launch](#ownership-and-restart) is, only until the deadline, and a bound thread is read to see
-  whether it finished without a valid title. Factory never launches a replacement; a launch still unbound at the
+  launch is dispatched once and only under the Run's authorization context, a sent launch without a bound thread is
+  searched for by uniquely verified provenance as an [uncertain worker launch](#ownership-and-restart) is, only until
+  the deadline, and a bound thread is read to see whether it finished without a valid title. Factory never launches a replacement; a launch still unbound at the
   deadline is abandoned.
 - **Cleanup.** After any outcome with a bound thread, while five minutes have not passed since the outcome and only
   under the Run's authorization context, Factory reads the title thread under the [completion

@@ -99,6 +99,27 @@ export function withdrawTitleModelAfterStartCheck(t3: ControlledT3, withdraw: ()
     withdraw();
   };
 }
+/**
+ * The host reauthorizes T3 with a new grant while the title thread's dispatch rechecks eligibility
+ * after Start accepted the Run, so the check passes under the new authorization context. Resolves
+ * once that context is live.
+ */
+export function reauthorizeDuringTitleDispatch(
+  t3: ControlledT3,
+  factory: Pick<FactoryOperations, "recheckConnection">,
+) {
+  return new Promise<void>((resolve) => {
+    let titleChecks = 0;
+    t3.beforeLaunchInspection = async (target) => {
+      // The Flow's own launch checks name a project; the title eligibility checks name only T3.
+      if ("projectId" in target || ++titleChecks < 2) return;
+      delete t3.beforeLaunchInspection;
+      t3.approve("controlled-grant-3");
+      await factory.recheckConnection();
+      resolve();
+    };
+  });
+}
 /** T3 holds the title thread's launch request until the returned call releases it. */
 export function holdTitleThreadLaunch(t3: ControlledT3) {
   let release = () => {};

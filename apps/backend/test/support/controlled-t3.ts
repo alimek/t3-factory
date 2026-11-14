@@ -58,10 +58,10 @@ export class ControlledT3 implements T3Adapter {
   engineStatus = "running";
   pendingRequestCount = 0;
   worktreeLaunchSupported = true;
-  beforeLaunchInspection?: (target: T3Endpoint) => void;
+  beforeLaunchInspection?: (target: T3Endpoint) => void | Promise<void>;
   async inspectLaunchSupport(target: T3Endpoint, workspace: FlowWorkspace["mode"]) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
-    this.beforeLaunchInspection?.(target);
+    await this.beforeLaunchInspection?.(target);
     if (this.launchSupported && workspace === "worktree" && !this.worktreeLaunchSupported)
       return {
         supported: false,

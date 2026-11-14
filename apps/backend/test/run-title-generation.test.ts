@@ -11,6 +11,7 @@ import {
   enableRunTitlesWithCheapModel,
   holdTitleThreadLaunch,
   loseTitleThreadLaunchReply,
+  reauthorizeDuringTitleDispatch,
   resultReported,
   titleGenerationEnded,
   titleEvents,
@@ -544,6 +545,32 @@ it("a restart after a lost title thread launch reply binds the launched thread b
     threadLink: expect.stringContaining(titleThreadReference(fixture.t3).threadId),
   });
   expect(fixture.t3.launchCalls).toBe(2);
+});
+
+it("a title launch recorded under an authorization context that reauthorization replaced is never sent, also after a restart", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const reauthorized = reauthorizeDuringTitleDispatch(fixture.t3, fixture.f);
+  const started = await fixture.f.startRun(fixture.input);
+  assert(started.ok);
+  await reauthorized;
+  await fixture.f.close();
+
+  // Act
+  const restored = await fixture.h.open({ t3: fixture.t3, connectionRetryMs: 60_000 });
+  c.onTestFinished(() => restored.close());
+
+  // Assert
+  const run = await restored.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.titleGeneration).toMatchObject({ state: "pending", threadLink: null });
+  expect(titleEvents(run.value)).toStrictEqual([]);
+  expect(
+    [...fixture.t3.launches.values()].filter((launch) =>
+      launch.payload.title.startsWith("Factory title · "),
+    ),
+  ).toStrictEqual([]);
 });
 
 it("a title thread that finishes without a valid title records failed quietly with a diagnostic on the setting, keeps the automatic title and settles the thread", async (c) => {

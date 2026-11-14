@@ -424,9 +424,11 @@ Flow.
   instance, model and options captured at Start, `interactionMode: "default"` and no `runtimeMode`, like a worker. Its
   title is `Factory title · Run #<n> · <Run id>`, which never matches a worker's
   `Factory #<n> · <position> <name>`; its request key also names the Run. The request, with its key, is recorded
-  when Start accepts the Run. Just before
-  dispatch Factory rechecks eligibility, marks the request sent and calls `t3_thread_launch` once. A definitive
-  rejection fails the generation; a lost reply leaves it pending with no thread bound.
+  when Start accepts the Run. Just before dispatch Factory rechecks eligibility, confirms that the Run's saved
+  authorization context is still the live one, marks the request sent and calls `t3_thread_launch` once. After
+  [reauthorization](#credentials-and-reauthorization) the launch stays unsent, like any operation intent with a
+  mismatched context, and the generation times out at its deadline. A definitive rejection fails the generation; a
+  lost reply leaves it pending with no thread bound.
 - **Launch provenance and recovery.** A sent launch with no bound thread is never sent again, also after a restart.
   Until the deadline, Factory searches the Project for its saved title and binds a thread only under the worker
   [launch provenance](#launch-provenance) rules: the one thread with that title, top-level, in the Project checkout,
