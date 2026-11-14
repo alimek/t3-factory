@@ -17,13 +17,13 @@ test("a desktop user turns on the menu bar icon, which is off by default, in Des
   await browser.addInitScript(desktopBridgeScript, desktopBridgeOptions("client"));
   await openApproved(app, "/settings/desktop");
   await expect(screen.getByRole("heading", "Desktop app")).toBeVisible();
-  await expect(screen.getByRole("checkbox", "Show Factory in the menu bar")).not.toBeChecked();
+  await expect(screen.getByRole("switch", "Show Factory in the menu bar")).not.toBeChecked();
   await app.screenshot("settings-desktop-app-menu-bar-off");
 
   // Act
-  await screen.getByRole("checkbox", "Show Factory in the menu bar").tap();
+  await screen.getByRole("switch", "Show Factory in the menu bar").tap();
 
   // Assert: the stand-in bridge publishes the stored choice like the desktop shell.
-  await expect(screen.getByRole("checkbox", "Show Factory in the menu bar")).toBeChecked();
+  await expect(screen.getByRole("switch", "Show Factory in the menu bar")).toBeChecked();
   await app.screenshot("settings-desktop-app-menu-bar-on");
 });

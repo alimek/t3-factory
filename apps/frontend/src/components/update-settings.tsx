@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { ApplicationUpdate, UpdateChannel } from "@t3-factory/contracts";
-import { SectionLabel } from "@/components/page";
 import { cn } from "@/lib/utils";
 import type { DesktopState } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { SegmentedChoice } from "./segmented-choice.tsx";
+import { SettingsGroup, SettingsRow } from "./settings-page.tsx";
 import { UpdateControl } from "./update-control.tsx";
 
 const channelOptions = [
@@ -52,34 +52,34 @@ export function UpdateSettings({ state, local }: { state: DesktopState; local: b
     setError(result.ok ? "" : result.message);
   };
   return (
-    <section aria-label="Updates" className="grid gap-3">
-      <SectionLabel>Updates</SectionLabel>
-      <p id="release-channel" className="text-sm text-foreground">
-        Release channel
-      </p>
-      <SegmentedChoice
-        labelledBy="release-channel"
-        value={state.updateChannel}
-        options={channelOptions}
-        onChange={(channel) => void choose(channel)}
-      />
-      <p className="text-xs text-muted-foreground">
-        Stable · Tagged releases from main.
-        <br />
-        Beta · Nightly with new commits, plus manual builds.
-        {state.updateChannel === "stable" && state.version.includes("-beta.") && (
+    <SettingsGroup label="Updates">
+      <SettingsRow
+        title="Release channel"
+        description={
           <>
-            <br />
-            This beta stays installed until a newer stable release is published.
+            Stable: tagged releases from main. Beta: nightly and manual builds.
+            {state.updateChannel === "stable" &&
+              state.version.includes("-beta.") &&
+              " This beta stays installed until a newer stable release is published."}
           </>
+        }
+        control={(text) => (
+          <SegmentedChoice
+            labelledBy={text.title}
+            value={state.updateChannel}
+            options={channelOptions}
+            onChange={(channel) => void choose(channel)}
+          />
         )}
-      </p>
-      <p role="status" className={cn("text-sm", error && "text-destructive")}>
-        {error || statusLine(state.update)}
-      </p>
-      <div>
-        <UpdateControl inline includeServer={!local} />
-      </div>
-    </section>
+      />
+      <SettingsRow
+        description={
+          <span role="status" className={cn(error && "text-destructive")}>
+            {error || statusLine(state.update)}
+          </span>
+        }
+        control={<UpdateControl inline includeServer={!local} />}
+      />
+    </SettingsGroup>
   );
 }

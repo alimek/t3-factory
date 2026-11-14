@@ -79,6 +79,12 @@ Unavailable choices in Agent execution settings stay visible and disabled, with 
 Long menus must stay within the viewport and scroll their choices without hiding search
 or actions.
 
+Settings sections share one page template instead of styling their own headers and
+footnotes: a header with the title, a one-line description and optionally a status pill, the
+"Managed on the Factory host" chip and one primary action; then labelled cards of rows, each
+ending in one control; label/value rows for read-only facts; and closed disclosures for
+explanations and diagnostics. On/off settings use the switch, named by their row's title.
+
 Settings and Studio use the same dialog conventions. The Run shell stays mounted behind
 them, while hidden content is inert. Unsaved-change guards and keyboard behavior are
 specified in [Studio](studio.md) and [Keyboard shortcuts](keyboard-shortcuts.md).

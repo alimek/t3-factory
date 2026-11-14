@@ -1,5 +1,7 @@
 import { useClientScope, useServerInheritsAppearance } from "../client-scope.ts";
+import { desktopBridge } from "../desktop-bridge.ts";
 import { AppearanceChoice } from "./appearance-choice.tsx";
+import { SettingsPage } from "./settings-page.tsx";
 import { ThemeColorSettings, ThemeColorsNote } from "./theme-color-settings.tsx";
 
 /**
@@ -10,13 +12,16 @@ export function AppearanceSettings() {
   const host = useClientScope() === "host";
   const inheritsAppearance = useServerInheritsAppearance();
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2">
-        <h2 className="text-title font-semibold text-foreground">Appearance</h2>
-        <p className="text-sm text-muted-foreground">How Factory looks on this device.</p>
-      </div>
-      <AppearanceChoice note={inheritsAppearance && !host && <ThemeColorsNote />} />
-      {inheritsAppearance && host && <ThemeColorSettings />}
-    </div>
+    <SettingsPage
+      title="Appearance"
+      description={
+        desktopBridge()
+          ? "Saved for this desktop installation. Other devices and browsers keep their own choice."
+          : "Saved in this browser profile for this Factory address. Other browsers and devices keep their own choice."
+      }
+    >
+      <AppearanceChoice />
+      {inheritsAppearance && (host ? <ThemeColorSettings /> : <ThemeColorsNote />)}
+    </SettingsPage>
   );
 }

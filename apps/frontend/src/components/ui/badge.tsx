@@ -13,6 +13,7 @@ const badgeVariants = cva(
         destructive: "border-destructive/50 bg-destructive/10 text-destructive",
         attention: "border-attention/50 bg-attention/10 text-attention",
         success: "border-success/50 bg-success/10 text-success",
+        info: "border-status-waiting/50 bg-status-waiting/10 text-status-waiting",
         outline:
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
