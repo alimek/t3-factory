@@ -359,13 +359,13 @@ it("a reply longer than one Discord message is published completely as ordered p
   expect(replies.every((part) => part.length <= 2000)).toBe(true);
 });
 
-it("the 41st turn evicts the oldest whole turn and its reply says older context is gone", async (c) => {
+it("the 41st turn evicts the oldest whole turn and the next reply says older context is gone", async (c) => {
   // Arrange
   const { discord, model } = await conversing(c);
   await conversationOf(discord, 40, 310000000000000000n);
+  await answered(discord, "300000000000000121", 41);
 
   // Act
-  await answered(discord, "300000000000000121", 41);
   const replies = await answered(discord, "300000000000000122", 42);
 
   // Assert
@@ -382,9 +382,9 @@ it("retained conversational text stays within 24 KiB by evicting the oldest whol
   await answered(discord, "300000000000000123", 1, { content: "a".repeat(7000) });
   await answered(discord, "300000000000000124", 2, { content: "b".repeat(7000) });
   await answered(discord, "300000000000000125", 3, { content: "c".repeat(7000) });
+  await answered(discord, "300000000000000126", 4, { content: "d".repeat(7000) });
 
   // Act
-  await answered(discord, "300000000000000126", 4, { content: "d".repeat(7000) });
   await answered(discord, "300000000000000127", 5);
 
   // Assert

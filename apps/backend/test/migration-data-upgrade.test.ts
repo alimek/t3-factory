@@ -125,7 +125,7 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
   ]);
 });
 
-it("upgraded Runs have no originating thread: turning Chat control On with their Project granted posts no status card", async (c) => {
+it("upgraded Runs have no originating thread: with Chat control On and their Project granted, an invocation's reply is the only message Factory posts", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   const model = await controlledModelProvider(c);
@@ -145,12 +145,10 @@ it("upgraded Runs have no originating thread: turning Chat control On with their
     channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [fixture.project.id] }],
   });
   assert(access.ok, JSON.stringify(access));
-
-  // Act
   await turnedOn(factory, discord);
 
-  // Assert
-  // Owed cards go out as soon as the session serves; a later invocation's reply is the sentinel.
+  // Act
+  // Owed cards go out as soon as the session serves, before an invocation is answered.
   discord.deliver(
     messageEvent({
       bot: discordBot,
@@ -159,6 +157,8 @@ it("upgraded Runs have no originating thread: turning Chat control On with their
       id: "600000000000000001",
     }),
   );
+
+  // Assert
   await discord.createdMessages(1);
   expect(discord.created.map((message) => message.content)).toStrictEqual(["OK"]);
 });

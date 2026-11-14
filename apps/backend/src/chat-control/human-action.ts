@@ -298,6 +298,7 @@ export function humanAnswerAction(sql: SqlClient.SqlClient, operations: HumanAns
       }
       return `Factory did not accept it: ${clip((outcome.facts as RejectedFacts).message, 300)}`;
     },
+    target: (parameters) => (parameters as unknown as AnswerParameters).occurrenceId,
   };
 
   const tool: MutationTool = {

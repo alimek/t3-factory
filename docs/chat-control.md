@@ -459,13 +459,21 @@ and the exact prompt in full. It discloses that the Flow's and its Agents' curre
 and workspace setting are resolved at confirmation without another review. A review is at most 32,000
 Unicode characters and goes out as fully visible ordered messages; only after every part was
 delivered does Factory post the last message with one **Confirm** button. A part that fails, or a
-button Discord definitely refused, leaves nothing to confirm and Factory says so.
+button Discord definitely refused, leaves nothing to confirm and Factory says so. Before each part
+and before the button, Factory checks again that the proposal is still pending, Chat control is On,
+Access still allows the requester and the targeted Projects in that channel, the requester's Discord
+access is current and the conversation was not reset; otherwise it stops posting the review, posts
+no button and the proposal is not presented.
 
 The consent is bound to the requester, the operating application, the thread, the exact operation
 and parameters and the model's call that proposed it. The button's first dispatch fixes its lifetime
 at five minutes; nothing renews it, including an uncertain delivery or a restart. Asking again for the
-identical action while its review waits points to the existing button instead of posting another; a
-correction names the pending proposal it supersedes, which then ends. A reply such as "yes" is never
+identical action while its review waits points to the existing button instead of posting another. A
+new proposal by the same requester in the same thread for the same operation and primary target (a
+Start's Project, a Human answer's occurrence, an Archive's Run) with different parameters is a
+correction: it ends every earlier pending review of that target as superseded before its own review is
+posted, whether or not the model named one. Proposals for other targets stay independent unless the
+model names the one it supersedes; expired and confirmed proposals are never changed. A reply such as "yes" is never
 consent: the model is told to point to the button, and later turns see each proposal's current state
 (waiting, expired, accepted with the Run's identity, rejected or no longer valid) as a Factory fact,
 so a status question reads it instead of proposing the action again. A waiting confirmation occupies no
@@ -522,14 +530,21 @@ from the new bot once it is authenticated and On.
 
 Factory records its intent before creating a message. Discord's rate limiting is retried with
 waits from one second doubling to five minutes. A definite refusal (for example a deleted or locked
-thread or missing bot permissions) waits for correction and Retry. A create whose outcome Factory
-cannot prove, because the connection dropped, Discord answered with a server error or Factory
-stopped while sending, is never repeated automatically. Settings → Chat control → Discord lists
+thread or missing bot permissions) waits for correction and Retry. Every message create carries a
+nonce that stays the same for that message, and Factory asks Discord to enforce it: Discord then
+returns the message an earlier create with the same nonce made, for a few minutes, instead of creating
+another. When the connection dropped or Discord answered with a server error, so the outcome is
+unproven, Factory asks again with the same nonce at most twice, within one minute of the first
+request. The outcome then becomes definite: Discord's message, or a definite refusal. Beyond that
+window, when the session ends meanwhile or after Factory stopped while sending, the create is unknown
+and never repeated automatically; identical text or a missing copy is never taken as proof. Settings → Chat control → Discord lists
 these current problems, with their destination and time, and confirmed actions whose outcome is
 still being reconciled. Retry of an unknown message first warns that Discord may show it twice;
 each Retry is one attempt, never repeats the action, and a new unknown outcome needs a new choice.
-Reviews are never retried: an uncertain review becomes usable only if its button is actually
-clicked, and otherwise expires so the requester asks again.
+Review parts and buttons follow the same nonce rule, so a button Discord already created is not posted
+twice and keeps the expiry its first dispatch fixed. Reviews are never retried by the host: an
+uncertain review becomes usable only if its button is actually clicked, and otherwise expires so the
+requester asks again.
 
 ### Originating thread
 
@@ -577,8 +592,8 @@ permissions or Discord's active-thread limit is a failed delivery in Settings wi
 Retry. Only Discord's Unknown Message answer to an edit proves the card deleted; an unknown or deleted
 thread does not. A deleted card is replaced automatically once per Run; if that replacement is deleted
 too, Factory creates the next card only on the host's Retry, one attempt at a time, and restarts,
-reconnects and time never renew the allowance. Card creates follow the receipt rules above: an
-unproven create is unknown and only the warned Retry sends it again, while an edit is safe to repeat
+reconnects and time never renew the allowance. Card creates follow the receipt rules above: a create
+still unproven after its nonce re-attempts is unknown and only the warned Retry sends it again, while an edit is safe to repeat
 and is retried with waits. A request already sent when a session is released (Off, a token rotation or a
 stop) is allowed to finish for up to ten seconds, so its answer is recorded.
 
@@ -629,7 +644,7 @@ and when a quiet Run's card stays the old bot's, that Run's catch-up says once t
 messages are no longer updated.
 
 Notice deliveries follow the card's rules: intent is recorded before each create, edits are repeated
-with waits, an unproven create is unknown and only the warned Retry sends it again, and failures appear in
+with waits, a create still unproven after its nonce re-attempts is unknown and only the warned Retry sends it again, and failures appear in
 Settings with their correction. A notice Discord proved deleted is not recreated: its pending matters
 stay on the card. A notice never created whose matters all resolved, including one that failed or whose
 create is unknown, is no longer owed and leaves Settings.
@@ -661,8 +676,10 @@ member lookup used after an outage are not yet qualified against Discord.
 
 Reviews, confirmation buttons, their private answers, receipts, status cards, notices and delivery
 failures are tested against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a
-message create or edit, and models deleted messages and threads and archived, locked and limited
-threads. Button payloads, ephemeral answers to button clicks, message edits, unarchiving, Discord's
-real error codes for archived, locked or deleted threads and messages, and message-create
-deduplication are not yet qualified against Discord; Factory uses no nonce deduplication, treats every
-unproven create as unknown and does not search for copies an unknown create may have left.
+message create or edit, models deleted messages and threads and archived, locked and limited
+threads, and returns the earlier message for a repeated enforced nonce until a test lets the
+uniqueness window pass. Button payloads, ephemeral answers to button clicks, message edits,
+unarchiving, Discord's real error codes for archived, locked or deleted threads and messages, and
+Discord's nonce enforcement and the length of its uniqueness window are not yet qualified against
+Discord ([#323](https://github.com/alimek/t3-factory/issues/323)). Factory does not search for copies
+an unknown create may have left.

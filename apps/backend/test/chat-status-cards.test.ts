@@ -26,7 +26,7 @@ import {
   userEnvelopes,
 } from "./support/chat-conversation.ts";
 import { addedProject, calls, readRun } from "./support/chat-runs.ts";
-import { PARTICIPANT_ID } from "./support/controlled-discord.ts";
+import { PARTICIPANT_ID, unproven } from "./support/controlled-discord.ts";
 import { resultHeld, resultReported, settled } from "./support/scenarios.ts";
 import { cardProblem, messageShows, chatStartedRun } from "./support/status-cards.ts";
 
@@ -394,7 +394,7 @@ it("a card create Discord may already have performed is not repeated and is show
   // Arrange
   const world = await startingWorld(c);
   const button = await proposedStart(world, "600000000000000001", 4);
-  world.discord.faultMessages("delivered", "lost");
+  world.discord.faultMessages("delivered", ...unproven("lost"));
 
   // Act
   await clicked(world.discord, button, "610000000000000001", 1);
@@ -416,9 +416,10 @@ it("the warned Retry of an unknown card create posts it once more with the curre
   // Arrange
   const world = await startingWorld(c);
   const button = await proposedStart(world, "600000000000000001", 4);
-  world.discord.faultMessages("delivered", "lost");
+  world.discord.faultMessages("delivered", ...unproven("lost"));
   await clicked(world.discord, button, "610000000000000001", 1);
   const [problem] = (await cardProblem(world.factory, "unknown")).delivery.problems;
+  world.discord.nonceWindowPassed();
   const navigation = await world.factory.listRunNavigation();
   assert(navigation.ok);
   assert((await world.factory.snoozeRun(navigation.value[0]!.id)).ok);

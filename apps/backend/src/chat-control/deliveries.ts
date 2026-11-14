@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -28,16 +30,16 @@ export interface ConfirmationButton {
 }
 
 /**
- * How the operating session sends Factory messages: `create` resolves with Discord's message ID,
- * `edit` replaces a message's text, and `reopen` unarchives an archived thread unless Discord shows
- * it locked, which Factory never undoes.
+ * How the operating session sends Factory messages: `create` resolves with Discord's message ID
+ * and asks Discord to enforce the create's `nonce`, `edit` replaces a message's text, and `reopen`
+ * unarchives an archived thread unless Discord shows it locked, which Factory never undoes.
  */
 export interface DiscordSender {
   readonly applicationId: string;
   readonly create: (
     destination: Destination,
     text: string,
-    button?: ConfirmationButton,
+    options: { readonly nonce: string; readonly button?: ConfirmationButton },
   ) => Promise<string>;
   readonly edit: (destination: Destination, messageId: string, text: string) => Promise<void>;
   readonly reopen: (destination: Destination) => Promise<"open" | "reopened" | "locked">;
@@ -49,7 +51,7 @@ export interface DiscordSender {
  * `unknown` when no answer proves whether Discord created the message: a lost connection, a
  * server error or an unreadable success.
  */
-export type SendFailure = "transient" | "rejected" | "unknown";
+type SendFailure = "transient" | "rejected" | "unknown";
 
 /** Discord's HTTP status and JSON error code of a failed request, as the adapter kept them. */
 function discordError(error: unknown): { status?: number; code?: number } {
@@ -63,7 +65,7 @@ function discordError(error: unknown): { status?: number; code?: number } {
   };
 }
 
-export function sendFailure(error: unknown): SendFailure {
+function sendFailure(error: unknown): SendFailure {
   const { status } = discordError(error);
   if (status === undefined || status >= 500) return "unknown";
   return status === 429 ? "transient" : "rejected";
@@ -159,6 +161,60 @@ const bounded: Request = <A>(send: () => Promise<A>) =>
     );
   });
 
+/** Re-attempts of an unproven create end after this many requests in all. */
+const DEDUPLICATED_REQUESTS = 3;
+/**
+ * Discord returns the message an earlier create with the same nonce made, instead of creating
+ * another, for a few minutes after it. Factory re-attempts only well inside that window.
+ */
+const DEDUPLICATION_WINDOW_MS = 60_000;
+
+/** A stable nonce for one create intent, within Discord's 25 characters. */
+export const nonceOf = (...intent: readonly string[]) =>
+  createHash("sha256").update(intent.join("\n")).digest("hex").slice(0, 25);
+
+/** How one create intent ended: Discord's message ID, or what its failure proves. */
+type Created =
+  | { readonly messageId: string }
+  | { readonly failure: SendFailure; readonly cause: unknown };
+
+/**
+ * Creates one message under its intent's nonce. When no answer proves whether Discord created it,
+ * Factory asks again with the same nonce, which Discord enforces: it returns the message the
+ * earlier request created instead of creating another. At most two re-attempts, within one minute
+ * of the first request; once a request was unproven, only a message ID or a definite refusal ends
+ * the series, and anything else leaves it unknown. Re-attempts stop when the session is released,
+ * so another session never repeats an unproven create on its own.
+ */
+export const createDeduplicated = (
+  sender: DiscordSender,
+  destination: Destination,
+  text: string,
+  nonce: string,
+  button?: ConfirmationButton,
+) =>
+  Effect.gen(function* (): Effect.fn.Return<Created> {
+    const firstAt = yield* Clock.currentTimeMillis;
+    let unproven = false;
+    for (let requests = 1; ; requests++) {
+      const sent = yield* Effect.result(
+        bounded(() =>
+          sender.create(destination, text, { nonce, ...(button === undefined ? {} : { button }) }),
+        ),
+      );
+      if (sent._tag === "Success") return { messageId: sent.success };
+      const failure = sendFailure(sent.failure.cause);
+      if (failure === "rejected" || (failure === "transient" && !unproven))
+        return { failure, cause: sent.failure.cause };
+      unproven = true;
+      const elapsed = (yield* Clock.currentTimeMillis) - firstAt;
+      if (requests >= DEDUPLICATED_REQUESTS || elapsed >= DEDUPLICATION_WINDOW_MS)
+        return { failure: "unknown", cause: sent.failure.cause };
+      // A released session's interruption arrives here, before any re-attempt.
+      yield* Effect.interruptible(Effect.void);
+    }
+  });
+
 const destinationOf = (row: DeliveryRow): Destination => ({
   guildId: row.guild_id,
   parentChannelId: row.parent_channel_id,
@@ -213,8 +269,9 @@ const problemOf = (row: DeliveryRow): ChatDeliveryProblem => ({
 /**
  * Chat control's owed Discord messages. Each create is preceded by its persisted intent, a
  * definite transient rejection retries with backoff, a definite refusal waits for correction and
- * Retry, and a create Factory cannot prove either way is never repeated automatically: only the
- * host's warned Retry sends it again, one attempt at a time. Delivery is attempted only while a
+ * Retry, and a create Factory cannot prove either way is repeated automatically only under its
+ * Discord-enforced nonce within the bounded deduplication window. Beyond that it is unknown: only
+ * the host's warned Retry sends it again, one attempt at a time. Delivery is attempted only while a
  * verified session operates, and never changes the action it reports.
  */
 export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
@@ -371,25 +428,19 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
         // Intent before the create: a crash from here on leaves an unknown delivery, never a
         // silent repeat.
         yield* sql`UPDATE chat_deliveries SET state='sending',attempts=${attempts} WHERE id=${row.id} AND state='owed'`;
-        const sent = yield* Effect.result(
-          request(() =>
-            sender.create(
-              {
-                guildId: row.guild_id,
-                parentChannelId: row.parent_channel_id,
-                threadId: row.thread_id,
-              },
-              row.text,
-            ),
-          ),
+        const sent = yield* createDeduplicated(
+          sender,
+          destinationOf(row),
+          row.text,
+          nonceOf("delivery", row.id),
+        ).pipe(
+          Effect.onInterrupt(() => record(row.id, { state: "unknown", problem: INTERRUPTED })),
         );
-        if (sent._tag === "Success")
-          return yield* delivered(row, sent.success, sender.applicationId);
-        const failed = sendFailure(sent.failure.cause);
-        if (failed === "transient") return yield* later(row.id, attempts, PROBLEMS.transient);
+        if ("messageId" in sent) return yield* delivered(row, sent.messageId, sender.applicationId);
+        if (sent.failure === "transient") return yield* later(row.id, attempts, PROBLEMS.transient);
         yield* record(row.id, {
-          state: failed === "rejected" ? "failed" : "unknown",
-          problem: failed === "rejected" ? correction(sent.failure.cause) : PROBLEMS.unknown,
+          state: sent.failure === "rejected" ? "failed" : "unknown",
+          problem: sent.failure === "rejected" ? correction(sent.cause) : PROBLEMS.unknown,
         });
       });
 

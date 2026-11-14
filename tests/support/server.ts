@@ -539,6 +539,10 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   "/__fixture/discord/fault": (query) => {
     discord.faultMessages(...(query.getAll("fault") as MessageFault[]));
   },
+  /** Discord's nonce uniqueness window passed: a repeated nonce creates a new message again. */
+  "/__fixture/discord/nonce-window": () => {
+    discord.nonceWindowPassed();
+  },
   /**
    * A moderator changes thread `thread`: `state=locked` archives and locks it, `state=unlocked`
    * unlocks it, leaving it archived.

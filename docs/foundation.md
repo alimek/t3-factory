@@ -45,52 +45,25 @@ and restricted OAuth credentials live outside project repositories.
   records when that request was sent, the thread T3 launched, when it reached its outcome and the claims for its one
   Stop and one T3 thread settlement. Migration `080` adds the setting off and gives existing Runs no generation. No
   other data changes.
-- [Chat control](chat-control.md) keeps its On/Off state and its Language model section in one SQLite row each.
-  The section's row holds the provider kind, base URL, model, revision, save time and the latest Test's revision,
-  time, outcome and message. Its optional key lives in an owner-only credential file that the row names: a save
-  stages a new file durably, then commits the row in one transaction, so restart never mixes a configuration
-  with another revision's key, and files no committed row names are removed. Migration `081` adds both rows with
-  Chat control Off and an empty section. No other data changes. Migration `082` adds the Discord connection
-  section's row the same way: Application ID, Public Key, revision, save time, the latest connection check's
-  revision, time, outcome and message, and the name of its bot token's credential file; it starts empty.
-  Migration `083` adds the Access section (its revision row, allowed users, allowed channels and the
-  Project IDs each grants, without a foreign key so an unknown Project stays visible), the persisted
-  rejection that keeps an On state from reconnecting until Retry, one conversation generation per
-  application and Discord thread, content-free markers of Discord messages and commands already taken,
-  and Chat SDK subscriptions and expiring key-value state. Access starts empty. No other data changes.
-  Migration `084` adds each conversation's last admission time and owed notice, its retained turns
-  (admitted message, selected reply, compact facts and published reply, deleted when the conversation is
-  cleared), content-free markers of unfinished invocations for resend notices, and the Language model's
-  runtime problem columns, which Test never writes. Existing conversations keep their generation and no
-  other data changes. Migration `085` adds the read handles Chat control's Run tools issue: each names a
-  search position or the section versions of one Run read, belongs to a conversation generation and the
-  invocation that issued it, and is deleted with that turn or when the conversation is cleared. It starts
-  empty and no other data changes. Migration `086` adds chat action proposals with their requester-bound
-  consent and original expiry, confirmed action attempts whose ID is the shared operation's request
-  identity, with their accepted or rejected facts, the backend-private originating thread of each
-  chat-started Run and owed Discord deliveries with their persisted intent and outcome. None depend on
-  conversation turns, so clearing a conversation keeps them. Existing Runs get no originating thread and
-  no other data changes. Migration `087` records, on a Human occurrence, the request an attributed answer
-  was applied under, so a chat action proves its own answer; existing answers have none. It also allows
-  Human answer proposals and keeps existing proposals. Migration `088` likewise records the request an
-  attributed Archive was applied under on the Run and allows Archive proposals; existing Archived Runs
-  have none.
-  Migration `089` rebuilds the owed Discord deliveries so they also hold status card
-  messages, with their Run, and lost (deleted) and retired (another application's) card messages kept as
-  provenance, and adds one status card lineage per chat-started Run: its current card message, whether
-  its one automatic replacement was used and the application it replaced. Existing receipts keep every
-  value, and Runs without an originating thread get no card.
-  Migration `090` rebuilds the owed deliveries again so they also hold attention, lifecycle and
-  catch-up notices, keeping every existing value, and records per chat-started Run the lifecycle its
-  notices accounted for, each notice's reported lifecycle change, and each attention matter with the
-  notice that announced it. Chat-started Runs recorded before it start from their current state, so
-  the upgrade posts nothing about earlier matters or outcomes.
-  Migration `092` removes the configured Application ID. The connection row keeps the Public Key and
-  token; a check records the application Discord authenticated; Chat control's state records the
-  application its operating connection authenticated as, starting from the formerly configured one,
-  because existing conversations, consent and messages belong to it. A stored identity-mismatch check
-  reached a ready session and becomes a verified check of the application it reported, and an On state
-  rejected for another application's token stays rejected until the owner retries.
+- [Chat control](chat-control.md) keeps its state in SQLite: the On/Off switch and one row per Settings section
+  (Language model, Discord connection, Access), each with its own revision so sections save independently, and
+  Test or check evidence apart from runtime health. Secrets never enter SQLite: the model key and the bot token
+  each live in an owner-only credential file the section's row names. A save stages the file durably, then
+  commits the row in one transaction, so restart never mixes a configuration with another revision's secret,
+  and files no committed row names are removed. Conversation memory, read handles and markers of handled
+  Discord events or unfinished invocations belong to a conversation generation or expire, and clearing a
+  conversation deletes them. Chat actions do not depend on conversation turns: proposals with their
+  requester-bound consent and original expiry, attempts identified by the shared operation's request identity,
+  the originating thread of each chat-started Run and owed Discord deliveries with their persisted intent and
+  outcome survive clearing, Off and restarts. Human answers and Archives record the request they were applied
+  under, so a chat action proves its own effect. Migrations `081` to `090` keep every existing row (rebuilt
+  tables copy their values), start with Chat control Off and empty sections, give existing Runs no originating
+  thread and post nothing about earlier Run activity.
+  Chat control's state also records the Discord application its operating connection authenticated as, which
+  owns the conversations, consent and messages; no Application ID is configured. Migration `092` carries a
+  formerly configured Application ID over as that recorded application, turns a stored identity-mismatch check
+  into a verified check of the application Discord reported, keeps a rejection for another application's token
+  until Retry and keeps every other value.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

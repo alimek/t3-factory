@@ -689,11 +689,17 @@ export const makeInterpreter = (session: InterpreterSession) =>
                   session.post(invocation.conversation, CONTEXT_NOTICES[notice]),
                 ),
               );
-            const presented = yield* proposals.present(opened.id, proposed, session.sender, {
-              guildId: invocation.conversation.guildId,
-              parentChannelId: invocation.conversation.parentChannelId,
-              threadId: invocation.conversation.threadId,
-            });
+            const presented = yield* proposals.present(
+              opened.id,
+              proposed,
+              session.sender,
+              {
+                guildId: invocation.conversation.guildId,
+                parentChannelId: invocation.conversation.parentChannelId,
+                threadId: invocation.conversation.threadId,
+              },
+              invocation.permitted,
+            );
             if (presented === "presented")
               yield* generations.record(
                 invocation.conversation,

@@ -103,10 +103,11 @@ class FactoryDiscordAdapter extends DiscordAdapter {
 
   /**
    * Creates one Factory message, optionally with a confirmation button, in a single request and
-   * resolves with Discord's message ID. Failures keep the adapter's error, whose status tells
-   * a definite refusal from an unproven outcome.
+   * resolves with Discord's message ID. Discord enforces `nonce`: a create repeating an earlier
+   * one's nonce returns that message instead of creating another. Failures keep the adapter's
+   * error, whose status tells a definite refusal from an unproven outcome.
    */
-  async create(threadId: string, text: string, button?: ConfirmationButton) {
+  async create(threadId: string, text: string, nonce: string, button?: ConfirmationButton) {
     const { payload } = this.buildMessagePayload({ raw: text });
     const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
     const response = await this.discordFetch(
@@ -114,6 +115,8 @@ class FactoryDiscordAdapter extends DiscordAdapter {
       "POST",
       {
         ...payload,
+        nonce,
+        enforce_nonce: true,
         ...(button
           ? {
               components: [
@@ -344,8 +347,8 @@ export const makeDiscordOperation = (
           adapter.post(encodeThreadId(key), text);
         const sender: DiscordSender = {
           applicationId,
-          create: (destination, text, button) =>
-            adapter.create(encodeThreadId(destination), text, button),
+          create: (destination, text, { nonce, button }) =>
+            adapter.create(encodeThreadId(destination), text, nonce, button),
           edit: (destination, messageId, text) =>
             adapter.edit(encodeThreadId(destination), messageId, text),
           reopen: (destination) => adapter.reopen(encodeThreadId(destination)),

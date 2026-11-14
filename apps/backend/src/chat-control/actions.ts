@@ -9,9 +9,11 @@ import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
 import type { ConversationKey } from "./conversations.ts";
 import {
+  createDeduplicated,
+  nonceOf,
   oweDelivery,
-  sendFailure,
   type ChatDeliveries,
+  type ConfirmationButton,
   type Destination,
   type DiscordSender,
 } from "./deliveries.ts";
@@ -75,6 +77,8 @@ export interface ChatOperation {
   ) => string;
   /** One line for the requester's repeated click: what this decided outcome was. */
   readonly summary: (outcome: Extract<ActionOutcome, { facts: JSONValue }>) => string;
+  /** The primary target whose newer proposal corrects an older one: a Project, occurrence or Run. */
+  readonly target: (parameters: JSONValue) => string;
 }
 
 /** Where and for whom a proposal was made, from the admitted invocation. */
@@ -257,8 +261,10 @@ export function makeChatActions(
 
   /**
    * Records a proposal, or finds the identical one still waiting for this requester here: same
-   * requester, context, operation and exact parameters keep their identity and expiry. A
-   * correction ends the pending proposal it supersedes.
+   * requester, context, operation and exact parameters keep their identity and expiry. Otherwise
+   * it corrects every pending proposal of the same requester, context and operation for the same
+   * primary target, whatever the model said, and the one `supersedes` names: they end as
+   * superseded before the new review is presented. Expired and confirmed proposals stay as they are.
    */
   const open = (proposed: Proposed, context: ProposalContext) =>
     sql.withTransaction(
@@ -276,11 +282,24 @@ export function makeChatActions(
             AND state IN ('presented','accepting') AND expires_at>${at} ORDER BY expires_at DESC LIMIT 1`;
         if (pending) return { kind: "pending", id: pending.id, expiresAt: pending.expires_at };
         const { conversation } = context;
-        if (proposed.supersedes !== undefined)
-          yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded'
-              WHERE id=${proposed.supersedes} AND application_id=${conversation.applicationId}
-                AND thread_id=${conversation.threadId} AND requester_id=${context.requesterId}
-                AND operation=${proposed.operation} AND state IN ('preparing','presented')`;
+        const operation = byName.get(proposed.operation)!;
+        const target = operation.target(proposed.parameters);
+        const live = yield* sql<{
+          id: string;
+          parameters_json: string;
+        }>`SELECT id,parameters_json FROM chat_proposals WHERE application_id=${conversation.applicationId}
+            AND thread_id=${conversation.threadId} AND requester_id=${context.requesterId}
+            AND operation=${proposed.operation} AND identity<>${identity}
+            AND (state='preparing' OR (state='presented' AND expires_at>${at}))`;
+        const corrected = live
+          .filter(
+            (row) =>
+              row.id === proposed.supersedes ||
+              operation.target(JSON.parse(row.parameters_json) as JSONValue) === target,
+          )
+          .map((row) => row.id);
+        if (corrected.length > 0)
+          yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded' WHERE id IN ${sql.in(corrected)}`;
         const id = yield* newId;
         yield* sql`INSERT INTO chat_proposals (id,application_id,guild_id,parent_channel_id,thread_id,requester_id,operation,parameters_json,identity,project_ids_json,generation,message_id,tool_call_id,state,created_at)
             VALUES (${id},${conversation.applicationId},${conversation.guildId},${conversation.parentChannelId},${conversation.threadId},${context.requesterId},
@@ -293,8 +312,20 @@ export function makeChatActions(
   const fail = (id: string) =>
     sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE id=${id} AND state IN ('preparing','presented')`;
 
+  /** Whether the proposal is still being prepared and current Access still grants its targets. */
+  const stillPreparing = (id: string, proposed: Proposed) =>
+    Effect.gen(function* () {
+      const row = yield* proposal(id);
+      if (row?.state !== "preparing") return false;
+      const granted = yield* grantedProjects(sql, row.requester_id, row.parent_channel_id);
+      return proposed.projectIds.every((projectId) => granted.includes(projectId));
+    });
+
   /**
-   * Publishes a new proposal's complete review: every part in order, then the button. Consent
+   * Publishes a new proposal's complete review: every part in order, then the button. Before
+   * each part and before the button, the proposal must still be preparing, current Access must
+   * grant its targets and `permitted` (Chat control On, the requester's access and the
+   * conversation generation) must hold; otherwise publication stops without a button. Consent
    * becomes usable only once every preceding part was delivered; the button's first dispatch
    * fixes the expiry even if its own delivery stays uncertain. A part that fails, or a button
    * Discord definitely refused, leaves no usable consent.
@@ -304,39 +335,38 @@ export function makeChatActions(
     proposed: Proposed,
     sender: DiscordSender,
     destination: Destination,
+    permitted: Effect.Effect<boolean, unknown>,
   ) =>
-    Effect.gen(function* (): Effect.fn.Return<"presented" | "failed", unknown> {
-      for (const part of proposed.review) {
-        const sent = yield* Effect.result(
-          Effect.tryPromise(() => sender.create(destination, part)),
-        );
-        if (sent._tag === "Failure") {
-          yield* fail(id);
-          yield* Effect.ignore(
-            Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
-          );
-          return "failed";
-        }
-      }
-      const expiresAt = new Date((yield* Clock.currentTimeMillis) + CONSENT_MS).toISOString();
-      yield* sql`UPDATE chat_proposals SET state='presented',expires_at=${expiresAt} WHERE id=${id} AND state='preparing'`;
-      const button = yield* Effect.result(
-        Effect.tryPromise(() =>
-          sender.create(destination, proposed.confirmation.text, {
-            customId: `${BUTTON_PREFIX}${id}`,
-            label: proposed.confirmation.label,
-          }),
-        ),
-      );
-      if (button._tag === "Failure" && sendFailure(button.failure.cause) !== "unknown") {
+    Effect.gen(function* (): Effect.fn.Return<"presented" | "failed" | "withdrawn", unknown> {
+      const create = (text: string, nonce: string, button?: ConfirmationButton) =>
+        createDeduplicated(sender, destination, text, nonceOf("review", id, nonce), button);
+      const failed = Effect.gen(function* () {
         yield* fail(id);
-        yield* Effect.ignore(
-          Effect.tryPromise(() => sender.create(destination, PREPARATION_FAILED)),
-        );
-        return "failed";
+        yield* create(PREPARATION_FAILED, "failed");
+        return "failed" as const;
+      });
+      const withdrawn = Effect.as(fail(id), "withdrawn" as const);
+      for (const [index, part] of proposed.review.entries()) {
+        if (!((yield* stillPreparing(id, proposed)) && (yield* permitted))) return yield* withdrawn;
+        if (!("messageId" in (yield* create(part, `part ${index}`)))) return yield* failed;
       }
+      if (!(yield* permitted)) return yield* withdrawn;
+      const expiresAt = new Date((yield* Clock.currentTimeMillis) + CONSENT_MS).toISOString();
+      const usable = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          if (!(yield* stillPreparing(id, proposed))) return false;
+          yield* sql`UPDATE chat_proposals SET state='presented',expires_at=${expiresAt} WHERE id=${id}`;
+          return true;
+        }),
+      );
+      if (!usable) return yield* withdrawn;
+      const button = yield* create(proposed.confirmation.text, "button", {
+        customId: `${BUTTON_PREFIX}${id}`,
+        label: proposed.confirmation.label,
+      });
+      if ("failure" in button && button.failure !== "unknown") return yield* failed;
       return "presented";
-    });
+    }).pipe(Effect.onInterrupt(() => fail(id)));
 
   /** Commits a decided outcome: consumption, the action's result, origin and owed receipt. */
   const decide = (row: ProposalRow, actionId: string, outcome: ActionOutcome) =>
@@ -409,12 +439,15 @@ export function makeChatActions(
     Effect.gen(function* () {
       const action = yield* actionOf(row.id);
       if (!action) return REPLIES.invalid;
-      if (action.state === "accepting") {
-        if (performing.has(action.id)) return REPLIES.confirming;
-        return OUTCOME_REPLIES[(yield* reconcileAction(row, action)).kind];
-      }
-      // The decided result is shown only to its requester, here, with current access.
+      // Reconciliation needs no clicker; any result is shown only to its requester, here, with
+      // current access.
+      const reconciled =
+        action.state === "accepting" && !performing.has(action.id)
+          ? yield* reconcileAction(row, action)
+          : undefined;
       if ((yield* click.access) !== "permitted") return REPLIES.denied;
+      if (action.state === "accepting")
+        return reconciled === undefined ? REPLIES.confirming : OUTCOME_REPLIES[reconciled.kind];
       const operation = byName.get(row.operation)!;
       return `You already confirmed this review. ${operation.summary({
         kind: action.state,
