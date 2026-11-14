@@ -172,8 +172,8 @@ export function SettingsModal() {
           content.current?.focus();
         }}
         onEscapeKeyDown={(event) => {
-          // Esc in a filled nav search clears it; anywhere else it closes Settings.
-          if (query && event.target === search.current) {
+          // While the nav search is filled, Esc clears it first; the next Esc closes Settings.
+          if (query) {
             event.preventDefault();
             setQuery("");
           }

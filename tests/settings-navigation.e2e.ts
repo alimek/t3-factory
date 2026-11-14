@@ -74,7 +74,7 @@ test("a removed Settings path opens the default T3 connection section", async ({
   await expect(screen.getByRole("heading", "Application")).toHaveCount(0);
 });
 
-test("Esc in a filled Settings search clears it and keeps Settings open", async ({
+test("Esc with a filled Settings search clears it and keeps Settings open", async ({
   app,
   screen,
   browser,
@@ -84,6 +84,8 @@ test("Esc in a filled Settings search clears it and keeps Settings open", async 
   await screen.getByLabel("Search settings").fill("RUN");
   await expect(sections(screen).getByRole("link", "Run titles")).toBeVisible();
   await expect(sections(screen).getByRole("link", "Appearance")).toHaveCount(0);
+  // Focus leaves the field; the filled search still takes the first Esc.
+  await sections(screen).getByRole("link", "Run titles").focus();
 
   // Act
   await browser.keyboard.press("Escape");
