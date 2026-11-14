@@ -108,11 +108,11 @@ latest diagnostic (`GET /api/settings/run-titles`).
 **Settings → Run titles** holds the setting. On the host it offers the on/off choice and the provider instance, model and
 options from the live T3 catalog, and saves each change at once; choosing a provider instance takes its first model, and
 the switch stays unavailable until a provider instance and model are chosen. A saved choice the catalog no longer
-offers stays visible as unavailable. The section discloses that the title model runs in the Project checkout with the
-owner's T3 permissions and that its prompt forbids reading or editing files without Factory enforcing it, and shows the
-latest diagnostic with its outcome, Run and time in the neutral notice style, never the error color. An approved client sees
-the same fields read-only under **Managed on the Factory host**. The section reads the setting when it opens; changes
-are not delivered live.
+offers stays visible as unavailable. The latest diagnostic follows the setting with its outcome, Run and time in a neutral
+status pill, never the error color. A closed **How it works** disclosure explains generation and that the title model runs
+in the Project checkout with the owner's T3 permissions, its prompt forbidding reading or editing files without Factory
+enforcing it. An approved client sees the same fields read-only with the **Managed on the Factory host** chip. The section
+reads the setting when it opens; changes are not delivered live.
 
 The shared Start operation, used by the composer and by `factory_start_run`, makes the decision, so every Start path behaves
 the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and
