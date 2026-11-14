@@ -16,8 +16,10 @@ import type {
   FlowGraph,
   FlowGraphInput,
   Result,
+  StudioDefinitions,
 } from "@t3-factory/contracts";
 import {
+  agentGeneration,
   CANVAS_COORD_MESSAGE,
   flowReadiness,
   type ReadinessAgent,
@@ -283,13 +285,18 @@ export const makeDefinitions = (
       validateFlow(input) {
         const validated = validateUpdateFlow(input);
         if (!validated.ok) return Effect.succeed(validated);
+        // One transaction, so the stamp names exactly the Agents the readiness was checked against.
         return provideSql(
-          Effect.gen(function* () {
-            return {
-              ok: true as const,
-              value: flowReadiness(validated.value.graph, yield* readinessAgents),
-            };
-          }),
+          sql.withTransaction(
+            Effect.gen(function* () {
+              const readiness = flowReadiness(validated.value.graph, yield* readinessAgents);
+              const agents = yield* readCurrentAgents(sql);
+              return {
+                ok: true as const,
+                value: { ...readiness, agentGeneration: agentGeneration(agents) },
+              };
+            }),
+          ),
         );
       },
       updateFlow(id, input) {
@@ -537,5 +544,29 @@ export const makeDefinitions = (
           publishOnSuccess,
           Effect.withSpan("Definitions.removeAgent"),
         ),
+      /**
+       * Every current Agent and Flow from one read transaction, so Flow readiness describes the
+       * delivered Agents. Capabilities load first, as for Agent reads, outside the transaction.
+       */
+      readStudioDefinitions: () =>
+        Effect.gen(function* () {
+          const capabilities = yield* loadCapabilities();
+          return yield* provideSql<StudioDefinitions>(
+            sql.withTransaction(
+              Effect.gen(function* () {
+                const agents = yield* readCurrentAgents(sql);
+                const flows = yield* readCurrentFlows(sql);
+                const readiness = yield* readinessAgents;
+                return {
+                  ok: true as const,
+                  value: {
+                    agents: agents.map((agent) => toAgent(agent, capabilities)),
+                    flows: flows.map((flow) => toDraft(flow, readiness)),
+                  },
+                };
+              }),
+            ),
+          );
+        }).pipe(Effect.withSpan("Definitions.readStudioDefinitions")),
     };
   });

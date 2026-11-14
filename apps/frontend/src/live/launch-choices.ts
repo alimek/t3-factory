@@ -1,6 +1,7 @@
 import type { LaunchChoices, LaunchChoicesLiveMessage } from "@t3-factory/contracts";
 import { useLiveScope } from "./live-connection.ts";
 import type { LiveScope } from "./owner.ts";
+import { applyChanges, flowOrder } from "./scopes.ts";
 
 export const launchChoicesScope: LiveScope<LaunchChoicesLiveMessage, LaunchChoices> = {
   key: "launchChoices",
@@ -17,15 +18,7 @@ export const launchChoicesScope: LiveScope<LaunchChoicesLiveMessage, LaunchChoic
       }));
       return { ...choices, catalog: { ...choices.catalog, projects } };
     }
-    if (!message.flows) return { ...choices, catalog: message.catalog ?? choices.catalog };
-    const byId = new Map(choices.flows.map((flow) => [flow.id, flow]));
-    for (const flow of message.flows.upserts) byId.set(flow.id, flow);
-    for (const id of message.flows.removals) byId.delete(id);
-    // Match SQLite's ORDER BY created_at DESC, id (binary collation).
-    const flows = [...byId.values()].sort((a, b) => {
-      if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    });
+    const flows = applyChanges(choices.flows, message.flows, flowOrder);
     return { catalog: message.catalog ?? choices.catalog, flows };
   },
 };

@@ -1,3 +1,4 @@
+import type { AgentDefinition } from "./agent.ts";
 import type { FlowDraft } from "./flow.ts";
 import type { OperationError } from "./result.ts";
 import type { ProjectCatalog } from "./project.ts";
@@ -212,4 +213,30 @@ export type LaunchChoicesLiveMessage =
   | {
       readonly _tag: "observed";
       readonly projects: readonly { readonly id: string; readonly observedAt: string }[];
+    };
+
+/** Studio's saved definitions: every current Agent with its settings status and every Flow with its readiness. */
+export interface StudioDefinitions {
+  /** Ordered by the backend: most recently saved first. */
+  readonly agents: readonly AgentDefinition[];
+  /** Ordered by `createdAt` descending, then `id`. */
+  readonly flows: readonly FlowDraft[];
+}
+
+/** Complete replacement entities by stable id and removed ids, applied atomically. */
+export interface DefinitionChanges<T> {
+  readonly upserts: readonly T[];
+  readonly removals: readonly string[];
+}
+
+/**
+ * Agents and Flows of one read transaction. A change carries whole entities: an Agent change can
+ * change a Flow's readiness without changing the Flow's revision.
+ */
+export type DefinitionsLiveMessage =
+  | { readonly _tag: "snapshot"; readonly definitions: StudioDefinitions }
+  | {
+      readonly _tag: "changed";
+      readonly agents?: DefinitionChanges<AgentDefinition>;
+      readonly flows?: DefinitionChanges<FlowDraft>;
     };

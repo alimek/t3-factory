@@ -76,3 +76,14 @@ export async function updateAgentExits(
   assert(result.ok);
   return result.value;
 }
+
+/** Another client removes Agent `id`. */
+export async function removeAgentElsewhere(baseUrl: string | undefined, id: string) {
+  const result = (await (
+    await fetch(new URL(`/api/agents/${id}`, baseUrl), {
+      method: "DELETE",
+      headers: { "X-Factory-Request": "1" },
+    })
+  ).json()) as Result<unknown>;
+  assert(result.ok);
+}

@@ -104,10 +104,11 @@ export function savedAgent(change: Partial<AgentDefinition> = {}): AgentDefiniti
   };
 }
 
-function memoryAgents() {
-  let latest = savedAgent();
+function memoryAgents(initial = savedAgent()) {
+  let latest = initial;
   return {
     latest: () => latest,
+    getAgent: vi.fn<AgentDraftOperations["getAgent"]>(async () => latest),
     createAgent: vi.fn<AgentDraftOperations["createAgent"]>(async (content) => {
       latest = savedAgent({ ...content, revision: 1 });
       return latest;
@@ -126,8 +127,18 @@ export function agentDraft(
   agent: AgentDefinition | null = savedAgent(),
   offered: AgentCapabilities | null = capabilities,
 ) {
-  const factory = memoryAgents();
-  return { draft: createAgentDraft(agent, offered, factory), factory };
+  const factory = memoryAgents(agent ?? undefined);
+  const draft = createAgentDraft(agent?.id ?? null, offered, factory);
+  if (agent) draft.observe({ definition: agent, synchronized: true });
+  return { draft, factory };
+}
+
+/** Studio's source delivers this Agent, or `null` for its absence. */
+export function deliverAgent(
+  draft: ReturnType<typeof agentDraft>["draft"],
+  agent: AgentDefinition | null,
+) {
+  draft.observe({ definition: agent ?? undefined, synchronized: true });
 }
 
 export function editedAgent() {

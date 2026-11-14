@@ -22,12 +22,15 @@ export type LivePart =
   | { readonly kind: "navigation" }
   | { readonly kind: "run"; readonly runId: string }
   | { readonly kind: "launchChoices" }
+  /** Studio's saved definitions and their latest revisions. */
+  | { readonly kind: "definitions" }
   /** Theme colors: optional presentation that never gates mutations. */
   | { readonly kind: "appearance" };
 
 export type LiveWatch =
   | { readonly rpc: "WatchConnection" }
   | { readonly rpc: "WatchLaunchChoices" }
+  | { readonly rpc: "WatchDefinitions" }
   | { readonly rpc: "WatchAppearance" }
   | {
       readonly rpc: "WatchRunView";
@@ -127,10 +130,16 @@ type Entry = {
 
 /**
  * The connection status subscription, the one view subscription for navigation and Runs, the
- * composer's launch choices and theme colors.
+ * composer's launch choices, Studio's definitions and theme colors.
  */
-type Channel = "connection" | "view" | "launchChoices" | "appearance";
-const channels: readonly Channel[] = ["connection", "view", "launchChoices", "appearance"];
+type Channel = "connection" | "view" | "launchChoices" | "definitions" | "appearance";
+const channels: readonly Channel[] = [
+  "connection",
+  "view",
+  "launchChoices",
+  "definitions",
+  "appearance",
+];
 
 type Subscription = {
   /** Fences events: only the subscription holding the current token may write. */
@@ -165,6 +174,7 @@ export class LiveOwner {
     connection: idleSubscription(),
     view: idleSubscription(),
     launchChoices: idleSubscription(),
+    definitions: idleSubscription(),
     appearance: idleSubscription(),
   };
   private session: Session | null = null;
@@ -285,6 +295,7 @@ export class LiveOwner {
     if (entries.length === 0) return undefined;
     if (channel === "connection") return { rpc: "WatchConnection" };
     if (channel === "launchChoices") return { rpc: "WatchLaunchChoices" };
+    if (channel === "definitions") return { rpc: "WatchDefinitions" };
     if (channel === "appearance") return { rpc: "WatchAppearance" };
     const runIds = this.viewRuns()
       .served.flatMap(({ scope: { part } }) => (part.kind === "run" ? [part.runId] : []))

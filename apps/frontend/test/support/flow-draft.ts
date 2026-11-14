@@ -78,23 +78,28 @@ export function held<T>(operation: Mock<(...args: never[]) => Promise<T>>) {
   return { answer: (value: T) => answer(value), fail: (error: Error) => fail(error) };
 }
 
-/** A Flow draft over a Flow Factory holds in memory; creating it starts loading the Flow. */
+/** A Flow draft over a Flow Factory holds in memory; Studio's source has not answered yet. */
 export function flowDraft(factory = memoryFactory()) {
   return { factory, draft: createFlowDraft("flow", factory) };
 }
 
-/** The Flow editor shows a loaded, clean Flow whose readiness refresh has answered. */
-export async function openedFlow() {
-  const setup = flowDraft();
-  setup.draft.reportVisibility(true);
-  await settled();
-  return setup;
+/** Studio's source delivers the Flow Factory holds now, or `null` for its absence. */
+export function deliver(
+  setup: ReturnType<typeof flowDraft>,
+  definition: FlowDraft | null = setup.factory.latest(),
+) {
+  setup.draft.observe({ definition: definition ?? undefined, synchronized: true });
 }
 
-/** The opened Flow is hidden while the user visits another Studio page. */
-export async function hiddenFlow() {
-  const setup = await openedFlow();
-  setup.draft.reportVisibility(false);
+/** The saved Agents Flow readiness depends on, as one generation. */
+const agentsBefore = "agent:1";
+export const agentsAfter = "agent:2";
+
+/** The Flow editor shows a loaded, clean Flow from Studio's source. */
+export async function openedFlow() {
+  const setup = flowDraft();
+  setup.draft.observeAgents(agentsBefore);
+  deliver(setup);
   return setup;
 }
 
@@ -111,6 +116,11 @@ export async function conflictedFlow() {
   setup.factory.saveElsewhere("Theirs");
   await setup.draft.save();
   return setup;
+}
+
+/** Another client saves the Flow and Studio's source delivers that revision. */
+export function savedElsewhere(setup: ReturnType<typeof flowDraft>, name: string) {
+  deliver(setup, setup.factory.saveElsewhere(name));
 }
 
 /** The conflicted save's latest saved Flow is loaded beside the local draft. */

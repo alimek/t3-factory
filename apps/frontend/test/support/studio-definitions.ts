@@ -61,6 +61,11 @@ export function studioSession(factory = studioFactory()) {
   return { factory, definitions: createStudioDefinitions(factory) };
 }
 
+/** Studio is open toward a protocol 12 server that delivers its definitions live. */
+export function liveStudio(factory = studioFactory()) {
+  return { factory, definitions: createStudioDefinitions(factory, "live") };
+}
+
 /** Studio is open and both of its opening reads have answered. */
 export async function openedStudio() {
   const setup = studioSession();

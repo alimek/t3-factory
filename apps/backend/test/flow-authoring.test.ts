@@ -183,6 +183,24 @@ it("validateFlow reports a missing agent reference before save", async (context)
   expect(missing.value.issues[0]?.code).toBe("agent_required");
 });
 
+it("validateFlow names the saved Agents its readiness was checked against", async (context) => {
+  // Arrange
+  const { factory, created, agent, unconnectedGraph } = await flowWithAgent(context);
+  assert(created.ok);
+
+  // Act
+  const validated = await factory.validateFlow({
+    name: created.value.name,
+    expectedRevision: created.value.revision,
+    workspace: created.value.workspace,
+    graph: unconnectedGraph,
+  });
+
+  // Assert
+  assert(validated.ok);
+  expect(validated.value.agentGeneration).toBe(`${agent.id}:${agent.revision}`);
+});
+
 it("updateFlow rejects duplicate block ids", async (context) => {
   // Arrange
   const { factory, created, block } = await validationFlow(context);

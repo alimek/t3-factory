@@ -988,6 +988,19 @@ export function continuationSources(graph: FlowGraphInput, blockId: string): str
 }
 
 /**
+ * The saved Agents Flow readiness depends on, as one comparable value: each `id:revision`,
+ * ordered by id and joined by commas.
+ */
+export function agentGeneration(
+  agents: readonly { readonly id: string; readonly revision: number }[],
+): string {
+  return agents
+    .map(({ id, revision }) => `${id}:${revision}`)
+    .sort()
+    .join(",");
+}
+
+/**
  * Graph readiness against the given saved Agents; live T3, project and provisioning gates remain
  * separate. Issues block Start, never a save.
  */
@@ -1042,6 +1055,7 @@ export {
 export {
   CLIENT_LABEL_LIMIT,
   FACTORY_APPEARANCE_PROTOCOL,
+  FACTORY_DEFINITIONS_PROTOCOL,
   FACTORY_FLOW_REVISION_PROTOCOL,
   FACTORY_MINIMUM_PEER_PROTOCOL,
   FACTORY_MINIMUM_SERVER_PROTOCOL,

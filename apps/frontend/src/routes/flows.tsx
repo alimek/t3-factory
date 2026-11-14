@@ -22,7 +22,7 @@ export function FlowList({
   onCreate: () => void;
 }) {
   const flows = useStudioRead(definitions, "flows");
-  const items = useVisitValue(flows);
+  const items = useVisitValue(flows, definitions.source);
   const error = flows.error ? "Could not load Flows. Check that Factory is running." : "";
   const [query, setQuery] = useState("");
   const filtered =

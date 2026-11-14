@@ -458,6 +458,8 @@ type FlowCanvasProps = {
   scope: string;
   savedGraph: FlowGraph | undefined;
   busy: boolean;
+  /** An explicit Auto-arrange started or ended. */
+  onArranging: (arranging: boolean) => void;
   /** Returns placement without exposing the canvas view transform to the library. */
   placementRef: RefObject<DropAt | null>;
   /** A block, or null for empty canvas or the Flow input, which clears every selection. */
@@ -532,6 +534,7 @@ export function FlowCanvas({
   scope,
   savedGraph,
   busy,
+  onArranging,
   placementRef,
   onSelect,
   onSelectWire,
@@ -562,7 +565,7 @@ export function FlowCanvas({
       }}
       resize="refit"
       covered={{ top: READINESS_HEIGHT, right: reservedRight }}
-      arrangement={{ busy, saved: savedGraph, commit: onChange }}
+      arrangement={{ busy, saved: savedGraph, commit: onChange, onArranging }}
       gesture={gestures.gesture}
       points={gestures.points}
       onTap={() => onSelect(null)}

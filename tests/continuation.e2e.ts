@@ -32,6 +32,8 @@ test("a Continuation added after an Agent names the thread it continues and keep
     "Continues Grill's thread",
   );
   await app.screenshot("continuation-authoring");
+  // Reloading during the save would meet the unsaved-changes leave warning.
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 2");
   await browser.reload();
   await screen.getByRole("button", "Continuation Spec", { exact: false }).tap();
   await expect(screen.getByRole("textbox", "Prompt required")).toHaveValue(

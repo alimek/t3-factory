@@ -231,6 +231,22 @@ test("an available update previews its changes as short lines in the footer tool
   await app.screenshot("changelog-tooltip");
 });
 
+test("Studio on a compatible server without live Studio delivery says refresh needs a server update", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await remoteFixture(app, "before-live-studio");
+
+  // Act
+  await approvedBrowser(app, screen, "/studio/flows");
+
+  // Assert
+  await expect(screen.getByRole("heading", "Flows", { exact: true })).toBeVisible();
+  await expect(screen.getByText(/Live Studio refresh requires a server update/)).toBeVisible();
+  await app.screenshot("studio-before-live-studio");
+});
+
 test("the current composer requires an updated server before requesting access", async ({
   app,
   screen,

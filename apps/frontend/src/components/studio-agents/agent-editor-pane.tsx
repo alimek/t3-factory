@@ -149,7 +149,8 @@ function AgentEditorHeader({
   onDeleted,
   duplicating,
 }: AgentEditorProps & { name: string; saving: boolean }) {
-  const { saved: agent, dirty } = state;
+  const { saved: agent } = state;
+  const removed = state.presence === "removed";
   const statusLine = agentEditorStatus(agent, flowUsage);
   const saveLabel = agent ? "Save" : "Create Agent";
   return (
@@ -163,18 +164,12 @@ function AgentEditorHeader({
         </span>
         <span className="flex-1" />
         {onDuplicate && (
-          <MutationGate>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={saving || dirty}
-              title={dirty ? "Save your changes before duplicating this Agent." : undefined}
-              aria-label="Duplicate"
-              onClick={onDuplicate}
-            >
-              {duplicating ? "Duplicating…" : "Duplicate…"}
-            </Button>
-          </MutationGate>
+          <DuplicateAgentButton
+            state={state}
+            saving={saving}
+            duplicating={duplicating}
+            onDuplicate={onDuplicate}
+          />
         )}
         {agent && (
           <DeleteAgentButton
@@ -182,18 +177,55 @@ function AgentEditorHeader({
             draft={draft}
             state={state}
             flowUsage={flowUsage}
-            disabled={saving}
+            disabled={saving || !state.canDelete}
             onDeleted={onDeleted}
           />
         )}
         <MutationGate>
-          <Button type="submit" disabled={saving}>
+          <Button
+            type="submit"
+            disabled={saving || !state.canSave}
+            title={removed ? "Save is unavailable: this Agent was removed elsewhere." : undefined}
+          >
             {saving ? "Saving…" : saveLabel}
           </Button>
         </MutationGate>
       </div>
       <p className="mt-1.5 text-2xs text-subtle-foreground">{statusLine}</p>
     </header>
+  );
+}
+
+function DuplicateAgentButton({
+  state,
+  saving,
+  duplicating,
+  onDuplicate,
+}: {
+  state: AgentDraftSnapshot;
+  saving: boolean;
+  duplicating: boolean;
+  onDuplicate: () => void;
+}) {
+  const title =
+    state.presence === "removed"
+      ? "This Agent was removed elsewhere."
+      : state.dirty
+        ? "Save your changes before duplicating this Agent."
+        : undefined;
+  return (
+    <MutationGate>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={saving || !state.canDuplicate}
+        title={title}
+        aria-label="Duplicate"
+        onClick={onDuplicate}
+      >
+        {duplicating ? "Duplicating…" : "Duplicate…"}
+      </Button>
+    </MutationGate>
   );
 }
 
@@ -220,6 +252,8 @@ function DeleteAgentButton({
 }) {
   const [open, setOpen] = useState(false);
   const { deleting, deleteError: error } = state;
+  // A removal elsewhere closes an unsubmitted confirmation; a submitted delete completes as usual.
+  if (open && !deleting && state.presence === "removed") setOpen(false);
   async function confirmDelete() {
     if (await draft.delete()) {
       setOpen(false);
