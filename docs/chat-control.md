@@ -256,6 +256,7 @@ only proposes, and Factory itself reviews and performs it (see [Actions](#action
 | Read Run | One such Run as Factory has it now, by its captured definitions, in an overview with readable sections |
 | Start Run | Nothing to perform: a validated proposal whose review Factory posts, or why it cannot be proposed |
 | Answer Human occurrence | The same for answering one pending Human occurrence |
+| Archive Run | The same for archiving one Run |
 
 List Projects and List Flows return pages of 20 entries with the page count, so every entry stays
 reachable; [Finding and reading Runs](#finding-and-reading-runs) describes the Run tools. The model is
@@ -264,7 +265,8 @@ substitute a missing one. Before every model request, tool call and publication 
 again that Chat control is On, Access still allows the requester in that channel, the conversation
 was not cleared, the requester's evidence is current and the Language model configuration is
 unchanged. Replies mention nobody, whatever the model wrote, and a reply longer than one Discord
-message goes out completely as ordered parts. Archiving is not available in chat yet.
+message goes out completely as ordered parts. Chat control adds no Stop, manual Settle, Wait
+**Continue now** or worker control: the model is told that a request to stop a Run means Archive.
 
 ### Finding and reading Runs
 
@@ -399,7 +401,7 @@ notice and deletes the markers, so turning On again revives none; a reset or cle
 A mutation in chat is a proposal, a review, the requester's consent and Factory's acceptance, kept
 apart. The model can only propose; Factory renders the review, records the consent and performs the
 action through the same shared Factory operation as every other client, and reports the actual
-result itself. Chat control can start a Run and answer a Human occurrence.
+result itself. Chat control can start a Run, answer a Human occurrence and archive a Run.
 
 ### Start proposals
 
@@ -421,6 +423,16 @@ nothing is proposed, so a broad request such as "approve this Run" never answers
 occurrences or picks one; the model is told to ask. Factory refuses an Archived Run, an occurrence
 the Run does not have or that no longer waits (answered, withdrawn or cancelled, or the Run accepts
 no answers) and an occurrence whose context Factory no longer has.
+
+### Archive proposals
+
+Archive Run takes one Run (ID or number) in a permitted Project, whoever started it and wherever;
+an Archived Run gets no review. The review names the Run (number, title, Project name and repository
+path), its Flow and state and how many Human occurrences and Wait arrivals are pending, and states
+that Archive is final, cancels the automatic work Factory still owes the Run and its pending Human
+and Wait items without inventing answers, and asks T3 once to interrupt the worker threads without
+waiting for or confirming that they stop. It says that nothing is rolled back and that the Run's
+history stays readable in Factory.
 
 ### Reviews and consent
 
@@ -476,6 +488,11 @@ handed on twice. The answer never moves to another occurrence. A refusal counts 
 the consent up, only when the Run's current state shows the occurrence no longer waits or the Run
 accepts no answers; an attempt left without an outcome is looked up by the action's identity alone.
 
+An Archive uses the shared Archive operation in the same way: the Run records the action's identity
+with the Archive, so a Run archived elsewhere rejects the confirmation and Factory requests no
+further worker interruption. Only an Archive this action performed requests interruption, and a
+repeated click, restart or reconciliation never archives or interrupts again.
+
 Consent survives restarts, Gateway outages, Off and On, Language model saves and the same
 application's token rotation, but only until it expires, and Off stops new confirmations. An Access
 save that removes the requester, the channel or the targeted Project voids matching consent for good;
@@ -486,7 +503,8 @@ switching back.
 
 Factory writes the receipt from the accepted facts: for a Start the Run's number and ID, its accepted
 automatic title, the Project and the Flow; for a Human answer the accepted answer, the Human step, its
-occurrence and the Run; or the rejection with its reasons. The decided outcome, the Run's
+occurrence and the Run; for an Archive the Run and what Archive cancelled and requested, without any
+claim of rollback or confirmed termination; or the rejection with its reasons. The decided outcome, the Run's
 originating thread and the owed receipt commit together. The receipt goes to the thread where the
 action was requested and depends on that channel still granting the Project and on the bot's access
 there, not on the requester remaining allowed; an Access save that revokes the destination cancels

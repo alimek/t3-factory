@@ -96,8 +96,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   const settle = openRunnerSettle(store, t3, lifecycle, liveContextId);
   const { settleWhenDone, settleFinishedBlockThreads, advanceSettlement } = settle;
   // Archive and manual settlement cancel a pending title generation; its cleanup follows.
-  const archiveRun = (id: string) =>
-    Effect.tap(archive.archiveRun(id), () => fork(titles.reconcileTitleGeneration(id)));
+  const archiveRun = (id: string, requestId?: string) =>
+    Effect.tap(archive.archiveRun(id, requestId), () => fork(titles.reconcileTitleGeneration(id)));
   const settleRun = (id: string, input: unknown) =>
     Effect.tap(settle.settleRun(id, input), () => fork(titles.reconcileTitleGeneration(id)));
 
@@ -249,6 +249,13 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
       Effect.gen(function* () {
         const answered = yield* store.answeredByRequest(requestId);
         return answered ? yield* getRun(answered.run_id) : undefined;
+      }),
+    /** The Run an attributed Archive request archived; undefined when it never applied. A Run
+     * archived by anyone else is not this request's. */
+    acceptedArchive: (requestId: string) =>
+      Effect.gen(function* () {
+        const archived = yield* store.archivedByRequest(requestId);
+        return archived ? yield* getRun(archived.id) : undefined;
       }),
     listRuns: (projectId: string) =>
       Effect.gen(function* () {

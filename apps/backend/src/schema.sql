@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_human_answers
+-- Newest applied migration: chat_archives
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -242,7 +242,7 @@ CREATE TABLE chat_proposals (
   parent_channel_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   requester_id TEXT NOT NULL,
-  operation TEXT NOT NULL CHECK (operation IN ('start', 'human-answer')),
+  operation TEXT NOT NULL CHECK (operation IN ('start', 'human-answer', 'archive')),
   parameters_json TEXT NOT NULL,
   -- Requester, context, operation and exact parameters; an identical pending proposal is reused.
   identity TEXT NOT NULL,
@@ -890,7 +890,11 @@ CREATE TABLE runs (
   creation_key TEXT NOT NULL DEFAULT '',
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id)
 , settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT, title_provenance TEXT NOT NULL DEFAULT 'legacy'
-  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')));
+  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')), archive_request_id TEXT);
+
+CREATE UNIQUE INDEX runs_archive_request ON runs(archive_request_id)
+  WHERE archive_request_id IS NOT NULL
+;
 
 CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL
 ;

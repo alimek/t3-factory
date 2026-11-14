@@ -30,6 +30,7 @@ const PURPOSE_LABELS: Record<ChatDeliveryProblem["purpose"], string> = {
 const OPERATION_LABELS: Record<ChatActionOperation, string> = {
   start: "Start",
   "human-answer": "Human answer",
+  archive: "Archive",
 };
 
 /**

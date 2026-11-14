@@ -200,7 +200,7 @@ export interface ChatDeliveryProblem {
 }
 
 /** The Factory operations a Chat control action can perform, one shared operation each. */
-export type ChatActionOperation = "start" | "human-answer";
+export type ChatActionOperation = "start" | "human-answer" | "archive";
 
 /** A confirmed action whose local outcome Factory has not reconciled yet. */
 export interface ChatActionReconciliation {

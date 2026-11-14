@@ -72,7 +72,9 @@ and restricted OAuth credentials live outside project repositories.
   conversation turns, so clearing a conversation keeps them. Existing Runs get no originating thread and
   no other data changes. Migration `087` records, on a Human occurrence, the request an attributed answer
   was applied under, so a chat action proves its own answer; existing answers have none. It also allows
-  Human answer proposals and keeps existing proposals.
+  Human answer proposals and keeps existing proposals. Migration `088` likewise records the request an
+  attributed Archive was applied under on the Run and allows Archive proposals; existing Archived Runs
+  have none.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

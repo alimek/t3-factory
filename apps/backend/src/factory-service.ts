@@ -26,6 +26,7 @@ import { conversationalModel, makeChatModel } from "./chat-control/model.ts";
 import { makeChatActions } from "./chat-control/actions.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
 import { makeChatDeliveries } from "./chat-control/deliveries.ts";
+import { archiveAction } from "./chat-control/archive-action.ts";
 import { humanAnswerAction } from "./chat-control/human-action.ts";
 import { startAction } from "./chat-control/start-action.ts";
 import { runTools } from "./chat-control/run-tools.ts";
@@ -147,10 +148,15 @@ export const makeFactoryService = (
         guard(runner.answerHumanOccurrence(id, input, requestId)),
       acceptedHumanAnswer: (requestId) => runner.acceptedHumanAnswer(requestId),
     });
+    const chatArchive = archiveAction(sql, {
+      getRun: (id) => guard(runner.getRun(id)),
+      archiveRun: (id, requestId) => guard(runner.archiveRun(id, requestId)),
+      acceptedArchive: (requestId) => runner.acceptedArchive(requestId),
+    });
     const chatDeliveries = yield* makeChatDeliveries(sql);
     const chatActions = makeChatActions(
       sql,
-      [chatStart.operation, chatHumanAnswer.operation],
+      [chatStart.operation, chatHumanAnswer.operation, chatArchive.operation],
       chatDeliveries,
     );
     const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
@@ -163,6 +169,7 @@ export const makeFactoryService = (
         ...runTools(sql, { getRun: (id) => guard(runner.getRun(id)) }),
         chatStart.tool,
         chatHumanAnswer.tool,
+        chatArchive.tool,
       ],
       actions: chatActions,
       deliveries: chatDeliveries,

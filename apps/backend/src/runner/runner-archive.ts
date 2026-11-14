@@ -39,9 +39,10 @@ export function openRunnerArchive(
     );
   }
 
-  /** Archive is final and completes in the acceptance lane; interruption follows in the background. */
-  function archiveRun(id: string): Effect.Effect<Result<RunDetail>, unknown> {
-    return changeLifecycle(lifecycle, id, store.archive(id), interruptWorkerThreads(id));
+  /** Archive is final and completes in the acceptance lane; interruption follows in the background,
+   * only when this call archived the Run. `requestId` attributes the Archive to that request. */
+  function archiveRun(id: string, requestId?: string): Effect.Effect<Result<RunDetail>, unknown> {
+    return changeLifecycle(lifecycle, id, store.archive(id, requestId), interruptWorkerThreads(id));
   }
   return { archiveRun };
 }

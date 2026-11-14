@@ -36,6 +36,14 @@ export function openRunReads(database: RunnerDatabase) {
           (rows) => rows[0],
         ),
       ),
+    /** The Run an attributed Archive request archived, if it did. */
+    archivedByRequest: (requestId: string) =>
+      transaction((sql) =>
+        Effect.map(
+          sql<{ id: string }>`SELECT id FROM runs WHERE archive_request_id=${requestId}`,
+          (rows) => rows[0],
+        ),
+      ),
     readBlock: (runId: string, blockId: string) =>
       transaction((sql) =>
         Effect.map(

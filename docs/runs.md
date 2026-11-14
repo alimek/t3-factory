@@ -567,7 +567,9 @@ uncertain deliveries keep their recorded state and are not retried.
 An Archived Run leaves navigation and cannot be restored, settled or snoozed. Archiving the open Run returns to the composer. All
 its data stays: its link still opens the read-only history with an **Archived** badge. Any later report from one of its Agents is
 acknowledged as a success that changes nothing and tells the Agent to stop work on the Block; Human answers and Request report are
-refused. Archive does not roll back edits or prevent new direct T3 chats; closing Factory or a browser tab is not Archive. Runs
+refused. Archive does not roll back edits or prevent new direct T3 chats; closing Factory or a browser tab is not Archive.
+An authorized participant can also archive a Run through [Chat control](chat-control.md#archive-proposals), where a request to
+stop a Run means Archive, after a complete review and their own confirmation. Runs
 stopped by an earlier release are Archived after the upgrade, with their recorded Stop history.
 
 ## Restart and shutdown

@@ -213,3 +213,25 @@ export async function occurrenceOf(factory: Pick<Factory, "getRun">, runId: stri
     handoffs: run.value.intents.filter((intent) => intent.occurrenceId === id),
   };
 }
+
+/**
+ * An operating Chat control over a working Run started in Factory (Run #1 “Improve search”) whose
+ * worker thread is bound, so Archive requests its interruption.
+ */
+export async function archivingWorld(c: TestContext) {
+  const world = await startingWorld(c);
+  const worker = await workerAtWork(world.world, world.input);
+  return { ...world, runId: worker.runId };
+}
+
+/** The model's archive_run call for Run #1. */
+export const archiveCall = (input: Record<string, unknown> = {}) => ({
+  toolCalls: [{ name: "archive_run", input: { run: "#1", ...input } }],
+});
+
+/** The Run's lifecycle as Factory shows it now. */
+export async function lifecycleOf(factory: Pick<Factory, "getRun">, runId: string) {
+  const run = await factory.getRun(runId);
+  assert(run.ok, JSON.stringify(run));
+  return run.value.lifecycle;
+}
