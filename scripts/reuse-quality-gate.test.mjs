@@ -16,6 +16,8 @@ function scenario({
   olderRerun = false,
   startedAt = "2026-01-01T10:00:00Z",
   currentRunId = 11,
+  headRepo = { id: 1 },
+  candidateRepo = { id: 1 },
 } = {}) {
   const run = {
     id: 10,
@@ -25,7 +27,7 @@ function scenario({
     conclusion,
     head_sha: head,
     head_branch: "feature",
-    head_repository: { id: 1 },
+    head_repository: candidateRepo,
     display_title: metadata ? marker.replace("Full code gate", "Reuse code gate") : stepName,
     html_url: "https://github.com/example/repo/actions/runs/10",
   };
@@ -83,7 +85,7 @@ function scenario({
     runId: String(currentRunId),
     event: {
       number: 42,
-      pull_request: { base: { sha: base }, head: { sha: head, ref: "feature", repo: { id: 1 } } },
+      pull_request: { base: { sha: base }, head: { sha: head, ref: "feature", repo: headRepo } },
     },
     read: async (path) => {
       assert(responses.has(path), `Unexpected API read: ${path}`);
@@ -277,4 +279,15 @@ await test("an unrelated in-flight PR run without job steps cannot hold this PR'
   // Assert
   assert.equal(result.state, "success");
   assert.match(result.url, /\/runs\/9$/);
+});
+
+await test("a deleted head repository leaves validation unproven without crashing or reusing a success", async () => {
+  // Arrange
+  const input = scenario({ headRepo: null, candidateRepo: null });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "missing");
 });

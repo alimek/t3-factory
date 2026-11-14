@@ -15,9 +15,11 @@ function codeGateState(run, jobs, marker) {
 }
 
 export async function readQualityGate({ read, repository, runId, event }) {
+  const pr = event.pull_request;
+  // A deleted fork has no repository identity to certify against stored runs.
+  if (pr.head.repo === null) return { state: "missing" };
   const prefix = `/repos/${repository}/actions`;
   const current = await read(`${prefix}/runs/${runId}`);
-  const pr = event.pull_request;
   const marker = `Full code gate for PR ${event.number}: ${pr.base.sha}..${pr.head.sha}`;
   const candidates = [];
   let page = 1;
