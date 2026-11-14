@@ -16,9 +16,11 @@ import {
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
 import { readAccess, updateAccess } from "./access.ts";
+import { clearConversations } from "./conversations.ts";
 import type { ChatCredentials } from "./credentials.ts";
 import type { DiscordConnection, DiscordGateway } from "./discord-gateway.ts";
 import type { DiscordOperation, OperationStatus } from "./discord-operation.ts";
+import { forgetPendingAdmissions } from "./pending-admissions.ts";
 
 type ConnectionRow = {
   application_id: string | null;
@@ -178,10 +180,19 @@ export const makeChatDiscord = (
           secret: next.token.kind === "replace" ? next.token.value : undefined,
           read: readRow(sql),
           problem: (row) => commitProblem(row, next),
-          write: (row, staged, savedAt) => {
-            const tokenStage = next.token.kind === "remove" ? null : (staged ?? row.token_stage);
-            return sql`UPDATE chat_discord_connection SET application_id=${next.applicationId},public_key=${next.publicKey},token_stage=${tokenStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
-          },
+          write: (row, staged, savedAt) =>
+            Effect.gen(function* () {
+              const tokenStage = next.token.kind === "remove" ? null : (staged ?? row.token_stage);
+              yield* sql`UPDATE chat_discord_connection SET application_id=${next.applicationId},public_key=${next.publicKey},token_stage=${tokenStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
+              // Another application is another identity: it inherits no conversation history, and
+              // switching back later revives none.
+              if (
+                row.application_id !== null &&
+                next.applicationId !== null &&
+                row.application_id !== next.applicationId
+              )
+                yield* clearConversations(sql, "all");
+            }),
         });
         if (refused) return refused;
         // While On, the running connection reconnects and verifies the newly saved configuration.
@@ -275,6 +286,7 @@ export const makeChatDiscord = (
         if (!validated.value.enabled) {
           yield* sql`UPDATE chat_control_state SET enabled=0 WHERE singleton=1`;
           yield* operation.stop;
+          yield* forgetPendingAdmissions(sql);
           return yield* getDiscordSettings();
         }
         // The section lock keeps a concurrent save from removing a required value meanwhile.

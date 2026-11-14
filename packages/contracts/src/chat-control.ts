@@ -31,12 +31,27 @@ export interface ChatModelTestEvidence {
   readonly message: string;
 }
 
+/**
+ * The latest actual conversational failure of the Language model. Only a later successful
+ * conversational request clears it; synthetic Tests neither set nor clear it.
+ */
+export interface ChatModelRuntimeProblem {
+  /** The configuration revision the failing conversation used; an older one dates the problem. */
+  readonly revision: number;
+  readonly occurredAt: string;
+  /** Factory's own description; never a provider-supplied body. */
+  readonly message: string;
+}
+
 /** Settings → Chat control → Language model, readable only on the Factory host. */
 export interface ChatModelSettings {
   /** Chat control's persisted On/Off state. Every installation starts Off. */
   readonly chatControlEnabled: boolean;
   readonly configuration: ChatModelConfiguration;
   readonly latestTest: ChatModelTestEvidence | null;
+  readonly runtimeProblem: ChatModelRuntimeProblem | null;
+  /** Whether the Language model navigation item shows an indicator: an unresolved runtime problem while On. */
+  readonly needsAttention: boolean;
 }
 
 /**

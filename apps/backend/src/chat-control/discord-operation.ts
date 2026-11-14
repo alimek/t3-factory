@@ -25,7 +25,10 @@ import {
   type DiscordGateway,
   type GatewayResult,
 } from "./discord-gateway.ts";
-import { acknowledge, makeIngress, registerCommands } from "./discord-ingress.ts";
+import type { ChatTool } from "./chat-tools.ts";
+import { makeIngress, registerCommands, type ReferencedMessage } from "./discord-ingress.ts";
+import { makeInterpreter, type InterpretationEngine } from "./interpretation.ts";
+import type { ConversationalModelAccess } from "./model.ts";
 import { makeRequesterEvidence } from "./requester-evidence.ts";
 
 type Run = <A>(effect: Effect.Effect<A, unknown>) => Promise<A>;
@@ -53,6 +56,39 @@ class FactoryDiscordAdapter extends DiscordAdapter {
   }
 
   protected override async handleGatewayReaction() {}
+
+  /**
+   * Every message Factory posts mentions nobody, whatever its text contains, and Factory's own
+   * raw text goes out exactly as given: the adapter would rewrite `@name` into mentions.
+   */
+  protected override buildMessagePayload(
+    ...args: Parameters<DiscordAdapter["buildMessagePayload"]>
+  ) {
+    const [message] = args;
+    const built = super.buildMessagePayload(...args);
+    const raw = typeof message === "object" && "raw" in message ? message.raw : undefined;
+    if (raw !== undefined && raw.length > 2000)
+      throw new Error("A Factory message exceeded Discord's length.");
+    return {
+      ...built,
+      payload: {
+        ...built.payload,
+        ...(raw === undefined ? {} : { content: raw }),
+        allowed_mentions: { parse: [] },
+      },
+    };
+  }
+
+  /** Factory splits its own messages; anything longer is a defect, never silently cut. */
+  protected override truncateContent(content: string): string {
+    if (content.length > 2000) throw new Error("A Factory message exceeded Discord's length.");
+    return content;
+  }
+
+  /** Posts Factory's own text exactly as given, without Markdown conversion. */
+  post(threadId: string, text: string) {
+    return this.postMessage(threadId, { raw: text });
+  }
 
   listen(client: Client, isShuttingDown: () => boolean) {
     this.setupLegacyGatewayHandlers(client, isShuttingDown);
@@ -95,6 +131,16 @@ interface ThreadMembersUpdate {
   readonly added_members?: readonly { readonly user_id: string }[];
   readonly removed_member_ids?: readonly string[];
 }
+
+/** The parts of Discord's MESSAGE_CREATE dispatch that carry a reply target. */
+interface RawMessageCreate {
+  readonly id: string;
+  readonly message_reference?: { readonly type?: number };
+  readonly referenced_message?: ReferencedMessage["message"];
+}
+
+/** References of messages that never reached admission are dropped beyond this many. */
+const MAX_HELD_REFERENCES = 256;
 
 type StateRow = {
   enabled: number;
@@ -141,9 +187,15 @@ const RECONNECTING: Omit<DiscordConnectionProblem, "occurredAt"> = {
  * after transient failures and stops after failures that need correction, recording them so a
  * restart does not reconnect until the owner retries.
  */
-export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatCredentials) =>
+export const makeDiscordOperation = (
+  gateway: DiscordGateway,
+  credentials: ChatCredentials,
+  conversation: { readonly model: ConversationalModelAccess; readonly tools: readonly ChatTool[] },
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    /** The serving session's interpretation, while one serves. */
+    let interpreter: InterpretationEngine | undefined;
     const supervisor = yield* FiberHandle.make<void>();
     const generations = conversationGenerations(sql);
     let current: Omit<OperationStatus, "connectionStatus"> & {
@@ -185,6 +237,38 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
         // Handlers belong to the session: releasing it interrupts them, which is not a failure.
         const run: Run = (effect) => runPromise(effect).catch(() => undefined as never);
         const evidence = makeRequesterEvidence();
+        const encodeThreadId = (key: {
+          guildId: string;
+          parentChannelId: string;
+          threadId: string;
+        }) =>
+          adapter.encodeThreadId({
+            guildId: key.guildId,
+            channelId: key.parentChannelId,
+            threadId: key.threadId,
+          });
+        const post = (key: Parameters<typeof encodeThreadId>[0], text: string) =>
+          adapter.post(encodeThreadId(key), text);
+        const engine = yield* makeInterpreter({
+          sql,
+          applicationId: connection.applicationId,
+          generations,
+          model: conversation.model,
+          tools: conversation.tools,
+          operating: () => !released(),
+          post,
+        });
+        // The reply target a MESSAGE_CREATE carried, kept until admission takes it.
+        const references = new Map<string, ReferencedMessage>();
+        client.on(Events.Raw, (packet: { t?: string; d?: RawMessageCreate }) => {
+          if (packet.t !== "MESSAGE_CREATE" || !packet.d?.message_reference) return;
+          references.set(packet.d.id, {
+            referenceType: packet.d.message_reference.type ?? 0,
+            message: packet.d.referenced_message ?? null,
+          });
+          if (references.size > MAX_HELD_REFERENCES)
+            references.delete(references.keys().next().value!);
+        });
         const ingress = makeIngress(
           {
             sql,
@@ -195,17 +279,18 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
             operating: () => !released(),
             startThread: (channelId, messageId) => adapter.startThread(channelId, messageId),
             handOff: (threadId, message) => adapter.handOff(threadId, message),
-            encodeThreadId: (key) =>
-              adapter.encodeThreadId({
-                guildId: key.guildId,
-                channelId: key.parentChannelId,
-                threadId: key.threadId,
-              }),
+            encodeThreadId,
+            post,
+            referenced: (messageId) => {
+              const reference = references.get(messageId);
+              references.delete(messageId);
+              return reference;
+            },
           },
-          acknowledge,
+          engine,
         );
-        const admitted = (thread: Thread, message: { id: string }) =>
-          run(ingress.admitted(thread, message.id));
+        const admitted = (_thread: Thread, message: { id: string }) =>
+          run(ingress.admitted(message.id));
         chat.onNewMention(admitted);
         chat.onSubscribedMessage(admitted);
         adapter.ingress = {
@@ -217,11 +302,12 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
         };
         client.on(Events.ShardReconnecting, () => {
           evidence.gap();
-          void run(reconnecting);
+          void run(Effect.andThen(engine.transportDown, reconnecting));
         });
         client.on(Events.Invalidated, () => evidence.gap());
         const connected = () => {
           current = { ...current, connectionStatus: "connected", connectionProblem: null };
+          void run(engine.transportUp);
         };
         client.on(Events.ShardResume, connected);
         client.on(Events.ShardReady, connected);
@@ -246,6 +332,13 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
         adapter.listen(client, released);
         const commandSetup = yield* registerCommands(client, connection.applicationId);
         current = { connectionStatus: "connected", connectionProblem: null, commandSetup };
+        interpreter = engine;
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            if (interpreter === engine) interpreter = undefined;
+          }),
+        );
+        yield* engine.started;
         return yield* Effect.callback<GatewayResult>((resume) => {
           client.once(Events.ShardDisconnect, ({ code }) =>
             resume(Effect.succeed(closeResult(code))),
@@ -330,6 +423,8 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
 
     return {
       start,
+      /** A committed Language model save discards the serving session's unfinished interpretation. */
+      modelSaved: Effect.suspend(() => interpreter?.discardAll ?? Effect.void),
       /** Stops the supervisor and waits until its Gateway session is released. */
       stop: FiberHandle.clear(supervisor),
       /** The operating connection now, for a persisted On state. */

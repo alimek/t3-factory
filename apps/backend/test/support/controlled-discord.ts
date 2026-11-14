@@ -107,7 +107,20 @@ const guildCreate = (
   member_count: 1,
   joined_at: new Date(0).toISOString(),
   features: [],
-  roles: [],
+  // Everyone may view and post in every channel unless the test removes them from the server.
+  roles: [
+    {
+      id: guild.id,
+      name: "@everyone",
+      permissions: "3072",
+      position: 0,
+      color: 0,
+      hoist: false,
+      managed: false,
+      mentionable: false,
+      flags: 0,
+    },
+  ],
   emojis: [],
   stickers: [],
   members: [],
@@ -165,6 +178,11 @@ export async function startControlledDiscord() {
   const trafficOnReady: GatewayEvent[] = [];
   let readyHeld = false;
   let threadMembersAvailable = true;
+  let resumeHeld = false;
+  let resumeAttempts = 0;
+  const heldResumes: [GatewaySession, WebSocket][] = [];
+  /** Users who left every server; Discord answers Unknown Member for them. */
+  const departed = new Set<string>();
   let gatewayAvailable = true;
   let sequence = 0;
   let nextId = 900000000000000000n;
@@ -285,6 +303,24 @@ export async function startControlledDiscord() {
     ],
     [
       "GET",
+      /^\/api\/v10\/guilds\/(\d+)\/members\/(\d+)$/,
+      ({ match }) =>
+        departed.has(match[2]!)
+          ? { status: 404, body: { message: "Unknown Member", code: 10007 } }
+          : {
+              status: 200,
+              body: {
+                user: user(match[2]!, "participant", false),
+                roles: [],
+                joined_at: new Date(0).toISOString(),
+                deaf: false,
+                mute: false,
+                flags: 0,
+              },
+            },
+    ],
+    [
+      "GET",
       /^\/api\/v10\/channels\/(\d+)\/thread-members\/(\d+)$/,
       ({ match }) => {
         if (!threadMembersAvailable) return unavailable;
@@ -380,6 +416,12 @@ export async function startControlledDiscord() {
     changed.notify();
   };
 
+  const resume = (session: GatewaySession, socket: WebSocket) => {
+    session.ready = true;
+    dispatch(socket, { t: "RESUMED", d: {} });
+    changed.notify();
+  };
+
   gateway.on("connection", (socket) => {
     const session: GatewaySession = { token: null, intents: null, ready: false, closed: false };
     sessions.push(session);
@@ -398,9 +440,12 @@ export async function startControlledDiscord() {
       if (packet.op === 6) {
         session.token = packet.d.token ?? "";
         if (!bots.has(session.token)) return socket.close(4004, "Authentication failed.");
-        session.ready = true;
-        dispatch(socket, { t: "RESUMED", d: {} });
-        return changed.notify();
+        resumeAttempts += 1;
+        if (resumeHeld) {
+          heldResumes.push([session, socket]);
+          return changed.notify();
+        }
+        return resume(session, socket);
       }
       if (packet.op !== 2) return;
       session.token = packet.d.token ?? "";
@@ -465,6 +510,10 @@ export async function startControlledDiscord() {
       gatewayAvailable = available;
     },
     /** Makes thread-member lookups fail as an outage does. */
+    /** The user leaves every server; lookups of them answer Unknown Member. */
+    removeGuildMember(userId: string) {
+      departed.add(userId);
+    },
     setThreadMembersAvailable(available: boolean) {
       threadMembersAvailable = available;
     },
@@ -474,6 +523,20 @@ export async function startControlledDiscord() {
     interruptSessions() {
       for (const [session, socket] of sockets)
         if (!session.closed) socket.close(4000, "Unknown error.");
+    },
+    /** Later resume attempts wait without RESUMED until `releaseResume`: the outage continues. */
+    holdResume() {
+      resumeHeld = true;
+    },
+    /** Answers every waiting resume attempt and lets later ones resume at once. */
+    releaseResume() {
+      resumeHeld = false;
+      for (const [session, socket] of heldResumes.splice(0))
+        if (!session.closed) resume(session, socket);
+    },
+    /** Resolves once clients attempted `count` resumes in total. */
+    resumeAttempted(count = 1) {
+      return changed.wait(() => resumeAttempts >= count);
     },
     /** Later sessions identify but receive no READY until `releaseReady`. */
     holdReady() {
@@ -527,6 +590,35 @@ export async function controlledDiscord(context: TestContext): Promise<Controlle
 
 export const PARTICIPANT_ID = "200000000000000001";
 
+/** A message payload replying to `target`, with the referenced message as Discord carries it. */
+function replyPayload(
+  message: Record<string, unknown> & { readonly guild_id: string },
+  target: NonNullable<Parameters<typeof messageEvent>[0]["replyTo"]>,
+) {
+  return {
+    ...message,
+    type: 19,
+    message_reference: {
+      type: 0,
+      message_id: target.id,
+      channel_id: target.channelId,
+      guild_id: message.guild_id,
+    },
+    referenced_message:
+      target.content === null
+        ? null
+        : {
+            ...message,
+            id: target.id,
+            type: target.type ?? 0,
+            channel_id: target.channelId,
+            author: user(target.authorId, "author", target.authorIsBot ?? false),
+            content: target.content,
+            mentions: [],
+          },
+  };
+}
+
 /** A guild MESSAGE_CREATE. By default a human participant mentions the bot. */
 export function messageEvent(options: {
   readonly bot: ControlledDiscordBot;
@@ -540,6 +632,18 @@ export function messageEvent(options: {
   readonly replyToBot?: boolean;
   readonly authorIsBot?: boolean;
   readonly webhook?: boolean;
+  /**
+   * A reply to another message, carried in the payload as Discord does; `null` content models a
+   * target Discord could not supply, such as a deleted message.
+   */
+  readonly replyTo?: {
+    readonly id: string;
+    readonly channelId: string;
+    readonly authorId: string;
+    readonly content: string | null;
+    readonly authorIsBot?: boolean;
+    readonly type?: number;
+  };
 }): GatewayEvent {
   const botUser = user(
     options.bot.userId ?? options.bot.applicationId,
@@ -565,6 +669,7 @@ export function messageEvent(options: {
     pinned: false,
     ...(options.webhook ? { webhook_id: "700000000000000001" } : {}),
   };
+  if (options.replyTo) return { t: "MESSAGE_CREATE", d: replyPayload(message, options.replyTo) };
   if (!options.replyToBot) return { t: "MESSAGE_CREATE", d: message };
   const replied = {
     ...message,

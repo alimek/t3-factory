@@ -82,6 +82,8 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
         savedAt: null,
       },
       latestTest: null,
+      runtimeProblem: null,
+      needsAttention: false,
     },
   });
   expect(await factory.getDiscordSettings()).toStrictEqual({

@@ -20,7 +20,7 @@ const TEST_TIMEOUT_MS = 30_000;
  * The AI SDK model for exactly the saved values. Every setting is passed explicitly, so the
  * server's environment can never change the provider, destination or key.
  */
-function chatLanguageModel(connection: ChatModelConnection): LanguageModel {
+export function chatLanguageModel(connection: ChatModelConnection): LanguageModel {
   if (connection.providerKind === "anthropic")
     return createAnthropic({
       baseURL: connection.baseUrl,
@@ -37,9 +37,9 @@ function chatLanguageModel(connection: ChatModelConnection): LanguageModel {
  * Factory's own description of a failed request. Provider bodies, URLs and SDK messages can
  * echo credentials or arbitrary content, so only the status code and a category leave here.
  */
-function failureMessage(error: unknown): string {
+export function failureMessage(error: unknown, timeoutMs: number): string {
   if (error instanceof Error && error.name === "TimeoutError")
-    return `The provider did not answer within ${TEST_TIMEOUT_MS / 1000} seconds.`;
+    return `The provider did not answer within ${timeoutMs / 1000} seconds.`;
   if (!APICallError.isInstance(error))
     return "The provider's answer could not be read as a model response.";
   const status = error.statusCode;
@@ -73,6 +73,6 @@ export async function requestSyntheticReply(
     });
     return { outcome: "succeeded", message: "The provider answered the synthetic request." };
   } catch (error) {
-    return { outcome: "failed", message: failureMessage(error) };
+    return { outcome: "failed", message: failureMessage(error, TEST_TIMEOUT_MS) };
   }
 }

@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_control_operation
+-- Newest applied migration: chat_conversation_memory
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -93,13 +93,31 @@ CREATE TABLE chat_control_state (
   )
 ), rejected_message TEXT, rejected_at TEXT);
 
+CREATE TABLE chat_conversation_turns (
+  application_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  turn INTEGER NOT NULL,
+  message_id TEXT NOT NULL,
+  author_id TEXT NOT NULL,
+  input TEXT NOT NULL,
+  quote_author_id TEXT,
+  quote TEXT,
+  facts_json TEXT NOT NULL,
+  reply TEXT NOT NULL,
+  text_bytes INTEGER NOT NULL CHECK (text_bytes >= 0),
+  CHECK ((quote_author_id IS NULL) = (quote IS NULL)),
+  PRIMARY KEY (application_id, thread_id, turn),
+  FOREIGN KEY (application_id, thread_id) REFERENCES chat_conversations(application_id, thread_id)
+);
+
 CREATE TABLE chat_conversations (
   application_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   guild_id TEXT NOT NULL,
   parent_channel_id TEXT NOT NULL,
   generation INTEGER NOT NULL CHECK (generation >= 1),
-  generation_started_at TEXT NOT NULL,
+  generation_started_at TEXT NOT NULL, last_admitted_at TEXT, notice TEXT CHECK (notice IN ('cleared', 'evicted')),
   PRIMARY KEY (application_id, thread_id)
 );
 
@@ -151,11 +169,24 @@ CREATE TABLE chat_model_settings (
   test_revision INTEGER,
   test_at TEXT,
   test_outcome TEXT CHECK (test_outcome IN ('succeeded', 'failed')),
-  test_message TEXT,
+  test_message TEXT, runtime_failure_revision INTEGER, runtime_failure_at TEXT, runtime_failure_message TEXT,
   CHECK ((revision = 0) = (saved_at IS NULL)),
   CHECK ((test_revision IS NULL) = (test_at IS NULL)),
   CHECK ((test_revision IS NULL) = (test_outcome IS NULL)),
   CHECK ((test_revision IS NULL) = (test_message IS NULL))
+);
+
+CREATE TABLE chat_pending_admissions (
+  application_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  requester_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  admitted_at TEXT NOT NULL,
+  interrupted TEXT CHECK (interrupted IN ('interrupted', 'model-failed', 'timed-out')),
+  PRIMARY KEY (application_id, message_id)
 );
 
 CREATE TABLE chat_sdk_cache (

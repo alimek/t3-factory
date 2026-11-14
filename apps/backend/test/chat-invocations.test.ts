@@ -85,7 +85,7 @@ it("an allowed participant's mention in an allowed channel opens a public thread
   expect(discord.requested("POST", POSTS)).toMatchObject([
     {
       path: "/api/v10/channels/300000000000000010/messages",
-      body: { content: expect.stringContaining("Factory received this request") },
+      body: { content: "OK" },
     },
   ]);
 });

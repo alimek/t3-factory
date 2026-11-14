@@ -7,6 +7,7 @@ import type {
 } from "@t3-factory/contracts";
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
+import { clearConversations } from "./conversations.ts";
 
 type AccessRow = { revision: number; saved_at: string | null };
 type GrantRow = { channel_id: string; project_id: string | null; known: number | null };
@@ -96,6 +97,16 @@ export const updateAccess = (sql: SqlClient.SqlClient, input: UpdateDiscordAcces
         ),
       );
       if (issues.length > 0) return failure("validation", "Choose Projects Factory knows.", issues);
+      // Narrowing or removing a channel's Project scope clears its whole shared conversations,
+      // mixed-Project prose included; an expansion keeps them, and a regrant restores nothing.
+      yield* clearConversations(sql, {
+        parentChannelIds: before.channels.flatMap((saved) => {
+          const kept = input.channels.find((channel) => channel.channelId === saved.channelId);
+          return kept && saved.projectIds.every((id) => kept.projectIds.includes(id))
+            ? []
+            : [saved.channelId];
+        }),
+      });
       const savedAt = yield* now;
       yield* sql`DELETE FROM chat_access_channel_projects`;
       yield* sql`DELETE FROM chat_access_channels`;

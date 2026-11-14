@@ -17,6 +17,7 @@ import {
   type DiscordRestRequest,
   type GatewaySession,
 } from "./controlled-discord.ts";
+import { controlledModelProvider } from "./controlled-model.ts";
 import { factoryHarness } from "./factory.ts";
 
 /** A complete keyless OpenAI-compatible save from the empty section, with overrides. */
@@ -83,11 +84,13 @@ export const discordGuild = {
 } as const;
 
 /**
- * Factory on a fresh home with one Project, a complete keyless Language model, a complete Discord
+ * Factory on a fresh home with one Project, a complete keyless Language model on the controlled
+ * model provider (answering "OK" unless scripted), a complete Discord
  * connection to the controlled Discord, and Access allowing the participant in the allowed channel
  * for that Project. Chat control is still Off.
  */
 export async function chatControlWorld(c: TestContext) {
+  const model = await controlledModelProvider(c);
   const discord = await controlledDiscord(c);
   discord.addBot(discordBot);
   discord.addGuild(discordGuild);
@@ -101,7 +104,7 @@ export async function chatControlWorld(c: TestContext) {
   await factory.configureConnection({ endpoint: "http://127.0.0.1:3773/mcp" });
   const project = await factory.addRepository({ path: root });
   assert(project.ok, JSON.stringify(project));
-  await savedChatModel(factory);
+  await savedChatModel(factory, { baseUrl: model.baseUrl() });
   await savedDiscordConnection(factory);
   const access = await factory.updateDiscordAccess({
     revision: 0,
@@ -109,7 +112,7 @@ export async function chatControlWorld(c: TestContext) {
     channels: [{ channelId: ALLOWED_CHANNEL, projectIds: [project.value.id] }],
   });
   assert(access.ok, JSON.stringify(access));
-  return { discord, harness, open, factory, project: project.value };
+  return { discord, model, harness, open, factory, project: project.value };
 }
 
 const COMMANDS = /^\/api\/v10\/applications\/\d+\/commands$/;

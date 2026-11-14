@@ -16,7 +16,7 @@ import {
   type Message,
   type ThreadChannel,
 } from "discord.js";
-import type { Thread } from "chat";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -24,25 +24,28 @@ import type { DiscordCommandSetup } from "@t3-factory/contracts";
 import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
 import type { ConversationGenerations, ConversationKey } from "./conversations.ts";
+import {
+  BUSY_REPLY,
+  type AdmittedInvocation,
+  type Interpreter,
+  type ReplyTarget,
+  type Reservation,
+} from "./interpretation.ts";
 import type { EvidenceToken, RequesterEvidence } from "./requester-evidence.ts";
 
-/**
- * An explicit invocation Factory authorized and admitted into a conversation. Requester and scope
- * come from the Discord event and Factory's policy, never from the message text. Work on it must
- * recheck `stillPermitted` before anything is published or recorded.
- */
-export interface AdmittedInvocation {
-  readonly conversation: ConversationKey;
-  readonly generation: number;
-  readonly requesterId: string;
-  readonly messageId: string;
-  /** The message text as admitted; later Discord edits never change it. */
-  readonly text: string;
-  readonly evidence: EvidenceToken;
-  /** The Chat SDK thread replies go to. */
-  readonly thread: Thread;
-  /** Whether the invocation may still publish: On, current evidence, policy and generation. */
-  readonly stillPermitted: Effect.Effect<boolean, unknown>;
+/** The message an event replied to, exactly as that event's payload carried it. */
+export interface ReferencedMessage {
+  /** Discord's reference type: 0 is a reply, 1 a forward. */
+  readonly referenceType: number;
+  /** Null when Discord could not supply the message, for example because it was deleted. */
+  readonly message: {
+    readonly id: string;
+    readonly channel_id: string;
+    readonly type: number;
+    readonly content: string;
+    readonly author: { readonly id: string; readonly bot?: boolean; readonly system?: boolean };
+    readonly webhook_id?: string;
+  } | null;
 }
 
 /** What admission needs from the operating session. */
@@ -59,11 +62,11 @@ interface IngressSession {
   /** Hands an admitted message to Chat SDK, which calls `admitted` with its thread. */
   readonly handOff: (threadId: string, message: Message) => Promise<void>;
   readonly encodeThreadId: (key: ConversationKey) => string;
+  /** Publishes one Factory message in the conversation's thread, mentioning nobody. */
+  readonly post: (key: ConversationKey, text: string) => Promise<unknown>;
+  /** The reply target the current MESSAGE_CREATE payload carried, taken once. */
+  readonly referenced: (messageId: string) => ReferencedMessage | undefined;
 }
-
-// Interpretation is a later slice; until then an admitted invocation gets this fixed reply.
-const ACKNOWLEDGEMENT =
-  "Factory received this request. Chat control cannot answer conversational requests yet.";
 
 const RESET_REPLIES = {
   cleared:
@@ -120,6 +123,28 @@ export const registerCommands = (client: Client<true>, applicationId: string) =>
 
 type Access = "permitted" | "denied" | "unavailable";
 
+/**
+ * Where an explicit invocation was made: a new human message of an ordinary type that mentions
+ * or replies to the bot in a text or announcement channel or a thread. Anything else is ignored.
+ */
+function explicitInvocation(message: Message<true>, botUserId: string) {
+  if (message.author.bot || message.webhookId !== null || message.system) return undefined;
+  if (message.type !== MessageType.Default && message.type !== MessageType.Reply) return undefined;
+  const invoked =
+    message.mentions.users.has(botUserId) || message.mentions.repliedUser?.id === botUserId;
+  if (!invoked) return undefined;
+  const channel = message.channel;
+  if (channel.isThread())
+    return channel.parentId ? { thread: channel, parentId: channel.parentId } : undefined;
+  return channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement
+    ? { thread: null, parentId: channel.id }
+    : undefined;
+}
+
+/** Discord affirmatively answered that the user is not a member; anything else is unresolved. */
+const unknownMember = (error: unknown) =>
+  error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownMember;
+
 // Discord redelivers events only within a resumed session, far sooner than this; it matches the
 // longest a conversation generation lasts.
 const MARKER_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -131,14 +156,14 @@ const MARKER_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
  * allowed parent channel (or its thread) that grants at least one Factory Project, with current
  * evidence of the requester's access.
  */
-export function makeIngress(
-  session: IngressSession,
-  admit: (invocation: AdmittedInvocation) => Effect.Effect<void>,
-) {
+export function makeIngress(session: IngressSession, interpreter: Interpreter) {
   const { sql, client, applicationId, evidence, generations } = session;
   const botUserId = client.user.id;
-  type Pending = Omit<AdmittedInvocation, "thread" | "stillPermitted">;
-  const pending = new Map<string, Pending>();
+  /** Admitted messages on their way through Chat SDK to Factory's handler. */
+  const pending = new Map<
+    string,
+    { readonly invocation: AdmittedInvocation; readonly reservation: Reservation | "busy" }
+  >();
 
   /** Records a Discord event once; false when Factory already took this delivery. */
   const firstDelivery = (eventId: string) =>
@@ -154,18 +179,97 @@ export function makeIngress(
   const permittedProjects = (userId: string, parentChannelId: string) =>
     Effect.map(grantedProjects(sql, userId, parentChannelId), (projects) => projects.length > 0);
 
-  /** Whether admitted work may still publish: On, unchanged evidence, policy and generation. */
-  const stillPermitted = (invocation: Pending) =>
-    Effect.gen(function* () {
-      if (!session.operating() || !evidence.isCurrent(invocation.evidence)) return false;
-      if (
-        !(yield* permittedProjects(invocation.requesterId, invocation.conversation.parentChannelId))
-      )
-        return false;
-      return yield* generations.isCurrent(invocation.conversation, invocation.generation);
+  /** Whether a private thread's member list includes the user, asked of Discord directly. */
+  const privateThreadMember = (thread: ThreadChannel, userId: string, guildId: string) =>
+    Effect.gen(function* (): Effect.fn.Return<Access, unknown> {
+      if (evidence.isMember(thread.id, userId)) return "permitted";
+      const token = evidence.token(guildId);
+      const member = yield* Effect.result(
+        Effect.tryPromise(() =>
+          thread.members.fetch({ member: userId, force: true, cache: false }),
+        ),
+      );
+      if (member._tag === "Success") {
+        if (evidence.isCurrent(token)) evidence.joined(guildId, thread.id, userId);
+        return "permitted";
+      }
+      return unknownMember(member.failure.cause) ? "denied" : "unavailable";
     });
 
-  /** Authorizes and records an invocation, creating its thread; the conversation it joined. */
+  /**
+   * A targeted refresh of the requester's access to the conversation's thread, for work whose
+   * evidence a connection gap or change made stale: the member's current permissions on the
+   * thread and, for a private thread, its membership.
+   */
+  const refreshedAccess = (conversation: ConversationKey, userId: string) =>
+    Effect.gen(function* (): Effect.fn.Return<Access, unknown> {
+      const guild = client.guilds.cache.get(conversation.guildId);
+      const channel = yield* Effect.result(
+        Effect.tryPromise(() => client.channels.fetch(conversation.threadId)),
+      );
+      if (!guild || channel._tag === "Failure" || !channel.success?.isThread())
+        return "unavailable";
+      const thread = channel.success;
+      const member = yield* Effect.result(
+        Effect.tryPromise(() => guild.members.fetch({ user: userId, force: true, cache: false })),
+      );
+      if (member._tag === "Failure")
+        return unknownMember(member.failure.cause) ? "denied" : "unavailable";
+      if (!thread.permissionsFor(member.success)?.has(PermissionFlagsBits.ViewChannel))
+        return "denied";
+      return thread.type === ChannelType.PrivateThread
+        ? yield* privateThreadMember(thread, userId, conversation.guildId)
+        : "permitted";
+    });
+
+  /**
+   * Whether admitted work may still dispatch or publish: On, current policy and generation, and
+   * current evidence of the requester's access, refreshed once Factory saw a gap or change.
+   */
+  const permitted = (
+    conversation: ConversationKey,
+    requesterId: string,
+    generation: number,
+    initial: EvidenceToken,
+  ) => {
+    let token = initial;
+    return Effect.gen(function* () {
+      if (!session.operating()) return false;
+      if (!(yield* permittedProjects(requesterId, conversation.parentChannelId))) return false;
+      if (!(yield* generations.isCurrent(conversation, generation))) return false;
+      if (evidence.isCurrent(token)) return true;
+      const refreshed = evidence.token(conversation.guildId);
+      if ((yield* refreshedAccess(conversation, requesterId)) !== "permitted") return false;
+      if (!evidence.isCurrent(refreshed)) return false;
+      token = refreshed;
+      return true;
+    });
+  };
+
+  /** The human message the invoker selected by replying to it, as the event supplied it. */
+  const replyTarget = (message: Message<true>, threadId: string): ReplyTarget => {
+    const reference = session.referenced(message.id);
+    if (message.type !== MessageType.Reply || !reference || reference.referenceType !== 0)
+      return { kind: "none" };
+    const target = reference.message;
+    if (!target) return { kind: "unusable" };
+    // Replying to the bot is how it was invoked; bot prose is never imported as a quote.
+    if (target.author.id === botUserId) return { kind: "none" };
+    if (
+      target.channel_id !== threadId ||
+      target.author.bot === true ||
+      target.author.system === true ||
+      target.webhook_id !== undefined ||
+      (target.type !== MessageType.Default && target.type !== MessageType.Reply)
+    )
+      return { kind: "unusable" };
+    return { kind: "selected", reply: { authorId: target.author.id, text: target.content } };
+  };
+
+  /**
+   * Authorizes and records an invocation, creating its thread, and queues it in its conversation;
+   * the conversation, or nothing when it was not admitted.
+   */
   const admitMessage = (message: Message<true>, thread: ThreadChannel | null, parentId: string) =>
     Effect.gen(function* () {
       if (!(yield* permittedProjects(message.author.id, parentId))) return undefined;
@@ -183,15 +287,19 @@ export function makeIngress(
         parentChannelId: parentId,
         threadId,
       };
-      pending.set(message.id, {
+      const generation = yield* generations.open(conversation);
+      const invocation: AdmittedInvocation = {
         conversation,
-        generation: yield* generations.open(conversation),
+        generation,
         requesterId: message.author.id,
         messageId: message.id,
         text: message.content,
-        evidence: token,
-      });
-      return conversation;
+        replyTarget: replyTarget(message, threadId),
+        admittedAt: yield* Clock.currentTimeMillis,
+        permitted: permitted(conversation, message.author.id, generation, token),
+      };
+      pending.set(message.id, { invocation, reservation: yield* interpreter.reserve(invocation) });
+      return invocation;
     });
 
   /** Whether the requester may act in `thread` now, from the interaction and maintained evidence. */
@@ -204,22 +312,8 @@ export function makeIngress(
       if (!thread.parentId || !(yield* permittedProjects(userId, thread.parentId))) return "denied";
       // Discord computes these for the channel the command was used in, including overwrites.
       if (!interaction.memberPermissions?.has(PermissionFlagsBits.ViewChannel)) return "denied";
-      if (thread.type !== ChannelType.PrivateThread || evidence.isMember(thread.id, userId))
-        return "permitted";
-      const token = evidence.token(interaction.guildId);
-      const member = yield* Effect.result(
-        Effect.tryPromise(() =>
-          thread.members.fetch({ member: userId, force: true, cache: false }),
-        ),
-      );
-      if (member._tag === "Success") {
-        if (evidence.isCurrent(token)) evidence.joined(interaction.guildId, thread.id, userId);
-        return "permitted";
-      }
-      const error = member.failure.cause;
-      return error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownMember
-        ? "denied"
-        : "unavailable";
+      if (thread.type !== ChannelType.PrivateThread) return "permitted";
+      return yield* privateThreadMember(thread, userId, interaction.guildId);
     });
 
   const reset = (interaction: ChatInputCommandInteraction<"cached" | "raw">) =>
@@ -249,43 +343,29 @@ export function makeIngress(
 
   // Events pass the gate one at a time in delivery order, so a repeated delivery meets the
   // marker its first delivery left and later events see every earlier decision.
+  // Queue places are taken here too, so each conversation's queue follows admission order.
   const gate = Semaphore.makeUnsafe(1);
-  const conversationLanes = new Map<string, Semaphore.Semaphore>();
-  /** One admitted invocation at a time per conversation, in admission order. */
-  const serialized = (threadId: string, work: Effect.Effect<void>) => {
-    let lane = conversationLanes.get(threadId);
-    if (!lane) conversationLanes.set(threadId, (lane = Semaphore.makeUnsafe(1)));
-    return lane.withPermits(1)(work);
-  };
 
   return {
     /** A Discord message; only explicit authorized invocations go further. */
     message: (message: Message) =>
       Effect.gen(function* () {
         if (!session.operating() || !message.inGuild()) return;
-        if (message.author.bot || message.webhookId !== null || message.system) return;
-        if (message.type !== MessageType.Default && message.type !== MessageType.Reply) return;
-        const invoked =
-          message.mentions.users.has(botUserId) || message.mentions.repliedUser?.id === botUserId;
-        if (!invoked) return;
-        const channel = message.channel;
-        const thread = channel.isThread() ? channel : null;
-        if (
-          !thread &&
-          channel.type !== ChannelType.GuildText &&
-          channel.type !== ChannelType.GuildAnnouncement
-        )
-          return;
-        const parentId = thread ? thread.parentId : channel.id;
-        if (!parentId) return;
+        const place = explicitInvocation(message, botUserId);
+        if (!place) return;
+        const { thread, parentId } = place;
         // Discord let the author post here, which shows they can see this private thread.
         if (thread?.type === ChannelType.PrivateThread)
           evidence.joined(message.guildId, thread.id, message.author.id);
-        const conversation = yield* gate.withPermits(1)(admitMessage(message, thread, parentId));
-        if (!conversation) return;
+        const invocation = yield* gate.withPermits(1)(admitMessage(message, thread, parentId));
+        if (!invocation) return;
         yield* Effect.promise(() =>
-          session.handOff(session.encodeThreadId(conversation), message),
-        ).pipe(Effect.ensuring(Effect.sync(() => pending.delete(message.id))));
+          session.handOff(session.encodeThreadId(invocation.conversation), message),
+        );
+        const handled = pending.get(message.id);
+        pending.delete(message.id);
+        // Chat SDK did not hand the message to Factory's handler; its queue place is released.
+        if (handled && handled.reservation !== "busy") yield* handled.reservation.cancel;
       }),
     /** A Discord interaction; only `/factory reset` of this application is handled. */
     interaction: (interaction: Interaction) =>
@@ -297,25 +377,19 @@ export function makeIngress(
         if (interaction.options.getSubcommand(false) !== "reset") return;
         yield* gate.withPermits(1)(reset(interaction));
       }),
-    /** Chat SDK's mention handler: the admitted message with its thread. */
-    admitted: (thread: Thread, messageId: string) =>
+    /** Chat SDK's mention handler for an admitted message. */
+    admitted: (messageId: string) =>
       Effect.gen(function* () {
-        const invocation = pending.get(messageId);
-        if (!invocation) return;
-        yield* serialized(
-          invocation.conversation.threadId,
-          admit({ ...invocation, thread, stillPermitted: stillPermitted(invocation) }),
-        );
+        const handled = pending.get(messageId);
+        if (!handled) return;
+        pending.delete(messageId);
+        const { invocation, reservation } = handled;
+        if (reservation !== "busy") return yield* reservation.attach;
+        // Overflow feedback is deterministic and the message is not queued or retained.
+        if (yield* invocation.permitted)
+          yield* Effect.ignore(
+            Effect.tryPromise(() => session.post(invocation.conversation, BUSY_REPLY)),
+          );
       }),
   };
 }
-
-/**
- * The admission seam's current consumer: one fixed acknowledgement per admitted invocation,
- * published only while the invocation is still permitted.
- */
-export const acknowledge = (invocation: AdmittedInvocation) =>
-  Effect.gen(function* () {
-    if (!(yield* invocation.stillPermitted)) return;
-    yield* Effect.tryPromise(() => invocation.thread.post(ACKNOWLEDGEMENT));
-  }).pipe(Effect.ignore);
