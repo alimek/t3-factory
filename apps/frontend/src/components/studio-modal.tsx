@@ -22,6 +22,7 @@ import {
   type StudioDefinitions,
 } from "../studio-definitions.ts";
 import { useServerProtocol } from "../client-scope.ts";
+import type { FlowDraft } from "@t3-factory/contracts";
 import { liveOwner } from "../live/live-connection.ts";
 
 /**
@@ -55,11 +56,25 @@ function useEscapeHandler() {
   return { escapeHandler, registerEscape };
 }
 
+/**
+ * Whether New Flow's dialog is open, and the Flow it created last: its editor opens from the
+ * create answer, which can arrive before Studio receives the Flow.
+ */
+function useFlowCreation() {
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<FlowDraft>();
+  const finishCreating = useCallback((flow: FlowDraft) => {
+    setCreating(false);
+    setCreated(flow);
+  }, []);
+  return { creating, created, setCreating, finishCreating };
+}
+
 export function StudioModal({ selection }: { selection: StudioSelection }) {
   const navigate = useStudioNavigation();
   const definitions = useStudioSession(selection);
   const dialog = useRef<HTMLDivElement>(null);
-  const [creating, setCreating] = useState(false);
+  const { creating, created, setCreating, finishCreating } = useFlowCreation();
   const [flowDraft, setFlowDraft] = useState<StudioDraft>();
   const [agentDraft, setAgentDraft] = useState<StudioDraft>();
   const flowDraftRef = useRef<StudioDraft | undefined>(undefined);
@@ -129,7 +144,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
             registerEscape={registerEscape}
             reportFlowDraft={reportFlowDraft}
             reportAgentDraft={reportAgentDraft}
-            onCreate={() => setCreating(true)}
+            creation={{ start: () => setCreating(true), created }}
           />
         </div>
         {blocker.status === "blocked" && <DraftDiscardDialog blocker={blocker} />}
@@ -138,7 +153,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
             createFlow={definitions.createFlow}
             onClose={() => setCreating(false)}
             onCreated={(flow) => {
-              setCreating(false);
+              finishCreating(flow);
               void navigate({ tab: "flows", flowId: flow.id });
             }}
           />
@@ -276,14 +291,15 @@ function StudioContent({
   selection,
   definitions,
   registerEscape,
-  onCreate,
   reportFlowDraft,
   reportAgentDraft,
+  creation,
 }: {
   selection: StudioSelection;
   definitions: StudioDefinitions;
   registerEscape: (handler: () => void) => () => void;
-  onCreate: () => void;
+  /** New Flow, and the Flow it created last, which can open before Studio receives it. */
+  creation: { readonly start: () => void; readonly created: FlowDraft | undefined };
   reportFlowDraft: (id: string, dirty: boolean) => void;
   reportAgentDraft: (id: string, dirty: boolean) => void;
 }) {
@@ -317,16 +333,13 @@ function StudioContent({
         />
       ) : !flowId ? (
         <div className="min-h-0 flex-1 overflow-auto">
-          <FlowList definitions={definitions} onCreate={onCreate} />
+          <FlowList definitions={definitions} onCreate={creation.start} />
         </div>
       ) : null}
       {openedFlowId && (
         <div
           key={openedFlowId}
-          className={cn(
-            selection.tab === "agents" ? "hidden" : "min-h-0 flex-1 overflow-auto",
-            flowHidden && "hidden",
-          )}
+          className={flowHidden ? "hidden" : "min-h-0 flex-1 overflow-auto"}
           inert={flowHidden}
         >
           <FlowDetail
@@ -335,6 +348,7 @@ function StudioContent({
             active={!flowHidden}
             registerEscape={registerEscape}
             reportDraft={reportFlowDraft}
+            created={creation.created}
           />
         </div>
       )}
