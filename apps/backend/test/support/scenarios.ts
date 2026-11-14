@@ -156,15 +156,19 @@ export async function titleThreadLaunchRecorded(t3: ControlledT3) {
   }
   return launch;
 }
-/** Factory launched the Run's title thread and bound it: T3 recorded the launch and the Run read
- * shows the thread link. Returns the launch request T3 received. */
+/** Factory launched the Run's title thread and bound it: the Run read shows the thread link. Returns
+ * the launch request T3 received for this Run, also when other Runs launched title threads. */
 export function titleGenerationLaunched(world: ScenarioWorld, runId: string) {
   return reach("title generation launched", async () => {
-    const launch = await titleThreadLaunchRecorded(world.t3);
-    await observeFor("observe the title thread", world, runId, (run) =>
-      Boolean(run.titleGeneration?.threadLink),
+    const run = await observeFor("observe the title thread", world, runId, (current) =>
+      Boolean(current.titleGeneration?.threadLink),
     );
-    return launch;
+    const launch = [...world.t3.launches.values()].find((entry) =>
+      entry.payload.title.startsWith(`Factory title · Run #${run.number} · `),
+    );
+    if (!launch)
+      stepFailed("find the title thread", `T3 recorded no title thread for Run #${run.number}.`);
+    return launch.payload;
   });
 }
 /** Factory accepted the Start and launched the Run's title thread, which holds the returned
