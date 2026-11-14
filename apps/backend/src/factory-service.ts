@@ -24,6 +24,7 @@ import { makeRunTitles } from "./run-titles.ts";
 import { makeChatCredentials } from "./chat-control/credentials.ts";
 import { conversationalModel, makeChatModel } from "./chat-control/model.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
+import { runTools } from "./chat-control/run-tools.ts";
 import { makeChatDiscord } from "./chat-control/discord.ts";
 import { DISCORD_API_URL, makeDiscordGateway } from "./chat-control/discord-gateway.ts";
 import { makeDiscordOperation } from "./chat-control/discord-operation.ts";
@@ -128,16 +129,19 @@ export const makeFactoryService = (
     );
     const chatCredentials = yield* makeChatCredentials(credentialsDirectory);
     const discordGateway = yield* makeDiscordGateway(options.discordApiUrl ?? DISCORD_API_URL);
+    let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
       model: conversationalModel(sql, chatCredentials),
-      tools: discoveryTools({
-        listProjects: projects.listProjects,
-        listFlows: definitions.listFlows,
-      }),
+      tools: [
+        ...discoveryTools({
+          listProjects: projects.listProjects,
+          listFlows: definitions.listFlows,
+        }),
+        ...runTools(sql, { getRun: (id) => guard(runner.getRun(id)) }),
+      ],
     });
     const chatModel = yield* makeChatModel(chatCredentials, discordOperation.modelSaved);
     const chatDiscord = yield* makeChatDiscord(chatCredentials, discordGateway, discordOperation);
-    let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
       (kind, input) => runner.readFactoryTool(kind, input),

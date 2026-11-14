@@ -10,6 +10,10 @@ import type { ConversationKey } from "./conversations.ts";
 export interface ChatToolScope {
   readonly requesterId: string;
   readonly conversation: ConversationKey;
+  /** The conversation generation the invocation was admitted into. */
+  readonly generation: number;
+  /** The admitted invocation whose interpretation makes the call. */
+  readonly messageId: string;
   /** The Projects the thread's parent channel grants the requester now, in Access order. */
   readonly projectIds: readonly string[];
 }

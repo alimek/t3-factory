@@ -135,6 +135,7 @@ export function conversationGenerations(sql: SqlClient.SqlClient) {
           VALUES (${key.applicationId},${key.threadId},${key.guildId},${key.parentChannelId},1,${startedAt})
           ON CONFLICT DO UPDATE SET generation=generation+1,generation_started_at=excluded.generation_started_at,last_admitted_at=NULL,notice=NULL`;
         yield* sql`DELETE FROM chat_conversation_turns WHERE application_id=${key.applicationId} AND thread_id=${key.threadId}`;
+        yield* sql`DELETE FROM chat_conversation_handles WHERE application_id=${key.applicationId} AND thread_id=${key.threadId}`;
       }),
     /** Whether work admitted under `admitted` may still publish or record into the conversation. */
     isCurrent,
@@ -203,6 +204,9 @@ export function conversationGenerations(sql: SqlClient.SqlClient) {
           if (evicted.length > 0)
             yield* sql`DELETE FROM chat_conversation_turns WHERE ${where} AND turn<=${evicted[0]!.turn}`;
           yield* sql`UPDATE chat_conversations SET notice=${evicted.length > 0 ? "evicted" : null} WHERE ${where}`;
+          // Handles live only as long as the turn whose interpretation issued them.
+          yield* sql`DELETE FROM chat_conversation_handles WHERE ${where}
+            AND message_id NOT IN (SELECT message_id FROM chat_conversation_turns WHERE ${where})`;
           return true;
         }),
       ),
@@ -241,6 +245,7 @@ function clearWhere(sql: SqlClient.SqlClient, condition: Statement.Fragment, at:
         count: number;
       }>`SELECT COUNT(*) AS count FROM chat_conversation_turns WHERE ${where}`;
       yield* sql`DELETE FROM chat_conversation_turns WHERE ${where}`;
+      yield* sql`DELETE FROM chat_conversation_handles WHERE ${where}`;
       // A conversation that retained nothing keeps whatever notice it already owed.
       yield* sql`UPDATE chat_conversations SET generation=generation+1,generation_started_at=${iso(at)},last_admitted_at=NULL,
         notice=${retained!.count > 0 ? sql`'cleared'` : sql`notice`} WHERE ${where}`;
