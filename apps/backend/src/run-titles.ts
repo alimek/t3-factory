@@ -214,6 +214,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
         return reportingInstallationProblem(
           model.providerInstanceId,
           yield* ops.getReportingInstallations(),
+          "Settings → Run titles",
         );
       }).pipe(Effect.catch(() => Effect.succeed("T3 could not be checked for title generation.")));
 

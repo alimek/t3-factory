@@ -9,10 +9,10 @@ import type {
   RunDetail,
 } from "@t3-factory/contracts";
 
-/** What the launch tools call: the Project catalog and the shared Start operation. */
+/** What the launch tools call: the Project catalog, the Run title setting and the shared Start operation. */
 export type LaunchOperations = Pick<
   FactoryOperations,
-  "recheckConnection" | "recheckProjects" | "listProjects"
+  "recheckConnection" | "recheckProjects" | "listProjects" | "getRunTitleSetting"
 > & { startTextRun(input: unknown): Promise<Result<RunDetail>> };
 
 /** Run Start for any local session with the Factory MCP; no Block id. */
@@ -20,7 +20,7 @@ export const launchTools: Tool[] = [
   {
     name: "factory_list_projects",
     description:
-      "List Factory's Projects in the current T3 connection and environment after a fresh recheck, with their availability. Pass workspaceRoot, the canonical repository root of this conversation's Project (projectWorkspaceRoot from T3's t3_worktree_status, also in a worktree), to match it exactly; match explains a missing, ambiguous or unavailable Project. Factory never substitutes or registers a Project.",
+      "List Factory's Projects in the current T3 connection and environment after a fresh recheck, with their availability. Pass workspaceRoot, the canonical repository root of this conversation's Project (projectWorkspaceRoot from T3's t3_worktree_status, also in a worktree), to match it exactly; match explains a missing, ambiguous or unavailable Project. Factory never substitutes or registers a Project. generateRunTitles says whether Generate Run titles is on: a Run started now may then have its automatic title replaced by a generated title shortly after Start.",
     inputSchema: {
       type: "object",
       properties: {
@@ -125,6 +125,7 @@ async function listProjects(factory: LaunchOperations, args: Record<string, unkn
     });
   const connection = await factory.recheckConnection();
   const catalog = await factory.recheckProjects();
+  const titles = await factory.getRunTitleSetting();
   const context = connection.ok ? connection.value.authorizationContext : null;
   const ready = connection.ok && connection.value.state === "ready" && context;
   // Only Projects of the current connection and environment can start; others are not offered.
@@ -149,6 +150,7 @@ async function listProjects(factory: LaunchOperations, args: Record<string, unkn
       availability,
     })),
     problem,
+    generateRunTitles: titles.ok && titles.value.enabled,
     ...(typeof workspaceRoot === "string"
       ? {
           match: ready

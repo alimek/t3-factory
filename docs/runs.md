@@ -104,6 +104,15 @@ Factory is refused); an unknown instance, model or option is rejected and the se
 the chosen model. Only the Factory host changes it (`PUT /api/settings/run-titles`); approved clients read it, with its
 latest diagnostic (`GET /api/settings/run-titles`).
 
+**Settings → Run titles** holds the setting. On the host it offers the on/off choice and the provider instance, model and
+options from the live T3 catalog, and saves each change at once; choosing a provider instance takes its first model, and
+the switch stays unavailable until a provider instance and model are chosen. A saved choice the catalog no longer
+offers stays visible as unavailable. The section discloses that the title model runs in the Project checkout with the
+owner's T3 permissions and that its prompt forbids reading or editing files without Factory enforcing it, and shows the
+latest diagnostic with its Run and time in the neutral notice style, never the error color. An approved client sees
+the same fields read-only under **Managed on the Factory host**. The section reads the setting when it opens; changes
+are not delivered live.
+
 The shared Start operation, used by the composer and by `factory_start_run`, makes the decision, so every Start path behaves
 the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and
 legacy Runs record no generation. An eligible Run captures the provider instance, model, options, built-in prompt version
@@ -177,7 +186,7 @@ generation is meant to move to it as the only generator.
 
 ### Starting from a conversation
 
-A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-skills). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line with automatic provenance and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
+A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-skills). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line with automatic provenance and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override. While **Generate Run titles** is on, the skill's review adds one line saying the title may be replaced by a generated title; the receipt still reports the accepted automatic title, and generation then applies as for any automatic Run.
 
 ## Live viewing
 

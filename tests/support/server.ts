@@ -18,6 +18,8 @@ import {
   workerAtWork,
   sha256Hex,
   workerHandle,
+  generatedTitleApplied,
+  enableRunTitlesWithCheapModel,
 } from "../../apps/backend/test/support/scenarios.ts";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage } from "node:http";
@@ -392,6 +394,10 @@ const transitions = {
     replyTurnObserved(context, workerOf(run), "ui-worker-reply"),
   settled: (run: RunDetail) => settled(context, workerOf(run)),
   "settlement unresolved": (run: RunDetail) => settlementUnresolved(context, workerOf(run)),
+  "generated title applied": (run: RunDetail, title?: string) => {
+    assert(title, "The generated title is required");
+    return generatedTitleApplied(context, run.id, title);
+  },
   "Stop taken while the turn continues": (run: RunDetail) =>
     t3.holdStops(run.threadBindings.map((binding) => binding.threadId)),
   "stopped turns ended": (run: RunDetail) =>
@@ -456,6 +462,27 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
       query.get("message") ?? undefined,
     );
     return { ok: true, outcome };
+  },
+  /**
+   * Generate Run titles is on with a cheap model that T3 withdraws before the next Start, so that
+   * Start records the setting's diagnostic; the model stays chosen and stays withdrawn.
+   */
+  async "/__fixture/run-titles/diagnostic"() {
+    const withdraw = await enableRunTitlesWithCheapModel(factory, t3);
+    withdraw();
+    const flow = flows.find((item) => item.name === "Demo · Focused change")!;
+    await workerAtWork(
+      context,
+      await demoStart(
+        context,
+        flow.id,
+        "run-title-diagnostic",
+        "UI title diagnostic · Tidy the project picker",
+        "Tidy the spacing of the Atlas project picker.",
+        undefined,
+        { titlePrefix: "", keyNamespace: "ui-live:" },
+      ),
+    );
   },
   "/__fixture/live/requests/reset": () => {
     browserRequests = [];

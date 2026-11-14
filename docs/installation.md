@@ -107,7 +107,9 @@ do not need them and neither runs on its own.
 - `factory-start-run` starts a Run with Factory. It resolves the conversation's
   Project, offers the returned Flows, reviews the exact prompt and asks for explicit
   confirmation before it calls [`factory_start_run`](t3-integration.md#run-start-tools);
-  that confirmation is the skill's instruction, not a server check.
+  that confirmation is the skill's instruction, not a server check. While
+  **Generate Run titles** is on, its review adds one line saying the title may be
+  replaced by a generated title.
 - `setup-factory` configures a repository's tracker claim, once per repository. It
   explores the repository and its tracker, proposes an "in progress" label (default
   `factory:in-progress`), shows a draft of every change and writes only after you
@@ -125,7 +127,10 @@ manual fix on every recheck, while the required reporting setup still completes.
 failed optional-skill replacement, such as a file locked by flags or an ACL, is named with its error
 until a later setup action writes that copy or Factory restarts.
 
-Startup and app updates do not write harness files. When an optional skill is
+Startup and app updates do not write harness files. Installed copies are compared with
+the exact skill text of the running Factory, so an update that changes an optional skill
+(such as the `factory-start-run` review line for generated titles) reports earlier copies
+as outdated until **Repair** or **Reinstall** replaces them. When an optional skill is
 missing or outdated, use **Reinstall** (or **Repair** when reporting also needs
 attention), then start a fresh harness session so it discovers the skill.
 
@@ -133,7 +138,9 @@ attention), then start a fresh harness session so it discovers the skill.
 
 After `pnpm build`, `pnpm test:e2e` runs the controlled Chromium journeys against a foreground backend with a temporary home and a controlled T3 adapter (no OAuth or paid workload). First boot may need
 `pnpm exec e2e-web install chromium --with-deps` (for CI). Logs and traces go to the ignored `.e2e/` directory. These journeys are separate from `pnpm test` and do not establish live compatibility; see
-[UI verification](testing.md).
+[UI verification](testing.md). The Run title journey submits the generated title for the controlled title thread through
+`factory_set_run_title`; it shows the Settings section, indicators, title line and details, not that a live model
+launches, honors its prompt or titles within the deadline.
 
 ## Compatibility and support limits
 
@@ -192,6 +199,8 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
   deadline bounds when a title can be written, not the tokens the model spends. Factory's one Stop of a title thread is
   unconfirmed: an acknowledgement does not prove termination. A title thread launch whose reply was lost and that
   Factory cannot bind by its provenance before the deadline is abandoned and can leave an orphan T3 thread.
+  Title generation is exercised only against the controlled T3: a live title model's launch, its use of
+  `factory_set_run_title` and whether it finishes within 30 seconds are unverified.
 - Archive closes Factory handoffs and asks T3 once to interrupt each worker thread without confirming termination; a backend crash right after archiving can leave threads running. It does not undo edits or prohibit later direct T3 chats. Backend exit is not Archive. Archived Runs stay archived.
 - No conversation archive, automatic failed-work retry, hosted multi-user service or team accounts. Remote Factory clients need approved, revocable credentials over TLS and the plain HTTP listener accepts only
   loopback peers ([client access](desktop-and-clients.md)).

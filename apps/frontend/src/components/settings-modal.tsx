@@ -8,6 +8,7 @@ import {
   Plug,
   Search,
   SlidersHorizontal,
+  Sparkle,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { AccessSettings } from "./access-settings.tsx";
 import { ApplicationSettings } from "./application-settings.tsx";
 import { GeneralSettings } from "./general-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
+import { RunTitleSettings } from "./run-title-settings.tsx";
 import { useClientScope, useServerInheritsAppearance } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { ThemeColorsNote } from "./theme-color-settings.tsx";
@@ -109,6 +111,14 @@ const applicationSection: SettingsSection = {
   ],
 };
 
+const runTitlesSection: SettingsSection = {
+  tab: "run-titles",
+  title: "Run titles",
+  icon: Sparkle,
+  group: "SETTINGS",
+  keywords: ["generate", "generated", "title", "name", "model", "provider"],
+};
+
 const runImagesSection: SettingsSection = {
   tab: "run-images",
   title: "Run images",
@@ -127,6 +137,7 @@ function useSections(): readonly SettingsSection[] {
     ...(scope === "host" ? [accessSection] : []),
     ...(desktopBridge() ? [generalSection] : []),
     applicationSection,
+    runTitlesSection,
     runImagesSection,
   ];
 }
@@ -146,6 +157,7 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   access: () => <AccessSettings />,
   general: () => <GeneralSettings />,
   application: () => <ApplicationPane />,
+  "run-titles": () => <RunTitleSettings />,
   "run-images": () => <RunImageSettings />,
 };
 
@@ -197,7 +209,7 @@ export function SettingsModal() {
         <WorkspaceDialogHeader
           title="Settings"
           section={current.title}
-          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, appearance, the desktop application and stored Run images."
+          description="Configure T3 connection, Agent reporting, keyboard shortcuts, device access, appearance, the desktop application, Run title generation and stored Run images."
           onClose={close}
         />
         <div className="flex min-h-0 flex-1 max-sm:flex-col">
