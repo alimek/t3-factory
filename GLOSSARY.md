@@ -313,3 +313,10 @@ on any Run in a permitted Project, and an action's receipt goes to the thread it
 started any other way have none, and reading or acting on a Run never adds one. See
 [Chat control](docs/chat-control.md#originating-thread).
 _Avoid_: Run owner; assigning an origin to a Run read or acted on from chat.
+
+**Status card**:
+The one Discord message Factory maintains in a chat-started Run's originating thread and edits from the
+Run's committed facts: identity, state, active Blocks, latest results, pending Waits, Needs input and
+Problems. Ordinary Block activity edits it rather than posting; it never carries report bodies. See
+[Chat control](docs/chat-control.md#status-cards).
+_Avoid_: Progress feed or per-event notification; treating the card's text as conversation input.
