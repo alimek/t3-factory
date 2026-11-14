@@ -51,15 +51,17 @@ export class ControlledT3 implements T3Adapter {
   launchSupported = true;
   retryScope: string | null = "controlled-durable-server-1";
   loseLaunchReply = false;
-  beforeLaunch?: () => Promise<void>;
+  beforeLaunch?: (payload: LaunchPayload) => Promise<void>;
   /** Every launch call received, including same-key replays T3 would not deduplicate. */
   launchCalls = 0;
   readonly launches = new Map<string, { payload: LaunchPayload; reference: LaunchReference }>();
   engineStatus = "running";
   pendingRequestCount = 0;
   worktreeLaunchSupported = true;
-  async inspectLaunchSupport(_target: T3Endpoint, workspace: FlowWorkspace["mode"]) {
+  beforeLaunchInspection?: (target: T3Endpoint) => void | Promise<void>;
+  async inspectLaunchSupport(target: T3Endpoint, workspace: FlowWorkspace["mode"]) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
+    await this.beforeLaunchInspection?.(target);
     if (this.launchSupported && workspace === "worktree" && !this.worktreeLaunchSupported)
       return {
         supported: false,
@@ -113,7 +115,7 @@ export class ControlledT3 implements T3Adapter {
   }
   async launchThread(_target: T3Endpoint, payload: LaunchPayload) {
     if (!this.available || !this.authorized) throw Error("Unavailable");
-    await this.beforeLaunch?.();
+    await this.beforeLaunch?.(payload);
     this.launchCalls++;
     if (payload.attachments?.some((attachment) => !this.uploads.has(attachment.id)))
       throw new LaunchRejected("Attachment not found (removed or expired).");

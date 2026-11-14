@@ -57,6 +57,8 @@ export type CanvasFlowInputContent = {
     | { readonly kind: "none" }
     | { readonly kind: "line"; readonly content: ReactNode }
     | { readonly kind: "images"; readonly content: ReactNode };
+  /** A read-only status row below the prompt, outside the press target. */
+  readonly status?: ReactNode;
   readonly port: CanvasPort;
 };
 
@@ -231,6 +233,11 @@ function SurfaceFlowInput({
         </>,
       )}
       {prompt.kind === "images" && prompt.content}
+      {content.status && (
+        <div className="flex flex-col border-t" style={{ height: input.statusLine }}>
+          {content.status}
+        </div>
+      )}
       <SurfacePort
         side="right"
         center={geometry.flowInputPoint.y - graph.flowInput.position.y - input.anchorBorder}
@@ -494,6 +501,7 @@ function useSurfaceGraph({
   const content = (item: CanvasBlock) => contents.get(item.id)!;
   const facts = {
     prompt: flowInput.prompt.kind,
+    flowInputStatus: flowInput.status !== undefined,
     footerCount: (item: CanvasBlock) => content(item).footers.length,
     reservedFooterCount: reservedFooters,
     emptyGraphSize,

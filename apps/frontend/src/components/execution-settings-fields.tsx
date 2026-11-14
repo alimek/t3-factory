@@ -262,7 +262,7 @@ function ModelOptionField({
   );
 }
 
-function ModelOptionSelect({
+export function ModelOptionSelect({
   id,
   label,
   descriptor,

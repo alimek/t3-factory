@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: appearance_snapshot
+-- Newest applied migration: run_title_generation
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -584,6 +584,46 @@ CREATE TABLE "run_thread_bindings" (
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
 
+CREATE TABLE run_title_generations (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'dropped', 'timed-out', 'cancelled', 'skipped', 'failed')),
+  reason TEXT,
+  provider_instance_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  model_options_json TEXT NOT NULL,
+  model_label TEXT NOT NULL,
+  prompt_version INTEGER NOT NULL,
+  deadline_at TEXT NOT NULL,
+  automatic_title TEXT NOT NULL,
+  generated_title TEXT,
+  thread_link TEXT,
+  created_at TEXT NOT NULL,
+  launch_payload_json TEXT,
+  launch_sent_at TEXT,
+  thread_id TEXT,
+  ended_at TEXT,
+  stop_requested_at TEXT,
+  settle_requested_at TEXT
+);
+
+CREATE TABLE run_title_settings (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  provider_instance_id TEXT,
+  model_id TEXT,
+  model_options_json TEXT,
+  revision INTEGER NOT NULL DEFAULT 0,
+  diagnostic_run_id TEXT REFERENCES runs(id),
+  diagnostic_message TEXT,
+  diagnostic_at TEXT,
+  CHECK ((model_id IS NULL) = (provider_instance_id IS NULL)),
+  CHECK ((model_id IS NULL) = (model_options_json IS NULL)),
+  CHECK (enabled = 0 OR model_id IS NOT NULL),
+  CHECK ((diagnostic_run_id IS NULL) = (diagnostic_message IS NULL)),
+  CHECK ((diagnostic_run_id IS NULL) = (diagnostic_at IS NULL))
+);
+
 CREATE TABLE run_workspaces (
   run_id TEXT PRIMARY KEY REFERENCES runs(id),
   base_ref TEXT NOT NULL CHECK (length(base_ref) BETWEEN 1 AND 255),
@@ -620,7 +660,8 @@ CREATE TABLE runs (
   created_at TEXT NOT NULL DEFAULT '',
   creation_key TEXT NOT NULL DEFAULT '',
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id)
-, settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT);
+, settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT, title_provenance TEXT NOT NULL DEFAULT 'legacy'
+  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')));
 
 CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL
 ;

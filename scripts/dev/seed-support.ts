@@ -104,7 +104,9 @@ export async function demoStart(
       `${namespace.titlePrefix}${title}\n\n${prompt}`,
       attachments,
     )),
+    // The title is the prompt's first line, as an unrenamed composer draft submits it.
     title: `${namespace.titlePrefix}${title}`,
+    titleProvenance: "automatic" as const,
     createdAt: new Date().toISOString(),
   };
 }

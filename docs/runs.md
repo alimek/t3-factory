@@ -41,10 +41,18 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   the Run's creation time; the Run's start time is when Factory accepted it. Factory rejects a blank or over-500-character
   title (after trimming) or a creation time not in `Date.toISOString()` form (for example `2026-11-07T08:00:00.000Z`),
   and creates nothing.
+- **Title provenance.** Start also carries how the title was chosen, and the Run keeps it: automatic for a draft never
+  renamed, manual for a renamed draft, even when its title equals the prompt's first line. A draft or pending request
+  saved before provenance existed submits legacy rather than a guess, as does a request that omits it. Start rejects any
+  other value, including generated, and creates nothing. Run detail and navigation expose the provenance.
+- **Title generation.** With **Generate Run titles** on, Start decides once, when it accepts a Run, whether
+  [Run title generation](#run-title-generation) applies; the decision never refuses or delays Start.
 - **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
   records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
-  even after a lost response or restart; reusing the key with changed content, including title, creation time or the
-  images' bytes, order, names or positions, conflicts. An unknown response keeps the
+  even after a lost response or restart, with its original title provenance; reusing the key with changed content,
+  including title, a change between manual and another title provenance, creation time or the images' bytes, order,
+  names or positions, conflicts. Automatic and legacy requests keep the identity requests had before provenance existed,
+  so a pending request or `factory_start_run` accepted then still recovers its Run with its stored provenance. An unknown response keeps the
   submitted fields and images read-only (previews still open) and offers **Check same request**, which uploads missing
   images again and repeats the same request; only confirmed success clears the prompt and opens the Run. If Factory
   reports an image missing at acceptance, the composer uploads it again and retries once automatically; a further
@@ -89,9 +97,97 @@ levels of evidence. A configuration check alone proves neither execution nor rep
   rejection keeps it editable. A draft's title follows its first non-empty prompt line until it is renamed; a manual title
   survives prompt edits, reload and other tabs' saves, and a title or selection alone never creates a draft.
 
+### Run title generation
+
+**Generate Run titles** is an installation-wide setting, off on new and upgraded installations. Turning it on needs a T3
+provider instance and model, with options, that the live T3 catalog offers (a provider whose harness cannot report to
+Factory is refused); an unknown instance, model or option is rejected and the setting is unchanged. Turning it off keeps
+the chosen model. Only the Factory host changes it (`PUT /api/settings/run-titles`); approved clients read it, with its
+latest diagnostic (`GET /api/settings/run-titles`).
+
+**Settings → Run titles** holds the setting. On the host it offers the on/off choice and the provider instance, model and
+options from the live T3 catalog, and saves each change at once; choosing a provider instance takes its first model, and
+the switch stays unavailable until a provider instance and model are chosen. A saved choice the catalog no longer
+offers stays visible as unavailable. The section discloses that the title model runs in the Project checkout with the
+owner's T3 permissions and that its prompt forbids reading or editing files without Factory enforcing it, and shows the
+latest diagnostic with its outcome, Run and time in the neutral notice style, never the error color. An approved client sees
+the same fields read-only under **Managed on the Factory host**. The section reads the setting when it opens; changes
+are not delivered live.
+
+The shared Start operation, used by the composer and by `factory_start_run`, makes the decision, so every Start path behaves
+the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and
+legacy Runs record no generation. An eligible Run captures the provider instance, model, options, built-in prompt version
+and an absolute deadline 30 seconds after acceptance, and records its generation in the acceptance transaction:
+
+- **pending** when every check passes: T3 is connected and authorized, the catalog offers the provider instance, model
+  and options, launch is supported and Factory MCP is installed for that provider (an instance disabled in T3 has no
+  [reporting installation](t3-integration.md#installation-actions), so it fails here);
+- **skipped** with that check's reason when one fails; the reason also becomes the setting's latest diagnostic, with the
+  Run and outcome, until a later diagnostic replaces it or a generated title is applied;
+- **skipped** without a diagnostic when the prompt has no letter or digit, counting `[Image N: name]` labels as text, or
+  when the setting changed between these checks and acceptance while staying on.
+
+The checks run beside the other Start checks; their failure never refuses Start. A replayed Start returns its Run with
+the original provenance and generation and decides nothing again. A Run generates at most once and only at Start; there
+is no regenerate, and later setting changes, including turning it off, affect only future Runs. Run detail and
+navigation, including live navigation, carry the generation's state with a short reason, captured model label, deadline,
+automatic title, generated title and T3 thread link, or none.
+
+A pending generation launches one [title thread](t3-integration.md#title-threads) beside the Flow: the Flow input
+targets dispatch as they would without it, and the title thread never gates or delays them. Just before the launch
+Factory runs the eligibility checks again; a failure records **skipped** with that check's reason as the setting's
+diagnostic and launches nothing. The model submits a title with `factory_set_run_title`, and the generation ends with
+exactly one outcome:
+
+- **applied** when the first valid title arrives before the deadline while the title provenance is still automatic: the
+  Run takes it and its provenance becomes generated;
+- **dropped** when the Run is renamed first, even to its automatic title; the owner's title stays;
+- **timed out** when the deadline passes first, also when Factory was not running then or the launch's outcome is
+  still unknown;
+- **cancelled** when the Run is archived or confirmed for manual settlement first, in the transaction that closes its
+  handoff gate, whether or not the launch was sent;
+- **failed** when T3 definitively rejects the title thread's launch, or the title thread finishes without a valid title
+  before the deadline.
+
+Every outcome but applied keeps the current title, and a later submission is refused without changing the outcome.
+Automatic settlement is not an outcome, so a title can still land on a Settled Run before its deadline; turning the
+setting off cancels nothing. Once an outcome is recorded Factory stops the title thread if it may still be running and
+settles it in T3 once it finished, best effort; the [Runner](runner.md#run-title-generations) owns the deadline,
+cancellation, restart and cleanup rules. Restart never launches a title thread twice.
+
+Applying a generated title is like Rename: it is not Run activity and moves no row. It also
+clears the setting's diagnostic, because it shows the setting works. A timed-out or failed outcome records its reason as
+the setting's latest diagnostic in the transaction that records the outcome; dropped and cancelled are owner actions
+and record none. Like every outcome they are quiet, raising no Problem or attention. The title thread is not a
+Block or worker: it never counts toward settlement, Needs input, attention, Problems, missing reports or Block
+readiness, so a Run can settle while its title is still pending.
+
+The Run shows its generation without treating it as Flow work:
+
+- While it is pending, **Generating title…** pulses next to the title on the Run's sidebar row and in the top bar. Any
+  outcome or Rename removes both, and nothing stays next to the title afterwards.
+- On the [execution canvas](#execution-canvas) the Flow input card of a Run whose generation was launched or skipped
+  carries one read-only line for the life of the Run: ✦ **Title**, its state, then the applied title or the outcome's
+  reason (for example **Title · applied · Exact matches first in search**). It has no port, visit or exit; manual,
+  legacy and setting-off Runs show none. Pending uses the working color, applied the success color and every other
+  outcome the neutral stopped color, never the error color.
+- Pressing the line opens the **Run title** details in the side details surface: state and reason, model, deadline,
+  automatic and generated titles, and **Open title thread in T3** once the thread is known. It selects no Block,
+  highlights no Block timeline rows and leaves **Follow active** as it was; the card takes a lighter inspected outline
+  instead of the selected-Block border. Escape, the close button or selecting a Block closes it.
+- The timeline records **title generation started** when the title thread's launch is sent, then exactly one outcome
+  event; a skipped generation records only its skipped event. These rows name the Run, marked ✦, as the actor and link
+  the title thread once it is known, including a thread bound after the outcome. They are not Run activity.
+
+**Decision: Run titles are generated by an installation-level T3 thread outside the Flow; status is shown on the Flow
+input card.** Factory has no LLM connection of its own, so a short-lived T3 thread with a cheap model writes the title.
+Keeping it outside the Flow leaves Flows, captured definitions and Studio unchanged, lets the Flow start at once and
+keeps a cosmetic step out of settlement, attention and Problems. Its status belongs with the Run's prompt, so the Flow
+input card carries it rather than a Block.
+
 ### Starting from a conversation
 
-A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-skills). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override.
+A T3 conversation on the Factory host, including one driven from a phone, can start a text-only Run through the [Run Start tools](t3-integration.md#run-start-tools), normally by the user invoking the [`factory-start-run` skill](installation.md#optional-skills). It shares the composer's Start operation, readiness gates, captured definitions, workspace behavior and idempotency; its title is the prompt's first non-empty line with automatic provenance and its creation time is when Factory first accepted the request. It has no draft, images or per-Run workspace override. Unless the skill has seen **Generate Run titles** reported off, its review adds one line saying the title may be replaced by a generated title; the receipt still reports the accepted automatic title, and generation then applies as for any automatic Run.
 
 ## Live viewing
 
@@ -125,7 +221,8 @@ A block's exits are its captured Agent revision's exits minus those the Flow hid
 keep the exit they recorded; Human steps upgraded from earlier releases show their exits as **Approve** and **Request changes**, the
 fixed Human exits their old exits were mapped to.
 
-- The **Flow input** block shows the Run's truncated prompt and has no state or details panel. With images it shows up
+- The **Flow input** block shows the Run's truncated prompt and has no state or details panel; its Run
+  [title generation](#run-title-generation) line opens the Run title details instead. With images it shows up
   to three prompt lines, each image reference as an **Image N: name** chip, the first three thumbnails and a **+N** control
   for the rest. A thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
   its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
@@ -223,7 +320,8 @@ menu items never opens a row preview.
   A Settle still stopping workers focuses the row; when the Run settles later, focus moves to the destination only if it is
   still on that row, on that Run's detail settlement section, or was lost because the row left; focus the user moved elsewhere,
   including to the page, stays. A detail **Retry** that starts stopping moves focus to the settlement section as the button disappears.
-- **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters); renaming never moves a row.
+- **Rename** changes that Run's or draft's title only (trimmed, non-empty, ≤500 characters) and makes its title provenance
+  manual, dropping a pending [title generation](#run-title-generation); renaming never moves a row.
   The same shadcn/Radix row menu serves desktop and browser clients. Right click opens it at the pointer;
   Shift+F10 and the context-menu key anchor it below the focused row. Touch devices retain a ⋯ button;
   mouse layouts omit it. Closing the menu or Rename/Archive dialogs returns focus to the row when it remains visible. Rename

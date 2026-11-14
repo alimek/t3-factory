@@ -135,10 +135,13 @@ function unavailableLaunch(): LaunchDiscovery {
   return { available: false };
 }
 
+/** Where a launch was sent: the Run's T3 environment, project and project root. */
+type LaunchScope = Pick<RunRow, "endpoint" | "environment_id" | "t3_project_id" | "workspace_root">;
+
 /** The only thread in the project that carries the saved launch title, if exactly one does. */
-function soleTitledCandidate(t3: T3Adapter, runRow: RunRow, title: string) {
+function soleTitledCandidate(t3: T3Adapter, scope: LaunchScope, title: string) {
   return Effect.tryPromise({
-    try: () => t3.discoverLaunchCandidates(runTarget(runRow), title).catch(unavailableLaunch),
+    try: () => t3.discoverLaunchCandidates(runTarget(scope), title).catch(unavailableLaunch),
     catch: unavailableLaunch,
   }).pipe(
     Effect.map((discovery) => {
@@ -166,22 +169,35 @@ function searchLaunchedWorker(
       current,
       retryNotBefore(current, launch.recovery_attempt + 1),
     );
-    const candidate = yield* soleTitledCandidate(t3, runRow, payload.title);
-    if (!candidate || !sameWorkerSettings(payload, runRow, candidate)) return yield* miss;
+    const launched = yield* verifiedLaunchedThread(t3, runRow, payload);
+    if (!launched) return yield* miss;
+    yield* store.bindLaunchedWorker(runRow, launch, launched);
+  });
+}
+
+/**
+ * The thread an uncertain launch created, found only by uniquely verified provenance: the one
+ * thread in the project with the saved title, top-level with the saved workspace and settings,
+ * and exactly one matching execution. Undefined when evidence is missing, ambiguous or incomplete.
+ */
+export function verifiedLaunchedThread(t3: T3Adapter, scope: LaunchScope, payload: LaunchPayload) {
+  return Effect.gen(function* () {
+    const candidate = yield* soleTitledCandidate(t3, scope, payload.title);
+    if (!candidate || !sameWorkerSettings(payload, scope, candidate)) return undefined;
     const executions = matchingExecutions(payload, candidate);
-    if (executions.length !== 1) return yield* miss;
-    yield* store.bindLaunchedWorker(runRow, launch, {
+    if (executions.length !== 1) return undefined;
+    return {
       projectId: candidate.projectId,
       threadId: candidate.threadId,
       link: candidate.link ?? null,
       runId: executions[0]!.runId,
       status: executions[0]!.status,
-    });
+    };
   });
 }
 
 /** A top-level thread of the Run's project with the saved workspace and Agent settings. */
-function sameWorkerSettings(payload: LaunchPayload, run: RunRow, candidate: LaunchCandidate) {
+function sameWorkerSettings(payload: LaunchPayload, run: LaunchScope, candidate: LaunchCandidate) {
   return (
     candidate.projectId === run.t3_project_id &&
     candidate.parentThreadId === null &&

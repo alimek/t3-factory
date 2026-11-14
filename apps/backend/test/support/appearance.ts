@@ -44,6 +44,9 @@ function pairedOn(
   return Effect.gen(function* () {
     const factory: FactoryService["Service"] = yield* harness.service({ t3, connectionRetryMs });
     assert((yield* factory.configureConnection({ endpoint: T3_ENDPOINT })).ok);
+    // Queue behind the backend's startup and connection-change reconciles so they finish before
+    // pairing; otherwise they run after it and add grant checks the tests do not expect.
+    yield* Effect.yieldNow;
     assert((yield* factory.pairAppearance({ pairing: t3.appearance.pairingCode })).ok);
     return factory;
   });

@@ -107,7 +107,37 @@ it("a Start with a non-canonical creation time creates no Run", async (c) => {
   expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
 });
 
-it("a started draft keeps its chosen title and creation order after restart", async (c) => {
+it("a Start claiming a generated title creates no Run", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+
+  // Act
+  const result = await f.startRun({ ...input, titleProvenance: "generated" });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.code).toBe("validation");
+  expect(result.error.issues.map((issue) => issue.path)).toStrictEqual(["titleProvenance"]);
+  expect(await f.listRunNavigation()).toStrictEqual({ ok: true, value: [] });
+});
+
+it("a Start request stored before title provenance existed is accepted as legacy and replays to the same Run", async (c) => {
+  // Arrange
+  const { f, input } = await prepared(c);
+  const { titleProvenance: _absent, ...stored } = input;
+  const accepted = await f.startRun(stored);
+  assert(accepted.ok);
+
+  // Act
+  const replayed = await f.startRun({ ...stored, titleProvenance: "legacy" });
+
+  // Assert
+  assert(replayed.ok);
+  expect(replayed.value.id).toBe(accepted.value.id);
+  expect(replayed.value.titleProvenance).toBe("legacy");
+});
+
+it("a started draft keeps its chosen title, its title provenance and creation order after restart", async (c) => {
   // Arrange
   const { h, f, t3, input } = await prepared(c);
   const newer = await f.startRun({
@@ -120,6 +150,7 @@ it("a started draft keeps its chosen title and creation order after restart", as
   const older = await f.startRun({
     ...input,
     title: "  Chosen draft title  ",
+    titleProvenance: "manual",
     createdAt: "2026-11-07T08:00:00.000Z",
   });
   assert(older.ok);
@@ -132,10 +163,28 @@ it("a started draft keeps its chosen title and creation order after restart", as
 
   // Assert
   assert(result.ok);
-  expect(result.value.map(({ id, title, createdAt }) => ({ id, title, createdAt }))).toStrictEqual([
-    { id: newer.value.id, title: "Newer draft", createdAt: "2026-11-07T09:00:00.000Z" },
-    { id: older.value.id, title: "Chosen draft title", createdAt: "2026-11-07T08:00:00.000Z" },
+  expect(
+    result.value.map(({ id, title, titleProvenance, createdAt }) => ({
+      id,
+      title,
+      titleProvenance,
+      createdAt,
+    })),
+  ).toStrictEqual([
+    {
+      id: newer.value.id,
+      title: "Newer draft",
+      titleProvenance: "automatic",
+      createdAt: "2026-11-07T09:00:00.000Z",
+    },
+    {
+      id: older.value.id,
+      title: "Chosen draft title",
+      titleProvenance: "manual",
+      createdAt: "2026-11-07T08:00:00.000Z",
+    },
   ]);
+  expect(older.value.titleProvenance).toBe("manual");
   expect(older.value.startedAt).not.toBe("2026-11-07T08:00:00.000Z");
 });
 
@@ -153,7 +202,7 @@ it("Runs created at the same time are ordered by their Start request keys", asyn
   expect(result.value.map((entry) => entry.creationKey)).toStrictEqual(["a-draft", "b-draft"]);
 });
 
-it("renaming a Run trims its title without changing its sibling or its Task", async (c) => {
+it("renaming a Run trims its title and makes it manual without changing its sibling or its Task", async (c) => {
   // Arrange
   const { f, world, input } = await prepared(c);
   const { first, second } = await twoRunsOfOneFlow(world, input, { ...input, ...secondStart });
@@ -164,6 +213,7 @@ it("renaming a Run trims its title without changing its sibling or its Task", as
   // Assert
   assert(renamed.ok);
   expect(renamed.value.title).toBe("Independent name");
+  expect(renamed.value.titleProvenance).toBe("manual");
   expect(renamed.value.definitions).toStrictEqual(first.definitions);
   expect(renamed.value.events).toStrictEqual(first.events);
   expect(renamed.value.input).toBe(first.input);
@@ -171,6 +221,10 @@ it("renaming a Run trims its title without changing its sibling or its Task", as
   const other = await f.getRun(second.id);
   assert(other.ok);
   expect(other.value.title).toBe("Second title");
+  expect(other.value.titleProvenance).toBe("automatic");
+  const navigation = await f.listRunNavigation();
+  assert(navigation.ok);
+  expect(navigation.value.find((entry) => entry.id === first.id)?.titleProvenance).toBe("manual");
 });
 
 it("a whitespace-only Run title is rejected", async (c) => {

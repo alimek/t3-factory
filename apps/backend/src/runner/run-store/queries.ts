@@ -1,6 +1,7 @@
 import { readCoordinationActions } from "./run-coordination-actions.ts";
 import { readRootWork } from "./run-root-history.ts";
 import { readRunImages } from "../../run-images.ts";
+import { readTitleGenerations } from "../../run-titles.ts";
 import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "../../thread-link.ts";
@@ -292,6 +293,8 @@ export function openRunQueries(database: RunnerDatabase) {
             id: runRow.id,
             number: runRow.number,
             title: runRow.title,
+            titleProvenance: runRow.title_provenance,
+            titleGeneration: (yield* readTitleGenerations(sql, [id])).get(id) ?? null,
             task: { id: runRow.task_id, title: runRow.task_title, projectId: runRow.project_id },
             input: runRow.input,
             segments: JSON.parse(saved.prompt_segments_json) as RunDetail["segments"],

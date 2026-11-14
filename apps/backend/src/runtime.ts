@@ -23,12 +23,15 @@ function blockUpdate(input: unknown): { publicId: string; report: RuntimeReport 
   };
 }
 
-/** Factory MCP operations. The Runner resolves the Block id and owns acceptance. */
+/** Factory MCP operations. The Runner resolves the Block id and owns acceptance; Run title
+ * generation owns title submissions. */
 export function createRuntime(
   update: (publicId: string, report: RuntimeReport) => Effect.Effect<RuntimeReply, unknown>,
   read: (kind: "block" | "run" | "image", input: unknown) => Effect.Effect<RuntimeReply, unknown>,
+  setRunTitle: (input: unknown) => Effect.Effect<RuntimeReply, unknown>,
 ) {
   return {
+    title: setRunTitle,
     block: (input: unknown) => read("block", input),
     run: (input: unknown) => read("run", input),
     image: (input: unknown) => read("image", input),

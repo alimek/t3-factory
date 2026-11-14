@@ -29,7 +29,7 @@ export function optionValue(
   return descriptor.choices?.[0]?.id ?? "";
 }
 
-function buildOptions(
+export function buildOptions(
   descriptors: readonly AgentModelOptionDescriptor[] | undefined,
   current: readonly AgentModelOptionValue[],
 ): AgentModelOptionValue[] {

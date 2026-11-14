@@ -78,6 +78,23 @@ const tools: Tool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "factory_set_run_title",
+    description:
+      "Submit the Run title your Factory title message asks for. Only the title thread that received the titleGenerationId calls this; it takes no Block id. Factory trims surrounding whitespace and accepts one non-empty line of at most 120 characters (Unicode code points) without control characters; it never shortens a title. A rejected title can be corrected and submitted again while the generation is pending. The first accepted title is final; repeating it returns the same acknowledgement.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        titleGenerationId: {
+          type: "string",
+          description: "The titleGenerationId stated in this thread's Factory title message.",
+        },
+        title: { type: "string", description: "The Run title." },
+      },
+      required: ["titleGenerationId", "title"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const operations = {
@@ -85,6 +102,7 @@ const operations = {
   factory_get_block: "block",
   factory_get_run: "run",
   factory_get_run_image: "image",
+  factory_set_run_title: "title",
 } as const;
 
 /** Runtime operations behind the tools; each receives the call's arguments. */
@@ -93,6 +111,7 @@ export interface RuntimeTools {
   block(input: unknown): Promise<RuntimeReply>;
   run(input: unknown): Promise<RuntimeReply>;
   image(input: unknown): Promise<RuntimeReply>;
+  title(input: unknown): Promise<RuntimeReply>;
 }
 
 async function callTool(
@@ -136,9 +155,10 @@ async function callTool(
 }
 
 /**
- * Stateless Streamable HTTP MCP server for harness reporting, definition authoring and Run Start.
- * Reporting calls name their Block by Block id; authoring and Start calls need none. The server
- * holds no identity: any local caller of this host-local endpoint may start a Run.
+ * Stateless Streamable HTTP MCP server for harness reporting, Run titles, definition authoring and
+ * Run Start. Reporting calls name their Block by Block id and title calls their title generation;
+ * authoring and Start calls need neither. The server holds no identity: any local caller of this
+ * host-local endpoint may start a Run.
  */
 export function runtimeMcpHandler(
   runtime: RuntimeTools,

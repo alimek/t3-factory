@@ -146,6 +146,34 @@ A concrete matter to work on within a project, such as a coding change, an idea 
 One execution of a selected flow for a task in a project, with its own editable title
 and global navigation entry. Its **Run number** is a global sequence assigned at Start,
 shared with worker thread titles and worktree branches; stored history may have no number.
+Its **title provenance** records how the title was chosen: **automatic** (the prompt's first
+non-empty line), **manual** (chosen by the owner; Rename sets it), **generated** (a
+**generated title** was applied) or **legacy** (the Run or its Start
+request predates provenance). Start records the provenance it is given; it is never inferred
+by comparing title text.
+
+**Run title generation**:
+An installation-level step outside any Flow that may give a new Run a short title written by a
+T3 model; it is not a Block, worker or Flow step. The host-only setting **Generate Run titles**,
+off by default, names a T3 provider instance, model and options. Start decides once, at
+acceptance: a Run with automatic title provenance accepted while the setting is on captures the
+model, options, built-in prompt version and a deadline 30 seconds after acceptance, and its
+generation is **pending**, or **skipped** when an eligibility check fails (recorded as the setting's
+latest **diagnostic**) or the prompt has no meaningful text. Manual and legacy Runs record none.
+Later setting changes affect only future Runs, and there is no regenerate. A pending generation
+launches one top-level **title thread** in the Project checkout beside the Flow, never gating it,
+after rechecking eligibility. It ends in exactly one outcome: **applied**, **dropped** by a
+Rename, **timed out** at the deadline, **cancelled** by Archive or manual settlement, or
+**failed** when the launch is rejected or the thread finishes without a title; a timeout or
+failure also becomes the setting's latest **diagnostic**. Factory then stops and settles the
+title thread best effort. A restart never launches it twice. The Run shows
+the generation on its Flow input card and timeline, with the Run, not a Block, as the actor.
+
+**Generated title**:
+The Run title a title thread submits through `factory_set_run_title` with its generation's opaque
+capability: one trimmed line of at most 120 code points without control characters, never
+shortened. The first valid one while the Run's title provenance is still automatic is applied,
+makes the provenance generated and is final; it is not Run activity.
 
 **Captured definitions**:
 The Flow revision a Run started with and the Agent revision of every Agent that Flow references, frozen at Start. Every read and later activation of the Run uses them; later saves and removals affect only future Runs.
@@ -244,8 +272,9 @@ the current saved Flow and Agent definitions.
 **Run draft**:
 A client-local composition saved in browser storage while its prompt has a
 non-whitespace character or it has an image: the exact prompt text and images, Project/Flow
-references, title and creation time. A draft with images but no text cannot Start. It has no Task, Run or captured revisions until Start is accepted, which removes
-it; the Run keeps its title and creation time. Not to be confused with an unsaved Flow draft in Studio.
+references, title, title provenance and creation time. Its provenance is automatic until it is renamed, then manual;
+a draft or pending Start saved before provenance existed submits legacy. A draft with images but no text cannot Start. It has no Task, Run or captured revisions until Start is accepted, which removes
+it; the Run keeps its title, title provenance and creation time. Not to be confused with an unsaved Flow draft in Studio.
 
 **Request report**:
 An explicit user operation starting one additional Agent turn on the same thread

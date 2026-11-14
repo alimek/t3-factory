@@ -63,6 +63,7 @@ export function imageStart(input: {
   projectId: string;
   flowId: string;
   title: string;
+  titleProvenance: StartRunInput["titleProvenance"];
   createdAt: string;
 }): StartRunInput {
   const images = [
@@ -80,6 +81,7 @@ export function imageStart(input: {
     projectId: input.projectId,
     flowId: input.flowId,
     title: input.title,
+    titleProvenance: input.titleProvenance,
     createdAt: input.createdAt,
     segments,
     images,

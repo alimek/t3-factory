@@ -404,17 +404,25 @@ const reference = (ordinal: number, name: string) => `[Image ${ordinal}: ${name}
  * its 1-based manifest position, followed by a list of every attached image.
  */
 export function workerPromptText(segments: readonly PromptSegment[], images: readonly RunImage[]) {
+  const text = labelledPromptText(segments, images);
+  if (!images.length) return text;
+  const listed = images.map((image, index) => reference(index + 1, image.name)).join(", ");
+  return `${text}\n\nAttached images: ${listed}`;
+}
+
+/** The prompt in order, each image reference spelled as its `[Image N: name]` label. */
+export function labelledPromptText(
+  segments: readonly PromptSegment[],
+  images: readonly RunImage[],
+) {
   const ordinals = new Map(images.map((image, index) => [image.imageId, index + 1]));
-  const text = segments
+  return segments
     .map((segment) => {
       if (segment.type === "text") return segment.text;
       const ordinal = ordinals.get(segment.imageId)!;
       return reference(ordinal, images[ordinal - 1]!.name);
     })
     .join("");
-  if (!images.length) return text;
-  const listed = images.map((image, index) => reference(index + 1, image.name)).join(", ");
-  return `${text}\n\nAttached images: ${listed}`;
 }
 
 /** The attachment name T3 receives: ordinal-prefixed, so repeated original names stay distinct. */

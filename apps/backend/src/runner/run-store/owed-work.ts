@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
+import { cancelTitleGeneration } from "../../run-titles.ts";
 import type { HumanRow } from "../runner-types.ts";
 import { settleAttention } from "./attention.ts";
 import { writeBlockState } from "./blocks.ts";
@@ -19,9 +20,9 @@ const CUTOFFS = {
 
 /** Nothing unsent leaves the Run any more: pending launches, sends and handoffs are cancelled,
  * pending Human occurrences and Wait arrivals too without inventing answers, pending attention
- * settles with the cutoff's reason, waiting Continuation arrivals are cancelled and activated
- * Blocks that had not finished show stopped. In-flight or uncertain operations keep their
- * recorded state. */
+ * settles with the cutoff's reason, waiting Continuation arrivals are cancelled, a pending Run
+ * title generation is cancelled and activated Blocks that had not finished show stopped.
+ * In-flight or uncertain operations keep their recorded state. */
 export function cancelOwedWork(
   sql: SqlClient.SqlClient,
   id: string,
@@ -86,6 +87,7 @@ export function cancelOwedWork(
       time,
     );
     yield* sql`UPDATE continuation_visits SET state='cancelled' WHERE run_id=${id} AND state IN ('queued','sent')`;
+    yield* cancelTitleGeneration(sql, id, time, cutoff);
     yield* writeBlockState(
       sql,
       { runId: id },
