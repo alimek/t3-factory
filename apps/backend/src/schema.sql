@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: run_title_generation
+-- Newest applied migration: chat_control
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -55,6 +55,29 @@ CREATE TABLE appearance_snapshot (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   endpoint TEXT NOT NULL,
   presentation TEXT NOT NULL
+);
+
+CREATE TABLE chat_control_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1))
+);
+
+CREATE TABLE chat_model_settings (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  provider_kind TEXT CHECK (provider_kind IN ('openai-compatible', 'anthropic')),
+  base_url TEXT,
+  model TEXT,
+  key_stage TEXT,
+  revision INTEGER NOT NULL DEFAULT 0,
+  saved_at TEXT,
+  test_revision INTEGER,
+  test_at TEXT,
+  test_outcome TEXT CHECK (test_outcome IN ('succeeded', 'failed')),
+  test_message TEXT,
+  CHECK ((revision = 0) = (saved_at IS NULL)),
+  CHECK ((test_revision IS NULL) = (test_at IS NULL)),
+  CHECK ((test_revision IS NULL) = (test_outcome IS NULL)),
+  CHECK ((test_revision IS NULL) = (test_message IS NULL))
 );
 
 CREATE TABLE client_grants (

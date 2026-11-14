@@ -4,6 +4,7 @@ import { projectOperations, projectServerOperations } from "./project.ts";
 import { connectionOperations } from "./connection.ts";
 import { appearanceOperations, type AppearanceSource } from "./appearance.ts";
 import { runOperations } from "./run.ts";
+import { chatControlOperations } from "./chat-control.ts";
 import {
   type ClientAccessState,
   type FactoryClient,
@@ -23,6 +24,7 @@ export const httpOperations = {
   ...connectionOperations,
   ...appearanceOperations,
   ...runOperations,
+  ...chatControlOperations,
   ...clientAccessOperations,
   ...clientAccessServerOperations,
   ...serverUpdateOperations,
@@ -36,6 +38,7 @@ export interface FactoryOperations extends FacadeOperations<
     typeof connectionOperations &
     typeof appearanceOperations &
     typeof runOperations &
+    typeof chatControlOperations &
     typeof clientAccessOperations
 > {
   reconcileRuns(): Promise<Result<void>>;

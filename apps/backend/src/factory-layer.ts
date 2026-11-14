@@ -26,14 +26,13 @@ export const factoryLayer = (options: FactoryOptions) =>
       );
       const sqlContext = yield* Layer.build(SqliteClient.layer({ filename: owner.path }));
       yield* Effect.provide(migrate, sqlContext);
+      const credentialsDirectory =
+        options.credentialsDirectory ?? join(dirname(options.databasePath), "credentials");
       const t3 = yield* Effect.sync(
-        () =>
-          options.t3 ??
-          new LiveT3Adapter({
-            credentialsDirectory:
-              options.credentialsDirectory ?? join(dirname(options.databasePath), "credentials"),
-          }),
+        () => options.t3 ?? new LiveT3Adapter({ credentialsDirectory }),
       );
-      return yield* makeFactoryService(options, owner, t3).pipe(Effect.provide(sqlContext));
+      return yield* makeFactoryService(options, owner, t3, credentialsDirectory).pipe(
+        Effect.provide(sqlContext),
+      );
     }),
   );

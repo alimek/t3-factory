@@ -15,6 +15,7 @@ import {
   appearanceOperations,
   connectionOperations,
   runOperations,
+  chatControlOperations,
   LIVE_PATH,
   type ProtocolDescriptor,
   type Result,
@@ -122,6 +123,7 @@ function apiRoutes(factory: Factory) {
     ...projectRoutes(factory),
     ...flowRoutes(factory),
     ...agentRoutes(factory),
+    ...chatControlRoutes(factory),
   };
 }
 
@@ -263,6 +265,29 @@ function appearanceRoutes(factory: Factory): RouteEntries<typeof appearanceOpera
     disconnectAppearance: {
       hostOnly: true,
       handle: () => answer(() => factory.disconnectAppearance()),
+    },
+  };
+}
+
+/**
+ * Chat control configuration names the host's provider destinations and credentials, and its
+ * Test may be charged: approved clients can neither read nor change it.
+ */
+function chatControlRoutes(factory: Factory): RouteEntries<typeof chatControlOperations> {
+  return {
+    getChatModelSettings: {
+      hostOnly: true,
+      handle: () => answer(() => factory.getChatModelSettings()),
+    },
+    updateChatModelSettings: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.updateChatModelSettings(input)),
+    },
+    testChatModel: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.testChatModel(input)),
     },
   };
 }
@@ -411,7 +436,7 @@ function dispatchApi(
 
 // Known client routes use the built entry; missing assets must stay 404.
 const clientRoutePattern =
-  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/general|\/application|\/run-titles|\/run-images)?)\/?$/;
+  /^\/(studio(?:\/(?:flows|agents)(?:\/[^/]+)?)?|flows(?:\/[^/]+)?|runs(?:\/[^/]+)?|settings(?:\/agents(?:\/[^/]+)?|\/skills|\/runtime|\/keyboard|\/connection|\/access|\/general|\/application|\/run-titles|\/run-images|\/chat-control\/model)?)\/?$/;
 
 function uiFile(uiDirectory: string, pathname: string): string | undefined {
   const root = resolve(uiDirectory);

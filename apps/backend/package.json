@@ -30,6 +30,8 @@
     "dev:prod": "vpx --watch --clear-screen=false --no-rerun-on-enter --include \"src/migrations/**/*.sql\" --include \"../../packages/*/src/**/*.ts\" --conditions=factory-source src/main.ts --api-only"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.104",
+    "@ai-sdk/openai-compatible": "3.0.92",
     "@effect/platform-node": "4.1.2",
     "@effect/sql-sqlite-node": "4.1.2",
     "@modelcontextprotocol/client": "2.4.0",
@@ -37,9 +39,11 @@
     "@t3-factory/contracts": "workspace:*",
     "@t3-factory/domain-validation": "workspace:*",
     "@t3-factory/flow-layout": "workspace:*",
+    "ai": "7.0.172",
     "effect": "4.1.2",
     "fs-ext": "2.1.1",
-    "smol-toml": "1.9.1"
+    "smol-toml": "1.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@effect/vitest": "4.1.2",

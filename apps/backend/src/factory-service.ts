@@ -21,6 +21,8 @@ import { makeRunner } from "./runner/runner.ts";
 import { makeClientAccess } from "./client-access.ts";
 import { makeRunImages } from "./run-images.ts";
 import { makeRunTitles } from "./run-titles.ts";
+import { makeChatCredentials } from "./chat-control/credentials.ts";
+import { makeChatModel } from "./chat-control/model.ts";
 import { failure } from "./result.ts";
 import { makeLiveChanges } from "./live-changes.ts";
 import { makeLiveStreams, type LiveStreams } from "./live-streams.ts";
@@ -71,6 +73,7 @@ export const makeFactoryService = (
   options: FactoryOptions,
   owner: Awaited<ReturnType<typeof acquireRunnerOwner>>,
   t3: T3Adapter,
+  credentialsDirectory: string,
 ) =>
   Effect.gen(function* () {
     const intervalMs = options.connectionRetryMs ?? 5_000;
@@ -119,6 +122,7 @@ export const makeFactoryService = (
       },
       changes,
     );
+    const chatModel = yield* makeChatModel(yield* makeChatCredentials(credentialsDirectory));
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
@@ -151,6 +155,9 @@ export const makeFactoryService = (
       getRunCreationPolicy: () => runner.getRunCreationPolicy(),
       getRunTitleSetting: () => runTitles.getRunTitleSetting(),
       updateRunTitleSetting: (input) => runTitles.updateRunTitleSetting(input),
+      getChatModelSettings: () => chatModel.getChatModelSettings(),
+      updateChatModelSettings: (input) => chatModel.updateChatModelSettings(input),
+      testChatModel: (input) => chatModel.testChatModel(input),
       startRun: (i) => runner.startRun(i),
       getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),
