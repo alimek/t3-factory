@@ -12,6 +12,8 @@ export interface ControlledDiscordBot {
   readonly username?: string;
   /** Whether the Developer Portal allows the privileged Message Content intent. */
   readonly messageContentIntent?: boolean;
+  /** Whether the bot holds Manage Threads, which lets Discord accept its posts in locked threads. */
+  readonly manageThreads?: boolean;
 }
 
 /** A server the bot is a member of, with its text channels. */
@@ -416,8 +418,8 @@ export async function startControlledDiscord() {
         if (faulted) return faulted;
         if (deletedThreads.has(match[1]!)) return unknownChannel;
         const thread = threads.get(match[1]!);
-        if (thread?.locked) return locked;
-        // Posting in an archived thread that is not locked reopens it.
+        if (thread?.locked && !bot.manageThreads) return locked;
+        // A post Discord accepts reopens an archived thread, locked ones included.
         if (thread) thread.archived = false;
         return { status: 200, body: createdOnce(match[1]!, fields, bot), lost: fault === "lost" };
       },
@@ -673,7 +675,7 @@ export async function startControlledDiscord() {
     commands,
     trafficOnReady,
     addBot(bot: ControlledDiscordBot) {
-      bots.set(bot.token, { messageContentIntent: true, ...bot });
+      bots.set(bot.token, { messageContentIntent: true, manageThreads: true, ...bot });
     },
     /** Removes a bot application, as when its token is reset in the Developer Portal. */
     removeBot(token: string) {

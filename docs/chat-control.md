@@ -597,7 +597,8 @@ does not stop the card: it depends on the channel's grant and the bot's access.
 Editing in an archived thread needs it unarchived: when Discord refuses the edit because the thread is
 archived and a fresh read shows it unlocked, Factory unarchives it and edits the card without posting
 anything; a new message, such as a receipt, reopens the thread by itself. Factory never unlocks,
-recreates or relocates a thread. A locked thread, a thread Discord no longer shows the bot, missing
+recreates or relocates a thread, and it reads the thread before each new message: it posts nothing in a
+locked thread, even though Discord would accept posts from a bot holding Manage Threads. A locked thread, a thread Discord no longer shows the bot, missing
 permissions or Discord's active-thread limit is a failed delivery in Settings with its correction and
 Retry. Only Discord's Unknown Message answer to an edit proves the card deleted; an unknown or deleted
 thread does not. A deleted card is replaced automatically once per Run; if that replacement is deleted

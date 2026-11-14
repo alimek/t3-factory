@@ -96,6 +96,32 @@ it("a Run becoming Settled posts one lifecycle notice in its originating thread,
   expect(world.discord.created.slice(messages)).toStrictEqual([notice]);
 });
 
+it("a Run settling in a locked thread posts no notice there, even though the bot may post in locked threads, and Settings asks to unlock it", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const { worker } = await chatStartedRun(world);
+  world.discord.archiveThread(THREAD, { locked: true });
+  const messages = world.discord.created.length;
+
+  // Act
+  await finished(world, worker);
+
+  // Assert
+  const settings = await discordSettingsWhen(world.factory, (current) =>
+    current.delivery.problems.some((problem) => problem.purpose === "lifecycle"),
+  );
+  expect(settings.delivery.problems).toContainEqual(
+    expect.objectContaining({
+      purpose: "lifecycle",
+      state: "failed",
+      threadId: THREAD,
+      message:
+        "The thread is locked, and Factory never unlocks threads. Unlock it in Discord, then retry.",
+    }),
+  );
+  expect(world.discord.created.slice(messages)).toStrictEqual([]);
+});
+
 it("a new Human step posts one Needs input notice that leads to a review in the thread, without answer buttons", async (c) => {
   // Arrange
   const world = await startingWorld(c, humanReviewFlow);
