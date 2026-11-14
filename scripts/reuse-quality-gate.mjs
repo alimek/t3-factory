@@ -11,6 +11,7 @@ function codeGateState(run, jobs, marker) {
   // Queued jobs may have no steps yet. An unknown newer attempt must not expose
   // an older success while it is pending or has failed before recording scope.
   if (!gate) {
+    if (job?.steps?.some((step) => step.name.startsWith("Full code gate for PR "))) return null;
     if (run.status !== "completed") return "pending";
     return run.conclusion === "success" ? null : "failure";
   }
@@ -39,7 +40,11 @@ export async function readQualityGate({ read, repository, runId, event }) {
     page += 1;
   } while (runs.length === 100);
   // Rerunning an older workflow retains its id but starts a newer attempt.
-  candidates.sort((a, b) => b.run_started_at.localeCompare(a.run_started_at) || b.id - a.id);
+  candidates.sort(
+    (a, b) =>
+      (b.run_started_at ?? b.created_at).localeCompare(a.run_started_at ?? a.created_at) ||
+      b.id - a.id,
+  );
   for (const run of candidates) {
     if (
       run.id >= current.id ||

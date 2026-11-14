@@ -14,10 +14,12 @@ function scenario({
   previous = false,
   emptySteps = false,
   olderRerun = false,
+  startedAt = "2026-01-01T10:00:00Z",
 } = {}) {
   const run = {
     id: 10,
-    run_started_at: "2026-01-01T10:00:00Z",
+    run_started_at: startedAt,
+    created_at: "2026-01-01T10:00:00Z",
     status,
     conclusion,
     head_sha: head,
@@ -160,4 +162,37 @@ await test("a failed new attempt of an older workflow supersedes an earlier succ
 
   // Assert
   assert.equal(result.state, "failure");
+});
+
+await test("a queued run with no start timestamp keeps the metadata check pending", async () => {
+  // Arrange
+  const input = scenario({
+    status: "queued",
+    conclusion: null,
+    previous: true,
+    emptySteps: true,
+    startedAt: null,
+  });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "pending");
+});
+
+await test("a failed validation scoped to another PR does not hide this PR's valid result", async () => {
+  // Arrange
+  const input = scenario({
+    stepName: `Full code gate for PR 43: ${base}..${head}`,
+    conclusion: "failure",
+    previous: true,
+  });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "success");
+  assert.match(result.url, /\/runs\/9$/);
 });
