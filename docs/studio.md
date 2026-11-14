@@ -14,9 +14,8 @@ and saved-Flow usage counts, the sidebar counts and the Flow editor's Agent libr
 committed create, save, duplicate and removal live, whichever client or Factory MCP made it, with
 no navigation or retry. On a protocol 9–11 server Studio keeps re-reading these lists after its
 own accepted writes, on navigation and on retry, and shows **Live Studio refresh requires a server
-update.** under its header. The Flow editor reads its Flow from these lists and follows its saved
-revisions ([Saving and readiness](#saving-and-readiness)); the Agent editor still loads its
-definition once when opened.
+update.** under its header. Both editors read their definition from these lists and follow its
+saved revisions ([Agent definitions](#agent-definitions), [Saving and readiness](#saving-and-readiness)).
 
 The current Flow draft survives navigation to the lists and Agents and keeps following its saved revisions while hidden; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
 rule; reload uses the browser's leave warning). Agent edits are guarded independently of a retained Flow draft.
@@ -74,9 +73,24 @@ The list and editor also show the provider's [reporting installation status](t3-
 The editor follows the current provider choice, explains installation problems and links to **Settings → Agent reporting**.
 Installed configuration does not establish full execution readiness or live report visibility; Start still checks those gates.
 
-**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt, settings and exits, and Studio shows the latest; a stale or invalid save returns an error,
+**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt, settings and exits; a stale or invalid save returns an error,
 appends nothing and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
+
+**Revisions saved elsewhere.** An open Agent editor reads its Agent from Studio's saved definitions instead of loading it once. When another client, tab or Factory MCP saves a newer
+revision, an editor without unsaved changes switches to it and briefly shows **Updated to revision N**. An editor with unsaved changes keeps them and the revision they are based on,
+and shows **Revision N was saved elsewhere** until resolved; a later revision replaces N. **Compare latest revision** shows the local draft and saved revision N side by side as two
+read-only blocks (name, worker settings, exits and prompt). **Load latest revision** asks for confirmation, then discards the edits for revision N. **Keep my edits against revision N**
+keeps the draft unsaved against N and sends nothing; the next explicit **Save** writes it as N+1. Save stays disabled until one is chosen. A stale save opens the same comparison
+(on a protocol 9–11 server Studio first re-reads its lists to find the newer revision). There is no merge or field-level diff. The comparison and its confirmation always name the
+revision they show: when N+1 arrives an open confirmation closes and the comparison moves to N+1, an action for an older revision does nothing, and a removal dismisses both.
+
+The editor's own saves never raise **saved elsewhere**, whether the save's reply or its delivery arrives first; deliveries during a pending save wait for its reply, and a higher
+revision than the reply's is then treated as saved elsewhere. A save that a rejection ends shows any newer revision beside its error without rebinding the draft. Offline, Factory
+reports that nothing was sent; a lost reply shows **Save outcome unknown**. Either way the draft is kept and nothing is retried; an unknown save whose content later arrives as
+a new revision is recognised as this editor's own. After an unknown **Create Agent**, which would create a second Agent if repeated, Create stays disabled until **I checked the
+Agent list** is pressed. The new-Agent form ignores other Agents' changes; after its Create, or after **Duplicate…**, the opened Agent follows these rules even before Studio
+has delivered it.
 
 **Removing.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
 rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at removal time even if the usage count is stale, while removed Flows and Runs never block
