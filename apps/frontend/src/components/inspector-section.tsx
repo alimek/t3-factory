@@ -57,3 +57,13 @@ export function InspectorDisclosure({
     </Collapsible>
   );
 }
+
+/** One labelled fact in an inspector `<dl>`. */
+export function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[6.5rem_1fr] gap-2 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-foreground">{children}</dd>
+    </div>
+  );
+}

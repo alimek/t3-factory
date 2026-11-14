@@ -23,6 +23,7 @@ import { ArchiveRunDialog } from "../components/archive-run-dialog.tsx";
 import { RunNumber } from "../components/run-number.tsx";
 import { NotLiveMarker, RunHeaderStatus } from "../components/run-header-status.tsx";
 import { runFreshness, runStatus, type RunFreshness } from "../run-status.ts";
+import { GeneratingTitle } from "../components/run-title-generation.tsx";
 import { RunTimeline } from "../components/run-timeline.tsx";
 import { ExecutionCanvas } from "../components/execution-canvas.tsx";
 import { clockTime, dayAndTime } from "../components/execution-state.tsx";
@@ -114,14 +115,17 @@ function useEscapeToDeselect(active: boolean, deselect: () => void) {
   }, [active, deselect]);
 }
 
+/** What the inspector shows besides the overview: a selected Block, or the Run title, which is not a Block. */
+type Inspected = { readonly blockId: string } | "run-title" | null;
+
 export function RunScreen({ id }: { id: string }) {
   const observed = useRunObservation(id);
   const { value: runs } = useLiveNavigation();
   const navigationRun = runs?.find((run) => run.id === id);
-  const [selected, setSelected] = useState<string | null>(null);
-  const deselect = useCallback(() => setSelected(null), []);
+  const [inspected, setInspected] = useState<Inspected>(null);
+  const deselect = useCallback(() => setInspected(null), []);
   const seenError = useRunOpened(id, !observed.unavailable);
-  useEscapeToDeselect(selected !== null, deselect);
+  useEscapeToDeselect(inspected !== null, deselect);
   const { run, error } = observed;
   return (
     <CanvasLayout>
@@ -135,8 +139,8 @@ export function RunScreen({ id }: { id: string }) {
           observed={observed}
           run={run}
           seenError={seenError}
-          selected={selected}
-          onSelect={setSelected}
+          inspected={inspected}
+          onInspect={setInspected}
         />
       ) : (
         <>
@@ -156,18 +160,21 @@ function RunDetailView({
   observed,
   run,
   seenError,
-  selected,
-  onSelect,
+  inspected,
+  onInspect,
 }: {
   observed: RunObservation;
   run: RunDetail;
   seenError: string;
-  selected: string | null;
-  onSelect: (blockId: string | null) => void;
+  inspected: Inspected;
+  onInspect: (inspected: Inspected) => void;
 }) {
   const settings = useSettings();
   const studio = useStudio();
   const inspectorOpen = useRunInspectorOpen();
+  const selected = inspected !== null && inspected !== "run-title" ? inspected.blockId : null;
+  const onSelect = (blockId: string | null) => onInspect(blockId === null ? null : { blockId });
+  const inspectedTitle = inspected === "run-title" ? run.titleGeneration : null;
   const unavailable = observed.unavailable;
   const freshness = runFreshness(run, unavailable);
   return (
@@ -187,6 +194,10 @@ function RunDetailView({
               selected={selected}
               observationUnavailable={unavailable}
               onSelect={onSelect}
+              title={{
+                inspected: inspectedTitle !== null,
+                onInspect: () => onInspect("run-title"),
+              }}
               overlay={
                 <CanvasOverlay
                   run={run}
@@ -209,6 +220,7 @@ function RunDetailView({
           <RunInspector
             run={run}
             selected={selected}
+            titleGeneration={inspectedTitle}
             project={observed.project}
             projectUnavailable={projectIsUnavailable(observed.project, observed.projectsLoaded)}
             observationUnavailable={unavailable}
@@ -245,9 +257,12 @@ function RunTopBar({
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b pr-4 pl-5">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
-        <h1 className="truncate text-base leading-4 font-semibold tracking-[-0.26px]">
-          {run.title}
-        </h1>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-base leading-4 font-semibold tracking-[-0.26px]">
+            {run.title}
+          </h1>
+          <GeneratingTitle generation={run.titleGeneration} />
+        </div>
         <p className={cn(metaClass, "flex min-w-0 items-center gap-1.5 whitespace-nowrap")}>
           {run.number !== null && (
             <>

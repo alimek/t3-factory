@@ -13,6 +13,7 @@ import { failure } from "../../result.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { storedProjectIcon } from "../../projects.ts";
 import { projectFaviconUrl } from "../../project-favicon.ts";
+import { dropTitleGeneration, readTitleGenerations } from "../../run-titles.ts";
 export function openRunNavigation(database: RunnerDatabase) {
   return {
     listRunNavigation(): Effect.Effect<Result<readonly RunNavigationEntry[]>, unknown> {
@@ -22,6 +23,7 @@ export function openRunNavigation(database: RunnerDatabase) {
             id: string;
             number: number | null;
             title: string;
+            title_provenance: RunNavigationEntry["titleProvenance"];
             created_at: string;
             last_activity_at: string;
             flow_name: string;
@@ -36,7 +38,7 @@ export function openRunNavigation(database: RunnerDatabase) {
             project_title: string;
             workspace_root: string;
             availability: RunNavigationEntry["project"]["availability"];
-          }>`SELECT r.id,r.number,r.title,r.created_at,r.creation_key,r.settled_at,r.archived_at,rp.snoozed,rp.woke,
+          }>`SELECT r.id,r.number,r.title,r.title_provenance,r.created_at,r.creation_key,r.settled_at,r.archived_at,rp.snoozed,rp.woke,
           COALESCE((SELECT MAX(e.observed_at) FROM run_events e WHERE e.run_id=r.id AND e.kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','continuation-passed','run-settled','run-activated')),r.started_at) AS last_activity_at,
           f.name AS flow_name,p.project_icon_json,p.favicon_path,
           p.id AS project_id,p.title AS project_title,p.workspace_root,p.availability
@@ -44,6 +46,10 @@ export function openRunNavigation(database: RunnerDatabase) {
           JOIN flow_revisions f ON f.id=r.flow_revision_id
           LEFT JOIN run_presentation rp ON rp.run_id=r.id WHERE r.archived_at IS NULL ORDER BY r.created_at DESC,r.creation_key`;
           const settlements = yield* readRunSettlementStates(sql, rows);
+          const titleGenerations = yield* readTitleGenerations(
+            sql,
+            rows.map((row) => row.id),
+          );
           const blocks = yield* sql<{
             run_id: string;
             block_id: string;
@@ -107,6 +113,8 @@ export function openRunNavigation(database: RunnerDatabase) {
                 id: row.id,
                 number: row.number,
                 title: row.title,
+                titleProvenance: row.title_provenance,
+                titleGeneration: titleGenerations.get(row.id) ?? null,
                 createdAt: row.created_at,
                 lastActivityAt: row.last_activity_at,
                 flowName: row.flow_name,
@@ -144,7 +152,9 @@ export function openRunNavigation(database: RunnerDatabase) {
       return Effect.gen(function* () {
         const found = yield* database.transaction((sql) =>
           Effect.gen(function* () {
-            const rows = yield* sql`UPDATE runs SET title=${title} WHERE id=${id} RETURNING id`;
+            const rows =
+              yield* sql`UPDATE runs SET title=${title},title_provenance='manual' WHERE id=${id} RETURNING id`;
+            yield* dropTitleGeneration(sql, id);
             return rows.length > 0;
           }),
         );

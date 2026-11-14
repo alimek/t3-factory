@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import type { ContinuationVisit, FlowBlock, RunBlock, RunDetail } from "@t3-factory/contracts";
 import { CONTINUATION_EXIT } from "@t3-factory/domain-validation";
 import { ChevronLeft, X } from "lucide-react";
@@ -14,7 +14,7 @@ import {
 } from "./execution-canvas.tsx";
 import { clockTime, dayAndTime, StatePill } from "./execution-state.tsx";
 import { BLOCK_KINDS, exitDisplayName } from "./flow-block.tsx";
-import { InspectorDisclosure, InspectorSection } from "./inspector-section.tsx";
+import { DetailRow, InspectorDisclosure, InspectorSection } from "./inspector-section.tsx";
 import { pendingRecovery, RequestReport, RunAttentionDetails } from "./run-attention.tsx";
 import { CoordinatorActivations } from "./run-coordination.tsx";
 import { ResultCard } from "./run-result.tsx";
@@ -218,15 +218,6 @@ function continuationResponse(run: RunDetail, prompt: ContinuationVisit | undefi
     run.reports.findLast(
       (report) => report.activationId === prompt.activationId && report.status === "finished",
     )?.resultMessage ?? null
-  );
-}
-
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[6.5rem_1fr] gap-2 text-sm">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-foreground">{children}</dd>
-    </div>
   );
 }
 

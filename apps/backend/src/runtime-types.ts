@@ -70,6 +70,7 @@ export const SUCCESS_CODES: readonly string[] = [
   "BLOCK",
   "RUN",
   "IMAGE",
+  "TITLE_APPLIED",
 ];
 
 /** Every report for a Run the user settled manually succeeds and changes nothing. */

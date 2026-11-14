@@ -9,7 +9,7 @@ import type { ScheduledWait } from "./run-store/run-store.ts";
  * store; a wake-up only asks the Runner to drive the Run, whose dispatch pass forwards every due
  * arrival through the store's guarded transition. A lost or extra wake-up therefore changes
  * nothing: restart schedules the pending arrivals again and the reconcile sweep catches overdue
- * ones.
+ * ones. The Runner keeps a second set, on the same terms, for Run title generation deadlines.
  */
 export function makeWaitTimers(
   scope: Scope.Scope,

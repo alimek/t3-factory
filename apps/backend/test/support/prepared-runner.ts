@@ -54,6 +54,7 @@ async function readyFlow(
       flowId: flow.id,
       input: "Improve search\nKeep it accessible.",
       title: "Improve search",
+      titleProvenance: "automatic" as const,
       createdAt: "2026-11-07T08:00:00.000Z",
     },
   };

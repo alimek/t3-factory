@@ -34,6 +34,17 @@ and restricted OAuth credentials live outside project repositories.
   that are staged and still have their file; the prompt segments and manifest are immutable and the
   Run's input keeps the worker-readable text. Migration `071`
   gives every existing Run one text segment and no images.
+- Each Run stores its title with an explicit title provenance (automatic, manual, generated or legacy) taken from
+  the Start request and changed to manual by Rename; it is never derived from the title text. Manual provenance is part
+  of the Start request identity; automatic and legacy keep the identity requests had before provenance existed.
+  Migration `079` marks every existing Run legacy and changes no title.
+- The installation-wide **Generate Run titles** setting is one SQLite row holding its on/off state, the chosen T3 model
+  and options, a revision and the latest title generation diagnostic. Start acceptance records at most one title generation
+  per Run in the same transaction as the Run, with its captured model, options, prompt version and deadline, and for a
+  pending one the title thread's launch request, so the intent is durable before any dispatch. The generation later
+  records when that request was sent, the thread T3 launched, when it reached its outcome and the claims for its one
+  Stop and one T3 thread settlement. Migration `080` adds the setting off and gives existing Runs no generation. No
+  other data changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report
@@ -183,7 +194,8 @@ unknown Start's identical key and payload for an explicit check, across reloads 
 storage allows; only confirmed success clears its prompt. Run drafts are client-local
 preparation in browser storage, never backend records: metadata in localStorage and image
 bytes in IndexedDB, keyed by selected server, draft and image. Drafts and pending requests
-saved before images become one text segment with the same request identity. Blocked storage
+saved before images become one text segment with the same request identity; those saved before title provenance
+submit legacy, which keeps their request identity. Blocked storage
 shows that a draft lasts only while the window is open. Client-local state that belongs
 to a server is scoped by that server: browsers are isolated by origin, while the desktop
 renderer shares one origin and names its role and selected server. Backend idempotency

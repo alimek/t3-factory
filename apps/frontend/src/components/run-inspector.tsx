@@ -1,5 +1,11 @@
 import { useState } from "react";
-import type { FactoryProject, FlowBlock, RunBlock, RunDetail } from "@t3-factory/contracts";
+import type {
+  FactoryProject,
+  FlowBlock,
+  RunBlock,
+  RunDetail,
+  RunTitleGeneration,
+} from "@t3-factory/contracts";
 import {
   CircleAlert,
   CircleCheck,
@@ -24,6 +30,7 @@ import { RunInitialPrompt } from "./run-prompt.tsx";
 import { repositorySummary, RunRepositories } from "./run-repositories.tsx";
 import { InspectorDisclosure, InspectorSection } from "./inspector-section.tsx";
 import { activeStates, currentVisitText, RunBlockView } from "./run-block-view.tsx";
+import { RunTitleView } from "./run-title-view.tsx";
 
 /** Keeps the width users chose for the earlier Run side panels. */
 const inspectorBounds: PanelBounds = {
@@ -348,12 +355,14 @@ function RunOverview({
 }
 
 /**
- * The one docked inspector beside the Execution canvas: the Run overview, or the selected
- * block. Selection is the caller's; whether the inspector is shown is the viewer's preference.
+ * The one docked inspector beside the Execution canvas: the Run overview, the selected block or
+ * the Run title. What is inspected is the caller's; whether the inspector is shown is the
+ * viewer's preference.
  */
 export function RunInspector({
   run,
   selected,
+  titleGeneration,
   project,
   projectUnavailable,
   observationUnavailable,
@@ -361,6 +370,8 @@ export function RunInspector({
 }: {
   run: RunDetail;
   selected: string | null;
+  /** The Run title's generation while the Run title is inspected. */
+  titleGeneration: RunTitleGeneration | null;
   project: FactoryProject | undefined;
   projectUnavailable: boolean;
   observationUnavailable: boolean;
@@ -374,7 +385,9 @@ export function RunInspector({
       className="relative flex w-[var(--factory-run-panel-width,21.25rem)] max-w-[50%] shrink-0 flex-col border-l bg-background"
     >
       <PanelResizeHandle label="Resize Run inspector" side="left" bounds={inspectorBounds} />
-      {block && recorded ? (
+      {titleGeneration ? (
+        <RunTitleView generation={titleGeneration} onBack={() => onSelect(null)} />
+      ) : block && recorded ? (
         <RunBlockView
           run={run}
           block={block}

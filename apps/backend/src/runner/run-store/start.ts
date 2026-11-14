@@ -12,6 +12,7 @@ import {
   workerPromptText,
   type RunImages,
 } from "../../run-images.ts";
+import { recordTitleGeneration, type TitleGenerationPlan } from "../../run-titles.ts";
 import { worktreeBranch, type RunWorkspace } from "../run-workspace.ts";
 import { createEntryLaunches } from "./activations.ts";
 import type { RunnerDatabase } from "./database.ts";
@@ -22,7 +23,7 @@ export type StartWorkspace = { mode: "checkout" } | { mode: "worktree"; baseRef:
 
 /** A validated Start, with the ids and time its records are created with. */
 export type StartPlan = {
-  input: Pick<StartRunInput, "requestId" | "title" | "createdAt">;
+  input: Pick<StartRunInput, "requestId" | "title" | "titleProvenance" | "createdAt">;
   prompt: StartPrompt;
   requestFingerprint: string;
   project: FactoryProject;
@@ -33,6 +34,8 @@ export type StartPlan = {
   time: string;
   contextId: string;
   retryScope: string | null;
+  /** Decided before acceptance for an automatic Run; undefined for manual and legacy Runs. */
+  titleGeneration: TitleGenerationPlan | undefined;
 };
 
 /** Rechecks saved revisions, context and project inside the acceptance transaction. */
@@ -115,7 +118,7 @@ function acceptStartRecords(
     const number = allocated!.n;
     const { flow, agents } = plan.definitions;
     const { segments, images } = plan.prompt;
-    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,prompt_segments_json,context_id,workspace_root,started_at,created_at,creation_key,title,number,block_settlement_enabled,flow_revision_id) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${workerPromptText(segments, images)},${JSON.stringify(segments)},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${number},1,(SELECT id FROM flow_revisions WHERE flow_id=${flow.id} AND revision=${flow.revision}))`;
+    yield* sql`INSERT INTO runs(id,task_id,request_id,request_fingerprint,input,prompt_segments_json,context_id,workspace_root,started_at,created_at,creation_key,title,title_provenance,number,block_settlement_enabled,flow_revision_id) VALUES(${plan.runId},${plan.taskId},${plan.input.requestId},${plan.requestFingerprint},${workerPromptText(segments, images)},${JSON.stringify(segments)},${plan.contextId},${project.workspaceRoot},${plan.time},${plan.input.createdAt},${plan.input.requestId},${title},${plan.input.titleProvenance},${number},1,(SELECT id FROM flow_revisions WHERE flow_id=${flow.id} AND revision=${flow.revision}))`;
     yield* attachRunImages(sql, plan.runId, images);
     for (const agent of agents)
       yield* sql`INSERT INTO run_agent_revisions(run_id,agent_id,agent_revision_id) SELECT ${plan.runId},agent_id,id FROM agent_revisions WHERE agent_id=${agent.id} AND revision=${agent.revision}`;
@@ -139,6 +142,15 @@ function acceptStartRecords(
       startLaunchTargets(plan.definitions, workspace),
     );
     yield* appendTimelineEvent(sql, { kind: "started", runId: plan.runId, observedAt: plan.time });
+    // After "started", so a generation skipped at Start follows it on the timeline.
+    yield* recordTitleGeneration(sql, plan.titleGeneration, {
+      id: plan.runId,
+      number,
+      title,
+      time: plan.time,
+      prompt: plan.prompt,
+      project,
+    });
     return { ok: true as const, value: plan.runId };
   });
 }

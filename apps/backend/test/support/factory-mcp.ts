@@ -45,6 +45,10 @@ export async function authoringMcpClient(c: TestContext) {
 export const readRunImage = (client: Client, blockId: string, imageId: string) =>
   client.callTool({ name: "factory_get_run_image", arguments: { blockId, imageId } });
 
+/** `factory_set_run_title`, as the title thread submits its title. */
+export const setRunTitle = (client: Client, titleGenerationId: string, title: string) =>
+  client.callTool({ name: "factory_set_run_title", arguments: { titleGenerationId, title } });
+
 /** The JSON reply in a Factory tool result's first, text content item. */
 export const toolReply = (result: { content: unknown }) =>
   JSON.parse((result.content as [{ text: string }])[0].text);

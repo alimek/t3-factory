@@ -16,6 +16,7 @@ import type {
 import {
   flowReadiness,
   isCanonicalTimestamp,
+  isStartTitleProvenance,
   promptText,
   promptTitle,
   TASK_TITLE_LIMIT,
@@ -31,6 +32,7 @@ import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
 import type { RunImages } from "../run-images.ts";
+import type { RunnerTitleGeneration } from "../run-titles.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -44,22 +46,41 @@ function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments"
 /**
  * The accepted key's content. A text-only prompt keeps the earlier `[project, Flow, input, title,
  * creation time]` form, so a request accepted before images still recovers its Run; images add the
- * ordered segments and every manifest field.
+ * ordered segments and every manifest field. Only manual provenance, the owner's own title, is
+ * appended: automatic and legacy keep the historical identity, so a request accepted before
+ * provenance existed, such as a `factory_start_run` retried after an upgrade, still recovers its Run.
  */
 function startFingerprint(
-  input: Pick<StartRunInput, "projectId" | "flowId" | "title" | "createdAt">,
+  input: Pick<StartRunInput, "projectId" | "flowId" | "title" | "titleProvenance" | "createdAt">,
   prompt: StartPrompt,
 ) {
   const text = promptText(prompt.segments);
   const content: unknown[] = [input.projectId, input.flowId, text, input.title, input.createdAt];
   if (prompt.images.length) content.push(prompt.segments, prompt.images);
+  if (input.titleProvenance === "manual") content.push({ titleProvenance: input.titleProvenance });
   return fingerprint(JSON.stringify(content));
 }
+/**
+ * A request sent before provenance existed, such as a composer's stored pending Start, has no
+ * `titleProvenance`; it is legacy and never guessed from its title.
+ */
+function startTitleProvenance(input: object) {
+  return "titleProvenance" in input ? input.titleProvenance : "legacy";
+}
 function startPresentationIssues(
-  input: Pick<StartRunInput, "title" | "createdAt">,
+  input: Pick<StartRunInput, "title" | "titleProvenance" | "createdAt">,
 ): ValidationIssue[] {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   return [
+    ...(isStartTitleProvenance(input.titleProvenance)
+      ? []
+      : [
+          {
+            code: "run_title_provenance",
+            path: "titleProvenance",
+            message: "Title provenance must be automatic, manual or legacy.",
+          },
+        ]),
     ...(title && title.length <= TASK_TITLE_LIMIT
       ? []
       : [
@@ -186,6 +207,8 @@ export function openRunnerStart(
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
   checkAgent: RunnerOptions["checkAgent"],
+  planTitleGeneration: RunnerTitleGeneration["planTitleGeneration"],
+  followTitleGeneration: (runId: string) => Effect.Effect<void, unknown>,
   images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
@@ -204,14 +227,17 @@ export function openRunnerStart(
             message: "Project, Flow and a stable Start request ID are required.",
           },
         ]);
-      const input = rawInput as typeof rawInput & Pick<StartRunInput, "title" | "createdAt">;
+      const input = {
+        ...(rawInput as typeof rawInput & Pick<StartRunInput, "title" | "createdAt">),
+        titleProvenance: startTitleProvenance(rawInput) as StartRunInput["titleProvenance"],
+      };
       const prompt = validateStartPrompt(rawInput);
       if (!prompt.ok) return prompt;
       const presentationIssues = startPresentationIssues(input);
       if (presentationIssues.length)
         return failure(
           "validation",
-          "Give the Run a title and a valid creation time.",
+          "Give the Run a title, its title provenance and a valid creation time.",
           presentationIssues,
         );
       const content = startFingerprint(input, prompt.value);
@@ -226,7 +252,7 @@ export function openRunnerStart(
                 message: "This Start request was accepted with other content.",
               },
             ]);
-      const checked = yield* startPreconditions(input, prompt.value.images.length);
+      const [checked, titleGeneration] = yield* startChecks(input, prompt.value);
       if (!checked.ok) return checked;
       const { project, context, flow, agents, retryScope, workspace } = checked.value;
       const definitions: RunDefinitions = { flow, agents };
@@ -246,11 +272,16 @@ export function openRunnerStart(
         time: yield* now,
         contextId: context.id,
         retryScope,
+        titleGeneration,
       };
       const accepted = yield* store.acceptStart(plan, images.hasFile);
       if (!accepted.ok) return accepted;
       // Deliberately detached from the response. The accepted Run survives a lost HTTP reply.
-      if (!isClosed()) yield* lifecycle.fork(drive(accepted.value));
+      // The title thread launches beside the Flow and never gates its dispatch.
+      if (!isClosed()) {
+        yield* lifecycle.fork(drive(accepted.value));
+        yield* followTitleGeneration(accepted.value);
+      }
       return yield* getRun(accepted.value);
     });
   }
@@ -276,9 +307,26 @@ export function openRunnerStart(
         segments: [{ type: "text", text: input }],
         images: [],
         title: promptTitle(input) ?? "",
+        titleProvenance: "automatic",
         createdAt: accepted?.created_at ?? (yield* now),
       });
     });
+  }
+  /**
+   * Start preconditions and, alongside them so it adds no wait of its own, the title generation
+   * decision. The decision is used only if Start accepts.
+   */
+  function startChecks(
+    input: Pick<StartRunInput, "projectId" | "flowId" | "titleProvenance">,
+    prompt: StartPrompt,
+  ) {
+    return Effect.all(
+      [
+        startPreconditions(input, prompt.images.length),
+        planTitleGeneration({ titleProvenance: input.titleProvenance, prompt }),
+      ],
+      { concurrency: "unbounded" },
+    );
   }
   /** Before Start: connection/project, Flow readiness, every referenced Agent's runtime and launch schema. */
   function startPreconditions(

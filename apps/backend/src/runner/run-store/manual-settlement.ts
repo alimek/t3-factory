@@ -2,6 +2,7 @@ import type { Result, RunSettlement, RunSettlementWorker } from "@t3-factory/con
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { failure } from "../../result.ts";
+import { cancelTitleGeneration } from "../../run-titles.ts";
 import { threadHref } from "../../thread-link.ts";
 import { now } from "../../time.ts";
 import type { RunRow } from "../runner-types.ts";
@@ -309,7 +310,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
    * Archived, this backend owns the database and no known authorization context replaced the
    * Run's, also while T3 is unavailable: such a settlement could never complete. A Settled Run
    * is left unchanged. The first
-   * confirmation closes the handoff gate and starts attempt 1; a later one starts the next
+   * confirmation closes the handoff gate, cancelling a pending Run title generation, and starts attempt 1; a later one starts the next
    * attempt only while the current attempt has an unresolved worker or launch. Both record this
    * backend as the attempt's owner, the bound workers as stopping and "settlement requested", and advance the
    * generation. Answers whether an attempt started. */
@@ -331,6 +332,7 @@ export function openRunManualSettlement(database: RunnerDatabase) {
           yield* sql`UPDATE run_settlements SET attempt=attempt+1,attempt_owner=${ownerToken},attempted_at=${time},stop_pass_at=NULL WHERE run_id=${id}`;
         } else {
           yield* sql`UPDATE runs SET gate_open=0 WHERE id=${id}`;
+          yield* cancelTitleGeneration(sql, id, time, "settle");
           yield* sql`INSERT INTO run_settlements(run_id,requested_at,attempt,attempt_owner,attempted_at) VALUES(${id},${time},1,${ownerToken},${time})`;
         }
         const attempt = (current?.attempt ?? 0) + 1;

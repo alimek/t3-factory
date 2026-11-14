@@ -173,6 +173,7 @@ export interface RouteTrust {
   readonly protocolOptional?: true;
   /** Reachable on the approved-client listener without an approved credential. */
   readonly public?: true;
-  /** Host setup that changes the host's T3 or reporting state; remote clients get `host_only`. */
+  /** Host setup that changes the host's T3, reporting or installation-wide settings; remote
+   * clients get `host_only`. */
   readonly hostOnly?: true;
 }

@@ -27,6 +27,9 @@ export type CanvasDimensions = {
     readonly outputY: number;
     readonly promptLine: number;
     readonly promptImages: number;
+    /** A read-only status row at the bottom of the Flow input; the execution canvas shows the Run
+     * title generation there. */
+    readonly statusLine: number;
   };
   readonly port: {
     /** The drawn circle. */
@@ -55,6 +58,8 @@ function dimensionPorts({ block }: CanvasDimensions): BlockPorts {
 
 export type GeometryFacts<B extends LayoutBlock = LayoutBlock> = {
   readonly prompt?: "none" | "line" | "images";
+  /** The Flow input shows its status row. */
+  readonly flowInputStatus?: boolean;
   readonly footerCount?: (block: B) => number;
   readonly reservedFooterCount?: number;
   readonly emptyGraphSize?: { readonly width: number; readonly height: number } | undefined;
@@ -88,6 +93,7 @@ export const AUTHORING_DIMENSIONS: CanvasDimensions = {
     outputY: 51,
     promptLine: 0,
     promptImages: 0,
+    statusLine: 0,
   },
   port: { size: 12, outset: 6, handle: 20, highlight: 16 },
 };
@@ -124,7 +130,8 @@ export function createNodeGeometry<B extends LayoutBlock>(
         ? input.promptImages
         : facts.prompt === "line"
           ? input.promptLine
-          : 0),
+          : 0) +
+      (facts.flowInputStatus ? input.statusLine : 0),
   };
   const reservedHeight = (block: B) =>
     Math.max(

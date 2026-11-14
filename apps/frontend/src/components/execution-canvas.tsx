@@ -23,6 +23,7 @@ import { pendingArrivals, waitDurationText } from "../wait-display.ts";
 import { FlowInputPrompt, runPromptText } from "./run-prompt.tsx";
 import { AttentionChip } from "./run-attention.tsx";
 import { ContinueNow } from "./wait-arrivals.tsx";
+import { FlowInputTitleLine } from "./run-title-generation.tsx";
 import { clockTime, dayAndTime, executionStateLabel, StatePill } from "./execution-state.tsx";
 
 function blockAttention(run: RunDetail, blockId: string) {
@@ -382,11 +383,24 @@ const port: CanvasPort = { className: "border-[1.5px] border-subtle-foreground b
 /** Without blocks, fit frames a canvas-sized area from the Flow input instead of the input alone. */
 const EMPTY_GRAPH_SIZE = { width: 640, height: 420 };
 
-/** Read-only Flow input: the Run prompt with no execution state; pressing it clears the selection. */
-function executionFlowInput(run: RunDetail, onClearSelection: () => void): CanvasFlowInputContent {
+/** How the Run title line on the Flow input is inspected. */
+type TitleInspection = { readonly inspected: boolean; readonly onInspect: () => void };
+
+/**
+ * Read-only Flow input: the Run prompt with no execution state; pressing it clears the selection.
+ * A Run whose title generation was launched or skipped carries its title line, which describes the
+ * Run's title rather than Flow input work.
+ */
+function executionFlowInput(
+  run: RunDetail,
+  onClearSelection: () => void,
+  title: TitleInspection,
+): CanvasFlowInputContent {
   const images = run.images.length > 0;
   const prompt = images ? runPromptText(run) : run.input.trim();
+  const generation = run.titleGeneration;
   return {
+    className: cn(title.inspected && "ring-1 ring-brand-soft-border"),
     press: (rows) => (
       <button
         type="button"
@@ -410,6 +424,15 @@ function executionFlowInput(run: RunDetail, onClearSelection: () => void): Canva
               </p>
             ),
           },
+    ...(generation && {
+      status: (
+        <FlowInputTitleLine
+          generation={generation}
+          inspected={title.inspected}
+          onInspect={title.onInspect}
+        />
+      ),
+    }),
     port,
   };
 }
@@ -467,6 +490,7 @@ export function ExecutionCanvas({
   observationUnavailable,
   shown,
   onSelect,
+  title,
   overlay,
 }: {
   run: RunDetail;
@@ -474,6 +498,8 @@ export function ExecutionCanvas({
   observationUnavailable: boolean;
   shown: boolean;
   onSelect: (blockId: string | null) => void;
+  /** The Run title line; inspecting it selects no Block and leaves following unchanged. */
+  title: TitleInspection;
   /** Top-left badges and notices (Figma "Overlay · top-left"); they never block panning. */
   overlay?: ReactNode;
 }) {
@@ -485,7 +511,7 @@ export function ExecutionCanvas({
       agents={run.definitions.agents}
       dimensions={EXECUTION_DIMENSIONS}
       reservedFooters={MAX_FOOTERS}
-      flowInput={executionFlowInput(run, () => onSelect(null))}
+      flowInput={executionFlowInput(run, () => onSelect(null), title)}
       block={(block) =>
         executionBlock(run, block, selected === block.id, observationUnavailable, () =>
           onSelect(block.id),

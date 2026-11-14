@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { clockTime, dayAndTime } from "./execution-state.tsx";
 import { BLOCK_KINDS } from "./flow-block.tsx";
+import { TitleMark, titleOutcome, titleStateLabel } from "./run-title-generation.tsx";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { timelineRows, type TimelineFilter, type TimelineRow } from "../run-timeline-rows.ts";
@@ -29,6 +30,8 @@ interface EventPhrase {
   readonly thread?: boolean;
   /** A Continuation row links to the thread its message belongs to instead. */
   readonly threadLink?: string | null;
+  /** A Run title generation row: the Run acts, marked ✦, not a Block. */
+  readonly title?: boolean;
 }
 
 function nameOf(run: RunDetail, blockId: string | null) {
@@ -193,6 +196,22 @@ function observed(lead: string) {
   });
 }
 
+/** Title generation events are the Run's; they link the title thread once it is known, also when
+ * it was bound after the outcome. */
+function titleGenerationEvent(run: RunDetail, event: RunEvent): EventPhrase | undefined {
+  const generation = run.titleGeneration;
+  if (!generation || !event.kind.startsWith("title-generation-")) return undefined;
+  const step = event.kind.slice("title-generation-".length);
+  const outcome = titleOutcome(generation);
+  const text =
+    step === "started"
+      ? `title generation started · ${generation.modelLabel} · beside the Flow`
+      : step === "applied"
+        ? `generated title applied · “${generation.generatedTitle}”`
+        : `title generation ${titleStateLabel(generation.state)}${outcome ? ` · ${outcome}` : ""}`;
+  return { actorId: null, text, title: true, thread: true, threadLink: generation.threadLink };
+}
+
 function said(text: string) {
   return (_run: RunDetail, event: RunEvent): EventPhrase => ({ actorId: event.blockId, text });
 }
@@ -252,13 +271,24 @@ const phrases: Record<string, (run: RunDetail, event: RunEvent) => EventPhrase> 
 
 /** Words derived only from the event's own recorded facts; unknown kinds stay visible. */
 function phrase(run: RunDetail, event: RunEvent): EventPhrase {
+  const title = titleGenerationEvent(run, event);
+  if (title) return title;
   const describe = phrases[event.kind];
   return describe
     ? describe(run, event)
     : { actorId: event.blockId, text: event.kind.replaceAll("-", " ") };
 }
 
-function ActorIcon({ run, actorId }: { run: RunDetail; actorId: string | null }) {
+function ActorIcon({
+  run,
+  actorId,
+  title,
+}: {
+  run: RunDetail;
+  actorId: string | null;
+  title: boolean;
+}) {
+  if (title) return <TitleMark className="text-link" />;
   const kind = run.definitions.flow.graph.blocks.find((block) => block.id === actorId)?.kind;
   const Icon = actorId ? BLOCK_KINDS[kind ?? "agent"].Icon : Flag;
   return <Icon aria-hidden className="size-3 shrink-0 text-link" strokeWidth={1.75} />;
@@ -493,7 +523,7 @@ function TimelineEvent({
   event: RunEvent;
   selectedBlockId: string | null;
 }) {
-  const { actorId, text, route, thread, threadLink } = phrase(run, event);
+  const { actorId, text, route, thread, threadLink, title = false } = phrase(run, event);
   const link =
     thread && (threadLink ?? run.blocks.find((block) => block.blockId === actorId)?.link);
   const report =
@@ -516,7 +546,7 @@ function TimelineEvent({
       >
         {clockTime(event.observedAt)}
       </time>{" "}
-      <ActorIcon run={run} actorId={actorId} />
+      <ActorIcon run={run} actorId={actorId} title={title} />
       <span className="shrink-0 font-medium whitespace-nowrap">{nameOf(run, actorId)}</span>{" "}
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{text}</span>{" "}
       {report && (

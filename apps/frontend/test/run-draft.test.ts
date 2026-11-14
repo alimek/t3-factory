@@ -78,6 +78,7 @@ it("Check same request sends the identical key and payload after a lost response
     segments: [{ type: "text", text: "Do the work" }],
     images: [],
     title: "Do the work",
+    titleProvenance: "automatic",
     createdAt: "2026-11-07T08:00:00.000Z",
   });
   expect(runId).toBe("accepted-run");
@@ -280,7 +281,7 @@ it("Discard keeps an unresolved Start for the same check", async (context) => {
   expect(runId).toBe("accepted-run");
 });
 
-it("Start submits the draft's bounded first-line title and its original creation time", async (context) => {
+it("Start submits an unrenamed draft's bounded first-line title as automatic with its original creation time", async (context) => {
   // Arrange
   const { draft, startRun } = composer(context);
   vi.setSystemTime(new Date("2026-11-07T08:05:00Z"));
@@ -299,6 +300,7 @@ it("Start submits the draft's bounded first-line title and its original creation
     segments: [{ type: "text", text: prompt }],
     images: [],
     title: "x".repeat(500),
+    titleProvenance: "automatic",
     createdAt: "2026-11-07T08:00:00.000Z",
   });
 });
@@ -339,7 +341,62 @@ it("Start submits a renamed draft's manual title", async (context) => {
   await draft.start();
 
   // Assert
-  expect(startRun.mock.calls[0]?.[0]).toMatchObject({ title: "Release notes" });
+  expect(startRun.mock.calls[0]?.[0]).toMatchObject({
+    title: "Release notes",
+    titleProvenance: "manual",
+  });
+});
+
+it("a draft renamed to its prompt's first line still starts as manual after reload", async (context) => {
+  // Arrange
+  const typed = composer(context);
+  const { draftId } = typed.draft.getSnapshot();
+  assert(draftId);
+  typed.draft.rename(draftId, "Do the work");
+  const { draft, startRun } = reopen(typed);
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[0]?.[0]).toMatchObject({
+    title: "Do the work",
+    titleProvenance: "manual",
+  });
+});
+
+it("a draft saved before title provenance starts as legacy instead of guessing", async (context) => {
+  // Arrange
+  const setup = composer(context);
+  setup.storage.setItem(
+    "factory-run-drafts:server-a",
+    JSON.stringify({
+      current: "draft-1",
+      drafts: [
+        {
+          id: "draft-1",
+          segments: [{ type: "text", text: "Fix the header" }],
+          images: [],
+          projectId: "project",
+          flowId: "flow",
+          createdAt: "2026-11-06T08:00:00.000Z",
+          listed: true,
+        },
+      ],
+    }),
+  );
+  const { draft, startRun } = reopen(setup);
+  startRun.mockResolvedValueOnce({ id: "accepted-run" });
+
+  // Act
+  await draft.start();
+
+  // Assert
+  expect(startRun.mock.calls[0]?.[0]).toMatchObject({
+    title: "Fix the header",
+    titleProvenance: "legacy",
+  });
 });
 
 it("an accepted Start removes its draft instead of listing it beside the Run", async (context) => {

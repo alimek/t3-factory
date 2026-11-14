@@ -1,8 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { failure } from "../src/result.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { factoryMcpClient, toolReply } from "./support/factory-mcp.ts";
+import { enableRunTitles } from "./support/scenarios.ts";
 
 /** factory_start_run arguments for the prepared Project and Flow. */
 const startArguments = (fixture: Awaited<ReturnType<typeof prepared>>) => ({
@@ -12,7 +14,7 @@ const startArguments = (fixture: Awaited<ReturnType<typeof prepared>>) => ({
   input: "  \nImprove search\nKeep it accessible.  ",
 });
 
-it("a session without a Block starts a text Run and receives the accepted Run's identity", async (c) => {
+it("a session without a Block starts a text Run with an automatic title and receives the accepted Run's identity", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   const client = await factoryMcpClient(c, fixture.f);
@@ -38,6 +40,65 @@ it("a session without a Block starts a text Run and receives the accepted Run's 
   const run = await fixture.f.getRun(reply.run.id);
   assert(run.ok);
   expect(run.value.input).toBe("  \nImprove search\nKeep it accessible.  ");
+  expect(run.value.titleProvenance).toBe("automatic");
+});
+
+it("a session Start while Generate Run titles is on records a pending generation for its automatic title", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const client = await factoryMcpClient(c, fixture.f);
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_start_run",
+    arguments: startArguments(fixture),
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const run = await fixture.f.getRun(toolReply(result).run.id);
+  assert(run.ok);
+  expect(run.value.titleGeneration).toMatchObject({
+    state: "pending",
+    automaticTitle: "Improve search",
+    modelLabel: "Codex · GPT 6.1 Sol",
+  });
+});
+
+it("the Project listing tells a conversation that Generate Run titles is on, so its review can say the title may be replaced", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const client = await factoryMcpClient(c, fixture.f);
+
+  // Act
+  const result = await client.callTool({ name: "factory_list_projects", arguments: {} });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result).generateRunTitles).toBe(true);
+});
+
+it("a Project listing that cannot read Generate Run titles reports it unknown with a problem instead of off, so the review still says the title may be replaced", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const client = await factoryMcpClient(c, {
+    ...fixture.f,
+    getRunTitleSetting: async () =>
+      failure("internal", "Factory could not complete the operation."),
+  });
+
+  // Act
+  const result = await client.callTool({ name: "factory_list_projects", arguments: {} });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const reply = toolReply(result);
+  expect(reply.generateRunTitles).toBeNull();
+  expect(reply.problem).toContain("Generate Run titles");
+  expect(reply.projects).toHaveLength(1);
 });
 
 it("the conversation's repository root identifies its Project while another clone stays distinct", async (c) => {
@@ -142,7 +203,7 @@ it("a rejected Start explains its problem and creates no Run", async (c) => {
   expect(navigation.value).toStrictEqual([]);
 });
 
-it("a Start whose reply was lost returns the same Run when retried after restart, without another worker launch", async (c) => {
+it("a Start whose reply was lost returns the same Run with its title provenance when retried after restart, without another worker launch", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   const lossy = await factoryMcpClient(c, fixture.f, { loseCallResponses: true });
@@ -165,7 +226,39 @@ it("a Start whose reply was lost returns the same Run when retried after restart
   // Assert
   expect(result.isError).toBe(false);
   expect(toolReply(result).run.id).toBe(navigation.value[0]!.id);
+  const run = await restored.getRun(navigation.value[0]!.id);
+  assert(run.ok);
+  expect(run.value.titleProvenance).toBe("automatic");
   expect(fixture.t3.launches.size).toBe(1);
+});
+
+it("a session Start accepted before title provenance existed replays to its Run with legacy provenance when retried after the upgrade", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  const { requestId, projectId, flowId, input } = startArguments(fixture);
+  const accepted = await fixture.f.startRun({
+    requestId,
+    projectId,
+    flowId,
+    input,
+    title: "Improve search",
+    createdAt: "2026-11-07T08:00:00.000Z",
+  });
+  assert(accepted.ok);
+  const client = await factoryMcpClient(c, fixture.f);
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_start_run",
+    arguments: startArguments(fixture),
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result).run.id).toBe(accepted.value.id);
+  const run = await fixture.f.getRun(accepted.value.id);
+  assert(run.ok);
+  expect(run.value.titleProvenance).toBe("legacy");
 });
 
 it("changed content under an accepted request identity is refused as a conflict", async (c) => {

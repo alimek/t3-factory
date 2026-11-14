@@ -6,6 +6,9 @@ import {
   repliesDiscussed,
   archived,
   changesRequested,
+  controlledTitleModel,
+  enableRunTitles,
+  generatedTitleApplied,
   executionFailed,
   missingReport,
   repositoryFactsObserved,
@@ -199,6 +202,8 @@ async function seedScenario(
     return workers[0].runId;
   }
   if (scenario.state === "Run worktree bound") return (await worktreeBound(context, start)).runId;
+  if (scenario.state === "generated title applied")
+    return generatedTitleRun(context, start, `${namespace.titlePrefix}${scenario.generatedTitle}`);
   const worker = await workerAtWork(context, start);
   if (scenario.state === "settlement unresolved") await settlementUnresolved(context, worker);
   else await finishScenario(context, worker, scenario);
@@ -206,6 +211,28 @@ async function seedScenario(
 }
 
 type Worker = Awaited<ReturnType<typeof workerAtWork>>;
+
+/**
+ * Generate Run titles is on only while this Run starts, so other demo Runs and the owner's new Runs
+ * launch no title thread; turning it off afterwards leaves the pending generation to finish.
+ */
+async function generatedTitleRun(
+  context: SeedContext,
+  start: Awaited<ReturnType<typeof demoStart>>,
+  title: string,
+) {
+  await enableRunTitles(context.factory);
+  let worker: Worker;
+  try {
+    worker = await workerAtWork(context, start);
+  } finally {
+    requireSuccess(
+      await context.factory.updateRunTitleSetting({ enabled: false, model: controlledTitleModel }),
+    );
+  }
+  await generatedTitleApplied(context, worker.runId, title);
+  return worker.runId;
+}
 
 /** The user confirmed Settle while T3 cannot stop the worker, so the settlement stays unresolved. */
 export async function settlementUnresolved(context: SeedContext, worker: Worker) {
@@ -244,7 +271,8 @@ async function finishScenario(
         | "two workers started from one prompt"
         | "Run worktree bound"
         | "results released to a Wait"
-        | "settlement unresolved";
+        | "settlement unresolved"
+        | "generated title applied";
     }
   >,
 ) {
