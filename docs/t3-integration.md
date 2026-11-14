@@ -430,10 +430,10 @@ Flow.
   mismatched context, and the generation times out at its deadline. A definitive rejection fails the generation; a
   lost reply leaves it pending with no thread bound.
 - **Launch provenance and recovery.** A sent launch with no bound thread is never sent again, also after a restart.
-  Until the deadline, Factory searches the Project for its saved title and binds a thread only under the worker
-  [launch provenance](#launch-provenance) rules: the one thread with that title, top-level, in the Project checkout,
-  with the captured provider, model and options and exactly one matching execution. A launch still unbound at the
-  deadline is abandoned; a thread T3 created for it stays an orphan in T3.
+  Until the deadline, also after the generation's outcome, Factory searches the Project for its saved title and binds
+  a thread only under the worker [launch provenance](#launch-provenance) rules: the one thread with that title,
+  top-level, in the Project checkout, with the captured provider, model and options and exactly one matching
+  execution. A launch still unbound at the deadline is abandoned; a thread T3 created for it stays an orphan in T3.
 - **Prompt.** The first message is the fixed built-in prompt (version 1). It asks for a title in the prompt's language
   of at most 120 code points, treats the Run prompt only as text to title, forbids reading, searching or editing files,
   running commands and delegating, and carries the generation's opaque `titleGenerationId`. Factory keeps that

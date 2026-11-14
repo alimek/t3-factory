@@ -367,11 +367,22 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
         () => Effect.succeed(null),
       );
 
+    /** Binds the thread of a sent launch whose reply was lost, found by uniquely verified
+     * provenance; the launch is never sent again. */
+    const recoverLaunch = (generation: ReconcileRow) =>
+      Effect.gen(function* () {
+        const launched = yield* verifiedLaunchedThread(
+          t3,
+          launchScope(generation),
+          launchPayload(generation),
+        );
+        if (launched) yield* bindThread(generation, launched.threadId);
+      });
+
     /**
      * One step for a pending generation, against its absolute deadline: at the deadline it times
      * out, also with a launch still unbound; before it, an unsent launch is dispatched, an
-     * uncertain one is searched for by verified provenance and never launched again, and a bound
-     * thread that finished without a title fails it.
+     * uncertain one is searched for, and a bound thread that finished without a title fails it.
      */
     const advancePending = (generation: ReconcileRow) =>
       Effect.gen(function* () {
@@ -379,17 +390,25 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
           return yield* endPending(generation, "timed-out", TIMED_OUT);
         if (!generation.launch_sent_at) return yield* dispatch(generation);
         if (!(yield* contextLive(generation))) return;
-        if (!generation.thread_id) {
-          const launched = yield* verifiedLaunchedThread(
-            t3,
-            launchScope(generation),
-            launchPayload(generation),
-          );
-          if (launched) yield* bindThread(generation, launched.threadId);
-          return;
-        }
+        if (!generation.thread_id) return yield* recoverLaunch(generation);
         const thread = yield* readTitleThread(generation, generation.thread_id);
         if (thread?.finished) yield* endPending(generation, "failed", FINISHED_WITHOUT_TITLE);
+      });
+
+    /**
+     * An outcome can arrive before a sent launch's thread is bound. The search goes on until the
+     * original deadline whatever the outcome, so the thread found is still linked and cleaned up.
+     */
+    const recoverEndedLaunch = (generation: ReconcileRow) =>
+      Effect.gen(function* () {
+        if (
+          !generation.launch_sent_at ||
+          generation.thread_id ||
+          (yield* Clock.currentTimeMillis) >= Date.parse(generation.deadline_at) ||
+          !(yield* contextLive(generation))
+        )
+          return;
+        yield* recoverLaunch(generation);
       });
 
     /**
@@ -456,9 +475,10 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
       );
 
     /**
-     * Brings the Run's title generation forward: the next step while it is pending, then cleanup
-     * of its thread once it has an outcome. Every transition is conditional, so concurrent or
-     * repeated passes, including after a restart, change nothing twice.
+     * Brings the Run's title generation forward: the next step while it is pending, or the search
+     * for a launch still unbound at its outcome, then cleanup of its thread once it has an
+     * outcome. Every transition is conditional, so concurrent or repeated passes, including after
+     * a restart, change nothing twice.
      */
     const reconcileTitleGeneration = (runId: string) =>
       recoverOperation(
@@ -466,21 +486,23 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
           const generation = yield* readGeneration(runId);
           if (!generation) return;
           if (generation.state === "pending") yield* advancePending(generation);
+          else yield* recoverEndedLaunch(generation);
           const current = yield* readGeneration(runId);
           if (current) yield* cleanUp(current);
         }),
         () => Effect.void,
       );
 
-    /** Every generation that is pending or may still owe its thread's cleanup. */
+    /** Every generation that is pending, has a sent launch to bind before its deadline or may
+     * still owe its thread's cleanup. */
     const reconcileTitleGenerations = () =>
       Effect.gen(function* () {
-        const windowStart = new Date(
-          (yield* Clock.currentTimeMillis) - CLEANUP_WINDOW_MS,
-        ).toISOString();
+        const time = yield* Clock.currentTimeMillis;
+        const current = new Date(time).toISOString();
+        const windowStart = new Date(time - CLEANUP_WINDOW_MS).toISOString();
         const rows = yield* sql<{
           run_id: string;
-        }>`SELECT run_id FROM run_title_generations WHERE state='pending' OR (thread_id IS NOT NULL AND settle_requested_at IS NULL AND ended_at>=${windowStart})`;
+        }>`SELECT run_id FROM run_title_generations WHERE state='pending' OR (launch_sent_at IS NOT NULL AND thread_id IS NULL AND deadline_at>${current}) OR (thread_id IS NOT NULL AND settle_requested_at IS NULL AND ended_at>=${windowStart})`;
         yield* Effect.forEach(rows, (row) => reconcileTitleGeneration(row.run_id), {
           concurrency: "unbounded",
           discard: true,

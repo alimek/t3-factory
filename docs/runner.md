@@ -454,11 +454,13 @@ outcome stays final.
 - **Restart.** Startup and each sweep reconcile every pending generation against its original deadline: an unsent
   launch is dispatched once and only under the Run's authorization context, a sent launch without a bound thread is
   searched for by uniquely verified provenance as an [uncertain worker launch](#ownership-and-restart) is, only until
-  the deadline, and a bound thread is read to see whether it finished without a valid title. Factory never launches a replacement; a launch still unbound at the
-  deadline is abandoned.
-- **Cleanup.** After any outcome with a bound thread, while five minutes have not passed since the outcome and only
-  under the Run's authorization context, Factory reads the title thread under the [completion
-  rule](#worker-thread-completion): an unfinished or unreadable thread gets one Stop with a key derived from the
+  the deadline, and a bound thread is read to see whether it finished without a valid title. The search for a sent
+  launch goes on until that deadline also after the generation's outcome, whichever outcome it was, so a thread found
+  then is bound, linked and cleaned up. Factory never launches a replacement; a launch still unbound at the deadline is
+  abandoned.
+- **Cleanup.** After any outcome with a bound thread, including one bound after the outcome, while five minutes have
+  not passed since the outcome and only under the Run's authorization context, Factory reads the title thread under
+  the [completion rule](#worker-thread-completion): an unfinished or unreadable thread gets one Stop with a key derived from the
   generation, and a finished one gets one T3 thread settlement. Each request is recorded before it is sent and never
   repeated; Factory neither confirms nor waits for either, also for Archived Runs.
 

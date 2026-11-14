@@ -547,6 +547,90 @@ it("a restart after a lost title thread launch reply binds the launched thread b
   expect(fixture.t3.launchCalls).toBe(2);
 });
 
+it("a title applied while its launch reply is lost still gets its title thread bound by provenance, linked and stopped", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  loseTitleThreadLaunchReply(fixture.t3);
+  const started = await fixture.f.startRun(fixture.input);
+  assert(started.ok);
+  const launch = await titleThreadLaunchRecorded(fixture.t3);
+  const applied = await fixture.f.runtime.title({
+    arguments: { titleGenerationId: capabilityFromLaunchPrompt(launch), title: "Search ranking" },
+  });
+  expect(applied.code).toBe("TITLE_APPLIED");
+
+  // Act
+  await fixture.f.reconcileRuns();
+
+  // Assert
+  const { threadId } = titleThreadReference(fixture.t3);
+  const run = await fixture.f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.titleGeneration).toMatchObject({
+    state: "applied",
+    threadLink: expect.stringContaining(threadId),
+  });
+  expect(titleThreadStops(fixture.t3)).toStrictEqual([
+    { threadId, clientRequestId: expect.any(String) },
+  ]);
+  expect(fixture.t3.launchCalls).toBe(2);
+});
+
+it("Archive while a title launch reply is lost still recovers the title thread and stops it", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  loseTitleThreadLaunchReply(fixture.t3);
+  const started = await fixture.f.startRun(fixture.input);
+  assert(started.ok);
+  await titleThreadLaunchRecorded(fixture.t3);
+  const stopped = titleThreadStopRequested(fixture.t3);
+
+  // Act
+  const archived = await fixture.f.archiveRun(started.value.id);
+
+  // Assert
+  assert(archived.ok);
+  expect(archived.value.titleGeneration?.state).toBe("cancelled");
+  const { threadId } = titleThreadReference(fixture.t3);
+  expect((await stopped).threadId).toBe(threadId);
+  const run = await fixture.f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.titleGeneration?.threadLink).toContain(threadId);
+  expect(fixture.t3.launchCalls).toBe(2);
+});
+
+it("a restart before the deadline recovers and stops the title thread of a generation renamed while its launch reply was lost", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  loseTitleThreadLaunchReply(fixture.t3);
+  const started = await fixture.f.startRun(fixture.input);
+  assert(started.ok);
+  await titleThreadLaunchRecorded(fixture.t3);
+  const renamed = await fixture.f.renameRun(started.value.id, { title: "Search ranking" });
+  assert(renamed.ok);
+  await fixture.f.close();
+
+  // Act
+  const restored = await fixture.h.open({ t3: fixture.t3, connectionRetryMs: 60_000 });
+  c.onTestFinished(() => restored.close());
+
+  // Assert
+  const { threadId } = titleThreadReference(fixture.t3);
+  const run = await restored.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.titleGeneration).toMatchObject({
+    state: "dropped",
+    threadLink: expect.stringContaining(threadId),
+  });
+  expect(titleThreadStops(fixture.t3)).toStrictEqual([
+    { threadId, clientRequestId: expect.any(String) },
+  ]);
+  expect(fixture.t3.launchCalls).toBe(2);
+});
+
 it("a title launch recorded under an authorization context that reauthorization replaced is never sent, also after a restart", async (c) => {
   // Arrange
   const fixture = await prepared(c);
