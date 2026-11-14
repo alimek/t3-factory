@@ -43,9 +43,8 @@ and restricted OAuth credentials live outside project repositories.
   per Run in the same transaction as the Run, with its captured model, options, prompt version and deadline, and for a
   pending one the title thread's launch request, so the intent is durable before any dispatch. The generation later
   records when that request was sent, the thread T3 launched, when it reached its outcome and the claims for its one
-  Stop and one T3 thread settlement. Migration `080` adds the setting off and gives existing Runs no generation;
-  migration `081` adds the launch request, sent time and thread columns; migration `082` adds the outcome time and
-  cleanup claims, leaving earlier generations without cleanup. No other data changes.
+  Stop and one T3 thread settlement. Migration `080` adds the setting off and gives existing Runs no generation. No
+  other data changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

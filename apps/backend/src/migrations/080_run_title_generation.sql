@@ -23,7 +23,11 @@ INSERT INTO run_title_settings (singleton) VALUES (1)
 -- statement-breakpoint
 -- At most one title generation per Run, recorded at Start acceptance with the configuration it
 -- captured. Its id is the generation's opaque capability, never shown in Run reads. Runs from
--- before this migration have none.
+-- before this migration have none. A pending generation carries its title thread's launch request,
+-- so the launch intent is durable before any dispatch; launch_sent_at marks that the request may
+-- have reached T3 and thread_id binds the thread T3 launched. ended_at, the outcome time, bounds
+-- how long Factory still tries to clean up the title thread, and its one Stop and its one T3 thread
+-- settlement are each claimed before the request is sent, so neither is ever repeated.
 CREATE TABLE run_title_generations (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL UNIQUE REFERENCES runs(id),
@@ -38,5 +42,11 @@ CREATE TABLE run_title_generations (
   automatic_title TEXT NOT NULL,
   generated_title TEXT,
   thread_link TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  launch_payload_json TEXT,
+  launch_sent_at TEXT,
+  thread_id TEXT,
+  ended_at TEXT,
+  stop_requested_at TEXT,
+  settle_requested_at TEXT
 )
