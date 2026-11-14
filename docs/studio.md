@@ -138,7 +138,7 @@ Wired hidden or removed exits keep a separate, unavailable canvas endpoint marke
 Agent blocks resolve against Studio's saved Agents as they arrive: an Agent saved or removed elsewhere updates block Agent names, exit ports and the missing-Agent state at once, without
 changing the draft or its unsaved state, block positions or the view. A wire from an exit the Agent no longer has stays as such a broken wire; Studio never repairs the graph or deletes a connection.
 **Local exits · only in this Flow** offers editable name, description and message-required cards and **Add local exit**. Removing a local exit removes its connections.
-Changes to the saved Agent appear on the next Flow read; Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
+Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
 exits **Approve** (message optional) and **Request changes** (message required). An unconnected exit ends that branch.
 
 **Wait.** A Wait holds each arrival for a fixed duration, then passes its message on unchanged. Its panel sets the
