@@ -249,9 +249,14 @@ export function ResultCard({
         <p className="min-w-0 flex-1 text-xs text-subtle-foreground">
           {[...footer, clockTime(report.acceptedAt)].filter(Boolean).join(" · ")}
         </p>
-        <Button type="button" variant="link" size="xs" onClick={() => setReading(true)}>
-          {/* tailwind-merge reads the text-label size token as a color and would drop text-link. */}
-          <span className="text-label">Read result</span>
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="text-label"
+          onClick={() => setReading(true)}
+        >
+          Read result
           <Maximize2 aria-hidden />
         </Button>
       </footer>
