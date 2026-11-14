@@ -120,6 +120,10 @@ export const registerCommands = (client: Client<true>, applicationId: string) =>
 
 type Access = "permitted" | "denied" | "unavailable";
 
+// Discord redelivers events only within a resumed session, far sooner than this; it matches the
+// longest a conversation generation lasts.
+const MARKER_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
 /**
  * Factory's policy gate for one operating session. Every Discord message and interaction passes
  * here before anything else happens: a thread is created, a conversation opened, Chat SDK
@@ -140,6 +144,8 @@ export function makeIngress(
   const firstDelivery = (eventId: string) =>
     Effect.gen(function* () {
       const receivedAt = yield* now;
+      const expired = new Date(Date.parse(receivedAt) - MARKER_RETENTION_MS).toISOString();
+      yield* sql`DELETE FROM chat_ingress_events WHERE received_at<${expired}`;
       const rows = yield* sql`INSERT INTO chat_ingress_events (application_id,event_id,received_at)
         VALUES (${applicationId},${eventId},${receivedAt}) ON CONFLICT DO NOTHING RETURNING event_id`;
       return rows.length > 0;
