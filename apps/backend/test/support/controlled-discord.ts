@@ -232,6 +232,7 @@ export async function startControlledDiscord() {
   /** Users who left every server; Discord answers Unknown Member for them. */
   const departed = new Set<string>();
   let gatewayAvailable = true;
+  let typingAvailable = true;
   const messageFaults: MessageFault[] = [];
   const editFaults: MessageFault[] = [];
   const created: CreatedMessage[] = [];
@@ -419,6 +420,15 @@ export async function startControlledDiscord() {
         // Posting in an archived thread that is not locked reopens it.
         if (thread) thread.archived = false;
         return { status: 200, body: createdOnce(match[1]!, fields, bot), lost: fault === "lost" };
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/v10\/channels\/(\d+)\/typing$/,
+      ({ match }) => {
+        if (!typingAvailable) return unavailable;
+        if (deletedThreads.has(match[1]!)) return unknownChannel;
+        return { status: 204 };
       },
     ],
     [
@@ -757,6 +767,10 @@ export async function startControlledDiscord() {
     /** Makes Gateway discovery fail as a Discord outage does. */
     setGatewayAvailable(available: boolean) {
       gatewayAvailable = available;
+    },
+    /** Makes typing indicator triggers fail as an outage does. */
+    setTypingAvailable(available: boolean) {
+      typingAvailable = available;
     },
     /** Makes thread-member lookups fail as an outage does. */
     /** The user leaves every server; lookups of them answer Unknown Member. */

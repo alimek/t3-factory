@@ -40,6 +40,9 @@ const INTERPRETATION_LIMITS = {
   transportHoldMs: 5 * MINUTE_MS,
 } as const;
 
+/** Discord shows a typing indicator for about ten seconds; Factory triggers it again before then. */
+const TYPING_REFRESH_MS = 8_000;
+
 const MAX_OUTPUT_TOKENS = 2048;
 const MAX_FACTS_BYTES = 2048;
 const MAX_FACT_INPUT_BYTES = 256;
@@ -104,6 +107,8 @@ export interface InterpreterSession {
   readonly operating: () => boolean;
   /** Publishes one Discord message of at most 2000 characters, mentioning nobody. */
   readonly post: (conversation: ConversationKey, text: string) => Promise<unknown>;
+  /** Shows Factory typing in the conversation's thread for Discord's indicator lifetime. */
+  readonly typing: (conversation: ConversationKey) => Promise<unknown>;
   /** Creates Factory messages with their Discord identity; reviews carry their button with it. */
   readonly sender: DiscordSender;
   /** The shared review and consent path mutation proposals take. */
@@ -533,6 +538,27 @@ export const makeInterpreter = (session: InterpreterSession) =>
         }),
       );
 
+    /**
+     * Keeps Factory's typing indicator showing while the slot is interpreted, best effort. Each
+     * trigger first rechecks that the invocation is still permitted; a denied recheck, the session
+     * ending or publication beginning ends it, and none is sent while the transport is down. A failed
+     * trigger is ignored: it is no delivery and never touches interpretation or its bounds.
+     */
+    const typing = (slot: Slot) =>
+      Effect.gen(function* () {
+        for (;;) {
+          if (slot.committed || !session.operating()) return;
+          if (!transport.down) {
+            const permitted = yield* Effect.orElseSucceed(slot.invocation.permitted, () => false);
+            if (!permitted || slot.committed) return;
+            yield* Effect.ignore(
+              Effect.tryPromise(() => session.typing(slot.invocation.conversation)),
+            );
+          }
+          yield* Effect.sleep(Duration.millis(TYPING_REFRESH_MS));
+        }
+      });
+
     /** One model request under every bound; its answer, or how the interpretation ends. */
     const requestModel = (state: Progress) =>
       Effect.gen(function* () {
@@ -811,7 +837,11 @@ export const makeInterpreter = (session: InterpreterSession) =>
           yield* model.failed(yield* model.revision, configuration.error.message);
           return interrupted("model-failed");
         }
-        return yield* interpret(slot, configuration.value);
+        // Typing ends with the interpretation, whichever way it ends.
+        return yield* Effect.raceFirst(
+          interpret(slot, configuration.value),
+          Effect.andThen(typing(slot), Effect.never),
+        );
       });
 
     /** A model failure also discards the invocations queued behind it in its conversation. */

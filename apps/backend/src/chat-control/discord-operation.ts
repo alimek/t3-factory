@@ -166,6 +166,12 @@ class FactoryDiscordAdapter extends DiscordAdapter {
     return "reopened";
   }
 
+  /** Triggers Discord's typing indicator in the thread, in a single request. */
+  async typing(threadId: string) {
+    const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
+    await this.discordFetch(`/channels/${discordThreadId ?? channelId}/typing`, "POST");
+  }
+
   listen(client: Client, isShuttingDown: () => boolean) {
     this.setupLegacyGatewayHandlers(client, isShuttingDown);
   }
@@ -361,6 +367,7 @@ export const makeDiscordOperation = (
           tools: conversation.tools,
           operating: () => !released(),
           post,
+          typing: (key) => adapter.typing(encodeThreadId(key)),
           sender,
           actions: conversation.actions,
         });

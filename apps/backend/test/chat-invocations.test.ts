@@ -246,6 +246,7 @@ it("a repeated delivery of an invocation opens one thread and is answered once",
   await discord.request("POST", /^\/api\/v10\/channels\/300000000000000021\/messages$/);
   expect(requestsBesides(discord, SENTINEL)).toStrictEqual([
     `POST /api/v10/channels/${ALLOWED_CHANNEL}/messages/300000000000000021/threads`,
+    "POST /api/v10/channels/300000000000000021/typing",
     "GET /api/v10/channels/300000000000000021",
     "POST /api/v10/channels/300000000000000021/messages",
   ]);

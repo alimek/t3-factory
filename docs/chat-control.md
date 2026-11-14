@@ -279,6 +279,15 @@ unchanged. Replies mention nobody, whatever the model wrote, and a reply longer 
 message goes out completely as ordered parts. Chat control adds no Stop, manual Settle, Wait
 **Continue now** or worker control: the model is told that a request to stop a Run means Archive.
 
+While an admitted invocation is actively interpreted, not while it waits in the queue, the bot shows
+Discord's typing indicator in the thread. Factory triggers it again before Discord's roughly ten-second
+indicator lapses, rechecking first that the invocation is still permitted, and stops as soon as
+publication begins or the interpretation ends, fails, times out or is fenced; nothing is triggered
+while the Gateway connection is down. Typing is best effort: a failed trigger is not retried, is no
+delivery problem and changes no Settings state, and it never delays or extends interpretation. Denied
+or ignored traffic, oversized requests, reports, receipts, reset acknowledgements and button clicks
+show no typing.
+
 ### Finding and reading Runs
 
 A participant can find and read every Run of the Projects the thread's parent channel grants, whoever
