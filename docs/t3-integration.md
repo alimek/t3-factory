@@ -481,10 +481,9 @@ exits. A Request report message lists the same exits with their descriptions and
 Continuation the reason is `continuation`, `prompt` is its captured prompt and `exits` is empty: the worker finishes
 it without an exit, with its response as the message. On a visit after the first to an Agent block whose
 [Revisit instruction](runner.md#revisit-instructions) is set, `revisitInstruction` is the captured instruction and
-`revisitRule` the conflict rule its message states: the instruction decides the visit's scope while the Agent's role,
-criteria, exits and reporting rules still apply, a narrower scope never permits skipping a required check or accepting a
-defect that has evidence, and a conflict is reported in the result. Both are omitted on a first visit or when the
-instruction is empty. A Request report message never includes the instruction: it asks for an assessment of existing
+`revisitRule` the conflict rule its message states, worded in
+[Revisit instructions](runner.md#revisit-instructions). Both are omitted on a first visit or when the instruction is
+empty. A Request report message never includes the instruction: it asks for an assessment of existing
 work, not a new task.
 
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result

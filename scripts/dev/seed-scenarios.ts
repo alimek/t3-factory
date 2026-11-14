@@ -198,7 +198,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
   },
   {
     key: "correction",
-    title: "Applying your requested changes",
+    title: "Corrections back in review",
     flow: "review",
     state: "corrections back in review",
     ...reviewContent,

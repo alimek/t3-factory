@@ -256,30 +256,60 @@ it("an MCP-created Flow with an eight-day Wait saves with Studio's readiness gap
   expect(assertOk(await factory.getFlow(flow.id))).toStrictEqual(flow);
 });
 
-it("factory_create_flow, factory_save_flow and factory_get_flow round-trip an Agent block's Revisit instruction without a readiness issue", async (c) => {
+function revisitGraph(agentId: string, revisitInstruction: string) {
+  return {
+    flowInput: { targetBlockIds: ["review"] },
+    blocks: [
+      {
+        id: "review",
+        kind: "agent" as const,
+        name: "Review",
+        agentId,
+        hiddenExitIds: [],
+        localExits: [],
+        revisitInstruction,
+      },
+    ],
+    connections: [],
+  };
+}
+
+it("factory_create_flow stores an Agent block's trimmed Revisit instruction and factory_get_flow returns it without a readiness issue", async (c) => {
   // Arrange
   const { factory, client } = await authoringMcpClient(c);
   const agent = assertOk(await factory.createAgent(sampleAgentInput("Reviewer")));
-  const reviewer = {
-    id: "review",
-    kind: "agent",
-    name: "Review",
-    agentId: agent.id,
-    hiddenExitIds: [],
-    localExits: [],
-  };
-  const graph = (revisitInstruction: string) => ({
-    flowInput: { targetBlockIds: ["review"] },
-    blocks: [{ ...reviewer, revisitInstruction }],
-    connections: [],
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_create_flow",
+    arguments: {
+      name: "Review once",
+      graph: revisitGraph(agent.id, "  Check every finding again.  "),
+    },
   });
-  const created = toolReply(
-    await client.callTool({
-      name: "factory_create_flow",
-      arguments: { name: "Review once", graph: graph("  Check every finding again.  ") },
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const created = toolReply(result);
+  expect(created.graph.blocks[0].revisitInstruction).toBe("Check every finding again.");
+  expect(created.readiness).toStrictEqual({ ready: true, issues: [] });
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_get_flow", arguments: { flowId: created.id } }),
+    ),
+  ).toStrictEqual(created);
+});
+
+it("factory_save_flow replaces an Agent block's Revisit instruction and factory_get_flow returns it without a readiness issue", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const agent = assertOk(await factory.createAgent(sampleAgentInput("Reviewer")));
+  const created = assertOk(
+    await factory.createFlow({
+      name: "Review once",
+      graph: revisitGraph(agent.id, "Check every finding again."),
     }),
   );
-  expect(created.graph.blocks[0].revisitInstruction).toBe("Check every finding again.");
 
   // Act
   const result = await client.callTool({
@@ -288,7 +318,7 @@ it("factory_create_flow, factory_save_flow and factory_get_flow round-trip an Ag
       flowId: created.id,
       name: created.name,
       expectedRevision: created.revision,
-      graph: graph("Verify the fixes and the newly affected scope."),
+      graph: revisitGraph(agent.id, "Verify the fixes and the newly affected scope."),
     },
   });
 

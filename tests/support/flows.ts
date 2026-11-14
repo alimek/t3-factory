@@ -15,14 +15,6 @@ async function flowRequest(baseUrl: string | undefined, path: string, init?: Req
   return result.value;
 }
 
-/** The latest saved revision of the Flow named `name`. */
-export async function readFlowByName(baseUrl: string | undefined, name: string) {
-  const flows = (await flowRequest(baseUrl, "/api/flows")) as FlowDraft[];
-  const flow = flows.find((item) => item.name === name);
-  assert(flow);
-  return flow;
-}
-
 /** Saves a new Flow with a seeded Flow's graph and the given workspace setting. */
 export async function saveFlowCopy(
   baseUrl: string | undefined,
@@ -30,7 +22,9 @@ export async function saveFlowCopy(
   name: string,
   workspace: FlowWorkspace,
 ) {
-  const seeded = await readFlowByName(baseUrl, source);
+  const flows = (await flowRequest(baseUrl, "/api/flows")) as FlowDraft[];
+  const seeded = flows.find((flow) => flow.name === source);
+  assert(seeded);
   const created = (await flowRequest(baseUrl, "/api/flows", {
     method: "POST",
     headers: mutation,
