@@ -181,8 +181,7 @@ The Run shows its generation without treating it as Flow work:
 input card.** Factory has no LLM connection of its own, so a short-lived T3 thread with a cheap model writes the title.
 Keeping it outside the Flow leaves Flows, captured definitions and Studio unchanged, lets the Flow start at once and
 keeps a cosmetic step out of settlement, attention and Problems. Its status belongs with the Run's prompt, so the Flow
-input card carries it rather than a Block. When Chat control's owner-configured LLM connection exists, title
-generation is meant to move to it as the only generator.
+input card carries it rather than a Block.
 
 ### Starting from a conversation
 
