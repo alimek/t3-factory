@@ -28,11 +28,11 @@ Where all workers of one Run work, fixed at Start: the project checkout, or for 
 _Avoid_: A worktree per worker.
 
 **Flow block**:
-A constituent element of a flow: the Flow input block, an agent block, a human step, a Wait or a Continuation.
+A constituent element of a flow: the Flow input block, an agent block, a human step, a Wait or a Continuation. An agent block may carry a Revisit instruction.
 _Avoid_: Puzzle as the canonical name; agent when referring to all block types.
 
 **Agent**:
-A reusable worker definition consisting of a prompt, execution settings and its exits, independent of a particular project. An agent block uses this definition within a Flow; its execution belongs to a Run.
+A reusable worker definition consisting of a prompt, execution settings and its exits, independent of a particular project. An agent block uses this definition within a Flow, adding only Flow-local exits, hidden exits and a Revisit instruction; its execution belongs to a Run.
 
 **Agent revision**:
 One immutable saved version of an Agent's name, prompt, execution settings and exits. Every successful create or save appends the next revision; Studio shows the latest, and removing an Agent keeps its revisions.
@@ -75,6 +75,10 @@ An exit a Flow adds to one agent block without changing its Agent. Its name and 
 
 **Hidden exit**:
 An inherited Agent exit that one Flow hides on an agent block. Hiding an exit the Agent later removes has no effect.
+
+**Revisit instruction**:
+Optional plain text, up to 120,000 characters, on one agent block of a Flow, sent on every visit to that block after the first alongside the incoming message. It decides that visit's scope; the Agent's prompt, role, criteria, exits and reporting rules still apply. It is captured with the Flow revision at Start, and an empty one adds nothing. It is the one narrow exception to blocks having no overrides: there is no first-visit block prompt and no execution override.
+_Avoid_: Later-visit instruction; block prompt override.
 
 **Block result**:
 An agent's explicit report of its block's state and, where applicable, a selected exit and a message for subsequent blocks. A request for corrections is distinct from an inability to perform the work.

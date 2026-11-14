@@ -478,8 +478,9 @@ function checkHiddenExits(hidden: unknown, path: string, issue: IssueReporter) {
     issue("invalid_hidden_exits", path, "Hide up to 100 distinct inherited exit IDs.");
 }
 
-/** The fields each block kind may carry beside its id, name, kind and position. A Map, so an
- * untrusted kind such as "toString" never resolves to an Object.prototype member. */
+/** The fields each block kind may carry beside its id, name, kind and position; an Agent block's
+ * Revisit instruction has its own rule, which reports it on any other kind at its field path. A
+ * Map, so an untrusted kind such as "toString" never resolves to an Object.prototype member. */
 const KIND_FIELDS: ReadonlyMap<unknown, readonly string[]> = new Map([
   ["agent", ["agentId", "hiddenExitIds", "localExits"]],
   ["human", []],
@@ -505,6 +506,26 @@ function checkKindFields(block: Record<string, unknown>, path: string, issue: Is
       "Enter a Continuation prompt up to 120,000 characters.",
     );
   if (block.kind === "wait") checkWaitDuration(block.duration, `${path}.duration`, issue);
+  checkRevisitInstruction(block, `${path}.revisitInstruction`, issue);
+}
+
+/** Only an Agent block has a Revisit instruction, reported at its own path on any other kind;
+ * an omitted one saves empty. */
+function checkRevisitInstruction(
+  block: Record<string, unknown>,
+  path: string,
+  issue: IssueReporter,
+) {
+  const instruction = block.revisitInstruction;
+  if (instruction === undefined) return;
+  if (block.kind !== "agent")
+    issue("invalid_revisit_instruction", path, "Only an Agent block has a Revisit instruction.");
+  else if (typeof instruction !== "string" || instruction.trim().length > REVISIT_INSTRUCTION_LIMIT)
+    issue(
+      "invalid_revisit_instruction",
+      path,
+      "Enter a Revisit instruction up to 120,000 characters.",
+    );
 }
 
 function checkBlockFields(
@@ -515,7 +536,7 @@ function checkBlockFields(
 ) {
   const kindFields = KIND_FIELDS.get(block.kind);
   const allowed = ["id", "name", "kind", "position", ...(kindFields ?? [])];
-  if (Object.keys(block).some((key) => !allowed.includes(key)))
+  if (Object.keys(block).some((key) => key !== "revisitInstruction" && !allowed.includes(key)))
     issue(
       "block_overrides_forbidden",
       path,
@@ -563,6 +584,7 @@ const HUMAN_EXIT_IDS: ReadonlySet<string> = new Set(HUMAN_EXITS.map((exit) => ex
 const WAIT_EXIT_IDS: ReadonlySet<string> = new Set([WAIT_OUTPUT.id]);
 const CONTINUATION_EXIT_IDS: ReadonlySet<string> = new Set([CONTINUATION_EXIT.id]);
 const CONTINUATION_PROMPT_LIMIT = 120_000;
+const REVISIT_INSTRUCTION_LIMIT = CONTINUATION_PROMPT_LIMIT;
 
 function checkBlock(
   block: unknown,
@@ -768,7 +790,7 @@ export function validateUpdateFlow(input: unknown): Result<UpdateFlowInput> {
 
 /**
  * Local exit names are stored trimmed, as Agent exit names are, so reports match them exactly;
- * Continuation prompts are stored trimmed, as Agent prompts are.
+ * Continuation prompts and Revisit instructions are stored trimmed, as Agent prompts are.
  */
 function trimGraphText(graph: FlowGraphInput): FlowGraphInput {
   return {
@@ -778,6 +800,9 @@ function trimGraphText(graph: FlowGraphInput): FlowGraphInput {
         return {
           ...block,
           localExits: block.localExits.map((exit) => ({ ...exit, name: exit.name.trim() })),
+          ...(block.revisitInstruction === undefined
+            ? {}
+            : { revisitInstruction: block.revisitInstruction.trim() }),
         };
       if (block.kind === "continuation") return { ...block, prompt: block.prompt.trim() };
       return block;

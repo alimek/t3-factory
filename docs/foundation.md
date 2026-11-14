@@ -24,11 +24,14 @@ and restricted OAuth credentials live outside project repositories.
   execution, recovery and Run history read these revisions, so later edits and removals
   cannot rewrite history.
   External skill files are not frozen. Agent revisions hold the Agent's exits and Flow revisions
-  hold each Agent block's hidden and Flow-local exits, so a Run's block exits come from the same
-  frozen revisions. Migration `072` converted every stored Flow revision, including those Runs
-  captured: Agents started with no exits, Agent block exits became Flow-local with the same IDs,
-  and Human exits became Approve or Request changes by their feedback flag, with their wires,
-  answers and handoffs following. Earlier Human exit names are not kept.
+  hold each Agent block's hidden and Flow-local exits and its Revisit instruction, so a Run's block
+  exits and Revisit instructions come from the same frozen revisions. Migration `072` converted
+  every stored Flow revision, including those Runs captured: Agents started with no exits, Agent
+  block exits became Flow-local with the same IDs, and Human exits became Approve or Request
+  changes by their feedback flag, with their wires, answers and handoffs following. Earlier Human
+  exit names are not kept. Migration `081` gave every Agent block of every stored Flow revision,
+  including those Runs captured, an empty Revisit instruction in place; other block kinds have
+  none.
 - Run images are bytes on disk under `FACTORY_HOME/images`, named by their SHA-256 digest, with
   staging metadata in SQLite. Start attaches the ordered manifest to the Run, accepting only digests
   that are staged and still have their file; the prompt segments and manifest are immutable and the
@@ -56,14 +59,14 @@ and restricted OAuth credentials live outside project repositories.
   requester-bound consent and original expiry, attempts identified by the shared operation's request identity,
   the originating thread of each chat-started Run and owed Discord deliveries with their persisted intent and
   outcome survive clearing, Off and restarts. Human answers and Archives record the request they were applied
-  under, so a chat action proves its own effect. Migrations `081` to `090` keep every existing row (rebuilt
+  under, so a chat action proves its own effect. Migrations `082` to `091` keep every existing row (rebuilt
   tables copy their values), start with Chat control Off and empty sections, give existing Runs no originating
   thread and post nothing about earlier Run activity.
   Chat control's state also records the Discord application its operating connection authenticated as, which
-  owns the conversations, consent and messages; no Application ID is configured. Migration `091` carries a
+  owns the conversations, consent and messages; no Application ID is configured. Migration `092` carries a
   formerly configured Application ID over as that recorded application, turns a stored identity-mismatch check
   into a verified check of the application Discord reported, keeps a rejection for another application's token
-  until Retry and keeps every other value. Migration `092` records the message carrying each new review's
+  until Retry and keeps every other value. Migration `093` records the message carrying each new review's
   button, so its button can be shown disabled once unusable; existing proposals have none and are never edited.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.

@@ -6,6 +6,7 @@ import { OPEN_TRANSITIONS, type RuntimeReply } from "../runtime-types.ts";
 import { reportDiagnostic } from "../runtime-report-diagnostic.ts";
 import { blockIdArgument } from "../runtime-block-id.ts";
 import type { RunImages } from "../run-images.ts";
+import { REVISIT_RULE } from "./worker-payloads.ts";
 
 type ImageRow = {
   image_id: string;
@@ -82,12 +83,16 @@ function blockView(
   const cause = current?.cause ?? "";
   // A Continuation's worker answers its prompt and finishes without naming an exit.
   const continuation = graphBlock.kind === "continuation";
+  // A later visit can re-read the Revisit instruction its message carried, e.g. after compaction.
+  const revisitInstruction =
+    graphBlock.kind === "agent" && visits.length > 1 ? graphBlock.revisitInstruction : "";
   return {
     code: "BLOCK",
     state: block.state,
     visit: visits.length,
     reason: continuation ? "continuation" : visitReason(cause),
     ...(continuation ? { prompt: graphBlock.prompt } : {}),
+    ...(revisitInstruction ? { revisitInstruction, revisitRule: REVISIT_RULE } : {}),
     exits: continuation
       ? []
       : effectiveExits(graphBlock, detail.definitions.agents).map((exit) => ({

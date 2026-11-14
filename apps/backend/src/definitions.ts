@@ -11,6 +11,7 @@ import type {
   AgentCapabilities,
   AgentDefinition,
   FactoryOperations,
+  FlowBlock,
   FlowDraft,
   FlowGraph,
   FlowGraphInput,
@@ -99,10 +100,12 @@ export const makeDefinitions = (
         const graph: FlowGraph = {
           ...input,
           flowInput: { ...input.flowInput, position: input.flowInput.position ?? { x: 0, y: 0 } },
-          blocks: input.blocks.map((block) => ({
-            ...block,
-            position: block.position ?? { x: 0, y: 0 },
-          })),
+          blocks: input.blocks.map((block): FlowBlock => {
+            const position = block.position ?? { x: 0, y: 0 };
+            return block.kind === "agent"
+              ? { ...block, position, revisitInstruction: block.revisitInstruction ?? "" }
+              : { ...block, position };
+          }),
         };
         if (
           input.flowInput.position !== undefined &&

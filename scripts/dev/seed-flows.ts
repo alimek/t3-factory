@@ -65,6 +65,7 @@ export async function createDemoFlows(
         { x: 700, y: 180 },
         ["approved"],
         [blockExit("decision", "Ready for your decision", "Ready for your decision")],
+        "This is a return after corrections. Verify each requested fix and the scope it newly affects instead of repeating the full review. Keep the dispositions of earlier findings unless the new changes reopen them. If your earlier baseline, coverage or findings are not available from this thread or your previous result, do the full review.",
       ),
       humanStep("decision", "Your review", { x: 1080, y: 180 }),
     ],

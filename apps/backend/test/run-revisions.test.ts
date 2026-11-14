@@ -109,3 +109,34 @@ it("a Run whose Flow was removed reads no current Flow revision", async (c) => {
   assert(run.ok);
   expect(run.value.currentFlowRevision).toBeNull();
 });
+
+it("a Flow save after Start leaves the Run on the Revisit instruction it captured", async (c) => {
+  // Arrange
+  const { f, input, flow } = await prepared(c, { revisitInstruction: "Verify the fixes." });
+  const started = await f.startRun(input);
+  assert(started.ok);
+  const [worker] = flow.graph.blocks;
+  assert(worker?.kind === "agent");
+
+  // Act
+  const saved = await f.updateFlow(flow.id, {
+    name: flow.name,
+    expectedRevision: flow.revision,
+    graph: {
+      ...flow.graph,
+      blocks: [{ ...worker, revisitInstruction: "Review everything again." }],
+    },
+  });
+
+  // Assert
+  assert(saved.ok);
+  const run = await f.getRun(started.value.id);
+  assert(run.ok);
+  expect(run.value.definitions.flow.graph.blocks[0]).toMatchObject({
+    kind: "agent",
+    revisitInstruction: "Verify the fixes.",
+  });
+  expect(saved.value.graph.blocks[0]).toMatchObject({
+    revisitInstruction: "Review everything again.",
+  });
+});

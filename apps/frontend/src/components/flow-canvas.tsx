@@ -164,6 +164,19 @@ function grip(visible: boolean) {
   );
 }
 
+/** Marks an Agent block that has a Revisit instruction: a neutral tag, never the text and never
+ * shaped like an execution state pill. */
+function revisitMarker(id: string) {
+  return (
+    <span
+      id={id}
+      className="rounded-sm border px-1 text-2xs leading-3.5 tracking-label whitespace-nowrap text-muted-foreground"
+    >
+      Revisit instruction
+    </span>
+  );
+}
+
 /**
  * An output port's handle for drawing a connection. It takes no focus; connections are drawn
  * only with a pointer.
@@ -333,11 +346,20 @@ function authoringBlock({
 }): CanvasBlockContent {
   const human = block.kind === "human";
   const name = block.name || "Unnamed block";
+  const markerId =
+    block.kind === "agent" && block.revisitInstruction.trim()
+      ? `revisit-instruction-${block.id}`
+      : undefined;
   const identity = blockIdentity({
     kind: block.kind,
     name,
     ...blockReference(graph, block, agents),
-    trailing: grip(selected),
+    trailing: (
+      <>
+        {markerId && revisitMarker(markerId)}
+        {grip(selected)}
+      </>
+    ),
   });
   return {
     className: cn(
@@ -354,6 +376,7 @@ function authoringBlock({
         <DragButton
           className={cn(dragPressClass, "rounded-t-lg")}
           aria-label={`${BLOCK_KINDS[block.kind].name} ${name}`}
+          aria-describedby={markerId}
           aria-pressed={selected}
           {...drag}
           onClick={onSelect}

@@ -137,12 +137,44 @@ function AgentBlockSettings({
             </StudioLink>
           </div>
           <p className="text-xs text-muted-foreground">
-            Prompt and execution settings live on the saved Agent — no local overrides on blocks.
+            Prompt and execution settings live on the saved Agent — blocks never override them.
             Duplicate the Agent to make a variant.
           </p>
         </div>
       )}
+      <RevisitInstructionField block={block} onEdit={onEdit} />
     </>
+  );
+}
+
+/** The block's one Flow-local instruction, edited like a Continuation's prompt but optional. */
+function RevisitInstructionField({
+  block,
+  onEdit,
+}: {
+  block: AgentBlock;
+  onEdit: (block: FlowBlock) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="grid gap-1.5">
+      <FieldLabel htmlFor={id}>
+        Revisit instruction <span className="text-subtle-foreground">optional</span>
+      </FieldLabel>
+      <Textarea
+        id={id}
+        rows={6}
+        aria-describedby={`${id}-help`}
+        value={block.revisitInstruction}
+        onChange={(e) => onEdit({ ...block, revisitInstruction: e.target.value })}
+        className="min-h-32 bg-muted text-sm"
+      />
+      <p id={`${id}-help`} className="text-xs text-muted-foreground">
+        Sent on every visit to this block after the first, with the incoming message. The Agent
+        prompt still applies: this decides the visit&apos;s scope, but never waives the Agent&apos;s
+        criteria, a required check or a defect with evidence.
+      </p>
+    </div>
   );
 }
 

@@ -16,7 +16,7 @@ import {
 import { controlledDiscord, messageEvent, PARTICIPANT_ID } from "./support/controlled-discord.ts";
 import { controlledModelProvider } from "./support/controlled-model.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run, leaves Generate Run titles off and starts Chat control Off with an empty Language model and Discord connection", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions in the project checkout, with an empty Revisit instruction on every Agent block, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run, leaves Generate Run titles off and starts Chat control Off with an empty Language model and Discord connection", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   expect(fixture.pendingStop.closedAt).toBeNull();

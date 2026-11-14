@@ -1,12 +1,15 @@
 import { assert, expect, it } from "@effect/vitest";
 import { launchedBlockId, workerMessage } from "./support/run-worker.ts";
 import {
+  REVISIT_INSTRUCTION,
   allTurnsEnd,
+  correctionReviewFlow,
   executionFailed,
   followUpReplyRunning,
   handoffFlow,
   humanReviewFlow,
   missingReport,
+  nextSend,
   replyTurnRunning,
   replyTurnObserved,
   workingReported,
@@ -17,6 +20,7 @@ import {
   resultReleasedToHumanReview,
   resultReleasedToSameWorker,
   resultReported,
+  sentTurnBegins,
   turnBegins,
   workerAtWork,
   workerFinal,
@@ -475,6 +479,28 @@ it("Request report on a worker idle in working queues an assessment turn on its 
   ]);
   expect(f.t3.launches.size).toBe(1);
 });
+it("Request report on a later visit asks for an assessment without the Revisit instruction", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const released = await resultReleasedToSameWorker(setup.world, reported);
+  const f = {
+    ...setup,
+    ...(await workingReportedIdle(setup.world, sentTurnBegins(setup.world, released))),
+  };
+
+  // Act
+  const result = await f.f.requestReport(f.runId, { blockId: "worker" });
+
+  // Assert
+  assert(result.ok, JSON.stringify(result));
+  const request = [...f.t3.sends.values()].at(-1)?.payload.message;
+  expect(f.t3.sends.size).toBe(2);
+  expect(request).toContain("Factory Request report: assess the existing work");
+  expect(request).not.toContain("Revisit instruction");
+  expect(request).not.toContain(REVISIT_INSTRUCTION);
+});
 it("a revisit reuses the direct worker with distinct activation ownership", async (c) => {
   // Arrange
   const setup = await prepared(c, { revisit: true });
@@ -533,6 +559,36 @@ it("restart preserves the worker binding without replaying accepted work", async
   expect(run.value.executions[0]?.activationId).toBe(run.value.activations[0]?.id);
   expect(f.t3.launches.size).toBe(1);
   expect(f.t3.sends.size).toBe(0);
+});
+it("after a lost acknowledgement and a restart, recovery resends the identical revisit with its Revisit instruction", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const attempts: unknown[] = [];
+  setup.t3.beforeSend = async (payload) => void attempts.push(payload);
+  setup.t3.loseSendReply = true;
+  const f = { ...setup, ...(await resultReleasedToSameWorker(setup.world, reported)) };
+  await f.f.close();
+  f.t3.loseSendReply = false;
+  const reopened = await f.h.open({ t3: f.t3 });
+  c.onTestFinished(() => reopened.close());
+
+  // Act
+  const reconciled = await reopened.reconcileRuns();
+
+  // Assert
+  assert(reconciled.ok);
+  const run = await reopened.getRun(f.runId);
+  assert(run.ok);
+  expect(run.value.intents.filter((intent) => intent.kind === "send")).toMatchObject([
+    { state: "acknowledged" },
+  ]);
+  expect(attempts.length).toBeGreaterThan(1);
+  expect(attempts.at(-1)).toStrictEqual(attempts[0]);
+  expect([...f.t3.sends.values()].map((send) => send.payload.message)).toStrictEqual([
+    expect.stringContaining(`\n${REVISIT_INSTRUCTION}\n\nIncoming message:\n`),
+  ]);
 });
 it("a worker resumed by the user's reply finishes the same activation without another working report", async (c) => {
   // Arrange
@@ -678,6 +734,28 @@ it("a Human answer releases its outgoing handoff without waiting for worker evid
   );
 });
 
+it("a Human answer requesting changes revisits the worker with its Revisit instruction before the person's message", async (c) => {
+  // Arrange
+  const setup = await prepared(c, correctionReviewFlow);
+  const reported = await resultReported(setup.world, await workerAtWork(setup.world, setup.input));
+  const f = { ...setup, ...(await resultReleasedToHumanReview(setup.world, reported)) };
+  const revisitSent = nextSend(f.world);
+
+  // Act
+  const result = await f.f.answerHumanOccurrence(f.occurrence.id, {
+    exitId: "request-changes",
+    message: "Handle the empty query.",
+  });
+
+  // Assert
+  assert(result.ok);
+  const revisit = await revisitSent;
+  expect(revisit.threadId).toBe(f.threadId);
+  expect(revisit.message).toContain("\n\nRevisit instruction for this later visit of your Block. ");
+  expect(revisit.message).toMatch(
+    /\nVerify the fixes and the newly affected scope\.\n\nIncoming message:\nHandle the empty query\.$/,
+  );
+});
 it("competing Human answers settle the occurrence once and the other answer is refused as a conflict", async (c) => {
   // Arrange
   const setup = await prepared(c, humanReviewFlow);

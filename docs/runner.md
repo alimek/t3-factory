@@ -350,7 +350,8 @@ answer directly authorizes its outgoing handoffs.
 A first visit launches that Block's own top-level worker. The message is `$factory-block`
 followed by the captured Agent prompt. A revisit queues a turn on the same worker after
 the previous activation's current result is released and, at send time, the worker thread is
-finished. Two Blocks using the same
+finished; it carries the incoming message, preceded by the Block's
+[Revisit instruction](#revisit-instructions) when one is set, and never resends the Agent prompt. Two Blocks using the same
 Agent still have separate workers. Parallel arrivals never join or batch their feedback.
 Threads share the Run's workspace, the project-root checkout or the Run's worktree; Factory guarantees neither edit-conflict handling
 nor agreement on one repository revision.
@@ -392,6 +393,42 @@ is pending are recorded as queued and wait. A run of the thread that Factory que
 the Continuation: its failure and a missing report after it are the Continuation's attention, while the
 worker's Agent block shows the thread's activity. A Run neither settles automatically nor has that thread
 settled natively while a Continuation is sent or a message waits.
+
+### Revisit instructions
+
+An Agent block's [Revisit instruction](../GLOSSARY.md#revisit-instruction), captured with the Flow revision at Start,
+goes to every visit of that Block after the first: returns with an Agent's result, Human answers and Wait arrivals. It is
+composed only where such an arrival becomes a repeated activation of the Agent block. The shared send builder that
+Continuation prompts and [Request report](#manual-request-report) also use never adds it, so neither carries it, and a
+first visit is driven by the Agent prompt alone. When the instruction is set, the revisit message is:
+
+1. the usual `$factory-block` header and `Factory Block id` line;
+2. a labelled Revisit instruction section: the label states that the instruction decides this visit's scope, that the
+   Agent's role, criteria, exits and reporting rules still apply, that a narrower scope never permits skipping a
+   required check or accepting a defect that has evidence, that a worker unable to reconcile the two says so in its
+   report, and that this Block's previous finished result is available from `factory_get_run`; the instruction follows;
+3. `Incoming message:` with the arriving result, answer or forwarded message, or `(no message)` when it is empty.
+
+An empty instruction leaves the revisit body exactly as it was before the field existed: the incoming message alone. The
+composed message is saved as the send's request in the transaction that creates the activation, so its fingerprint is
+stable, and restart and lost-acknowledgement recovery reuse it unchanged through the ordinary uncertain-send rules. There
+is no extra retry, no combined length check and no truncation; an oversize send follows the existing uncertain-delivery
+path. The worker can re-read the instruction from its [Block read](t3-integration.md#block-and-run-reads) on later visits.
+
+**Conflict rule.** The instruction narrows what a visit covers; it never waives the Agent's criteria. When the two cannot
+be reconciled, the worker reports the conflict in its normal result; Factory adds no other mechanism.
+
+**Recording and recovering earlier evidence.** Factory stays out of review logic: it does not read commits, cap visits,
+pass a Block automatically, skip a visit because the commit is unchanged or keep a checkpoint store. An Agent whose
+prompt supports a narrower later visit, such as a delta review, records on its first visit what a later visit needs:
+the baseline it assessed, what it covered, and its findings with their dispositions, in its result message and in files
+or PR comments it manages. A later visit recovers that record in this order: its own worker thread; this Block's previous
+finished result from `factory_get_run`, which keeps returning each Block's latest finished result while a later visit
+reports `working`; then the files or comments the Agent manages. When that evidence is not enough to justify a narrower
+visit, the Agent performs the full assessment again; a missing record never justifies a pass.
+
+**Reconsidering a checkpoint store.** Revisit when a captured Run shows a later visit, with a correct Revisit instruction,
+that redid a full review or dropped a finding because its earlier evidence was lost or never recorded.
 
 ### Human occurrences
 
@@ -650,7 +687,9 @@ T3 Settled is separate from Factory attention. When native settle is supported, 
 best-effort settles a Block's bound worker thread while the Run is still in progress when that
 Block's current report is an accepted `finished` result, the [completion rule](#worker-thread-completion)
 confirms the worker thread is done, no execution-failed attention is pending on the Block, and
-the Run is not [Archived](#archive). A current `working` report, a missing-report Problem, or
+the Run is not [Archived](#archive). A [Continuation](#continuations)'s result settles the
+thread its prompt ran on, for the prompt's T3 run, under the same conditions once its response is
+released. A current `working` report, a missing-report Problem, or
 open execution-failed attention leaves the thread unsettled. The sweep runs in each
 reconciliation pass for Active, Snoozed and [Settled](#settled-runs) Runs that still owe
 operations—handoff Blocks, terminal activations and long-running Flows alike.

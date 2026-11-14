@@ -407,6 +407,8 @@ CREATE TABLE "flow_revision_blocks" (
   agent_id TEXT CHECK (kind = 'agent' OR agent_id IS NULL),
   -- The prompt a Continuation sends once per Run; empty only in a draft.
   prompt TEXT CHECK ((kind = 'continuation') = (prompt IS NOT NULL)),
+  -- The instruction an Agent block's later visits receive, stored trimmed; empty when unset.
+  revisit_instruction TEXT CHECK ((kind = 'agent') = (revisit_instruction IS NOT NULL)),
   x REAL NOT NULL,
   y REAL NOT NULL,
   -- A Wait's duration; both are null while the draft has none. Any finite amount saves:

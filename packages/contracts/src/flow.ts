@@ -33,10 +33,10 @@ export interface WaitDuration {
 }
 /**
  * An Agent block exposes its Agent's exits, minus those this Flow hides, plus its Flow-local
- * exits. A Human block has the fixed Approve and Request changes exits. A Wait block has one
- * unnamed output; `duration` is null while the draft has none. A Continuation sends its prompt
- * once per Run into the worker thread of the message that reaches it and has one fixed, unnamed
- * output.
+ * exits and may carry a Revisit instruction. A Human block has the fixed Approve and Request
+ * changes exits. A Wait block has one unnamed output; `duration` is null while the draft has none.
+ * A Continuation sends its prompt once per Run into the worker thread of the message that reaches
+ * it and has one fixed, unnamed output.
  */
 export type FlowBlock = BlockBase &
   (
@@ -47,6 +47,8 @@ export type FlowBlock = BlockBase &
         readonly hiddenExitIds: readonly string[];
         /** Exits only this Flow adds to the block. */
         readonly localExits: readonly BlockExit[];
+        /** Sent on every visit to this block after the first; stored trimmed, empty when unset. */
+        readonly revisitInstruction: string;
       }
     | { readonly kind: "human" }
     | { readonly kind: "wait"; readonly duration: WaitDuration | null }
@@ -76,7 +78,11 @@ export interface FlowGraph {
 type OptionalPosition<B extends { readonly position: FlowBlock["position"] }> = B extends unknown
   ? Omit<B, "position"> & { readonly position?: B["position"] }
   : never;
-export type FlowBlockInput = OptionalPosition<FlowBlock>;
+/** An omitted Revisit instruction saves empty. */
+type OptionalRevisitInstruction<B> = B extends { readonly kind: "agent" }
+  ? Omit<B, "revisitInstruction"> & { readonly revisitInstruction?: string }
+  : B;
+export type FlowBlockInput = OptionalRevisitInstruction<OptionalPosition<FlowBlock>>;
 /** Save/create input only: if any position is omitted, the server arranges the whole graph. */
 export interface FlowGraphInput {
   readonly blocks: readonly FlowBlockInput[];

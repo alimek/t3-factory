@@ -53,7 +53,13 @@ export async function saveSingleAgentFlow(
   baseUrl: string | undefined,
   name: string,
   agentName: string,
-  block: { readonly id: string; readonly name: string; readonly x: number; readonly y: number },
+  block: {
+    readonly id: string;
+    readonly name: string;
+    readonly x: number;
+    readonly y: number;
+    readonly revisitInstruction?: string;
+  },
 ) {
   const agents = (await flowRequest(baseUrl, "/api/agents")) as AgentDefinition[];
   const agent = agents.find((item) => item.name === agentName);
@@ -74,6 +80,7 @@ export async function saveSingleAgentFlow(
             agentId: agent.id,
             hiddenExitIds: [],
             localExits: [],
+            revisitInstruction: block.revisitInstruction,
             position: { x: block.x, y: block.y },
           },
         ],
