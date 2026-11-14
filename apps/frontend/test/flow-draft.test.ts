@@ -401,3 +401,39 @@ it("refreshed saved Agents keep an unresolved revision conflict and its refused 
   // Assert
   expect(draft.getSnapshot()).toMatchObject({ conflict: { status: "detected" }, canSave: false });
 });
+
+it("a newer revision Studio read elsewhere replaces a clean draft", async () => {
+  // Arrange
+  const { draft, factory } = await openedFlow();
+  const theirs = factory.saveElsewhere("Theirs");
+
+  // Act
+  draft.reportSaved(theirs);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 2, name: "Theirs" },
+    content: { name: "Theirs" },
+    dirty: false,
+    conflict: { status: "none" },
+  });
+});
+
+it("a newer revision Studio read elsewhere keeps unsaved edits and enters the revision conflict", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow("Mine");
+  const theirs = factory.saveElsewhere("Theirs");
+
+  // Act
+  draft.reportSaved(theirs);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 1 },
+    content: { name: "Mine" },
+    dirty: true,
+    conflict: { status: "detected" },
+    error: "A newer revision 2 of this Flow was saved elsewhere.",
+    canSave: false,
+  });
+});

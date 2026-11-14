@@ -167,6 +167,22 @@ export function createAgentDraft(
     setEnvironmentId(id: string) {
       edit({ execution: { ...content.execution, environmentId: id } });
     },
+    /**
+     * Studio read this Agent again. A newer revision saved elsewhere replaces a clean draft; unsaved
+     * changes stay as they are and show that saving them will report the conflict.
+     */
+    reportSaved(latest: AgentDefinition) {
+      if (!saved || saving || deleting || latest.revision <= saved.revision) return;
+      if (snapshot.dirty)
+        conflict = `This Agent was saved elsewhere as revision ${latest.revision}. Your edits are still here; saving them reports a conflict.`;
+      else {
+        saved = latest;
+        content = contentOf(latest);
+        baseline = content;
+        conflict = "";
+      }
+      publish();
+    },
     clearDeleteError() {
       deleteError = "";
       publish();

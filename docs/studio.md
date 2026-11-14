@@ -14,9 +14,10 @@ rule; reload uses the browser's leave warning). Agent edits are guarded independ
 
 Studio re-reads its Flow and Agent lists after its own writes, on navigation and on retry. Toward a protocol 12 server it also follows
 [live delivery](foundation.md#live-delivery) of which definitions are saved and their revisions, so a create, save or removal from
-[Factory MCP](t3-integration.md#authoring-tools) or another window appears in open lists without navigation. An open editor whose Flow or Agent
-was removed elsewhere says so and keeps its draft for copying; a save from it still errors and never recreates the definition. Older servers
-refresh only on Studio's own reads.
+[Factory MCP](t3-integration.md#authoring-tools) or another window appears in open lists without navigation. An open editor without unsaved changes
+takes a revision saved elsewhere; with unsaved changes it keeps them and reports the conflict (a Flow offers
+[Compare latest revision](#saving-and-readiness)). An editor whose Flow or Agent was removed elsewhere says so and keeps its draft for copying; a save
+from it still errors and never recreates the definition. Older servers refresh only on Studio's own reads.
 
 | Destination | Browser URL |
 | --- | --- |

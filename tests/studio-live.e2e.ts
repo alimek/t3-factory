@@ -1,8 +1,19 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { copyAgentDefinition } from "./support/agents.ts";
+import { renameFlow } from "./support/flows.ts";
 
 const mutation = { "content-type": "application/json", "X-Factory-Request": "1" };
+
+/** Another client creates an empty Flow and returns its id. */
+async function createFlowElsewhere(baseUrl: string | undefined, name: string) {
+  const response = await fetch(new URL("/api/flows", baseUrl), {
+    method: "POST",
+    headers: mutation,
+    body: JSON.stringify({ name }),
+  });
+  return ((await response.json()) as { value: { id: string } }).value.id;
+}
 
 test("an Agent created by another client appears in an open Studio Agents list", async ({
   app,
@@ -43,18 +54,12 @@ test("an open Agent editor says its Agent was removed elsewhere and keeps the dr
 
 test("an open Flow editor says its Flow was removed elsewhere", async ({ app, screen }) => {
   // Arrange
-  const created = (await (
-    await fetch(new URL("/api/flows", app.baseUrl), {
-      method: "POST",
-      headers: mutation,
-      body: JSON.stringify({ name: "Removed Studio Flow" }),
-    })
-  ).json()) as { value: { id: string } };
-  await app.open(`/studio/flows/${created.value.id}`);
+  const flowId = await createFlowElsewhere(app.baseUrl, "Removed Studio Flow");
+  await app.open(`/studio/flows/${flowId}`);
   await expect(screen.getByRole("status", "Flow save status")).toContainText("Revision 1");
 
   // Act
-  const removed = await fetch(new URL(`/api/flows/${created.value.id}`, app.baseUrl), {
+  const removed = await fetch(new URL(`/api/flows/${flowId}`, app.baseUrl), {
     method: "DELETE",
     headers: mutation,
   });
@@ -62,4 +67,21 @@ test("an open Flow editor says its Flow was removed elsewhere", async ({ app, sc
   // Assert
   expect(removed.status).toBe(200);
   await expect(screen.getByText("This Flow was removed elsewhere.", { exact: true })).toBeVisible();
+});
+
+test("an open Flow editor without unsaved changes shows a revision saved by another client", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const flowId = await createFlowElsewhere(app.baseUrl, "Saved elsewhere Flow");
+  await app.open(`/studio/flows/${flowId}`);
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 1");
+
+  // Act
+  await renameFlow(app.baseUrl, flowId, "Saved elsewhere Flow renamed");
+
+  // Assert
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 2");
+  await expect(screen.getByRole("heading", "Saved elsewhere Flow renamed")).toBeAttached();
 });

@@ -49,7 +49,7 @@ import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts"
 
 /**
  * This editor's Flow draft, saved and removed through Studio's definitions and told when the
- * editor is shown or hidden and when Studio's saved Agents were read again. Studio's guard learns
+ * editor is shown or hidden and when Studio's saved Flows or Agents were read again. Studio's guard learns
  * of changes to unsaved changes from the draft's notification itself, before any render, and only
  * when that fact changes.
  */
@@ -73,14 +73,17 @@ function useOpenedFlowDraft(
     return () => draft.reportVisibility(false);
   }, [draft, active]);
   useEffect(() => {
-    let agents = definitions.getSnapshot().agents.value;
+    let { agents, flows } = definitions.getSnapshot();
     return definitions.subscribe(() => {
-      const next = definitions.getSnapshot().agents.value;
-      if (next === agents) return;
-      agents = next;
-      draft.reportAgentsRefreshed();
+      const next = definitions.getSnapshot();
+      if (next.flows.value !== flows.value) {
+        const latest = next.flows.value?.find((flow) => flow.id === id);
+        if (latest) draft.reportSaved(latest);
+      }
+      if (next.agents.value !== agents.value) draft.reportAgentsRefreshed();
+      ({ agents, flows } = next);
     });
-  }, [definitions, draft]);
+  }, [definitions, draft, id]);
   useDraftGuard(draft, id, reportDraft);
   return { draft, state: useFlowDraftSnapshot(draft) };
 }

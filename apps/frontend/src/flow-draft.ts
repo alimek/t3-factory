@@ -235,6 +235,18 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
       refreshReadiness();
       publish();
     },
+    /**
+     * Studio read this Flow again. A newer revision saved elsewhere replaces a clean draft and
+     * enters the revision conflict for unsaved changes, which stay as they are.
+     */
+    reportSaved(latest: FlowDraft) {
+      if (!saved || busy || removing || latest.revision <= saved.revision || unresolved()) return;
+      if (dirty) {
+        conflict = { status: "detected" };
+        error = `A newer revision ${latest.revision} of this Flow was saved elsewhere.`;
+      } else adopt(latest);
+      publish();
+    },
     /** The editor's saved Agents were read again, which can change this Flow's readiness. */
     reportAgentsRefreshed() {
       refreshReadiness();

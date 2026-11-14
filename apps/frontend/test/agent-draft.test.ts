@@ -407,3 +407,35 @@ it("a save completing after disposal cannot notify the former guard", async () =
   expect(guard).not.toHaveBeenCalled();
   expect(draft.getSnapshot()).toMatchObject({ dirty: false, saved: { revision: 4 } });
 });
+
+it("a newer revision Studio read elsewhere replaces a clean Agent draft", () => {
+  // Arrange
+  const { draft } = agentDraft();
+
+  // Act
+  draft.reportSaved(savedAgent({ revision: 4, name: "Theirs" }));
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 4 },
+    content: { name: "Theirs" },
+    dirty: false,
+    conflict: "",
+  });
+});
+
+it("a newer revision Studio read elsewhere keeps unsaved Agent edits with a conflict notice", () => {
+  // Arrange
+  const { draft } = editedAgent();
+
+  // Act
+  draft.reportSaved(savedAgent({ revision: 4, name: "Theirs" }));
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3 },
+    content: { name: "Edited" },
+    dirty: true,
+    conflict: expect.stringContaining("saved elsewhere as revision 4"),
+  });
+});

@@ -195,11 +195,8 @@ function SelectedAgentEditor({
       if (active.current) setDuplicating(false);
     }
   }
-  const removed =
-    !creating &&
-    agent !== null &&
-    library.answeredAgents !== null &&
-    !library.answeredAgents.some((saved) => saved.id === agentId);
+  const latest = library.answeredAgents?.find((saved) => saved.id === agentId);
+  const removed = !creating && agent !== null && library.answeredAgents !== null && !latest;
   if (error)
     return (
       <p role="alert" className="p-8 text-sm text-destructive">
@@ -220,6 +217,7 @@ function SelectedAgentEditor({
       operations={library.definitions}
       agentId={agentId}
       flowUsage={flowUsageCount(library.flows ?? [], agentId)}
+      latest={latest}
       removed={removed}
       duplicating={duplicating}
       duplicateError={duplicateError}
@@ -252,6 +250,7 @@ function OpenedAgentEditor({
   reportDraft,
   onSaved,
   duplicateError,
+  latest,
   removed,
   ...props
 }: {
@@ -262,6 +261,8 @@ function OpenedAgentEditor({
   reportDraft: (id: string, dirty: boolean) => void;
   onSaved: (agent: AgentDefinition) => void;
   duplicateError: string;
+  /** This Agent as Studio's latest answered read lists it. */
+  latest: AgentDefinition | undefined;
   removed: boolean;
   flowUsage: number;
   duplicating: boolean;
@@ -275,6 +276,9 @@ function OpenedAgentEditor({
     agentId,
     reportDraft,
   );
+  useEffect(() => {
+    if (latest) draft.reportSaved(latest);
+  }, [draft, latest]);
   async function save() {
     const saved = await draft.save();
     if (saved) onSaved(saved);

@@ -135,7 +135,9 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
     position: { x: 40, y: 200 },
     targetBlockIds: [saved.graph.blocks[0]!.id],
   });
-  // A second author uses the same public backend, while this editor retains revision 3.
+  // A second author uses the same public backend while this editor holds unsaved changes
+  // against revision 3; live delivery reports the newer revision without overwriting them.
+  await screen.getByLabel("Flow name").fill("My preserved draft");
   const concurrent = await fetch(endpoint, {
     method: "PUT",
     headers: { "content-type": "application/json", "X-Factory-Request": "1" },
@@ -146,9 +148,8 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
     }),
   });
   expect(concurrent.status).toBe(200);
-  await screen.getByLabel("Flow name").fill("My preserved draft");
-  await screen.getByRole("button", "Save Flow").tap();
   await expect(screen.getByRole("alert")).toContainText("newer revision");
+  await expect(screen.getByRole("button", "Save Flow")).toBeDisabled();
   await expect(screen.getByLabel("Flow name")).toHaveValue("My preserved draft");
   await screen.getByRole("button", "Compare latest revision").tap();
   await expect(screen.getByRole("heading", "Saved revision 4")).toBeVisible();
