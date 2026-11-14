@@ -426,12 +426,15 @@ export function makeChatActions(
     Effect.gen(function* () {
       const action = yield* actionOf(row.id);
       if (!action) return REPLIES.invalid;
-      if (action.state === "accepting") {
-        if (performing.has(action.id)) return REPLIES.confirming;
-        return OUTCOME_REPLIES[(yield* reconcileAction(row, action)).kind];
-      }
-      // The decided result is shown only to its requester, here, with current access.
+      // Reconciliation needs no clicker; any result is shown only to its requester, here, with
+      // current access.
+      const reconciled =
+        action.state === "accepting" && !performing.has(action.id)
+          ? yield* reconcileAction(row, action)
+          : undefined;
       if ((yield* click.access) !== "permitted") return REPLIES.denied;
+      if (action.state === "accepting")
+        return reconciled === undefined ? REPLIES.confirming : OUTCOME_REPLIES[reconciled.kind];
       const operation = byName.get(row.operation)!;
       return `You already confirmed this review. ${operation.summary({
         kind: action.state,
