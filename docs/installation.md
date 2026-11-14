@@ -28,9 +28,10 @@ inside its own source checkout (including through symlinks), though not merely b
 | `factory.sqlite.runner.lock` | Permanent OS lock inode; never delete while a backend runs |
 | `credentials/` | OAuth files (directory 0700, files 0600) |
 | `credentials/tls/` | Host certificate authority and server keys for secure remote access (0600); never shared |
+| `credentials/chat-control/` | [Chat control](chat-control.md#key) secrets referenced by the committed configuration (0600); back up with `factory.sqlite` |
 
-Installation-wide settings changed in the application, such as **Generate Run titles** ([Runs](runs.md#run-title-generation)),
-live in `factory.sqlite`, not `config.json`. The home is created with mode 0700 and `config.json` 0600; existing configuration is preserved and `host`/`port` edits need a restart. Environment overrides affect only that process:
+Installation-wide settings changed in the application, such as **Generate Run titles** ([Runs](runs.md#run-title-generation))
+and the non-secret [Chat control](chat-control.md) configuration, live in `factory.sqlite`, not `config.json`. The home is created with mode 0700 and `config.json` 0600; existing configuration is preserved and `host`/`port` edits need a restart. Environment overrides affect only that process:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

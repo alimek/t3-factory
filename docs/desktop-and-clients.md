@@ -268,8 +268,9 @@ the same server-side installer as the host panel and accepts only a discovered t
 identifier, not a client-supplied filesystem path. Factory MCP (`/mcp`), endpoint changes
 (`PUT /api/connection`), host reauthorization (`POST /api/connection/authorize`, which
 retires the current context) and theme-color pairing and disconnect
-(`POST`/`DELETE /api/connection/appearance`) and changing **Generate Run titles**
-(`PUT /api/settings/run-titles`) remain `hostOnly`: report ingress
+(`POST`/`DELETE /api/connection/appearance`), changing **Generate Run titles**
+(`PUT /api/settings/run-titles`) and every [Chat control](chat-control.md) operation, reads
+included (`/api/chat-control/*`), remain `hostOnly`: report ingress
 therefore cannot become a bypass into general APIs, and the T3 grant never leaves the
 host. `POST /api/connection/authorization/open` is the one connection mutation an
 approved client may call: it only reopens a pending approval or starts one for the

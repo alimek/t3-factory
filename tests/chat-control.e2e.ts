@@ -1,0 +1,140 @@
+import assert from "node:assert/strict";
+import { createServer, type IncomingHttpHeaders } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, beforeEach, test } from "@e2e-dev/web";
+import { expect } from "e2e";
+import type { ChatModelSettings, Result } from "../packages/contracts/src/index.ts";
+import { openApproved, remoteFixture } from "./support/remote-access.ts";
+
+/** A chat-completions provider on loopback that records the headers of each request. */
+async function controlledProvider() {
+  const requests: IncomingHttpHeaders[] = [];
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      requests.push(request.headers);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          id: "chatcmpl-ui",
+          object: "chat.completion",
+          created: 0,
+          model: "ui-model",
+          choices: [
+            { index: 0, message: { role: "assistant", content: "OK" }, finish_reason: "stop" },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/gateway/v1`,
+    requests,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+let provider: Awaited<ReturnType<typeof controlledProvider>>;
+
+beforeEach(async ({ browser }) => {
+  await browser.setViewport({ width: 1440, height: 1000 });
+  provider = await controlledProvider();
+});
+
+afterEach(async () => {
+  await provider.close();
+});
+
+async function chatModelSettings(baseUrl: string | undefined) {
+  const response = await fetch(new URL("/api/chat-control/model", baseUrl));
+  return (await response.json()) as Result<ChatModelSettings>;
+}
+
+test("the host saves a keyed Language model, tests the saved connection and never sees the key again", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await app.open("/settings/chat-control/model");
+  await expect(screen.getByText("Chat control is Off")).toBeVisible();
+  const connection = screen.getByRole("region", "Language model connection");
+  await connection.getByRole("button", /^Provider: /).tap();
+  await screen.getByRole("menuitemradio", /^OpenAI-compatible/).tap();
+  await connection.getByLabel("Base URL").fill(provider.baseUrl);
+  await connection.getByLabel("Model").fill("ui-model");
+  await connection.getByLabel("Key (optional)").fill("sk-ui-journey");
+  await connection.getByRole("button", "Save", { exact: true }).tap();
+  await expect(connection.getByText(/^Saved .* · revision \d+\.$/)).toBeVisible();
+  await app.screenshot("chat-model-saved");
+
+  // Act
+  await screen
+    .getByRole("region", "Language model test")
+    .getByRole("button", "Test saved connection")
+    .tap();
+
+  // Assert
+  await expect(screen.getByText(/^Latest Test succeeded · /)).toBeVisible();
+  assert.deepStrictEqual(
+    provider.requests.map((headers) => headers.authorization),
+    ["Bearer sk-ui-journey"],
+  );
+  await screen.getByText(/^A Test is dated evidence for one saved configuration/).scrollIntoView();
+  await app.screenshot("chat-model-tested");
+  await browser.reload();
+  await expect(screen.getByRole("radio", "Keep saved key")).toBeChecked();
+  await expect(
+    screen.getByRole("region", "Language model connection").getByLabel("Base URL"),
+  ).toHaveValue(provider.baseUrl);
+  const settings = await chatModelSettings(app.baseUrl);
+  expect(settings).toMatchObject({ ok: true, value: { configuration: { keyConfigured: true } } });
+  assert(!JSON.stringify(settings).includes("sk-ui-journey"));
+});
+
+test("leaving the Language model page with unsaved edits asks before discarding them", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await app.open("/settings/chat-control/model");
+  const connection = screen.getByRole("region", "Language model connection");
+  await connection.getByLabel("Model").fill("unsaved-model");
+  await expect(connection.getByText("Unsaved changes.")).toBeVisible();
+
+  // Act
+  await screen
+    .getByRole("navigation", "Settings sections")
+    .getByRole("link", "Run titles", { exact: true })
+    .tap();
+
+  // Assert
+  await expect(screen.getByRole("dialog", "Discard unsaved Language model changes?")).toBeVisible();
+  // Hovering waits for the dialog's opening zoom to settle before the evidence frame.
+  await screen.getByRole("button", "Keep editing").hover();
+  await app.screenshot("chat-model-discard-guard");
+  await screen.getByRole("button", "Keep editing").tap();
+  await expect(connection.getByLabel("Model")).toHaveValue("unsaved-model");
+});
+
+test("an approved client's Settings has no Chat control group or search entry", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await remoteFixture(app, "compatible");
+  await app.open("/__fixture/remote-browser");
+  await openApproved(app, "/settings/run-titles");
+  const sections = screen.getByRole("navigation", "Settings sections");
+  await expect(sections.getByRole("link", "Run titles", { exact: true })).toBeVisible();
+
+  // Act
+  await screen.getByLabel("Search settings").fill("chat control");
+
+  // Assert
+  await expect(screen.getByText("No settings match “chat control”.")).toBeVisible();
+  await expect(sections.getByRole("group", "CHAT CONTROL")).toHaveCount(0);
+  await app.screenshot("chat-control-approved-client");
+});

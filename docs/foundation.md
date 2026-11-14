@@ -45,6 +45,12 @@ and restricted OAuth credentials live outside project repositories.
   records when that request was sent, the thread T3 launched, when it reached its outcome and the claims for its one
   Stop and one T3 thread settlement. Migration `080` adds the setting off and gives existing Runs no generation. No
   other data changes.
+- [Chat control](chat-control.md) keeps its On/Off state and its Language model section in one SQLite row each.
+  The section's row holds the provider kind, base URL, model, revision, save time and the latest Test's revision,
+  time, outcome and message. Its optional key lives in an owner-only credential file that the row names: a save
+  stages a new file durably, then commits the row in one transaction, so restart never mixes a configuration
+  with another revision's key, and files no committed row names are removed. Migration `081` adds both rows with
+  Chat control Off and an empty section. No other data changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

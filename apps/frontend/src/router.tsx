@@ -160,6 +160,11 @@ const runImagesRoute = createRoute({
   path: "settings/run-images",
   beforeLoad: () => openSettings({ tab: "run-images" }),
 });
+const chatModelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings/chat-control/model",
+  beforeLoad: () => openSettings({ tab: "chat-model" }),
+});
 const skillsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "settings/skills",
@@ -190,6 +195,7 @@ const routeTree = rootRoute.addChildren([
   applicationRoute,
   runTitlesRoute,
   runImagesRoute,
+  chatModelRoute,
   skillsRoute,
 ]);
 export const router = createRouter({ routeTree });
