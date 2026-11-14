@@ -111,16 +111,70 @@ export interface DiscordCheckEvidence {
 
 /**
  * The Gateway connection as Factory runs it now. While Chat control is Off the only connection is
- * an owner-requested check.
+ * an owner-requested check; while On, Factory's single operating connection is `connecting`,
+ * `connected`, `reconnecting` after a transient failure, or `rejected` after a failure that needs
+ * correction and an explicit Retry.
  */
-export type DiscordConnectionStatus = "incomplete" | "off" | "checking";
+export type DiscordConnectionStatus =
+  | "incomplete"
+  | "off"
+  | "checking"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "rejected";
+
+/** Why the operating connection is reconnecting or rejected; Factory's own description. */
+export interface DiscordConnectionProblem {
+  readonly outcome: DiscordCheckOutcome;
+  readonly message: string;
+  readonly occurredAt: string;
+}
+
+/**
+ * The outcome of registering `/factory reset` for the verified application on the latest
+ * operating connection. A connected Gateway does not by itself mean the command works.
+ */
+export interface DiscordCommandSetup {
+  readonly outcome: "registered" | "failed";
+  readonly message: string;
+  readonly occurredAt: string;
+}
+
+/** One allowed parent channel and the Projects it grants; its threads inherit the grant. */
+export interface DiscordAccessChannel {
+  /** A decimal Discord channel ID kept as text. */
+  readonly channelId: string;
+  /** Factory Project IDs; an empty list grants nothing. */
+  readonly projectIds: readonly string[];
+}
+
+/** The saved Access section: who may invoke Chat control, where, and for which Projects. */
+export interface DiscordAccessConfiguration {
+  /** Decimal Discord user IDs kept as text. Roles and server membership grant nothing. */
+  readonly users: readonly string[];
+  readonly channels: readonly DiscordAccessChannel[];
+  /** Granted Project IDs no Factory Project has; they stay listed and grant nothing. */
+  readonly unresolvedProjectIds: readonly string[];
+  /** Increases with every committed save; stale-write checks name it. */
+  readonly revision: number;
+  /** When this revision was saved; null before the first save. */
+  readonly savedAt: string | null;
+}
 
 /** Settings → Chat control → Discord, readable only on the Factory host. */
 export interface DiscordSettings {
   /** Chat control's persisted On/Off state. Every installation starts Off. */
   readonly chatControlEnabled: boolean;
   readonly connectionStatus: DiscordConnectionStatus;
+  /** The current reconnecting or rejected cause while On; null otherwise. */
+  readonly connectionProblem: DiscordConnectionProblem | null;
+  /** Command setup on the current operating connection; null while Off or not yet attempted. */
+  readonly commandSetup: DiscordCommandSetup | null;
+  /** Whether a current unresolved failure warrants the Settings navigation indicator; never while Off. */
+  readonly needsAttention: boolean;
   readonly configuration: DiscordConnectionConfiguration;
+  readonly access: DiscordAccessConfiguration;
   readonly latestCheck: DiscordCheckEvidence | null;
 }
 
@@ -138,8 +192,24 @@ export interface UpdateDiscordConnectionInput {
 }
 
 export interface CheckDiscordConnectionInput {
-  /** The saved revision the owner chose to check; unsaved edits are never checked. */
+  /**
+   * The saved revision the owner chose to check; unsaved edits are never checked. While Chat
+   * control is On the request inspects the running connection and retries it when it is not
+   * connected, instead of opening another session.
+   */
   readonly revision: number;
+}
+
+export interface UpdateDiscordAccessInput {
+  /** The revision the edits started from; a different current revision is a conflict. */
+  readonly revision: number;
+  readonly users: readonly string[];
+  readonly channels: readonly DiscordAccessChannel[];
+}
+
+export interface SetChatControlEnabledInput {
+  /** On needs a complete saved Discord connection and Language model; Off always succeeds. */
+  readonly enabled: boolean;
 }
 
 /** Host-only Chat control administration; approved clients get `host_only`. */
@@ -170,6 +240,16 @@ export const chatControlOperations = {
   checkDiscordConnection: operation<CheckDiscordConnectionInput, DiscordSettings>()({
     method: "POST",
     path: "/api/chat-control/discord/check",
+    body: "json",
+  }),
+  updateDiscordAccess: operation<UpdateDiscordAccessInput, DiscordSettings>()({
+    method: "PUT",
+    path: "/api/chat-control/discord/access",
+    body: "json",
+  }),
+  setChatControlEnabled: operation<SetChatControlEnabledInput, DiscordSettings>()({
+    method: "PUT",
+    path: "/api/chat-control/enabled",
     body: "json",
   }),
 };

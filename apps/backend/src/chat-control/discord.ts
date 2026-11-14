@@ -9,12 +9,16 @@ import type {
 } from "@t3-factory/contracts";
 import {
   validateCheckDiscordConnection,
+  validateSetChatControlEnabled,
+  validateUpdateDiscordAccess,
   validateUpdateDiscordConnection,
 } from "@t3-factory/domain-validation";
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
+import { readAccess, updateAccess } from "./access.ts";
 import type { ChatCredentials } from "./credentials.ts";
 import type { DiscordConnection, DiscordGateway } from "./discord-gateway.ts";
+import type { DiscordOperation, OperationStatus } from "./discord-operation.ts";
 
 type ConnectionRow = {
   application_id: string | null;
@@ -38,9 +42,24 @@ const readRow = (sql: SqlClient.SqlClient) =>
 const complete = (row: ConnectionRow) =>
   row.application_id !== null && row.public_key !== null && row.token_stage !== null;
 
-const settings = (row: ConnectionRow, checking: boolean): DiscordSettings => ({
-  chatControlEnabled: row.chat_control_enabled === 1,
-  connectionStatus: checking ? "checking" : complete(row) ? "off" : "incomplete",
+const settings = (
+  row: ConnectionRow,
+  checking: boolean,
+  operating: OperationStatus | null,
+  access: DiscordSettings["access"],
+): DiscordSettings => ({
+  chatControlEnabled: operating !== null,
+  ...(operating ?? {
+    connectionStatus: checking ? "checking" : complete(row) ? "off" : "incomplete",
+    connectionProblem: null,
+    commandSetup: null,
+  }),
+  needsAttention:
+    operating !== null &&
+    (operating.connectionStatus === "rejected" ||
+      operating.connectionStatus === "reconnecting" ||
+      operating.commandSetup?.outcome === "failed"),
+  access,
   configuration: {
     applicationId: row.application_id,
     publicKey: row.public_key,
@@ -110,18 +129,40 @@ function commitProblem(
   return undefined;
 }
 
+type ModelRow = { provider_kind: string | null; base_url: string | null; model: string | null };
+
+/** The required saved values that are missing for On; the model key is optional. */
+function missingForOn(connection: ConnectionRow, model: ModelRow) {
+  const missing = (value: unknown, path: string, message: string) =>
+    value === null ? [{ code: "chat_control_incomplete", path, message }] : [];
+  return [
+    ...missing(connection.application_id, "discord.applicationId", "Save the Application ID."),
+    ...missing(connection.public_key, "discord.publicKey", "Save the Public Key."),
+    ...missing(connection.token_stage, "discord.token", "Save the bot token."),
+    ...missing(model.provider_kind, "model.providerKind", "Save the Language model provider."),
+    ...missing(model.base_url, "model.baseUrl", "Save the Language model base URL."),
+    ...missing(model.model, "model.model", "Save the Language model name."),
+  ];
+}
+
 /**
- * Settings → Chat control → Discord, connection section. Host only, enforced by the routes. Access
- * and the On/Off switch are separate sections with their own saves.
+ * Settings → Chat control → Discord: the connection and Access sections, each with its own save,
+ * and the one persisted On/Off switch. Host only, enforced by the routes.
  */
-export const makeChatDiscord = (credentials: ChatCredentials, gateway: DiscordGateway) =>
+export const makeChatDiscord = (
+  credentials: ChatCredentials,
+  gateway: DiscordGateway,
+  operation: DiscordOperation,
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const getDiscordSettings = () =>
-      Effect.map(readRow(sql), (row): Result<DiscordSettings> => ({
-        ok: true,
-        value: settings(row, gateway.isChecking()),
-      }));
+      Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
+        const row = yield* readRow(sql);
+        const operating = row.chat_control_enabled === 1 ? yield* operation.status : null;
+        const access = yield* readAccess(sql);
+        return { ok: true, value: settings(row, gateway.isChecking(), operating, access) };
+      });
 
     /**
      * Commits the whole section as one revision: a replacement token is staged first, and the row
@@ -142,24 +183,26 @@ export const makeChatDiscord = (credentials: ChatCredentials, gateway: DiscordGa
             return sql`UPDATE chat_discord_connection SET application_id=${next.applicationId},public_key=${next.publicKey},token_stage=${tokenStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
           },
         });
-        return refused ?? (yield* getDiscordSettings());
+        if (refused) return refused;
+        // While On, the running connection reconnects and verifies the newly saved configuration.
+        if ((yield* readRow(sql)).chat_control_enabled === 1) yield* operation.start;
+        return yield* getDiscordSettings();
       });
 
-    /** The complete saved connection at `revision` with its token, or why it cannot be checked. */
+    /**
+     * The complete saved connection at `revision` with its token, `"operating"` while Chat control
+     * is On, or why it cannot be checked.
+     */
     const savedConnection = (revision: number) =>
       credentials.read(
-        Effect.gen(function* (): Effect.fn.Return<Result<DiscordConnection>, unknown> {
+        Effect.gen(function* (): Effect.fn.Return<Result<DiscordConnection | "operating">, unknown> {
           const row = yield* readRow(sql);
           if (row.revision !== revision)
             return failure(
               "conflict",
               "Save or discard your edits, then check the saved connection.",
             );
-          if (row.chat_control_enabled === 1)
-            return failure(
-              "conflict",
-              "Chat control is On. Its running connection reports the Gateway's current state.",
-            );
+          if (row.chat_control_enabled === 1) return { ok: true, value: "operating" };
           if (!row.application_id || !row.public_key || !row.token_stage)
             return failure(
               "validation",
@@ -179,8 +222,10 @@ export const makeChatDiscord = (credentials: ChatCredentials, gateway: DiscordGa
       );
 
     /**
-     * One owner-requested connection-only session with the saved configuration at `revision`,
-     * recorded as dated evidence for that revision. It never changes the configuration.
+     * While Off, one owner-requested connection-only session with the saved configuration at
+     * `revision`, recorded as dated evidence for that revision; it never changes the configuration.
+     * While On, the running connection is inspected instead and retried when it is not connected,
+     * so no second Gateway session opens.
      */
     const checkDiscordConnection = (input: unknown) =>
       Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
@@ -188,6 +233,12 @@ export const makeChatDiscord = (credentials: ChatCredentials, gateway: DiscordGa
         if (!validated.ok) return validated;
         const connection = yield* savedConnection(validated.value.revision);
         if (!connection.ok) return connection;
+        if (connection.value === "operating") {
+          const { connectionStatus } = yield* operation.status;
+          if (connectionStatus === "rejected" || connectionStatus === "reconnecting")
+            yield* operation.start;
+          return yield* getDiscordSettings();
+        }
         const checked = yield* gateway.check(connection.value);
         if (Option.isNone(checked))
           return failure(
@@ -199,5 +250,59 @@ export const makeChatDiscord = (credentials: ChatCredentials, gateway: DiscordGa
         return yield* getDiscordSettings();
       });
 
-    return { getDiscordSettings, updateDiscordConnection, checkDiscordConnection };
+    /** Commits the Access section; it is in effect for every later event when this returns. */
+    const updateDiscordAccess = (input: unknown) =>
+      Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
+        const validated = validateUpdateDiscordAccess(input);
+        if (!validated.ok) return validated;
+        const saved = yield* updateAccess(sql, validated.value);
+        return saved.ok ? yield* getDiscordSettings() : saved;
+      });
+
+    /**
+     * Persists the On/Off intent. On needs the complete saved Discord connection and Language
+     * model, but no key, passed test or Access entry, and starts the operating connection. Off
+     * stops admission and returns once the Gateway session is released; configuration, data and
+     * accepted work are untouched.
+     */
+    const setChatControlEnabled = (input: unknown) =>
+      Effect.gen(function* (): Effect.fn.Return<Result<DiscordSettings>, unknown> {
+        const validated = validateSetChatControlEnabled(input);
+        if (!validated.ok) return validated;
+        if (!validated.value.enabled) {
+          yield* sql`UPDATE chat_control_state SET enabled=0 WHERE singleton=1`;
+          yield* operation.stop;
+          return yield* getDiscordSettings();
+        }
+        // The section lock keeps a concurrent save from removing a required value meanwhile.
+        const turnedOn = yield* credentials.read(
+          sql.withTransaction(
+            Effect.gen(function* (): Effect.fn.Return<Result<boolean>, unknown> {
+              const connection = yield* readRow(sql);
+              if (connection.chat_control_enabled === 1) return { ok: true, value: false };
+              const [model] = yield* sql<ModelRow>`SELECT provider_kind,base_url,model FROM chat_model_settings WHERE singleton=1`;
+              const missing = missingForOn(connection, model!);
+              if (missing.length > 0)
+                return failure(
+                  "validation",
+                  "Save a complete Discord connection and Language model before turning Chat control on.",
+                  missing,
+                );
+              yield* sql`UPDATE chat_control_state SET enabled=1 WHERE singleton=1`;
+              return { ok: true, value: true };
+            }),
+          ),
+        );
+        if (!turnedOn.ok) return turnedOn;
+        if (turnedOn.value) yield* operation.start;
+        return yield* getDiscordSettings();
+      });
+
+    return {
+      getDiscordSettings,
+      updateDiscordConnection,
+      checkDiscordConnection,
+      updateDiscordAccess,
+      setChatControlEnabled,
+    };
   });

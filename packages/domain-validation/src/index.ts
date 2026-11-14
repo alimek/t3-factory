@@ -1049,4 +1049,8 @@ export {
   validateTestChatModel,
   validateUpdateChatModel,
   validateUpdateDiscordConnection,
+  validateUpdateDiscordAccess,
+  validateSetChatControlEnabled,
+  DISCORD_ACCESS_USER_LIMIT,
+  DISCORD_ACCESS_CHANNEL_LIMIT,
 } from "./chat-control.ts";

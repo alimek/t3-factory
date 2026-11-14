@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { factoryHarness } from "./support/factory.ts";
-import { controlledDiscord, mentionEvent } from "./support/controlled-discord.ts";
+import { controlledDiscord, messageEvent } from "./support/controlled-discord.ts";
 import { unreachableBaseUrl } from "./support/controlled-model.ts";
 import {
   DISCORD_PUBLIC_KEY,
@@ -432,7 +432,14 @@ it("an Off check handles no Discord traffic and sends Discord nothing beyond its
     channels: [{ id: "400000000000000002", name: "factory" }],
   };
   discord.addGuild(guild);
-  discord.trafficOnReady.push(mentionEvent(discordBot, guild, "start a Run"));
+  discord.trafficOnReady.push(
+    messageEvent({
+      bot: discordBot,
+      guildId: guild.id,
+      channelId: guild.channels[0]!.id,
+      id: "300000000000000001",
+    }),
+  );
   await savedDiscordConnection(factory);
 
   // Act

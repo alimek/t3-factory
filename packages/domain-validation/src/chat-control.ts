@@ -1,6 +1,9 @@
 import type {
   CheckDiscordConnectionInput,
+  DiscordAccessChannel,
   DiscordTokenChange,
+  SetChatControlEnabledInput,
+  UpdateDiscordAccessInput,
   UpdateDiscordConnectionInput,
   ChatModelKeyChange,
   ChatModelProviderKind,
@@ -267,4 +270,125 @@ export function validateCheckDiscordConnection(
     "discord_revision",
   );
   return revision.ok ? { ok: true, value: { revision: revision.value } } : revision;
+}
+
+export const DISCORD_ACCESS_USER_LIMIT = 100;
+export const DISCORD_ACCESS_CHANNEL_LIMIT = 100;
+const PROJECT_ID_LIMIT = 200;
+
+/** Decimal Discord IDs at `path`; a repeated ID is refused rather than silently merged. */
+function parseDiscordIds(
+  value: unknown,
+  path: string,
+  limit: number,
+  code: string,
+  label: string,
+): Result<string[]> {
+  if (!Array.isArray(value) || value.length > limit)
+    return invalid(code, path, `List at most ${limit} ${label}s.`);
+  const ids: string[] = [];
+  for (const [index, item] of value.entries()) {
+    const id =
+      typeof item === "string"
+        ? validateDiscordId(item, code, `${path}[${index}]`, label)
+        : invalid(code, `${path}[${index}]`, `Enter the ${label} as text.`);
+    if (!id.ok) return id;
+    if (ids.includes(id.value))
+      return invalid(
+        "discord_access_duplicate",
+        `${path}[${index}]`,
+        `${id.value} is listed twice. Remove the repeated ${label}.`,
+      );
+    ids.push(id.value);
+  }
+  return { ok: true, value: ids };
+}
+
+function parseProjectIds(value: unknown, path: string): Result<string[]> {
+  if (!Array.isArray(value))
+    return invalid("discord_access_project", path, "List the Projects this channel grants.");
+  const ids: string[] = [];
+  for (const [index, item] of value.entries()) {
+    const id = typeof item === "string" ? item.trim() : "";
+    if (id.length === 0 || id.length > PROJECT_ID_LIMIT || hasControlCharacter(id))
+      return invalid("discord_access_project", `${path}[${index}]`, "Choose a Factory Project.");
+    if (ids.includes(id))
+      return invalid(
+        "discord_access_duplicate",
+        `${path}[${index}]`,
+        "This Project is granted twice to the channel. Remove the repeated grant.",
+      );
+    ids.push(id);
+  }
+  return { ok: true, value: ids };
+}
+
+function parseChannels(value: unknown): Result<DiscordAccessChannel[]> {
+  if (!Array.isArray(value) || value.length > DISCORD_ACCESS_CHANNEL_LIMIT)
+    return invalid(
+      "discord_access_channel",
+      "channels",
+      `List at most ${DISCORD_ACCESS_CHANNEL_LIMIT} channels.`,
+    );
+  const channels: DiscordAccessChannel[] = [];
+  for (const [index, item] of value.entries()) {
+    const fields = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const channelId =
+      typeof fields.channelId === "string"
+        ? validateDiscordId(
+            fields.channelId,
+            "discord_access_channel",
+            `channels[${index}].channelId`,
+            "channel ID",
+          )
+        : invalid(
+            "discord_access_channel",
+            `channels[${index}].channelId`,
+            "Enter the channel ID as text.",
+          );
+    if (!channelId.ok) return channelId;
+    if (channels.some((channel) => channel.channelId === channelId.value))
+      return invalid(
+        "discord_access_duplicate",
+        `channels[${index}].channelId`,
+        `${channelId.value} is listed twice. Combine its Projects in one channel entry.`,
+      );
+    const projectIds = parseProjectIds(fields.projectIds, `channels[${index}].projectIds`);
+    if (!projectIds.ok) return projectIds;
+    channels.push({ channelId: channelId.value, projectIds: projectIds.value });
+  }
+  return { ok: true, value: channels };
+}
+
+/**
+ * Structural validation of an Access save: trimmed decimal IDs, no repeated user, channel or
+ * per-channel Project. Whether the Projects exist is checked by the backend.
+ */
+export function validateUpdateDiscordAccess(input: unknown): Result<UpdateDiscordAccessInput> {
+  const fields =
+    typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  const revision = parseRevision(fields.revision, "discord_access_revision");
+  if (!revision.ok) return revision;
+  const users = parseDiscordIds(
+    fields.users,
+    "users",
+    DISCORD_ACCESS_USER_LIMIT,
+    "discord_access_user",
+    "user ID",
+  );
+  if (!users.ok) return users;
+  const channels = parseChannels(fields.channels);
+  if (!channels.ok) return channels;
+  return {
+    ok: true,
+    value: { revision: revision.value, users: users.value, channels: channels.value },
+  };
+}
+
+export function validateSetChatControlEnabled(input: unknown): Result<SetChatControlEnabledInput> {
+  const enabled =
+    typeof input === "object" && input !== null && "enabled" in input ? input.enabled : undefined;
+  return typeof enabled === "boolean"
+    ? { ok: true, value: { enabled } }
+    : invalid("chat_control_enabled", "enabled", "Say whether Chat control is On or Off.");
 }

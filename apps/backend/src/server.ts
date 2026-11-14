@@ -270,9 +270,9 @@ function appearanceRoutes(factory: Factory): RouteEntries<typeof appearanceOpera
 }
 
 /**
- * Chat control configuration names the host's provider destinations, Discord application and
- * credentials, its Test may be charged and its check connects to Discord: approved clients can
- * neither read nor change it.
+ * Chat control configuration names the host's provider destinations, Discord application,
+ * credentials and access policy, its Test may be charged, and its check and On/Off switch connect
+ * to Discord: approved clients can neither read nor change it.
  */
 function chatControlRoutes(factory: Factory): RouteEntries<typeof chatControlOperations> {
   return {
@@ -303,6 +303,16 @@ function chatControlRoutes(factory: Factory): RouteEntries<typeof chatControlOpe
       hostOnly: true,
       body: standardBody,
       handle: ({ input }) => answer(() => factory.checkDiscordConnection(input)),
+    },
+    updateDiscordAccess: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.updateDiscordAccess(input)),
+    },
+    setChatControlEnabled: {
+      hostOnly: true,
+      body: standardBody,
+      handle: ({ input }) => answer(() => factory.setChatControlEnabled(input)),
     },
   };
 }

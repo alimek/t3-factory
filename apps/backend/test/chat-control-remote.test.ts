@@ -1,6 +1,6 @@
 import { assert, expect, it } from "@effect/vitest";
 import { remoteServer } from "./support/remote-clients.ts";
-import { controlledDiscord } from "./support/controlled-discord.ts";
+import { controlledDiscord, PARTICIPANT_ID } from "./support/controlled-discord.ts";
 import {
   chatModelSave,
   discordBot,
@@ -112,5 +112,47 @@ it("an approved client cannot make the host connect to Discord", async (c) => {
   expect(reply.status).toBe(403);
   assert(!reply.body.ok);
   expect(reply.body.error.code).toBe("host_only");
+  expect(discord.requests).toHaveLength(0);
+});
+
+it("an approved client cannot change the host's Chat control Access", async (c) => {
+  // Arrange
+  const server = await remoteServer(c);
+  const before = await server.factory.getDiscordSettings();
+  const laptop = await server.approved("Laptop");
+
+  // Act
+  const reply = await laptop.send("PUT", "/api/chat-control/discord/access", {
+    revision: 0,
+    users: [PARTICIPANT_ID],
+    channels: [],
+  });
+
+  // Assert
+  expect(reply.status).toBe(403);
+  assert(!reply.body.ok);
+  expect(reply.body.error.code).toBe("host_only");
+  expect(await server.factory.getDiscordSettings()).toStrictEqual(before);
+});
+
+it("an approved client cannot turn the host's Chat control On", async (c) => {
+  // Arrange
+  const discord = await controlledDiscord(c);
+  discord.addBot(discordBot);
+  const server = await remoteServer(c, { discordApiUrl: discord.apiUrl });
+  await savedChatModel(server.factory);
+  await savedDiscordConnection(server.factory);
+  const laptop = await server.approved("Laptop");
+
+  // Act
+  const reply = await laptop.send("PUT", "/api/chat-control/enabled", { enabled: true });
+
+  // Assert
+  expect(reply.status).toBe(403);
+  assert(!reply.body.ok);
+  expect(reply.body.error.code).toBe("host_only");
+  const read = await server.factory.getDiscordSettings();
+  assert(read.ok);
+  expect(read.value.chatControlEnabled).toBe(false);
   expect(discord.requests).toHaveLength(0);
 });

@@ -89,6 +89,9 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
     value: {
       chatControlEnabled: false,
       connectionStatus: "incomplete",
+      connectionProblem: null,
+      commandSetup: null,
+      needsAttention: false,
       configuration: {
         applicationId: null,
         publicKey: null,
@@ -96,6 +99,7 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
         revision: 0,
         savedAt: null,
       },
+      access: { users: [], channels: [], unresolvedProjectIds: [], revision: 0, savedAt: null },
       latestCheck: null,
     },
   });

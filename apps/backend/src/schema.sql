@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_discord_connection
+-- Newest applied migration: chat_control_operation
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -57,9 +57,50 @@ CREATE TABLE appearance_snapshot (
   presentation TEXT NOT NULL
 );
 
+CREATE TABLE chat_access_channel_projects (
+  channel_id TEXT NOT NULL REFERENCES chat_access_channels(channel_id),
+  project_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (channel_id, project_id)
+);
+
+CREATE TABLE chat_access_channels (
+  channel_id TEXT PRIMARY KEY,
+  position INTEGER NOT NULL
+);
+
+CREATE TABLE chat_access_settings (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision INTEGER NOT NULL DEFAULT 0,
+  saved_at TEXT,
+  CHECK ((revision = 0) = (saved_at IS NULL))
+);
+
+CREATE TABLE chat_access_users (
+  user_id TEXT PRIMARY KEY,
+  position INTEGER NOT NULL
+);
+
 CREATE TABLE chat_control_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1))
+, rejected_outcome TEXT CHECK (
+  rejected_outcome IN (
+    'identity-mismatch',
+    'token-rejected',
+    'intent-disallowed',
+    'failed'
+  )
+), rejected_message TEXT, rejected_at TEXT);
+
+CREATE TABLE chat_conversations (
+  application_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  parent_channel_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 1),
+  generation_started_at TEXT NOT NULL,
+  PRIMARY KEY (application_id, thread_id)
 );
 
 CREATE TABLE chat_discord_connection (
@@ -89,6 +130,16 @@ CREATE TABLE chat_discord_connection (
   CHECK ((check_revision IS NULL) = (check_message IS NULL))
 );
 
+CREATE TABLE chat_ingress_events (
+  application_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  PRIMARY KEY (application_id, event_id)
+);
+
+CREATE INDEX chat_ingress_events_received ON chat_ingress_events (received_at)
+;
+
 CREATE TABLE chat_model_settings (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   provider_kind TEXT CHECK (provider_kind IN ('openai-compatible', 'anthropic')),
@@ -105,6 +156,16 @@ CREATE TABLE chat_model_settings (
   CHECK ((test_revision IS NULL) = (test_at IS NULL)),
   CHECK ((test_revision IS NULL) = (test_outcome IS NULL)),
   CHECK ((test_revision IS NULL) = (test_message IS NULL))
+);
+
+CREATE TABLE chat_sdk_cache (
+  cache_key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  expires_at INTEGER
+);
+
+CREATE TABLE chat_sdk_subscriptions (
+  thread_id TEXT PRIMARY KEY
 );
 
 CREATE TABLE client_grants (
