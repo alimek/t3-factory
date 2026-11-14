@@ -62,7 +62,12 @@ and restricted OAuth credentials live outside project repositories.
   (admitted message, selected reply, compact facts and published reply, deleted when the conversation is
   cleared), content-free markers of unfinished invocations for resend notices, and the Language model's
   runtime problem columns, which Test never writes. Existing conversations keep their generation and no
-  other data changes.
+  other data changes. Migration `086` adds chat action proposals with their requester-bound consent and
+  original expiry, confirmed action attempts whose ID is the shared operation's request identity, with
+  their accepted or rejected facts, the backend-private originating thread of each chat-started Run and
+  owed Discord deliveries with their persisted intent and outcome. None depend on conversation turns,
+  so clearing a conversation keeps them. Existing Runs get no originating thread and no other data
+  changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

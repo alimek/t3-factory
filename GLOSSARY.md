@@ -305,3 +305,11 @@ requests through Factory's own tools. Each thread has one shared, bounded and di
 conversation. It is Off by default, works only while the Factory backend runs, and connects to
 Discord and the model provider outbound only. See [Chat control](docs/chat-control.md).
 _Avoid_: Chat bot as a separate service; treating chat messages or model output as authorization.
+
+**Originating thread**:
+The Discord thread a Run was requested in through a confirmed Chat control Start, recorded when Factory
+accepts the Run. It is where Factory reports on that Run, not ownership: any allowed participant may act
+on any Run in a permitted Project, and an action's receipt goes to the thread it was requested in. Runs
+started any other way have none, and reading or acting on a Run never adds one. See
+[Chat control](docs/chat-control.md#originating-thread).
+_Avoid_: Run owner; assigning an origin to a Run read or acted on from chat.

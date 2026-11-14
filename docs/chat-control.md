@@ -245,12 +245,14 @@ and that a proposal is neither consent nor acceptance; Factory adds the requeste
 the thread permits from the Discord event and Access. Message text, selected replies, names and tool
 results reach the model as untrusted data in JSON envelopes, never as instructions or authority.
 
-The tools run in-process over Factory's own operations, and only read:
+The tools run in-process over Factory's own operations. Reads answer the model directly; a mutation
+only proposes, and Factory itself reviews and performs it (see [Actions](#actions)):
 
 | Tool | Returns |
 | --- | --- |
 | List Projects | The Projects the thread's parent channel grants the requester: stable ID, name, repository path and availability |
 | List Flows | Saved global Flows: stable ID, name, workspace setting and readiness with its first reasons |
+| Start Run | Nothing to perform: a validated proposal whose review Factory posts, or why it cannot be proposed |
 
 Both return pages of 20 entries with the page count, so every entry stays reachable. The model is
 told to list candidates and ask when several could match, and never to pick the first match or
@@ -258,8 +260,8 @@ substitute a missing one. Before every model request, tool call and publication 
 again that Chat control is On, Access still allows the requester in that channel, the conversation
 was not cleared, the requester's evidence is current and the Language model configuration is
 unchanged. Replies mention nobody, whatever the model wrote, and a reply longer than one Discord
-message goes out completely as ordered parts. Starting Runs, answering Human steps and archiving are
-not available in chat yet.
+message goes out completely as ordered parts. Answering Human steps and archiving are not available in
+chat yet.
 
 ### Shared conversation
 
@@ -338,6 +340,99 @@ thread and sent only within fifteen minutes of admission while the requester is 
 Content-free markers of unfinished invocations make this possible after a restart. Off sends no
 notice and deletes the markers, so turning On again revives none; a reset or clearing sends none.
 
+## Actions
+
+A mutation in chat is a proposal, a review, the requester's consent and Factory's acceptance, kept
+apart. The model can only propose; Factory renders the review, records the consent and performs the
+action through the same shared Factory operation as every other client, and reports the actual
+result itself. Starting a Run is the first such action.
+
+### Start proposals
+
+Start Run takes a permitted Project ID, a saved Flow ID and the Run's complete prompt. The prompt is
+text only and must be copied exactly from the requester's current message or the human reply they
+selected; text the model wrote must be marked composed, and the review labels it so. Factory refuses,
+before any review, a prompt that is blank, is not found verbatim in its stated source, exceeds 8,000
+Unicode characters or 16 KiB UTF-8, a Project the thread does not permit or that is unavailable, and
+an unknown or not-ready Flow; the model is told why so it can ask. Nothing is appended, shortened or
+inferred, there are no attachments and no per-Run workspace override.
+
+### Reviews and consent
+
+Factory generates the whole review: the Project's name and repository path, the Flow's name and ID,
+its current workspace setting, the automatic title derived from the prompt's first non-empty line,
+whether Generate Run titles is on, off or could not be read (then the title may still be replaced)
+and the exact prompt in full. It discloses that the Flow's and its Agents' current saved definitions
+and workspace setting are resolved at confirmation without another review. A review is at most 32,000
+Unicode characters and goes out as fully visible ordered messages; only after every part was
+delivered does Factory post the last message with one **Confirm** button. A part that fails, or a
+button Discord definitely refused, leaves nothing to confirm and Factory says so.
+
+The consent is bound to the requester, the configured application, the thread, the exact operation
+and parameters and the model's call that proposed it. The button's first dispatch fixes its lifetime
+at five minutes; nothing renews it, including an uncertain delivery or a restart. Asking again for the
+identical Start while its review waits points to the existing button instead of posting another; a
+correction names the pending proposal it supersedes, which then ends. A reply such as "yes" is never
+consent: the model is told to point to the button, and later turns see each proposal's current state
+(waiting, expired, accepted with the Run's identity, rejected or no longer valid) as a Factory fact,
+so a status question reads it instead of starting another Run. A waiting confirmation occupies no
+place in the conversation's queue, and a reset or clearing removes the conversation, not the consent.
+
+### Confirmation
+
+Only the requester's click within the lifetime, in the review's thread, confirms. Factory answers
+each click privately (an ephemeral reply). It checks again that Chat control is On, Access still
+allows the requester in that channel with the targeted Project, the application is still the
+configured one and the requester's Discord access is current, then takes the consent and performs the
+Start with no model request and outside any database transaction. A click by someone else, a denied
+or unconfirmed Discord access check and a click that arrives while Factory is momentarily unable to
+decide all leave the consent usable until it expires; a click after expiry does nothing, even if the
+button was pressed earlier.
+
+The Start uses the shared Start operation with the action's own identity as its request ID, so the
+same validation, readiness checks and current-definition acceptance apply and a repeated attempt can
+only recover the same Run. A definitive rejection, which proves nothing was started, uses the
+consent up. A duplicate or racing click, a lost answer and a restart reconcile that same request: an
+attempt left without a recorded outcome is looked up by its request ID when Factory starts, and
+returns its consent (still bound to the original expiry) only when no Run was accepted. A repeated
+click by the requester after the decision gets the result privately, with current access required,
+and never a second public receipt.
+
+Consent survives restarts, Gateway outages, Off and On, Language model saves and the same
+application's token rotation, but only until it expires, and Off stops new confirmations. An Access
+save that removes the requester, the channel or the targeted Project voids matching consent for good;
+connecting a different Discord application voids the previous application's, including after
+switching back.
+
+### Receipts and delivery
+
+Factory writes the receipt from the accepted facts: the Run's number and ID, its accepted automatic
+title, the Project and the Flow, or the rejection with its reasons. The decided outcome, the Run's
+originating thread and the owed receipt commit together. The receipt goes to the thread where the
+action was requested and depends on that channel still granting the Project and on the bot's access
+there, not on the requester remaining allowed; an Access save that revokes the destination cancels
+the owed receipt and keeps the accepted Run. After an application replacement, owed receipts go out
+from the new bot once it is verified and On.
+
+Factory records its intent before creating a message. Discord's rate limiting is retried with
+waits from one second doubling to five minutes. A definite refusal (for example a deleted or locked
+thread or missing bot permissions) waits for correction and Retry. A create whose outcome Factory
+cannot prove, because the connection dropped, Discord answered with a server error or Factory
+stopped while sending, is never repeated automatically. Settings → Chat control → Discord lists
+these current problems, with their destination and time, and confirmed actions whose outcome is
+still being reconciled. Retry of an unknown message first warns that Discord may show it twice;
+each Retry is one attempt, never repeats the action, and a new unknown outcome needs a new choice.
+Reviews are never retried: an uncertain review becomes usable only if its button is actually
+clicked, and otherwise expires so the requester asks again.
+
+### Originating thread
+
+A Run accepted from a chat Start records the Discord thread it was requested in as its originating
+thread. It is a reporting destination for later status reports, not ownership: any allowed
+participant may act on any Run in a permitted Project. Runs started in Factory, through Factory MCP
+or before this release have none, and reading or acting on a Run never adds one. Ordinary Run views
+and approved clients never see it.
+
 ## Support limits
 
 The pinned AI SDK packages are `ai` 7.0.172, `@ai-sdk/openai-compatible` 3.0.92 and
@@ -362,3 +457,9 @@ Conversations are tested against a loopback model stand-in that scripts answers 
 the OpenAI-compatible wire format; no live model's tool-calling quality is qualified, which remains
 the owner's responsibility. Reply-target payloads, mention suppression, multi-part replies and the
 member lookup used after an outage are not yet qualified against Discord.
+
+Reviews, confirmation buttons, their private answers, receipts and delivery failures are tested
+against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a message
+create. Button payloads, ephemeral answers to button clicks, Discord's real error codes for
+archived, locked or deleted threads and message-create deduplication are not yet qualified against
+Discord; Factory uses no nonce deduplication and treats every unproven create as unknown.

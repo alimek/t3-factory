@@ -114,8 +114,8 @@ latest diagnostic with its outcome, Run and time in the neutral notice style, ne
 the same fields read-only under **Managed on the Factory host**. The section reads the setting when it opens; changes
 are not delivered live.
 
-The shared Start operation, used by the composer and by `factory_start_run`, makes the decision, so every Start path behaves
-the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and
+The shared Start operation, used by the composer, by `factory_start_run` and by a confirmed
+[Chat control](chat-control.md#actions) Start, makes the decision, so every Start path behaves the same. A Run is eligible only when the setting is on at acceptance and its title provenance is automatic; manual and
 legacy Runs record no generation. An eligible Run captures the provider instance, model, options, built-in prompt version
 and an absolute deadline 30 seconds after acceptance, and records its generation in the acceptance transaction:
 
