@@ -139,7 +139,7 @@ function UpgradePanel({
 
 /**
  * One update control for this app and its server: the footer icon, or the labelled button in
- * Application settings. Without `includeServer` only this desktop app is updated.
+ * Desktop app settings. Without `includeServer` only this desktop app is updated.
  */
 export function UpdateControl({
   inline = false,

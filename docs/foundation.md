@@ -183,6 +183,9 @@ public results; they never edit current data to fabricate an old contract. See t
 
 Settings and Studio open over the current Run or composer. Closing them returns to that
 screen with its draft intact; direct links fall back to `/runs/new` in a fresh session.
+Settings sections open at `/settings/<section>`: `connection`, `agent-reporting`, `devices`,
+`run-titles`, `run-images`, `appearance`, `keyboard` and `desktop`. A removed or unknown
+section path opens T3 connection; removed paths have no redirects.
 [Studio](studio.md) and [Keyboard shortcuts](keyboard-shortcuts.md) document navigation and
 unsaved-change guards. Direct URLs must also work on reload.
 

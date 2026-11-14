@@ -40,7 +40,7 @@ function statusLine(update: ApplicationUpdate) {
 }
 
 /**
- * Desktop-only part of Application settings: the release channel this installation follows,
+ * Settings → Desktop app updates: the release channel this installation follows,
  * its updater state and the update control. `local` gates update only this app.
  */
 export function UpdateSettings({ state, local }: { state: DesktopState; local: boolean }) {

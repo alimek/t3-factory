@@ -6,7 +6,7 @@ semantics are unchanged; see [Runs](runs.md). Packaging and release qualificatio
 ## Installation roles
 
 Each installation has exactly one role, chosen on first launch and changeable in
-**Settings → Application**:
+**Settings → Desktop app**:
 
 | Role | What runs on this computer | Data |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ same conflict in the other direction.
 
 - Closing the last window leaves the server (and its Runs) running. The Dock icon and
   launching the app again reopen the panel.
-- **Settings → General → Show Factory in the menu bar** (desktop only) is off by
+- **Settings → Desktop app → Show Factory in the menu bar** (desktop only) is off by
   default. When enabled, a menu-bar icon shows the installation's role and status with
   **Open Factory** and **Quit Factory**. The choice is stored per installation and
   applies immediately, without a restart.
@@ -113,7 +113,7 @@ outside the draggable region, fullscreen and window controls stay native, and th
 ## Appearance
 
 Each desktop installation, and each browser profile per Factory address, has its own
-**Light** or **Dark** appearance, chosen in **Settings → Application → Appearance**. It is
+**Light** or **Dark** appearance, chosen in **Settings → Appearance**. It is
 Dark until chosen. The choice is never sent to or synchronized through the Factory server,
 so clients of the same server can use different modes, and changing the server, role, T3
 endpoint or authorization does not reset it. Every connection and startup gate keeps its
@@ -185,9 +185,9 @@ menu bar is hidden until Alt is pressed.
 
 ## Updates
 
-Updates are checked automatically on launch and every hour, so a running app shows a new Release or beta build in the sidebar without a manual check. **Settings → Application → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
+Updates are checked automatically on launch and every hour, so a running app shows a new Release or beta build in the sidebar without a manual check. **Settings → Desktop app → Updates** (desktop only) chooses the installation's **release channel**: **Stable** (tagged Releases) or **Beta** (nightly and
 on-demand [beta builds](release.md#beta-builds) of main, plus newer stable Releases). Until chosen, an installation follows the channel of the build it runs. Changing the channel discards an update found on the
-previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Application settings says so. The same section shows the updater state with the last check time and a labelled update control.
+previous one and checks again; it is refused while a download is in progress. Leaving beta never downgrades: the installed beta stays until a newer Release exists, and Desktop app settings says so. The same section shows the updater state with the last check time and a labelled update control.
 
 One control at the right of the Run sidebar footer drives the lifecycle for every installation this window can replace: the desktop app itself, and the server when the window talks to one through its update
 API (a desktop client's remote server, or the server a browser profile uses). A desktop server is one target. Its states:

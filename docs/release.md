@@ -109,7 +109,7 @@ Qualification happens after publication, because `publish` runs without an appro
 
 Verify an update from the previous signed Release through the app (download, **Cancel** in the review, ordinary Quit and relaunch with the update still offered, download again, **Upgrade**, and a client with its remote server) on disposable data right after publication. This risk is accepted: a published Release is never replaced, so a defect found in qualification is fixed by a new version.
 
-Recipients install the first signed DMG manually; developer packages cannot bootstrap into the update feed. Release and beta builds check on launch and every hour, and from the footer or Application settings.
+Recipients install the first signed DMG manually; developer packages cannot bootstrap into the update feed. Release and beta builds check on launch and every hour, and from the footer or Desktop app settings.
 Downloads and installation are explicit: the footer control downloads, and the upgrade review confirms installation; ordinary Quit never installs. A client connected to a remote server upgrades the server
 first and restarts only once the server is back on its target release; a client update otherwise affects only that client. Compatible protocol ranges let clients and server update independently.
 

@@ -1,26 +1,20 @@
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 
-export type SettingsSelection = {
-  tab:
-    | "connection"
-    | "runtime"
-    | "keyboard"
-    | "access"
-    | "general"
-    | "application"
-    | "run-titles"
-    | "run-images";
-};
-const settingsTabs: readonly SettingsSelection["tab"][] = [
+const settingsTabs = [
   "connection",
-  "runtime",
-  "keyboard",
-  "access",
-  "general",
-  "application",
+  "agent-reporting",
+  "devices",
   "run-titles",
   "run-images",
-];
+  "appearance",
+  "keyboard",
+  "desktop",
+] as const;
+export type SettingsSelection = { tab: (typeof settingsTabs)[number] };
+/** A known Settings section, or undefined for removed and unknown ones. */
+export function settingsTab(value: unknown): SettingsSelection["tab"] | undefined {
+  return settingsTabs.find((tab) => tab === value);
+}
 export type StudioSelection =
   | { tab: "flows"; flowId?: string }
   | { tab: "agents"; agentId?: string };
@@ -46,10 +40,8 @@ function studioSelection(value: unknown): StudioSelection | undefined {
 export function validateAppSearch(search: Record<string, unknown>): AppSearch {
   const studio = studioSelection(search.studio);
   if (studio) return { studio };
-  const tab = searchRecord(search.settings).tab;
-  return settingsTabs.includes(tab as SettingsSelection["tab"])
-    ? { settings: { tab: tab as SettingsSelection["tab"] } }
-    : {};
+  const tab = settingsTab(searchRecord(search.settings).tab);
+  return tab ? { settings: { tab } } : {};
 }
 
 export function studioMask(selection: StudioSelection) {
@@ -62,15 +54,7 @@ export function studioMask(selection: StudioSelection) {
     : { to: "/studio/agents" as const };
 }
 export function settingsMask(selection: SettingsSelection) {
-  if (selection.tab === "keyboard") return { to: "/settings/keyboard" as const };
-  if (selection.tab === "access") return { to: "/settings/access" as const };
-  if (selection.tab === "general") return { to: "/settings/general" as const };
-  if (selection.tab === "application") return { to: "/settings/application" as const };
-  if (selection.tab === "run-titles") return { to: "/settings/run-titles" as const };
-  if (selection.tab === "run-images") return { to: "/settings/run-images" as const };
-  return selection.tab === "runtime"
-    ? { to: "/settings/runtime" as const }
-    : { to: "/settings/connection" as const };
+  return { to: "/settings/$" as const, params: { _splat: selection.tab } };
 }
 export function useSettings() {
   return useSearch({ from: "__root__", select: (search) => search.settings });

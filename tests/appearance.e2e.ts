@@ -27,7 +27,7 @@ test("a browser profile's Light choice survives reload and is applied before the
     });
     record.observe(document, { childList: true, subtree: true });
   });
-  await app.open("/settings/application");
+  await app.open("/settings/appearance");
   expect(await browser.evaluate(documentAppearance)).toBe("dark");
   await screen.getByRole("radio", "Light").tap();
 
@@ -58,7 +58,7 @@ test("an offline client switches appearance without its server", async ({
   await remoteFixture(app, "offline");
   await expect(screen.getByRole("status", "Offline")).toBeVisible({ timeout: 15_000 });
   await screen.getByRole("link", /^Settings,/).tap();
-  await screen.getByRole("link", "Application", { exact: true }).tap();
+  await screen.getByRole("link", "Appearance", { exact: true }).tap();
 
   // Act
   await screen.getByRole("radio", "Light").tap();
@@ -71,7 +71,7 @@ test("an offline client switches appearance without its server", async ({
   await remoteFixture(app, "online");
 });
 
-test("an incompatible server's gate offers the appearance choice in Application settings", async ({
+test("an incompatible server's gate offers the appearance choice in local application settings", async ({
   app,
   screen,
   browser,

@@ -41,15 +41,15 @@ export function themeColors(app: FixtureApp) {
      * browser profile's storage, mode and client access.
      */
     otherAddress,
-    /** Application settings of an approved browser profile at the other address, following Ocean. */
+    /** Appearance settings of an approved browser profile at the other address, following Ocean. */
     async openApprovedClient(screen: Screen) {
       await app.open(otherAddress("/__fixture/remote-browser"));
-      await app.open(otherAddress("/__fixture/approved-browser?next=/settings/application"));
+      await app.open(otherAddress("/__fixture/approved-browser?next=/settings/appearance"));
       await expect(screen.getByText("Colors follow T3’s default theme “Ocean”.")).toBeVisible();
     },
     /**
      * The host follows the published "Nightfall", and an approved browser profile at the other
-     * address shows its Application settings, so the host panel keeps its own mode.
+     * address shows its Appearance settings, so the host panel keeps its own mode.
      */
     async followNightfallInApprovedBrowser() {
       await post("reset");
@@ -57,9 +57,19 @@ export function themeColors(app: FixtureApp) {
       await post("publish");
       await post("default?theme=nightfall");
       await app.open(otherAddress("/__fixture/remote-browser"));
-      await app.open(otherAddress("/__fixture/approved-browser?next=/settings/application"));
+      await app.open(otherAddress("/__fixture/approved-browser?next=/settings/appearance"));
     },
   };
+}
+
+/** The host panel's Appearance settings, paired and following T3's Ocean theme in Dark. */
+export async function hostFollowingOcean({ app, browser }: { app: FixtureApp; browser: Browser }) {
+  const colors = themeColors(app);
+  await colors.reset();
+  await colors.pair();
+  await app.open("/settings/appearance");
+  await expect.poll(() => browser.evaluate(canvasColor)).toBe(oceanDark);
+  return colors;
 }
 
 /**
@@ -81,5 +91,5 @@ export async function clientWithCachedOcean({
   await colors.openApprovedClient(screen);
   await expect.poll(() => browser.evaluate(canvasColor)).toBe(oceanDark);
   await expect.poll(() => browser.evaluate(cachedSnapshot)).not.toBe(null);
-  return { colors, application: colors.otherAddress("/settings/application") };
+  return { colors, appearance: colors.otherAddress("/settings/appearance") };
 }

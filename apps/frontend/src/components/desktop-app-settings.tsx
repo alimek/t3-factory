@@ -1,92 +1,38 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SectionLabel } from "@/components/page";
-import type { Appearance, DesktopResult } from "@t3-factory/contracts/desktop-bridge";
+import type { DesktopResult } from "@t3-factory/contracts/desktop-bridge";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { chooseAppearance, useAppearance } from "../appearance.ts";
 import { useDesktopState } from "../desktop-state.ts";
-import { SegmentedChoice } from "./segmented-choice.tsx";
+import { AppearanceChoice } from "./appearance-choice.tsx";
 import { UpdateSettings } from "./update-settings.tsx";
 
-const appearanceOptions = [
-  ["light", "Light"],
-  ["dark", "Dark"],
-] as const;
-
-/** Local to this installation or browser profile; never sent to the Factory server. */
-function AppearanceSettings({ note }: { note: ReactNode }) {
-  const appearance = useAppearance();
-  const [error, setError] = useState("");
-  const choose = async (next: Appearance) => setError((await chooseAppearance(next)) ?? "");
-  return (
-    <section aria-label="Appearance" className="grid gap-3">
-      <SectionLabel id="appearance-label">Appearance</SectionLabel>
-      <SegmentedChoice
-        labelledBy="appearance-label"
-        value={appearance}
-        options={appearanceOptions}
-        onChange={(next) => void choose(next)}
-      />
-      <p className="text-xs text-muted-foreground">
-        {desktopBridge()
-          ? "Saved for this desktop installation. Other devices and browsers keep their own choice."
-          : "Saved in this browser profile for this Factory address. Other browsers and devices keep their own choice."}
-      </p>
-      {note}
-      {error && (
-        <p role="status" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
-
-/**
- * Appearance for every client; on desktop also role, remembered server, launch at login and
- * updates. `local` is the gate dialog without a usable server, where only this app can be
- * updated. `appearanceNote` explains the selected mode's colors where a server provides them.
- */
-export function ApplicationSettings({
-  local = false,
-  appearanceNote,
-}: {
-  local?: boolean;
-  appearanceNote?: ReactNode;
-}) {
+/** Settings → Desktop app: everything that only applies to this desktop installation. */
+export function DesktopAppSettings() {
+  const state = useDesktopState();
+  if (!desktopBridge() || !state) return null;
   return (
     <div className="grid gap-6">
       <div className="grid gap-2">
-        <h2 className="text-title font-semibold text-foreground">Application</h2>
-        <ApplicationSummary />
+        <h2 className="text-title font-semibold text-foreground">Desktop app</h2>
+        <p className="text-sm text-muted-foreground">
+          Version {state.version} for macOS (Apple Silicon).
+        </p>
       </div>
-      <AppearanceSettings note={appearanceNote} />
-      <DesktopApplicationSettings local={local} />
+      <DesktopAppControls local={false} />
     </div>
   );
 }
 
-function ApplicationSummary() {
-  const state = useDesktopState();
-  if (!desktopBridge())
-    return (
-      <p className="text-sm text-muted-foreground">
-        Preferences for this browser, kept independently of the Factory server.
-      </p>
-    );
-  if (!state) return null;
-  return (
-    <p className="text-sm text-muted-foreground">
-      Version {state.version} for macOS (Apple Silicon).
-    </p>
-  );
-}
-
-function DesktopApplicationSettings({ local }: { local: boolean }) {
+/**
+ * Role, remembered server, start-up and updates of this desktop installation. `local` is the
+ * gate dialog without a usable server, where only this app can be updated.
+ */
+function DesktopAppControls({ local }: { local: boolean }) {
   const desktop = desktopBridge();
   const state = useDesktopState();
   const [error, setError] = useState("");
@@ -140,6 +86,21 @@ function DesktopApplicationSettings({ local }: { local: boolean }) {
         />
         <Label htmlFor="launch-at-login">Open Factory in the background at login</Label>
       </section>
+      <section aria-label="Menu bar" className="grid gap-1">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="menu-bar-icon"
+            checked={state.menuBarIcon}
+            aria-describedby="menu-bar-icon-description"
+            onCheckedChange={(checked) => void run(() => desktop.setMenuBarIcon(checked === true))}
+          />
+          <Label htmlFor="menu-bar-icon">Show Factory in the menu bar</Label>
+        </div>
+        <p id="menu-bar-icon-description" className="pl-6 text-sm text-muted-foreground">
+          Adds the Factory icon to the macOS menu bar with Open Factory and Quit Factory. The Dock
+          icon reopens Factory either way.
+        </p>
+      </section>
       <UpdateSettings state={state} local={local} />
     </>
   );
@@ -161,7 +122,10 @@ export function LocalApplicationControls() {
               ? "Settings and updates for this computer, available independently of the server."
               : "Settings for this browser, available independently of the server."}
           </DialogDescription>
-          <ApplicationSettings local />
+          <div className="grid gap-6">
+            <AppearanceChoice />
+            <DesktopAppControls local />
+          </div>
         </DialogContent>
       </Dialog>
     </>

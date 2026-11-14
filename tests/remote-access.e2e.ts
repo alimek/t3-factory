@@ -64,7 +64,7 @@ test("an approved browser installs Factory MCP on the server and retains it afte
   // Arrange
   await browser.setViewport({ width: 1600, height: 1000 });
   await remoteFixture(app, "reporting/remove-registration");
-  await openApproved(app, "/settings/runtime");
+  await openApproved(app, "/settings/agent-reporting");
   const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
   await expect(codex.getByRole("status")).toHaveText("Not installed");
   await expect(codex.getByRole("button", "Install Factory MCP", { exact: true })).toBeEnabled();
@@ -87,7 +87,7 @@ test("an approved browser repairs the server's Factory MCP installation", async 
 }) => {
   // Arrange
   await remoteFixture(app, "reporting/break");
-  await openApproved(app, "/settings/runtime");
+  await openApproved(app, "/settings/agent-reporting");
   const codex = screen.getByRole("article").filter({ hasText: "codex-main" });
   await expect(codex.getByRole("status")).toHaveText("Needs attention");
 

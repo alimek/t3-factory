@@ -6,7 +6,7 @@ parallel stylesheets, global element styling or per-screen color palettes.
 
 ## Light and Dark
 
-**Settings → Application → Appearance** offers exactly **Light** and **Dark**; Dark is the
+**Settings → Appearance** offers exactly **Light** and **Dark**; Dark is the
 default and there is no System mode. The choice is local to the client, never sent to the
 server, and available on every connection gate and while offline; see
 [Desktop and approved clients](desktop-and-clients.md#appearance).

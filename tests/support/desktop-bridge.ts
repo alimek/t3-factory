@@ -6,7 +6,7 @@ import {
 } from "../../packages/contracts/src/desktop-bridge.ts";
 
 export const desktopBridgeOptions = (
-  role: "client" | null = null,
+  role: "client" | "server" | null = null,
   update: "available" | "downloaded" | "downloading" = "downloaded",
   releaseNotes:
     | string
@@ -38,7 +38,7 @@ export function desktopBridgeScript({
     launchAtLogin: false,
     menuBarIcon: false,
     updateChannel: "stable",
-    backend: { state: "stopped", message: null },
+    backend: { state: role === "server" ? "running" : "stopped", message: null },
     minimized: false,
     update: {
       state: update,

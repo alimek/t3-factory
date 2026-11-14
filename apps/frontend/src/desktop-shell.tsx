@@ -68,7 +68,7 @@ function RoleChooser({ desktop }: { desktop: FactoryDesktop }) {
       label="Choose this computer's role"
       icon={Server}
       title="How will this computer use Factory?"
-      description="Each installation has one role. You can change it later in Settings → Application; local data is kept and never copied to another server."
+      description="Each installation has one role. You can change it later in Settings → Desktop app; local data is kept and never copied to another server."
     >
       <div className="grid gap-3">
         <RoleOption

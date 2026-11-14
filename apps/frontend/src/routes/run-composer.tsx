@@ -672,7 +672,7 @@ function StartNotice({ model }: { model: Composer }) {
               </ul>
             )}
             {draft.remedy === "reporting" && (
-              <NoticeSettingsLink selection={{ tab: "runtime" }}>
+              <NoticeSettingsLink selection={{ tab: "agent-reporting" }}>
                 Open Settings → Agent reporting
               </NoticeSettingsLink>
             )}

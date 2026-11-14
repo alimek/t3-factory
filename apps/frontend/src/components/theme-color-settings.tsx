@@ -15,7 +15,6 @@ import { Notice } from "@/components/notice";
 import { MutationGate } from "@/client-gate";
 import { api } from "../api.ts";
 import { useAppearance } from "../appearance.ts";
-import { useClientScope } from "../client-scope.ts";
 import { useLiveAppearance } from "../live/live-connection.ts";
 
 const stateBadges: Record<
@@ -165,12 +164,11 @@ function HostThemeColorControls({ appearance }: { appearance: T3Appearance | nul
 }
 
 /**
- * Settings → T3 connection → Theme colors: whether Factory follows the T3 environment's default
- * theme, why not, and the grant's expiry. Independent of the connection's readiness.
+ * Host-only Settings → Appearance → Theme colors: whether Factory follows the T3 environment's
+ * default theme, why not, and the grant's expiry. Independent of the connection's readiness.
  */
 export function ThemeColorSettings() {
   const appearance = useLiveAppearance().value;
-  const host = useClientScope() === "host";
   const badge = appearance && stateBadges[appearance.state];
   const warn = appearance?.grant?.expiresSoon && appearance.state !== "re-pair-required";
   return (
@@ -188,10 +186,13 @@ export function ThemeColorSettings() {
       </div>
       <p className="text-sm text-muted-foreground">
         Optionally use the colors of the T3 environment’s default theme. Every device keeps its own
-        Light or Dark choice in Application settings; Runs never depend on theme colors.
+        Light or Dark choice; Runs never depend on theme colors.
       </p>
-      {/* The connection pane is already a polite live region; its notices own role="status". */}
-      {appearance && <p className="text-sm text-foreground">{appearance.explanation}</p>}
+      {appearance && (
+        <p aria-live="polite" className="text-sm text-foreground">
+          {appearance.explanation}
+        </p>
+      )}
       {warn && appearance.grant && (
         <Notice tone="attention" icon={TriangleAlert} title="Theme colors expire soon">
           The grant ends {formatDate(appearance.grant.expiresAt)}. Pair again before then; Factory
@@ -199,18 +200,12 @@ export function ThemeColorSettings() {
         </Notice>
       )}
       {appearance && <ThemeColorDetails appearance={appearance} />}
-      {host ? (
-        <HostThemeColorControls appearance={appearance} />
-      ) : (
-        <p className="text-2xs tracking-label text-subtle-foreground">
-          Theme colors are paired and disconnected on the Factory host.
-        </p>
-      )}
+      <HostThemeColorControls appearance={appearance} />
     </section>
   );
 }
 
-/** Under Application → Appearance: what the selected mode shows, and why. */
+/** Under Light or Dark on clients other than the host: what the selected mode shows, and why. */
 export function ThemeColorsNote() {
   const mode = useAppearance();
   const appearance = useLiveAppearance().value;
@@ -222,6 +217,7 @@ export function ThemeColorsNote() {
     text = `Colors follow T3’s default theme “${presentation!.theme.name}”.`;
   else if (half) text = half.explanation;
   else if (appearance.state === "not-paired")
-    text = "Factory’s own colors. T3 theme colors can be paired in Settings → T3 connection.";
+    text =
+      "Factory’s own colors. T3 theme colors can be paired in Settings → Appearance on the Factory host.";
   return <p className="text-xs text-muted-foreground">{text}</p>;
 }
