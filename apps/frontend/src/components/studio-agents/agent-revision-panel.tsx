@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { RefreshCw } from "lucide-react";
 import type { AgentDefinition } from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,7 +68,11 @@ export function AgentRevisionPanel({
   }, [draft, updatedTo]);
   if (!newer && !stale)
     return updatedTo === null ? null : (
-      <p role="status" className="shrink-0 px-4 pt-3 text-sm text-muted-foreground sm:px-6 md:px-8">
+      <p
+        role="status"
+        className="flex shrink-0 items-center gap-1.5 px-4 pt-3 text-2xs text-muted-foreground sm:px-6 md:px-8"
+      >
+        <RefreshCw aria-hidden className="size-3.5 text-link" />
         Updated to revision {updatedTo}
       </p>
     );
@@ -78,9 +83,12 @@ export function AgentRevisionPanel({
     >
       <div className="flex flex-wrap items-center gap-3">
         <p role="status" className="text-sm text-foreground">
-          {newer
-            ? `Revision ${newer.revision} was saved elsewhere. Your edits are kept.`
-            : "Factory holds a newer revision of this Agent. Your edits are kept."}
+          <span className="font-medium">
+            {newer
+              ? `Revision ${newer.revision} was saved elsewhere.`
+              : "Factory holds a newer revision of this Agent."}
+          </span>{" "}
+          Your edits are kept.
         </p>
         {!comparing && (
           <Button type="button" variant="outline" size="sm" onClick={draft.compare}>
