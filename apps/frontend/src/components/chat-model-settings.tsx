@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CircleCheck, CircleX, Info, Power } from "lucide-react";
 import type {
   ChatModelKeyChange,
@@ -13,21 +13,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChoiceMenu } from "@/components/choice-menu";
 import { fieldLabelClass } from "@/components/page";
-import { api, ApiError } from "../api.ts";
-import { MutationGate } from "../client-gate.tsx";
+import { api } from "../api.ts";
 import { dayAndTime } from "./execution-state.tsx";
-import { Notice, ReadFailure } from "./notice.tsx";
+import { Notice } from "./notice.tsx";
 import { SegmentedChoice } from "./segmented-choice.tsx";
-import { SettingsDraftDialog, useSettingsDraftGuard } from "./settings-draft-guard.tsx";
-
-const errorMessage = (cause: unknown, fallback: string) =>
-  cause instanceof ApiError
-    ? [cause.message, ...cause.detail.issues.map((issue) => issue.message)]
-        .filter((text, index, all) => all.indexOf(text) === index)
-        .join(" ")
-    : cause instanceof Error
-      ? cause.message
-      : fallback;
+import { useSettingsDraftGuard } from "./settings-draft-guard.tsx";
+import {
+  ChatControlPage,
+  chatControlError,
+  SectionSaveBar,
+  useChatControlSection,
+} from "./chat-control-form.tsx";
 
 const providerChoices = [
   { id: "openai-compatible", label: "OpenAI-compatible", description: "Chat completions" },
@@ -102,81 +98,33 @@ const committed = (input: UpdateChatModelInput, current: ChatModelSettings) =>
 
 /** The page's saved settings and draft, with its save, Test and Discard actions. */
 function useChatModelPage() {
-  const [settings, setSettings] = useState<ChatModelSettings | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [loadError, setLoadError] = useState("");
-  const [loads, setLoads] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const section = useChatControlSection({
+    read: api.getChatModelSettings,
+    update: api.updateChatModelSettings,
+    draftOf,
+    committed,
+    name: "the Language model settings",
+  });
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState("");
-  const adopt = (next: ChatModelSettings) => {
-    setSettings(next);
-    setDraft(draftOf(next));
-  };
-  useEffect(() => {
-    let active = true;
-    setLoadError("");
-    api.getChatModelSettings().then(
-      (value) => active && adopt(value),
-      (cause: unknown) =>
-        active &&
-        setLoadError(errorMessage(cause, "Factory could not read the Language model settings.")),
-    );
-    return () => {
-      active = false;
-    };
-  }, [loads]);
-  /** A lost answer is resolved by reading the host's current state, never by saving again. */
-  const recoverLostSave = async (input: UpdateChatModelInput, cause: unknown) => {
-    const current = await api.getChatModelSettings().catch(() => null);
-    if (current && committed(input, current)) adopt(current);
-    else
-      setSaveError(
-        `${errorMessage(cause, "Factory could not save the Language model settings.")} Your edits are kept; save again when Factory answers.`,
-      );
-  };
-  const save = async (input: UpdateChatModelInput) => {
-    setSaving(true);
-    setSaveError("");
-    try {
-      adopt(await api.updateChatModelSettings(input));
-    } catch (cause) {
-      if (cause instanceof ApiError) setSaveError(errorMessage(cause, ""));
-      else await recoverLostSave(input, cause);
-    } finally {
-      setSaving(false);
-    }
-  };
   const test = async (revision: number) => {
     setTesting(true);
     setTestError("");
     try {
-      setSettings(await api.testChatModel({ revision }));
+      section.setSettings(await api.testChatModel({ revision }));
     } catch (cause) {
-      setTestError(errorMessage(cause, "Factory could not run the Test."));
+      setTestError(chatControlError(cause, "Factory could not run the Test."));
     } finally {
       setTesting(false);
     }
   };
-  const discard = () => {
-    if (settings) setDraft(draftOf(settings));
-    setSaveError("");
-  };
+  const { settings, draft } = section;
   return {
-    settings,
-    draft,
-    setDraft,
+    ...section,
     dirty: settings !== null && draft !== null && isDirty(draft, settings),
-    loadError,
-    reload: () => setLoads((n) => n + 1),
-    saving,
-    saveError,
-    save,
     testing,
     testError,
     test,
-    discard,
   };
 }
 
@@ -189,17 +137,15 @@ export function ChatModelSettings() {
   const { settings, draft, loadError } = page;
   const decision = useSettingsDraftGuard("chat-model", page.dirty ? ["Language model"] : []);
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2">
-        <h2 className="text-title font-semibold text-foreground">Language model</h2>
-        <p className="text-sm text-muted-foreground">
-          The model connection Chat control uses to understand chat requests. It is separate from
-          Agents, T3 and Run title generation, and only this Factory host can see or change it.
-        </p>
-      </div>
-      {loadError && <ReadFailure message={loadError} onRetry={page.reload} />}
+    <ChatControlPage
+      title="Language model"
+      intro="The model connection Chat control uses to understand chat requests. It is separate from Agents, T3 and Run title generation, and only this Factory host can see or change it."
+      loadError={loadError}
+      onRetry={page.reload}
+      decision={decision}
+    >
       {settings && draft ? (
-        <MutationGate>
+        <>
           <ChatControlState enabled={settings.chatControlEnabled} />
           <ModelForm
             settings={settings}
@@ -218,16 +164,9 @@ export function ChatModelSettings() {
             testError={page.testError}
             onTest={(revision) => void page.test(revision)}
           />
-        </MutationGate>
-      ) : (
-        !loadError && (
-          <p role="status" className="text-sm text-muted-foreground">
-            Reading Language model settings…
-          </p>
-        )
-      )}
-      <SettingsDraftDialog decision={decision} />
-    </div>
+        </>
+      ) : null}
+    </ChatControlPage>
   );
 }
 
@@ -286,8 +225,8 @@ function ModelForm({
           <AlertDescription>{saveError}</AlertDescription>
         </Alert>
       )}
-      <SaveBar
-        settings={settings}
+      <SectionSaveBar
+        saved={settings.configuration}
         dirty={dirty}
         saving={saving}
         onSave={
@@ -378,38 +317,6 @@ function BaseUrlField({
       >
         {problem || baseUrlHints[draft.providerKind ?? "none"]}
       </p>
-    </div>
-  );
-}
-
-/** Save is offered only for a valid, decided draft; Discard for any unsaved edit. */
-function SaveBar({
-  settings: { configuration },
-  dirty,
-  saving,
-  onSave,
-  onDiscard,
-}: {
-  settings: ChatModelSettings;
-  dirty: boolean;
-  saving: boolean;
-  onSave: (() => void) | undefined;
-  onDiscard: () => void;
-}) {
-  const state = dirty
-    ? "Unsaved changes."
-    : configuration.savedAt
-      ? `Saved ${dayAndTime(configuration.savedAt)} · revision ${configuration.revision}.`
-      : "Not saved yet.";
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button type="button" disabled={!onSave || saving} onClick={onSave}>
-        {saving ? "Saving…" : "Save"}
-      </Button>
-      <Button type="button" variant="outline" disabled={!dirty || saving} onClick={onDiscard}>
-        Discard
-      </Button>
-      <p className="text-sm text-muted-foreground">{state}</p>
     </div>
   );
 }

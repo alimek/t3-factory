@@ -40,6 +40,7 @@ import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-ac
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
+import { startControlledDiscord } from "../../apps/backend/test/support/controlled-discord.ts";
 import { upstreamPublishedTheme } from "../../apps/backend/test/support/t3-theme-fixture.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
 import { seedDevelopment, seedScenarios, settlementUnresolved } from "../../scripts/dev/seed.ts";
@@ -55,6 +56,10 @@ const config = await loadConfiguration({
   FACTORY_REMOTE_PORT: "0",
 });
 const t3 = new PersistentT3(home, false);
+// Chat control reaches this controlled Discord instead of discord.com; it knows one bot.
+const discord = await startControlledDiscord();
+const discordBot = { token: "ui-journey-bot-token", applicationId: "112233445566778899" };
+discord.addBot(discordBot);
 // Use the real pending-approval simulation for remote connection journeys.
 t3.authorize = ControlledT3.prototype.authorize.bind(t3);
 // The desktop server's updater holding a downloaded beta; approved clients' requests are recorded.
@@ -65,6 +70,7 @@ const server = await startServer(
     t3,
     connectionRetryMs: 1000,
     reportingStateDirectory: join(home, "reporting-t3-state"),
+    discordApiUrl: discord.apiUrl,
     applicationUpdates: {
       status: () => ({
         channel: "beta",
@@ -484,6 +490,11 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
       ),
     );
   },
+  /** The bot the controlled Discord knows, and the tokens of the Gateway sessions it saw. */
+  "/__fixture/discord": () => ({
+    bot: discordBot,
+    sessions: discord.sessions.map(({ token, ready, closed }) => ({ token, ready, closed })),
+  }),
   "/__fixture/live/requests/reset": () => {
     browserRequests = [];
   },

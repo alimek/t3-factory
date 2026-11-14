@@ -10,7 +10,8 @@ export type SettingsSelection = {
     | "application"
     | "run-titles"
     | "run-images"
-    | "chat-model";
+    | "chat-model"
+    | "chat-discord";
 };
 const settingsTabs: readonly SettingsSelection["tab"][] = [
   "connection",
@@ -22,6 +23,7 @@ const settingsTabs: readonly SettingsSelection["tab"][] = [
   "run-titles",
   "run-images",
   "chat-model",
+  "chat-discord",
 ];
 export type StudioSelection =
   | { tab: "flows"; flowId?: string }
@@ -71,6 +73,7 @@ export function settingsMask(selection: SettingsSelection) {
   if (selection.tab === "run-titles") return { to: "/settings/run-titles" as const };
   if (selection.tab === "run-images") return { to: "/settings/run-images" as const };
   if (selection.tab === "chat-model") return { to: "/settings/chat-control/model" as const };
+  if (selection.tab === "chat-discord") return { to: "/settings/chat-control/discord" as const };
   return selection.tab === "runtime"
     ? { to: "/settings/runtime" as const }
     : { to: "/settings/connection" as const };

@@ -165,6 +165,11 @@ const chatModelRoute = createRoute({
   path: "settings/chat-control/model",
   beforeLoad: () => openSettings({ tab: "chat-model" }),
 });
+const chatDiscordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings/chat-control/discord",
+  beforeLoad: () => openSettings({ tab: "chat-discord" }),
+});
 const skillsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "settings/skills",
@@ -196,6 +201,7 @@ const routeTree = rootRoute.addChildren([
   runTitlesRoute,
   runImagesRoute,
   chatModelRoute,
+  chatDiscordRoute,
   skillsRoute,
 ]);
 export const router = createRouter({ routeTree });

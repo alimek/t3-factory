@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   AppWindow,
   BotMessageSquare,
+  MessagesSquare,
   ImageIcon,
   Keyboard,
   MonitorSmartphone,
@@ -20,6 +21,7 @@ import { GeneralSettings } from "./general-settings.tsx";
 import { RunImageSettings } from "./run-image-settings.tsx";
 import { RunTitleSettings } from "./run-title-settings.tsx";
 import { ChatModelSettings } from "./chat-model-settings.tsx";
+import { ChatDiscordSettings } from "./chat-discord-settings.tsx";
 import { useClientScope, useServerInheritsAppearance } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { ThemeColorsNote } from "./theme-color-settings.tsx";
@@ -151,6 +153,25 @@ const chatModelSection: SettingsSection = {
   ],
 };
 
+const chatDiscordSection: SettingsSection = {
+  tab: "chat-discord",
+  title: "Discord",
+  icon: MessagesSquare,
+  group: "CHAT CONTROL",
+  keywords: [
+    "chat control",
+    "chat",
+    "bot",
+    "Discord",
+    "application",
+    "token",
+    "public key",
+    "Gateway",
+    "check",
+    "invite",
+  ],
+};
+
 /** Approvals and Chat control exist only on the host panel; General only in the desktop app. */
 function useSections(): readonly SettingsSection[] {
   const scope = useClientScope();
@@ -162,7 +183,7 @@ function useSections(): readonly SettingsSection[] {
     ...(desktopBridge() ? [generalSection] : []),
     applicationSection,
     runTitlesSection,
-    ...(scope === "host" ? [chatModelSection] : []),
+    ...(scope === "host" ? [chatModelSection, chatDiscordSection] : []),
     runImagesSection,
   ];
 }
@@ -185,6 +206,7 @@ const sectionContent: Record<SettingsSelection["tab"], () => ReactNode> = {
   "run-titles": () => <RunTitleSettings />,
   "run-images": () => <RunImageSettings />,
   "chat-model": () => <ChatModelSettings />,
+  "chat-discord": () => <ChatDiscordSettings />,
 };
 
 function ApplicationPane() {

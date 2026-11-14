@@ -50,7 +50,9 @@ and restricted OAuth credentials live outside project repositories.
   time, outcome and message. Its optional key lives in an owner-only credential file that the row names: a save
   stages a new file durably, then commits the row in one transaction, so restart never mixes a configuration
   with another revision's key, and files no committed row names are removed. Migration `081` adds both rows with
-  Chat control Off and an empty section. No other data changes.
+  Chat control Off and an empty section. No other data changes. Migration `082` adds the Discord connection
+  section's row the same way: Application ID, Public Key, revision, save time, the latest connection check's
+  revision, time, outcome and message, and the name of its bot token's credential file; it starts empty.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

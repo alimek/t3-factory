@@ -2,9 +2,10 @@
 
 Chat control is administered only on the Factory host, in the **Settings → Chat control** group.
 It is Off on every new and upgraded installation. This document describes what is implemented
-today: the **Language model** page. Approved clients do not see the group or its search entries,
-and the server refuses its operations on the approved-client listener with `host_only`, whether
-the client reads, saves or tests.
+today: the **Language model** and **Discord** pages. Approved clients do not see the group or its
+search entries, and the server refuses its operations on the approved-client listener with
+`host_only`, whether the client reads, saves, tests or checks. The local browser and the desktop
+server administer it through the same host operations.
 
 ## Language model
 
@@ -70,9 +71,80 @@ provider's response body or the request URL. A Test is dated evidence for one sa
 a later save leaves it as evidence for its own, earlier revision. It does not report whether Chat
 control conversations work, and a failed Test does not turn Chat control off.
 
+## Discord
+
+Chat control uses one Discord application per Factory installation, reached with the Chat SDK
+Discord adapter in direct Gateway mode. Factory opens outbound connections only: it adds no webhook
+listener or public endpoint, the application has no Interactions Endpoint URL, and the bot is not
+a Factory MCP client. The bot works only while the Factory backend runs.
+
+### Connection
+
+The **Connection** section saves three values with its own **Save** and **Discard**, independently
+of the Language model:
+
+| Value | Rule |
+| --- | --- |
+| Application ID | The expected application, a Discord ID kept as a trimmed decimal string of 17 to 20 digits, never as a number |
+| Public Key | The application's non-secret Public Key, 64 hexadecimal characters, stored in lowercase |
+| Bot token | Secret; stored like the model key |
+
+While Chat control is Off the owner may save an incomplete section; malformed supplied values are
+always refused. While Chat control is On, removing the Application ID, Public Key or token is
+refused, and so is replacing the Application ID. Replacing a saved Application ID with a different
+one also needs the owner's explicit confirmation of the consequence: a different application is a
+different bot, and nothing of the old bot carries over. Saving never contacts Discord.
+
+The token follows the [key](#key) rules: reads report only whether one is saved, a blank field keeps
+it, **Replace token** and **Remove token** are explicit, and it is stored outside SQLite in an
+owner-only file under `credentials/chat-control/` that the committed section names. Saves name the
+revision their edits started from, conflicts keep the page's edits, a lost answer is resolved by
+reading the current settings, and unsaved edits are guarded as on the Language model page. Factory
+never reads the application's identity from the token itself.
+
+### Check
+
+While Chat control is Off, **Check saved connection** opens one bounded connection-only Gateway
+session with the saved token at the saved revision. It waits at most 30 seconds for the session to
+become ready, compares the application Discord authenticated with the configured Application ID,
+and disconnects. It attaches no conversation handler: it answers no message, button or command,
+posts nothing, registers no command and makes no model request; messages arriving meanwhile are not
+serviced. Only one Gateway session exists at a time, so a check while another runs is refused, and
+closing Factory ends a running check's session.
+
+The result is recorded with the checked revision and its time, using Factory's own description:
+verified, a token of another application, a token Discord rejects, a missing Message Content
+intent, Discord unreachable, timed out, or another Gateway failure. Discord's error bodies and the
+token never appear in it. A mismatched or unverified identity is never replaced by another token or
+an earlier one. A later save leaves the result as evidence for its earlier revision. A passing check
+shows only that Discord accepted the token for the configured application; it does not show channel
+permissions, message delivery, command setup or that the Public Key is correct.
+
+### Setting up the application
+
+The page explains the setup the owner performs in the Discord Developer Portal:
+
+1. Create an application and copy its Application ID and Public Key.
+2. On the Bot page, reset and copy the token and turn on **Message Content Intent**; the adapter
+   requests it and Discord refuses a connection without it. Other privileged intents are not needed.
+3. Leave **Interactions Endpoint URL** empty. With a URL set, Discord sends interactions there
+   instead of over Factory's Gateway connection.
+4. Invite the bot with the `bot` and `applications.commands` scopes and the permissions View
+   Channels, Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read
+   Message History, Add Reactions and Attach Files. One application can serve several servers; no
+   server (Guild) ID is configured.
+5. Keep the Factory backend running.
+
 ## Support limits
 
 The pinned AI SDK packages are `ai` 7.0.172, `@ai-sdk/openai-compatible` 3.0.92 and
 `@ai-sdk/anthropic` 4.0.104. Controlled tests cover the request each provider kind sends against a
 loopback stand-in; they do not establish compatibility with any live provider, gateway or local
 model server.
+
+The pinned Discord packages are `chat` 4.44.0 and `@chat-adapter/discord` 4.44.0, with
+`discord.js` 14.28.1 and `@discordjs/ws` 1.2.3, the versions the adapter resolves. Factory supplies
+its own Gateway shard strategy because `@discordjs/ws` 1.2.3 can leave a session that is destroyed
+before it is ready reconnecting. Controlled tests run the check against a loopback stand-in for
+Discord's REST API and Gateway; real Gateway identity, readiness and intent behavior are not yet
+qualified against Discord.

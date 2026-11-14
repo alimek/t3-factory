@@ -3,7 +3,11 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import type { ChatModelSettings, Result } from "../packages/contracts/src/index.ts";
+import type {
+  ChatModelSettings,
+  DiscordSettings,
+  Result,
+} from "../packages/contracts/src/index.ts";
 import { openApproved, remoteFixture } from "./support/remote-access.ts";
 
 /** A chat-completions provider on loopback that records the headers of each request. */
@@ -117,6 +121,86 @@ test("leaving the Language model page with unsaved edits asks before discarding 
   await app.screenshot("chat-model-discard-guard");
   await screen.getByRole("button", "Keep editing").tap();
   await expect(connection.getByLabel("Model")).toHaveValue("unsaved-model");
+});
+
+/** The bot the fixture's controlled Discord knows and the Gateway sessions it saw. */
+async function controlledDiscord(baseUrl: string | undefined) {
+  const response = await fetch(new URL("/__fixture/discord", baseUrl), { method: "POST" });
+  return (await response.json()) as {
+    bot: { token: string; applicationId: string };
+    sessions: { token: string | null; ready: boolean; closed: boolean }[];
+  };
+}
+
+async function discordSettings(baseUrl: string | undefined) {
+  const response = await fetch(new URL("/api/chat-control/discord", baseUrl));
+  return (await response.json()) as Result<DiscordSettings>;
+}
+
+test("the host saves the Discord connection, checks it over the Gateway and never sees the token again", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const { bot } = await controlledDiscord(app.baseUrl);
+  await app.open("/settings/chat-control/discord");
+  await expect(screen.getByText("Chat control is Off")).toBeVisible();
+  const connection = screen.getByRole("region", "Discord connection");
+  await connection.getByLabel("Application ID").fill(bot.applicationId);
+  await connection.getByLabel("Public Key").fill("ab".repeat(32));
+  await connection.getByLabel("Bot token").fill(bot.token);
+  await connection.getByRole("button", "Save", { exact: true }).tap();
+  await expect(connection.getByText(/^Saved .* · revision \d+\.$/)).toBeVisible();
+  await app.screenshot("chat-discord-saved");
+
+  // Act
+  await screen
+    .getByRole("region", "Discord connection check")
+    .getByRole("button", "Check saved connection")
+    .tap();
+
+  // Assert
+  await expect(screen.getByText(/^Latest check verified · /)).toBeVisible();
+  const discord = await controlledDiscord(app.baseUrl);
+  assert.deepStrictEqual(discord.sessions, [{ token: bot.token, ready: true, closed: true }]);
+  await screen.getByText(/^A passing check shows that Discord accepted the token/).scrollIntoView();
+  await app.screenshot("chat-discord-checked");
+  await browser.reload();
+  await expect(screen.getByRole("radio", "Keep saved token")).toBeChecked();
+  const settings = await discordSettings(app.baseUrl);
+  expect(settings).toMatchObject({
+    ok: true,
+    value: { configuration: { applicationId: bot.applicationId, tokenConfigured: true } },
+  });
+  assert(!JSON.stringify(settings).includes(bot.token));
+});
+
+test("leaving the Discord page with unsaved connection edits asks before discarding them", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await app.open("/settings/chat-control/discord");
+  const connection = screen.getByRole("region", "Discord connection");
+  await connection.getByLabel("Public Key").fill("cd".repeat(32));
+  await expect(connection.getByText("Unsaved changes.")).toBeVisible();
+
+  // Act
+  await screen
+    .getByRole("navigation", "Settings sections")
+    .getByRole("link", "Language model", { exact: true })
+    .tap();
+
+  // Assert
+  await expect(
+    screen.getByRole("dialog", "Discard unsaved Discord connection changes?"),
+  ).toBeVisible();
+  // Hovering waits for the dialog's opening zoom to settle before the evidence frame.
+  await screen.getByRole("button", "Keep editing").hover();
+  await app.screenshot("chat-discord-discard-guard");
+  await screen.getByRole("button", "Keep editing").tap();
+  await expect(connection.getByLabel("Public Key")).toHaveValue("cd".repeat(32));
 });
 
 test("an approved client's Settings has no Chat control group or search entry", async ({
