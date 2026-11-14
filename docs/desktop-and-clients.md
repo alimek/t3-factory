@@ -75,7 +75,7 @@ revision-conflict behavior. They can also install, repair and reinstall Factory 
 commands execute on the server and reporting setup changes the server's harness files.
 Keeping files and credentials on the server does not by itself restrict an operation
 to its local panel. The T3 endpoint and host reauthorization remain host-only: remote
-clients see their status and a "Managed on the Factory host" notice.
+clients see their status and the "Managed on the Factory host" chip.
 When T3 needs approval, a remote client may choose **Open authorization on
 server** to reopen or start consent in the host's browser for the saved endpoint; see
 [T3 connection](t3-integration.md#authorizing). Lifecycle and approvals are host-local

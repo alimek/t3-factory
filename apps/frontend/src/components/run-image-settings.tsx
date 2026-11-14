@@ -26,6 +26,7 @@ import { api } from "../api.ts";
 import { MutationGate } from "../client-gate.tsx";
 import { imageSize, revalidateRunImages, useRunImageSource } from "../run-images.ts";
 import { useProjects } from "../use-projects.ts";
+import { SettingsPage } from "./settings-page.tsx";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const lifecycleLabel = { settled: "Settled", archived: "Archived" } as const;
@@ -74,62 +75,59 @@ export function RunImageSettings() {
     />
   );
   return (
-    <div className="grid gap-4">
-      <div className="grid gap-2">
-        <h2 className="text-title font-semibold text-foreground">Run images</h2>
-        <p className="text-sm text-muted-foreground">
-          Images attached to Settled and Archived Runs, stored by the Factory server. Deleting an
-          image removes only its file: the Run keeps its history and shows “Image unavailable” in
-          its place.
-        </p>
+    <SettingsPage
+      title="Run images"
+      description="Images attached to Settled and Archived Runs, stored by the Factory server. Deleting an image removes only its file: the Run keeps its history and shows “Image unavailable” in its place."
+    >
+      <div className="grid gap-4">
+        {listing.error && (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              {listing.error}
+              <Button type="button" variant="outline" size="sm" onClick={listing.retry}>
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {deletion.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{deletion.error}</AlertDescription>
+          </Alert>
+        )}
+        {deletion.notice && (
+          <Alert>
+            <AlertDescription>{deletion.notice}</AlertDescription>
+          </Alert>
+        )}
+        {images && index >= 0 ? (
+          <RunImagePreview
+            images={images}
+            index={index}
+            project={project}
+            confirmation={confirmation}
+            onIndexChange={(next) => preview(images[next]!.sha256)}
+            onBack={() => preview(null)}
+            onDelete={() => deletion.ask({ scope: "one", images: [images[index]!] })}
+          />
+        ) : (
+          <RunImageList
+            images={images}
+            failed={Boolean(listing.error)}
+            projects={projects}
+            project={project}
+            confirmation={confirmation}
+            onProjectChange={(next) => {
+              deletion.cancel();
+              setProjectId(next);
+            }}
+            onOpen={preview}
+            onDelete={(image) => deletion.ask({ scope: "one", images: [image] })}
+            onDeleteAll={(listed) => deletion.ask({ scope: "all", images: listed })}
+          />
+        )}
       </div>
-      {listing.error && (
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            {listing.error}
-            <Button type="button" variant="outline" size="sm" onClick={listing.retry}>
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {deletion.error && (
-        <Alert variant="destructive">
-          <AlertDescription>{deletion.error}</AlertDescription>
-        </Alert>
-      )}
-      {deletion.notice && (
-        <Alert>
-          <AlertDescription>{deletion.notice}</AlertDescription>
-        </Alert>
-      )}
-      {images && index >= 0 ? (
-        <RunImagePreview
-          images={images}
-          index={index}
-          project={project}
-          confirmation={confirmation}
-          onIndexChange={(next) => preview(images[next]!.sha256)}
-          onBack={() => preview(null)}
-          onDelete={() => deletion.ask({ scope: "one", images: [images[index]!] })}
-        />
-      ) : (
-        <RunImageList
-          images={images}
-          failed={Boolean(listing.error)}
-          projects={projects}
-          project={project}
-          confirmation={confirmation}
-          onProjectChange={(next) => {
-            deletion.cancel();
-            setProjectId(next);
-          }}
-          onOpen={preview}
-          onDelete={(image) => deletion.ask({ scope: "one", images: [image] })}
-          onDeleteAll={(listed) => deletion.ask({ scope: "all", images: listed })}
-        />
-      )}
-    </div>
+    </SettingsPage>
   );
 }
 

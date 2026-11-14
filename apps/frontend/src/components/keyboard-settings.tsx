@@ -24,7 +24,9 @@ import {
   setShortcutRecording,
   useShortcutPreferences,
 } from "../shortcut-preferences.ts";
+import { SettingsDisclosure, SettingsGroup, SettingsPage, SettingsRow } from "./settings-page.tsx";
 
+/** Settings → Keyboard shortcuts: every registry command by group, with its current binding. */
 export function KeyboardSettings() {
   const { bindings, conflicts, sessionOnly, storageIssue, hint, isConflict } =
     useShortcutPreferences();
@@ -33,14 +35,10 @@ export function KeyboardSettings() {
   const [error, setError] = useState<string>();
   const groups = [...new Set(shortcutDefinitions.map((command) => command.group))];
   return (
-    <section className="grid gap-6 py-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="grid gap-2">
-          <h2 className="text-lg font-semibold">Keyboard shortcuts</h2>
-          <p className="text-sm text-muted-foreground">
-            Changes apply immediately and are saved in this browser.
-          </p>
-        </div>
+    <SettingsPage
+      title="Keyboard shortcuts"
+      description="Changes apply immediately and are saved on this device."
+      action={
         <Button
           variant="outline"
           onClick={() => {
@@ -48,9 +46,10 @@ export function KeyboardSettings() {
             setError(undefined);
           }}
         >
-          Reset all shortcuts
+          Reset all
         </Button>
-      </div>
+      }
+    >
       {sessionOnly && (
         <p role="status" className="text-sm text-attention">
           Browser storage is unavailable. Changes apply only for this session.
@@ -67,67 +66,63 @@ export function KeyboardSettings() {
         </p>
       )}
       {groups.map((group) => (
-        <div key={group} className="grid gap-2">
-          <h3 className="text-sm font-medium">{shortcutGroupLabels[group]}</h3>
-          <div className="grid divide-y rounded-lg border">
-            {shortcutDefinitions
-              .filter((command) => command.group === group)
-              .map((command) => (
-                <div
-                  key={command.id}
-                  role="group"
-                  aria-label={command.label}
-                  className="flex flex-wrap items-center gap-3 p-3"
-                >
-                  <div className="min-w-32 flex-1">
-                    <p className="text-sm font-medium">{command.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {command.scope === "global"
-                        ? "Global"
-                        : command.scope === "contextual"
-                          ? "Open Run; outside text fields without Mod"
-                          : "Focused canvas only"}
-                    </p>
-                    {isConflict(command.id) && (
-                      <p className="text-xs text-destructive">
-                        Unbound because another command already uses the default combination. Change
-                        or reset the conflicting shortcut, then reset this one.
-                      </p>
-                    )}
-                  </div>
-                  <kbd className="rounded border bg-muted px-2 py-1 text-sm">
-                    {hint(command.id)}
-                  </kbd>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Change ${command.label}`}
-                    onClick={() => {
-                      setError(undefined);
-                      setEditing(command.id);
-                    }}
-                  >
-                    Change
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Reset ${command.label}`}
-                    disabled={
-                      formatShortcut(bindings[command.id]) ===
-                        formatShortcut(defaults[command.id]) && !conflicts.includes(command.id)
-                    }
-                    onClick={() => setError(resetShortcutBindings(command.id))}
-                  >
-                    Reset
-                  </Button>
-                </div>
-              ))}
-          </div>
-        </div>
+        <SettingsGroup key={group} label={shortcutGroupLabels[group]}>
+          {shortcutDefinitions
+            .filter((command) => command.group === group)
+            .map((command) => (
+              <div key={command.id} role="group" aria-label={command.label}>
+                <SettingsRow
+                  title={command.label}
+                  description={
+                    (command.scope === "contextual" || isConflict(command.id)) && (
+                      <>
+                        {command.scope === "contextual" &&
+                          "Open Run; outside text fields without Mod"}
+                        {isConflict(command.id) && (
+                          <p className="text-destructive">
+                            Unbound because another command already uses the default combination.
+                            Change or reset the conflicting shortcut, then reset this one.
+                          </p>
+                        )}
+                      </>
+                    )
+                  }
+                  control={
+                    <>
+                      <kbd className="rounded-sm border bg-background px-1.5 py-0.5 font-sans text-2xs leading-none font-medium text-muted-foreground">
+                        {hint(command.id)}
+                      </kbd>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Change ${command.label}`}
+                        onClick={() => {
+                          setError(undefined);
+                          setEditing(command.id);
+                        }}
+                      >
+                        Change
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Reset ${command.label}`}
+                        disabled={
+                          formatShortcut(bindings[command.id]) ===
+                            formatShortcut(defaults[command.id]) && !conflicts.includes(command.id)
+                        }
+                        onClick={() => setError(resetShortcutBindings(command.id))}
+                      >
+                        Reset
+                      </Button>
+                    </>
+                  }
+                />
+              </div>
+            ))}
+        </SettingsGroup>
       ))}
-      <div className="grid gap-2 text-sm text-muted-foreground">
-        <h3 className="font-medium text-foreground">Fixed controls</h3>
+      <SettingsDisclosure label="Fixed controls" hint="Not editable here">
         <p>
           Esc closes the topmost dialog or cancels the current interaction. Arrow keys and Enter
           navigate the palette. Tab moves focus.
@@ -138,16 +133,17 @@ export function KeyboardSettings() {
         </p>
         <p>
           {formatShortcut({ key: "Enter", mod: true, alt: false, shift: false })} starts a ready Run
-          from the composer. These controls are not editable here.
+          from the composer.
         </p>
         <p>
-          Global shortcuts require Command on macOS or Control elsewhere. Canvas shortcuts may also
-          use a bare key. + and = share one binding. Browser and operating system shortcuts may take
-          priority; choose another combination if a key is not received.
+          Global shortcuts require Command on macOS or Control elsewhere. Canvas shortcuts work only
+          on a focused canvas and may also use a bare key. + and = share one binding. Browser and
+          operating system shortcuts may take priority; choose another combination if a key is not
+          received.
         </p>
-      </div>
+      </SettingsDisclosure>
       {editing && <ShortcutRecorder id={editing} onClose={() => setEditing(undefined)} />}
-    </section>
+    </SettingsPage>
   );
 }
 
