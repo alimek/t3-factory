@@ -60,7 +60,7 @@ and restricted OAuth credentials live outside project repositories.
   tables copy their values), start with Chat control Off and empty sections, give existing Runs no originating
   thread and post nothing about earlier Run activity.
   Chat control's state also records the Discord application its operating connection authenticated as, which
-  owns the conversations, consent and messages; no Application ID is configured. Migration `092` carries a
+  owns the conversations, consent and messages; no Application ID is configured. Migration `091` carries a
   formerly configured Application ID over as that recorded application, turns a stored identity-mismatch check
   into a verified check of the application Discord reported, keeps a rejection for another application's token
   until Retry and keeps every other value.
