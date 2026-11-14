@@ -7,6 +7,8 @@ export type LiveScope =
   | { readonly kind: "view"; readonly navigation: boolean; readonly runIds: ReadonlySet<string> }
   /** The Run composer's Project catalog and Flows. */
   | { readonly kind: "launchChoices" }
+  /** Studio's saved Flows and Agents. */
+  | { readonly kind: "definitions" }
   | { readonly kind: "appearance" };
 
 interface Watcher {
@@ -38,13 +40,15 @@ export function makeLiveChanges() {
       );
     },
     /**
-     * Flow and Agent definitions decide which Flows the composer offers and their readiness, and
-     * an open Run shows whether its Flow was edited since Start.
+     * Flow and Agent definitions are Studio's lists, decide which Flows the composer offers and
+     * their readiness, and an open Run shows whether its Flow was edited since Start.
      */
     definitionsChanged() {
       mark(
         (scope) =>
-          scope.kind === "launchChoices" || (scope.kind === "view" && scope.runIds.size > 0),
+          scope.kind === "definitions" ||
+          scope.kind === "launchChoices" ||
+          (scope.kind === "view" && scope.runIds.size > 0),
       );
     },
     /** The catalog derives project availability from the current connection. */

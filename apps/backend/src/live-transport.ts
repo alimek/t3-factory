@@ -24,6 +24,7 @@ export async function startLiveTransport(live: LiveStreams) {
           WatchRunView: (view) => live.watchRunView(view),
           WatchLaunchChoices: () => live.watchLaunchChoices(),
           WatchAppearance: () => live.watchAppearance(),
+          WatchDefinitions: () => live.watchDefinitions(),
         }),
       ),
       Effect.provide(RpcSerialization.layerJson),

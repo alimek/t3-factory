@@ -6,6 +6,8 @@ import {
   runEntityKeys,
   type AppearanceLiveMessage,
   type ConnectionLiveMessage,
+  type DefinitionsLiveMessage,
+  type DefinitionVersions,
   type FlowDraft,
   type LaunchChoices,
   type LaunchChoicesLiveMessage,
@@ -39,6 +41,11 @@ export interface LiveStreams {
   /** The Run composer's Project catalog and Flows with their readiness. */
   readonly watchLaunchChoices: () => Stream.Stream<
     LiveEnvelope<LaunchChoicesLiveMessage>,
+    OperationError
+  >;
+  /** Which Flows and Agents are saved and their latest revisions, for Studio. */
+  readonly watchDefinitions: () => Stream.Stream<
+    LiveEnvelope<DefinitionsLiveMessage>,
     OperationError
   >;
   /** Theme-color status and the inherited presentation, for approved clients only. */
@@ -117,6 +124,12 @@ function connectionDiff(sent: T3Connection, current: T3Connection): ConnectionLi
     ? [{ _tag: "checked", checkedAt: current.checkedAt }]
     : [{ _tag: "changed", connection: current }];
 }
+
+const definitionsDiff = (
+  sent: DefinitionVersions,
+  current: DefinitionVersions,
+): DefinitionsLiveMessage[] =>
+  Equal.equals(sent, current) ? [] : [{ _tag: "changed", versions: current }];
 
 const appearanceDiff = (sent: T3Appearance, current: T3Appearance): AppearanceLiveMessage[] =>
   Equal.equals(sent, current) ? [] : [{ _tag: "changed", appearance: current }];
@@ -336,6 +349,7 @@ export function makeLiveStreams(
     readonly getRun: (id: string) => Read<RunDetail>;
     readonly readProjectCatalog: () => Read<ProjectCatalog>;
     readonly listFlows: () => Read<readonly FlowDraft[]>;
+    readonly readDefinitionVersions: () => Read<DefinitionVersions>;
     readonly getAppearance: () => Effect.Effect<T3Appearance>;
   },
   /** One read transaction, so a view's navigation and Runs describe the same committed state. */
@@ -385,6 +399,14 @@ export function makeLiveStreams(
         ),
         (choices) => [{ _tag: "snapshot", choices }],
         launchChoicesDiff,
+      ),
+    watchDefinitions: () =>
+      watch(
+        changes,
+        { kind: "definitions" },
+        settled(reads.readDefinitionVersions()),
+        (versions) => [{ _tag: "snapshot", versions }],
+        definitionsDiff,
       ),
     watchAppearance: () =>
       watch(

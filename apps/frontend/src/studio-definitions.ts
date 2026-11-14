@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { AgentDefinition, FlowDraft } from "@t3-factory/contracts";
+import type { AgentDefinition, DefinitionVersions, FlowDraft } from "@t3-factory/contracts";
 import { api } from "./api.ts";
 
 /** The Factory operations one Studio session uses; the HTTP client in the app, fakes in tests. */
@@ -30,6 +30,12 @@ export interface StudioDefinitionsSnapshot {
 }
 
 const unread: StudioRead<never> = { value: null, synchronized: false, error: null };
+
+const versionKeys = (list: readonly { readonly id: string; readonly revision: number }[]) =>
+  list
+    .map(({ id, revision }) => `${id}:${revision}`)
+    .sort()
+    .join("\n");
 
 function savedList<V>(read: () => Promise<V>, publish: () => void) {
   let view: StudioRead<V> = unread;
@@ -64,14 +70,17 @@ function savedList<V>(read: () => Promise<V>, publish: () => void) {
 /**
  * The saved Flows and saved Agents of one Studio session. Opening reads both; Studio re-reads
  * them on each navigation and retry, and every accepted write through this module re-reads them
- * without waiting. Ending the session retires pending reads, and a write completing later still
- * answers its caller but refreshes nothing.
+ * without waiting. Saved versions followed from live delivery re-read both once the lists show
+ * other definitions or revisions. Ending the session retires pending reads, and a write
+ * completing later still answers its caller but refreshes nothing.
  */
 export function createStudioDefinitions(operations: StudioDefinitionsOperations = api) {
   const flows = savedList(operations.listFlows, publish);
   const agents = savedList(operations.listAgents, publish);
   let snapshot: StudioDefinitionsSnapshot = current();
   let ended = false;
+  /** Followed versions not yet compared with synchronized lists. */
+  let followed: DefinitionVersions | null = null;
   const listeners = new Set<() => void>();
 
   function current(): StudioDefinitionsSnapshot {
@@ -80,6 +89,22 @@ export function createStudioDefinitions(operations: StudioDefinitionsOperations 
   function publish() {
     snapshot = current();
     listeners.forEach((notify) => notify());
+    compareFollowed();
+  }
+  /**
+   * Compares only lists that answered, so a read requested before a change was committed is
+   * followed by one more read; each followed value causes at most one.
+   */
+  function compareFollowed() {
+    const { flows: flowsRead, agents: agentsRead } = snapshot;
+    if (!followed || ended || !flowsRead.synchronized || !agentsRead.synchronized) return;
+    const versions = followed;
+    followed = null;
+    if (
+      versionKeys(versions.flows) !== versionKeys(flowsRead.value ?? []) ||
+      versionKeys(versions.agents) !== versionKeys(agentsRead.value ?? [])
+    )
+      refresh();
   }
   function refresh() {
     if (ended) return;
@@ -107,6 +132,11 @@ export function createStudioDefinitions(operations: StudioDefinitionsOperations 
     },
     /** Re-reads both lists; Studio calls it on each navigation and on an explicit retry. */
     refresh,
+    /** The saved versions live delivery reported, after any write through any client. */
+    follow(versions: DefinitionVersions) {
+      followed = versions;
+      compareFollowed();
+    },
     createFlow: write(operations.createFlow),
     updateFlow: write(operations.updateFlow),
     removeFlow: write(operations.removeFlow),

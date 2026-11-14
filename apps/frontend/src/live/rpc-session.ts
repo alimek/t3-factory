@@ -16,6 +16,7 @@ function watchStream(client: Client, watch: LiveWatch): LiveStream {
   if (watch.rpc === "WatchConnection") return client.WatchConnection();
   if (watch.rpc === "WatchLaunchChoices") return client.WatchLaunchChoices();
   if (watch.rpc === "WatchAppearance") return client.WatchAppearance();
+  if (watch.rpc === "WatchDefinitions") return client.WatchDefinitions();
   return client.WatchRunView({ navigation: watch.navigation, runIds: watch.runIds });
 }
 

@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import type { AppearanceSource } from "@t3-factory/contracts";
 import {
   FACTORY_APPEARANCE_PROTOCOL,
+  FACTORY_DEFINITIONS_PROTOCOL,
   FACTORY_FLOW_REVISION_PROTOCOL,
   FACTORY_PROTOCOL,
 } from "@t3-factory/domain-validation";
@@ -36,3 +37,7 @@ export const useServerInheritsAppearance = () =>
 /** Older servers omit the Flow's current revision from Run detail. */
 export const useServerReportsFlowRevision = () =>
   useContext(ServerProtocolContext) >= FACTORY_FLOW_REVISION_PROTOCOL;
+
+/** Older servers do not deliver definition changes, so Studio refreshes only on its own reads. */
+export const useServerWatchesDefinitions = () =>
+  useContext(ServerProtocolContext) >= FACTORY_DEFINITIONS_PROTOCOL;

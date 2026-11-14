@@ -84,6 +84,43 @@ it("a read requested before an accepted write cannot synchronize a list after th
   });
 });
 
+it("versions followed during a pending read re-read both lists once that read shows another revision", async () => {
+  // Arrange
+  const { definitions, factory } = await openedStudio();
+  const beforeSave = held(factory.listAgents);
+  definitions.refresh();
+  const review = savedFlow("Review");
+  definitions.follow({
+    flows: [{ id: review.id, revision: review.revision }],
+    agents: [{ id: "agent", revision: 4 }],
+  });
+
+  // Act
+  beforeSave.answer([savedAgent()]);
+  await settled();
+
+  // Assert
+  expect(factory.listFlows).toHaveBeenCalledTimes(3);
+  expect(factory.listAgents).toHaveBeenCalledTimes(3);
+});
+
+it("followed versions the answered lists already show read neither list again", async () => {
+  // Arrange
+  const { definitions, factory } = await openedStudio();
+  const review = savedFlow("Review");
+
+  // Act
+  definitions.follow({
+    flows: [{ id: review.id, revision: review.revision }],
+    agents: [{ id: "agent", revision: 3 }],
+  });
+  await settled();
+
+  // Assert
+  expect(factory.listFlows).toHaveBeenCalledTimes(1);
+  expect(factory.listAgents).toHaveBeenCalledTimes(1);
+});
+
 it("a failed re-read keeps the last value, unsynchronized, with its error", async () => {
   // Arrange
   const { definitions, factory } = await openedStudio();

@@ -213,3 +213,23 @@ export type LaunchChoicesLiveMessage =
       readonly _tag: "observed";
       readonly projects: readonly { readonly id: string; readonly observedAt: string }[];
     };
+
+/** A saved definition's identity and latest revision. */
+export interface DefinitionVersion {
+  readonly id: string;
+  readonly revision: number;
+}
+
+/**
+ * Which Flows and Agents are saved, each with its latest revision, ordered by `id`. A change
+ * tells Studio to read its definition lists again; the lists themselves stay HTTP reads because
+ * Agent settings availability depends on live T3 capabilities.
+ */
+export interface DefinitionVersions {
+  readonly flows: readonly DefinitionVersion[];
+  readonly agents: readonly DefinitionVersion[];
+}
+
+export type DefinitionsLiveMessage =
+  | { readonly _tag: "snapshot"; readonly versions: DefinitionVersions }
+  | { readonly _tag: "changed"; readonly versions: DefinitionVersions };

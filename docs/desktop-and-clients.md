@@ -312,7 +312,9 @@ on the OS trust store, so they need the Factory CA installed or a provided certi
 
 ## Protocol compatibility
 
-The current protocol is **11**, and both sides require at least **9**. Protocol 11 added the Flow's
+The current protocol is **12**, and both sides require at least **9**. Protocol 12 added the
+definitions live subscription (`WatchDefinitions`); a client follows definition changes in Studio only when the
+server's handshake declares at least 12, so an older server's Studio refreshes only on its own reads. Protocol 11 added the Flow's
 current revision to Run detail; a client shows that a Flow changed since Start only when the
 server's handshake declares at least 11, so a protocol 9 or 10 server's Runs show no revision
 notice. Protocol 10 added the

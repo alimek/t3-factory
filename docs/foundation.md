@@ -100,13 +100,15 @@ by host and approved clients, with explicit [host-only boundaries](desktop-and-c
 
 ## Live delivery
 
-Run detail, sidebar navigation, shared T3 connection status, [theme colors](t3-integration.md#theme-colors)
-and the Run composer's launch choices use typed Effect RPC streams over WebSocket at `/api/live`;
+Run detail, sidebar navigation, shared T3 connection status, [theme colors](t3-integration.md#theme-colors),
+the Run composer's launch choices and Studio's saved definition versions use typed Effect RPC streams over WebSocket at `/api/live`;
 commands and other reads remain HTTP operations. A window holds one connection-status subscription,
 one theme-color subscription (only toward protocol 10 servers; it never disables mutations or shows
 synchronizing), one view
 subscription carrying navigation and its open Runs, and, while the composer is shown, one
-launch-choices subscription carrying the Project catalog and Flows with their readiness. Each read of a view covers navigation and those Runs in one
+launch-choices subscription carrying the Project catalog and Flows with their readiness. While Studio is open toward a protocol 12 server,
+one definitions subscription carries each saved Flow's and Agent's id and latest revision; Studio re-reads its lists over HTTP
+when they show other versions, because Agent settings availability depends on live T3 capabilities. Each read of a view covers navigation and those Runs in one
 read transaction, and its changes travel in one delivery that the window applies at once,
 so one commit's lifecycle, attention and report changes appear together in Run detail and
 the sidebar. Opening or leaving a Run resubscribes the view with a fresh joint snapshot.
@@ -115,7 +117,7 @@ owning modules publish only after a successful durable commit, or an authoritati
 in-memory connection or project-discovery transition. This covers reports, including
 committed rejection diagnostics, as well as background observation, recovery and lifecycle
 changes. Flow and Agent writes, project observation and selection, discovery problems and
-connection transitions mark launch choices; Run changes do not. Each read of launch choices
+connection transitions mark launch choices; Flow and Agent writes also mark definitions. Run changes mark neither. Each read of launch choices
 covers the catalog and Flows in one read transaction and does not wait for a running
 project reconcile, whose own publications would otherwise leave that read not current.
 Subscription registration precedes the snapshot read. A relevant hint during that read

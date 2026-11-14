@@ -47,13 +47,15 @@ function useShownLists(definitions: StudioDefinitions) {
   )
     setShown({ agents: visitAgents, flows: visitFlows });
   const error = agentsRead.error || flowsRead.error ? "Factory could not load Agents." : "";
-  return { shown, error };
+  /** The Agents of a read that answered after the latest change this Studio knows of. */
+  const answeredAgents = answered ? visitAgents : null;
+  return { shown, error, answeredAgents };
 }
 
 /** The Agents page's saved lists and capabilities; reporting is checked on entry and after each write. */
 function useAgentsLibrary(definitions: StudioDefinitions) {
   const { refresh: refreshReporting } = useReportingState();
-  const { shown, error } = useShownLists(definitions);
+  const { shown, error, answeredAgents } = useShownLists(definitions);
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>();
   useEffect(() => {
     void refreshReporting();
@@ -75,6 +77,7 @@ function useAgentsLibrary(definitions: StudioDefinitions) {
   return {
     agents: shown?.agents ?? null,
     flows: shown?.flows ?? null,
+    answeredAgents,
     capabilities,
     error,
     definitions,
@@ -192,6 +195,11 @@ function SelectedAgentEditor({
       if (active.current) setDuplicating(false);
     }
   }
+  const removed =
+    !creating &&
+    agent !== null &&
+    library.answeredAgents !== null &&
+    !library.answeredAgents.some((saved) => saved.id === agentId);
   if (error)
     return (
       <p role="alert" className="p-8 text-sm text-destructive">
@@ -212,6 +220,7 @@ function SelectedAgentEditor({
       operations={library.definitions}
       agentId={agentId}
       flowUsage={flowUsageCount(library.flows ?? [], agentId)}
+      removed={removed}
       duplicating={duplicating}
       duplicateError={duplicateError}
       reportDraft={reportDraft}
@@ -243,6 +252,7 @@ function OpenedAgentEditor({
   reportDraft,
   onSaved,
   duplicateError,
+  removed,
   ...props
 }: {
   agent: AgentDefinition | null;
@@ -252,6 +262,7 @@ function OpenedAgentEditor({
   reportDraft: (id: string, dirty: boolean) => void;
   onSaved: (agent: AgentDefinition) => void;
   duplicateError: string;
+  removed: boolean;
   flowUsage: number;
   duplicating: boolean;
   onDuplicate: (() => void) | undefined;
@@ -268,7 +279,11 @@ function OpenedAgentEditor({
     const saved = await draft.save();
     if (saved) onSaved(saved);
   }
-  const notice = state.conflict || duplicateError;
+  const notice =
+    (removed &&
+      "This Agent was removed elsewhere. Your draft stays here for copying; saving it will not recreate the Agent.") ||
+    state.conflict ||
+    duplicateError;
   return (
     <>
       {notice && (

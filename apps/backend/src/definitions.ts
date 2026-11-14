@@ -10,6 +10,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type {
   AgentCapabilities,
   AgentDefinition,
+  DefinitionVersion,
+  DefinitionVersions,
   FactoryOperations,
   FlowDraft,
   FlowGraph,
@@ -534,5 +536,22 @@ export const makeDefinitions = (
           publishOnSuccess,
           Effect.withSpan("Definitions.removeAgent"),
         ),
+      /** Saved Flows and Agents with their latest revisions; reads no T3 capabilities. */
+      readDefinitionVersions: () =>
+        provideSql<DefinitionVersions>(
+          Effect.gen(function* () {
+            const flows = yield* sql<DefinitionVersion>`SELECT f.id, max(r.revision) AS revision
+              FROM flows f JOIN flow_revisions r ON r.flow_id = f.id
+              WHERE f.removed_at IS NULL GROUP BY f.id ORDER BY f.id`;
+            const agents = yield* sql<DefinitionVersion>`SELECT a.id, max(r.revision) AS revision
+              FROM agents a JOIN agent_revisions r ON r.agent_id = a.id
+              WHERE a.removed_at IS NULL GROUP BY a.id ORDER BY a.id`;
+            const version = ({ id, revision }: DefinitionVersion) => ({ id, revision });
+            return {
+              ok: true as const,
+              value: { flows: flows.map(version), agents: agents.map(version) },
+            };
+          }),
+        ).pipe(Effect.withSpan("Definitions.readDefinitionVersions")),
     };
   });

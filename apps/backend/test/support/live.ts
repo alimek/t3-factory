@@ -165,6 +165,8 @@ export const liveReads = (factory: Factory): Parameters<typeof makeLiveStreams>[
   getRun: (id) => Effect.promise(() => factory.getRun(id)),
   readProjectCatalog: () => Effect.promise(() => factory.listProjects()),
   listFlows: () => Effect.promise(() => factory.listFlows()),
+  readDefinitionVersions: () =>
+    Effect.die(new Error("Replaced-read live streams serve no definition versions.")),
   getAppearance: () => Effect.die(new Error("Replaced-read live streams serve no appearance.")),
 });
 

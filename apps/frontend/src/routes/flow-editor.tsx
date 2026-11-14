@@ -203,6 +203,26 @@ function useLibraryAgents(definitions: StudioDefinitions) {
   };
 }
 
+/** Shown once a read that answered after the latest change this Studio knows of omits Flow `id`. */
+function RemovedElsewhereNotice({
+  definitions,
+  id,
+}: {
+  definitions: StudioDefinitions;
+  id: string;
+}) {
+  const { value, synchronized } = useStudioRead(definitions, "flows");
+  if (!synchronized || value === null || value.some((flow) => flow.id === id)) return null;
+  return (
+    <Alert variant="attention" role="status" className="rounded-none border-x-0 border-t-0">
+      <AlertTitle>This Flow was removed elsewhere.</AlertTitle>
+      <AlertDescription>
+        Your draft stays here for copying; saving it will not recreate the Flow.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 const PANEL_WIDTH = 344;
 /** Matches `--duration-panel-out`; the reduced-motion fade is shorter and ends first. */
 const PANEL_CLOSE_MS = 140;
@@ -256,6 +276,7 @@ export function FlowDetail({
     <CanvasLayout>
       <h1 className="sr-only">{name}</h1>
       <EditorToolbar draft={draft} state={state} revision={saved.revision} flowId={id} />
+      <RemovedElsewhereNotice definitions={definitions} id={id} />
       <DraftProblems draft={draft} state={state} onSelect={select} />
       <div inert={state.busy} className="flex min-h-0 flex-1">
         <BlockLibrary

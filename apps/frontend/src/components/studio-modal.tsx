@@ -15,6 +15,8 @@ import { Button } from "./ui/button";
 import { WorkspaceDialogHeader } from "./workspace-dialog-header.tsx";
 import { cn } from "@/lib/utils";
 import { type StudioDraft, useStudioDraftGuard } from "../use-studio-draft-guard.ts";
+import { useServerWatchesDefinitions } from "../client-scope.ts";
+import { useLiveDefinitions } from "../live/live-connection.ts";
 import {
   createStudioDefinitions,
   useStudioRead,
@@ -42,6 +44,19 @@ function useStudioSession(selection: StudioSelection) {
     definitions.refresh();
   }, [definitions, selection]);
   return definitions;
+}
+
+/** Lets Studio follow definition changes made by any client, such as Factory MCP. */
+function FollowDefinitions({ definitions }: { definitions: StudioDefinitions }) {
+  return useServerWatchesDefinitions() ? <FollowLiveDefinitions definitions={definitions} /> : null;
+}
+
+function FollowLiveDefinitions({ definitions }: { definitions: StudioDefinitions }) {
+  const versions = useLiveDefinitions().value;
+  useEffect(() => {
+    if (versions) definitions.follow(versions);
+  }, [definitions, versions]);
+  return null;
 }
 
 /** The Escape handler an open Studio page registers; Studio runs it instead of closing. */
@@ -132,6 +147,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
             onCreate={() => setCreating(true)}
           />
         </div>
+        <FollowDefinitions definitions={definitions} />
         {blocker.status === "blocked" && <DraftDiscardDialog blocker={blocker} />}
         {creating && (
           <CreateFlow

@@ -1,6 +1,8 @@
 import type {
   AppearanceLiveMessage,
   ConnectionLiveMessage,
+  DefinitionsLiveMessage,
+  DefinitionVersions,
   T3Appearance,
   T3Connection,
 } from "@t3-factory/contracts";
@@ -21,4 +23,11 @@ export const appearanceScope: LiveScope<AppearanceLiveMessage, T3Appearance> = {
   part: { kind: "appearance" },
   snapshot: (message) => message.appearance,
   apply: (_appearance, message) => message.appearance,
+};
+
+export const definitionsScope: LiveScope<DefinitionsLiveMessage, DefinitionVersions> = {
+  key: "definitions",
+  part: { kind: "definitions" },
+  snapshot: (message) => message.versions,
+  apply: (_versions, message) => message.versions,
 };
