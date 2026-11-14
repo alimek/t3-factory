@@ -4,6 +4,7 @@ import { readRunImages } from "../../run-images.ts";
 import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "../../thread-link.ts";
+import { currentFlowRevisionNumber } from "../../flow-revisions.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { recoveryRows } from "./recovery-read.ts";
 import { waitArrival, type WaitArrivalRow } from "./waits.ts";
@@ -240,16 +241,6 @@ function taskSummary(sql: SqlClient.SqlClient, task: TaskRow) {
   });
 }
 
-/** The latest saved revision of a Flow that has not been removed. */
-function currentFlowRevision(sql: SqlClient.SqlClient, flowId: string) {
-  return Effect.gen(function* () {
-    const [current] = yield* sql<{
-      revision: number;
-    }>`SELECT MAX(r.revision) AS revision FROM flow_revisions r JOIN flows f ON f.id=r.flow_id WHERE r.flow_id=${flowId} AND f.removed_at IS NULL GROUP BY r.flow_id`;
-    return current?.revision ?? null;
-  });
-}
-
 export function openRunQueries(database: RunnerDatabase) {
   const { run, transaction } = database;
   function getRun(id: string): Effect.Effect<Result<RunDetail>, unknown> {
@@ -309,7 +300,8 @@ export function openRunQueries(database: RunnerDatabase) {
             flowId: definitions.flow.id,
             flowName: definitions.flow.name,
             definitions,
-            currentFlowRevision: yield* currentFlowRevision(sql, definitions.flow.id),
+            currentFlowRevision:
+              (yield* currentFlowRevisionNumber(sql, definitions.flow.id)) ?? null,
             workspace: yield* runWorkspace(sql, id, intents),
             repositories: (yield* readWorkerRepositories(sql, id)).map(
               ({ runId: _runId, ...worker }) => worker,
