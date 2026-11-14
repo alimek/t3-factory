@@ -56,9 +56,9 @@ A conflict, an invalid key or a platform-reserved combination explains why Save 
 unavailable. Desktop and browser each maintain their own reserved-combination list so
 Mod+N, Mod+1…9 and Mod+[ ] validate on desktop but stay reserved in the browser.
 
-**Reset** restores one command to the current platform default; **Reset all shortcuts**
-restores the full default set. If another command occupies a default, resetting that
-command reports the conflict. The UI hints and active handlers update immediately.
+**Reset** restores one command to the current platform default; **Reset all** in the
+page header restores the full default set. If another command occupies a default,
+resetting that command reports the conflict. The UI hints and active handlers update immediately.
 
 Preferences persist in browser storage on this client and Factory origin
 (`factory.keyboardShortcuts`, storage **version 2**). They do not sync to T3 or other
