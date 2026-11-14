@@ -2,9 +2,9 @@ import { MutationGate } from "@/client-gate";
 import { useDraftGuard } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type FocusEvent, type RefObject } from "react";
 import type { AgentDefinition, FlowBlock, FlowDraft, FlowGraph } from "@t3-factory/contracts";
-import { ArrowLeft, Check, CircleDot, ListChecks, Save, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, CircleDot, ListChecks, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,16 +41,18 @@ import {
 import {
   createFlowDraft,
   useFlowDraftSnapshot,
+  type FlowConflict,
   type FlowContent,
   type FlowDraftModel,
   type FlowDraftSnapshot,
 } from "../flow-draft.ts";
 import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
+import { useServerProtocol } from "../client-scope.ts";
 
 /**
- * This editor's Flow draft, saved and removed through Studio's definitions and told when the
- * editor is shown or hidden and when Studio's saved Agents were read again. Studio's guard learns
- * of changes to unsaved changes from the draft's notification itself, before any render, and only
+ * This editor's Flow draft, following the Flow through Studio's saved definitions and told when
+ * the editor is hidden and which protocol the server speaks. Studio's guard learns of
+ * changes to unsaved changes from the draft's notification itself, before any render, and only
  * when that fact changes.
  */
 function useOpenedFlowDraft(
@@ -58,31 +60,85 @@ function useOpenedFlowDraft(
   definitions: StudioDefinitions,
   active: boolean,
   reportDraft: (id: string, dirty: boolean) => void,
+  created: FlowDraft | undefined,
 ) {
   const [draft] = useState(() =>
-    createFlowDraft(id, {
-      getFlow: api.getFlow,
-      validateFlow: api.validateFlow,
-      updateFlow: definitions.updateFlow,
-      removeFlow: definitions.removeFlow,
-    }),
+    createFlowDraft(id, definitions, api, created?.id === id ? created : undefined),
   );
-  useEffect(() => {
-    draft.reportVisibility(active);
-    // An editor that is no longer mounted is hidden, so late answers start no readiness read.
-    return () => draft.reportVisibility(false);
-  }, [draft, active]);
-  useEffect(() => {
-    let agents = definitions.getSnapshot().agents.value;
-    return definitions.subscribe(() => {
-      const next = definitions.getSnapshot().agents.value;
-      if (next === agents) return;
-      agents = next;
-      draft.reportAgentsRefreshed();
-    });
-  }, [definitions, draft]);
+  const protocol = useServerProtocol();
+  useEffect(() => draft.open(), [draft]);
+  useEffect(() => draft.reportProtocol(protocol), [draft, protocol]);
+  // Hiding or unmounting a shown editor ends it, so a late readiness answer is not shown.
+  useEffect(() => (active ? () => draft.hide() : undefined), [draft, active]);
   useDraftGuard(draft, id, reportDraft);
-  return { draft, state: useFlowDraftSnapshot(draft) };
+  const interactions = useInteractionReports(draft, active);
+  return { draft, state: useFlowDraftSnapshot(draft), interactions };
+}
+
+/** Whether focus in `target` means the user is typing into a field. */
+function isTextEntry(target: EventTarget) {
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return (
+    target instanceof HTMLInputElement &&
+    !["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"].includes(
+      target.type,
+    )
+  );
+}
+
+type Interaction = "pointer" | "text" | "composition" | "arrange";
+
+/**
+ * Tells the draft about the interactions a newer saved revision waits for: a pointer gesture
+ * on the library or canvas (block, library and wire drags), focus in a draft field, text
+ * composition and an Auto-arrange run. The pointer gesture ends after the release has reached
+ * its drop handler, so a drop's edit counts. Hiding the editor ends every interaction.
+ */
+function useInteractionReports(draft: FlowDraftModel, active: boolean) {
+  const ends = useRef(new Map<Interaction, () => void>());
+  const begin = useCallback(
+    (kind: Interaction) => {
+      if (!ends.current.has(kind)) ends.current.set(kind, draft.interact());
+    },
+    [draft],
+  );
+  const end = useCallback((kind: Interaction) => {
+    ends.current.get(kind)?.();
+    ends.current.delete(kind);
+  }, []);
+  useEffect(() => {
+    if (!active) return;
+    const open = ends.current;
+    const release = () => end("pointer");
+    // Bubbling to the window runs after React's handlers at the root, including drops.
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      for (const finish of open.values()) finish();
+      open.clear();
+    };
+  }, [active, end]);
+  const reportArranging = useCallback(
+    (arranging: boolean) => (arranging ? begin("arrange") : end("arrange")),
+    [begin, end],
+  );
+  return {
+    gestures: { onPointerDownCapture: () => begin("pointer") },
+    fields: {
+      onFocus: (event: FocusEvent) => {
+        if (isTextEntry(event.target)) begin("text");
+      },
+      onBlur: (event: FocusEvent) => {
+        if (isTextEntry(event.target)) end("text");
+      },
+      onCompositionStart: () => begin("composition"),
+      onCompositionEnd: () => end("composition"),
+    },
+    reportArranging,
+  };
 }
 
 /** Keeps the last selected block rendered while the floating panel plays its close motion. */
@@ -166,6 +222,11 @@ function useCanvasSelection(
   useEffect(() => {
     if (selectedWire && !wire) setSelectedWire(null);
   }, [selectedWire, wire]);
+  // A newer revision adopted while clean may no longer have the selected block.
+  const missingBlock = selected !== null && !graph.blocks.some((block) => block.id === selected);
+  useEffect(() => {
+    if (missingBlock) setSelected(null);
+  }, [missingBlock]);
   /** Selects a block, or with null clears every selection. */
   const select = useCallback((blockId: string | null) => {
     setSelected(blockId);
@@ -213,16 +274,25 @@ export function FlowDetail({
   active,
   registerEscape,
   reportDraft,
+  created,
 }: {
   id: string;
   definitions: StudioDefinitions;
   active: boolean;
   registerEscape: (handler: () => void) => () => void;
   reportDraft: (id: string, dirty: boolean) => void;
+  /** This Studio's latest create answer, which can arrive before Studio receives that Flow. */
+  created: FlowDraft | undefined;
 }) {
   const canvas = useRef<HTMLElement>(null);
   const placement = useRef<DropAt | null>(null);
-  const { draft, state } = useOpenedFlowDraft(id, definitions, active, reportDraft);
+  const { draft, state, interactions } = useOpenedFlowDraft(
+    id,
+    definitions,
+    active,
+    reportDraft,
+    created,
+  );
   const { agents, agentError } = useLibraryAgents(definitions);
   const [libraryOpen, setLibraryOpen] = useState(true);
   const { saved, error, readiness } = state;
@@ -255,9 +325,15 @@ export function FlowDetail({
   return (
     <CanvasLayout>
       <h1 className="sr-only">{name}</h1>
-      <EditorToolbar draft={draft} state={state} revision={saved.revision} flowId={id} />
+      <EditorToolbar
+        draft={draft}
+        state={state}
+        revision={saved.revision}
+        flowId={id}
+        fields={interactions.fields}
+      />
       <DraftProblems draft={draft} state={state} onSelect={select} />
-      <div inert={state.busy} className="flex min-h-0 flex-1">
+      <div inert={state.busy} className="flex min-h-0 flex-1" {...interactions.gestures}>
         <BlockLibrary
           open={libraryOpen}
           onOpenChange={setLibraryOpen}
@@ -266,7 +342,7 @@ export function FlowDetail({
           onAdd={add}
           dropAt={dropAt}
         />
-        <div className="relative flex min-w-0 flex-1">
+        <div className="relative flex min-w-0 flex-1" {...interactions.fields}>
           <FlowCanvas
             ref={canvas}
             graph={graph}
@@ -283,6 +359,7 @@ export function FlowDetail({
             onDeleteWire={deleteWire}
             onEdit={editBlock}
             onChange={change}
+            onArranging={interactions.reportArranging}
           />
           <ReadinessPanel readiness={readiness} graph={graph} onSelect={select} />
           <EditorSelectionPanel
@@ -341,15 +418,18 @@ function EditorToolbar({
   state,
   revision,
   flowId,
+  fields,
 }: {
   draft: FlowDraftModel;
   state: FlowDraftSnapshot;
   revision: number;
   flowId: string;
+  /** Reports typing in the toolbar's fields, which a newer revision waits for. */
+  fields: ReturnType<typeof useInteractionReports>["fields"];
 }) {
   const { openFlowComposer } = useComposerNavigation();
   return (
-    <div className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4">
+    <div className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4" {...fields}>
       <StudioLink
         selection={{ tab: "flows" }}
         className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground no-underline hover:text-foreground"
@@ -372,6 +452,7 @@ function EditorToolbar({
         onChange={(workspace) => draft.edit({ workspace })}
       />
       <span className="flex-1" />
+      <UpdatedNotice revision={state.updatedTo} />
       <span
         role="status"
         aria-label="Flow save status"
@@ -403,6 +484,29 @@ function EditorToolbar({
       </MutationGate>
       <RemoveFlowAction draft={draft} state={state} />
     </div>
+  );
+}
+
+const UPDATED_NOTICE_MS = 4000;
+
+/** A brief line after a clean draft switched to a revision saved elsewhere. */
+function UpdatedNotice({ revision }: { revision: number | null }) {
+  const [expired, setExpired] = useState<number | null>(null);
+  useEffect(() => {
+    if (revision === null) return;
+    const timer = window.setTimeout(() => setExpired(revision), UPDATED_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [revision]);
+  const shown = revision !== null && expired !== revision;
+  return (
+    <span role="status" className="flex items-center gap-1.5 text-2xs text-muted-foreground">
+      {shown && (
+        <>
+          <RefreshCw aria-hidden className="size-3.5 text-link" />
+          Updated to revision {revision}
+        </>
+      )}
+    </span>
   );
 }
 
@@ -514,7 +618,7 @@ function DraftProblems({
       {conflict.status !== "none" && (
         <ConflictPanel
           local={state.content}
-          latest={conflict.status === "compared" ? conflict.latest : null}
+          conflict={conflict}
           onCompare={draft.compareLatest}
           onTakeLatest={draft.takeLatest}
           onKeepLocal={draft.keepLocal}
@@ -602,30 +706,44 @@ function BlockPanel({
   );
 }
 
+/** The newest revision Factory holds beyond the draft's baseline, when Studio has it. */
+function newerRevision(conflict: Exclude<FlowConflict, { status: "none" }>) {
+  return conflict.status === "compared" ? conflict.latest.revision : conflict.revision;
+}
+
+/**
+ * A newer saved revision than the unsaved draft's baseline. Its actions name the revision they
+ * show, and the draft ignores them once another revision or a removal replaced it.
+ */
 function ConflictPanel({
   local,
-  latest,
+  conflict,
   onCompare,
   onTakeLatest,
   onKeepLocal,
 }: {
   local: FlowContent;
-  latest: FlowDraft | null;
-  onCompare: () => Promise<void>;
-  onTakeLatest: () => void;
-  onKeepLocal: () => void;
+  conflict: Exclude<FlowConflict, { status: "none" }>;
+  onCompare: () => void;
+  onTakeLatest: (revision: number) => void;
+  onKeepLocal: (revision: number) => void;
 }) {
+  const latest = conflict.status === "compared" ? conflict.latest : null;
+  const revision = newerRevision(conflict);
   return (
     <section
       aria-label="Reconcile Flow"
       className="grid gap-3 border-b border-attention/40 bg-attention/5 px-4 py-3"
     >
       <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-foreground">
+        <p role="status" className="text-sm text-foreground">
+          {revision !== null && (
+            <span className="font-medium">Revision {revision} was saved elsewhere. </span>
+          )}
           Your local draft is preserved. Load the latest revision to compare before choosing what to
           save.
         </p>
-        <Button variant="outline" size="sm" onClick={() => void onCompare()}>
+        <Button variant="outline" size="sm" onClick={onCompare}>
           Compare latest revision
         </Button>
       </div>
@@ -650,10 +768,10 @@ function ConflictPanel({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onTakeLatest}>
+            <Button variant="outline" size="sm" onClick={() => onTakeLatest(latest.revision)}>
               Use latest saved Flow
             </Button>
-            <Button variant="outline" size="sm" onClick={onKeepLocal}>
+            <Button variant="outline" size="sm" onClick={() => onKeepLocal(latest.revision)}>
               Keep local draft against revision {latest.revision}
             </Button>
             <p className="text-xs text-muted-foreground">

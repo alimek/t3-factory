@@ -14,10 +14,10 @@ and saved-Flow usage counts, the sidebar counts and the Flow editor's Agent libr
 committed create, save, duplicate and removal live, whichever client or Factory MCP made it, with
 no navigation or retry. On a protocol 9–11 server Studio keeps re-reading these lists after its
 own accepted writes, on navigation and on retry, and shows **Live Studio refresh requires a server
-update.** under its header. The Agent editor follows the same saved definitions
-([Agent definitions](#agent-definitions)); the Flow editor still loads its Flow once when opened.
+update.** under its header. Both editors read their definition from these lists and follow its
+saved revisions ([Agent definitions](#agent-definitions), [Saving and readiness](#saving-and-readiness)).
 
-The current Flow draft survives navigation to the lists and Agents; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
+The current Flow draft survives navigation to the lists and Agents and keeps following its saved revisions while hidden; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
 rule; reload uses the browser's leave warning). Agent edits are guarded independently of a retained Flow draft.
 
 | Destination | Browser URL |
@@ -153,8 +153,9 @@ on load only when the saved positions can be preserved, so blocks never move on 
 
 The canvas shares its view controls with the Run canvas: scale 20%–200%; **+**/**−** zoom around the viewport center and **0** fits (bare keys leave browser zoom alone; bindings in
 [Keyboard shortcuts](keyboard-shortcuts.md)); pinch or **Mod**+wheel (Command on macOS, Control elsewhere) zooms at the pointer, including Safari pinch; plain scroll, arrow keys and dragging
-empty canvas pan. Drag, drop and wire gestures follow the zoom level. The view fits on load and container resize but is preserved across edits and selection; explicit Fit reserves space for an open
-inspector. Zoom and pan never change saved positions.
+empty canvas pan. Drag, drop and wire gestures follow the zoom level. The view fits on load and container resize but is preserved across edits, selection and a switch to a revision saved
+elsewhere; explicit Fit reserves space for an open inspector. Zoom and pan never change saved positions. Such a switch closes a selection or **Block configuration** only when its block or wire
+no longer exists.
 
 ### Workspace setting
 
@@ -167,14 +168,24 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 ### Saving and readiness
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
-validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
+validates the draft through the backend without saving and is cleared by any change, by a newer saved revision, by the Flow's removal and while Studio's saved definitions are not
+synchronized, also while a switch to a newer revision waits; **Start Run** stays disabled while readiness is unknown. A clean draft shows the readiness Studio received with its saved revision. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
 issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit sharing a name or ID with any current Agent exit, including hidden exits (also when
 the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, a Continuation without a prompt and unreachable blocks. Each names the block, the exit and the problem, and selecting one
 inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
 are separate Start gates ([Runs](runs.md)).
 
-A stale save returns a conflict and keeps local work. **Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against
-revision N** (another explicit save, which can conflict again). There is no automatic merge or silent overwrite.
+When another client, tab or Factory MCP saves the open Flow, the editor follows it, also when the draft is hidden while Agents are shown. A clean draft switches to the newer revision
+and briefly shows **Updated to revision N**; that switch waits while a block or library item is dragged, a wire is drawn, Auto-arrange runs or a draft field has focus or text composition,
+and happens afterwards only if the draft is still clean. A draft with unsaved changes keeps them and its baseline revision and shows **Revision N was saved elsewhere**, naming the newest
+revision, with **Compare latest revision**; **Save Flow** stays disabled until it is resolved. A stale save that Studio had not yet seen returns a conflict and keeps local work the same way.
+**Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against revision N** (another explicit save, which can
+conflict again). Both act only on the revision shown: a newer revision moves the comparison to it, and a removal dismisses it. There is no automatic merge or silent overwrite.
+
+The editor's own save never shows as saved elsewhere, whether its answer or the live update arrives first; a newer revision saved meanwhile is followed once the save answers, and a removal
+that arrived meanwhile wins over a late success. A rejected save keeps the draft and baseline and shows its error beside any newer-revision notice. When the connection is lost before the
+answer, or the server's protocol changes meanwhile, the editor shows **Save outcome unknown**, keeps the draft and never retries; the saved revision is recognised as its own when it
+arrives. A save refused before sending because Factory is offline says that nothing was sent. On protocol 9–11 servers the comparison re-reads Studio's saved Flows.
 
 ### Removing a Flow
 
