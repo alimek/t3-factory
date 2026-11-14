@@ -21,7 +21,7 @@ export const launchTools: Tool[] = [
   {
     name: "factory_list_projects",
     description:
-      "List Factory's Projects in the current T3 connection and environment after a fresh recheck, with their availability. Pass workspaceRoot, the canonical repository root of this conversation's Project (projectWorkspaceRoot from T3's t3_worktree_status, also in a worktree), to match it exactly; match explains a missing, ambiguous or unavailable Project. Factory never substitutes or registers a Project. generateRunTitles says whether Generate Run titles is on: a Run started now may then have its automatic title replaced by a generated title shortly after Start. It is null when Factory could not read the setting, which problem explains; treat that like on, since the title may still be replaced.",
+      "List Factory's Projects in the current T3 connection and environment after a fresh recheck, with their availability. Pass workspaceRoot, the canonical repository root of this conversation's Project (projectWorkspaceRoot from T3's t3_worktree_status, also in a worktree), to match it exactly; match explains a missing, ambiguous or unavailable Project. Factory never substitutes or registers a Project. generateRunTitles says whether Generate Run titles is on: a Run started now may then have its automatic title replaced by a generated title shortly after Start. It is null when Factory could not read the setting, which problem explains; treat that like on, since the title may still be replaced. Only false shows the title will be kept.",
     inputSchema: {
       type: "object",
       properties: {
