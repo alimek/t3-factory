@@ -251,11 +251,13 @@ test("a lost image Start stays read-only and Check same request recovers exactly
   await expect(references(screen, "diagram.png")).toHaveCount(0);
   await expect(screen.getByRole("button", /^Remove /)).toHaveCount(0);
   await app.screenshot("images-pending-read-only");
+  const recovery = browser.waitForResponse("**/api/runs");
 
   // Act
   await screen.getByRole("button", "Check same request", { exact: true }).tap();
 
   // Assert
+  expect(await (await recovery).json()).toMatchObject({ ok: true });
   await expect(screen.getByRole("heading", "UI images lost Start", { exact: true })).toBeVisible();
   expect(await runsTitled(app.baseUrl, "UI images lost Start")).toHaveLength(1);
 });
