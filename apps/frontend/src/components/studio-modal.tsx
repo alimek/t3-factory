@@ -100,6 +100,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
     flowRef: flowDraftRef,
     agentRef: agentDraftRef,
   });
+  const keepEditing = useRetainedFlowReopen(blocker);
   const { escapeHandler, registerEscape } = useEscapeHandler();
   const close = () => void navigate(undefined);
   return (
@@ -150,7 +151,7 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
             creation={{ start: () => setCreating(true), created }}
           />
         </div>
-        {blocker.status === "blocked" && <DraftDiscardDialog blocker={blocker} />}
+        <DraftDiscardDialog blocker={blocker} onKeepEditing={keepEditing} />
         {creating && (
           <CreateFlow
             createFlow={definitions.createFlow}
@@ -164,6 +165,23 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Reopen a retained Flow only after the blocked navigation has finished cancelling. */
+function useRetainedFlowReopen(blocker: ReturnType<typeof useStudioDraftGuard>) {
+  const navigate = useStudioNavigation();
+  const [reopenFlow, setReopenFlow] = useState<string>();
+  useEffect(() => {
+    if (!reopenFlow || blocker.status !== "idle") return;
+    setReopenFlow(undefined);
+    void navigate({ tab: "flows", flowId: reopenFlow });
+  }, [reopenFlow, blocker.status, navigate]);
+  return () => {
+    if (blocker.status !== "blocked") return;
+    const flow = blocker.drafts.find((draft) => draft.kind === "flow" && draft.removed);
+    if (flow && blocker.drafts.length === 1) setReopenFlow(flow.id);
+    blocker.reset();
+  };
 }
 
 /** Older servers cannot deliver Studio live; their lists refresh after writes, navigation and retry. */
@@ -217,9 +235,12 @@ function discardMessage(drafts: readonly StudioDraft[]) {
 
 function DraftDiscardDialog({
   blocker,
+  onKeepEditing,
 }: {
-  blocker: Extract<ReturnType<typeof useStudioDraftGuard>, { status: "blocked" }>;
+  blocker: ReturnType<typeof useStudioDraftGuard>;
+  onKeepEditing: () => void;
 }) {
+  if (blocker.status !== "blocked") return null;
   const message = discardMessage(blocker.drafts);
   return (
     <Dialog
@@ -244,7 +265,7 @@ function DraftDiscardDialog({
         <DialogTitle>{message.title}</DialogTitle>
         <DialogDescription>{message.description}</DialogDescription>
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={blocker.reset}>
+          <Button variant="outline" onClick={onKeepEditing}>
             Keep editing
           </Button>
           <Button variant="destructive" onClick={blocker.proceed}>

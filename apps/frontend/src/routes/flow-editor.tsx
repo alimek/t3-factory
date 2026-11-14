@@ -1,3 +1,4 @@
+import { StudioRemovedDraft } from "../components/studio-removed-draft.tsx";
 import { MutationGate } from "@/client-gate";
 import { useDraftGuard, type ReportDraft } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
@@ -314,14 +315,7 @@ export function FlowDetail({
     select(next.id);
   }
   const dropAt: DropAt = (x, y, grab) => placement.current?.(x, y, grab) ?? null;
-  if (!saved)
-    return (
-      <Page>
-        <p role={error ? "alert" : "status"} className="text-sm text-muted-foreground">
-          {error || "Opening Flow…"}
-        </p>
-      </Page>
-    );
+  if (!saved) return <FlowLoadState error={error} retry={definitions.refresh} />;
   return (
     <CanvasLayout>
       <h1 className="sr-only">{name}</h1>
@@ -379,6 +373,30 @@ export function FlowDetail({
         </div>
       </div>
     </CanvasLayout>
+  );
+}
+
+/** An absent definition and a retryable read failure offer different recovery actions. */
+function FlowLoadState({ error, retry }: { error: string; retry: () => void }) {
+  const navigate = useStudioNavigation();
+  return (
+    <Page>
+      <p role={error ? "alert" : "status"} className="text-sm text-muted-foreground">
+        {error === "Flow not found." ? "Flow not found" : error || "Opening Flow…"}
+      </p>
+      {error && (
+        <div className="flex gap-2">
+          {error !== "Flow not found." && (
+            <Button variant="outline" onClick={() => retry()}>
+              Retry
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => void navigate({ tab: "flows" })}>
+            Back to list
+          </Button>
+        </div>
+      )}
+    </Page>
   );
 }
 
@@ -457,33 +475,50 @@ function EditorToolbar({
         onChange={(workspace) => draft.edit({ workspace })}
       />
       <span className="flex-1" />
-      <UpdatedNotice revision={state.updatedTo} />
+      <UpdatedNotice revision={state.removed ? null : state.updatedTo} />
       <span
         role="status"
         aria-label="Flow save status"
         className={cn(
           "flex items-center gap-1.5 px-2 text-2xs font-medium whitespace-nowrap",
-          state.dirty ? "text-attention" : "text-muted-foreground",
+          state.dirty || state.removed ? "text-attention" : "text-muted-foreground",
         )}
       >
-        {state.dirty ? (
+        {state.dirty || state.removed ? (
           <CircleDot aria-hidden className="size-3.5" />
         ) : (
           <Check aria-hidden className="size-3.5 text-success" />
         )}
-        {state.dirty ? "Unsaved changes" : "Saved"} · Revision {revision}
+        {state.removed
+          ? "Removed elsewhere · retained draft"
+          : `${state.dirty ? "Unsaved changes" : "Saved"} · Revision ${revision}`}
       </span>
       <Separator orientation="vertical" className="h-5!" />
-      <Button variant="outline" disabled={state.busy} onClick={() => void draft.check()}>
+      <Button
+        variant="outline"
+        disabled={state.busy || state.removed}
+        title={state.removed ? "This Flow was removed elsewhere." : undefined}
+        onClick={() => void draft.check()}
+      >
         <ListChecks aria-hidden /> Check readiness
       </Button>
       <MutationGate>
-        <Button disabled={!state.canSave} onClick={() => void draft.save()}>
+        <Button
+          title={state.removed ? "This Flow was removed elsewhere." : undefined}
+          disabled={!state.canSave}
+          onClick={() => void draft.save()}
+        >
           <Save aria-hidden /> Save Flow
         </Button>
       </MutationGate>
       <MutationGate>
-        <Button disabled={!state.canStartRun} onClick={() => openFlowComposer(flowId)}>
+        <Button
+          title={state.removed ? "This Flow was removed elsewhere." : undefined}
+          disabled={!state.canStartRun}
+          onClick={() => {
+            if (draft.getSnapshot().canStartRun) openFlowComposer(flowId);
+          }}
+        >
           Start Run
         </Button>
       </MutationGate>
@@ -519,6 +554,7 @@ function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: Flow
   const navigate = useStudioNavigation();
   const [open, setOpen] = useState(false);
   const { removing, removalError, busy, dirty, content } = state;
+  if (open && state.removed && !removing) setOpen(false);
   async function confirmRemove() {
     if (!(await draft.remove())) return;
     setOpen(false);
@@ -530,9 +566,11 @@ function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: Flow
         <Button
           type="button"
           variant="outline"
-          disabled={busy || removing}
+          disabled={busy || removing || state.removed}
+          title={state.removed ? "This Flow was removed elsewhere." : undefined}
           className="text-destructive hover:text-destructive"
           onClick={() => {
+            if (draft.getSnapshot().removed) return;
             draft.clearRemovalError();
             setOpen(true);
           }}
@@ -580,7 +618,7 @@ function RemoveFlowAction({ draft, state }: { draft: FlowDraftModel; state: Flow
               <Button
                 type="button"
                 variant="destructive"
-                disabled={removing}
+                disabled={removing || state.removed}
                 onClick={() => void confirmRemove()}
               >
                 {removing ? "Removing…" : "Remove Flow"}
@@ -604,6 +642,7 @@ function DraftProblems({
   onSelect: (blockId: string | null) => void;
 }) {
   const { conflict } = state;
+  if (state.removed) return <StudioRemovedDraft kind="Flow" json={draft.exportJson()} />;
   return (
     <>
       {state.error && (

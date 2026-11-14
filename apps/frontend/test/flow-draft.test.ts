@@ -823,3 +823,155 @@ it("an unsaved draft names a revision saved elsewhere at once, even during an in
     conflict: { status: "detected", revision: 2 },
   });
 });
+
+it("a clean Flow removed during an interaction immediately refuses saving and starting", async () => {
+  // Arrange
+  const { draft, removedElsewhere } = interactingFlow();
+
+  // Act
+  await removedElsewhere();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    removed: true,
+    dirty: false,
+    canSave: false,
+    canStartRun: false,
+  });
+});
+
+it("a retained Flow refuses a further Remove without sending it", async () => {
+  // Arrange
+  const { draft, factory, removedElsewhere } = openedFlow();
+  await removedElsewhere();
+  factory.removeFlow.mockClear();
+
+  // Act
+  const accepted = await draft.remove();
+
+  // Assert
+  expect(accepted).toBe(false);
+  expect(factory.removeFlow).not.toHaveBeenCalled();
+});
+
+it("a retained Flow stays editable while a superseded save reply is pending", async () => {
+  // Arrange
+  const { draft, removedElsewhere } = savingFlow();
+  await removedElsewhere();
+
+  // Act
+  draft.edit({ name: "Recovery edits" });
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    removed: true,
+    content: { name: "Recovery edits" },
+    canSave: false,
+  });
+});
+
+it("a hidden clean Flow retains its content when removed elsewhere", async () => {
+  // Arrange
+  const { draft, removedElsewhere } = hiddenFlow();
+  const content = draft.getSnapshot().content;
+
+  // Act
+  await removedElsewhere();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ removed: true, dirty: false, canSave: false });
+  expect(draft.getSnapshot().content).toBe(content);
+});
+
+it("a retained Flow exports unfinished content without saved identity or readiness", async () => {
+  // Arrange
+  const { draft, removedElsewhere } = openedFlow();
+  await removedElsewhere();
+  draft.edit({
+    name: "",
+    workspace: { mode: "worktree", base: { kind: "ref", ref: "unfinished/" } },
+  });
+
+  // Act
+  const json = draft.exportJson();
+
+  // Assert
+  expect(JSON.parse(json)).toStrictEqual({
+    name: "",
+    workspace: { mode: "worktree", base: { kind: "ref", ref: "unfinished/" } },
+    graph: {
+      blocks: [
+        {
+          id: "review",
+          name: "Review",
+          kind: "agent",
+          agentId: "agent",
+          position: { x: 200, y: 0 },
+          hiddenExitIds: [],
+          localExits: [],
+        },
+      ],
+      connections: [],
+      flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["review"] },
+    },
+  });
+});
+
+it("a retained Flow refuses Save without sending a write", async () => {
+  // Arrange
+  const { draft, factory, removedElsewhere } = openedFlow();
+  await removedElsewhere();
+
+  // Act
+  await draft.save();
+
+  // Assert
+  expect(factory.updateFlow).not.toHaveBeenCalled();
+  expect(draft.getSnapshot()).toMatchObject({ removed: true, canSave: false });
+});
+
+it("a retained Flow refuses a readiness request", async () => {
+  // Arrange
+  const { draft, factory, removedElsewhere } = openedFlow();
+  await removedElsewhere();
+
+  // Act
+  await draft.check();
+
+  // Assert
+  expect(factory.validateFlow).not.toHaveBeenCalled();
+  expect(draft.getSnapshot().readiness).toBe(null);
+});
+
+it("a submitted Flow removal completes normally when another client removes it too", async () => {
+  // Arrange
+  const { draft, factory, removedElsewhere } = editedFlow();
+  const reply = held(factory.removeFlow);
+
+  // Act
+  const removing = draft.remove();
+  await removedElsewhere();
+  reply.answer(undefined);
+  const accepted = await removing;
+
+  // Assert
+  expect(accepted).toBe(true);
+  expect(draft.getSnapshot()).toMatchObject({ removed: false, dirty: false, removing: false });
+});
+
+it("a removal keeps revision resolution dismissed after a late save conflict", async () => {
+  // Arrange
+  const { draft, removedElsewhere, reply, saving } = savingFlow();
+  await removedElsewhere();
+
+  // Act
+  reply.fail(rejection({ code: "conflict", message: "A stale save." }));
+  await saving;
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    removed: true,
+    conflict: { status: "none" },
+    error: "",
+  });
+});

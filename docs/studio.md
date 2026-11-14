@@ -217,6 +217,29 @@ the Flow list, also when another view already removed it: removing an absent or 
 removal is not Archive. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
 Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; open Studio lists drop it at once on protocol 12 servers and after navigation or retry on older ones.
 
+
+**Removed elsewhere.** A Flow already opened in Studio keeps its URL and editable draft when another
+client removes it, even if it was clean or an interaction is in progress. The persistent **This Flow
+was removed elsewhere. Your draft is kept.** notice replaces revision notices and dismisses comparison
+and unsubmitted Remove confirmations. Save Flow, Start Run, Check readiness and further Remove are
+disabled with an explanation; their handlers also refuse these actions. An already submitted Remove
+completes normally and returns to the list without another discard prompt. Removal wins over a late
+save reply, and the retained draft stays editable while that reply is pending. The backend still
+rejects saves and Starts targeting removed Flows and never recreates them.
+
+**Copy as JSON** exports the current `{name, graph, workspace}`, including unfinished edits, block
+and exit IDs, Agent references, connections and positions, without identity, revision or readiness.
+Clipboard success is confirmed; clipboard failure shows the same bounded, selectable read-only JSON
+fallback as the Agent editor. Its content follows further edits.
+
+A retained removed Flow has a discard guard even when clean or hidden while viewing Agents or the
+Flow list. Closing Studio or opening another Flow asks **This Flow was removed elsewhere. Discard
+the retained draft?** with **Keep editing** and **Discard**. Keep editing returns to the hidden Flow
+when it is the blocking draft. When both a Flow and an Agent block navigation, the dialog names both
+and Keep editing preserves the current editor. Ordinary unsaved-change prompts stay unchanged;
+browser close and reload use the standard browser warning. A fresh link to a missing Flow shows
+**Flow not found** with **Back to list**; transport failures instead remain retryable.
+
 ## Validation contract
 
 `PUT /api/flows/:id` and `POST /api/flows/validate` take

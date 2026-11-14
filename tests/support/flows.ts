@@ -111,3 +111,13 @@ export async function createStudioFlow(
   await screen.getByLabel("Flow name").fill(name);
   await screen.getByRole("button", "Create Flow").tap();
 }
+
+/** Removes a Flow through another client's public write boundary. */
+export async function removeFlowElsewhere(baseUrl: string | undefined, id: string) {
+  await flowRequest(baseUrl, `/api/flows/${id}`, { method: "DELETE", headers: mutation });
+}
+
+/** Reads the saved Flow through Factory's public API. */
+export async function readFlow(baseUrl: string | undefined, id: string) {
+  return (await flowRequest(baseUrl, `/api/flows/${id}`)) as FlowDraft;
+}

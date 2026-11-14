@@ -35,6 +35,8 @@ use older/newer peers owned and cleaned up by the same fixture process.
 
 | Agent removal recovery | `tests/studio-agent-removal.e2e.ts` | Retained editable clean and dirty drafts after external removal, disabled actions, Delete confirmation closing, JSON clipboard feedback and selectable fallback, clean retained-draft guard and a simultaneous hidden Flow draft, missing deep links, and own Delete navigation without a discard prompt |
 
+| Flow removal recovery | `tests/studio-flow-removal.e2e.ts` | Retained clean drafts, Remove confirmation dismissal, disabled actions, JSON clipboard and fallback, hidden Flow reopening through Keep editing, discard guard and missing deep links |
+
 Use `pnpm exec e2e run <spec> --trace on --video on --output .e2e/proof/<change>`.
 Live MCP sessions use the same fixture, including seeded Run attention and Human answers.
 

@@ -139,6 +139,7 @@ export function createFlowDraft(
   let session = 0;
   let protocol: number | undefined;
   let removing = false;
+  let deleted = false;
   let removalError = "";
   let error = "";
   let issues: readonly ValidationIssue[] = [];
@@ -173,7 +174,7 @@ export function createFlowDraft(
       dirty,
       removed,
       updatedTo,
-      busy,
+      busy: busy && !removed,
       saveState,
       removing,
       removalError,
@@ -182,8 +183,8 @@ export function createFlowDraft(
       readiness,
       agentsChanged,
       conflict,
-      canSave: loaded && !busy && conflict.status === "none",
-      canStartRun: loaded && !busy && !dirty && !!readiness?.ready,
+      canSave: loaded && !removed && !busy && conflict.status === "none",
+      canStartRun: loaded && !removed && !busy && !dirty && !!readiness?.ready,
     };
   }
   function publish() {
@@ -244,6 +245,11 @@ export function createFlowDraft(
     // The echo of this editor's own submitted removal is not a removal elsewhere.
     if (!source.getSnapshot().flows.synchronized || !known || removed || removing) return;
     removed = true;
+    updatedTo = null;
+    error = "";
+    issues = [];
+    removalError = "";
+    forgetCheck();
     comparing = false;
     conflict = noConflict;
   }
@@ -274,6 +280,7 @@ export function createFlowDraft(
    * while a save is pending, or while a clean draft is being interacted with; a removal does not.
    */
   function reconcile() {
+    if (removed || deleted) return;
     const { flows } = source.getSnapshot();
     const flow = latest();
     if (flow && flows.synchronized) known = true;
@@ -351,12 +358,16 @@ export function createFlowDraft(
     },
     /** Any edit marks the draft unsaved and makes readiness unknown; errors stay shown. */
     edit(change: Partial<FlowContent>) {
-      if (status !== "loaded" || busy) return;
+      if (status !== "loaded" || (busy && !removed)) return;
       content = { ...content, ...change };
       dirty = true;
       updatedTo = null;
       forgetCheck();
       publish();
+    },
+    /** The current unfinished draft in the create API shape, without saved metadata. */
+    exportJson() {
+      return JSON.stringify(content, null, 2);
     },
     /** Saves the content against the saved revision; a stale revision enters the conflict. */
     async save() {
@@ -374,15 +385,22 @@ export function createFlowDraft(
             ...content,
             expectedRevision: against.revision,
           });
+          if (removed) {
+            saveState = "succeeded";
+            return;
+          }
           if (lost()) {
             saveState = "unknown";
             error = unknownOutcome;
             return;
           }
           saveState = "succeeded";
-          // A removal that arrived meanwhile wins: the draft never looks current again.
-          if (!removed) adopt(accepted);
+          adopt(accepted);
         } catch (cause) {
+          if (removed) {
+            saveState = "rejected";
+            return;
+          }
           if (lost(cause)) {
             saveState = "unknown";
             error = unknownOutcome;
@@ -398,12 +416,13 @@ export function createFlowDraft(
     },
     /** Accepted removal clears the guard before the caller navigates away. */
     async remove() {
-      if (!saved || busy || removing) return false;
+      if (!saved || removed || busy || removing) return false;
       removing = true;
       removalError = "";
       publish();
       try {
         await source.removeFlow(id);
+        deleted = true;
         dirty = false;
         forgetCheck();
         return true;
@@ -422,7 +441,7 @@ export function createFlowDraft(
     /** Validates the content without saving it. */
     async check() {
       const against = saved;
-      if (!against || busy) return;
+      if (!against || removed || busy) return;
       await run(async () => {
         const asked = readinessRequest;
         try {
