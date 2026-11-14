@@ -292,12 +292,15 @@ function RunTopBar({
           {inspectorHint !== "Unbound" ? ` · ${inspectorHint}` : ""}
         </TooltipContent>
       </Tooltip>
-      <RunActionsMenu run={run} />
+      {run.lifecycle !== "archived" && <RunActionsMenu run={run} />}
     </header>
   );
 }
 
-/** Archive is rare and final, so it waits in the ··· menu; its shortcut opens the same dialog. */
+/**
+ * Archive is rare and final, so it waits in the ··· menu; its shortcut opens the same dialog.
+ * Archive is the menu's only action, so an Archived Run shows no menu.
+ */
 function RunActionsMenu({ run }: { run: RunDetail }) {
   const [archiving, setArchiving] = useState(false);
   const mutationsAllowed = useMutationsAllowed();
@@ -312,19 +315,17 @@ function RunActionsMenu({ run }: { run: RunDetail }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {run.lifecycle !== "archived" && (
-            <DropdownMenuItem
-              disabled={!mutationsAllowed}
-              onSelect={() => setArchiving(true)}
-              aria-keyshortcuts={archiveHint === "Unbound" ? undefined : archiveHint}
-            >
-              <Archive aria-hidden strokeWidth={1.5} />
-              Archive…
-              <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
-                {archiveHint === "Unbound" ? "" : archiveHint}
-              </span>
-            </DropdownMenuItem>
-          )}
+          <DropdownMenuItem
+            disabled={!mutationsAllowed}
+            onSelect={() => setArchiving(true)}
+            aria-keyshortcuts={archiveHint === "Unbound" ? undefined : archiveHint}
+          >
+            <Archive aria-hidden strokeWidth={1.5} />
+            Archive…
+            <span aria-hidden className="ml-auto text-2xs tracking-label text-subtle-foreground">
+              {archiveHint === "Unbound" ? "" : archiveHint}
+            </span>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <ArchiveRunDialog run={run} open={archiving} onOpenChange={setArchiving} />

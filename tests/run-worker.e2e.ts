@@ -752,8 +752,8 @@ test("Archive from the Run page's ··· menu asks for confirmation and archives
   await app.open(`/runs/${found.id}`);
   await browser.reload();
   await expect(screen.getByRole("status", "Run status")).toContainText("Archived");
-  await screen.getByRole("button", "Run actions", { exact: true }).tap();
-  await expect(screen.getByRole("menuitem", "Archive…", { exact: true })).toHaveCount(0);
+  // Archive is the only Run action, so archived history offers no actions menu.
+  await expect(screen.getByRole("button", "Run actions", { exact: true })).toHaveCount(0);
   await app.screenshot("archived-run-history-by-link");
 });
 

@@ -204,8 +204,8 @@ fixed Human exits their old exits were mapped to.
   Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
   on this device.
 - The top bar shows title, project, captured Flow revision, one Run status, each worker's **Open worker in T3** link (a pending launch says
-  recovery is still searching and offers no replacement), the inspector toggle and a ··· menu holding **Archive…** (until
-  archived). The Run status is the first that applies of **Archived**, **Settled** (each with its time), **Problem**, **Needs
+  recovery is still searching and offers no replacement), the inspector toggle and, until the Run is
+  archived, a ··· menu holding **Archive…**. The Run status is the first that applies of **Archived**, **Settled** (each with its time), **Problem**, **Needs
   input** (both as the Run sidebar shows them, naming their blocks), **Working** (naming the active blocks) and **Idle**; block
   states stay on the canvas. While an Active Run's observations are stale or its live delivery is unavailable, **Not live** with
   Factory's last observation time appears beside it; a live Run shows no freshness marker. The timeline starts collapsed. The inspector's **Workspace** section reads **Project checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
