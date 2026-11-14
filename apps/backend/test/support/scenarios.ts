@@ -508,6 +508,9 @@ export interface SingleWorkerVariant {
   readonly revisitInstruction?: string;
 }
 
+/** The Revisit instruction tests give Entry worker. */
+export const REVISIT_INSTRUCTION = "Verify the fixes and the newly affected scope.";
+
 const workerAgent = (
   world: ScenarioWorld,
   exits: readonly BlockExit[] = [blockExit("done", "Done", "Completed")],
@@ -595,13 +598,35 @@ const reviewStep = humanStep("review", "Review", { x: 400, y: 0 });
 
 const specStep = continuationStep("spec", "Spec", "Write the spec from what we agreed.");
 
+const instructedWorker = (agentId: string) =>
+  agentBlock("worker", "Entry worker", agentId, undefined, [], [], REVISIT_INSTRUCTION);
+
+/** Entry worker, with `REVISIT_INSTRUCTION`, hands "Done" to a Human Review whose Request changes
+ * returns to it. */
+export const correctionReviewFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Correction review", (agentId) => ({
+    flowInput: flowInput("worker"),
+    blocks: [instructedWorker(agentId), reviewStep],
+    connections: [
+      connection("worker", "done", "review"),
+      connection("review", "request-changes", "worker"),
+    ],
+  }));
+
+const continuationGraph =
+  (worker: (agentId: string) => ScenarioAgentBlock) => (agentId: string) => ({
+    flowInput: flowInput("worker"),
+    blocks: [worker(agentId), specStep, followUp(agentId)],
+    connections: [connection("worker", "done", "spec"), connection("spec", "output", "follow-up")],
+  });
+
 /** Entry worker's "Done" goes to the Continuation Spec, whose output hands to Follow-up. */
 export const continuationFlow: ReadyFlowShape = (world) =>
-  workerShape(world, "Continuation", (agentId) => ({
-    flowInput: flowInput("worker"),
-    blocks: [entryWorker(agentId), specStep, followUp(agentId)],
-    connections: [connection("worker", "done", "spec"), connection("spec", "output", "follow-up")],
-  }));
+  workerShape(world, "Continuation", continuationGraph(entryWorker));
+
+/** As `continuationFlow`, with `REVISIT_INSTRUCTION` on Entry worker. */
+export const instructedContinuationFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Instructed continuation", continuationGraph(instructedWorker));
 
 /** As `continuationFlow`, and Follow-up's "Done" returns to Spec, which by then passes through. */
 export const continuationLoopFlow: ReadyFlowShape = (world) =>
@@ -764,16 +789,22 @@ export const consecutiveWaitFlow: ReadyFlowShape = (world) =>
     ],
   }));
 
+const loopWaitGraph = (worker: (agentId: string) => ScenarioAgentBlock) => (agentId: string) => ({
+  flowInput: flowInput("worker"),
+  blocks: [worker(agentId), coolDown()],
+  connections: [
+    connection("worker", "done", "cool-down"),
+    connection("cool-down", WAIT_OUTPUT, "worker"),
+  ],
+});
+
 /** Entry worker's "Done" waits in Cool down, which returns it to Entry worker. */
 export const loopWaitFlow: ReadyFlowShape = (world) =>
-  workerShape(world, "Wait loop", (agentId) => ({
-    flowInput: flowInput("worker"),
-    blocks: [entryWorker(agentId), coolDown()],
-    connections: [
-      connection("worker", "done", "cool-down"),
-      connection("cool-down", WAIT_OUTPUT, "worker"),
-    ],
-  }));
+  workerShape(world, "Wait loop", loopWaitGraph(entryWorker));
+
+/** As `loopWaitFlow`, with `REVISIT_INSTRUCTION` on Entry worker. */
+export const instructedLoopWaitFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Instructed wait loop", loopWaitGraph(instructedWorker));
 
 /** Entry worker and Second entry both start from the Flow input and hand "Done" to Cool down,
  * whose output ends the branch. */

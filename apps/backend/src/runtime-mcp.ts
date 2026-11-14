@@ -43,7 +43,7 @@ const tools: Tool[] = [
   {
     name: "factory_get_block",
     description:
-      "Read your Block's current visit: state, why it was activated, its inputs, exits {id, name, description, messageRequired} and allowed reports. inputs.images is an ordered manifest {imageId, ordinal, name, mimeType, sizeBytes}; ordinal N matches [Image N: name] in the Run input. Fetch an image with factory_get_run_image; this read carries no image bytes.",
+      "Read your Block's current visit: state, why it was activated, its inputs, exits {id, name, description, messageRequired} and allowed reports. inputs.images is an ordered manifest {imageId, ordinal, name, mimeType, sizeBytes}; ordinal N matches [Image N: name] in the Run input. Fetch an image with factory_get_run_image; this read carries no image bytes. On a later visit of a Block with a Revisit instruction, revisitInstruction and revisitRule restate it.",
     inputSchema: {
       type: "object",
       properties: { blockId: blockIdProperty },

@@ -96,6 +96,24 @@ export function workerRevisitPayload(
   };
 }
 
+/** How a Revisit instruction relates to the Agent's own requirements; stated with the instruction in
+ * a later visit's message and in that visit's Block read. */
+export const REVISIT_RULE =
+  "It decides the scope of this visit; your Agent's role, criteria, exits and reporting rules still apply. A narrower scope never permits skipping a required check or accepting a defect that has evidence; if you cannot reconcile the two, say so in your report.";
+
+/**
+ * The body of a later visit to an Agent block, for a feedback return, Human answer or Wait arrival.
+ * A captured Revisit instruction precedes the incoming message, each labelled; without one the
+ * incoming message is the whole body, as before Revisit instructions existed. Continuation
+ * prompts and Request report never use this, so they never carry the instruction.
+ */
+export function agentRevisitMessage(definitions: RunDefinitions, blockId: string, message: string) {
+  const block = definitions.flow.graph.blocks.find((entry) => entry.id === blockId);
+  if (!block || block.kind !== "agent") throw Error("Revisit target is not an Agent Block");
+  if (!block.revisitInstruction) return message;
+  return `Revisit instruction for this later visit of your Block. ${REVISIT_RULE} Your Block's previous finished result is available from factory_get_run.\n${block.revisitInstruction}\n\nIncoming message:\n${message.trim() ? message : "(no message)"}`;
+}
+
 /**
  * A Continuation's prompt, queued as the next turn of the worker thread it continues. A Human
  * step's reply follows it, labelled, because that worker has not seen it; a message from an Agent
