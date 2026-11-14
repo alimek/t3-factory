@@ -3,12 +3,12 @@ import { createServer, type IncomingHttpHeaders, type ServerResponse } from "nod
 import type { AddressInfo } from "node:net";
 
 /** One request as the provider received it. */
-interface ProviderRequest {
+type ProviderRequest = {
   readonly method: string;
   readonly path: string;
   readonly headers: IncomingHttpHeaders;
   readonly body: unknown;
-}
+};
 
 /**
  * One scripted model answer: reply text, tool calls the model requests (Factory runs them and
