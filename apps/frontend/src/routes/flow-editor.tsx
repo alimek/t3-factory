@@ -361,7 +361,12 @@ export function FlowDetail({
             onChange={change}
             onArranging={interactions.reportArranging}
           />
-          <ReadinessPanel readiness={readiness} graph={graph} onSelect={select} />
+          <ReadinessPanel
+            readiness={readiness}
+            agentsChanged={state.agentsChanged}
+            graph={graph}
+            onSelect={select}
+          />
           <EditorSelectionPanel
             block={block}
             closing={closing}

@@ -1,6 +1,6 @@
 import { afterEach, test } from "@e2e-dev/web";
 import { expect } from "e2e";
-import { copyAgentDefinition, listAgentDefinitions } from "./support/agents.ts";
+import { copyAgentDefinition, listAgentDefinitions, updateAgentExits } from "./support/agents.ts";
 import { saveSingleAgentFlow } from "./support/flows.ts";
 import { browserRequests, resetBrowserRequests } from "./support/live.ts";
 import { openApproved, remoteFixture } from "./support/remote-access.ts";
@@ -93,6 +93,50 @@ test("the Flow editor's block library offers an Agent saved elsewhere while the 
     library.getByRole("button", "Add Live · Library worker", { exact: true }),
   ).toBeVisible();
   await app.screenshot("studio-live-block-library");
+});
+
+test("an open Flow's Agent block follows an Agent saved elsewhere, keeps the broken wire and asks to check readiness again", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1920, height: 1000 });
+  const agent = await copyAgentDefinition(app.baseUrl, "Sample worker", "Live · Canvas worker");
+  const wired = agent.exits[0]!;
+  const flow = await saveSingleAgentFlow(
+    app.baseUrl,
+    "Live · Canvas Flow",
+    "Live · Canvas worker",
+    block,
+    wired.id,
+  );
+  await app.open(`/studio/flows/${flow}`);
+  await screen.getByLabel("Flow name").fill("Live · Canvas Flow edited");
+  await screen.getByRole("button", "Check readiness", { exact: true }).tap();
+  await expect(screen.getByRole("button", /Graph ready/)).toBeVisible();
+  const handoff = { id: "handoff", name: "handoff", description: "", messageRequired: false };
+
+  // Act
+  await updateAgentExits(app.baseUrl, agent, [...agent.exits.slice(1), handoff]);
+
+  // Assert
+  const canvas = screen.getByRole("region", "Flow canvas");
+  await expect(screen.getByRole("button", /Agents changed — check readiness again/)).toBeVisible();
+  await expect(canvas.getByText("handoff", { exact: true })).toBeVisible();
+  await expect(canvas.getByText("Agent · removed", { exact: true })).toBeVisible();
+  await expect(
+    screen.getByRole("button", `Connection ${wired.id} from Worker to Review`, { exact: true }),
+  ).toBeVisible();
+  await expect(screen.getByRole("status", "Flow save status")).toContainText(
+    "Unsaved changes · Revision 1",
+  );
+  await expect(screen.getByLabel("Flow name")).toHaveValue("Live · Canvas Flow edited");
+  await expect(screen.getByRole("button", "Start Run", { exact: true })).toBeDisabled();
+  await app.screenshot("studio-live-agent-changed-on-canvas");
+  await screen.getByRole("button", "Check readiness", { exact: true }).tap();
+  await expect(screen.getByText(/Worker: its Agent no longer has exit/)).toBeVisible();
+  await app.screenshot("studio-live-agent-changed-checked");
 });
 
 test("on a compatible older server Studio says live refresh needs an update and re-reads its lists after its own write and navigation", async ({

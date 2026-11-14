@@ -104,6 +104,15 @@ export interface FlowReadiness {
   readonly issues: readonly ValidationIssue[];
 }
 
+/** The saved revision of each Agent a graph places, by Agent id; null for one that does not exist. */
+export type FlowAgentRevisions = Readonly<Record<string, number | null>>;
+
+/** Readiness of submitted Flow content and the saved Agents it was resolved against. */
+export interface FlowValidation extends FlowReadiness {
+  /** Protocol 12 and later; older servers omit it. */
+  readonly agentRevisions?: FlowAgentRevisions;
+}
+
 export interface FlowDraft {
   readonly id: string;
   readonly name: string;
@@ -123,7 +132,7 @@ export const flowOperations = {
     path: "/api/flows",
     body: "json",
   }),
-  validateFlow: operation<UpdateFlowInput, FlowReadiness>()({
+  validateFlow: operation<UpdateFlowInput, FlowValidation>()({
     method: "POST",
     path: "/api/flows/validate",
     body: "json",

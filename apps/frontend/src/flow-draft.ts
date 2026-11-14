@@ -1,5 +1,12 @@
 import { useSyncExternalStore } from "react";
-import type { FlowDraft, FlowReadiness, ValidationIssue } from "@t3-factory/contracts";
+import type {
+  AgentDefinition,
+  FlowDraft,
+  FlowGraph,
+  FlowReadiness,
+  ValidationIssue,
+} from "@t3-factory/contracts";
+import { flowAgentRevisions } from "@t3-factory/domain-validation";
 import { api, ApiError } from "./api.ts";
 import type { StudioDefinitions } from "./studio-definitions.ts";
 import { OfflineError } from "./transport.ts";
@@ -52,6 +59,8 @@ export interface FlowDraftSnapshot {
   readonly issues: readonly ValidationIssue[];
   /** Null while readiness is unknown. */
   readonly readiness: FlowReadiness | null;
+  /** An Agent this unsaved draft places changed since readiness was last known; check again. */
+  readonly agentsChanged: boolean;
   readonly conflict: FlowConflict;
   readonly canSave: boolean;
   readonly canStartRun: boolean;
@@ -81,6 +90,13 @@ function canonical(value: unknown): string {
 }
 
 const sameContent = (a: FlowContent, b: FlowContent) => canonical(a) === canonical(b);
+
+/**
+ * The saved revisions of the Agents `graph` places, comparable with a validation answer's; null
+ * while Studio holds no Agents.
+ */
+const agentStamp = (graph: FlowGraph, agents: readonly AgentDefinition[] | null) =>
+  agents ? canonical(flowAgentRevisions(graph, agents)) : null;
 
 const unknownOutcome =
   "Save outcome unknown. The connection was lost before Factory answered; your draft is kept and nothing is sent again.";
@@ -127,6 +143,7 @@ export function createFlowDraft(
   let error = "";
   let issues: readonly ValidationIssue[] = [];
   let checked: FlowReadiness | null = null;
+  let agentsChanged = false;
   let conflict = noConflict;
   /** Advances whenever a pending readiness answer must no longer apply. */
   let readinessRequest = 0;
@@ -163,6 +180,7 @@ export function createFlowDraft(
       error,
       issues,
       readiness,
+      agentsChanged,
       conflict,
       canSave: loaded && !busy && conflict.status === "none",
       canStartRun: loaded && !busy && !dirty && !!readiness?.ready,
@@ -187,6 +205,7 @@ export function createFlowDraft(
     comparing = false;
     error = "";
     issues = [];
+    agentsChanged = false;
     forgetCheck();
   }
   function observed() {
@@ -196,16 +215,18 @@ export function createFlowDraft(
   let seen = observed();
   /**
    * A shown readiness result stops applying as soon as the Flow's saved revision changes, the
-   * Flow is removed, Studio loses synchronization or a saved Agent changes, also while
-   * adoption waits for an interaction.
+   * Flow is removed, Studio loses synchronization or an Agent the draft places changes, also
+   * while adoption waits for an interaction. A clean draft then shows the saved Flow's
+   * readiness, delivered with those Agents; an unsaved draft waits for another check.
    */
   function observe() {
     const next = observed();
-    if (
-      next.flow !== seen.flow ||
-      (seen.synchronized && !next.synchronized) ||
-      next.agents !== seen.agents
-    )
+    const placed =
+      seen.agents !== null &&
+      next.agents !== null &&
+      agentStamp(content.graph, seen.agents) !== agentStamp(content.graph, next.agents);
+    if (placed && dirty) agentsChanged = true;
+    if (next.flow !== seen.flow || (seen.synchronized && !next.synchronized) || placed)
       forgetCheck();
     seen = next;
   }
@@ -405,11 +426,17 @@ export function createFlowDraft(
       await run(async () => {
         const asked = readinessRequest;
         try {
-          const answer = await operations.validateFlow({
+          const { agentRevisions, ...answer } = await operations.validateFlow({
             ...content,
             expectedRevision: against.revision,
           });
-          if (asked === readinessRequest) checked = answer;
+          // An Agent change Studio has not delivered yet also makes the answer stale. Older
+          // servers name no revisions; their answers rely on the request alone.
+          const shown = agentStamp(content.graph, source.getSnapshot().agents.value);
+          const matches = !agentRevisions || canonical(agentRevisions) === shown;
+          if (asked !== readinessRequest || !matches) return;
+          checked = answer;
+          agentsChanged = false;
         } catch (cause) {
           if (asked === readinessRequest) reject(cause, "Could not check Flow.");
         }
