@@ -55,9 +55,12 @@ test("an offline client switches appearance without its server", async ({
   await remoteFixture(app, "compatible");
   await app.open("/__fixture/remote-browser");
   await openApproved(app, "/runs/new");
+  // Go offline only after the first load; a server lost before it shows the unreachable gate.
+  const settings = screen.getByRole("link", /^Settings,/);
+  await expect(settings).toBeVisible();
   await remoteFixture(app, "offline");
   await expect(screen.getByRole("status", "Offline")).toBeVisible({ timeout: 15_000 });
-  await screen.getByRole("link", /^Settings,/).tap();
+  await settings.tap();
   await screen.getByRole("link", "Appearance", { exact: true }).tap();
 
   // Act
