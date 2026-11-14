@@ -33,6 +33,7 @@ export function ChoiceMenu({
   disabled,
   placeholder,
   hint,
+  className,
 }: {
   id: string;
   /** The field label; the trigger's accessible name adds the current value. */
@@ -44,6 +45,8 @@ export function ChoiceMenu({
   placeholder: string;
   /** Where the choices come from, shown inside the trigger on wide forms. */
   hint?: string;
+  /** Trigger size where the form is denser than the composer, such as a Settings row. */
+  className?: string;
 }) {
   const selected = choices.find((choice) => choice.id === value);
   const shown = selected?.label ?? placeholder;
@@ -55,7 +58,7 @@ export function ChoiceMenu({
           id={id}
           variant="outline"
           aria-label={`${label}: ${selected ? `${shown}${selected.badge ? `, ${selected.badge}` : ""}` : shown}`}
-          className={cn(selectFieldClass, "disabled:opacity-50")}
+          className={cn(selectFieldClass, "disabled:opacity-50", className)}
         >
           <span className={cn("min-w-0 truncate", !selected && "text-muted-foreground")}>
             {shown}
