@@ -687,34 +687,42 @@ create is unknown, is no longer owed and leaves Settings.
 ## Support limits
 
 The pinned AI SDK packages are `ai` 7.0.172, `@ai-sdk/openai-compatible` 3.0.92 and
-`@ai-sdk/anthropic` 4.0.104. Controlled tests cover the request each provider kind sends against a
-loopback stand-in; they do not establish compatibility with any live provider, gateway or local
-model server.
+`@ai-sdk/anthropic` 4.0.104. The pinned Discord packages are `chat` 4.44.0 and
+`@chat-adapter/discord` 4.44.0, with `discord.js` 14.28.1 and `@discordjs/ws` 1.2.3, the versions the
+adapter resolves. Factory supplies its own Gateway shard strategy because `@discordjs/ws` 1.2.3 can
+leave a session that is destroyed before it is ready reconnecting. Chat SDK runs with its `concurrent`
+strategy because its queue merges queued messages and its drop strategy loses admitted ones; Factory
+serializes each conversation itself and discards unfinished work on restart. The Chat SDK state
+Factory needs, thread subscriptions and its expiring key-value entries such as message deduplication,
+lives in SQLite; the SDK's locks, lists and queues are not used.
 
-The pinned Discord packages are `chat` 4.44.0 and `@chat-adapter/discord` 4.44.0, with
-`discord.js` 14.28.1 and `@discordjs/ws` 1.2.3, the versions the adapter resolves. Factory supplies
-its own Gateway shard strategy because `@discordjs/ws` 1.2.3 can leave a session that is destroyed
-before it is ready reconnecting. Chat SDK runs with its `concurrent` strategy because its queue
-merges queued messages and its drop strategy loses admitted ones; Factory serializes each
-conversation itself and discards unfinished work on restart. The Chat SDK state Factory needs, thread
-subscriptions and its expiring key-value entries such as message deduplication, lives in SQLite; the
-SDK's locks, lists and queues are not used. Controlled tests run the check, the operating connection,
-invocations and `/factory reset` against a loopback stand-in for Discord's REST API and Gateway. Real
-Gateway identity, readiness and intent behavior, authorization before thread creation, permission
-evidence and its invalidation (private threads included), command registration, interaction
-acknowledgement and private replies are not yet qualified against Discord.
+Controlled tests run every behavior on this page against loopback stand-ins for Discord's REST API
+and Gateway and for the model provider. The Discord stand-in can rate-limit, refuse, lose the answer
+to or hold a message create or edit, models deleted messages and threads and archived, locked and
+limited threads, and returns the earlier message for a repeated enforced nonce until a test lets the
+uniqueness window pass. Factory does not search for copies an unknown create may have left.
 
-Conversations are tested against a loopback model stand-in that scripts answers and tool calls in
-the OpenAI-compatible wire format; no live model's tool-calling quality is qualified, which remains
-the owner's responsibility. Reply-target payloads, mention suppression, multi-part replies and the
-member lookup used after an outage are not yet qualified against Discord.
+### Live qualification
 
-Reviews, confirmation buttons, their private answers, receipts, status cards, notices and delivery
-failures are tested against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a
-message create or edit, models deleted messages and threads and archived, locked and limited
-threads, and returns the earlier message for a repeated enforced nonce until a test lets the
-uniqueness window pass. Button payloads, ephemeral answers to button clicks, message edits,
-unarchiving, Discord's real error codes for archived, locked or deleted threads and messages, and
-Discord's nonce enforcement and the length of its uniqueness window are not yet qualified against
-Discord ([#323](https://github.com/alimek/t3-factory/issues/323)). Factory does not search for copies
-an unknown create may have left.
+One live qualification ran these pins against the real Discord Gateway and REST API with one
+application, one server, one allowlisted channel and one human participant, and against an
+OpenAI-compatible local model gateway, with a disposable Factory home whose T3 adapter was simulated
+(no real workers). It confirmed: the synthetic model Test; the Off connection-only check (real
+readiness and authenticated application, disconnect, no handlers or command registration); adoption of
+the authenticated application, `/factory reset` registration and reconnect after backend restarts;
+authorization before thread creation (a role mention and a channel removed from Access caused no
+thread, reply or model request); discovery, Run reads and the typing indicator; complete Start, Human
+answer and Archive reviews with the button last, single-use requester confirmation, disabled buttons,
+private answers to repeated, expired and superseded clicks, and deterministic receipts; `/factory reset`
+acknowledgement and clearing; status card edits and lifecycle notices; recovery after Off with an
+archived thread (unarchived without a wake-up message, card corrected, one catch-up labelled delivered
+late); and a locked thread left locked with its correction and a successful host Retry after unlocking.
+It found and fixed two incompatibilities: command registration replaced the application's other
+commands, and Discord accepts posts in a locked thread from a bot holding Manage Threads.
+
+Not qualified live: another participant's click, private-thread membership evidence, several servers,
+same-thread reply-target payloads, uncertain-create nonce reconciliation, rate limits, the active-thread
+limit, deleted-card replacement, application replacement and token rotation, a real model failure, the
+Anthropic provider, real T3 workers, and the desktop application or a remote approved-client device.
+A model's tool-calling quality is the owner's responsibility: a model that requests more than 16 tool
+calls for a broad question gets the deterministic refusal.
