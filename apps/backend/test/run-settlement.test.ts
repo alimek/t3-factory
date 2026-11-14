@@ -34,7 +34,7 @@ import {
   workingReport,
 } from "./support/scenarios.ts";
 import { prepared } from "./support/prepared-runner.ts";
-import { promptSent } from "./support/continuation.ts";
+import { promptSent, responseForwarded } from "./support/continuation.ts";
 import {
   answerDelegatedWait,
   beginThreadRun,
@@ -102,6 +102,21 @@ it("a revisited Block settles its thread again after a new T3 run finishes", asy
 
   // Assert
   expect(f.t3.settlements.map((entry) => entry.threadId)).toStrictEqual(["thread-1", "thread-1"]);
+});
+
+it("a worker thread settles again once its Continuation's response moves the Run on", async (c) => {
+  // Arrange
+  const setup = await prepared(c, continuationFlow);
+  const worker = await workerAtWork(setup.world, setup.input);
+  await resultReported(setup.world, worker);
+  const prompt = await promptSent(setup.world, worker);
+  await responseForwarded(setup.world, worker, prompt);
+
+  // Act
+  await setup.f.reconcileRuns();
+
+  // Assert
+  expect(setup.t3.settlements).toStrictEqual([{ threadId: "thread-1" }, { threadId: "thread-1" }]);
 });
 
 it("a finished Block on a snoozed Run still settles its worker thread", async (c) => {
