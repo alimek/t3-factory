@@ -1,5 +1,6 @@
+import { Button } from "../components/ui/button";
 import { useEffect, useState } from "react";
-import { useDraftGuard } from "../draft-guard.ts";
+import { useDraftGuard, type ReportDraft } from "../draft-guard.ts";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
 import { useStudioNavigation } from "../settings-navigation.ts";
 import { createAgentDraft, useAgentDraftSnapshot, type AgentDraftSource } from "../agent-draft.ts";
@@ -90,7 +91,7 @@ export function StudioAgentsPage({
 }: {
   agentId: string | undefined;
   definitions: StudioDefinitions;
-  reportAgentDraft: (id: string, dirty: boolean) => void;
+  reportAgentDraft: ReportDraft;
 }) {
   const openStudio = useStudioNavigation();
   const library = useAgentsLibrary(definitions);
@@ -155,42 +156,6 @@ function useOpenedAgent(
   return { agent, unavailable: !agent && Boolean(library.error || library.agents) };
 }
 
-/** Duplicates the saved Agent and opens the copy, which Studio may not have delivered yet. */
-function useDuplicate(
-  agentId: string,
-  library: ReturnType<typeof useAgentsLibrary>,
-  onAcknowledged: (agent: AgentDefinition) => void,
-) {
-  const openStudio = useStudioNavigation();
-  const active = useActiveView();
-  const [duplicateError, setDuplicateError] = useState("");
-  const [duplicating, setDuplicating] = useState(false);
-  async function duplicate() {
-    if (duplicating) return;
-    setDuplicating(true);
-    try {
-      const copy = await library.definitions.duplicateAgent(agentId, {});
-      void library.refreshReporting();
-      if (!active.current) return;
-      onAcknowledged(copy);
-      void openStudio({ tab: "agents", agentId: copy.id });
-    } catch (cause) {
-      if (!active.current) return;
-      setDuplicateError(
-        cause instanceof Error ? cause.message : "Factory could not duplicate this Agent.",
-      );
-    } finally {
-      if (active.current) setDuplicating(false);
-    }
-  }
-  return {
-    duplicate,
-    duplicating,
-    duplicateError,
-    clearDuplicateError: () => setDuplicateError(""),
-  };
-}
-
 function SelectedAgentEditor({
   agentId,
   library,
@@ -202,21 +167,14 @@ function SelectedAgentEditor({
   library: ReturnType<typeof useAgentsLibrary>;
   acknowledged: AgentDefinition | null;
   onAcknowledged: (agent: AgentDefinition) => void;
-  reportDraft: (id: string, dirty: boolean) => void;
+  reportDraft: ReportDraft;
 }) {
   const openStudio = useStudioNavigation();
   const active = useActiveView();
-  const creating = agentId === "new";
   const { agent, unavailable } = useOpenedAgent(agentId, library, acknowledged);
-  const { duplicate, duplicating, duplicateError, clearDuplicateError } = useDuplicate(
-    agentId,
-    library,
-    onAcknowledged,
-  );
   const saved = (value: AgentDefinition) => {
     void library.refreshReporting();
     if (!active.current) return;
-    clearDuplicateError();
     if (value.id === agentId) return;
     onAcknowledged(value);
     void openStudio({ tab: "agents", agentId: value.id });
@@ -228,9 +186,19 @@ function SelectedAgentEditor({
   };
   if (unavailable)
     return (
-      <p role="alert" className="p-8 text-sm text-destructive">
-        Factory could not load this Agent editor.
-      </p>
+      <div className="grid justify-items-start gap-3 p-8">
+        <p role="alert" className="text-sm text-destructive">
+          {library.error ? "Factory could not load this Agent editor." : "Agent not found"}
+        </p>
+        {library.error && (
+          <Button variant="outline" onClick={library.retry}>
+            Retry
+          </Button>
+        )}
+        <Button variant="outline" onClick={() => void openStudio({ tab: "agents" })}>
+          Back to list
+        </Button>
+      </div>
     );
   if (agent === undefined || library.capabilities === undefined) {
     return (
@@ -246,11 +214,9 @@ function SelectedAgentEditor({
       source={library.definitions}
       agentId={agentId}
       flowUsage={flowUsageCount(library.flows ?? [], agentId)}
-      duplicating={duplicating}
-      duplicateError={duplicateError}
       reportDraft={reportDraft}
       onSaved={saved}
-      onDuplicate={creating ? undefined : () => void duplicate()}
+      onDuplicated={saved}
       onDeleted={deleted}
     />
   );
@@ -265,7 +231,7 @@ function useOpenedAgentDraft(
   capabilities: AgentCapabilities | null,
   source: AgentDraftSource,
   id: string,
-  reportDraft: (id: string, dirty: boolean) => void,
+  reportDraft: ReportDraft,
 ) {
   const [draft] = useState(() => createAgentDraft(agent, capabilities, source));
   useEffect(() => draft.connect(), [draft]);
@@ -280,22 +246,37 @@ function OpenedAgentEditor({
   agentId,
   reportDraft,
   onSaved,
-  duplicateError,
+  onDuplicated,
   ...props
 }: {
   agent: AgentDefinition | null;
   capabilities: AgentCapabilities | null;
   source: AgentDraftSource;
   agentId: string;
-  reportDraft: (id: string, dirty: boolean) => void;
+  reportDraft: ReportDraft;
   onSaved: (agent: AgentDefinition) => void;
-  duplicateError: string;
+  onDuplicated: (agent: AgentDefinition) => void;
   flowUsage: number;
-  duplicating: boolean;
-  onDuplicate: (() => void) | undefined;
   onDeleted: () => void;
 }) {
   const { draft, state } = useOpenedAgentDraft(agent, capabilities, source, agentId, reportDraft);
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateError, setDuplicateError] = useState("");
+  async function duplicate() {
+    if (duplicating) return;
+    setDuplicating(true);
+    setDuplicateError("");
+    try {
+      const copy = await draft.duplicate();
+      if (copy) onDuplicated(copy);
+    } catch (cause) {
+      setDuplicateError(
+        cause instanceof Error ? cause.message : "Factory could not duplicate this Agent.",
+      );
+    } finally {
+      setDuplicating(false);
+    }
+  }
   async function save() {
     const saved = await draft.save();
     if (saved) onSaved(saved);
@@ -313,6 +294,8 @@ function OpenedAgentEditor({
         state={state}
         capabilities={capabilities}
         onSave={save}
+        duplicating={duplicating}
+        onDuplicate={agent ? () => void duplicate() : undefined}
       />
     </>
   );

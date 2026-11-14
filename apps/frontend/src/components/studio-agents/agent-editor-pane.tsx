@@ -1,6 +1,7 @@
 import { LaunchSkillStatus } from "../launch-skill-status.tsx";
 import { MutationGate } from "@/client-gate";
 import { ExecutionSettingsFields } from "../execution-settings-fields.tsx";
+import { StudioRemovedDraft } from "../studio-removed-draft.tsx";
 import { useState } from "react";
 import type { AgentCapabilities, AgentDefinition } from "@t3-factory/contracts";
 import { fieldLabelClass } from "@/components/page";
@@ -53,7 +54,11 @@ export function AgentEditorPane(props: AgentEditorProps) {
         }}
       >
         <AgentEditorHeader {...props} name={name} saving={saving} />
-        <AgentRevisionPanel draft={draft} state={state} />
+        {state.removed ? (
+          <StudioRemovedDraft kind="Agent" json={draft.exportJson()} />
+        ) : (
+          <AgentRevisionPanel draft={draft} state={state} />
+        )}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 md:px-8">
           <div className="@container/agent-form grid min-w-0 gap-3.5">
             <div className="grid gap-1.5">
@@ -181,8 +186,8 @@ function AgentEditorHeader({
             <Button
               type="button"
               variant="outline"
-              disabled={saving || dirty}
-              title={dirty ? "Save your changes before duplicating this Agent." : undefined}
+              disabled={state.removed || saving || dirty}
+              title={duplicateBlockedReason(state)}
               aria-label="Duplicate"
               onClick={onDuplicate}
             >
@@ -215,7 +220,14 @@ function AgentEditorHeader({
   );
 }
 
+function duplicateBlockedReason(state: AgentDraftSnapshot): string | undefined {
+  if (state.removed) return "This Agent was removed elsewhere.";
+  if (state.dirty) return "Save your changes before duplicating this Agent.";
+  return undefined;
+}
+
 function saveBlockedReason(state: AgentDraftSnapshot): string | undefined {
+  if (state.removed) return "This Agent was removed elsewhere.";
   if (state.newer || state.stale) return "Compare the latest revision before saving.";
   if (!state.saved && state.saveOutcome === "unknown")
     return "Check the Agent list before creating this Agent again.";
@@ -245,6 +257,7 @@ function DeleteAgentButton({
 }) {
   const [open, setOpen] = useState(false);
   const { deleting, deleteError: error } = state;
+  if (open && state.removed && !deleting) setOpen(false);
   async function confirmDelete() {
     if (await draft.delete()) {
       setOpen(false);
@@ -257,8 +270,10 @@ function DeleteAgentButton({
         <Button
           type="button"
           variant="destructive"
-          disabled={disabled}
+          disabled={disabled || state.removed}
+          title={state.removed ? "This Agent was removed elsewhere." : undefined}
           onClick={() => {
+            if (draft.getSnapshot().removed) return;
             draft.clearDeleteError();
             setOpen(true);
           }}
@@ -299,7 +314,7 @@ function DeleteAgentButton({
               <Button
                 type="button"
                 variant="destructive"
-                disabled={deleting}
+                disabled={deleting || state.removed}
                 onClick={() => void confirmDelete()}
               >
                 {deleting ? "Deleting…" : "Delete Agent"}

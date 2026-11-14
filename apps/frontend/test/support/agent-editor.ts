@@ -35,6 +35,9 @@ function memoryAgents() {
         return latest;
       },
     ),
+    duplicateAgent: vi.fn<AgentDraftOperations["duplicateAgent"]>(async () =>
+      savedAgent({ id: "copy", name: "Reviewer copy" }),
+    ),
     removeAgent: vi.fn<AgentDraftOperations["removeAgent"]>(async () => undefined),
   };
 }

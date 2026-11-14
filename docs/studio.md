@@ -97,6 +97,24 @@ rejects Agents placed in the latest revision of any current Flow; the backend ch
 removal. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Runs keep the Agent revision they started with, and removing an absent or removed Agent succeeds.
 Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; open Studio lists drop it at once on protocol 12 servers and after navigation or retry on older ones.
 
+
+**Removed elsewhere.** If an Agent already open in Studio is removed by another client, its URL and
+editable draft stay open, even when the draft was clean. A persistent **This Agent was removed
+elsewhere. Your draft is kept.** notice replaces revision notices. Save, Duplicate and Delete are
+disabled with an explanation, and their handlers refuse further writes. An unsubmitted Delete
+confirmation closes; an already submitted Delete completes normally through the idempotent removal
+and returns to the list without another discard prompt. Saves that reach a removed Agent are still
+rejected by the backend and never recreate it.
+
+**Copy as JSON** recovers the current name, prompt, execution settings and exits, including unfinished
+edits, in the create API's shape without identity, revision or status fields. Studio confirms a
+successful clipboard write; if clipboard access fails, a read-only selectable JSON box remains
+available. Leaving or closing Studio asks **This Agent was removed elsewhere. Discard the retained
+draft?** with **Keep editing** and **Discard**, even for a clean draft. A hidden Flow draft keeps its
+independent guard, and a decision discarding both drafts names both. Ordinary unsaved-change prompts
+stay unchanged; browser close and reload use only the browser's standard warning. A fresh link to
+an absent Agent shows **Agent not found** and **Back to list**; a failed read instead offers Retry.
+
 See [T3 integration](t3-integration.md) for authorization and capability reads.
 
 ## Flow authoring

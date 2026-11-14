@@ -100,3 +100,12 @@ export async function saveAgentElsewhere(
   assert(result.ok);
   return result.value;
 }
+
+/** Remove a journey-owned Agent through the public API, as another client. */
+export async function removeAgentElsewhere(baseUrl: string | undefined, id: string) {
+  const response = await fetch(new URL(`/api/agents/${id}`, baseUrl), {
+    method: "DELETE",
+    headers: { "X-Factory-Request": "1" },
+  });
+  assert(response.ok);
+}

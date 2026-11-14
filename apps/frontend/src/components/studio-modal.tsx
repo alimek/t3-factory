@@ -1,3 +1,4 @@
+import type { ReportDraft, DraftGuardState } from "../draft-guard.ts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bot, RefreshCw, Workflow } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -79,15 +80,17 @@ export function StudioModal({ selection }: { selection: StudioSelection }) {
   const [agentDraft, setAgentDraft] = useState<StudioDraft>();
   const flowDraftRef = useRef<StudioDraft | undefined>(undefined);
   const agentDraftRef = useRef<StudioDraft | undefined>(undefined);
-  const reportFlowDraft = useCallback((id: string, dirty: boolean) => {
-    if (!dirty && flowDraftRef.current?.id !== id) return;
-    const next = dirty ? ({ kind: "flow", id, dirty: true } as const) : undefined;
+  const reportFlowDraft = useCallback((id: string, state: DraftGuardState) => {
+    if (!state.dirty && !state.removed && flowDraftRef.current?.id !== id) return;
+    const next =
+      state.dirty || state.removed ? ({ kind: "flow", id, ...state } as const) : undefined;
     flowDraftRef.current = next;
     setFlowDraft(next);
   }, []);
-  const reportAgentDraft = useCallback((id: string, dirty: boolean) => {
-    if (!dirty && agentDraftRef.current?.id !== id) return;
-    const next = dirty ? ({ kind: "agent", id, dirty: true } as const) : undefined;
+  const reportAgentDraft = useCallback((id: string, state: DraftGuardState) => {
+    if (!state.dirty && !state.removed && agentDraftRef.current?.id !== id) return;
+    const next =
+      state.dirty || state.removed ? ({ kind: "agent", id, ...state } as const) : undefined;
     agentDraftRef.current = next;
     setAgentDraft(next);
   }, []);
@@ -177,13 +180,47 @@ function StudioRefreshNotice({ definitions }: { definitions: StudioDefinitions }
   );
 }
 
+function discardMessage(drafts: readonly StudioDraft[]) {
+  const agent = drafts.some((draft) => draft.kind === "agent");
+  const both = drafts.length > 1;
+  const removed = drafts.some((draft) => draft.removed);
+  if (removed)
+    return {
+      removed,
+      title: both
+        ? "Discard the Flow and Agent drafts?"
+        : `This ${agent ? "Agent" : "Flow"} was removed elsewhere. Discard the retained draft?`,
+      description: drafts
+        .map((draft) => {
+          const kind = draft.kind === "agent" ? "Agent" : "Flow";
+          return draft.removed
+            ? `This ${kind} was removed elsewhere. Its retained draft will be discarded.`
+            : `Your ${kind} has unsaved changes that will be discarded.`;
+        })
+        .join(" "),
+    };
+  if (both)
+    return {
+      removed,
+      title: "Discard unsaved Flow and Agent changes?",
+      description:
+        "Your Flow and Agent have unsaved changes. Keep editing to save them, or discard both to continue.",
+    };
+  return {
+    removed,
+    title: agent ? "Discard unsaved Agent changes?" : "Discard unsaved Flow changes?",
+    description: agent
+      ? "This Agent has unsaved changes. Keep editing to save them, or discard them to continue."
+      : "Your Flow has unsaved changes. Keep editing to save them, or discard them to continue.",
+  };
+}
+
 function DraftDiscardDialog({
   blocker,
 }: {
   blocker: Extract<ReturnType<typeof useStudioDraftGuard>, { status: "blocked" }>;
 }) {
-  const blockingAgent = blocker.drafts.some((draft) => draft.kind === "agent");
-  const blockingBoth = blocker.drafts.length > 1;
+  const message = discardMessage(blocker.drafts);
   return (
     <Dialog
       open
@@ -204,26 +241,14 @@ function DraftDiscardDialog({
           blocker.reset();
         }}
       >
-        <DialogTitle>
-          {blockingBoth
-            ? "Discard unsaved Flow and Agent changes?"
-            : blockingAgent
-              ? "Discard unsaved Agent changes?"
-              : "Discard unsaved Flow changes?"}
-        </DialogTitle>
-        <DialogDescription>
-          {blockingBoth
-            ? "Your Flow and Agent have unsaved changes. Keep editing to save them, or discard both to continue."
-            : blockingAgent
-              ? "This Agent has unsaved changes. Keep editing to save them, or discard them to continue."
-              : "Your Flow has unsaved changes. Keep editing to save them, or discard them to continue."}
-        </DialogDescription>
+        <DialogTitle>{message.title}</DialogTitle>
+        <DialogDescription>{message.description}</DialogDescription>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={blocker.reset}>
             Keep editing
           </Button>
           <Button variant="destructive" onClick={blocker.proceed}>
-            Discard changes
+            {message.removed ? "Discard" : "Discard changes"}
           </Button>
         </div>
       </DialogContent>
@@ -300,8 +325,8 @@ function StudioContent({
   registerEscape: (handler: () => void) => () => void;
   /** New Flow, and the Flow it created last, which can open before Studio receives it. */
   creation: { readonly start: () => void; readonly created: FlowDraft | undefined };
-  reportFlowDraft: (id: string, dirty: boolean) => void;
-  reportAgentDraft: (id: string, dirty: boolean) => void;
+  reportFlowDraft: ReportDraft;
+  reportAgentDraft: ReportDraft;
 }) {
   const content = useRef<HTMLDivElement>(null);
   useEffect(() => {

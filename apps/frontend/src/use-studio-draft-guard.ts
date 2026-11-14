@@ -1,10 +1,9 @@
+import type { DraftGuardState } from "./draft-guard.ts";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { validateAppSearch, type StudioSelection } from "./settings-navigation.ts";
 
-export type StudioDraft =
-  | { kind: "flow"; id: string; dirty: boolean }
-  | { kind: "agent"; id: string; dirty: boolean };
+export type StudioDraft = DraftGuardState & { kind: "flow" | "agent"; id: string };
 
 export type StudioDraftGuardInput = {
   flow?: StudioDraft | undefined;
@@ -49,7 +48,9 @@ function staysWithDraft(studio: StudioSelection | undefined, draft: StudioDraft)
 function liveDrafts(input: StudioDraftGuardInput): StudioDraft[] {
   const flow = input.flowRef ? input.flowRef.current : input.flow;
   const agent = input.agentRef ? input.agentRef.current : input.agent;
-  return [flow, agent].filter((draft): draft is StudioDraft => !!draft?.dirty);
+  return [flow, agent].filter(
+    (draft): draft is StudioDraft => !!draft && (draft.dirty || draft.removed),
+  );
 }
 
 export function useStudioDraftGuard(input: StudioDraftGuardInput) {
@@ -60,10 +61,10 @@ export function useStudioDraftGuard(input: StudioDraftGuardInput) {
     inputRef.current = input;
   }, [input]);
   const [decision, setDecision] = useState<Decision>({ status: "idle" });
-  const dirty = !!(input.flow?.dirty || input.agent?.dirty);
+  const guarded = liveDrafts(input).length > 0;
   useEffect(() => {
     const unblock = router.history.block({
-      enableBeforeUnload: dirty,
+      enableBeforeUnload: guarded,
       blockerFn: async ({ nextLocation }) => {
         const studio = studioSelectionFromLocation(router.parseLocation(nextLocation));
         const drafts = liveDrafts(inputRef.current).filter(
@@ -90,6 +91,6 @@ export function useStudioDraftGuard(input: StudioDraftGuardInput) {
       pending.current = undefined;
       unblock();
     };
-  }, [dirty, router]);
+  }, [guarded, router]);
   return decision;
 }

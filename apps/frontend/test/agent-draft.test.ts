@@ -939,3 +939,69 @@ it("an own delete delivered before its reply is not a removal elsewhere", async 
     deleting: false,
   });
 });
+
+it("a clean Agent removed elsewhere retains a draft and refuses Save", async () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+
+  // Act
+  const result = await setup.draft.save();
+
+  // Assert
+  expect(result).toBeUndefined();
+  expect(setup.factory.updateAgent).not.toHaveBeenCalled();
+  expect(setup.draft.getSnapshot()).toMatchObject({ removed: true, dirty: false, canSave: false });
+});
+
+it("an Agent removed elsewhere refuses another Delete", async () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+
+  // Act
+  const deleted = await setup.draft.delete();
+
+  // Assert
+  expect(deleted).toBe(false);
+  expect(setup.factory.removeAgent).not.toHaveBeenCalled();
+});
+
+it("an Agent removed elsewhere refuses Duplicate", async () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+
+  // Act
+  const copy = await setup.draft.duplicate();
+
+  // Assert
+  expect(copy).toBeUndefined();
+  expect(setup.factory.duplicateAgent).not.toHaveBeenCalled();
+});
+
+it("Copy as JSON recovers unfinished edits in the create shape after removal", () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+  setup.draft.edit({ name: "", prompt: "Unfinished recovery" });
+
+  // Act
+  const recovered = JSON.parse(setup.draft.exportJson());
+
+  // Assert
+  expect(recovered).toEqual({
+    name: "",
+    prompt: "Unfinished recovery",
+    execution: {
+      environmentId: "local",
+      providerInstanceId: "primary",
+      modelId: "first",
+      modelOptions: [
+        { id: "effort", value: "low" },
+        { id: "old", value: true },
+      ],
+    },
+    exits: [{ id: "done", name: "done", description: "", messageRequired: false }],
+  });
+});

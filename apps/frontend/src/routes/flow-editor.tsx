@@ -1,5 +1,5 @@
 import { MutationGate } from "@/client-gate";
-import { useDraftGuard } from "../draft-guard.ts";
+import { useDraftGuard, type ReportDraft } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
 import { useCallback, useEffect, useRef, useState, type FocusEvent, type RefObject } from "react";
@@ -59,7 +59,7 @@ function useOpenedFlowDraft(
   id: string,
   definitions: StudioDefinitions,
   active: boolean,
-  reportDraft: (id: string, dirty: boolean) => void,
+  reportDraft: ReportDraft,
   created: FlowDraft | undefined,
 ) {
   const [draft] = useState(() =>
@@ -280,7 +280,7 @@ export function FlowDetail({
   definitions: StudioDefinitions;
   active: boolean;
   registerEscape: (handler: () => void) => () => void;
-  reportDraft: (id: string, dirty: boolean) => void;
+  reportDraft: ReportDraft;
   /** This Studio's latest create answer, which can arrive before Studio receives that Flow. */
   created: FlowDraft | undefined;
 }) {

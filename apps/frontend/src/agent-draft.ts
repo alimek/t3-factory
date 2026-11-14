@@ -16,7 +16,10 @@ import { randomId } from "./lib/ids.ts";
 import type { StudioDefinitions } from "./studio-definitions.ts";
 
 /** Factory writes used by one Agent draft; the HTTP client in the app, fakes in Node tests. */
-export type AgentDraftOperations = Pick<typeof api, "createAgent" | "updateAgent" | "removeAgent">;
+export type AgentDraftOperations = Pick<
+  typeof api,
+  "createAgent" | "updateAgent" | "removeAgent" | "duplicateAgent"
+>;
 
 /** Studio's saved definitions as one Agent draft follows them, and the writes it sends. */
 export type AgentDraftSource = Pick<StudioDefinitions, "getSnapshot" | "subscribe" | "refresh"> &
@@ -219,7 +222,7 @@ export function createAgentDraft(
       confirmingLoad,
       updatedTo,
       removed,
-      canSave: !saving && !deleting && !newer && !stale && !unknownCreate,
+      canSave: !removed && !saving && !deleting && !newer && !stale && !unknownCreate,
       deleting,
       deleteError,
       choices: { environments, providers, selectedProvider, selectedModel },
@@ -313,6 +316,11 @@ export function createAgentDraft(
       return unsubscribe;
     },
     edit,
+    exportJson: () => JSON.stringify(content, null, 2),
+    async duplicate() {
+      if (removed || !saved || snapshot.dirty || snapshot.saving || deleting) return;
+      return source.duplicateAgent(saved.id, {});
+    },
     setEnvironmentId(id: string) {
       edit({ execution: { ...content.execution, environmentId: id } });
     },
@@ -327,7 +335,7 @@ export function createAgentDraft(
       publish();
     },
     async delete() {
-      if (!saved || snapshot.saving || deleting) return false;
+      if (removed || !saved || snapshot.saving || deleting) return false;
       deleting = true;
       deleteError = "";
       publish();
