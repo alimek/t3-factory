@@ -141,8 +141,10 @@ function TargetRow({
             )}
             {/* The T3 instances tell apart rows of one provider, including unsupported ones without a path. */}
             <span className="block">{target.instances.join(", ")}</span>
-            {/* Installed rows keep the generic caveat in "How it works". */}
-            {target.status !== "installed" && <span className="block">{target.message}</span>}
+            {/* Healthy installed rows keep the generic caveat in "How it works". */}
+            {(target.status !== "installed" || target.launchSkill !== "current") && (
+              <span className="block">{target.message}</span>
+            )}
             {target.launchSkill !== "current" && <LaunchSkillStatus state={target.launchSkill} />}
           </>
         }

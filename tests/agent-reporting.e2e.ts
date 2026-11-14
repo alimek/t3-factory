@@ -7,6 +7,7 @@ import { remoteFixture } from "./support/remote-access.ts";
 // Later journeys share the fixture's T3 connection.
 afterEach(async ({ app }) => {
   await remoteFixture(app, "t3-available");
+  await remoteFixture(app, "reporting/optional-skill");
 });
 
 test("reporting problems are visible before Start and clear after repairing the provider", async ({
@@ -144,6 +145,33 @@ test("the Agent reporting attention dot clears once every harness is installed",
     "Installed",
   );
   await expect(screen.getByRole("link", "Agent reporting", { exact: true })).toBeVisible();
+});
+
+test("installed reporting shows the file and manual remedy for a linked optional skill", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1600, height: 1000 });
+  const linked = await remoteFixture(app, "reporting/optional-skill?linked=1");
+  assert(linked.ok);
+  const { path } = (await linked.json()) as { path: string };
+
+  // Act
+  await app.open("/settings/agent-reporting");
+
+  // Assert
+  const codex = screen.getByRole("group", "Codex", { exact: true });
+  await expect(codex.getByRole("status")).toHaveText("Installed");
+  await expect
+    .poll(() =>
+      browser.evaluate(`getComputedStyle(document.querySelector('[role="dialog"]')).opacity`),
+    )
+    .toBe("1");
+  await app.screenshot("reporting-optional-skill-diagnostic");
+  await expect(codex).toContainText(path);
+  await expect(codex).toContainText("Replace or remove it manually, then Reinstall.");
 });
 
 test("a disconnected T3 connection takes precedence over reporting warnings", async ({
