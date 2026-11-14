@@ -293,9 +293,9 @@ it("narrowing a channel's Projects clears its whole conversation and a regrant r
   await savedAccess(factory, [PARTICIPANT_ID], [project.id, other.value.id]);
   await answered(discord, "300000000000000226", 1, { content: "about both" });
   await savedAccess(factory, [PARTICIPANT_ID], [project.id]);
+  await savedAccess(factory, [PARTICIPANT_ID], [project.id, other.value.id]);
 
   // Act
-  await savedAccess(factory, [PARTICIPANT_ID], [project.id, other.value.id]);
   const replies = await answered(discord, "300000000000000227", 2);
 
   // Assert
@@ -311,9 +311,9 @@ it("expanding a channel's Projects keeps its conversation", async (c) => {
   const other = await factory.addRepository({ path: otherRoot });
   assert(other.ok);
   await answered(discord, "300000000000000228", 1, { content: "remember me" });
+  await savedAccess(factory, [PARTICIPANT_ID], [project.id, other.value.id]);
 
   // Act
-  await savedAccess(factory, [PARTICIPANT_ID], [project.id, other.value.id]);
   await answered(discord, "300000000000000229", 2);
 
   // Assert
@@ -343,13 +343,14 @@ it("removing a user stops their unfinished interpretation before it publishes", 
   discord.deliver(invocation("300000000000000232"));
   await model.requested(1);
   await savedAccess(factory, [COLLABORATOR_ID], [project.id]);
+  // The thread's next invocation waits in its queue until the stopped one ends.
+  discord.deliver(invocation("300000000000000233", { authorId: COLLABORATOR_ID }));
 
   // Act
   late.release({ text: "for a removed user" });
 
   // Assert
-  const replies = await answered(discord, "300000000000000233", 1, { authorId: COLLABORATOR_ID });
-  expect(replies).toStrictEqual(["OK"]);
+  expect(await posted(discord, 1)).toStrictEqual(["OK"]);
   expect(userEnvelopes(model, 1)).toHaveLength(1);
 });
 
@@ -368,32 +369,34 @@ it("a reset during interpretation fences its late reply and keeps nothing of it"
     }),
   );
   await discord.request("PATCH", /\/messages\/%40original$/);
+  // The thread's next invocation waits in its queue until the fenced one ends.
+  discord.deliver(invocation("300000000000000236"));
 
   // Act
   late.release({ text: "from before the reset" });
 
   // Assert
-  const replies = await answered(discord, "300000000000000236", 1);
-  expect(replies).toStrictEqual(["OK"]);
+  expect(await posted(discord, 1)).toStrictEqual(["OK"]);
   expect(userEnvelopes(model, 1)).toHaveLength(1);
 });
 
-it("Off discards unfinished work without a notice, and turning On again revives none", async (c) => {
+it("Off discards unfinished work without a notice, and after turning On again the next invocation finds none of it", async (c) => {
   // Arrange
   const { discord, model, factory } = await conversing(c);
   const late = model.held();
   discord.deliver(invocation("300000000000000237"));
   await model.requested(1);
   await factory.setChatControlEnabled({ enabled: false });
-
-  // Act
   await factory.setChatControlEnabled({ enabled: true });
   await servingAgain(discord, 2);
+  late.release({ text: "after Off" });
+
+  // Act
+  const replies = await answered(discord, "300000000000000238", 1);
 
   // Assert
-  late.release({ text: "after Off" });
-  const replies = await answered(discord, "300000000000000238", 1);
   expect(replies).toStrictEqual(["OK"]);
+  expect(userEnvelopes(model, 1)).toHaveLength(1);
 });
 
 it("a restart discards unfinished work without replaying it and tells the thread once to resend", async (c) => {
