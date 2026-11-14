@@ -40,8 +40,11 @@ red when disconnected. The sidebar Settings dot also checks reporting configurat
 while Connected, a missing, outdated, unsupported or unreadable installation makes it amber with a labelled warning and
 opens **Agent reporting**. Unused providers do not raise this warning. Reporting inspection is neutral while loading;
 connection problems take precedence. The footer names problems, so status never relies on color. The
-pane shows the address, T3 version, authorization, environment and last-check time with T3's explanation, **Check again**
-for non-connected states and **Edit address** (open by default when no endpoint is saved). Settings groups its
+T3 connection pane header carries the status badge and **Check again** in every state; a notice explains any state
+other than Connected. Its Connection group lists the address with **Edit** (the address form is open by default when no
+endpoint is saved), T3 version, authorization with **Authorize on backend host**, **Reauthorize** or **Start new
+authorization** when authorization applies, and the last-check time. The environment ID and inspected tool schemas sit
+under the closed **Diagnostics** disclosure. Only the Factory host edits the address or authorizes. Settings groups its
 sections by scope: **Factory** (T3 connection, Agent reporting, Devices & access), **Runs** (Run titles, Run images)
 and **This device** (Appearance, [Keyboard shortcuts](keyboard-shortcuts.md), Desktop app). Sections that do not apply
 are not listed: Desktop app only in the desktop app, Devices & access only on the Factory host. On other clients Run
