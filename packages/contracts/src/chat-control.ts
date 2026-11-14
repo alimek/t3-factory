@@ -63,6 +63,85 @@ export interface TestChatModelInput {
   readonly revision: number;
 }
 
+/**
+ * What a save does with the saved bot token. A blank form field keeps it; replacement and
+ * removal are explicit.
+ */
+export type DiscordTokenChange =
+  | { readonly kind: "keep" }
+  | { readonly kind: "replace"; readonly value: string }
+  | { readonly kind: "remove" };
+
+/** The saved Discord connection section. The token itself never leaves the host's credential files. */
+export interface DiscordConnectionConfiguration {
+  /** The expected Application ID, a decimal Discord ID kept as text; null until supplied. */
+  readonly applicationId: string | null;
+  /** The application's non-secret Public Key, 64 lowercase hexadecimal characters. */
+  readonly publicKey: string | null;
+  /** Whether a bot token is saved. */
+  readonly tokenConfigured: boolean;
+  /** Increases with every committed save; checks and stale-write checks name it. */
+  readonly revision: number;
+  /** When this revision was saved; null before the first save. */
+  readonly savedAt: string | null;
+}
+
+/**
+ * How the latest connection-only check ended. Only `verified` means Discord authenticated the
+ * saved token as the configured application over a ready Gateway session.
+ */
+export type DiscordCheckOutcome =
+  | "verified"
+  | "identity-mismatch"
+  | "token-rejected"
+  | "intent-disallowed"
+  | "unreachable"
+  | "timed-out"
+  | "failed";
+
+/** The latest owner-requested connection-only check: dated evidence for one saved revision. */
+export interface DiscordCheckEvidence {
+  /** The configuration revision that was checked; an older one dates the evidence. */
+  readonly revision: number;
+  readonly checkedAt: string;
+  readonly outcome: DiscordCheckOutcome;
+  /** Factory's own description; never a Discord-supplied body. */
+  readonly message: string;
+}
+
+/**
+ * The Gateway connection as Factory runs it now. While Chat control is Off the only connection is
+ * an owner-requested check.
+ */
+export type DiscordConnectionStatus = "incomplete" | "off" | "checking";
+
+/** Settings → Chat control → Discord, readable only on the Factory host. */
+export interface DiscordSettings {
+  /** Chat control's persisted On/Off state. Every installation starts Off. */
+  readonly chatControlEnabled: boolean;
+  readonly connectionStatus: DiscordConnectionStatus;
+  readonly configuration: DiscordConnectionConfiguration;
+  readonly latestCheck: DiscordCheckEvidence | null;
+}
+
+export interface UpdateDiscordConnectionInput {
+  /** The revision the edits started from; a different current revision is a conflict. */
+  readonly revision: number;
+  readonly applicationId: string | null;
+  readonly publicKey: string | null;
+  readonly token: DiscordTokenChange;
+  /**
+   * The owner's acknowledgement that replacing a saved Application ID with another one connects a
+   * different bot. Required for that change and ignored otherwise.
+   */
+  readonly applicationChangeConfirmed: boolean;
+}
+
+export interface CheckDiscordConnectionInput {
+  /** The saved revision the owner chose to check; unsaved edits are never checked. */
+  readonly revision: number;
+}
+
 /** Host-only Chat control administration; approved clients get `host_only`. */
 export const chatControlOperations = {
   getChatModelSettings: operation<never, ChatModelSettings>()({
@@ -77,6 +156,20 @@ export const chatControlOperations = {
   testChatModel: operation<TestChatModelInput, ChatModelSettings>()({
     method: "POST",
     path: "/api/chat-control/model/test",
+    body: "json",
+  }),
+  getDiscordSettings: operation<never, DiscordSettings>()({
+    method: "GET",
+    path: "/api/chat-control/discord",
+  }),
+  updateDiscordConnection: operation<UpdateDiscordConnectionInput, DiscordSettings>()({
+    method: "PUT",
+    path: "/api/chat-control/discord/connection",
+    body: "json",
+  }),
+  checkDiscordConnection: operation<CheckDiscordConnectionInput, DiscordSettings>()({
+    method: "POST",
+    path: "/api/chat-control/discord/check",
     body: "json",
   }),
 };

@@ -32,6 +32,8 @@
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.104",
     "@ai-sdk/openai-compatible": "3.0.92",
+    "@chat-adapter/discord": "4.44.0",
+    "@discordjs/ws": "1.2.3",
     "@effect/platform-node": "4.1.2",
     "@effect/sql-sqlite-node": "4.1.2",
     "@modelcontextprotocol/client": "2.4.0",
@@ -40,6 +42,8 @@
     "@t3-factory/domain-validation": "workspace:*",
     "@t3-factory/flow-layout": "workspace:*",
     "ai": "7.0.172",
+    "chat": "4.44.0",
+    "discord.js": "14.28.1",
     "effect": "4.1.2",
     "fs-ext": "2.1.1",
     "smol-toml": "1.9.1",

@@ -1043,6 +1043,10 @@ export {
   CHAT_MODEL_NAME_LIMIT,
   CHAT_MODEL_PROVIDER_KINDS,
   validateChatModelBaseUrl,
+  validateCheckDiscordConnection,
+  validateDiscordId,
+  validateDiscordPublicKey,
   validateTestChatModel,
   validateUpdateChatModel,
+  validateUpdateDiscordConnection,
 } from "./chat-control.ts";

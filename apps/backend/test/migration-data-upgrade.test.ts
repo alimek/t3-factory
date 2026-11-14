@@ -6,7 +6,7 @@ import {
   releasedUpgradeData,
 } from "./support/released-upgrade.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run, leaves Generate Run titles off and starts Chat control Off with an empty Language model", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run, leaves Generate Run titles off and starts Chat control Off with an empty Language model and Discord connection", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   expect(fixture.pendingStop.closedAt).toBeNull();
@@ -82,6 +82,21 @@ it("upgrading v0.2.0 keeps clients and definitions in the project checkout, sett
         savedAt: null,
       },
       latestTest: null,
+    },
+  });
+  expect(await factory.getDiscordSettings()).toStrictEqual({
+    ok: true,
+    value: {
+      chatControlEnabled: false,
+      connectionStatus: "incomplete",
+      configuration: {
+        applicationId: null,
+        publicKey: null,
+        tokenConfigured: false,
+        revision: 0,
+        savedAt: null,
+      },
+      latestCheck: null,
     },
   });
   const tasks = await factory.listTasks(fixture.project.id);

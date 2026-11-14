@@ -1,4 +1,7 @@
 import type {
+  CheckDiscordConnectionInput,
+  DiscordTokenChange,
+  UpdateDiscordConnectionInput,
   ChatModelKeyChange,
   ChatModelProviderKind,
   Result,
@@ -92,10 +95,10 @@ function parseKeyChange(value: unknown): Result<ChatModelKeyChange> {
   return { ok: true, value: { kind: "replace", value: key } };
 }
 
-const parseRevision = (value: unknown): Result<number> =>
+const parseRevision = (value: unknown, code = "chat_model_revision"): Result<number> =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? { ok: true, value }
-    : invalid("chat_model_revision", "revision", "Name the saved revision these edits start from.");
+    : invalid(code, "revision", "Name the saved revision these edits start from.");
 
 function parseProviderKind(value: unknown): Result<ChatModelProviderKind | null> {
   if (value === null || value === undefined) return { ok: true, value: null };
@@ -158,6 +161,110 @@ export function validateUpdateChatModel(input: unknown): Result<UpdateChatModelI
 export function validateTestChatModel(input: unknown): Result<TestChatModelInput> {
   const revision = parseRevision(
     typeof input === "object" && input !== null && "revision" in input ? input.revision : undefined,
+  );
+  return revision.ok ? { ok: true, value: { revision: revision.value } } : revision;
+}
+
+const DISCORD_TOKEN_LIMIT = 512;
+const DISCORD_ID_MAX = 2n ** 64n - 1n;
+
+/**
+ * A Discord ID (snowflake) as a trimmed decimal string. It is never converted to a JavaScript
+ * number, which cannot hold every 64-bit ID exactly.
+ */
+export function validateDiscordId(
+  value: string,
+  code: string,
+  path: string,
+  label: string,
+): Result<string> {
+  const text = value.trim();
+  return /^[1-9][0-9]{16,19}$/.test(text) && BigInt(text) <= DISCORD_ID_MAX
+    ? { ok: true, value: text }
+    : invalid(code, path, `Enter the ${label} as the 17 to 20 digit number Discord shows.`);
+}
+
+/** The application's Public Key from the Developer Portal: 64 hexadecimal characters. */
+export function validateDiscordPublicKey(value: string): Result<string> {
+  const text = value.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(text)
+    ? { ok: true, value: text }
+    : invalid(
+        "discord_public_key",
+        "publicKey",
+        "Enter the Public Key as the 64 hexadecimal characters the Developer Portal shows.",
+      );
+}
+
+function parseOptionalText<A>(
+  value: unknown,
+  parse: (text: string) => Result<A>,
+  fallback: Result<never>,
+): Result<A | null> {
+  if (value === null || value === undefined) return { ok: true, value: null };
+  return typeof value === "string" ? parse(value) : fallback;
+}
+
+function parseTokenChange(value: unknown): Result<DiscordTokenChange> {
+  const fields =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  if (fields.kind === "keep" || fields.kind === "remove")
+    return { ok: true, value: { kind: fields.kind } };
+  if (fields.kind !== "replace")
+    return invalid("discord_token", "token", "Say whether to keep, replace or remove the token.");
+  const token = typeof fields.value === "string" ? fields.value.trim() : "";
+  if (token.length === 0 || token.length > DISCORD_TOKEN_LIMIT || /\s/u.test(token))
+    return invalid(
+      "discord_token",
+      "token.value",
+      `Enter a replacement bot token up to ${DISCORD_TOKEN_LIMIT} characters without spaces.`,
+    );
+  return { ok: true, value: { kind: "replace", value: token } };
+}
+
+/**
+ * Structural validation of a Discord connection save. Missing required fields are permitted here;
+ * whether they may be removed depends on Chat control's current state, which the backend checks.
+ */
+export function validateUpdateDiscordConnection(
+  input: unknown,
+): Result<UpdateDiscordConnectionInput> {
+  const fields =
+    typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  const revision = parseRevision(fields.revision, "discord_revision");
+  if (!revision.ok) return revision;
+  const applicationId = parseOptionalText(
+    fields.applicationId,
+    (text) => validateDiscordId(text, "discord_application_id", "applicationId", "Application ID"),
+    invalid("discord_application_id", "applicationId", "Enter the Application ID as text."),
+  );
+  if (!applicationId.ok) return applicationId;
+  const publicKey = parseOptionalText(
+    fields.publicKey,
+    validateDiscordPublicKey,
+    invalid("discord_public_key", "publicKey", "Enter the Public Key as text."),
+  );
+  if (!publicKey.ok) return publicKey;
+  const token = parseTokenChange(fields.token);
+  if (!token.ok) return token;
+  return {
+    ok: true,
+    value: {
+      revision: revision.value,
+      applicationId: applicationId.value,
+      publicKey: publicKey.value,
+      token: token.value,
+      applicationChangeConfirmed: fields.applicationChangeConfirmed === true,
+    },
+  };
+}
+
+export function validateCheckDiscordConnection(
+  input: unknown,
+): Result<CheckDiscordConnectionInput> {
+  const revision = parseRevision(
+    typeof input === "object" && input !== null && "revision" in input ? input.revision : undefined,
+    "discord_revision",
   );
   return revision.ok ? { ok: true, value: { revision: revision.value } } : revision;
 }

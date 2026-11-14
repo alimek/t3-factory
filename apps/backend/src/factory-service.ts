@@ -23,6 +23,8 @@ import { makeRunImages } from "./run-images.ts";
 import { makeRunTitles } from "./run-titles.ts";
 import { makeChatCredentials } from "./chat-control/credentials.ts";
 import { makeChatModel } from "./chat-control/model.ts";
+import { makeChatDiscord } from "./chat-control/discord.ts";
+import { DISCORD_API_URL, makeDiscordGateway } from "./chat-control/discord-gateway.ts";
 import { failure } from "./result.ts";
 import { makeLiveChanges } from "./live-changes.ts";
 import { makeLiveStreams, type LiveStreams } from "./live-streams.ts";
@@ -122,7 +124,12 @@ export const makeFactoryService = (
       },
       changes,
     );
-    const chatModel = yield* makeChatModel(yield* makeChatCredentials(credentialsDirectory));
+    const chatCredentials = yield* makeChatCredentials(credentialsDirectory);
+    const chatModel = yield* makeChatModel(chatCredentials);
+    const chatDiscord = yield* makeChatDiscord(
+      chatCredentials,
+      yield* makeDiscordGateway(options.discordApiUrl ?? DISCORD_API_URL),
+    );
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
@@ -158,6 +165,9 @@ export const makeFactoryService = (
       getChatModelSettings: () => chatModel.getChatModelSettings(),
       updateChatModelSettings: (input) => chatModel.updateChatModelSettings(input),
       testChatModel: (input) => chatModel.testChatModel(input),
+      getDiscordSettings: () => chatDiscord.getDiscordSettings(),
+      updateDiscordConnection: (input) => chatDiscord.updateDiscordConnection(input),
+      checkDiscordConnection: (input) => chatDiscord.checkDiscordConnection(input),
       startRun: (i) => runner.startRun(i),
       getRunImageInfo: (sha256) => images.getRunImageInfo(sha256),
       stageRunImage: (sha256, input) => images.stageRunImage(sha256, input),

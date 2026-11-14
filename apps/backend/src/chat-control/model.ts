@@ -105,29 +105,22 @@ export const makeChatModel = (credentials: ChatCredentials) =>
      * naming it commits only when the edits still apply. Saving never contacts the provider.
      */
     const updateChatModelSettings = (input: unknown) =>
-      credentials.commit(
-        Effect.gen(function* (): Effect.fn.Return<Result<ChatModelSettings>, unknown> {
-          const validated = validateUpdateChatModel(input);
-          if (!validated.ok) return validated;
-          const next = validated.value;
-          const staged =
-            next.key.kind === "replace"
-              ? yield* credentials.stage("model-key", next.key.value)
-              : undefined;
-          const savedAt = yield* now;
-          const committed = yield* sql.withTransaction(
-            Effect.gen(function* () {
-              const row = yield* readRow(sql);
-              const problem = commitProblem(row, next);
-              if (problem) return problem;
-              const keyStage = next.key.kind === "remove" ? null : (staged ?? row.key_stage);
-              yield* sql`UPDATE chat_model_settings SET provider_kind=${next.providerKind},base_url=${next.baseUrl},model=${next.model},key_stage=${keyStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
-              return undefined;
-            }),
-          );
-          return committed ?? (yield* getChatModelSettings());
-        }),
-      );
+      Effect.gen(function* (): Effect.fn.Return<Result<ChatModelSettings>, unknown> {
+        const validated = validateUpdateChatModel(input);
+        if (!validated.ok) return validated;
+        const next = validated.value;
+        const refused = yield* credentials.commitSection({
+          purpose: "model-key",
+          secret: next.key.kind === "replace" ? next.key.value : undefined,
+          read: readRow(sql),
+          problem: (row) => commitProblem(row, next),
+          write: (row, staged, savedAt) => {
+            const keyStage = next.key.kind === "remove" ? null : (staged ?? row.key_stage);
+            return sql`UPDATE chat_model_settings SET provider_kind=${next.providerKind},base_url=${next.baseUrl},model=${next.model},key_stage=${keyStage},revision=revision+1,saved_at=${savedAt} WHERE singleton=1`;
+          },
+        });
+        return refused ?? (yield* getChatModelSettings());
+      });
 
     /**
      * One owner-requested synthetic request with the saved configuration at `revision`, recorded
