@@ -4,24 +4,23 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type { HumanOccurrence, Result, RunDetail } from "@t3-factory/contracts";
 import { effectiveExits, HUMAN_EXITS } from "@t3-factory/domain-validation";
 import {
-  REVIEW_CHARACTER_LIMIT,
+  exceedsReviewLimit,
   type ActionOutcome,
   type ChatOperation,
   type Proposed,
 } from "./actions.ts";
 import { invalid, type ChatToolOutcome, type MutationTool } from "./chat-tools.ts";
-import { characters, messageParts } from "./interpretation.ts";
 import {
-  clip,
-  CONSENT_LINE,
   exactTextProblem,
-  MESSAGE_LENGTH,
   refused,
-  SOURCE_LINES,
+  reviewMessages,
+  runLine,
+  sourceLine,
   TEXT_SOURCES,
   textBlocks,
   type TextSource,
 } from "./review-text.ts";
+import { at, clip, inert } from "./status-cards.ts";
 import { runSearch, type RunIdentity } from "./run-search.ts";
 import { NOT_PERMITTED, referenceOf, runReference } from "./run-tools.ts";
 
@@ -137,16 +136,13 @@ function arrivalLine(detail: RunDetail, occurrence: HumanOccurrence) {
           (entry) => entry.id === arrival.exitId,
         )?.name
       : undefined;
-  return `**Arrived from:** ${blockName(detail, arrival.sourceBlockId)}${exit ? `, exit ${exit}` : ""}`;
+  return `↪️ From ${inert(blockName(detail, arrival.sourceBlockId))}${exit ? ` · exit ${inert(exit)}` : ""}`;
 }
 
-const runLine = (number: number | null, title: string) =>
-  `Run ${number === null ? "" : `#${number} `}“${clip(title, 300)}”`;
+const ANSWER_EMOJI: Record<ExitId, string> = { approve: "✅", "request-changes": "✏️" };
 
-const DISCLOSURE = [
-  "When you confirm, Factory answers exactly this occurrence with this answer and message. If it was answered or cancelled elsewhere meanwhile, or the Run no longer accepts answers, Factory answers nothing and says so; it never applies this answer to another occurrence.",
-  CONSENT_LINE,
-].join("\n");
+const DISCLOSURE =
+  "ℹ️ Answers exactly this occurrence. If it was answered or cancelled elsewhere meanwhile, Factory answers nothing and never applies this answer to another one.";
 
 /** The complete review of a Human answer, as ordered Discord messages. */
 function answerReview(
@@ -156,21 +152,23 @@ function answerReview(
   occurrence: HumanOccurrence & { readonly context: string },
 ) {
   const exit = exitOf(parameters.exitId);
-  const header = [
-    "**Review: answer a Human step**",
-    `**Run:** ${runLine(detail.number, detail.title)} in ${identity.project.name} — \`${identity.project.repositoryPath}\``,
-    `**Human step:** ${blockName(detail, occurrence.blockId)} (occurrence \`${occurrence.id}\`), waiting since ${occurrence.appearedAt}`,
+  const answer = `${ANSWER_EMOJI[parameters.exitId]} **${exit.name}**`;
+  return reviewMessages([
+    "🙋 **Answer a Human step?**",
+    `📌 ${runLine(detail.number, detail.title)} · 📁 ${inert(identity.project.name)} · \`${identity.project.repositoryPath}\``,
+    `🧩 ${inert(blockName(detail, occurrence.blockId))} · waiting since ${at(occurrence.appearedAt)}`,
     ...[arrivalLine(detail, occurrence)].filter((line) => line !== null),
-    `**Context** (${characters(occurrence.context).toLocaleString("en-US")} characters), complete:`,
-  ].join("\n");
-  const answer =
-    parameters.message === null
-      ? [`**Answer:** ${exit.name}. ${exit.name} sends no message.`]
+    "📄 Full context:",
+    ...textBlocks(occurrence.context),
+    ...(parameters.message === null
+      ? [`${answer} — sends no message`]
       : [
-          `**Answer:** ${exit.name}.\n**Message** (${characters(parameters.message).toLocaleString("en-US")} characters), ${SOURCE_LINES[parameters.source!]}:`,
+          `${answer} with this message:`,
+          ...[sourceLine(parameters.source!, "Message")].filter((line) => line !== undefined),
           ...textBlocks(parameters.message),
-        ];
-  return [...messageParts(header), ...textBlocks(occurrence.context), ...answer, DISCLOSURE];
+        ]),
+    DISCLOSURE,
+  ]);
 }
 
 type AnswerFacts = {
@@ -279,16 +277,12 @@ export function humanAnswerAction(sql: SqlClient.SqlClient, operations: HumanAns
     receipt: (outcome) => {
       if (outcome.kind === "accepted") {
         const facts = outcome.facts as AnswerFacts;
-        return [
-          `**Human answer accepted.** Factory accepted **${exitOf(facts.answer).name}** for the Human step “${clip(facts.block, 200)}” in ${runLine(facts.runNumber, facts.title)}. The Flow continues from this answer; Factory shows its progress.`,
-          `Occurrence: \`${facts.occurrenceId}\` · Run ID: \`${facts.runId}\``,
-        ].join("\n");
+        return `✅ **${exitOf(facts.answer).name} accepted** — 🧩 ${inert(clip(facts.block, 200))} · ${runLine(facts.runNumber, facts.title)}`;
       }
       const facts = outcome.facts as RejectedFacts;
       return [
-        `**Human answer not accepted.** Factory did not answer the Human step “${clip(facts.block, 200)}”${facts.title === "" ? "" : ` in ${runLine(facts.runNumber, facts.title)}`}: ${clip(facts.message, 300)}`,
-        `Occurrence: \`${facts.occurrenceId}\` · Run ID: \`${facts.runId}\``,
-        "Nothing was answered. If it still needs an answer, read the Run and ask for a new review.",
+        `❌ **Answer not accepted** — 🧩 ${inert(clip(facts.block, 200))}${facts.title === "" ? "" : ` · ${runLine(facts.runNumber, facts.title)}`}`,
+        clip(facts.message, 300),
       ].join("\n");
     },
     summary: (outcome) => {
@@ -355,14 +349,8 @@ export function humanAnswerAction(sql: SqlClient.SqlClient, operations: HumanAns
         });
         const exit = exitOf(parameters.exitId);
         const block = blockName(detail.value, occurrence.blockId);
-        const confirmation = {
-          label: `Confirm ${exit.name}`,
-          text: clip(
-            `Confirm this answer: ${exit.name} for the Human step “${block}” in ${runLine(detail.value.number, detail.value.title)}.`,
-            MESSAGE_LENGTH,
-          ),
-        };
-        if (characters([...review, confirmation.text].join("")) > REVIEW_CHARACTER_LIMIT)
+        const confirmation = { label: `Confirm ${exit.name}` };
+        if (exceedsReviewLimit(review))
           return refused(
             "review_too_long",
             "Factory's complete review of this answer, with the occurrence's full context, would exceed 32,000 characters, so it cannot be confirmed in chat. The context stays readable with read_run; suggest answering in Factory.",

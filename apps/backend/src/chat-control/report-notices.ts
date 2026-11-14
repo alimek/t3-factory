@@ -36,11 +36,11 @@ const NEEDS_INPUT = new Set<MatterKind>(["human", "native-request", "conversatio
 const MATTERS: Record<MatterKind, { what: (block: string) => string; pending?: string }> = {
   human: {
     what: (block) => `Human step ${block} waits for an answer`,
-    pending: "Ask Factory in this thread to review it; answering takes your confirmation.",
+    pending: "ask here to review it; answering needs your confirmation",
   },
   "native-request": {
     what: (block) => `${block} has a T3 request`,
-    pending: "Answer it in T3.",
+    pending: "answer it in T3",
   },
   "conversation-waiting": { what: (block) => `${block} asked a question` },
   "missing-report": { what: (block) => `${block}: report missing` },
@@ -48,15 +48,16 @@ const MATTERS: Record<MatterKind, { what: (block: string) => string; pending?: s
   "report-problem": { what: (block) => `${block}: report problem` },
 };
 
+const LIFECYCLE_EMOJI: Record<Lifecycle, string> = { active: "🟢", settled: "✅", archived: "🗄️" };
 const LIFECYCLE_SENTENCES: Record<Lifecycle, string> = {
-  active: "returned to Active at",
-  settled: "is Settled since",
-  archived: "was Archived at",
+  active: "is Active again",
+  settled: "is Settled",
+  archived: "was Archived",
 };
 const LIFECYCLE_LABELS: Record<Lifecycle, string> = {
-  active: "Returned to Active",
-  settled: "Settled",
-  archived: "Archived",
+  active: "🟢 Active again",
+  settled: "✅ Settled",
+  archived: "🗄️ Archived",
 };
 
 const APPLICATION_NOTICE =
@@ -89,23 +90,22 @@ type NoticeRow = {
 
 const matterLine = (matter: MatterRow) => {
   const kind = MATTERS[matter.kind];
-  const what = `${kind.what(name(matter.block))}, since ${at(matter.appeared_at)}`;
-  if (matter.resolved === 1) return `• ~~${what}~~ · resolved`;
-  return `• ${what}.${kind.pending ? ` ${kind.pending}` : ""}`;
+  const what = `${kind.what(name(matter.block))} · since ${at(matter.appeared_at)}`;
+  if (matter.resolved === 1) return `• ~~${what}~~ ✅`;
+  return `• ${what}${kind.pending ? ` — ${kind.pending}` : ""}`;
 };
 
-/** How an attention notice's first line describes its matters. */
-function attentionHeading(matters: readonly MatterRow[]) {
+/** An attention notice's first line: an emoji for its kind of matters, the Run and what it has. */
+function attentionHeading(heading: string, matters: readonly MatterRow[]) {
   const needsInput = matters.filter((matter) => NEEDS_INPUT.has(matter.kind)).length;
-  const subject =
+  const [emoji, subject] =
     needsInput === matters.length
-      ? "needs input"
+      ? ["🙋", "needs input"]
       : needsInput === 0
-        ? matters.length === 1
-          ? "has a Problem"
-          : "has Problems"
-        : "needs attention";
-  return matters.every((matter) => matter.resolved === 1) ? `${subject} · resolved` : subject;
+        ? ["⚠️", matters.length === 1 ? "has a Problem" : "has Problems"]
+        : ["🔔", "needs attention"];
+  const resolved = matters.every((matter) => matter.resolved === 1) ? " · ✅ resolved" : "";
+  return `${emoji} ${heading} ${subject}${resolved}`;
 }
 
 /**
@@ -128,17 +128,16 @@ function noticeText(notice: NoticeRow, matters: readonly MatterRow[]) {
     if (rest > 0) lines.push(`• and ${rest} more; the status card shows what is pending`);
     switch (notice.purpose) {
       case "attention":
-        return [...intro, `${heading} ${attentionHeading(matters)}`, ...lines];
+        return [...intro, attentionHeading(heading, matters), ...lines];
       case "lifecycle":
         return [
           ...intro,
-          `${heading} ${LIFECYCLE_SENTENCES[notice.lifecycle!]} ${at(notice.lifecycle_at!)}.`,
-          `Ask Factory to read Run ${notice.reference} for details.`,
+          `${LIFECYCLE_EMOJI[notice.lifecycle!]} ${heading} ${LIFECYCLE_SENTENCES[notice.lifecycle!]} ${at(notice.lifecycle_at!)}`,
         ];
       case "catch-up":
         return [
           ...intro,
-          `${heading} · while Factory could not post in this thread:`,
+          `📬 ${heading} · while Factory could not post in this thread:`,
           ...lifecycleLine,
           ...lines,
         ];

@@ -10,7 +10,7 @@ import type {
 } from "@t3-factory/contracts";
 import { promptTitle } from "@t3-factory/domain-validation";
 import {
-  REVIEW_CHARACTER_LIMIT,
+  exceedsReviewLimit,
   type ActionOutcome,
   type ChatOperation,
   type Proposed,
@@ -21,23 +21,22 @@ import {
   type ChatToolScope,
   type MutationTool,
 } from "./chat-tools.ts";
-import { characters, messageParts } from "./interpretation.ts";
 import {
-  clip,
-  CONSENT_LINE,
   exactTextProblem,
-  MESSAGE_LENGTH,
   refused,
-  SOURCE_LINES,
+  reviewMessages,
+  sourceLine,
   TEXT_SOURCES,
   textBlocks,
   type TextSource,
 } from "./review-text.ts";
+import { clip, inert } from "./status-cards.ts";
 
 /** The Factory operations a chat Start uses: the shared text Start and its reads. */
 export interface StartOperations {
   readonly listProjects: () => Effect.Effect<Result<ProjectCatalog>, unknown>;
   readonly getFlow: (id: string) => Effect.Effect<Result<FlowDraft>, unknown>;
+  readonly listFlows: () => Effect.Effect<Result<readonly FlowDraft[]>, unknown>;
   readonly getRunTitleSetting: () => Effect.Effect<Result<RunTitleSetting>, unknown>;
   /** Factory MCP's shared text Start; the request ID is the Start's identity. */
   readonly startTextRun: (input: unknown) => Effect.Effect<Result<RunDetail>, unknown>;
@@ -106,22 +105,16 @@ function startArguments(input: unknown) {
 
 const workspaceLine = (flow: FlowDraft) =>
   flow.workspace.mode === "checkout"
-    ? "the Project's checkout"
+    ? "in the Project's checkout"
     : flow.workspace.base.kind === "default"
-      ? "a new worktree from the Project's default branch"
-      : `a new worktree from \`${flow.workspace.base.ref}\``;
+      ? "new worktree from the default branch"
+      : `new worktree from \`${flow.workspace.base.ref}\``;
 
-const titlePolicy = (setting: Result<RunTitleSetting>) =>
-  !setting.ok
-    ? "Factory could not read the Generate Run titles setting, so a generated title may still replace this one shortly after Start."
-    : setting.value.enabled
-      ? "Generate Run titles is on: Factory may replace this title with a generated title shortly after Start."
-      : "Generate Run titles is off: the Run keeps this title.";
+/** Shown unless Generate Run titles is known to be off: an unread setting is not "off". */
+const TITLE_REPLACEABLE = " _(may be replaced by a generated title)_";
 
-const DISCLOSURE = [
-  "When you confirm, Factory resolves the current saved definitions of this Flow and its Agents, including the workspace setting, at that moment: changes saved before then apply without another review. Factory checks the Project, the Flow and T3 again and may still refuse the Start.",
-  CONSENT_LINE,
-].join("\n");
+const DISCLOSURE =
+  "ℹ️ The current saved Flow and Agent definitions, workspace included, apply when you confirm; Factory checks again and may still refuse.";
 
 type AcceptedFacts = {
   runId: string;
@@ -142,18 +135,18 @@ function startReview(
   { project, flow }: { readonly project: FactoryProject; readonly flow: FlowDraft },
   title: string,
   setting: Result<RunTitleSetting>,
+  sameNamedFlow: boolean,
 ) {
-  const header = [
-    "**Review: start a Run**",
-    `**Project:** ${project.title} — \`${project.workspaceRoot}\``,
-    `**Flow:** ${flow.name} (\`${flow.id}\`)`,
-    `**Workspace:** ${workspaceLine(flow)}`,
-    `**Run title:** ${title}`,
-    "Factory derives this automatic title from the prompt's first non-empty line.",
-    titlePolicy(setting),
-    `**Prompt** (${characters(prompt).toLocaleString("en-US")} characters), ${SOURCE_LINES[source]}:`,
-  ].join("\n");
-  return [...messageParts(header), ...textBlocks(prompt), DISCLOSURE];
+  const titled = setting.ok && !setting.value.enabled ? "" : TITLE_REPLACEABLE;
+  return reviewMessages([
+    "📝 **Start a Run?**",
+    `📁 ${inert(project.title)} · \`${project.workspaceRoot}\``,
+    `🔀 ${inert(flow.name)} · ${workspaceLine(flow)}${sameNamedFlow ? ` · \`${flow.id}\`` : ""}`,
+    `🏷️ ${inert(title)}${titled}`,
+    ...[sourceLine(source, "Prompt")].filter((line) => line !== undefined),
+    ...textBlocks(prompt),
+    DISCLOSURE,
+  ]);
 }
 
 /** The chat Start: proposal validation and review, and its binding to the shared text Start. */
@@ -218,15 +211,14 @@ export function startAction(operations: StartOperations) {
       if (outcome.kind === "accepted") {
         const facts = outcome.facts as AcceptedFacts;
         return [
-          `**Start accepted.** Factory accepted Run ${facts.runNumber === null ? "" : `#${facts.runNumber} `}“${clip(facts.title, 500)}” in ${clip(facts.projectTitle ?? facts.projectId, 200)} with Flow ${clip(facts.flowName, 200)}. Workers start asynchronously; Factory shows their progress.`,
-          `Run ID: \`${facts.runId}\``,
+          `✅ **Run ${facts.runNumber === null ? "" : `#${facts.runNumber} `}started** — ${inert(clip(facts.title, 500))}`,
+          `📁 ${inert(clip(facts.projectTitle ?? facts.projectId, 200))} · 🔀 ${inert(clip(facts.flowName, 200))}`,
         ].join("\n");
       }
       const facts = outcome.facts as RejectedFacts;
       return [
-        `**Start not accepted.** Factory did not start this Run: ${clip(facts.message, 300)}`,
-        ...facts.issues.map((issue) => `- ${clip(issue, 200)}`),
-        "Nothing was started. Fix the cause, then ask for a new review.",
+        `❌ **Start not accepted** — ${clip(facts.message, 300)}`,
+        ...facts.issues.map((issue) => `• ${clip(issue, 200)}`),
       ].join("\n");
     },
     summary: (outcome) => {
@@ -290,20 +282,18 @@ export function startAction(operations: StartOperations) {
         if ("output" in targets) return targets;
         const { project, flow } = targets;
         const title = promptTitle(parameters.prompt)!;
+        const flows = yield* operations.listFlows();
         const review = startReview(
           parameters,
           targets,
           title,
           yield* operations.getRunTitleSetting(),
+          // A Flow is named by its ID only when the name alone cannot tell it apart.
+          !flows.ok ||
+            flows.value.some((other) => other.id !== flow.id && other.name === flow.name),
         );
-        const confirmation = {
-          label: "Confirm Start",
-          text: clip(
-            `Confirm this Start: Run “${title}” in ${project.title} with Flow ${flow.name}.`,
-            MESSAGE_LENGTH,
-          ),
-        };
-        if (characters([...review, confirmation.text].join("")) > REVIEW_CHARACTER_LIMIT)
+        const confirmation = { label: "Confirm Start" };
+        if (exceedsReviewLimit(review))
           return refused(
             "review_too_long",
             "Factory's complete review of this Start would exceed 32,000 characters, so it cannot be confirmed in chat. Suggest using Factory.",

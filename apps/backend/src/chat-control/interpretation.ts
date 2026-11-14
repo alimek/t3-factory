@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import type * as SqlClient from "effect/sql/SqlClient";
 import { grantedProjects } from "./access.ts";
 import type { ChatActions, ChatOperationName, ProposalStatus, Proposed } from "./actions.ts";
+import { at } from "./status-cards.ts";
 import { isMutation, toolDefinitions, type ChatTool } from "./chat-tools.ts";
 import type {
   ConversationGenerations,
@@ -703,7 +704,7 @@ export const makeInterpreter = (session: InterpreterSession) =>
         if (opened.kind === "pending")
           return yield* reply(
             state,
-            `This exact ${OPERATION_NAMES[proposed.operation]} already has a review waiting for your confirmation in this thread. Use its button before ${opened.expiresAt}; Factory did not post it again.`,
+            `This exact ${OPERATION_NAMES[proposed.operation]} already has a review waiting for your confirmation in this thread. Use its button; it expires ${at(opened.expiresAt)}. Factory did not post it again.`,
           );
         const notice = state.evicted > 0 ? "evicted" : history.notice;
         slot.committed = true;

@@ -26,7 +26,7 @@ type World = Awaited<ReturnType<typeof startingWorld>>;
 type Worker = Awaited<ReturnType<typeof chatStartedRun>>["worker"];
 
 /** A Discord timestamp in a notice. */
-const AT = "<t:\\d+:f>";
+const AT = "<t:\\d+:R>";
 const MESSAGES = new RegExp(`^/api/v10/channels/${THREAD}/messages$`);
 /** The other application a replaced Discord connection names. */
 const otherBot = { token: "other-bot-token.discord.secret", applicationId: "123456789012345679" };
@@ -89,9 +89,7 @@ it("a Run becoming Settled posts one lifecycle notice in its originating thread,
   const notice = await noticeCreated(world.discord);
   expect(notice.channelId).toBe(THREAD);
   expect(notice.content).toMatch(
-    new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* is Settled since ${AT}\\.\\nAsk Factory to read Run #1 for details\\.$`,
-    ),
+    new RegExp(`^✅ \\*\\*Run #1 · Improve search\\*\\* is Settled ${AT}$`),
   );
   expect(world.discord.created.slice(messages)).toStrictEqual([notice]);
 });
@@ -109,7 +107,7 @@ it("a new Human step posts one Needs input notice that leads to a review in the 
   const notice = await noticeCreated(world.discord);
   expect(notice.content).toMatch(
     new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* needs input\\n• Human step Review waits for an answer, since ${AT}\\. Ask Factory in this thread to review it; answering takes your confirmation\\.$`,
+      `^🙋 \\*\\*Run #1 · Improve search\\*\\* needs input\\n• Human step Review waits for an answer · since ${AT} — ask here to review it; answering needs your confirmation$`,
     ),
   );
   expect(notice.components).toEqual([]);
@@ -127,10 +125,10 @@ it("answering the Human step edits its notice in place to resolved, without a ne
 
   // Assert
   assert(answered.ok, JSON.stringify(answered));
-  const shown = await messageShows(world.discord, notice, /· resolved\n/);
+  const shown = await messageShows(world.discord, notice, /· ✅ resolved\n/);
   expect(shown.content).toMatch(
     new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* needs input · resolved\\n• ~~Human step Review waits for an answer, since ${AT}~~ · resolved$`,
+      `^🙋 \\*\\*Run #1 · Improve search\\*\\* needs input · ✅ resolved\\n• ~~Human step Review waits for an answer · since ${AT}~~ ✅$`,
     ),
   );
   expect(world.discord.created).toHaveLength(messages);
@@ -148,7 +146,7 @@ it("a native T3 request of a Snoozed Run posts a Needs input notice to answer it
   const notice = await noticeCreated(world.discord);
   expect(notice.content).toMatch(
     new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* needs input\\n• Entry worker has a T3 request, since ${AT}\\. Answer it in T3\\.$`,
+      `^🙋 \\*\\*Run #1 · Improve search\\*\\* needs input\\n• Entry worker has a T3 request · since ${AT} — answer it in T3$`,
     ),
   );
 });
@@ -188,7 +186,7 @@ it("after Chat control was Off, one catch-up lists each matter still pending on 
   const notice = await noticeCreated(world.discord);
   expect(notice.content).toMatch(
     new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* · while Factory could not post in this thread:\\n• Entry worker has a T3 request, since ${AT}\\. Answer it in T3\\.\\n• Second entry: report missing, since ${AT}\\.$`,
+      `^📬 \\*\\*Run #1 · Improve search\\*\\* · while Factory could not post in this thread:\\n• Entry worker has a T3 request · since ${AT} — answer it in T3\\n• Second entry: report missing · since ${AT}$`,
     ),
   );
   expect(world.discord.created.slice(messages)).toStrictEqual([notice]);
@@ -208,7 +206,7 @@ it("resolving one matter of a catch-up edits only its own line in place", async 
   const shown = await messageShows(world.discord, notice, /~~/);
   expect(shown.content).toMatch(
     new RegExp(
-      `\\n• ~~Entry worker has a T3 request, since ${AT}~~ · resolved\\n• Second entry: report missing, since ${AT}\\.$`,
+      `\\n• ~~Entry worker has a T3 request · since ${AT}~~ ✅\\n• Second entry: report missing · since ${AT}$`,
     ),
   );
   expect(noticesIn(world.discord)).toHaveLength(1);
@@ -230,7 +228,7 @@ it("a Run that settled while Chat control was Off gets one catch-up after a rest
   const notice = await noticeCreated(world.discord);
   expect(notice.content).toMatch(
     new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* · while Factory could not post in this thread:\\n• Settled ${AT}, delivered late$`,
+      `^📬 \\*\\*Run #1 · Improve search\\*\\* · while Factory could not post in this thread:\\n• ✅ Settled ${AT}, delivered late$`,
     ),
   );
   expect(noticesIn(world.discord)).toHaveLength(1);
@@ -254,7 +252,7 @@ it("a Settled outcome already posted gets nothing more when Chat control is turn
   await messageShows(world.discord, card, /Renamed while Off/);
   assert((await world.factory.archiveRun(runId)).ok);
   const archivedNotice = await noticeCreated(world.discord, 2);
-  expect(archivedNotice.content).toMatch(/^\*\*Run #1 · Renamed while Off\*\* was Archived at /);
+  expect(archivedNotice.content).toMatch(/^🗄️ \*\*Run #1 · Renamed while Off\*\* was Archived </);
   expect(noticesIn(world.discord)).toStrictEqual([settledNotice, archivedNotice]);
 });
 
@@ -275,7 +273,7 @@ it("a catch-up Discord rate-limited before an Off and On flap is posted once", a
 
   // Assert
   const notice = await noticeCreated(world.discord);
-  expect(notice.content).toMatch(/\n• Settled <t:\d+:f>, delivered late$/);
+  expect(notice.content).toMatch(/\n• ✅ Settled <t:\d+:R>, delivered late$/);
   expect(noticesIn(world.discord)).toHaveLength(1);
 });
 
@@ -292,9 +290,7 @@ it("a Settled Run whose Agent reports again posts a notice that it returned to A
   // Assert
   const notice = await noticeCreated(world.discord, 2);
   expect(notice.content).toMatch(
-    new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* returned to Active at ${AT}\\.\\nAsk Factory to read Run #1 for details\\.$`,
-    ),
+    new RegExp(`^🟢 \\*\\*Run #1 · Improve search\\*\\* is Active again ${AT}$`),
   );
 });
 
@@ -312,13 +308,11 @@ it("Archive edits the pending matter's notice to resolved and posts one notice t
   await messageShows(
     world.discord,
     pending,
-    /^\*\*Run #1 · Improve search\*\* needs input · resolved\n/,
+    /^🙋 \*\*Run #1 · Improve search\*\* needs input · ✅ resolved\n/,
   );
   const notice = await noticeCreated(world.discord, 2);
   expect(notice.content).toMatch(
-    new RegExp(
-      `^\\*\\*Run #1 · Improve search\\*\\* was Archived at ${AT}\\.\\nAsk Factory to read Run #1 for details\\.$`,
-    ),
+    new RegExp(`^🗄️ \\*\\*Run #1 · Improve search\\*\\* was Archived ${AT}$`),
   );
   expect(noticesIn(world.discord)).toHaveLength(2);
 });
@@ -337,10 +331,10 @@ it("while the thread's Project is revoked nothing accrues, and a regrant posts n
   // Assert
   // Once the card shows the request, the regrant was captured; a later Archive's notice comes
   // after anything the regrant would have posted.
-  await messageShows(world.discord, card, /\*\*Needs input\*\*/);
+  await messageShows(world.discord, card, /\n🙋 /);
   assert((await world.factory.archiveRun(runId)).ok);
   const notice = await noticeCreated(world.discord);
-  expect(notice.content).toMatch(/^\*\*Run #1 · Improve search\*\* was Archived at /);
+  expect(notice.content).toMatch(/^🗄️ \*\*Run #1 · Improve search\*\* was Archived </);
   expect(noticesIn(world.discord)).toStrictEqual([notice]);
 });
 
@@ -382,7 +376,7 @@ it("a quiet Run that settled while the application was replaced gets its outcome
   expect(notice.applicationId).toBe(otherBot.applicationId);
   expect(notice.content).toMatch(
     new RegExp(
-      `^_Factory's Discord application changed\\. Messages the previous bot posted in this thread are no longer updated\\._\\n\\n\\*\\*Run #1 · Improve search\\*\\* · while Factory could not post in this thread:\\n• Settled ${AT}, delivered late$`,
+      `^_Factory's Discord application changed\\. Messages the previous bot posted in this thread are no longer updated\\._\\n\\n📬 \\*\\*Run #1 · Improve search\\*\\* · while Factory could not post in this thread:\\n• ✅ Settled ${AT}, delivered late$`,
     ),
   );
   expect(noticesIn(world.discord)).toHaveLength(1);
@@ -455,7 +449,7 @@ it("the warned Retry of a Settled notice Discord may not have created posts it o
   // Assert
   assert(retried.ok, JSON.stringify(retried));
   const notice = await noticeCreated(world.discord);
-  expect(notice.content).toMatch(/^\*\*Run #1 · Improve search\*\* is Settled since /);
+  expect(notice.content).toMatch(/^✅ \*\*Run #1 · Improve search\*\* is Settled </);
   expect(await runsOf(world.factory)).toHaveLength(1);
   await discordSettingsWhen(world.factory, (current) => current.delivery.problems.length === 0);
 });

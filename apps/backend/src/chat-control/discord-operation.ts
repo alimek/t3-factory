@@ -1,13 +1,6 @@
 import { DiscordAdapter } from "@chat-adapter/discord";
 import { Message as ChatMessage, type Thread } from "chat";
-import {
-  ButtonStyle,
-  ComponentType,
-  Events,
-  type Client,
-  type Interaction,
-  type Message,
-} from "discord.js";
+import { Events, type Client, type Interaction, type Message } from "discord.js";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -34,7 +27,8 @@ import {
 } from "./discord-gateway.ts";
 import type { ChatActions } from "./actions.ts";
 import type { ChatTool } from "./chat-tools.ts";
-import type { ChatDeliveries, ConfirmationButton, DiscordSender } from "./deliveries.ts";
+import { buttonRow, type ConfirmationButton, type DisabledButton } from "./confirmation-buttons.ts";
+import type { ChatDeliveries, DiscordSender } from "./deliveries.ts";
 import { makeIngress, registerCommands, type ReferencedMessage } from "./discord-ingress.ts";
 import { makeInterpreter, type InterpretationEngine } from "./interpretation.ts";
 import type { ConversationalModelAccess } from "./model.ts";
@@ -117,23 +111,7 @@ class FactoryDiscordAdapter extends DiscordAdapter {
         ...payload,
         nonce,
         enforce_nonce: true,
-        ...(button
-          ? {
-              components: [
-                {
-                  type: ComponentType.ActionRow,
-                  components: [
-                    {
-                      type: ComponentType.Button,
-                      style: ButtonStyle.Primary,
-                      label: button.label,
-                      custom_id: button.customId,
-                    },
-                  ],
-                },
-              ],
-            }
-          : {}),
+        ...(button ? { components: buttonRow(button.customId, { label: button.label }) } : {}),
       },
     );
     return ((await response.json()) as { id: string }).id;
@@ -147,6 +125,16 @@ class FactoryDiscordAdapter extends DiscordAdapter {
       `/channels/${discordThreadId ?? channelId}/messages/${messageId}`,
       "PATCH",
       { content: payload.content, allowed_mentions: payload.allowed_mentions },
+    );
+  }
+
+  /** Replaces a review's button with a disabled one showing why, in a single request. */
+  async disable(threadId: string, messageId: string, customId: string, state: DisabledButton) {
+    const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
+    await this.discordFetch(
+      `/channels/${discordThreadId ?? channelId}/messages/${messageId}`,
+      "PATCH",
+      { components: buttonRow(customId, { disabled: state }), allowed_mentions: { parse: [] } },
     );
   }
 
@@ -357,6 +345,8 @@ export const makeDiscordOperation = (
             adapter.create(encodeThreadId(destination), text, nonce, button),
           edit: (destination, messageId, text) =>
             adapter.edit(encodeThreadId(destination), messageId, text),
+          disable: (destination, messageId, customId, state) =>
+            adapter.disable(encodeThreadId(destination), messageId, customId, state),
           reopen: (destination) => adapter.reopen(encodeThreadId(destination)),
         };
         const engine = yield* makeInterpreter({
@@ -456,6 +446,7 @@ export const makeDiscordOperation = (
         yield* engine.started;
         // Owed receipts go out only from a verified, serving session.
         yield* Effect.forkScoped(conversation.deliveries.serve(sender));
+        yield* Effect.forkScoped(conversation.actions.serveButtons(sender));
         return yield* Effect.callback<GatewayResult>((resume) => {
           client.once(Events.ShardDisconnect, ({ code }) =>
             resume(Effect.succeed(closeResult(code))),

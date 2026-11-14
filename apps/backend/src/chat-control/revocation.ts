@@ -36,8 +36,11 @@ export const applyAccessRevocation = (
         !access.users.includes(row.requester_id) ||
         ungranted(access.channels, row.parent_channel_id, row.project_ids_json),
     );
+    // Buttons voided while Chat control is Off are never edited later: nothing is sent for Off.
     if (voided.length > 0)
-      yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='revoked' WHERE id IN ${sql.in(voided.map((row) => row.id))}`;
+      yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='revoked',
+          button_settled=CASE WHEN (SELECT enabled FROM chat_control_state WHERE singleton=1)=1 THEN button_settled ELSE 1 END
+        WHERE id IN ${sql.in(voided.map((row) => row.id))}`;
     const owed = yield* sql<{
       id: string;
       parent_channel_id: string;

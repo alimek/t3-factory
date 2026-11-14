@@ -1,5 +1,6 @@
 import type { ChatToolOutcome, ChatToolScope } from "./chat-tools.ts";
-import { characters } from "./interpretation.ts";
+import { characters, messageParts } from "./interpretation.ts";
+import { clip, inert } from "./status-cards.ts";
 
 /** Where exact action text (a Start prompt, a Human answer message) came from. */
 export type TextSource = "requester-message" | "selected-reply" | "composed";
@@ -12,33 +13,45 @@ export const TEXT_SOURCES: readonly TextSource[] = [
 /** Both bounds apply to exact action text supplied through chat. */
 const TEXT_CHARACTERS = 8000;
 const TEXT_BYTES = 16 * 1024;
-export const MESSAGE_LENGTH = 2000;
+const MESSAGE_LENGTH = 2000;
 const FENCE = "```";
 
-/** How a review labels where its exact text came from. */
-export const SOURCE_LINES: Record<TextSource, string> = {
-  "requester-message": "exactly as written in your message",
-  "selected-reply": "exactly as written in the message you replied to",
-  composed:
-    "**composed by Factory's assistant, not written by you**; read all of it before confirming",
-};
-
-/** The review's closing statement of who can consent, and how. */
-export const CONSENT_LINE =
-  "Only the person who asked can confirm, with the button below, within five minutes of it appearing. A reply such as “yes” confirms nothing.";
+/**
+ * The line a review puts above exact text that did not come from the requester's own message;
+ * text the assistant composed is always labelled as such.
+ */
+export const sourceLine = (source: TextSource, what: string) =>
+  source === "composed"
+    ? `⚠️ ${what} **composed by Factory's assistant, not written by you** — read all of it:`
+    : source === "selected-reply"
+      ? `💬 ${what} from the message you replied to:`
+      : undefined;
 
 export const refused = (error: string, message: string): ChatToolOutcome => ({
   output: { error, message },
   fact: { error },
 });
 
-/** `text` for display, cut to `limit` characters; stored facts keep the full value. */
-export const clip = (text: string, limit: number) =>
-  characters(text) <= limit
-    ? text
-    : `${Array.from(text)
-        .slice(0, limit - 1)
-        .join("")}…`;
+/** How reviews and receipts name a Run: its number and title. */
+export const runLine = (number: number | null, title: string) =>
+  `Run ${number === null ? "" : `#${number} · `}${inert(clip(title, 300))}`;
+
+/**
+ * A review's blocks (lines, code blocks) as Discord messages: consecutive blocks share a message
+ * while it fits, and no block is split unless it alone exceeds a message.
+ */
+export function reviewMessages(blocks: readonly string[]) {
+  const messages: string[] = [];
+  let message = "";
+  for (const block of blocks.flatMap((entry) => messageParts(entry))) {
+    if (message !== "" && message.length + 1 + block.length > MESSAGE_LENGTH) {
+      messages.push(message);
+      message = "";
+    }
+    message = message === "" ? block : `${message}\n${block}`;
+  }
+  return message === "" ? messages : [...messages, message];
+}
 
 /** Displayable text inside a code block; the stored text is never changed. */
 const fenced = (text: string) => `${FENCE}\n${text.replaceAll(FENCE, "``​`")}\n${FENCE}`;

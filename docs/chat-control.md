@@ -456,19 +456,24 @@ history stays readable in Factory.
 
 ### Reviews and consent
 
-A Human answer review names the Run (number, title, Project name and repository path), the Human
-step and its occurrence ID with when it appeared and the Block and exit it arrived from, then the
-occurrence's complete context, read by Factory itself whatever pages the model read, the selected
-answer and the exact message with its source. A context too long for a 32,000-character review stays
-readable through Read Run but cannot be confirmed in chat; nothing is shortened.
+Reviews are compact: one short emoji-led line per fact, exact text in code blocks, and consecutive
+lines and blocks sharing a Discord message while it fits. A Human answer review names the Run
+(number, title, Project name and repository path), the Human step with when it appeared and the
+Block and exit it arrived from, then the occurrence's complete context, read by Factory itself
+whatever pages the model read, the selected answer and the exact message, labelled when it came from
+a replied-to message or was composed by the assistant. A context too long for a 32,000-character
+review stays readable through Read Run but cannot be confirmed in chat; nothing is shortened.
 
-A Start review is likewise Factory's own: the Project's name and repository path, the Flow's name and ID,
-its current workspace setting, the automatic title derived from the prompt's first non-empty line,
-whether Generate Run titles is on, off or could not be read (then the title may still be replaced)
-and the exact prompt in full. It discloses that the Flow's and its Agents' current saved definitions
-and workspace setting are resolved at confirmation without another review. A review is at most 32,000
-Unicode characters and goes out as fully visible ordered messages; only after every part was
-delivered does Factory post the last message with one **Confirm** button. A part that fails, or a
+A Start review is likewise Factory's own: the Project's name and repository path, the Flow's name
+(and its ID only when another saved Flow has the same name), its current workspace setting, the
+automatic title derived from the prompt's first non-empty line and the exact prompt in full. When
+Generate Run titles is on or could not be read, the title line says it may be replaced by a generated
+title; when it is off, nothing is added. One line discloses that the Flow's and its Agents' current
+saved definitions, workspace included, are resolved at confirmation without another review. A
+review is at most 32,000 Unicode characters and goes out as fully visible ordered messages; only
+after every part was delivered does Factory post the last message with one **Confirm** button, which
+says that only the requester can confirm and when the review expires, as a Discord relative
+timestamp. A part that fails, or a
 button Discord definitely refused, leaves nothing to confirm and Factory says so. Before each part
 and before the button, Factory checks again that the proposal is still pending, Chat control is On,
 Access still allows the requester and the targeted Projects in that channel, the requester's Discord
@@ -491,8 +496,14 @@ place in the conversation's queue, and a reset or clearing removes the conversat
 
 ### Confirmation
 
-Only the requester's click within the lifetime, in the review's thread, confirms. Factory answers
-each click privately (an ephemeral reply). It checks again that Chat control is On, Access still
+Only the requester's click within the lifetime, in the review's thread, confirms. Factory
+acknowledges each click as a deferred update of the button's message. A click that decides the
+review disables its button for everyone, as **✅ Confirmed** when Factory accepted the action or
+**🚫 No longer valid** when it definitively rejected it, and the receipt follows in the thread; no
+private reply is sent. Every other click (someone else's, an expired, used or voided review, a denied
+or unconfirmed access check, a moment Factory cannot decide, an outcome still being established) gets
+a private ephemeral reply and leaves the button as it is, so a requester whose consent is still live
+or still being reconciled can click again. It checks again that Chat control is On, Access still
 allows the requester in that channel with the targeted Project, the application is still the
 one Factory operates as and the requester's Discord access is current, then takes the consent and performs the
 action with no model request and outside any database transaction. A click by someone else, a denied
@@ -526,12 +537,22 @@ application's token rotation, but only until it expires, and Off stops new confi
 save that removes the requester, the channel or the targeted Project voids matching consent for good;
 an application replacement voids the previous application's, including after switching back.
 
+Disabling buttons is best effort and never decides anything: every click is checked against the
+review's recorded state. Factory edits a review's button once, from a serving session, when the
+review becomes unusable: **⌛ Expired** at its original expiry, **↩️ Replaced** when a correction
+superseded it, **🚫 No longer valid** when an Access save voided it. It edits only buttons the serving
+application posted and only while the thread's channel still grants the review's Projects. A failed
+edit is ignored: it is not retried, is no delivery problem and shows nothing in Settings. Nothing is
+edited while Chat control is Off: a review that expired while no session served, or that an Access
+save voided while Chat control was Off, keeps its button as it is. The old bot's buttons are not
+edited after an application replacement.
+
 ### Receipts and delivery
 
-Factory writes the receipt from the accepted facts: for a Start the Run's number and ID, its accepted
-automatic title, the Project and the Flow; for a Human answer the accepted answer, the Human step, its
-occurrence and the Run; for an Archive the Run and what Archive cancelled and requested, without any
-claim of rollback or confirmed termination; or the rejection with its reasons. The decided outcome, the Run's
+Factory writes the receipt from the accepted facts, in one or two short lines: for a Start the Run's
+number, its accepted automatic title, the Project and the Flow; for a Human answer the accepted
+answer, the Human step and the Run; for an Archive the Run and what Archive cancelled and requested,
+without any claim of rollback or confirmed termination; or the rejection with its reasons. The decided outcome, the Run's
 originating thread and the owed receipt commit together. The receipt goes to the thread where the
 action was requested and depends on that channel still granting the Project and on the bot's access
 there, not on the requester remaining allowed; an Access save that revokes the destination cancels
@@ -574,7 +595,10 @@ its exit, whether its worker finished and where its handoffs went, pending Waits
 and pending Needs input and Problems. An observation that is stale or not yet made is shown as such,
 never as a Problem. Block starts, results and Wait progress edit the card; they never post a message,
 and the card never carries report bodies or prompts: participants read those with Read Run. Long
-lists are summarized so the card always fits one message. The card mentions nobody. Replying to the
+lists are summarized so the card always fits one message. Each line leads with an emoji for its
+state (for example 🟢 Active, 💤 Snoozed, ✅ Settled, 🗄️ Archived; ⚙️ working, ⏳ waiting, ✅ finished,
+⚠️ Problem, 🙋 Needs input, ⏰ Wait deadline), and times are Discord timestamps that each reader's client
+shows relative to now in their own time zone. The card mentions nobody. Replying to the
 card points Factory's conversation at its Run: the model receives only the Run's ID and reads the Run
 afresh within the thread's current scope, never the card's text.
 

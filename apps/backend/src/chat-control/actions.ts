@@ -9,14 +9,21 @@ import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
 import type { ConversationKey } from "./conversations.ts";
 import {
+  BUTTON_PREFIX,
+  confirmationButtons,
+  type ConfirmationButton,
+  type DisabledButton,
+} from "./confirmation-buttons.ts";
+import {
   createDeduplicated,
   nonceOf,
   oweDelivery,
   type ChatDeliveries,
-  type ConfirmationButton,
   type Destination,
   type DiscordSender,
 } from "./deliveries.ts";
+import { characters } from "./interpretation.ts";
+import { at } from "./status-cards.ts";
 
 /** The mutation kinds Chat control can propose; each has one shared Factory operation. */
 export type ChatOperationName = ChatActionOperation;
@@ -24,8 +31,16 @@ export type ChatOperationName = ChatActionOperation;
 /** A requester's confirmation lasts this long from the first dispatch of its button. */
 const CONSENT_MS = 5 * 60_000;
 /** The longest complete review, all parts together, in Unicode characters. */
-export const REVIEW_CHARACTER_LIMIT = 32_000;
-const BUTTON_PREFIX = "factory-confirm:";
+const REVIEW_CHARACTER_LIMIT = 32_000;
+
+/** The text of a review's last message, which carries the button: who confirms, and until when. */
+const confirmationText = (expiresAt: string) =>
+  `🔒 Only the person who asked can confirm · expires ${at(expiresAt)}`;
+
+/** Whether a complete review, its button message included, exceeds what chat may present. */
+export const exceedsReviewLimit = (review: readonly string[]) =>
+  characters([...review, confirmationText(new Date(0).toISOString())].join("")) >
+  REVIEW_CHARACTER_LIMIT;
 
 /**
  * A mutation call Factory validated into an exact proposal: what would be performed, which
@@ -37,8 +52,8 @@ export interface Proposed {
   readonly parameters: JSONValue;
   readonly projectIds: readonly string[];
   readonly review: readonly string[];
-  /** The confirmation button's label and the text of the message carrying it. */
-  readonly confirmation: { readonly label: string; readonly text: string };
+  /** The confirmation button's label. */
+  readonly confirmation: { readonly label: string };
   /** Compact targets the turn retains as the proposal fact. */
   readonly targets: JSONValue;
   /** A pending proposal of the same requester and thread this one corrects. */
@@ -136,26 +151,34 @@ export interface ConfirmationClick {
 
 export const isConfirmation = (customId: string) => customId.startsWith(BUTTON_PREFIX);
 
+/** The clicker's private feedback when a click does not change the button. */
 const REPLIES = {
   notYours:
-    "Only the person who asked for this review can confirm it. Ask Factory for your own review.",
-  invalid: "This confirmation is no longer valid. Ask Factory again for a new review.",
-  expired:
-    "This review expired five minutes after Factory posted it, so nothing was done. Ask Factory again for a new review.",
-  denied: "Chat control does not accept this confirmation from you here.",
+    "🔒 Only the person who asked for this review can confirm it. Ask Factory for your own.",
+  invalid: "🚫 This confirmation is no longer valid. Ask Factory for a new review.",
+  expired: "⌛ This review expired, so nothing was done. Ask Factory for a new review.",
+  denied: "🚫 Chat control does not accept this confirmation from you here.",
   unavailable:
-    "Factory could not confirm your access to this thread, so nothing was done. Try the button again before the review expires.",
-  confirming: "Factory is already working on this confirmation.",
-  accepted: "Confirmed. Factory accepted it; the receipt follows in this thread.",
-  rejected: "Confirmed, but Factory did not accept it; the receipt in this thread explains why.",
+    "⚠️ Factory could not confirm your access to this thread, so nothing was done. Try again before the review expires.",
+  confirming: "⏳ Factory is already working on this confirmation.",
   notNow:
-    "Factory could not act on this right now and did nothing. Try the button again before the review expires.",
+    "⚠️ Factory could not act on this right now and did nothing. Try again before the review expires.",
   unknown:
-    "Factory could not yet establish whether this was accepted. It will not perform it again; the receipt follows in this thread once Factory knows.",
+    "❓ Factory cannot tell yet whether this was accepted. It will not perform it again; the receipt follows here once Factory knows.",
 } as const;
 
+/**
+ * How Factory answers a confirmation click: privately to the clicker, or, once the click decided
+ * the review, by disabling its button in place (the receipt follows in the thread).
+ */
+export type ClickAnswer =
+  | { readonly kind: "ephemeral"; readonly text: string }
+  | { readonly kind: "disable"; readonly customId: string; readonly state: DisabledButton };
+
+const ephemeral = (text: string): ClickAnswer => ({ kind: "ephemeral", text });
+
 const PREPARATION_FAILED =
-  "Factory could not post the complete review, so it cannot be confirmed. Ask again for a new review.";
+  "⚠️ Factory could not post the complete review, so it cannot be confirmed. Ask again for a new review.";
 
 const identityOf = (context: ProposalContext, proposed: Proposed) =>
   createHash("sha256")
@@ -176,12 +199,19 @@ const destinationOf = (row: ProposalRow): Destination => ({
   threadId: row.thread_id,
 });
 
-/** The clicker's answer for each way performing a confirmed action can end. */
-const OUTCOME_REPLIES: Record<ActionOutcome["kind"], string> = {
-  accepted: REPLIES.accepted,
-  rejected: REPLIES.rejected,
-  unavailable: REPLIES.notNow,
-  unknown: REPLIES.unknown,
+/**
+ * The clicker's answer for each way performing a confirmed action can end. A decided review's
+ * button is disabled for everyone; consent that is still live or still being reconciled keeps
+ * its button, so the requester can click again.
+ */
+const outcomeAnswer = (proposalId: string, kind: ActionOutcome["kind"]): ClickAnswer => {
+  if (kind === "unavailable") return ephemeral(REPLIES.notNow);
+  if (kind === "unknown") return ephemeral(REPLIES.unknown);
+  return {
+    kind: "disable",
+    customId: `${BUTTON_PREFIX}${proposalId}`,
+    state: kind === "accepted" ? "confirmed" : "invalid",
+  };
 };
 
 /**
@@ -243,6 +273,7 @@ export function makeChatActions(
   originRecorded: (runId: string) => void,
 ) {
   const byName = new Map(operations.map((operation) => [operation.name, operation]));
+  const buttons = confirmationButtons(sql);
   /** Actions this process is performing right now. */
   const performing = new Set<string>();
 
@@ -267,47 +298,49 @@ export function makeChatActions(
    * superseded before the new review is presented. Expired and confirmed proposals stay as they are.
    */
   const open = (proposed: Proposed, context: ProposalContext) =>
-    sql.withTransaction(
-      Effect.gen(function* (): Effect.fn.Return<
-        | { readonly kind: "new"; readonly id: string }
-        | { readonly kind: "pending"; readonly id: string; readonly expiresAt: string },
-        unknown
-      > {
-        const identity = identityOf(context, proposed);
-        const at = yield* now;
-        const [pending] = yield* sql<{
-          id: string;
-          expires_at: string;
-        }>`SELECT id,expires_at FROM chat_proposals WHERE identity=${identity}
+    sql
+      .withTransaction(
+        Effect.gen(function* (): Effect.fn.Return<
+          | { readonly kind: "new"; readonly id: string }
+          | { readonly kind: "pending"; readonly id: string; readonly expiresAt: string },
+          unknown
+        > {
+          const identity = identityOf(context, proposed);
+          const at = yield* now;
+          const [pending] = yield* sql<{
+            id: string;
+            expires_at: string;
+          }>`SELECT id,expires_at FROM chat_proposals WHERE identity=${identity}
             AND state IN ('presented','accepting') AND expires_at>${at} ORDER BY expires_at DESC LIMIT 1`;
-        if (pending) return { kind: "pending", id: pending.id, expiresAt: pending.expires_at };
-        const { conversation } = context;
-        const operation = byName.get(proposed.operation)!;
-        const target = operation.target(proposed.parameters);
-        const live = yield* sql<{
-          id: string;
-          parameters_json: string;
-        }>`SELECT id,parameters_json FROM chat_proposals WHERE application_id=${conversation.applicationId}
+          if (pending) return { kind: "pending", id: pending.id, expiresAt: pending.expires_at };
+          const { conversation } = context;
+          const operation = byName.get(proposed.operation)!;
+          const target = operation.target(proposed.parameters);
+          const live = yield* sql<{
+            id: string;
+            parameters_json: string;
+          }>`SELECT id,parameters_json FROM chat_proposals WHERE application_id=${conversation.applicationId}
             AND thread_id=${conversation.threadId} AND requester_id=${context.requesterId}
             AND operation=${proposed.operation} AND identity<>${identity}
             AND (state='preparing' OR (state='presented' AND expires_at>${at}))`;
-        const corrected = live
-          .filter(
-            (row) =>
-              row.id === proposed.supersedes ||
-              operation.target(JSON.parse(row.parameters_json) as JSONValue) === target,
-          )
-          .map((row) => row.id);
-        if (corrected.length > 0)
-          yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded' WHERE id IN ${sql.in(corrected)}`;
-        const id = yield* newId;
-        yield* sql`INSERT INTO chat_proposals (id,application_id,guild_id,parent_channel_id,thread_id,requester_id,operation,parameters_json,identity,project_ids_json,generation,message_id,tool_call_id,state,created_at)
+          const corrected = live
+            .filter(
+              (row) =>
+                row.id === proposed.supersedes ||
+                operation.target(JSON.parse(row.parameters_json) as JSONValue) === target,
+            )
+            .map((row) => row.id);
+          if (corrected.length > 0)
+            yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded' WHERE id IN ${sql.in(corrected)}`;
+          const id = yield* newId;
+          yield* sql`INSERT INTO chat_proposals (id,application_id,guild_id,parent_channel_id,thread_id,requester_id,operation,parameters_json,identity,project_ids_json,generation,message_id,tool_call_id,state,created_at)
             VALUES (${id},${conversation.applicationId},${conversation.guildId},${conversation.parentChannelId},${conversation.threadId},${context.requesterId},
               ${proposed.operation},${JSON.stringify(proposed.parameters)},${identity},${JSON.stringify(proposed.projectIds)},
               ${context.generation},${context.messageId},${context.toolCallId},'preparing',${at})`;
-        return { kind: "new", id };
-      }),
-    );
+          return { kind: "new", id };
+        }),
+      )
+      .pipe(Effect.tap(() => buttons.changed));
 
   const fail = (id: string) =>
     sql`UPDATE chat_proposals SET state='ended',ended_reason='failed' WHERE id=${id} AND state IN ('preparing','presented')`;
@@ -360,11 +393,15 @@ export function makeChatActions(
         }),
       );
       if (!usable) return yield* withdrawn;
-      const button = yield* create(proposed.confirmation.text, "button", {
+      const button = yield* create(confirmationText(expiresAt), "button", {
         customId: `${BUTTON_PREFIX}${id}`,
         label: proposed.confirmation.label,
       });
       if ("failure" in button && button.failure !== "unknown") return yield* failed;
+      if ("messageId" in button) {
+        yield* sql`UPDATE chat_proposals SET button_message_id=${button.messageId} WHERE id=${id}`;
+        yield* buttons.changed;
+      }
       return "presented";
     }).pipe(Effect.onInterrupt(() => fail(id)));
 
@@ -384,7 +421,8 @@ export function makeChatActions(
           if (outcome.kind === "unknown") return;
           yield* sql`UPDATE chat_actions SET state=${outcome.kind},decided_at=${decidedAt},outcome_json=${JSON.stringify(outcome.facts)}
               WHERE id=${actionId} AND state='accepting'`;
-          yield* sql`UPDATE chat_proposals SET state='consumed' WHERE id=${row.id}`;
+          // The click that decided it, if any, disables the button in place.
+          yield* sql`UPDATE chat_proposals SET state='consumed',button_settled=1 WHERE id=${row.id}`;
           if (outcome.kind === "accepted" && outcome.originRunId !== undefined)
             yield* sql`INSERT INTO chat_run_origins (run_id,application_id,guild_id,parent_channel_id,thread_id,action_id,recorded_at)
                 VALUES (${outcome.originRunId},${row.application_id},${row.guild_id},${row.parent_channel_id},${row.thread_id},${actionId},${decidedAt})
@@ -436,23 +474,27 @@ export function makeChatActions(
     });
 
   const repeatedClick = (row: ProposalRow, click: ConfirmationClick) =>
-    Effect.gen(function* () {
+    Effect.gen(function* (): Effect.fn.Return<ClickAnswer, unknown> {
       const action = yield* actionOf(row.id);
-      if (!action) return REPLIES.invalid;
+      if (!action) return ephemeral(REPLIES.invalid);
       // Reconciliation needs no clicker; any result is shown only to its requester, here, with
       // current access.
       const reconciled =
         action.state === "accepting" && !performing.has(action.id)
           ? yield* reconcileAction(row, action)
           : undefined;
-      if ((yield* click.access) !== "permitted") return REPLIES.denied;
+      if ((yield* click.access) !== "permitted") return ephemeral(REPLIES.denied);
       if (action.state === "accepting")
-        return reconciled === undefined ? REPLIES.confirming : OUTCOME_REPLIES[reconciled.kind];
+        return reconciled === undefined
+          ? ephemeral(REPLIES.confirming)
+          : outcomeAnswer(row.id, reconciled.kind);
       const operation = byName.get(row.operation)!;
-      return `You already confirmed this review. ${operation.summary({
-        kind: action.state,
-        facts: JSON.parse(action.outcome_json!) as JSONValue,
-      })}`;
+      return ephemeral(
+        `You already confirmed this review. ${operation.summary({
+          kind: action.state,
+          facts: JSON.parse(action.outcome_json!) as JSONValue,
+        })}`,
+      );
     });
 
   /** Takes the consent for one attempt, if it is still live and its scope still holds. */
@@ -487,26 +529,26 @@ export function makeChatActions(
     );
 
   /**
-   * A confirmation button click; the ephemeral answer for the clicker. Wrong requester, wrong
-   * context, denied or unavailable access never consume live consent.
+   * A confirmation button click and how to answer it. Wrong requester, wrong context, denied or
+   * unavailable access never consume live consent and never change the button.
    */
   const confirm = (click: ConfirmationClick) =>
-    Effect.gen(function* (): Effect.fn.Return<string, unknown> {
+    Effect.gen(function* (): Effect.fn.Return<ClickAnswer, unknown> {
       const row = yield* proposal(click.customId.slice(BUTTON_PREFIX.length));
       const refused = clickRefusal(row, click);
       if (refused === "repeated") return yield* repeatedClick(row!, click);
-      if (refused) return REPLIES[refused];
-      if (yield* expired(row!)) return REPLIES.expired;
+      if (refused) return ephemeral(REPLIES[refused]);
+      if (yield* expired(row!)) return ephemeral(REPLIES.expired);
       const access = yield* click.access;
-      if (access !== "permitted") return REPLIES[access];
+      if (access !== "permitted") return ephemeral(REPLIES[access]);
       // Chat control turned Off meanwhile: nothing is consumed and the consent stays live.
-      if (!click.operating()) return REPLIES.notNow;
+      if (!click.operating()) return ephemeral(REPLIES.notNow);
       const taken = yield* take(row!);
       if (!("refused" in taken))
-        return OUTCOME_REPLIES[(yield* perform(row!, taken.actionId)).kind];
+        return outcomeAnswer(row!.id, (yield* perform(row!, taken.actionId)).kind);
       return taken.refused === "confirming"
         ? yield* repeatedClick(row!, click)
-        : REPLIES[taken.refused];
+        : ephemeral(REPLIES[taken.refused]);
     });
 
   /**
@@ -544,7 +586,19 @@ export function makeChatActions(
         .map((row) => ({ id: row.id, operation: row.operation, startedAt: row.started_at })),
   );
 
-  return { open, present, fail, confirm, recover, statuses, reconciling };
+  return {
+    open,
+    present,
+    fail,
+    confirm,
+    recover,
+    statuses,
+    reconciling,
+    /** The serving session's best-effort retirement of buttons that can no longer confirm. */
+    serveButtons: buttons.serve,
+    /** Something outside this module may have made reviews unusable, e.g. an Access save. */
+    buttonsChanged: buttons.changed,
+  };
 }
 
 export type ChatActions = ReturnType<typeof makeChatActions>;

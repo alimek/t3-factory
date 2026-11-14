@@ -13,6 +13,7 @@ import type {
 import { newId } from "../ids.ts";
 import { failure } from "../result.ts";
 import { now } from "../time.ts";
+import type { ConfirmationButton, DisabledButton } from "./confirmation-buttons.ts";
 import { catchUpNotices } from "./report-notices.ts";
 import { withApplicationNotice } from "./status-cards.ts";
 
@@ -23,16 +24,11 @@ export interface Destination {
   readonly threadId: string;
 }
 
-/** A requester-bound confirmation button carried by the last message of a review. */
-export interface ConfirmationButton {
-  readonly customId: string;
-  readonly label: string;
-}
-
 /**
  * How the operating session sends Factory messages: `create` resolves with Discord's message ID
- * and asks Discord to enforce the create's `nonce`, `edit` replaces a message's text, and `reopen`
- * unarchives an archived thread unless Discord shows it locked, which Factory never undoes.
+ * and asks Discord to enforce the create's `nonce`, `edit` replaces a message's text, `disable`
+ * replaces a review's button with a disabled one, and `reopen` unarchives an archived thread
+ * unless Discord shows it locked, which Factory never undoes.
  */
 export interface DiscordSender {
   readonly applicationId: string;
@@ -42,6 +38,12 @@ export interface DiscordSender {
     options: { readonly nonce: string; readonly button?: ConfirmationButton },
   ) => Promise<string>;
   readonly edit: (destination: Destination, messageId: string, text: string) => Promise<void>;
+  readonly disable: (
+    destination: Destination,
+    messageId: string,
+    customId: string,
+    state: DisabledButton,
+  ) => Promise<void>;
   readonly reopen: (destination: Destination) => Promise<"open" | "reopened" | "locked">;
 }
 
@@ -221,6 +223,37 @@ const destinationOf = (row: DeliveryRow): Destination => ({
   threadId: row.thread_id,
 });
 
+/**
+ * A serving session's wakeable loop: `run` performs `pass`, then waits until the time it returns
+ * (null: until woken) or a wake-up, and repeats until the session's scope ends. `wake` reaches
+ * only a running loop.
+ */
+export const wakeableLoop = () => {
+  let wake: (() => void) | undefined;
+  const run = <E, R>(pass: Effect.Effect<string | null, E, R>) =>
+    Effect.gen(function* () {
+      let signal = yield* Deferred.make<void>();
+      const notify = () => Deferred.doneUnsafe(signal, Effect.void);
+      wake = notify;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (wake === notify) wake = undefined;
+        }),
+      );
+      for (;;) {
+        signal = yield* Deferred.make<void>();
+        const next = yield* pass;
+        const waitMs =
+          next === null ? undefined : Date.parse(next) - (yield* Clock.currentTimeMillis);
+        if (waitMs !== undefined && waitMs <= 0) continue;
+        yield* Deferred.await(signal).pipe(
+          waitMs === undefined ? (effect) => effect : Effect.timeoutOption(Duration.millis(waitMs)),
+        );
+      }
+    });
+  return { run, wake: () => wake?.() };
+};
+
 /** One message owed to a destination, recorded inside the transaction of the fact it reports. */
 export interface OwedDelivery {
   readonly purpose: "receipt";
@@ -276,8 +309,8 @@ const problemOf = (row: DeliveryRow): ChatDeliveryProblem => ({
  */
 export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
-    /** Wakes the serving session's dispatcher, while one serves. */
-    let wake: (() => void) | undefined;
+    /** The serving session's dispatcher, while one serves. */
+    const dispatcher = wakeableLoop();
 
     // An edit interrupted by a stop or crash is simply repeated; a create cannot be proven
     // either way.
@@ -470,25 +503,7 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
           AND id IN (SELECT delivery_id FROM chat_status_cards WHERE reportable=1)`;
         // Notices that accrued while no session served are posted as one catch-up per Run.
         yield* catchUpNotices(sql, sender.applicationId);
-        let signal = yield* Deferred.make<void>();
-        const notify = () => Deferred.doneUnsafe(signal, Effect.void);
-        wake = notify;
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => {
-            if (wake === notify) wake = undefined;
-          }),
-        );
-        for (;;) {
-          signal = yield* Deferred.make<void>();
-          const next = yield* deliverDue(sender);
-          const waitMs = next === null ? undefined : Date.parse(next) - Date.parse(yield* now);
-          if (waitMs !== undefined && waitMs <= 0) continue;
-          yield* Deferred.await(signal).pipe(
-            waitMs === undefined
-              ? (effect) => effect
-              : Effect.timeoutOption(Duration.millis(waitMs)),
-          );
-        }
+        return yield* dispatcher.run(deliverDue(sender));
       });
 
     const diagnostics = Effect.gen(function* (): Effect.fn.Return<
@@ -540,14 +555,14 @@ export const makeChatDeliveries = (sql: SqlClient.SqlClient) =>
         }
         yield* sql`UPDATE chat_deliveries SET state='owed',next_attempt_at=NULL,problem=NULL,problem_at=NULL
           WHERE id=${row.id} AND state=${row.state}`;
-        wake?.();
+        dispatcher.wake();
         return { ok: true, value: undefined };
       });
 
     return {
       serve,
       /** New debt was recorded; the serving session delivers it now. */
-      wake: Effect.sync(() => wake?.()),
+      wake: Effect.sync(dispatcher.wake),
       diagnostics,
       retry,
     };

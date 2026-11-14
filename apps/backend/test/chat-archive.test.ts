@@ -13,38 +13,29 @@ import { invocation, toolResults } from "./support/chat-conversation.ts";
 import { addedProject, startedRun } from "./support/chat-runs.ts";
 import { nextThreadInterrupt } from "./support/run-worker.ts";
 
-const ACCEPTED = "Confirmed. Factory accepted it; the receipt follows in this thread.";
-const REJECTED =
-  "Confirmed, but Factory did not accept it; the receipt in this thread explains why.";
+const ACCEPTED = "✅ Confirmed (disabled)";
+const REJECTED = "🚫 No longer valid (disabled)";
 
 it("an Archive proposal reviews the Run with final archival, cancelled owed work and pending items, one interruption request and retained history, and archives nothing", async (c) => {
   // Arrange
   const world = await archivingWorld(c);
 
   // Act
-  const button = await proposed(world, "600000000000000001", 3, archiveCall(), "stop #1");
+  const button = await proposed(world, "600000000000000001", 2, archiveCall(), "stop #1");
 
   // Assert
-  const [header, consequences, confirmation] = world.discord.created;
-  expect(header!.content).toBe(
+  const [review, confirmation] = world.discord.created;
+  expect(review!.content).toBe(
     [
-      "**Review: archive a Run**",
-      `**Run:** Run #1 “Improve search” in ${world.project.title} — \`${world.project.workspaceRoot}\``,
-      `**Flow:** ${world.flow.name} · **State:** active`,
-      "**Pending now:** 0 Human occurrences, 0 Wait arrivals",
+      "🗄️ **Archive Run #1 · Improve search?**",
+      `📁 ${world.project.title} · \`${world.project.workspaceRoot}\` · 🔀 ${world.flow.name} · 🟢 Active`,
+      "⏳ Pending now: 0 Human occurrences, 0 Wait arrivals",
+      "⚠️ Final: the Run can't be restored, reopened, settled or answered. Factory cancels the automatic work it still owes and its pending Human and Wait items, and asks T3 once to interrupt the workers without confirming they stop.",
+      "↩️ Nothing is rolled back in the repository or worktree; the Run's history stays readable in Factory.",
     ].join("\n"),
   );
-  expect(consequences!.content).toContain("Archive is final.");
-  expect(consequences!.content).toContain(
-    "cancels the automatic work it still owes the Run (handoffs, launches and turns not yet sent) and its pending Human and Wait items",
-  );
-  expect(consequences!.content).toContain(
-    "asks T3 once to interrupt the Run's worker threads, without waiting for or confirming that they stop",
-  );
-  expect(consequences!.content).toContain("Nothing is rolled back");
-  expect(consequences!.content).toContain("The Run's history, results and reports stay readable");
-  expect(confirmation!.content).toBe(
-    `Confirm archiving Run #1 “Improve search” in ${world.project.title}.`,
+  expect(confirmation!.content).toMatch(
+    /^🔒 Only the person who asked can confirm · expires <t:\d+:R>$/,
   );
   expect(button).toMatch(/^factory-confirm:/);
   expect(await lifecycleOf(world.factory, world.runId)).toBe("active");
@@ -53,7 +44,7 @@ it("an Archive proposal reviews the Run with final archival, cancelled owed work
 it("the requester's confirmation archives exactly the reviewed Run started in Factory, requests its worker's interruption once and posts the receipt in the request thread without giving the Run an origin", async (c) => {
   // Arrange
   const world = await archivingWorld(c);
-  const button = await proposed(world, "600000000000000001", 3, archiveCall(), "archive #1");
+  const button = await proposed(world, "600000000000000001", 2, archiveCall(), "archive #1");
   const interrupt = nextThreadInterrupt(world.t3);
 
   // Act
@@ -64,9 +55,9 @@ it("the requester's confirmation archives exactly the reviewed Run started in Fa
   expect(await lifecycleOf(world.factory, world.runId)).toBe("archived");
   await interrupt;
   expect(world.t3.threadStops).toHaveLength(1);
-  await world.discord.createdMessages(4);
-  expect(world.discord.created[3]!.content).toBe(
-    `**Archive accepted.** Factory archived Run #1 “Improve search”. It cancelled the automatic work it still owed the Run and its pending Human and Wait items, and asks T3 once to interrupt its workers without confirming that they stop. Nothing in the repository was rolled back; the Run's history stays in Factory.\nRun ID: \`${world.runId}\``,
+  await world.discord.createdMessages(3);
+  expect(world.discord.created[2]!.content).toBe(
+    "✅ **Run #1 archived** — Improve search\nOwed automatic work and pending Human/Wait items cancelled · T3 asked once to interrupt workers (not confirmed) · nothing rolled back",
   );
   expect(statusCardsIn(world.discord)).toStrictEqual([]);
 });
@@ -74,7 +65,7 @@ it("the requester's confirmation archives exactly the reviewed Run started in Fa
 it("a Run archived in Factory meanwhile is not this action's Archive: the confirmation is rejected and requests no further interruption", async (c) => {
   // Arrange
   const world = await archivingWorld(c);
-  const button = await proposed(world, "600000000000000001", 3, archiveCall(), "archive #1");
+  const button = await proposed(world, "600000000000000001", 2, archiveCall(), "archive #1");
   const interrupt = nextThreadInterrupt(world.t3);
   assert((await world.factory.archiveRun(world.runId)).ok);
   await interrupt;
@@ -84,9 +75,9 @@ it("a Run archived in Factory meanwhile is not this action's Archive: the confir
 
   // Assert
   expect(answer).toBe(REJECTED);
-  await world.discord.createdMessages(4);
-  expect(world.discord.created[3]!.content).toBe(
-    `**Archive not accepted.** Factory did not archive Run #1 “Improve search”: This Run was already archived elsewhere.\nRun ID: \`${world.runId}\`\nNothing was changed by this confirmation.`,
+  await world.discord.createdMessages(3);
+  expect(world.discord.created[2]!.content).toBe(
+    "❌ **Archive not accepted** — Run #1 · Improve search\nThis Run was already archived elsewhere.",
   );
   expect(world.t3.threadStops).toHaveLength(1);
 });
@@ -94,7 +85,7 @@ it("a Run archived in Factory meanwhile is not this action's Archive: the confir
 it("two clicks racing on one Archive review archive once and request interruption once", async (c) => {
   // Arrange
   const world = await archivingWorld(c);
-  const button = await proposed(world, "600000000000000001", 3, archiveCall(), "archive #1");
+  const button = await proposed(world, "600000000000000001", 2, archiveCall(), "archive #1");
   const interrupt = nextThreadInterrupt(world.t3);
 
   // Act
@@ -113,7 +104,7 @@ it("two clicks racing on one Archive review archive once and request interruptio
 it("an Archive review presented before a backend restart is confirmed once after it", async (c) => {
   // Arrange
   const world = await archivingWorld(c);
-  const button = await proposed(world, "600000000000000001", 3, archiveCall(), "archive #1");
+  const button = await proposed(world, "600000000000000001", 2, archiveCall(), "archive #1");
   await world.factory.close();
   const reopened = await world.open();
   await servingAgain(world.discord, 2);
@@ -129,11 +120,11 @@ it("an Archive review presented before a backend restart is confirmed once after
 it("after a restart that interrupted an accepted Archive's receipt, the repeated click reports the accepted result and archives or interrupts nothing again", async (c) => {
   // Arrange
   const world = await archivingWorld(c);
-  const button = await proposed(world, "600000000000000001", 3, archiveCall(), "archive #1");
+  const button = await proposed(world, "600000000000000001", 2, archiveCall(), "archive #1");
   const interrupt = nextThreadInterrupt(world.t3);
   world.discord.faultMessages("held");
   await clicked(world.discord, button, "610000000000000001", 1);
-  await world.discord.request("POST", /^\/api\/v10\/channels\/\d+\/messages$/, 4);
+  await world.discord.request("POST", /^\/api\/v10\/channels\/\d+\/messages$/, 3);
   await interrupt;
   await world.factory.close();
   const reopened = await world.open();
@@ -144,7 +135,7 @@ it("after a restart that interrupted an accepted Archive's receipt, the repeated
 
   // Assert
   expect(answer).toBe(
-    "You already confirmed this review. Factory archived Run #1 “Improve search”.",
+    "You already confirmed this review. Factory archived Run #1 · Improve search.",
   );
   expect(world.t3.threadStops).toHaveLength(1);
   const settings = await reopened.getDiscordSettings();

@@ -5,7 +5,12 @@ import type { Factory } from "../../src/index.ts";
 import { ALLOWED_CHANNEL, discordBot, discordGuild } from "./chat-control.ts";
 import { invocation, operatingService, THREAD } from "./chat-conversation.ts";
 import { chatWorlds, runConversation } from "./chat-runs.ts";
-import { buttonEvent, type ControlledDiscord, type CreatedMessage } from "./controlled-discord.ts";
+import {
+  buttonEvent,
+  type ControlledDiscord,
+  type CreatedMessage,
+  type InteractionAnswer,
+} from "./controlled-discord.ts";
 import { preparedService } from "./prepared-runner.ts";
 import {
   humanReviewFlow,
@@ -72,13 +77,28 @@ export const startCall = (
 
 export const START_PROMPT = "Improve search\nKeep it accessible.";
 
+type ButtonComponent = {
+  readonly custom_id: string;
+  readonly label: string;
+  readonly disabled?: boolean;
+};
+
+/** The confirmation button a message's components show, if any. */
+const buttonIn = (components: unknown) =>
+  (components as readonly { readonly components: readonly ButtonComponent[] }[])[0]?.components[0];
+
 /** The custom ID of the confirmation button on `message`, if it carries one. */
-const buttonOf = (message: CreatedMessage) =>
-  (
-    message.components as readonly {
-      readonly components: readonly { readonly custom_id: string }[];
-    }[]
-  )[0]?.components[0]?.custom_id;
+const buttonOf = (message: CreatedMessage) => buttonIn(message.components)?.custom_id;
+
+/**
+ * The button `customId` as Discord shows it now: its label, marked when disabled, or undefined
+ * when no message shows it.
+ */
+export const buttonShown = (discord: ControlledDiscord, customId: string) => {
+  const message = discord.created.find((entry) => buttonOf(entry) === customId);
+  const button = message && buttonIn(message.components);
+  return button && (button.disabled === true ? `${button.label} (disabled)` : button.label);
+};
 
 /** Messages Discord created so far that carry a confirmation button. */
 export const confirmations = (discord: ControlledDiscord) =>
@@ -120,17 +140,20 @@ export async function proposed(
   return button;
 }
 
-const ORIGINAL = /^\/api\/v10\/webhooks\/\d+\/[^/]+\/messages\/(?:@|%40)original$/;
+/** An interaction answer as text: an ephemeral reply, or the button an update left showing. */
+const answerText = (answer: InteractionAnswer) => {
+  if (answer.kind === "ephemeral") return answer.content;
+  const button = buttonIn(answer.components)!;
+  return button.disabled === true ? `${button.label} (disabled)` : button.label;
+};
 
-/** The ephemeral answers Factory gave to interactions, in order. */
-export const ephemeralAnswers = (discord: ControlledDiscord) =>
-  discord
-    .requested("PATCH", ORIGINAL)
-    .map((request) => (request.body as { content: string }).content);
+/** How Factory answered clicks, in order: ephemeral texts or the button an update shows. */
+export const clickAnswers = (discord: ControlledDiscord) =>
+  discord.interactionAnswers.map(answerText);
 
 /**
- * Delivers a click on `customId` in `THREAD` and returns Factory's ephemeral answer once it is the
- * `answers`th answer overall.
+ * Delivers a click on `customId` in `THREAD` and returns Factory's answer once it is the
+ * `answers`th answer overall: the ephemeral text, or the button its message now shows.
  */
 export async function clicked(
   discord: ControlledDiscord,
@@ -139,6 +162,7 @@ export async function clicked(
   answers: number,
   options: { readonly userId?: string; readonly permissions?: bigint } = {},
 ) {
+  const message = discord.created.find((entry) => buttonOf(entry) === customId);
   discord.deliver(
     buttonEvent({
       bot: discordBot,
@@ -146,11 +170,12 @@ export async function clicked(
       thread: { id: THREAD, parentId: ALLOWED_CHANNEL },
       id,
       customId,
+      ...(message ? { message } : {}),
       ...options,
     }),
   );
-  await discord.request("PATCH", ORIGINAL, answers);
-  return ephemeralAnswers(discord).at(-1)!;
+  await discord.answered(answers);
+  return clickAnswers(discord).at(-1)!;
 }
 
 /** The Runs Factory shows in navigation, as identity and title. */
@@ -160,9 +185,10 @@ export async function runsOf(factory: Pick<Factory, "listRunNavigation">) {
   return navigation.value.map((entry) => ({ number: entry.number, title: entry.title }));
 }
 
-const STATUS_CARD = /^(?:_[^\n]+_\n\n)?\*\*Run [^\n]+\*\* · (?:Active|Snoozed|Settled|Archived)\n/;
-/** A status card or notice: its first line names the Run in bold. */
-const RUN_REPORT = /^(?:_[^\n]+_\n\n)?\*\*Run [^\n]+\*\* /;
+const STATUS_CARD =
+  /^(?:_[^\n]+_\n\n)?\*\*Run [^\n]+\*\* · (?:🟢 Active|💤 Snoozed|✅ Settled|🗄️ Archived)\n/;
+/** A status card or notice: its first line names the Run in bold, after an emoji for notices. */
+const RUN_REPORT = /^(?:_[^\n]+_\n\n)?(?:\S+ )?\*\*Run \S+ · [^\n]+\*\* /;
 
 /** Whether Discord shows `message` as a Run's status card: its first line names the Run. */
 export const isStatusCard = (message: Pick<CreatedMessage, "content">) =>

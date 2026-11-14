@@ -63,7 +63,8 @@ and restricted OAuth credentials live outside project repositories.
   owns the conversations, consent and messages; no Application ID is configured. Migration `091` carries a
   formerly configured Application ID over as that recorded application, turns a stored identity-mismatch check
   into a verified check of the application Discord reported, keeps a rejection for another application's token
-  until Retry and keeps every other value.
+  until Retry and keeps every other value. Migration `092` records the message carrying each new review's
+  button, so its button can be shown disabled once unusable; existing proposals have none and are never edited.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

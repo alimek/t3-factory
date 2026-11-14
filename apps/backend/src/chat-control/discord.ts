@@ -257,6 +257,7 @@ export const makeChatDiscord = (
         const saved = yield* updateAccess(sql, validated.value);
         if (!saved.ok) return saved;
         yield* recovery.reportingRescan;
+        yield* recovery.actions.buttonsChanged;
         return yield* getDiscordSettings();
       });
 

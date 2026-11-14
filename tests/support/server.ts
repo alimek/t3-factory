@@ -44,6 +44,7 @@ import {
   buttonEvent,
   messageEvent,
   startControlledDiscord,
+  type CreatedMessage,
   type MessageFault,
 } from "../../apps/backend/test/support/controlled-discord.ts";
 import { upstreamPublishedTheme } from "../../apps/backend/test/support/t3-theme-fixture.ts";
@@ -64,6 +65,9 @@ const t3 = new PersistentT3(home, false);
 // Chat control reaches this controlled Discord instead of discord.com; it knows one bot.
 const discord = await startControlledDiscord();
 const discordBot = { token: "ui-journey-bot-token", applicationId: "112233445566778899" };
+/** The confirmation button a message Discord created carries, if any. */
+const buttonOf = (message: CreatedMessage) =>
+  (message.components as { components: { custom_id: string }[] }[])[0]?.components[0];
 discord.addBot(discordBot);
 // The bot's server, with the channel UI journeys allow in Access.
 const discordGuild = {
@@ -531,9 +535,7 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     discord.created.map((message) => ({
       channelId: message.channelId,
       content: message.content,
-      customId:
-        (message.components as { components: { custom_id: string }[] }[])[0]?.components[0]
-          ?.custom_id ?? null,
+      customId: buttonOf(message)?.custom_id ?? null,
     })),
   /** Discord meets the next message creates with these faults, in order. */
   "/__fixture/discord/fault": (query) => {
@@ -562,6 +564,9 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
         thread: { id: query.get("thread")!, parentId: discordGuild.channels[0]!.id },
         id: String(310000000000000000n + BigInt(discordInvocations)),
         customId: query.get("customId")!,
+        message: discord.created.find(
+          (message) => buttonOf(message)?.custom_id === query.get("customId"),
+        )!,
       }),
     );
   },

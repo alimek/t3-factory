@@ -3,16 +3,16 @@ import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { Result, RunDetail } from "@t3-factory/contracts";
 import {
-  REVIEW_CHARACTER_LIMIT,
+  exceedsReviewLimit,
   type ActionOutcome,
   type ChatOperation,
   type Proposed,
 } from "./actions.ts";
 import { invalid, type ChatToolOutcome, type MutationTool } from "./chat-tools.ts";
-import { characters, messageParts } from "./interpretation.ts";
-import { clip, CONSENT_LINE, MESSAGE_LENGTH, refused } from "./review-text.ts";
+import { refused, reviewMessages, runLine } from "./review-text.ts";
 import { runSearch, type RunIdentity } from "./run-search.ts";
 import { NOT_PERMITTED, referenceOf, runReference } from "./run-tools.ts";
+import { clip, inert, LIFECYCLE } from "./status-cards.ts";
 
 /** The Factory operations a chat Archive uses: the shared Archive and the Run read. */
 export interface ArchiveOperations {
@@ -57,32 +57,24 @@ function archiveArguments(input: unknown) {
   return { run, supersedes };
 }
 
-const runLine = (number: number | null, title: string) =>
-  `Run ${number === null ? "" : `#${number} `}“${clip(title, 300)}”`;
-
 const count = (amount: number, one: string, many: string) =>
   `${amount} ${amount === 1 ? one : many}`;
 
 const CONSEQUENCES = [
-  "Archive is final. When you confirm, Factory:",
-  "- archives the Run, which then cannot be restored, reopened, settled or answered;",
-  "- cancels the automatic work it still owes the Run (handoffs, launches and turns not yet sent) and its pending Human and Wait items, without inventing answers;",
-  "- asks T3 once to interrupt the Run's worker threads, without waiting for or confirming that they stop.",
-  "Nothing is rolled back: changes already made in the repository or worktree stay as they are. The Run's history, results and reports stay readable in Factory.",
-  CONSENT_LINE,
-].join("\n");
+  "⚠️ Final: the Run can't be restored, reopened, settled or answered. Factory cancels the automatic work it still owes and its pending Human and Wait items, and asks T3 once to interrupt the workers without confirming they stop.",
+  "↩️ Nothing is rolled back in the repository or worktree; the Run's history stays readable in Factory.",
+];
 
 /** The complete review of an Archive, as ordered Discord messages. */
 function archiveReview(identity: RunIdentity, detail: RunDetail) {
   const humans = detail.humanOccurrences.filter((entry) => entry.state === "pending").length;
   const waits = detail.waitArrivals.filter((entry) => entry.state === "pending").length;
-  const header = [
-    "**Review: archive a Run**",
-    `**Run:** ${runLine(identity.number, identity.title)} in ${identity.project.name} — \`${identity.project.repositoryPath}\``,
-    `**Flow:** ${identity.flow} · **State:** ${identity.state}`,
-    `**Pending now:** ${count(humans, "Human occurrence", "Human occurrences")}, ${count(waits, "Wait arrival", "Wait arrivals")}`,
-  ].join("\n");
-  return [...messageParts(header), CONSEQUENCES];
+  return reviewMessages([
+    `🗄️ **Archive ${runLine(identity.number, identity.title)}?**`,
+    `📁 ${inert(identity.project.name)} · \`${identity.project.repositoryPath}\` · 🔀 ${inert(identity.flow)} · ${LIFECYCLE[identity.state]}`,
+    `⏳ Pending now: ${count(humans, "Human occurrence", "Human occurrences")}, ${count(waits, "Wait arrival", "Wait arrivals")}`,
+    ...CONSEQUENCES,
+  ]);
 }
 
 type ArchiveFacts = { runId: string; runNumber: number | null; title: string };
@@ -145,13 +137,12 @@ export function archiveAction(sql: SqlClient.SqlClient, operations: ArchiveOpera
       const run = runLine(facts.runNumber, facts.title);
       if (outcome.kind === "accepted")
         return [
-          `**Archive accepted.** Factory archived ${run}. It cancelled the automatic work it still owed the Run and its pending Human and Wait items, and asks T3 once to interrupt its workers without confirming that they stop. Nothing in the repository was rolled back; the Run's history stays in Factory.`,
-          `Run ID: \`${facts.runId}\``,
+          `✅ **Run ${facts.runNumber === null ? "" : `#${facts.runNumber} `}archived** — ${inert(clip(facts.title, 300))}`,
+          "Owed automatic work and pending Human/Wait items cancelled · T3 asked once to interrupt workers (not confirmed) · nothing rolled back",
         ].join("\n");
       return [
-        `**Archive not accepted.** Factory did not archive ${facts.title === "" ? "this Run" : run}: ${clip(facts.message, 300)}`,
-        `Run ID: \`${facts.runId}\``,
-        "Nothing was changed by this confirmation.",
+        `❌ **Archive not accepted** — ${facts.title === "" ? "this Run" : run}`,
+        clip(facts.message, 300),
       ].join("\n");
     },
     summary: (outcome) => {
@@ -184,14 +175,8 @@ export function archiveAction(sql: SqlClient.SqlClient, operations: ArchiveOpera
         const detail = yield* operations.getRun(identity.id);
         if (!detail.ok) return refused("unavailable", "Factory could not read this Run right now.");
         const review = archiveReview(identity, detail.value);
-        const confirmation = {
-          label: "Confirm Archive",
-          text: clip(
-            `Confirm archiving ${runLine(identity.number, identity.title)} in ${identity.project.name}.`,
-            MESSAGE_LENGTH,
-          ),
-        };
-        if (characters([...review, confirmation.text].join("")) > REVIEW_CHARACTER_LIMIT)
+        const confirmation = { label: "Confirm Archive" };
+        if (exceedsReviewLimit(review))
           return refused(
             "review_too_long",
             "Factory's complete review of this Archive would exceed 32,000 characters, so it cannot be confirmed in chat. Suggest using Factory.",

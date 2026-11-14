@@ -91,12 +91,21 @@ export interface CreatedMessage {
   readonly channelId: string;
   /** The current text: edits replace it. */
   content: string;
-  readonly components: unknown;
+  /** The current components: edits and interaction updates replace them. */
+  components: unknown;
   /** The application whose bot authored it. */
   readonly applicationId: string;
   deleted: boolean;
 }
 type Fields = Record<string, unknown>;
+
+/**
+ * How Factory answered one interaction: privately (an ephemeral reply or follow-up), or by
+ * updating the message whose component was clicked, with the components it shows now.
+ */
+export type InteractionAnswer =
+  | { readonly interactionId: string; readonly kind: "ephemeral"; readonly content: string }
+  | { readonly interactionId: string; readonly kind: "updated"; readonly components: unknown };
 
 /** A REST request matched to a route, with its parsed body and the bot its token belongs to. */
 interface RouteRequest {
@@ -114,6 +123,9 @@ export interface GatewayEvent {
 }
 
 const MESSAGE_CONTENT_INTENT = 1 << 15;
+/** The interaction callback type acknowledging a component click by a later message update. */
+const DEFERRED_UPDATE_MESSAGE = 6;
+const EPHEMERAL = 1 << 6;
 
 /** A Discord user, as message authors and mentions carry it. */
 const user = (id: string, username: string, bot: boolean) => ({
@@ -240,8 +252,16 @@ export async function startControlledDiscord() {
   const nonces = new Map<string, CreatedMessage>();
   /** Answers paused creates once `releaseMessages` is called. */
   const pausedCreates: (() => void)[] = [];
-  /** Every edit Discord applied, in order. */
+  /** Every text edit Discord applied, in order. */
   const edits: { readonly messageId: string; readonly content: string }[] = [];
+  /** Every edit of a message's components Discord applied, in order. */
+  const componentEdits: { readonly messageId: string; readonly components: unknown }[] = [];
+  /** Interactions by token: the clicked message and how Factory acknowledged them. */
+  const interactions = new Map<
+    string,
+    { readonly id: string; readonly messageId?: string; callbackType?: number }
+  >();
+  const interactionAnswers: InteractionAnswer[] = [];
   const deletedThreads = new Set<string>();
   let activeThreadLimitReached = false;
   let sequence = 0;
@@ -260,6 +280,13 @@ export async function startControlledDiscord() {
     send(socket, { op: 0, s: ++sequence, t: event.t, d: event.d });
   /** Delivers `event` to every ready, open Gateway session. */
   const deliver = (event: GatewayEvent) => {
+    if (event.t === "INTERACTION_CREATE") {
+      const interaction = event.d as { id: string; token: string; message?: { id: string } };
+      interactions.set(interaction.token, {
+        id: interaction.id,
+        ...(interaction.message ? { messageId: interaction.message.id } : {}),
+      });
+    }
     for (const [session, socket] of sockets)
       if (session.ready && !session.closed) dispatch(socket, event);
   };
@@ -451,8 +478,14 @@ export async function startControlledDiscord() {
         const thread = threads.get(match[1]!);
         if (thread?.locked) return locked;
         if (thread?.archived) return archived;
-        if (typeof fields.content === "string") message.content = fields.content;
-        edits.push({ messageId: message.id, content: message.content });
+        if (typeof fields.content === "string") {
+          message.content = fields.content;
+          edits.push({ messageId: message.id, content: message.content });
+        }
+        if (fields.components !== undefined) {
+          message.components = fields.components;
+          componentEdits.push({ messageId: message.id, components: message.components });
+        }
         return {
           status: 200,
           body: sentMessage(match[1]!, botUser(bot), fields, { id: message.id }),
@@ -520,24 +553,83 @@ export async function startControlledDiscord() {
     ],
   ];
 
+  /** An interaction's reply or follow-up message; ephemeral ones are recorded as answers. */
+  const privateAnswer = (
+    applicationId: string,
+    interaction: { readonly id: string } | undefined,
+    fields: Fields,
+    message: { readonly type: number; readonly flags: number },
+  ): Answer => {
+    if (
+      interaction &&
+      (message.flags & EPHEMERAL) === EPHEMERAL &&
+      typeof fields.content === "string"
+    )
+      interactionAnswers.push({
+        interactionId: interaction.id,
+        kind: "ephemeral",
+        content: fields.content,
+      });
+    return {
+      status: 200,
+      body: sentMessage("0", user(applicationId, "Factory bot", true), fields, {
+        ...message,
+        embeds: [],
+      }),
+    };
+  };
+
   /** Interaction responses authenticate with the interaction's token instead of the bot's. */
   const interactionRoutes: readonly (readonly [
     string,
     RegExp,
     (request: Omit<RouteRequest, "bot" | "resumed">) => Answer,
   ])[] = [
-    ["POST", /^\/api\/v10\/interactions\/\d+\/[^/]+\/callback$/, () => ({ status: 204 })],
+    [
+      "POST",
+      /^\/api\/v10\/interactions\/\d+\/([^/]+)\/callback$/,
+      ({ match, fields }) => {
+        const interaction = interactions.get(match[1]!);
+        if (interaction) interaction.callbackType = fields.type as number;
+        return { status: 204 };
+      },
+    ],
     [
       "PATCH",
-      /^\/api\/v10\/webhooks\/(\d+)\/[^/]+\/messages\/(?:@|%40)original$/,
-      ({ match, fields }) => ({
-        status: 200,
-        body: sentMessage("0", user(match[1]!, "Factory bot", true), fields, {
-          type: 20,
-          embeds: [],
-          flags: 64,
-        }),
-      }),
+      /^\/api\/v10\/webhooks\/(\d+)\/([^/]+)\/messages\/(?:@|%40)original$/,
+      ({ match, fields }) => {
+        const interaction = interactions.get(match[2]!);
+        // After a deferred message update, the original is the message whose component was used.
+        if (interaction?.callbackType === DEFERRED_UPDATE_MESSAGE) {
+          const message = created.find((entry) => entry.id === interaction.messageId);
+          if (!message) return unknownMessage;
+          if (fields.components !== undefined) message.components = fields.components;
+          if (typeof fields.content === "string") message.content = fields.content;
+          interactionAnswers.push({
+            interactionId: interaction.id,
+            kind: "updated",
+            components: message.components,
+          });
+          return {
+            status: 200,
+            body: sentMessage(message.channelId, user(match[1]!, "Factory bot", true), fields, {
+              id: message.id,
+              components: message.components,
+            }),
+          };
+        }
+        return privateAnswer(match[1]!, interaction, fields, { type: 20, flags: EPHEMERAL });
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/v10\/webhooks\/(\d+)\/([^/]+)$/,
+      ({ match, fields }) => {
+        return privateAnswer(match[1]!, interactions.get(match[2]!), fields, {
+          type: 0,
+          flags: Number(fields.flags ?? 0),
+        });
+      },
     ],
   ];
 
@@ -728,8 +820,20 @@ export async function startControlledDiscord() {
     createdWhere(matches: (message: CreatedMessage) => boolean, count: number) {
       return changed.wait(() => created.filter(matches).length >= count);
     },
-    /** Every message edit Discord applied, in order. */
+    /** Every message text edit Discord applied, in order. */
     edits,
+    /** Every edit of a message's components (its buttons) Discord applied, in order. */
+    componentEdits,
+    /** How Factory answered interactions, in order. */
+    interactionAnswers,
+    /** Resolves once Factory answered `count` interactions in total. */
+    answered(count: number) {
+      return changed.wait(() => interactionAnswers.length >= count);
+    },
+    /** Resolves once Discord applied `count` component edits in total. */
+    componentsEdited(count: number) {
+      return changed.wait(() => componentEdits.length >= count);
+    },
     /** Later message edits meet these faults in order, one each. */
     faultEdits(...faults: MessageFault[]) {
       editFaults.push(...faults);
@@ -1042,6 +1146,8 @@ export function buttonEvent(options: {
   readonly userId?: string;
   /** What Discord computed for the member in this channel, overwrites included. */
   readonly permissions?: bigint;
+  /** The message carrying the button, as Discord shows it now. */
+  readonly message?: Pick<CreatedMessage, "id" | "content" | "components">;
 }): GatewayEvent {
   const botUser = user(
     options.bot.userId ?? options.bot.applicationId,
@@ -1078,10 +1184,10 @@ export function buttonEvent(options: {
       authorizing_integration_owners: { "0": options.guildId },
       context: 0,
       message: {
-        id: "800000000000000002",
+        id: options.message?.id ?? "800000000000000002",
         type: 0,
         channel_id: options.thread.id,
-        content: "Confirm",
+        content: options.message?.content ?? "Confirm",
         author: botUser,
         timestamp: new Date(0).toISOString(),
         edited_timestamp: null,
@@ -1092,7 +1198,7 @@ export function buttonEvent(options: {
         attachments: [],
         embeds: [],
         pinned: false,
-        components: [],
+        components: options.message?.components ?? [],
         flags: 0,
       },
       data: { custom_id: options.customId, component_type: 2 },

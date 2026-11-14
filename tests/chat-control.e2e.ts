@@ -496,9 +496,9 @@ async function messagesWhen(
   throw new Error("The controlled Discord did not create the expected messages.");
 }
 
-const RECEIPT = "**Start accepted.**";
+const RECEIPT = /^✅ \*\*Run #(\d+) started\*\*/;
 const receipts = (messages: FixtureMessage[]) =>
-  messages.filter((message) => message.content.startsWith(RECEIPT));
+  messages.filter((message) => RECEIPT.test(message.content));
 
 /**
  * A participant's Start of `prompt`, confirmed with its button after Discord was told to meet the
@@ -536,16 +536,23 @@ async function confirmedStart(baseUrl: string | undefined, prompt: string, fault
   return { thread, before };
 }
 
-/** The Run ID the latest receipt in `thread` names. */
+/** The ID of the Run the latest receipt in `thread` names by its number. */
 async function receiptRunId(baseUrl: string | undefined, thread: string) {
   const messages = await messagesWhen(baseUrl, (created) =>
     receipts(created).some((message) => message.channelId === thread),
   );
-  return /Run ID: `([^`]+)`/.exec(
-    receipts(messages)
-      .filter((message) => message.channelId === thread)
-      .at(-1)!.content,
-  )![1]!;
+  const number = Number(
+    RECEIPT.exec(
+      receipts(messages)
+        .filter((message) => message.channelId === thread)
+        .at(-1)!.content,
+    )![1],
+  );
+  const navigation = (await (
+    await fetch(new URL("/api/run-navigation", baseUrl))
+  ).json()) as Result<{ id: string; number: number | null }[]>;
+  assert(navigation.ok);
+  return navigation.value.find((entry) => entry.number === number)!.id;
 }
 
 /**
@@ -631,7 +638,7 @@ test("the host retries an owed receipt Discord may already show only after a dup
   await app.screenshot("chat-discord-delivery-retried");
 });
 
-const CARD = /^\*\*Run [^\n]+\*\* · /;
+const CARD = /^\*\*Run [^\n]+\*\* · (?:🟢|💤|✅|🗄️) /;
 const LOCKED_CORRECTION =
   "The thread is locked, and Factory never unlocks threads. Unlock it in Discord, then retry.";
 
@@ -682,7 +689,7 @@ test("the host retries the status card Discord refused in a locked thread once a
   const messages = await messagesWhen(app.baseUrl, (created) =>
     created.some(
       (message) =>
-        message.channelId === thread && /^\*\*Run [^\n]+\*\* · Archived\n/.test(message.content),
+        message.channelId === thread && /^\*\*Run [^\n]+\*\* · 🗄️ Archived\n/.test(message.content),
     ),
   );
   assert.strictEqual(

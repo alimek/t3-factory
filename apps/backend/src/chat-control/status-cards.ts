@@ -24,27 +24,31 @@ export const clip = (text: string, limit: number) => {
  * Names come from users, so a zero-width space follows every `@`: no name can read as a user,
  * role or mass mention, independently of the allowed mentions every Factory message sends.
  */
-const inert = (text: string) => text.replaceAll("@", "@\u200b");
+export const inert = (text: string) => text.replaceAll("@", "@\u200b");
 export const name = (text: string | null | undefined) =>
   inert(clip(text ?? "Unnamed Block", NAME_LIMIT));
 const runTitle = (text: string) => inert(clip(text, TITLE_LIMIT));
 /** A card's or notice's bold Run line start: reference and title. */
 export const runHeading = (reference: string, title: string) =>
   `**Run ${reference} · ${runTitle(title)}**`;
-/** A Discord timestamp: every reader sees it in their own time zone. */
-export const at = (iso: string) => `<t:${Math.floor(Date.parse(iso) / 1000)}:f>`;
+/**
+ * A relative Discord timestamp ("in 5 minutes", "2 hours ago"): every reader's client renders it
+ * in their own time zone, with the exact time on hover.
+ */
+export const at = (iso: string) => `<t:${Math.floor(Date.parse(iso) / 1000)}:R>`;
 
-const STATES: Record<RunReport["run"]["state"], string> = {
-  active: "Active",
-  snoozed: "Snoozed",
-  settled: "Settled",
-  archived: "Archived",
+/** How every Chat control message shows a Run's lifecycle. */
+export const LIFECYCLE: Record<RunReport["run"]["state"], string> = {
+  active: "🟢 Active",
+  snoozed: "💤 Snoozed",
+  settled: "✅ Settled",
+  archived: "🗄️ Archived",
 };
 const ACTIVE_BLOCKS = new Set(["working", "waiting", "sent"]);
 const BLOCK_STATES: Record<string, string> = {
-  working: "working",
-  waiting: "waiting",
-  sent: "Continuation sent",
+  working: "⚙️ {block} — working",
+  waiting: "⏳ {block} — waiting",
+  sent: "⚙️ {block} — Continuation sent",
 };
 const OBSERVATIONS: Record<string, string> = {
   stale: " · observation stale",
@@ -58,7 +62,7 @@ const HANDOFFS: Record<string, (to: string) => string> = {
 };
 const NEEDS_INPUT: Record<string, string> = {
   human: "Human step",
-  "native-request": "T3 request, answer it in T3",
+  "native-request": "T3 request (answer it in T3)",
   "conversation-waiting": "Agent question",
 };
 const PROBLEMS: Record<string, string> = {
@@ -69,9 +73,9 @@ const PROBLEMS: Record<string, string> = {
 
 function resultLine(result: RunReport["latestResults"][number]) {
   const parts = [
-    `${name(result.block)}: ${result.status === "finished" ? "finished" : "reported waiting"}${
+    `${result.status === "finished" ? "✅" : "⏳"} ${name(result.block)} — ${result.status === "finished" ? "finished" : "reported waiting"}${
       result.exit ? ` via “${name(result.exit)}”` : ""
-    }, accepted ${at(result.acceptedAt)}`,
+    } ${at(result.acceptedAt)}`,
   ];
   if (result.workerCompletion === "confirmed") parts.push("worker finished");
   if (result.workerCompletion === "held") parts.push("worker not confirmed finished");
@@ -79,12 +83,11 @@ function resultLine(result: RunReport["latestResults"][number]) {
   return parts.join(" · ");
 }
 
-/** A titled list of at most `limit` lines, summarizing the rest; nothing when empty. */
-function section(title: string, lines: readonly string[], limit: number) {
-  if (lines.length === 0) return [];
-  const shown = lines.slice(0, limit).map((line) => `• ${line}`);
+/** At most `limit` lines of one kind, summarizing the rest as `what`; nothing when empty. */
+function section(what: string, lines: readonly string[], limit: number) {
+  const shown = lines.slice(0, limit);
   const rest = lines.length - shown.length;
-  return [`**${title}**`, ...shown, ...(rest > 0 ? [`• and ${rest} more`] : [])];
+  return [...shown, ...(rest > 0 ? [`… and ${rest} more ${what}`] : [])];
 }
 
 /**
@@ -98,45 +101,45 @@ function statusCardText(report: RunReport, replacedApplication: boolean) {
   const reference = runReference(run);
   const head = [
     ...(replacedApplication ? [`_${APPLICATION_NOTICE}_`, ""] : []),
-    `${runHeading(reference, run.title)} · ${STATES[run.state]}`,
-    `Project: ${name(run.project.name)} (\`${clip(run.project.repositoryPath, TITLE_LIMIT)}\`) · Flow: ${name(run.flow)}`,
+    `${runHeading(reference, run.title)} · ${LIFECYCLE[run.state]}`,
+    `📁 ${name(run.project.name)} · \`${clip(run.project.repositoryPath, TITLE_LIMIT)}\` · 🔀 ${name(run.flow)}`,
     ...(report.settlement === null
       ? []
       : [
           report.settlement === "stopping"
-            ? "Settle confirmed: Factory is stopping this Run's workers."
-            : "Settle confirmed, but some workers could not be confirmed stopped.",
+            ? "⏹️ Settle confirmed: Factory is stopping this Run's workers."
+            : "⚠️ Settle confirmed, but some workers could not be confirmed stopped.",
         ]),
   ];
   const blocks = report.blocks
     .filter((block) => ACTIVE_BLOCKS.has(block.state))
     .map(
       (block) =>
-        `${name(block.name)}: ${BLOCK_STATES[block.state]}${OBSERVATIONS[block.observation] ?? ""}`,
+        `${BLOCK_STATES[block.state]!.replace("{block}", name(block.name))}${OBSERVATIONS[block.observation] ?? ""}`,
     );
   const results = report.latestResults.map(resultLine);
   const waits = report.pendingWaits.map(
-    (wait) => `${name(wait.block)}: until ${at(wait.deadlineAt)}`,
+    (wait) => `⏰ ${name(wait.block)} — waits until ${at(wait.deadlineAt)}`,
   );
   const needsInput = report.needsInput.map(
     (matter) =>
-      `${NEEDS_INPUT[matter.kind]} in ${name(matter.block)} since ${at(matter.appearedAt)}${
+      `🙋 ${NEEDS_INPUT[matter.kind]} in ${name(matter.block)} since ${at(matter.appearedAt)}${
         OBSERVATIONS[matter.observation] ?? ""
       }`,
   );
   const problems = report.problems.map(
     (matter) =>
-      `${name(matter.block)}: ${PROBLEMS[matter.kind]} since ${at(matter.appearedAt)}${
+      `⚠️ ${name(matter.block)} — ${PROBLEMS[matter.kind]} since ${at(matter.appearedAt)}${
         OBSERVATIONS[matter.observation] ?? ""
       }`,
   );
-  const foot = `Factory keeps this card current. Ask Factory to read Run ${reference} for results and details.`;
+  const foot = `_Ask Factory to read Run ${reference} for details._`;
   const render = (limit: number) =>
     [
       ...head,
-      ...section("Active Blocks", blocks, limit),
-      ...section("Latest results", results, limit),
-      ...section("Waiting", waits, limit),
+      ...section("active Blocks", blocks, limit),
+      ...section("results", results, limit),
+      ...section("Waits", waits, limit),
       ...section("Needs input", needsInput, limit),
       ...section("Problems", problems, limit),
       foot,

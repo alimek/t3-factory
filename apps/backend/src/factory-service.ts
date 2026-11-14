@@ -141,6 +141,7 @@ export const makeFactoryService = (
     const chatStart = startAction({
       listProjects: projects.listProjects,
       getFlow: definitions.getFlow,
+      listFlows: definitions.listFlows,
       getRunTitleSetting: runTitles.getRunTitleSetting,
       startTextRun: (input) => guard(runner.startTextRun(input)),
       acceptedStart: (requestId) => runner.acceptedStart(requestId),

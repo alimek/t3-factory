@@ -3,11 +3,12 @@ import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import {
   besidesReports,
+  buttonShown,
   clicked,
   clockedStartingWorld,
   createdBesidesReports,
   confirmations,
-  ephemeralAnswers,
+  clickAnswers,
   isStatusCard,
   proposedStart,
   runsOf,
@@ -35,39 +36,41 @@ import {
 import { addedProject } from "./support/chat-runs.ts";
 import { PARTICIPANT_ID, unproven } from "./support/controlled-discord.ts";
 
+/** Clicks that decided the review answer with its disabled button; others privately. */
 const ANSWERS = {
-  accepted: "Confirmed. Factory accepted it; the receipt follows in this thread.",
+  accepted: "✅ Confirmed (disabled)",
   notYours:
-    "Only the person who asked for this review can confirm it. Ask Factory for your own review.",
-  invalid: "This confirmation is no longer valid. Ask Factory again for a new review.",
-  expired:
-    "This review expired five minutes after Factory posted it, so nothing was done. Ask Factory again for a new review.",
-  denied: "Chat control does not accept this confirmation from you here.",
-  rejected: "Confirmed, but Factory did not accept it; the receipt in this thread explains why.",
+    "🔒 Only the person who asked for this review can confirm it. Ask Factory for your own.",
+  invalid: "🚫 This confirmation is no longer valid. Ask Factory for a new review.",
+  expired: "⌛ This review expired, so nothing was done. Ask Factory for a new review.",
+  denied: "🚫 Chat control does not accept this confirmation from you here.",
+  rejected: "🚫 No longer valid (disabled)",
 } as const;
 
 const MESSAGE_CREATES = /^\/api\/v10\/channels\/\d+\/messages$/;
 
-it("a Start proposal posts Factory's complete review in ordered parts with one requester button last, and starts nothing", async (c) => {
+it("a Start proposal posts Factory's complete compact review with one requester button last, and starts nothing", async (c) => {
   // Arrange
   const world = await startingWorld(c);
 
   // Act
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
 
   // Assert
-  const [review, prompt, disclosure, confirmation] = world.discord.created;
-  expect(review!.content).toContain(
-    `**Project:** ${world.project.title} — \`${world.project.workspaceRoot}\``,
+  const [review, confirmation] = world.discord.created;
+  expect(review!.content).toBe(
+    [
+      "📝 **Start a Run?**",
+      `📁 ${world.project.title} · \`${world.project.workspaceRoot}\``,
+      `🔀 ${world.flow.name} · in the Project's checkout`,
+      "🏷️ Improve search",
+      `\`\`\`\n${START_PROMPT}\n\`\`\``,
+      "ℹ️ The current saved Flow and Agent definitions, workspace included, apply when you confirm; Factory checks again and may still refuse.",
+    ].join("\n"),
   );
-  expect(review!.content).toContain(`**Flow:** ${world.flow.name} (\`${world.flow.id}\`)`);
-  expect(review!.content).toContain("**Workspace:** the Project's checkout");
-  expect(review!.content).toContain("**Run title:** Improve search");
-  expect(review!.content).toContain("Generate Run titles is off: the Run keeps this title.");
-  expect(review!.content).toContain("exactly as written in your message");
-  expect(prompt!.content).toBe(`\`\`\`\n${START_PROMPT}\n\`\`\``);
-  expect(disclosure!.content).toContain("current saved definitions of this Flow and its Agents");
-  expect(confirmation!.content).toContain("Confirm this Start");
+  expect(confirmation!.content).toMatch(
+    /^🔒 Only the person who asked can confirm · expires <t:\d+:R>$/,
+  );
   expect(confirmations(world.discord)).toHaveLength(1);
   expect(button).toMatch(/^factory-confirm:/);
   expect(await runsOf(world.factory)).toStrictEqual([]);
@@ -76,14 +79,16 @@ it("a Start proposal posts Factory's complete review in ordered parts with one r
 it("the requester's confirmation accepts exactly the reviewed Start, posts the deterministic receipt and makes the thread the Run's originating thread", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000001", 1);
 
   // Assert
-  expect(answer).toBe("Confirmed. Factory accepted it; the receipt follows in this thread.");
-  await createdBesidesReports(world.discord, 5);
+  expect(answer).toBe(ANSWERS.accepted);
+  expect(buttonShown(world.discord, button)).toBe("✅ Confirmed (disabled)");
+  expect(world.discord.interactionAnswers.map((entry) => entry.kind)).toStrictEqual(["updated"]);
+  await createdBesidesReports(world.discord, 3);
   const navigation = await world.factory.listRunNavigation();
   assert(navigation.ok);
   const [run] = navigation.value;
@@ -92,8 +97,8 @@ it("the requester's confirmation accepts exactly the reviewed Start, posts the d
   expect(detail.value.input).toBe(START_PROMPT);
   expect(detail.value.title).toBe("Improve search");
   expect(detail.value.titleProvenance).toBe("automatic");
-  expect(besidesReports(world.discord)[4]!.content).toBe(
-    `**Start accepted.** Factory accepted Run #1 “Improve search” in ${world.project.title} with Flow ${world.flow.name}. Workers start asynchronously; Factory shows their progress.\nRun ID: \`${run!.id}\``,
+  expect(besidesReports(world.discord)[2]!.content).toBe(
+    `✅ **Run #1 started** — Improve search\n📁 ${world.project.title} · 🔀 ${world.flow.name}`,
   );
   await world.discord.createdWhere(isStatusCard, 1);
   expect(statusCardsIn(world.discord).map((card) => card.channelId)).toStrictEqual([THREAD]);
@@ -102,24 +107,40 @@ it("the requester's confirmation accepts exactly the reviewed Start, posts the d
 it("another participant's click is refused ephemerally and leaves the requester's consent usable", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   await clicked(world.discord, button, "610000000000000001", 1, { userId: COLLABORATOR_ID });
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000002", 2);
 
   // Assert
-  expect(ephemeralAnswers(world.discord)).toStrictEqual([ANSWERS.notYours, ANSWERS.accepted]);
+  expect(clickAnswers(world.discord)).toStrictEqual([ANSWERS.notYours, ANSWERS.accepted]);
   expect(answer).toBe(ANSWERS.accepted);
   expect(await runsOf(world.factory)).toStrictEqual([{ number: 1, title: "Improve search" }]);
+});
+
+it("another participant's click is answered privately and leaves the requester's button as it is", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000000001", 2);
+
+  // Act
+  const answer = await clicked(world.discord, button, "610000000000000001", 1, {
+    userId: COLLABORATOR_ID,
+  });
+
+  // Assert
+  expect(answer).toBe(ANSWERS.notYours);
+  expect(buttonShown(world.discord, button)).toBe("Confirm Start");
+  expect(world.discord.componentEdits).toStrictEqual([]);
 });
 
 it("a repeated click after acceptance starts no second Run and tells the requester the accepted result without a public receipt", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   await clicked(world.discord, button, "610000000000000001", 1);
-  await createdBesidesReports(world.discord, 5);
+  await createdBesidesReports(world.discord, 3);
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000002", 2);
@@ -129,13 +150,13 @@ it("a repeated click after acceptance starts no second Run and tells the request
     "You already confirmed this review. Factory accepted Run #1 “Improve search”.",
   );
   expect(await runsOf(world.factory)).toHaveLength(1);
-  expect(besidesReports(world.discord)).toHaveLength(5);
+  expect(besidesReports(world.discord)).toHaveLength(3);
 });
 
 it("two clicks racing on one review start exactly one Run", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
 
   // Act
   const [first, second] = await Promise.all([
@@ -151,7 +172,7 @@ it("two clicks racing on one review start exactly one Run", async (c) => {
 it("an identical proposal by the same requester reuses the waiting review and posts no second button", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  await proposedStart(world, "600000000000000001", 4);
+  await proposedStart(world, "600000000000000001", 2);
   world.model.script(startCall(world, START_PROMPT));
 
   // Act
@@ -160,8 +181,8 @@ it("an identical proposal by the same requester reuses the waiting review and po
   );
 
   // Assert
-  await createdBesidesReports(world.discord, 5);
-  expect(besidesReports(world.discord)[4]!.content).toContain(
+  await createdBesidesReports(world.discord, 3);
+  expect(besidesReports(world.discord)[2]!.content).toContain(
     "This exact Start already has a review waiting for your confirmation in this thread.",
   );
   expect(confirmations(world.discord)).toHaveLength(1);
@@ -170,11 +191,11 @@ it("an identical proposal by the same requester reuses the waiting review and po
 it("a corrected Start for the same Project supersedes the earlier review without the model naming it, so its button starts nothing", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const first = await proposedStart(world, "600000000000000001", 4);
+  const first = await proposedStart(world, "600000000000000001", 2);
   await proposedStart(
     world,
     "600000000000000002",
-    8,
+    4,
     startCall(world, "Improve search filters"),
     "no, start: Improve search filters",
   );
@@ -187,16 +208,36 @@ it("a corrected Start for the same Project supersedes the earlier review without
   expect(await runsOf(world.factory)).toStrictEqual([]);
 });
 
+it("a corrected Start shows the earlier review's button as replaced", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const first = await proposedStart(world, "600000000000000001", 2);
+
+  // Act
+  await proposedStart(
+    world,
+    "600000000000000002",
+    4,
+    startCall(world, "Improve search filters"),
+    "no, start: Improve search filters",
+  );
+
+  // Assert
+  await world.discord.componentsEdited(1);
+  expect(buttonShown(world.discord, first)).toBe("↩️ Replaced (disabled)");
+  expect(confirmations(world.discord)).toHaveLength(2);
+});
+
 it("a Start proposed for another Project leaves the earlier Start's review confirmable", async (c) => {
   // Arrange
   const world = await startingWorld(c);
   const other = await addedProject(world, "other-clone");
   await savedAccess(world.factory, [PARTICIPANT_ID, COLLABORATOR_ID], [world.project.id, other.id]);
-  const first = await proposedStart(world, "600000000000000001", 4);
+  const first = await proposedStart(world, "600000000000000001", 2);
   await proposedStart(
     world,
     "600000000000000002",
-    8,
+    4,
     startCall(world, "Improve search filters", { projectId: other.id }),
     "also start: Improve search filters",
   );
@@ -241,16 +282,15 @@ it("a composed prompt is reviewed in full and labelled as written by Factory's a
   await proposedStart(
     world,
     "600000000000000001",
-    4,
+    2,
     startCall(world, "Fix the flaky login test", { promptSource: "composed" }),
     "can you get the login test fixed?",
   );
 
   // Assert
   expect(world.discord.created[0]!.content).toContain(
-    "**composed by Factory's assistant, not written by you**",
+    "⚠️ Prompt **composed by Factory's assistant, not written by you** — read all of it:\n```\nFix the flaky login test\n```",
   );
-  expect(world.discord.created[1]!.content).toBe("```\nFix the flaky login test\n```");
 });
 
 it("task text over 8,000 characters is refused without a review, never shortened", async (c) => {
@@ -273,7 +313,7 @@ it.effect("a click after the review's five-minute lifetime starts nothing", (c) 
   Effect.gen(function* () {
     // Arrange
     const world = yield* clockedStartingWorld(c);
-    const button = yield* until(() => proposedStart(world, "600000000000000001", 4));
+    const button = yield* until(() => proposedStart(world, "600000000000000001", 2));
     yield* TestClock.adjust(5 * 60_000);
 
     // Act
@@ -287,17 +327,32 @@ it.effect("a click after the review's five-minute lifetime starts nothing", (c) 
   }),
 );
 
+it.effect("a review's button shows as expired at its original expiry", (c) =>
+  Effect.gen(function* () {
+    // Arrange
+    const world = yield* clockedStartingWorld(c);
+    const button = yield* until(() => proposedStart(world, "600000000000000001", 2));
+
+    // Act
+    yield* TestClock.adjust(5 * 60_000);
+
+    // Assert
+    yield* until(() => world.discord.componentsEdited(1));
+    expect(buttonShown(world.discord, button)).toBe("⌛ Expired (disabled)");
+  }),
+);
+
 it("a Discord access denial rejects the click without consuming the consent", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   await clicked(world.discord, button, "610000000000000001", 1, { permissions: 0n });
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000002", 2);
 
   // Assert
-  expect(ephemeralAnswers(world.discord)).toStrictEqual([ANSWERS.denied, ANSWERS.accepted]);
+  expect(clickAnswers(world.discord)).toStrictEqual([ANSWERS.denied, ANSWERS.accepted]);
   expect(answer).toBe(ANSWERS.accepted);
   expect(await runsOf(world.factory)).toHaveLength(1);
 });
@@ -305,7 +360,7 @@ it("a Discord access denial rejects the click without consuming the consent", as
 it("revoking the requester voids their waiting review for good, even after the grant returns", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   await savedAccess(world.factory, [COLLABORATOR_ID], [world.project.id]);
   await savedAccess(world.factory, [PARTICIPANT_ID, COLLABORATOR_ID], [world.project.id]);
 
@@ -317,7 +372,48 @@ it("revoking the requester voids their waiting review for good, even after the g
   expect(await runsOf(world.factory)).toStrictEqual([]);
 });
 
-it("revoking the requester while their multipart review is being posted stops it before the next part, so no button appears", async (c) => {
+it("revoking the requester shows their waiting review's button as no longer valid", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const button = await proposedStart(world, "600000000000000001", 2);
+
+  // Act
+  await savedAccess(world.factory, [COLLABORATOR_ID], [world.project.id]);
+
+  // Assert
+  await world.discord.componentsEdited(1);
+  expect(buttonShown(world.discord, button)).toBe("🚫 No longer valid (disabled)");
+});
+
+it("a review voided while Chat control is Off keeps its button as it is after turning On again", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const voidedWhileOff = await proposedStart(world, "600000000000000001", 2);
+  world.model.script(startCall(world, START_PROMPT));
+  world.discord.deliver(
+    invocation("600000000000000002", {
+      content: `start this:\n${START_PROMPT}`,
+      authorId: COLLABORATOR_ID,
+    }),
+  );
+  await world.discord.createdMessages(4);
+  const voidedWhileOn = confirmations(world.discord)[1]!;
+  assert((await world.factory.setChatControlEnabled({ enabled: false })).ok);
+  await savedAccess(world.factory, [COLLABORATOR_ID], [world.project.id]);
+  await turnedOn(world.factory, world.discord, 2);
+
+  // Act
+  await savedAccess(world.factory, [], [world.project.id]);
+
+  // Assert
+  await world.discord.componentsEdited(1);
+  expect(world.discord.componentEdits.map((edit) => edit.messageId)).toStrictEqual([
+    voidedWhileOn.id,
+  ]);
+  expect(buttonShown(world.discord, voidedWhileOff)).toBe("Confirm Start");
+});
+
+it("revoking the requester while their review is being posted stops it before its button appears", async (c) => {
   // Arrange
   const world = await startingWorld(c);
   world.discord.faultMessages("paused");
@@ -336,7 +432,7 @@ it("revoking the requester while their multipart review is being posted stops it
   // Assert
   await world.discord.createdMessages(2);
   expect(world.discord.created.map((message) => message.content)).toStrictEqual([
-    expect.stringContaining(`**Flow:** ${world.flow.name}`),
+    expect.stringContaining(`🔀 ${world.flow.name}`),
     "OK",
   ]);
   expect(confirmations(world.discord)).toStrictEqual([]);
@@ -345,7 +441,7 @@ it("revoking the requester while their multipart review is being posted stops it
 it("replacing the Discord application retires its waiting reviews, even after switching back", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   const other = { token: "other-bot-token.discord.secret", applicationId: "123456789012345679" };
   world.discord.addBot(other);
   const replaced = await world.factory.updateDiscordConnection(
@@ -370,7 +466,7 @@ it("replacing the Discord application retires its waiting reviews, even after sw
 it("consent survives turning Chat control Off and On again within its lifetime", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   assert((await world.factory.setChatControlEnabled({ enabled: false })).ok);
   await turnedOn(world.factory, world.discord, 2);
 
@@ -385,7 +481,7 @@ it("consent survives turning Chat control Off and On again within its lifetime",
 it("rotating the same application's bot token while On keeps the waiting review confirmable", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   const rotated = "rotated-bot-token.discord.secret";
   world.discord.addBot({ token: rotated, applicationId: discordBot.applicationId });
   const saved = await world.factory.updateDiscordConnection(
@@ -405,7 +501,7 @@ it("rotating the same application's bot token while On keeps the waiting review 
 it("a review presented before a backend restart is confirmed once after it", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   await world.factory.close();
   const reopened = await world.open();
   await servingAgain(world.discord, 2);
@@ -421,7 +517,7 @@ it("a review presented before a backend restart is confirmed once after it", asy
 it("a confirmation works while the language model fails, with no model request", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.model.fail(500, { error: "down" });
   const requests = world.model.requests.length;
 
@@ -431,14 +527,14 @@ it("a confirmation works while the language model fails, with no model request",
   // Assert
   expect(answer).toBe(ANSWERS.accepted);
   expect(world.model.requests).toHaveLength(requests);
-  await createdBesidesReports(world.discord, 5);
-  expect(besidesReports(world.discord)[4]!.content).toContain("**Start accepted.**");
+  await createdBesidesReports(world.discord, 3);
+  expect(besidesReports(world.discord)[2]!.content).toContain("✅ **Run #1 started**");
 });
 
 it("a definitive Start rejection uses up the consent and posts a not-accepted receipt", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   assert((await world.factory.removeFlow(world.flow.id)).ok);
 
   // Act
@@ -446,9 +542,9 @@ it("a definitive Start rejection uses up the consent and posts a not-accepted re
 
   // Assert
   expect(answer).toBe(ANSWERS.rejected);
-  await createdBesidesReports(world.discord, 5);
-  expect(besidesReports(world.discord)[4]!.content).toMatch(
-    /^\*\*Start not accepted\.\*\* Factory did not start this Run: [^\n]+\n(?:- [^\n]+\n)*Nothing was started\. Fix the cause, then ask for a new review\.$/,
+  await createdBesidesReports(world.discord, 3);
+  expect(besidesReports(world.discord)[2]!.content).toMatch(
+    /^❌ \*\*Start not accepted\*\* — [^\n]+(?:\n• [^\n]+)*$/,
   );
   expect(await runsOf(world.factory)).toStrictEqual([]);
 });
@@ -456,16 +552,16 @@ it("a definitive Start rejection uses up the consent and posts a not-accepted re
 it("a later turn reads the proposal's accepted outcome from Factory's facts instead of proposing again", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   await clicked(world.discord, button, "610000000000000001", 1);
-  await createdBesidesReports(world.discord, 5);
+  await createdBesidesReports(world.discord, 3);
   world.model.script({ text: "It started as Run #1." });
 
   // Act
   world.discord.deliver(invocation("600000000000000002", { content: "did it start?" }));
 
   // Assert
-  await createdBesidesReports(world.discord, 6);
+  await createdBesidesReports(world.discord, 4);
   expect(toolResults(world.model, 1)).toStrictEqual([
     expect.objectContaining({
       operation: "start",
@@ -488,18 +584,18 @@ it("a UI-started Run gets no status card, while a chat-started Run in the same P
     input: "Started in Factory\nNot through chat.",
   });
   assert(uiStarted.ok, JSON.stringify(uiStarted));
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
 
   // Act
   await clicked(world.discord, button, "610000000000000001", 1);
 
   // Assert
   await world.discord.createdWhere(isStatusCard, 1);
-  await createdBesidesReports(world.discord, 5);
+  await createdBesidesReports(world.discord, 3);
   expect(statusCardsIn(world.discord)).toStrictEqual([
     expect.objectContaining({
       channelId: THREAD,
-      content: expect.stringMatching(/^\*\*Run #2 · Improve search\*\* · Active\n/),
+      content: expect.stringMatching(/^\*\*Run #2 · Improve search\*\* · 🟢 Active\n/),
     }),
   ]);
 });
@@ -510,7 +606,7 @@ const owedReceipt = (world: Awaited<ReturnType<typeof startingWorld>>) =>
 it("a receipt create Discord performed without answering is asked again under its enforced nonce and shows once", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages("lost");
 
   // Act
@@ -520,13 +616,13 @@ it("a receipt create Discord performed without answering is asked again under it
   await world.discord.createdWhere(isStatusCard, 1);
   expect(
     besidesReports(world.discord)
-      .slice(4)
+      .slice(2)
       .map((message) => message.content),
-  ).toStrictEqual([expect.stringMatching(/^\*\*Start accepted\.\*\*/)]);
+  ).toStrictEqual([expect.stringMatching(/^✅ \*\*Run #1 started\*\*/)]);
   const creates = world.discord
     .requested("POST", MESSAGE_CREATES)
     .map((request) => request.body as { nonce: string; enforce_nonce: boolean; content: string })
-    .filter((create) => create.content.startsWith("**Start accepted.**"));
+    .filter((create) => create.content.startsWith("✅ **Run #1 started**"));
   expect(creates).toHaveLength(2);
   expect(creates[1]!.nonce).toBe(creates[0]!.nonce);
   expect(creates.map((create) => create.enforce_nonce)).toStrictEqual([true, true]);
@@ -539,7 +635,7 @@ it("a confirmation button whose create failed without proof is asked again under
   // Arrange
   const world = await startingWorld(c);
   world.discord.faultMessages("delivered", "delivered", "delivered", "failed");
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000001", 1);
@@ -553,7 +649,7 @@ it("a confirmation button whose create failed without proof is asked again under
 it("a receipt create still unproven after its re-attempts under the nonce is not repeated and is shown in Settings as unknown", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages(...unproven("lost"));
 
   // Act
@@ -573,13 +669,13 @@ it("a receipt create still unproven after its re-attempts under the nonce is not
     }),
   ]);
   expect(settings.needsAttention).toBe(true);
-  expect(besidesReports(world.discord)).toHaveLength(5);
+  expect(besidesReports(world.discord)).toHaveLength(3);
 });
 
 it("the warned Retry sends an unknown receipt once more and never starts another Run", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages(...unproven("lost"));
   await clicked(world.discord, button, "610000000000000001", 1);
   const [problem] = (await owedReceipt(world)).delivery.problems;
@@ -593,8 +689,8 @@ it("the warned Retry sends an unknown receipt once more and never starts another
 
   // Assert
   assert(retried.ok, JSON.stringify(retried));
-  await createdBesidesReports(world.discord, 6);
-  expect(besidesReports(world.discord)[5]!.content).toBe(besidesReports(world.discord)[4]!.content);
+  await createdBesidesReports(world.discord, 4);
+  expect(besidesReports(world.discord)[3]!.content).toBe(besidesReports(world.discord)[2]!.content);
   const settings = await discordSettingsWhen(
     world.factory,
     (current) => current.delivery.problems.length === 0,
@@ -606,7 +702,7 @@ it("the warned Retry sends an unknown receipt once more and never starts another
 it("Retry of an unknown receipt is refused until the owner accepts a possible duplicate", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages(...unproven("lost"));
   await clicked(world.discord, button, "610000000000000001", 1);
   const [problem] = (await owedReceipt(world)).delivery.problems;
@@ -620,13 +716,13 @@ it("Retry of an unknown receipt is refused until the owner accepts a possible du
   // Assert
   assert(!retried.ok);
   expect(retried.error.issues[0]?.code).toBe("chat_delivery_duplicate_risk");
-  expect(besidesReports(world.discord)).toHaveLength(5);
+  expect(besidesReports(world.discord)).toHaveLength(3);
 });
 
 it("a receipt Discord refused is shown as failed, and Retry after correction delivers it without a duplicate warning", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages("refused");
   await clicked(world.discord, button, "610000000000000001", 1);
   const [problem] = (await owedReceipt(world)).delivery.problems;
@@ -640,28 +736,28 @@ it("a receipt Discord refused is shown as failed, and Retry after correction del
   // Assert
   expect(problem!.state).toBe("failed");
   assert(retried.ok, JSON.stringify(retried));
-  await createdBesidesReports(world.discord, 5);
-  expect(besidesReports(world.discord)[4]!.content).toContain("**Start accepted.**");
+  await createdBesidesReports(world.discord, 3);
+  expect(besidesReports(world.discord)[2]!.content).toContain("✅ **Run #1 started**");
 });
 
 it("a rate-limited receipt is retried automatically", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages("rate-limited");
 
   // Act
   await clicked(world.discord, button, "610000000000000001", 1);
 
   // Assert
-  await createdBesidesReports(world.discord, 5);
-  expect(besidesReports(world.discord)[4]!.content).toContain("**Start accepted.**");
+  await createdBesidesReports(world.discord, 3);
+  expect(besidesReports(world.discord)[2]!.content).toContain("✅ **Run #1 started**");
 });
 
 it("revoking the receipt's destination cancels the owed receipt and keeps the accepted Run", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages("refused");
   await clicked(world.discord, button, "610000000000000001", 1);
   await owedReceipt(world);
@@ -679,10 +775,10 @@ it("revoking the receipt's destination cancels the owed receipt and keeps the ac
 it("a receipt create interrupted by a backend stop is unknown after restart and not sent again", async (c) => {
   // Arrange
   const world = await startingWorld(c);
-  const button = await proposedStart(world, "600000000000000001", 4);
+  const button = await proposedStart(world, "600000000000000001", 2);
   world.discord.faultMessages("held");
   await clicked(world.discord, button, "610000000000000001", 1);
-  await world.discord.request("POST", /^\/api\/v10\/channels\/\d+\/messages$/, 5);
+  await world.discord.request("POST", /^\/api\/v10\/channels\/\d+\/messages$/, 3);
   await world.factory.close();
 
   // Act

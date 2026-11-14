@@ -24,7 +24,8 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type { DiscordCommandSetup } from "@t3-factory/contracts";
 import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
-import { isConfirmation, type ConfirmationClick } from "./actions.ts";
+import { isConfirmation, type ClickAnswer, type ConfirmationClick } from "./actions.ts";
+import { buttonRow } from "./confirmation-buttons.ts";
 import type { ConversationGenerations, ConversationKey } from "./conversations.ts";
 import {
   BUSY_REPLY,
@@ -68,8 +69,8 @@ interface IngressSession {
   readonly post: (key: ConversationKey, text: string) => Promise<unknown>;
   /** The reply target the current MESSAGE_CREATE payload carried, taken once. */
   readonly referenced: (messageId: string) => ReferencedMessage | undefined;
-  /** Decides a confirmation button click; the ephemeral answer for the clicker. */
-  readonly confirm: (click: ConfirmationClick) => Effect.Effect<string, unknown>;
+  /** Decides a confirmation button click and how to answer it. */
+  readonly confirm: (click: ConfirmationClick) => Effect.Effect<ClickAnswer, unknown>;
   /**
    * The Run a message this application published in `threadId` identifies, if Factory recorded
    * one for it. Only the identity is returned: the message's content is never imported.
@@ -393,16 +394,19 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
     });
 
   /**
-   * A confirmation button click: acknowledged at once and ephemerally, then decided outside the
-   * gate, since performing an action may take longer than later events should wait.
+   * A confirmation button click: acknowledged at once as a deferred update of its message, then
+   * decided outside the gate, since performing an action may take longer than later events
+   * should wait. A click that decided the review disables the button for everyone; any other
+   * answer goes privately to the clicker and leaves the button as it is.
    */
   const confirmation = (interaction: ButtonInteraction<"cached" | "raw">) =>
     Effect.gen(function* () {
       if (!(yield* gate.withPermits(1)(firstDelivery(interaction.id)))) return;
-      const place = yield* acknowledged(interaction);
-      if (!place) return;
-      const { thread } = place;
-      const reply = yield* session.confirm({
+      const deferred = yield* Effect.option(Effect.tryPromise(() => interaction.deferUpdate()));
+      if (deferred._tag === "None") return;
+      const channel = interaction.channel;
+      const thread = channel?.isThread() ? channel : null;
+      const answer = yield* session.confirm({
         customId: interaction.customId,
         userId: interaction.user.id,
         threadId: interaction.channelId,
@@ -410,7 +414,26 @@ export function makeIngress(session: IngressSession, interpreter: Interpreter) {
         operating: session.operating,
         access: thread ? requesterAccess(interaction, thread) : Effect.succeed("unavailable"),
       });
-      yield* Effect.ignore(Effect.tryPromise(() => interaction.editReply(reply)));
+      if (answer.kind === "ephemeral")
+        return yield* Effect.ignore(
+          Effect.tryPromise(() =>
+            interaction.followUp({
+              content: answer.text,
+              flags: MessageFlags.Ephemeral,
+              allowedMentions: { parse: [] },
+            }),
+          ),
+        );
+      // Editing the message is an external send, which never happens while Chat control is Off.
+      if (session.operating())
+        yield* Effect.ignore(
+          Effect.tryPromise(() =>
+            interaction.editReply({
+              components: buttonRow(answer.customId, { disabled: answer.state }),
+              allowedMentions: { parse: [] },
+            }),
+          ),
+        );
     });
 
   // Events pass the gate one at a time in delivery order, so a repeated delivery meets the

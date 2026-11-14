@@ -13,9 +13,8 @@ import { servingAgain } from "./support/chat-control.ts";
 import { invocation, toolResults } from "./support/chat-conversation.ts";
 import { addedProject, startedRun } from "./support/chat-runs.ts";
 
-const ACCEPTED = "Confirmed. Factory accepted it; the receipt follows in this thread.";
-const REJECTED =
-  "Confirmed, but Factory did not accept it; the receipt in this thread explains why.";
+const ACCEPTED = "✅ Confirmed (disabled)";
+const REJECTED = "🚫 No longer valid (disabled)";
 const FEEDBACK = "Please handle the empty state too.";
 const REQUEST = `request changes on #1: ${FEEDBACK}`;
 
@@ -29,25 +28,27 @@ it("a Human answer proposal reviews the Run, the exact occurrence with its compl
   });
 
   // Act
-  const button = await proposed(world, "600000000000000001", 6, call, REQUEST);
+  const button = await proposed(world, "600000000000000001", 2, call, REQUEST);
 
   // Assert
-  const [header, context, answer, message, disclosure, confirmation] = world.discord.created;
-  expect(header!.content).toContain("**Review: answer a Human step**");
-  expect(header!.content).toContain(
-    `**Run:** Run #1 “Improve search” in ${world.project.title} — \`${world.project.workspaceRoot}\``,
+  const [review, confirmation] = world.discord.created;
+  expect(review!.content).toMatch(
+    new RegExp(
+      [
+        "^🙋 \\*\\*Answer a Human step\\?\\*\\*",
+        `📌 Run #1 · Improve search · 📁 ${world.project.title} · \`${world.project.workspaceRoot}\``,
+        "🧩 Review · waiting since <t:\\d+:R>",
+        "↪️ From Entry worker · exit Done",
+        "📄 Full context:",
+        `\`\`\`\n${HUMAN_CONTEXT}\n\`\`\``,
+        "✏️ \\*\\*Request changes\\*\\* with this message:",
+        `\`\`\`\n${FEEDBACK}\n\`\`\``,
+        "ℹ️ Answers exactly this occurrence\\. If it was answered or cancelled elsewhere meanwhile, Factory answers nothing and never applies this answer to another one\\.$",
+      ].join("\n"),
+    ),
   );
-  expect(header!.content).toContain(
-    `**Human step:** Review (occurrence \`${world.occurrence.id}\`)`,
-  );
-  expect(header!.content).toContain("**Arrived from:** Entry worker, exit Done");
-  expect(context!.content).toBe(`\`\`\`\n${HUMAN_CONTEXT}\n\`\`\``);
-  expect(answer!.content).toContain("**Answer:** Request changes.");
-  expect(answer!.content).toContain("exactly as written in your message");
-  expect(message!.content).toBe(`\`\`\`\n${FEEDBACK}\n\`\`\``);
-  expect(disclosure!.content).toContain("it never applies this answer to another occurrence");
-  expect(confirmation!.content).toBe(
-    "Confirm this answer: Request changes for the Human step “Review” in Run #1 “Improve search”.",
+  expect(confirmation!.content).toMatch(
+    /^🔒 Only the person who asked can confirm · expires <t:\d+:R>$/,
   );
   expect(confirmations(world.discord)).toHaveLength(1);
   expect(button).toMatch(/^factory-confirm:/);
@@ -59,7 +60,7 @@ it("a Human answer proposal reviews the Run, the exact occurrence with its compl
 it("the requester's confirmation answers exactly the reviewed occurrence of a Run started in Factory and posts the receipt in the request thread without giving the Run an origin", async (c) => {
   // Arrange
   const world = await answeringWorld(c);
-  const button = await proposed(world, "600000000000000001", 5, answerCall(world), "approve #1");
+  const button = await proposed(world, "600000000000000001", 2, answerCall(world), "approve #1");
 
   // Act
   const answer = await clicked(world.discord, button, "610000000000000001", 1);
@@ -73,9 +74,9 @@ it("the requester's confirmation answers exactly the reviewed occurrence of a Ru
   );
   expect(occurrence).toMatchObject({ state: "answered", exitId: "approve" });
   expect(handoffs).toHaveLength(1);
-  await world.discord.createdMessages(6);
-  expect(world.discord.created[5]!.content).toBe(
-    `**Human answer accepted.** Factory accepted **Approve** for the Human step “Review” in Run #1 “Improve search”. The Flow continues from this answer; Factory shows its progress.\nOccurrence: \`${world.occurrence.id}\` · Run ID: \`${world.runId}\``,
+  await world.discord.createdMessages(3);
+  expect(world.discord.created[2]!.content).toBe(
+    "✅ **Approve accepted** — 🧩 Review · Run #1 · Improve search",
   );
   expect(statusCardsIn(world.discord)).toStrictEqual([]);
 });
@@ -83,7 +84,7 @@ it("the requester's confirmation answers exactly the reviewed occurrence of a Ru
 it("an identical answer given in Factory meanwhile is not this action's: the confirmation is rejected and the receipt says nothing was answered", async (c) => {
   // Arrange
   const world = await answeringWorld(c);
-  const button = await proposed(world, "600000000000000001", 5, answerCall(world), "approve #1");
+  const button = await proposed(world, "600000000000000001", 2, answerCall(world), "approve #1");
   const elsewhere = await world.factory.answerHumanOccurrence(world.occurrence.id, {
     exitId: "approve",
   });
@@ -94,9 +95,9 @@ it("an identical answer given in Factory meanwhile is not this action's: the con
 
   // Assert
   expect(answer).toBe(REJECTED);
-  await world.discord.createdMessages(6);
-  expect(world.discord.created[5]!.content).toBe(
-    `**Human answer not accepted.** Factory did not answer the Human step “Review” in Run #1 “Improve search”: This occurrence was already answered or cancelled elsewhere.\nOccurrence: \`${world.occurrence.id}\` · Run ID: \`${world.runId}\`\nNothing was answered. If it still needs an answer, read the Run and ask for a new review.`,
+  await world.discord.createdMessages(3);
+  expect(world.discord.created[2]!.content).toBe(
+    "❌ **Answer not accepted** — 🧩 Review · Run #1 · Improve search\nThis occurrence was already answered or cancelled elsewhere.",
   );
   expect(
     (await occurrenceOf(world.factory, world.runId, world.occurrence.id)).handoffs,
@@ -106,7 +107,7 @@ it("an identical answer given in Factory meanwhile is not this action's: the con
 it("two clicks racing on one Human answer review answer once and hand the answer on once", async (c) => {
   // Arrange
   const world = await answeringWorld(c);
-  const button = await proposed(world, "600000000000000001", 5, answerCall(world), "approve #1");
+  const button = await proposed(world, "600000000000000001", 2, answerCall(world), "approve #1");
 
   // Act
   const answers = await Promise.all([
@@ -128,7 +129,7 @@ it("two clicks racing on one Human answer review answer once and hand the answer
 it("a Human answer review presented before a backend restart is confirmed once after it", async (c) => {
   // Arrange
   const world = await answeringWorld(c);
-  const button = await proposed(world, "600000000000000001", 5, answerCall(world), "approve #1");
+  const button = await proposed(world, "600000000000000001", 2, answerCall(world), "approve #1");
   await world.factory.close();
   const reopened = await world.open();
   await servingAgain(world.discord, 2);
