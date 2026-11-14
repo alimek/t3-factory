@@ -525,7 +525,7 @@ export function ExecutionCanvas({
       shown={shown}
       onTap={() => onSelect(null)}
       overlay={overlay}
-      hint="The view follows active Blocks until you move it."
+      controls={{ kind: "icons" }}
     />
   );
 }

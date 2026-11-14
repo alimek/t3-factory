@@ -171,10 +171,11 @@ The Run shows its generation without treating it as Flow work:
   reason (for example **Title · applied · Exact matches first in search**). It has no port, visit or exit; manual,
   legacy and setting-off Runs show none. Pending uses the working color, applied the success color and every other
   outcome the neutral stopped color, never the error color.
-- Pressing the line opens the **Run title** details in the side details surface: state and reason, model, deadline,
+- Pressing the line shows the **Run title** in the Run inspector: state and reason, model, deadline,
   automatic and generated titles, and **Open title thread in T3** once the thread is known. It selects no Block,
   highlights no Block timeline rows and leaves **Follow active** as it was; the card takes a lighter inspected outline
-  instead of the selected-Block border. Escape, the close button or selecting a Block closes it.
+  instead of the selected-Block border. Escape, the breadcrumb or close button returns to the overview, and selecting a
+  Block shows that Block.
 - The timeline records **title generation started** when the title thread's launch is sent, then exactly one outcome
   event; a skipped generation records only its skipped event. These rows name the Run, marked ✦, as the actor and link
   the title thread once it is known, including a thread bound after the outcome. They are not Run activity.
@@ -222,12 +223,12 @@ keep the exit they recorded; Human steps upgraded from earlier releases show the
 fixed Human exits their old exits were mapped to.
 
 - The **Flow input** block shows the Run's truncated prompt and has no state or details panel; its Run
-  [title generation](#run-title-generation) line opens the Run title details instead. With images it shows up
+  [title generation](#run-title-generation) line opens the Run title in the Run inspector instead. With images it shows up
   to three prompt lines, each image reference as an **Image N: name** chip, the first three thumbnails and a **+N** control
   for the rest. A thumbnail or **+N** opens a gallery of every image in manifest order, titled **Image N of M** with
   its name, with a full-size preview and **Previous image**/**Next image** (also the arrow keys). Ordinals and names match
-  the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the context
-  rail's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)).
+  the workers' `[Image N: name]` text. The canvas chips are labels, since the truncated prompt can hide them; the Run
+  inspector's initial prompt shows the full prompt with clickable references and every image, opening the same gallery. Settled and Archived Runs keep their images ([persistence](foundation.md#persistence-model)).
   Images are read from the selected Factory server without thumbnails or transformation. Each load revalidates with the
   server by the image's digest, and image URLs carry a client revalidation key. Each opened view (a Run's prompt, its
   gallery, Settings → Run images) gets its own key, so it asks the server again even after this client loaded the bytes
@@ -272,15 +273,42 @@ fixed Human exits their old exits were mapped to.
 - Pan, zoom, fit and **Auto-arrange** are local. Zoom ranges 20%–200% (**+**/**−**, **Fit Flow**, **0**, pinch or **Mod**+wheel
   at the pointer; plain wheel and arrow keys pan; bindings are in [Keyboard shortcuts](keyboard-shortcuts.md)). Auto-arrange
   lays out left to right, changes neither the Flow nor the captured revision and resets on reload. Apart from following, live Run updates and container resize preserve the Run viewport.
-- Selecting a block floats its details (visits, exits, T3 references and link, attention actions). There is no editing here.
-- Drag the inner edge of the shell sidebar (224–480 px) or of the right panel beside the canvas (280–640 px; the context rail and
-  block details share one width) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
+- The canvas shows exceptions only. **Flow edited since Start** (or **Flow removed since Start**) appears when the Flow's
+  current revision differs from the Run's captured definitions; an open Run shows it as soon as the Flow is saved. A
+  **Not live** badge with Factory's last observation time appears exactly while the top bar shows Not live. Zoom, fit,
+  **Follow active** and **Auto-arrange** are icon buttons with tooltips; the keyboard button beside them opens the canvas
+  shortcuts with their current bindings and a link to the cheat sheet. The Flow editor keeps its labelled controls and
+  keyboard hint.
+- One docked **inspector** beside the canvas shows the **Run overview** until a block is selected or the Run title is
+  inspected: attention, started blocks
+  with their current visit or accepted exit, branches and pull requests, the initial prompt and block activations, with project,
+  Flow revision, workspace and work periods under a closed **Workspace & observation** section. Selecting a block shows it in the
+  same panel: its Needs input or Problem first (answers and Problem actions work here), its current visit and working report,
+  the results handed off to an Agent block (**Received**), activations, exits, **Open thread in T3**, and its T3 thread and
+  execution ids under a closed **Technical details** section. Pressing the Flow input's
+  [Run title](#run-title-generation) line shows the Run title there instead; it selects no block.
+  **Esc** or the **Overview** breadcrumb returns from the block or the Run title to the overview. Selecting never answers
+  or clears attention, and there is no editing here.
+- The inspector toggle in the top bar (default **Mod+.**, see [Keyboard shortcuts](keyboard-shortcuts.md)) shows or hides the
+  panel. The choice is kept per browser profile on this device across what is inspected, Runs and reload; until chosen, the
+  inspector opens from 1280 px wide. While it is hidden, pending attention shows below the canvas.
+- Block results, including a completed Run's Final result, appear as **result cards** in the inspector and the timeline:
+  block, visit, exit, deliveries and acceptance time around the result rendered as Markdown (CommonMark with GitHub tables
+  and task lists), collapsed to a short preview. **Read result** opens a reader with the full result, its provenance,
+  **Copy Markdown** (the unmodified text) and **Open thread in T3**; its execution, completion and version are under
+  **Technical details**, and **Esc** returns focus to the card. Raw HTML in a result is shown as text and never runs, links open
+  outside Factory and images appear as links, so a result never loads remote content. Copying needs a secure context
+  (Factory's own window, loopback or HTTPS); over a plain-HTTP remote address the reader says copying is unavailable.
+- Drag the inner edge of the shell sidebar (224–480 px) or of the inspector (280–640 px, at most half the area beside the
+  sidebar) to resize it; with the edge focused, Left/Right step 16 px and Home/End jump to the bounds.
   Double-click restores the responsive default, which a saved width otherwise replaces. Widths are saved per browser profile
   on this device.
-- The top bar shows title, project, captured Flow revision, block states, each worker's **Open worker in T3** link (a pending launch says
-  recovery is still searching and offers no replacement), **Archive Run** (until archived) and a ··· menu. The timeline starts collapsed; the context rail (attention,
-  prompt, Flow revision, workspace, project, work periods) opens from 1280 px wide. Its **Workspace** section reads **Project
-  checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
+- The top bar shows title, project, captured Flow revision, one Run status, each worker's **Open worker in T3** link (a pending launch says
+  recovery is still searching and offers no replacement), the inspector toggle and, until the Run is
+  archived, a ··· menu holding **Archive…**. The Run status is the first that applies of **Archived**, **Settled** (each with its time), **Problem**, **Needs
+  input** (both as the Run sidebar shows them, naming their blocks), **Working** (naming the active blocks) and **Idle**; block
+  states stay on the canvas. While an Active Run's observations are stale or its live delivery is unavailable, **Not live** with
+  Factory's last observation time appears beside it; a live Run shows no freshness marker. The timeline starts collapsed. The inspector's **Workspace** section reads **Project checkout**, **Preparing workspace** with the base ref until T3 reports the worktree, **Worktree · branch · path**, or
   **Workspace failed** with the reason; an unconfirmed creator launch shows its recovery note. Retained Runs that queued a
   first visit on an idle worker prepared under the earlier contract still show **entered · prepared idle T3 thread**.
 - Running worker work is ordinary progress; unavailable observations mark the Block **Not live**, preserving prior facts without creating a Problem.
@@ -344,8 +372,8 @@ several branches and PRs; the same PR linked to multiple workers counts once. Br
 workers' T3 workspace metadata, not exclusive ownership of a branch by the Run. Factory does not infer
 associations from conversation text or the project's current checkout, and it does not create or switch branches.
 
-The side preview and Run context show the full branch list with the corresponding worker names and the
-distinct PR list. The Run context links to those PRs; their states are last known in T3, not live GitHub checks.
+The side preview and the Run overview in the inspector show the full branch list with the corresponding worker names
+and the distinct PR list. The Run overview links to those PRs; their states are last known in T3, not live GitHub checks.
 Normal worker observations update the metadata; metadata-only changes affect neither the activity age nor list order. If an
 observation fails, retained metadata stays visible as Not live. Settled Runs keep their recorded metadata;
 expanding their group or hovering a row does not start background work or refresh T3. Older Runs have no
@@ -410,7 +438,10 @@ Block's current visit. Factory returns acceptance only after saving it. The mode
   read showing none records `withdrawn`; unavailable reads keep matters pending and mark the observation stale.
 - **Timeline** entries are plain sentences derived from recorded facts ("entered · new T3 thread", "handed off to Reviewer via
   Review", "finished · exit Approved", "result version 2 replaces the earlier result", "you answered", "settled by you",
-  "reported · the Run is Active again", "archived"). Every
+  "reported · the Run is Active again", "archived"). The timeline shows **Key events** by default: T3 status changes Factory
+  observed on a Block's executions collapse into one row per run of repeats, with their count, statuses and time span, which
+  opens in place; any other entry ends the run. Every other entry, including handoffs, Needs input, Problems, results and
+  lifecycle changes, is always shown. **All events** lists every recorded entry. The choice is kept per browser profile. Every
   result version keeps its exit, message and deliveries; an earlier version reads **Replaced by version N** and its cancelled
   handoffs **Cancelled**, and a same-exit update after hand-off says it was not handed off again. Activations show the current
   result, and the latest Agent visit shows the Block's current execution state. **Work periods** list each exact execution with
@@ -521,7 +552,7 @@ Runs. History, input, captured definitions and events remain; no transcript or r
 
 ## Archive
 
-**Archive…** in the row menu and **Archive Run** in the Run's top bar both ask for confirmation, then end the Run for good.
+**Archive…** in the row menu and in the Run's ··· menu both ask for confirmation, then end the Run for good.
 Archiving closes the handoff gate, cancels unsent launches and handoffs, cancels pending Human steps without inventing answers,
 cancels pending Wait arrivals so no deadline forwards afterwards and clears every arrival's message, settles pending attention
 as `archived` and shows activated blocks that had not finished, including waiting Waits, as stopped. Factory then asks T3 once to

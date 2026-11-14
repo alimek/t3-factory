@@ -1,4 +1,23 @@
-import type { RunBlock, RunDetail } from "@t3-factory/contracts";
+import type { RunAttention, RunBlock, RunDetail } from "@t3-factory/contracts";
+
+/** A pending attention matter of `kind` on `blockId`. */
+export const attention = (blockId: string, kind: RunAttention["kind"]): RunAttention => ({
+  id: `${blockId}-${kind}`,
+  runId: "run",
+  taskTitle: "Task",
+  blockId,
+  blockName: blockId,
+  executionId: "execution",
+  kind,
+  nativeRequestId: null,
+  occurrenceId: null,
+  link: null,
+  freshness: "fresh",
+  appearedAt: "2026-11-08T00:00:00Z",
+  settledAt: null,
+  settlementReason: null,
+  message: null,
+});
 
 export const block = (blockId: string): RunBlock => ({
   blockId,
@@ -76,6 +95,7 @@ export function runDetail(): RunDetail {
       },
       agents: [],
     },
+    currentFlowRevision: 1,
     workspace: { mode: "checkout" },
     coordinationActions: { questionReplies: [] },
     runCoordinator: null,

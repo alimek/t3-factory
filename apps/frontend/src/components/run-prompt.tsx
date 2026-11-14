@@ -5,6 +5,7 @@ import { useRunImageSource } from "../run-images.ts";
 import { ImagePreviewDialog, previewImageClass } from "./prompt-images.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip.tsx";
+import { cn } from "../lib/utils.ts";
 
 const FLOW_INPUT_THUMBNAILS = 3;
 
@@ -272,13 +273,13 @@ export function FlowInputPrompt({ run }: { run: RunDetail }) {
   );
 }
 
-const promptTextClass =
-  "font-mono text-xs leading-4.5 break-words whitespace-pre-wrap text-emphasis-foreground";
+const promptTextClass = "font-sans text-sm break-words whitespace-pre-wrap text-muted-foreground";
 
-/** The Run context's initial prompt: the same references and images as the Flow input. */
-export function RunInitialPrompt({ run }: { run: RunDetail }) {
+/** The Run overview's initial prompt: the same references and images as the Flow input. */
+export function RunInitialPrompt({ run, preview = false }: { run: RunDetail; preview?: boolean }) {
   const { openAt, unavailable, markUnavailable, gallery } = useRunImages(run);
-  if (!run.images.length) return <pre className={promptTextClass}>{run.input}</pre>;
+  if (!run.images.length)
+    return <pre className={cn(promptTextClass, preview && "line-clamp-3")}>{run.input}</pre>;
   return (
     <>
       <pre className={promptTextClass}>

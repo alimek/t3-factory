@@ -1,6 +1,6 @@
 import { confirmSettlement } from "./support/run-history.ts";
-import { test } from "@e2e-dev/web";
-import { expect } from "e2e";
+import { test, type Browser } from "@e2e-dev/web";
+import { expect, type App, type Screen } from "e2e";
 import { findRun, readHistoryRun } from "./support/run-history.ts";
 import { matchingSidebarTitles } from "./support/sidebar.ts";
 import { elapse } from "./support/remote-access.ts";
@@ -17,6 +17,7 @@ import {
 
 const modShiftE = `${shortcutMod}+Shift+E`;
 const modSlash = `${shortcutMod}+/`;
+const inspectorHint = process.platform === "darwin" ? "⌘." : "Ctrl+.";
 
 test("palette Enter opens the selected Flow", async ({ app, screen, browser }) => {
   // Arrange
@@ -192,7 +193,7 @@ test("Settle from an editable field on open Run detail while Mod+ shortcuts stay
   await expect
     .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
     .toBe("settled");
-  await expect(screen.getByRole("status", "Run observation")).toContainText("Settled");
+  await expect(screen.getByRole("status", "Run status")).toContainText("Settled");
 });
 
 test("Settle is ignored while Settings is open", async ({ app, screen, browser }) => {
@@ -237,6 +238,64 @@ test("Mod+Backspace opens the existing Archive confirmation for the open Run", a
   expect((await readHistoryRun(app.baseUrl, found.id)).lifecycle).toBe("active");
 });
 
+async function openParallelReviewRun(app: App, screen: Screen, browser: Browser) {
+  await browser.setViewport({ width: 1440, height: 1100 });
+  const found = await findRun(app.baseUrl, "Demo · Parallel review from one prompt");
+  await app.open(`/runs/${found.id}`);
+  await expectFactoryConnected(screen);
+}
+
+test("Mod+. hides the docked inspector of the open Run", async ({ app, screen, browser }) => {
+  // Arrange
+  await openParallelReviewRun(app, screen, browser);
+  const toggle = screen.getByRole("button", "Toggle inspector", { exact: true });
+  await expect(screen.getByRole("complementary", "Run inspector")).toBeVisible();
+  await toggle.hover();
+  await expect(browser.locator('[data-slot="tooltip-content"]')).toContainText(
+    `Hide inspector · ${inspectorHint}`,
+  );
+
+  // Act
+  await browser.keyboard.press(`${shortcutMod}+.`);
+
+  // Assert
+  await expect(screen.getByRole("complementary", "Run inspector")).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("a hidden inspector stays hidden through block selection, another Run and reload", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await openParallelReviewRun(app, screen, browser);
+  await screen.getByRole("button", "Toggle inspector", { exact: true }).tap();
+  await screen.getByRole("button", "Agent ", { exact: false }).first().tap();
+  await expect(screen.getByRole("complementary", "Run inspector")).toHaveCount(0);
+  await screen
+    .getByRole("navigation", "Open Runs")
+    .getByRole("link", /Demo · Two reviewers working in parallel/)
+    .tap();
+  await expect(
+    screen.getByRole("heading", "Demo · Two reviewers working in parallel", { exact: true }),
+  ).toBeVisible();
+  await expect(screen.getByRole("complementary", "Run inspector")).toHaveCount(0);
+
+  // Act
+  await browser.reload();
+
+  // Assert
+  await expect(
+    screen.getByRole("heading", "Demo · Two reviewers working in parallel", { exact: true }),
+  ).toBeVisible();
+  await expect(screen.getByRole("button", "Toggle inspector", { exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await expect(screen.getByRole("complementary", "Run inspector")).toHaveCount(0);
+});
+
 test("Mod+/ opens the shortcuts cheat sheet with current hints and a Settings link", async ({
   app,
   screen,
@@ -255,6 +314,8 @@ test("Mod+/ opens the shortcuts cheat sheet with current hints and a Settings li
   await expect(sheet.getByText(desktopNewRunHint)).toBeVisible();
   await expect(sheet.getByText("Follow active", { exact: true })).toBeVisible();
   await expect(sheet.getByText(".", { exact: true })).toBeVisible();
+  await expect(sheet.getByText("Toggle inspector", { exact: true })).toBeVisible();
+  await expect(sheet.getByText(inspectorHint, { exact: true })).toBeVisible();
   await expect(sheet.getByRole("link", "Open Settings → Keyboard shortcuts")).toBeVisible();
   await app.screenshot("shortcuts-cheat-sheet-desktop");
 });
@@ -329,4 +390,38 @@ test("choosing Settle in the desktop menu settles the open Run", async ({
   await expect
     .poll(async () => (await readHistoryRun(app.baseUrl, found.id)).lifecycle)
     .toBe("settled");
+});
+
+test("the canvas shortcuts popover lists a customized binding and opens the cheat sheet", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1440, height: 1000 });
+  const openRun = await findRun(app.baseUrl, "Demo · Working · Improve the project picker");
+  await app.open(`/runs/${openRun.id}`);
+  await expectFactoryConnected(screen);
+  await openKeyboardSettings(screen, browser);
+  await screen.getByRole("group", "Zoom in").getByRole("button", "Change Zoom in").tap();
+  await browser.keyboard.press("i");
+  await screen.getByRole("button", "Save shortcut").tap();
+  await browser.keyboard.press("Escape");
+  await expect(screen.getByRole("heading", { name: "Keyboard shortcuts", level: 2 })).toBeHidden();
+  await screen.getByRole("button", "Canvas shortcuts", { exact: true }).tap();
+  const popover = screen.getByRole("dialog", "Canvas shortcuts");
+  await expect(popover).toContainText("Zoom in I");
+  await expect(popover).toContainText("Follow active .");
+  await expect(popover).toContainText("Pan ← ↑ → ↓");
+  await app.screenshot("canvas-shortcuts-popover-customized");
+
+  // Act
+  await popover.getByRole("button", "All keyboard shortcuts", { exact: true }).tap();
+
+  // Assert
+  const sheet = screen.getByRole("dialog", "Keyboard shortcuts");
+  await expect(sheet).toBeVisible();
+  await expect(popover).toBeHidden();
+  await expect(sheet).toContainText("Zoom in I");
+  await expect(sheet).toContainText("Pan ← ↑ → ↓");
 });

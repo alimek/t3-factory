@@ -28,7 +28,7 @@ import {
 } from "../flow-graph.ts";
 import { useCanvasViewport } from "../use-canvas-viewport.ts";
 import { useFlowLayoutSession } from "../use-flow-layout.ts";
-import { CanvasZoomControls } from "./canvas-zoom-controls.tsx";
+import { CanvasZoomControls, type CanvasControlsPresentation } from "./canvas-zoom-controls.tsx";
 import { AutoArrangeButton, AutoArrangeStatus } from "./flow-arrange-control.tsx";
 import { flowInputIdentity } from "./flow-block.tsx";
 import { ConnectionPreview, FlowWires, type WirePresentation } from "./flow-wires.tsx";
@@ -474,8 +474,7 @@ type CanvasSurfaceProps = {
   overlay?: ReactNode;
   /** A line below the zoom controls. */
   note?: string;
-  /** What the zoom controls add to the canvas keyboard hint. */
-  hint: string;
+  controls: CanvasControlsPresentation;
 };
 
 /**
@@ -616,14 +615,14 @@ function SurfaceControls({
   focusTargets,
   busy,
   note,
-  hint,
+  controls,
 }: {
   viewport: ReturnType<typeof useCanvasViewport>;
   layout: SurfaceGraph["layout"];
   focusTargets: readonly string[] | undefined;
   busy: boolean;
   note: string | undefined;
-  hint: string;
+  controls: CanvasControlsPresentation;
 }) {
   return (
     <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col items-start gap-2">
@@ -638,17 +637,15 @@ function SurfaceControls({
             onFollow: viewport.followActive,
           }
         }
-        trailing={
-          <>
-            <span aria-hidden className="h-5 w-px bg-border" />
-            <AutoArrangeButton
-              pending={layout.pending}
-              disabled={busy}
-              onClick={() => void layout.autoArrange()}
-            />
-          </>
+        arrange={
+          <AutoArrangeButton
+            pending={layout.pending}
+            disabled={busy}
+            iconOnly={controls.kind === "icons"}
+            onClick={() => void layout.autoArrange()}
+          />
         }
-        hint={hint}
+        presentation={controls}
       />
       <AutoArrangeStatus error={layout.error} onDismiss={layout.dismissError} />
       {note && <p className="text-2xs tracking-label text-muted-foreground">{note}</p>}
@@ -724,7 +721,7 @@ export function CanvasSurface(props: CanvasSurfaceProps) {
         focusTargets={focusTargets}
         busy={props.arrangement?.busy === true}
         note={props.note}
-        hint={props.hint}
+        controls={props.controls}
       />
     </section>
   );

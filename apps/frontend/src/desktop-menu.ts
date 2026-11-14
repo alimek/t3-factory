@@ -22,7 +22,8 @@ type CommandWithoutMenuItem =
   | "openRow6"
   | "openRow7"
   | "openRow8"
-  | "openRow9";
+  | "openRow9"
+  | "toggleInspector";
 
 type NoneLeft<Ids extends never> = Ids;
 type NonCanvasCommand = Exclude<(typeof shortcutDefinitions)[number], { group: "canvas" }>["id"];

@@ -1,12 +1,22 @@
-import { RetainedResult, resultVersion } from "./run-coordination.tsx";
+import { ResultCard, resultVersion } from "./run-result.tsx";
 import { useState } from "react";
 import type { RunAttention, RunDetail } from "@t3-factory/contracts";
 import { capturedExits } from "../flow-graph.ts";
-import { ArrowRight, ChevronDown, ChevronUp, ExternalLink, Flag, History } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  ExternalLink,
+  Flag,
+  History,
+} from "lucide-react";
 import { clockTime, dayAndTime } from "./execution-state.tsx";
 import { BLOCK_KINDS } from "./flow-block.tsx";
 import { TitleMark, titleOutcome, titleStateLabel } from "./run-title-generation.tsx";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { timelineRows, type TimelineFilter, type TimelineRow } from "../run-timeline-rows.ts";
 import { cn } from "@/lib/utils";
 
 type RunEvent = RunDetail["events"][number];
@@ -313,7 +323,30 @@ function useTimelineOpen() {
   return [open, toggle] as const;
 }
 
-/** Figma Run/TimelineHeader + events: 40 px bar; expanded list 260 px below the canvas. */
+const timelineFilterKey = "factory.runTimelineFilter";
+
+/** Key events by default (Figma RD13); the choice is this viewer's, kept across Runs and reloads. */
+function useTimelineFilter() {
+  const [filter, setFilter] = useState<TimelineFilter>(() => {
+    try {
+      return localStorage.getItem(timelineFilterKey) === "all" ? "all" : "key";
+    } catch {
+      return "key";
+    }
+  });
+  function choose(next: TimelineFilter) {
+    setFilter(next);
+    try {
+      localStorage.setItem(timelineFilterKey, next);
+    } catch {
+      // Storage may be unavailable; the filter still applies on this page.
+    }
+  }
+  return [filter, choose] as const;
+}
+
+/** Figma Run/TimelineHeader + events: 40 px bar; expanded list 260 px below the canvas, with the
+ * Key events | All filter (RD13). */
 export function RunTimeline({
   run,
   selectedBlockId,
@@ -322,37 +355,142 @@ export function RunTimeline({
   selectedBlockId: string | null;
 }) {
   const [expanded, toggle] = useTimelineOpen();
-  const latest = run.events.at(-1);
-  const summary = selectedBlockId
-    ? "Handoffs, corrections and repeated visits, oldest first · rows of the selected block are highlighted"
-    : "Handoffs, corrections and repeated visits, oldest first · observation times are approximate";
+  const [filter, setFilter] = useTimelineFilter();
+  const rows = timelineRows(run.events, filter);
+  const total = run.events.length;
+  const keyEvents = rows.flatMap((row) => (row.kind === "event" ? [row.event] : []));
+  const latest = filter === "key" ? keyEvents.at(-1) : run.events.at(-1);
+  const count =
+    filter === "all"
+      ? `${total} events`
+      : `${keyEvents.length} key events${expanded ? ` · ${total} total` : ""}`;
   return (
     <section className="flex min-h-10 flex-col bg-sidebar" aria-label="Timeline">
-      <div className="flex h-10 shrink-0 items-center gap-2.5 border-t pr-2.5 pl-4">
-        <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <h2 className="text-sm font-semibold whitespace-nowrap">Timeline</h2>
-        <span className="text-2xs font-medium whitespace-nowrap text-subtle-foreground">
-          {run.events.length} events
-        </span>
-        <p className="min-w-0 flex-1 truncate text-2xs tracking-label text-subtle-foreground">
-          {expanded || !latest ? summary : latestLine(run, latest)}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          className="text-muted-foreground"
-          aria-label={expanded ? "Collapse timeline" : "Show timeline"}
-          aria-expanded={expanded}
-          onClick={toggle}
+      <Tabs
+        value={filter}
+        onValueChange={(value) => setFilter(value === "all" ? "all" : "key")}
+        className="min-h-0 gap-0"
+      >
+        <div className="flex h-10 shrink-0 items-center gap-2.5 border-t pr-2.5 pl-4">
+          <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <h2 className="text-sm font-semibold whitespace-nowrap">Timeline</h2>
+          <span className="text-2xs font-medium whitespace-nowrap text-subtle-foreground">
+            {count}
+          </span>
+          <p className="min-w-0 flex-1 truncate text-2xs tracking-label text-subtle-foreground">
+            {!expanded && latest ? latestLine(run, latest) : null}
+          </p>
+          {expanded && (
+            <TabsList variant="segmented" aria-label="Timeline events">
+              <TabsTrigger value="key">Key events</TabsTrigger>
+              <TabsTrigger value="all">All {total}</TabsTrigger>
+            </TabsList>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="text-muted-foreground"
+            aria-label={expanded ? "Collapse timeline" : "Show timeline"}
+            aria-expanded={expanded}
+            onClick={toggle}
+          >
+            {expanded ? "Collapse" : "Show timeline"}
+            {expanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
+          </Button>
+        </div>
+        {expanded && (
+          <TabsContent
+            value={filter}
+            asChild
+            className="h-65 min-h-0 flex-none overflow-auto border-t px-3 py-1"
+          >
+            <ol>
+              {rows.map((row) =>
+                row.kind === "event" ? (
+                  <TimelineEvent
+                    key={row.event.sequence}
+                    run={run}
+                    event={row.event}
+                    selectedBlockId={selectedBlockId}
+                  />
+                ) : (
+                  <StatusUpdates
+                    key={row.events[0].sequence}
+                    run={run}
+                    row={row}
+                    selectedBlockId={selectedBlockId}
+                  />
+                ),
+              )}
+            </ol>
+          </TabsContent>
+        )}
+      </Tabs>
+    </section>
+  );
+}
+
+/** "20:33–20:41", or one time when the span is shorter than the clock shows. */
+function timeSpan(first: string, last: string) {
+  const [from, to] = [clockTime(first), clockTime(last)];
+  return from === to ? from : `${from}–${to}`;
+}
+
+/** Figma RD13 "Collapsed · status updates": one row per run of a Block's T3 status
+ * observations in Key events; it opens in place to show each observation. */
+function StatusUpdates({
+  run,
+  row,
+  selectedBlockId,
+}: {
+  run: RunDetail;
+  row: Extract<TimelineRow, { kind: "status-updates" }>;
+  selectedBlockId: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const first = row.events[0];
+  const last = row.events.at(-1) ?? first;
+  const statuses = [...new Set(row.events.flatMap((event) => event.engineStatus ?? []))];
+  const updates = `${row.events.length} T3 status ${row.events.length === 1 ? "update" : "updates"}`;
+  const text = [`${updates} from ${nameOf(run, row.blockId)}`, statuses.join(" ↔ ")]
+    .filter(Boolean)
+    .join(" · ");
+  const selected = !!row.blockId && row.blockId === selectedBlockId;
+  return (
+    <li>
+      <Button
+        type="button"
+        variant="ghost"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "h-auto w-full min-w-0 justify-start gap-2 border border-transparent py-1.5 pr-4 pl-6 font-normal text-subtle-foreground",
+          selected && "border-border bg-muted",
+        )}
+      >
+        <time
+          dateTime={first.observedAt}
+          title={`Observed ${new Date(first.observedAt).toLocaleString()} to ${new Date(last.observedAt).toLocaleString()}`}
+          className="shrink-0 font-mono text-xs"
         >
-          {expanded ? "Collapse" : "Show timeline"}
-          {expanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
-        </Button>
-      </div>
-      {expanded && (
-        <ol className="h-65 min-h-0 overflow-auto border-t px-3 py-1">
-          {run.events.map((event) => (
+          {timeSpan(first.observedAt, last.observedAt)}
+        </time>
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "size-3 transition-transform motion-reduce:transition-none",
+            open && "rotate-90",
+          )}
+        />
+        <span className="min-w-0 truncate">
+          {text}
+          {open ? "" : " · hidden in Key events"}
+        </span>
+      </Button>
+      {open && (
+        <ol aria-label={`${updates} from ${nameOf(run, row.blockId)}`} className="pl-6">
+          {row.events.map((event) => (
             <TimelineEvent
               key={event.sequence}
               run={run}
@@ -362,7 +500,7 @@ export function RunTimeline({
           ))}
         </ol>
       )}
-    </section>
+    </li>
   );
 }
 
@@ -413,7 +551,7 @@ function TimelineEvent({
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{text}</span>{" "}
       {report && (
         <div className="w-full py-2 pl-11">
-          <RetainedResult run={run} report={report} />
+          <ResultCard run={run} report={report} />
         </div>
       )}
       {route && <RouteChip {...route} />}{" "}

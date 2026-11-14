@@ -28,7 +28,13 @@ export type SeedScenario = {
   /** Generate Run titles was on for this Start only; the title thread's title was applied. */
   | { state: "generated title applied"; generatedTitle: string }
   | { state: "Run worktree bound" }
-  | { state: "working reported and idle"; message: string; repository?: Repository }
+  | {
+      state: "working reported and idle";
+      message: string;
+      repository?: Repository;
+      /** Turns the user's T3 replies ran afterwards, each observed running then completed. */
+      replies?: number;
+    }
   | { state: "missing report"; rejected: Report }
   | ({ implementation: Report; review: Report } & (
       | { state: "result released to a Human review" }
@@ -72,6 +78,36 @@ const continuationContent = {
   approval: "Approved. Leave email alerts out of the first version.",
 };
 
+/** A long Markdown result as Agents write them; its raw HTML must stay inert text. */
+const settledResult = `## Welcome copy updated
+
+The first-run screen now says where recent projects live, in two short sentences.
+
+### Changes
+
+- Rewrote the heading and body in \`WelcomePanel\`.
+- Gave every action a descriptive label.
+
+### Copy
+
+| Element | Before | After |
+| --- | --- | --- |
+| Heading | Welcome! | Welcome to Atlas |
+| Body | Get started below. | Your recent projects are in the sidebar. |
+
+\`\`\`ts
+const body = t("welcome.recentProjects");
+\`\`\`
+
+### Checks
+
+- [x] Every action has an accessible name
+- [ ] Translations follow in a separate change
+
+See the [Atlas copy guide](https://example.com/atlas/copy-guide) for tone.
+
+<b>Raw HTML stays text</b> <img src="missing.png" onerror="window.resultHtmlRan = true">`;
+
 /** Stable keys, titles and creation order are shared with journeys and the scenario catalog.
  * Reading this list needs no Factory; callers supply the saved Flow ids when instantiating it. */
 export const seedScenarioList: readonly SeedScenario[] = [
@@ -91,10 +127,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
       "Polish the first-run welcome copy for Atlas. Explain where to find recent projects in two short sentences.",
     attachments: { images: [demoImages.welcomeCopy], referenced: 1 },
     repository: { branch: "copy/welcome", pullRequests: [demoPullRequest(41, "merged")] },
-    result: {
-      exit: "Done",
-      message: "Updated the welcome text and checked that every action has a descriptive label.",
-    },
+    result: { exit: "Done", message: settledResult },
   },
   {
     key: "archived",
@@ -142,6 +175,7 @@ export const seedScenarioList: readonly SeedScenario[] = [
     prompt:
       "Talk through the empty-state wording for Atlas search with me before changing anything.",
     message: "Discussing the empty-state wording in T3: tone, filters and the button label.",
+    replies: 4,
   },
   {
     key: "rejected-report",

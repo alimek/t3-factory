@@ -348,7 +348,7 @@ test("reloading preserves Flow input thumbnails, the image list and ordinal refe
 
   // Assert
   await expectFlowInputImages(screen);
-  const context = screen.getByRole("complementary", "Run context");
+  const context = screen.getByRole("complementary", "Run inspector");
   await expect(context.getByRole("list", "Prompt images").getByRole("button")).toHaveCount(4);
   await context.getByRole("button", "Image 2: screenshot.png", { exact: true }).tap();
   await expectGalleryImage(screen, browser, 2, "screenshot.png", run.images[1]!.sha256);
@@ -371,7 +371,7 @@ test("unavailable image bytes preserve readable prompt history and other images 
   const input = screen.getByRole("article", "Flow input block");
   await expectFlowInputImages(screen);
   await expect(input).toContainText("Review the Atlas settings page");
-  const context = screen.getByRole("complementary", "Run context");
+  const context = screen.getByRole("complementary", "Run inspector");
   await expect(context).toContainText("Review the Atlas settings page");
   await expect(context.getByRole("list", "Prompt images").getByRole("button")).toHaveCount(4);
   // The failed read has run before attention is checked.

@@ -180,13 +180,25 @@ The Flow revision a Run started with and the Agent revision of every Agent that 
 _Avoid_: Run snapshot.
 
 **Run timeline**:
-The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, stopping workers for a manual settlement, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads.
+The chronological record of a Run's execution events, including block activity, handoffs, human-attention events, stopping workers for a manual settlement, settling, returning to Active, and archiving. Each Run has its own timeline, distinct from conversations in its T3 threads. Its default **Key events** view collapses repeated T3 status observations of a Block into one row; **All events** shows every entry.
 
 **Run activity**:
 A meaningful change in a Run's work, such as an accepted Agent report, an execution change, a new Needs input matter or an answer to a Human step. Viewing or renaming a Run and observing an unchanged state are not Run activity.
 
 **Execution canvas**:
 The read-only view of the Flow revision a Run captured at Start. Each block shows its recorded execution state, and the same block is updated when work visits it again. Needs input and Problem are separate indicators. Pan, zoom and fit do not edit the Flow, and configured connections stay visible without implying they were traversed.
+
+**Run inspector**:
+The one panel docked beside the Execution canvas. It shows the **Run overview** (Run-level facts such as attention, progress, the Flow input and work periods) until a block is selected or the Run title is inspected; it then shows that block, or the Run title's generation, which is not a block selection. Esc or **Overview** returns it to the Run overview. Whether it is shown is a per-viewer preference, independent of what is inspected.
+_Avoid_: Run context, block details card
+
+**Run status**:
+The one status the Run detail header shows for the whole Run: Archived, Settled, Problem, Needs input, Working or Idle, the first that applies. Block execution states stay on the execution canvas.
+_Avoid_: header pills, Run state badges.
+
+**Not live**:
+An Active Run whose observations are stale or whose live delivery is unavailable, so the screen may be out of date. It is shown with Factory's last observation time and only while it applies; it is not a Problem.
+_Avoid_: Last known as a separate marker.
 
 **Flow input**:
 The data supplied to a particular flow execution: the required prompt text entered when starting a Run, with any attached images. Every Agent block connected to the Flow input block receives the text and the same original images with its first message, each in its own independent session; image references in the text read `[Image N: name]`.

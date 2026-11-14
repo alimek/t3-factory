@@ -129,7 +129,9 @@ test("pressing a Run's title line opens its title details with the title thread 
   await screen.getByRole("button", /^Run title, applied/).tap();
 
   // Assert
-  const details = screen.getByRole("complementary", "Run title details");
+  const details = screen
+    .getByRole("complementary", "Run inspector")
+    .getByRole("region", "Run title details");
   await expect(details.getByRole("link", "Open title thread in T3")).toHaveAttribute(
     "href",
     titleGeneration.threadLink,

@@ -73,3 +73,39 @@ it("a block first activated after its Agent was edited and removed and the backe
     { id: f.agent.id, revision: 1, prompt: "Follow repository instructions." },
   ]);
 });
+
+it("a Run read after its Flow was saved again shows the Flow's current revision beside the captured one", async (c) => {
+  // Arrange
+  const { f, input, flow } = await prepared(c);
+  const started = await f.startRun(input);
+  assert(started.ok);
+  const saved = await f.updateFlow(flow.id, {
+    name: `${flow.name} (edited)`,
+    graph: flow.graph,
+    expectedRevision: flow.revision,
+  });
+  assert(saved.ok);
+
+  // Act
+  const run = await f.getRun(started.value.id);
+
+  // Assert
+  assert(run.ok);
+  expect(run.value.definitions.flow.revision).toBe(flow.revision);
+  expect(run.value.currentFlowRevision).toBe(saved.value.revision);
+});
+
+it("a Run whose Flow was removed reads no current Flow revision", async (c) => {
+  // Arrange
+  const { f, input, flow } = await prepared(c);
+  const started = await f.startRun(input);
+  assert(started.ok);
+  assert((await f.removeFlow(flow.id)).ok);
+
+  // Act
+  const run = await f.getRun(started.value.id);
+
+  // Assert
+  assert(run.ok);
+  expect(run.value.currentFlowRevision).toBeNull();
+});

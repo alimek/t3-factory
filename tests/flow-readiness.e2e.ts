@@ -65,7 +65,9 @@ test("Start names every blocked Agent including later branches and succeeds afte
   const finished = await applyRunState(app.baseUrl, created.id, "result released to two workers");
   assert(finished.ok);
   await browser.reload();
-  await expect(screen.getByRole("region", "Block activations")).toContainText("Report accepted");
+  await expect(screen.getByRole("region", "Block activations")).toContainText(
+    "Ready for parallel review.",
+  );
   const run = await readHistoryRun(app.baseUrl, created.id);
   expect(run.reports[0]?.completionEligibleAt).not.toBe(null);
   expect(run.activations).toHaveLength(3);

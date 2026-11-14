@@ -1159,6 +1159,21 @@ export function replyTurnObserved(
   });
 }
 
+/** From a worker idle in working: the user replied `replies` times in its T3 thread, and Factory
+ * observed each reply's turn running and then completed; the handle is on the last reply. */
+export function repliesDiscussed(world: ScenarioWorld, worker: WorkerHandle, replies: number) {
+  return reach("replies discussed", async () => {
+    let current = worker;
+    for (let reply = 1; reply <= replies; reply++) {
+      current = turnBegins(world, current, `reply-execution-${reply}`);
+      await observeFor("observe the reply", world, worker.runId, turnObserved(current, "running"));
+      turnEnds(world, current);
+      await observeFor("observe the reply's end", world, worker.runId, idleWorking(current));
+    }
+    return current;
+  });
+}
+
 /** From a reply turn running: Factory observed it, it ended without a report and Factory observed
  * the end; then the user's follow-up reply runs as the next turn, which the handle is on. */
 export function followUpReplyRunning(world: ScenarioWorld, worker: WorkerHandle) {

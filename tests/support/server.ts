@@ -347,7 +347,7 @@ async function ensureRun(
     assert.equal(known.flow, flowName, `Journey ${key} already uses another Flow`);
     return known.id;
   }
-  const flow = flows.find((item) => item.name === flowName);
+  const flow = requireSuccess(await factory.listFlows()).find((item) => item.name === flowName);
   assert(flow, `Unknown journey Flow ${flowName}`);
   const worker = await workerAtWork(
     context,

@@ -35,6 +35,7 @@ export const shortcutDefinitions = [
   { id: "settle", label: "Settle Run", scope: "global", group: "runActions" },
   { id: "archive", label: "Archive Run…", scope: "global", group: "runActions" },
   { id: "rename", label: "Rename Run", scope: "contextual", group: "runActions" },
+  { id: "toggleInspector", label: "Toggle inspector", scope: "global", group: "runActions" },
   { id: "zoomIn", label: "Zoom in", scope: "canvas", group: "canvas" },
   { id: "zoomOut", label: "Zoom out", scope: "canvas", group: "canvas" },
   { id: "fit", label: "Fit canvas", scope: "canvas", group: "canvas" },
@@ -82,6 +83,7 @@ const sharedPlatformDefaults = {
   settle: binding("e", { mod: true, shift: true }),
   archive: binding("Backspace", { mod: true }),
   rename: binding("F2"),
+  toggleInspector: binding(".", { mod: true }),
   zoomIn: binding("="),
   zoomOut: binding("-"),
   fit: binding("0"),
@@ -360,6 +362,35 @@ export function formatShortcut(binding: ShortcutBinding | null | undefined) {
   ]
     .filter(Boolean)
     .join(isMacPlatform() ? "" : "+");
+}
+
+/** One line of a shortcut group as the cheat sheet and the canvas shortcuts popover list it. */
+export type ShortcutEntry = {
+  readonly id: string;
+  readonly label: string;
+  readonly keys: readonly string[];
+};
+
+/** Fixed contextual controls listed with a registry group; they cannot be rebound. */
+const fixedGroupEntries: Partial<Record<ShortcutGroup, readonly ShortcutEntry[]>> = {
+  canvas: [{ id: "pan", label: "Pan", keys: ["←", "↑", "→", "↓"] }],
+};
+
+/** A group's registry commands with their current bindings, then its fixed controls. */
+export function shortcutGroupEntries(
+  group: ShortcutGroup,
+  bindings: ShortcutBindings,
+): readonly ShortcutEntry[] {
+  return [
+    ...shortcutDefinitions
+      .filter((command) => command.group === group)
+      .map((command) => ({
+        id: command.id,
+        label: command.label,
+        keys: [formatShortcut(bindings[command.id])],
+      })),
+    ...(fixedGroupEntries[group] ?? []),
+  ];
 }
 
 function bindingFingerprint(binding: ShortcutBinding) {

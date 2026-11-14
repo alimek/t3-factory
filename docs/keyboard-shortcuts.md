@@ -28,6 +28,7 @@ desktop app can use.
 | Settle Run | Mod+Shift+E | Mod+Shift+E |
 | Archive Run… | Mod+Backspace | Mod+Backspace |
 | Rename Run | F2 | F2 |
+| Toggle inspector | Mod+. | Mod+. |
 | Zoom in | + (or =) | + (or =) |
 | Zoom out | − | − |
 | Fit canvas | 0 | 0 |
@@ -84,12 +85,14 @@ shortcuts could not be restored. Defaults are in use.**
 ## Discovery
 
 - **Cheat sheet:** Mod+/ opens a read-only overlay grouped like Settings, showing current
-  bindings and a link to **Settings → Keyboard shortcuts**. Escape closes it; it does not
-  edit bindings.
+  bindings and a link to **Settings → Keyboard shortcuts**. Its Canvas group also lists the fixed
+  arrow-key pan. Escape closes it; it does not edit bindings.
+- **Canvas shortcuts:** the keyboard button in the Run execution canvas toolbar opens that same
+  Canvas group with current bindings and an **All keyboard shortcuts** link to the cheat sheet.
 - **Settings → Keyboard shortcuts** is the place to change bindings.
 - **Hints:** current bindings appear on the command-palette search field, footer Settings
   and Studio controls, selected palette actions (New Run, Settings, Studio), Rename in row
-  menus, Snooze/Restore, Settle and Archive menu items, and the Archive toolbar tooltip.
+  menus, and Snooze/Restore, Settle and Archive menu items, including Archive in the open Run's ··· menu.
 - **Desktop menu:** the desktop app's native menu lists registry commands with the current
   bindings as accelerators; see [Application menu](desktop-and-clients.md#application-menu).
 
@@ -111,6 +114,10 @@ order, without group headers. **Open row *n*** opens the *n*th visible row (Run 
 draft). **Previous Run** and **Next Run** move among visible rows from the current
 selection **without wrap-around**. If the current selection is not visible, stepping does nothing. **Search Runs** focuses the sidebar search field.
 Back and Forward use browser history.
+
+**Toggle inspector** shows or hides the docked inspector of the Run open in detail, also
+while observations are unavailable; elsewhere it does nothing. It is not an application menu
+item on desktop.
 
 **Open Run actions** (Snooze or restore, Settle, Archive…, Rename) apply to the Run
 currently open in detail, not to a highlighted sidebar row alone. Snooze and Settle follow

@@ -7,32 +7,35 @@ import { cn } from "@/lib/utils";
 export function AutoArrangeButton({
   pending,
   disabled,
+  iconOnly,
   onClick,
-  className,
 }: {
   pending: boolean;
   disabled?: boolean;
+  /** The execution canvas's toolbar shows the icon with its tooltip only. */
+  iconOnly: boolean;
   onClick: () => void;
-  className?: string;
 }) {
+  const iconClass = iconOnly ? "size-4" : "size-3.5";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           type="button"
           variant="ghost"
-          className={cn("h-8 gap-1.5 rounded-sm pr-3 pl-2.5 text-2xs", className)}
+          size={iconOnly ? "icon-sm" : "default"}
+          className={cn(!iconOnly && "h-8 gap-1.5 rounded-sm pr-3 pl-2.5 text-2xs")}
           disabled={disabled || pending}
           aria-busy={pending}
           aria-label="Auto-arrange"
           onClick={onClick}
         >
           {pending ? (
-            <Loader2 aria-hidden className="size-3.5 animate-spin" strokeWidth={1.5} />
+            <Loader2 aria-hidden className={cn(iconClass, "animate-spin")} strokeWidth={1.5} />
           ) : (
-            <LayoutGrid aria-hidden className="size-3.5" strokeWidth={1.5} />
+            <LayoutGrid aria-hidden className={iconClass} strokeWidth={1.5} />
           )}
-          {pending ? "Arranging…" : "Auto-arrange"}
+          {!iconOnly && (pending ? "Arranging…" : "Auto-arrange")}
         </Button>
       </TooltipTrigger>
       <TooltipContent>Layer blocks left-to-right and route wires</TooltipContent>

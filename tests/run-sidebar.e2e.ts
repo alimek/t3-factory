@@ -1,8 +1,9 @@
 import { confirmSettlement } from "./support/run-history.ts";
 import { test } from "@e2e-dev/web";
 import assert from "node:assert/strict";
-import { expect } from "e2e";
-import { findRun } from "./support/run-history.ts";
+import { expect, type App, type Screen } from "e2e";
+import { findArchivedRun, findRun, readHistoryRun } from "./support/run-history.ts";
+import { liveRun } from "./support/live.ts";
 import { prepareScenarios } from "./support/scenarios.ts";
 import {
   openSidebarAction,
@@ -330,4 +331,105 @@ test("cancelling Rename returns focus with Run state and attention available wit
     /Demo · Problem · Search checks failed.*Problem.*,\s*(Waiting|Observation unknown or stale)$/,
   );
   await expect(preview).toBeHidden();
+});
+
+/** Opens Run `id` by link and returns its header Run status, of which there is exactly one. */
+async function openRunStatus(app: App, screen: Screen, id: string) {
+  await app.open(`/runs/${id}`);
+  const status = screen.getByRole("status", "Run status");
+  await expect(status).toHaveCount(1);
+  return status;
+}
+
+/** Opens the open Run titled `title` with its sidebar row, to compare their presentations. */
+async function openSidebarRun(app: App, screen: Screen, title: string) {
+  const row = screen.getByRole("navigation", "Open Runs").getByRole("link", new RegExp(title));
+  const status = await openRunStatus(app, screen, (await findRun(app.baseUrl, title)).id);
+  return { status, row };
+}
+
+test("a working Run's header shows one Working status naming its active block and no Not live", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  // A restart or T3 outage earlier in the suite correctly leaves seeded Runs stale; this
+  // journey's own worker was just observed.
+  const id = await liveRun(app, "run-header-working");
+  const run = await readHistoryRun(app.baseUrl, id);
+  expect(run.blocks.find((block) => block.blockId === "worker")?.freshness).toBe("fresh");
+
+  // Act
+  const status = await openRunStatus(app, screen, id);
+
+  // Assert
+  await expect(status).toHaveText(/^Working · \S/);
+  await expect(screen.getByRole("status", "Observation freshness")).toHaveCount(0);
+  await app.screenshot("run-header-working");
+});
+
+test("a Run waiting for an answer shows the sidebar's Needs input chip as its one header status", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  // Other journeys answer or settle the Human review Run; this native question stays pending.
+  const title = "Demo · Woke · A question about keyboard shortcuts";
+
+  // Act
+  const { status, row } = await openSidebarRun(app, screen, title);
+
+  // Assert
+  await expect(status).toHaveText(/^Needs input · /);
+  await expect(row).toContainText("Needs input");
+  await app.screenshot("run-header-needs-input");
+});
+
+test("a Run with a Problem shows the sidebar's Problem chip as its one header status", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const title = "Demo · Problem · Search checks failed";
+
+  // Act
+  const { status, row } = await openSidebarRun(app, screen, title);
+
+  // Assert
+  await expect(status).toHaveText(/^Problem · /);
+  await expect(row).toContainText("Problem");
+  await app.screenshot("run-header-problem");
+});
+
+test("a Settled Run's header shows Settled instead of its finished block's state", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const title = "Demo · Settled · Clearer onboarding copy";
+  const canvas = screen.getByRole("region", "Execution canvas");
+
+  // Act
+  const status = await openRunStatus(app, screen, (await findRun(app.baseUrl, title)).id);
+
+  // Assert
+  await expect(status).toHaveText(/^Settled/);
+  await expect(canvas.getByText("finished", { exact: true })).toBeVisible();
+  await app.screenshot("run-header-settled");
+});
+
+test("an Archived Run opened by link shows Archived as its one header status", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const title = "Demo · Archived · Earlier navigation experiment";
+  const found = await findArchivedRun(app.baseUrl, title);
+
+  // Act
+  const status = await openRunStatus(app, screen, found.id);
+
+  // Assert
+  await expect(status).toHaveText(/^Archived/);
+  await app.screenshot("run-header-archived");
 });

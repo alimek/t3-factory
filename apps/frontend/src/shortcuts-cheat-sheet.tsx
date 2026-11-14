@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
-  formatShortcut,
-  shortcutDefinitions,
+  shortcutGroupEntries,
   shortcutGroupLabels,
   type ShortcutGroup,
 } from "./keyboard-shortcuts.ts";
@@ -33,7 +32,7 @@ export function ShortcutsCheatSheet({
         </DialogDescription>
         <div className="max-h-[min(70vh,32rem)] overflow-y-auto px-4 py-3">
           {groupOrder.map((group) => {
-            const commands = shortcutDefinitions.filter((command) => command.group === group);
+            const commands = shortcutGroupEntries(group, bindings);
             if (!commands.length) return null;
             return (
               <section key={group} className="pb-4 last:pb-0">
@@ -48,7 +47,7 @@ export function ShortcutsCheatSheet({
                     >
                       <dt className="min-w-0 truncate text-foreground">{command.label}</dt>
                       <dd className="shrink-0 font-mono text-2xs text-muted-foreground">
-                        {formatShortcut(bindings[command.id])}
+                        {command.keys.join(" ")}
                       </dd>
                     </div>
                   ))}

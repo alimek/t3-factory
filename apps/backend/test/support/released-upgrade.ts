@@ -120,7 +120,12 @@ function capturedDefinitions({ flow, agents }: ReleasedSnapshot) {
 /** A released closed Run as current Run detail shows it in its new lifecycle state (Settled with
  * its handoff gate open for Finished, Archived for Stopped), keeping the same history without
  * the retired report keys, completion evidence and closure, and with no working message or Wait. */
-export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archived"): CurrentRun {
+export function currentRun(
+  released: ReleasedRun,
+  lifecycle: "settled" | "archived",
+  /** The latest saved revision of the Run's Flow now; null once it was removed. */
+  currentFlowRevision: number | null,
+): CurrentRun {
   const {
     snapshot,
     remoteWork: _remote,
@@ -147,6 +152,7 @@ export function currentRun(released: ReleasedRun, lifecycle: "settled" | "archiv
     // Upgrading starts no manual settlement: a released Settled Run keeps its open gate.
     settlement: null,
     definitions: capturedDefinitions(snapshot),
+    currentFlowRevision,
     // Released Runs worked in the project checkout.
     workspace: { mode: "checkout" },
     blocks: run.blocks.map((block) => ({ ...block, workingMessage: null })),

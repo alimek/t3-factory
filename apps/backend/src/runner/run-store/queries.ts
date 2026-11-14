@@ -5,6 +5,7 @@ import { readTitleGenerations } from "../../run-titles.ts";
 import { coordinationRead } from "./runner-coordination.ts";
 import { readRunCoordinator } from "./run-coordinator.ts";
 import { threadHref } from "../../thread-link.ts";
+import { currentFlowRevisionNumber } from "../../flow-revisions.ts";
 import { readWorkerRepositories } from "./worker-repositories.ts";
 import { recoveryRows } from "./recovery-read.ts";
 import { waitArrival, type WaitArrivalRow } from "./waits.ts";
@@ -302,6 +303,8 @@ export function openRunQueries(database: RunnerDatabase) {
             flowId: definitions.flow.id,
             flowName: definitions.flow.name,
             definitions,
+            currentFlowRevision:
+              (yield* currentFlowRevisionNumber(sql, definitions.flow.id)) ?? null,
             workspace: yield* runWorkspace(sql, id, intents),
             repositories: (yield* readWorkerRepositories(sql, id)).map(
               ({ runId: _runId, ...worker }) => worker,
