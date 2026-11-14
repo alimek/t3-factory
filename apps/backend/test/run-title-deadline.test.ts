@@ -25,7 +25,7 @@ const titleThreadAtWork = (c: Parameters<typeof preparedService>[0]) =>
   });
 
 it.effect(
-  "at its 30-second deadline a pending generation times out quietly, keeps the automatic title and stops the title thread",
+  "at its 30-second deadline a pending generation times out quietly with a diagnostic on the setting, keeps the automatic title and stops the title thread",
   (c) =>
     Effect.gen(function* () {
       // Arrange
@@ -49,6 +49,15 @@ it.effect(
       expect(run.value.title).toBe("Improve search");
       expect(run.value.titleProvenance).toBe("automatic");
       expect(run.value.attention).toStrictEqual([]);
+      const setting = yield* f.factory.getRunTitleSetting();
+      assert(setting.ok);
+      expect(setting.value.diagnostic).toStrictEqual({
+        runId: f.runId,
+        runNumber: run.value.number,
+        outcome: "timed-out",
+        message: "No valid title arrived within 30 seconds of Start.",
+        recordedAt: expect.any(String),
+      });
     }),
 );
 

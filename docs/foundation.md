@@ -39,7 +39,7 @@ and restricted OAuth credentials live outside project repositories.
   of the Start request identity, except that legacy keeps the identity requests had before provenance existed.
   Migration `079` marks every existing Run legacy and changes no title.
 - The installation-wide **Generate Run titles** setting is one SQLite row holding its on/off state, the chosen T3 model
-  and options, a revision and the latest eligibility diagnostic. Start acceptance records at most one title generation
+  and options, a revision and the latest title generation diagnostic. Start acceptance records at most one title generation
   per Run in the same transaction as the Run, with its captured model, options, prompt version and deadline, and for a
   pending one the title thread's launch request, so the intent is durable before any dispatch. The generation later
   records when that request was sent, the thread T3 launched, when it reached its outcome and the claims for its one

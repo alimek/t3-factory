@@ -7,6 +7,7 @@ import type {
   FactoryOperations,
   FactoryProject,
   Result,
+  RunTitleDiagnostic,
   RunTitleGeneration,
   RunTitleModel,
   RunTitleSetting,
@@ -52,6 +53,7 @@ type SettingRow = {
   revision: number;
   diagnostic_run_id: string | null;
   diagnostic_run_number: number | null;
+  diagnostic_outcome: RunTitleDiagnostic["outcome"] | null;
   diagnostic_message: string | null;
   diagnostic_at: string | null;
 };
@@ -70,7 +72,7 @@ const settingModel = (row: SettingRow): RunTitleModel | null =>
 
 function readSettingRow(sql: SqlClient.SqlClient) {
   return Effect.map(
-    sql<SettingRow>`SELECT s.*,r.number AS diagnostic_run_number FROM run_title_settings s LEFT JOIN runs r ON r.id=s.diagnostic_run_id WHERE s.singleton=1`,
+    sql<SettingRow>`SELECT s.*,r.number AS diagnostic_run_number,g.state AS diagnostic_outcome FROM run_title_settings s LEFT JOIN runs r ON r.id=s.diagnostic_run_id LEFT JOIN run_title_generations g ON g.run_id=s.diagnostic_run_id WHERE s.singleton=1`,
     ([row]) => row!,
   );
 }
@@ -154,10 +156,14 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
           enabled: row.enabled === 1,
           model: settingModel(row),
           diagnostic:
-            row.diagnostic_run_id && row.diagnostic_message && row.diagnostic_at
+            row.diagnostic_run_id &&
+            row.diagnostic_outcome &&
+            row.diagnostic_message &&
+            row.diagnostic_at
               ? {
                   runId: row.diagnostic_run_id,
                   runNumber: row.diagnostic_run_number,
+                  outcome: row.diagnostic_outcome,
                   message: row.diagnostic_message,
                   recordedAt: row.diagnostic_at,
                 }
@@ -268,7 +274,8 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
         if (skipped) changes.runChanged(runId);
       });
 
-    /** Records `state` for a generation still pending; any earlier outcome is final. */
+    /** Records `state` and its diagnostic for a generation still pending; any earlier outcome is
+     * final. */
     const endPending = (generation: ReconcileRow, state: "timed-out" | "failed", reason: string) =>
       Effect.gen(function* () {
         const time = yield* now;
@@ -276,8 +283,10 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
           Effect.gen(function* () {
             const rows =
               yield* sql`UPDATE run_title_generations SET state=${state},reason=${reason},ended_at=${time} WHERE id=${generation.id} AND state='pending' RETURNING id`;
-            if (rows.length) yield* titleEvent(sql, generation.run_id, generation.id, state, time);
-            return rows.length > 0;
+            if (!rows.length) return false;
+            yield* titleEvent(sql, generation.run_id, generation.id, state, time);
+            yield* recordDiagnostic(sql, generation.run_id, reason, time);
+            return true;
           }),
         );
         if (ended) changes.runChanged(generation.run_id);
@@ -523,7 +532,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
             yield* sql`UPDATE runs SET title=${title},title_provenance='generated' WHERE id=${generation.run_id}`;
             yield* sql`UPDATE run_title_generations SET state='applied',generated_title=${title},ended_at=${appliedAt} WHERE id=${titleGenerationId}`;
             yield* titleEvent(sql, generation.run_id, titleGenerationId, "applied", appliedAt);
-            // An applied title shows the setting works, so an earlier eligibility diagnostic is stale.
+            // An applied title shows the setting works, so an earlier diagnostic is stale.
             yield* sql`UPDATE run_title_settings SET diagnostic_run_id=NULL,diagnostic_message=NULL,diagnostic_at=NULL WHERE singleton=1`;
             return { reply: titleApplied(title), appliedTo: generation.run_id };
           }),
@@ -664,7 +673,8 @@ function titleEvent(
   });
 }
 
-/** The setting's latest diagnostic, naming the Run whose eligibility check failed. */
+/** The setting's latest diagnostic, naming the Run whose generation was skipped by a failed
+ * eligibility check, failed or timed out. */
 function recordDiagnostic(sql: SqlClient.SqlClient, runId: string, message: string, time: string) {
   return sql`UPDATE run_title_settings SET diagnostic_run_id=${runId},diagnostic_message=${message},diagnostic_at=${time} WHERE singleton=1`;
 }
@@ -732,7 +742,7 @@ const CANCELLED = {
 /**
  * Archive and manual settlement end a pending generation in the transaction that closes the Run's
  * handoff gate, including a launch not sent yet. One whose deadline already passed records the
- * timeout its wake-up had not recorded yet.
+ * timeout, with its diagnostic, that its wake-up had not recorded yet.
  */
 export function cancelTitleGeneration(
   sql: SqlClient.SqlClient,
@@ -745,7 +755,9 @@ export function cancelTitleGeneration(
       id: string;
       state: "timed-out" | "cancelled";
     }>`UPDATE run_title_generations SET state=CASE WHEN deadline_at<=${time} THEN 'timed-out' ELSE 'cancelled' END,reason=CASE WHEN deadline_at<=${time} THEN ${TIMED_OUT} ELSE ${CANCELLED[cutoff]} END,ended_at=${time} WHERE run_id=${runId} AND state='pending' RETURNING id,state`;
-    if (ended) yield* titleEvent(sql, runId, ended.id, ended.state, time);
+    if (!ended) return;
+    yield* titleEvent(sql, runId, ended.id, ended.state, time);
+    if (ended.state === "timed-out") yield* recordDiagnostic(sql, runId, TIMED_OUT, time);
   });
 }
 

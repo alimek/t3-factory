@@ -109,7 +109,7 @@ options from the live T3 catalog, and saves each change at once; choosing a prov
 the switch stays unavailable until a provider instance and model are chosen. A saved choice the catalog no longer
 offers stays visible as unavailable. The section discloses that the title model runs in the Project checkout with the
 owner's T3 permissions and that its prompt forbids reading or editing files without Factory enforcing it, and shows the
-latest diagnostic with its Run and time in the neutral notice style, never the error color. An approved client sees
+latest diagnostic with its outcome, Run and time in the neutral notice style, never the error color. An approved client sees
 the same fields read-only under **Managed on the Factory host**. The section reads the setting when it opens; changes
 are not delivered live.
 
@@ -122,7 +122,7 @@ and an absolute deadline 30 seconds after acceptance, and records its generation
   and options, launch is supported and Factory MCP is installed for that provider (an instance disabled in T3 has no
   [reporting installation](t3-integration.md#installation-actions), so it fails here);
 - **skipped** with that check's reason when one fails; the reason also becomes the setting's latest diagnostic, with the
-  Run, until a later failure replaces it or a generated title is applied;
+  Run and outcome, until a later diagnostic replaces it or a generated title is applied;
 - **skipped** without a diagnostic when the prompt has no letter or digit, counting `[Image N: name]` labels as text, or
   when the setting changed between these checks and acceptance while staying on.
 
@@ -155,8 +155,9 @@ settles it in T3 once it finished, best effort; the [Runner](runner.md#run-title
 cancellation, restart and cleanup rules. Restart never launches a title thread twice.
 
 Applying a generated title is like Rename: it is not Run activity and moves no row. It also
-clears the setting's diagnostic, because it shows the setting works. Timed-out, failed, dropped and cancelled outcomes
-record no diagnostic: like every outcome they are quiet, raising no Problem or attention. The title thread is not a
+clears the setting's diagnostic, because it shows the setting works. A timed-out or failed outcome records its reason as
+the setting's latest diagnostic in the transaction that records the outcome; dropped and cancelled are owner actions
+and record none. Like every outcome they are quiet, raising no Problem or attention. The title thread is not a
 Block or worker: it never counts toward settlement, Needs input, attention, Problems, missing reports or Block
 readiness, so a Run can settle while its title is still pending.
 

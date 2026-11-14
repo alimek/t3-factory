@@ -1,7 +1,8 @@
 -- Generate Run titles is one installation-wide setting, off until the host owner enables it with a
 -- T3 provider instance and model. Every installation, new or upgraded, starts with it off; no
 -- existing data changes. The revision lets Start notice a change between its checks and acceptance.
--- The latest eligibility diagnostic is kept beside the setting until a later one replaces it.
+-- The latest diagnostic, from a generation skipped by a failed eligibility check, failed or timed
+-- out, is kept beside the setting until a later one replaces it.
 CREATE TABLE run_title_settings (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),

@@ -372,13 +372,19 @@ function CheckoutDisclosure() {
 }
 
 /** The latest eligibility failure; neutral, because a skipped title never affects the Run. */
+const DIAGNOSTIC_OUTCOMES: Record<RunTitleDiagnostic["outcome"], string> = {
+  skipped: "skipped",
+  failed: "failed",
+  "timed-out": "timed out",
+};
+
 function LatestDiagnostic({ diagnostic }: { diagnostic: RunTitleDiagnostic }) {
   const run = diagnostic.runNumber === null ? "a Run" : `Run #${diagnostic.runNumber}`;
   return (
     <Notice
       tone="neutral"
       icon={Info}
-      title={`Latest title generation skipped · ${run} · ${dayAndTime(diagnostic.recordedAt)}`}
+      title={`Latest title generation ${DIAGNOSTIC_OUTCOMES[diagnostic.outcome]} · ${run} · ${dayAndTime(diagnostic.recordedAt)}`}
     >
       {diagnostic.message} The Run kept its automatic title and was otherwise not affected.
     </Notice>

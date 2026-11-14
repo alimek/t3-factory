@@ -123,6 +123,7 @@ it("a title model T3 no longer offers skips generation with a diagnostic on the 
       diagnostic: {
         runId: started.value.id,
         runNumber: 1,
+        outcome: "skipped",
         message: "T3 does not offer gpt-6.1-luna for Codex.",
         recordedAt: started.value.startedAt,
       },
@@ -252,6 +253,7 @@ it("an approved client reads Generate Run titles with its latest diagnostic", as
     diagnostic: {
       runId: started.value.id,
       runNumber: 1,
+      outcome: "skipped",
       message: "T3 does not offer gpt-6.1-luna for Codex.",
       recordedAt: started.value.startedAt,
     },
@@ -344,6 +346,7 @@ it("a title model T3 withdrew after Start is skipped just before dispatch with a
   assert(setting.ok);
   expect(setting.value.diagnostic).toMatchObject({
     runId: started.value.id,
+    outcome: "skipped",
     message: "T3 does not offer gpt-6.1-luna for Codex.",
   });
   expect([...fixture.t3.launches.values()].map((launch) => launch.payload.title)).toStrictEqual([
@@ -351,7 +354,7 @@ it("a title model T3 withdrew after Start is skipped just before dispatch with a
   ]);
 });
 
-it("a title thread launch T3 rejects records the generation failed and keeps the automatic title", async (c) => {
+it("a title thread launch T3 rejects records the generation failed with a diagnostic on the setting and keeps the automatic title", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   await enableRunTitles(fixture.f);
@@ -370,6 +373,14 @@ it("a title thread launch T3 rejects records the generation failed and keeps the
   });
   expect(run.title).toBe("Improve search");
   expect(run.titleProvenance).toBe("automatic");
+  expect(run.attention).toStrictEqual([]);
+  const setting = await fixture.f.getRunTitleSetting();
+  assert(setting.ok);
+  expect(setting.value.diagnostic).toMatchObject({
+    runId: started.value.id,
+    outcome: "failed",
+    message: "T3 rejected the title thread launch.",
+  });
 });
 
 it("a Rename while the title is pending drops the generation even when it keeps the automatic title", async (c) => {
@@ -435,7 +446,7 @@ it("turning Generate Run titles off leaves a pending generation to finish with i
   });
 });
 
-it("Archive cancels a pending title generation in its transaction and requests one Stop of the title thread", async (c) => {
+it("Archive cancels a pending title generation in its transaction without a diagnostic and requests one Stop of the title thread", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   await enableRunTitles(fixture.f);
@@ -456,6 +467,9 @@ it("Archive cancels a pending title generation in its transaction and requests o
     { kind: "title-generation-started", blockId: null },
     { kind: "title-generation-cancelled", blockId: null },
   ]);
+  const setting = await fixture.f.getRunTitleSetting();
+  assert(setting.ok);
+  expect(setting.value.diagnostic).toBeNull();
   expect(await stopped).toStrictEqual({
     threadId: titleThreadReference(fixture.t3).threadId,
     clientRequestId: expect.any(String),
@@ -504,7 +518,7 @@ it("a restart after a lost title thread launch reply binds the launched thread b
   expect(fixture.t3.launchCalls).toBe(2);
 });
 
-it("a title thread that finishes without a valid title records failed quietly, keeps the automatic title and settles the thread", async (c) => {
+it("a title thread that finishes without a valid title records failed quietly with a diagnostic on the setting, keeps the automatic title and settles the thread", async (c) => {
   // Arrange
   const fixture = await prepared(c);
   await enableRunTitles(fixture.f);
@@ -529,6 +543,13 @@ it("a title thread that finishes without a valid title records failed quietly, k
   expect(run.value.titleProvenance).toBe("automatic");
   expect(run.value.attention).toStrictEqual([]);
   expect(await fixture.f.listAttention()).toStrictEqual({ ok: true, value: [] });
+  const setting = await fixture.f.getRunTitleSetting();
+  assert(setting.ok);
+  expect(setting.value.diagnostic).toMatchObject({
+    runId: thread.runId,
+    outcome: "failed",
+    message: "The title thread finished without submitting a valid title.",
+  });
   expect(fixture.t3.settlements).toStrictEqual([
     { threadId: titleThreadReference(fixture.t3).threadId },
   ]);

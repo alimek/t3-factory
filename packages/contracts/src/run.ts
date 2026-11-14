@@ -98,10 +98,14 @@ export interface RunTitleModel {
   readonly modelId: string;
   readonly modelOptions: readonly AgentModelOptionValue[];
 }
-/** The latest eligibility failure, kept until a later one replaces it or a generated title is applied. */
+/**
+ * The latest generation that skipped after a failed eligibility check, failed or timed out, kept until a
+ * later one replaces it or a generated title is applied. `message` is that outcome's reason.
+ */
 export interface RunTitleDiagnostic {
   readonly runId: string;
   readonly runNumber: number | null;
+  readonly outcome: Extract<RunTitleGeneration["state"], "skipped" | "failed" | "timed-out">;
   readonly message: string;
   readonly recordedAt: string;
 }

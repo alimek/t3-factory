@@ -164,8 +164,9 @@ Later setting changes affect only future Runs, and there is no regenerate. A pen
 launches one top-level **title thread** in the Project checkout beside the Flow, never gating it,
 after rechecking eligibility. It ends in exactly one outcome: **applied**, **dropped** by a
 Rename, **timed out** at the deadline, **cancelled** by Archive or manual settlement, or
-**failed** when the launch is rejected or the thread finishes without a title; Factory then
-stops and settles the title thread best effort. A restart never launches it twice. The Run shows
+**failed** when the launch is rejected or the thread finishes without a title; a timeout or
+failure also becomes the setting's latest **diagnostic**. Factory then stops and settles the
+title thread best effort. A restart never launches it twice. The Run shows
 the generation on its Flow input card and timeline, with the Run, not a Block, as the actor.
 
 **Generated title**:
