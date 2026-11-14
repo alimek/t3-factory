@@ -16,7 +16,9 @@ import {
   refusedFlow,
   rejection,
   savingFlow,
+  validated,
 } from "./support/flow-draft.ts";
+import { savedAgent } from "./support/agent-draft.ts";
 
 it("a save sends the edited Flow against the saved revision and adopts the accepted revision", async () => {
   // Arrange
@@ -646,16 +648,68 @@ it("an Agent change that only changes the saved Flow's readiness keeps the draft
   });
 });
 
-it("a changed saved Agent clears an unsaved draft's readiness check", async () => {
+it("a change to an Agent an unsaved draft places clears its readiness check and asks to check again", async () => {
   // Arrange
-  const { draft, agentChanged } = editedFlow();
+  const { draft, factory, agentChanged } = editedFlow();
   await draft.check();
 
   // Act
   agentChanged();
 
   // Assert
-  expect(draft.getSnapshot()).toMatchObject({ content: { name: "Edited" }, readiness: null });
+  expect(draft.getSnapshot()).toMatchObject({
+    content: { name: "Edited" },
+    dirty: true,
+    readiness: null,
+    agentsChanged: true,
+  });
+  expect(factory.validateFlow).toHaveBeenCalledTimes(1);
+});
+
+it("a change to an Agent the Flow does not place keeps a shown readiness check", async () => {
+  // Arrange
+  const { draft, agentChanged } = editedFlow();
+  await draft.check();
+
+  // Act
+  agentChanged(savedAgent({ id: "other", revision: 1 }));
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    readiness: { ready: true },
+    agentsChanged: false,
+  });
+});
+
+it("a clean Flow's readiness check gives way to the saved Flow's readiness after an Agent it places changes", async () => {
+  // Arrange
+  const { draft, factory, agentChanged } = openedFlow();
+  await draft.check();
+
+  // Act
+  agentChanged(savedAgent({ revision: 4 }), [{ ...factory.latest(), readiness: notReady }]);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    dirty: false,
+    readiness: notReady,
+    agentsChanged: false,
+    canStartRun: false,
+  });
+});
+
+it("a readiness answer resolved against an Agent revision Studio has not shown yet is dropped", async () => {
+  // Arrange
+  const { draft, factory } = editedFlow();
+  const answer = held(factory.validateFlow);
+  const checking = draft.check();
+
+  // Act
+  answer.answer(validated(undefined, 4));
+  await checking;
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ readiness: null, canStartRun: false });
 });
 
 it("a readiness check answered after a saved Agent changed is dropped", async () => {
@@ -666,7 +720,7 @@ it("a readiness check answered after a saved Agent changed is dropped", async ()
   agentChanged();
 
   // Act
-  answer.answer({ ready: true, issues: [] });
+  answer.answer(validated());
   await checking;
 
   // Assert

@@ -19,6 +19,7 @@ import type {
 } from "@t3-factory/contracts";
 import {
   CANVAS_COORD_MESSAGE,
+  flowAgentRevisions,
   flowReadiness,
   type ReadinessAgent,
   validateCreateAgent,
@@ -89,8 +90,9 @@ export const makeDefinitions = (
     const readinessAgents = Effect.gen(function* () {
       const agents = yield* readCurrentAgents(sql);
       const formerExitNames = yield* readFormerExitNames(sql);
-      return agents.map((agent): ReadinessAgent => ({
+      return agents.map((agent): ReadinessAgent & Pick<AgentRevision, "revision"> => ({
         id: agent.id,
+        revision: agent.revision,
         exits: agent.exits,
         formerExitNames: formerExitNames.get(agent.id) ?? new Map(),
       }));
@@ -283,9 +285,14 @@ export const makeDefinitions = (
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql(
           Effect.gen(function* () {
+            const agents = yield* readinessAgents;
+            const { graph } = validated.value;
             return {
               ok: true as const,
-              value: flowReadiness(validated.value.graph, yield* readinessAgents),
+              value: {
+                ...flowReadiness(graph, agents),
+                agentRevisions: flowAgentRevisions(graph, agents),
+              },
             };
           }),
         );

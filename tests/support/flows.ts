@@ -48,13 +48,18 @@ export async function renameFlow(baseUrl: string | undefined, id: string, name: 
   });
 }
 
-/** Saves a new checkout Flow whose input starts one block of the named saved Agent. */
+/**
+ * Saves a new checkout Flow whose input starts one block of the named saved Agent; with
+ * `wiredExit`, that Agent exit hands over to a Human step named Review.
+ */
 export async function saveSingleAgentFlow(
   baseUrl: string | undefined,
   name: string,
   agentName: string,
   block: { readonly id: string; readonly name: string; readonly x: number; readonly y: number },
+  wiredExit?: string,
 ) {
+  const review = { id: "review", kind: "human", name: "Review" };
   const agents = (await flowRequest(baseUrl, "/api/agents")) as AgentDefinition[];
   const agent = agents.find((item) => item.name === agentName);
   assert(agent);
@@ -76,8 +81,11 @@ export async function saveSingleAgentFlow(
             localExits: [],
             position: { x: block.x, y: block.y },
           },
+          ...(wiredExit ? [{ ...review, position: { x: block.x + 360, y: block.y } }] : []),
         ],
-        connections: [],
+        connections: wiredExit
+          ? [{ sourceBlockId: block.id, exitId: wiredExit, targetBlockId: review.id }]
+          : [],
       },
     }),
   })) as FlowDraft;

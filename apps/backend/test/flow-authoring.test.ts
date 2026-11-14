@@ -3,7 +3,7 @@ import { prepared } from "./support/prepared-runner.ts";
 import { ControlledT3 } from "./support/controlled-t3.ts";
 import { factoryHarness } from "./support/factory.ts";
 import { flowWithAgent, readFlowAfterRestart, validationFlow } from "./support/domain-setup.ts";
-import { flowInput, humanStep } from "./support/scenarios.ts";
+import { agentBlock, flowInput, humanStep } from "./support/scenarios.ts";
 
 it("an incomplete graph draft saves with the Flow input connection outstanding", async (context) => {
   // Arrange
@@ -181,6 +181,25 @@ it("validateFlow reports a missing agent reference before save", async (context)
   // Assert
   assert(missing.ok);
   expect(missing.value.issues[0]?.code).toBe("agent_required");
+});
+
+it("validateFlow names the saved revision of each Agent the graph places, null for a missing one", async (context) => {
+  // Arrange
+  const { factory, created, agent, unconnectedGraph } = await flowWithAgent(context);
+  const missing = agentBlock("missing", "Missing", "missing-agent");
+  const graph = { ...unconnectedGraph, blocks: [...unconnectedGraph.blocks, missing] };
+
+  // Act
+  const result = await factory.validateFlow({
+    name: created.value.name,
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph,
+  });
+
+  // Assert
+  assert(result.ok);
+  expect(result.value.agentRevisions).toStrictEqual({ [agent.id]: 1, "missing-agent": null });
 });
 
 it("updateFlow rejects duplicate block ids", async (context) => {

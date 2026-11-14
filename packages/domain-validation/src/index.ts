@@ -6,6 +6,7 @@ import type {
   CreateAgentInput,
   CreateFlowInput,
   DuplicateAgentInput,
+  FlowAgentRevisions,
   FlowBlockInput,
   FlowGraphInput,
   FlowWorkspace,
@@ -991,6 +992,23 @@ export function flowReadiness(
   connectionReadiness(graph, agents, add);
   if (graph.flowInput.targetBlockIds.length) reachabilityReadiness(graph, add);
   return { ready: issues.length === 0, issues };
+}
+
+/**
+ * The dependency stamp of Flow readiness: readiness depends only on the graph and the saved
+ * revisions of the Agents it places, because an Agent's exits and former exit names are fixed
+ * per revision. Equal stamps for the same graph mean equal readiness.
+ */
+export function flowAgentRevisions(
+  graph: FlowGraphInput,
+  agents: readonly Pick<AgentDefinition, "id" | "revision">[],
+): FlowAgentRevisions {
+  const revisions: Record<string, number | null> = {};
+  for (const block of graph.blocks)
+    if (block.kind === "agent" && block.agentId)
+      revisions[block.agentId] =
+        agents.find((agent) => agent.id === block.agentId)?.revision ?? null;
+  return revisions;
 }
 
 /** Resolve saved execution identifiers against a capability catalog without substituting defaults. */

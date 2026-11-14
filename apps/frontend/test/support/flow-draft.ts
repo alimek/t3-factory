@@ -4,6 +4,7 @@ import type {
   FlowDraft,
   FlowGraph,
   FlowReadiness,
+  FlowValidation,
   OperationError,
   StudioLiveMessage,
 } from "@t3-factory/contracts";
@@ -32,6 +33,12 @@ interface MemoryFactory extends Operations {
 
 const ready: FlowReadiness = { ready: true, issues: [] };
 
+/** Readiness a protocol 12 Factory validated against the saved Agent at revision 3. */
+export const validated = (readiness: FlowReadiness = ready, revision = 3): FlowValidation => ({
+  ...readiness,
+  agentRevisions: { agent: revision },
+});
+
 export const notReady: FlowReadiness = {
   ready: false,
   issues: [{ code: "missing_target", path: "flowInput", message: "Connect the Flow input." }],
@@ -50,9 +57,19 @@ export function memoryFactory(): MemoryFactory {
     name: "Review",
     revision: 1,
     graph: {
-      blocks: [],
+      blocks: [
+        {
+          id: "review",
+          name: "Review",
+          kind: "agent",
+          agentId: "agent",
+          position: { x: 200, y: 0 },
+          hiddenExitIds: [],
+          localExits: [],
+        },
+      ],
       connections: [],
-      flowInput: { position: { x: 0, y: 0 }, targetBlockIds: [] },
+      flowInput: { position: { x: 0, y: 0 }, targetBlockIds: ["review"] },
     },
     workspace: { mode: "checkout" },
     createdAt: "2026-11-10T08:00:00.000Z",
@@ -79,7 +96,7 @@ export function memoryFactory(): MemoryFactory {
     removeFlow: vi.fn<FlowOperations["removeFlow"]>(async () => {
       removed = true;
     }),
-    validateFlow: vi.fn<FlowOperations["validateFlow"]>(async () => ready),
+    validateFlow: vi.fn<FlowOperations["validateFlow"]>(async () => validated()),
   };
 }
 
@@ -156,9 +173,18 @@ function flowDraft(factory = memoryFactory()) {
       await factory.removeFlow("flow");
       changed({ flows: { upserts: [], removals: ["flow"] } });
     },
-    /** Studio receives a change to a saved Agent. */
-    agentChanged: (agent: AgentDefinition = savedAgent({ revision: 2 })) =>
-      changed({ agents: { upserts: [agent], removals: [] } }),
+    /**
+     * Studio receives a save of a saved Agent, by default the one the Flow places, with the
+     * Flows whose readiness that save changed.
+     */
+    agentChanged: (
+      agent: AgentDefinition = savedAgent({ revision: 4 }),
+      flows: readonly FlowDraft[] = [],
+    ) =>
+      changed({
+        agents: { upserts: [agent], removals: [] },
+        flows: { upserts: flows, removals: [] },
+      }),
     /** The live connection drops, so Studio's saved definitions are no longer current. */
     disconnected: () => socket.disconnected(),
   };

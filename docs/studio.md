@@ -121,6 +121,8 @@ connection selected, Delete/Backspace (outside form controls) or the **Delete co
 Flow-local exits are stored with the Flow revision. **Exits from Agent** shows read-only names, descriptions and message requirements, with **Hide in this Flow** / **Show in this Flow**.
 Hidden rows remain visible in the panel but are absent from worker choices and cannot start new connections; they still reserve their names and IDs against local exits. Hiding a wired exit preserves its connection and reports a readiness issue until the exit is shown or the wire removed.
 Wired hidden or removed exits keep a separate, unavailable canvas endpoint marked **Agent · hidden** or **Agent · removed**, so their wires never appear to leave a usable exit.
+Agent blocks resolve against Studio's saved Agents as they arrive: an Agent saved or removed elsewhere updates block Agent names, exit ports and the missing-Agent state at once, without
+changing the draft or its unsaved state, block positions or the view. A wire from an exit the Agent no longer has stays as such a broken wire; Studio never repairs the graph or deletes a connection.
 **Local exits · only in this Flow** offers editable name, description and message-required cards and **Add local exit**. Removing a local exit removes its connections.
 Changes to the saved Agent appear on the next Flow read; Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
 exits **Approve** (message optional) and **Request changes** (message required). An unconnected exit ends that branch.
@@ -154,8 +156,11 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 ### Saving and readiness
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
-validates the draft through the backend without saving and is cleared by any change, by a newer saved revision, by the Flow's removal and while Studio's saved definitions are not
-synchronized, also while a switch to a newer revision waits; **Start Run** stays disabled while readiness is unknown. A clean draft shows the readiness Studio received with its saved revision. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
+validates the draft through the backend without saving and is cleared by any change, by a newer saved revision, by a change to an Agent the draft places, by the Flow's removal and while
+Studio's saved definitions are not synchronized, also while a switch to a newer revision waits; **Start Run** stays disabled while readiness is unknown. A check result applies only to the
+content, baseline revision and placed Agent revisions it was requested for: an answer arriving after any of them changed, or resolved against Agent revisions Studio does not show yet, is
+discarded. A clean draft shows the readiness Studio received with its saved revision and the Agents shown, also after a placed Agent changes. A draft with unsaved changes then shows
+**Agents changed — check readiness again** and is not checked automatically. **Start Run** is enabled only by readiness for the graph and Agent revisions on screen. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
 issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit sharing a name or ID with any current Agent exit, including hidden exits (also when
 the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, a Continuation without a prompt and unreachable blocks. Each names the block, the exit and the problem, and selecting one
 inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
@@ -214,6 +219,10 @@ Readiness reports these gaps (`flow_input_required`: connect the Flow input to a
 without a duration (`wait_duration_required`) or outside 1 minute to 7 days inclusive after converting its unit, including a zero or negative amount (`wait_duration_range`), a Wait Flow input target, missing saved
 Agents and blocks unreachable from the Flow input, resolving each block against the current saved Agents. Hide entries for exits the Agent no longer has are ignored. A
 terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3 capability or live execution readiness.
+
+Readiness depends only on the graph and the saved revisions of the Agents it places, because an Agent's exits and former exit names are fixed per revision. Validating unsaved content
+(`POST /api/flows/validate`, Studio's **Check readiness**) therefore also answers `agentRevisions`: the saved revision of each placed Agent by id, `null` for a missing one, against which that
+readiness was resolved, so a client can compare it with the Agents it shows. Servers older than protocol 12 omit it; toward them Studio discards an answer only by its request.
 
 ### Revisions
 
