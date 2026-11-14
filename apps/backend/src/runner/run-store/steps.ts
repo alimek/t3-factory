@@ -102,7 +102,6 @@ export type TimelineEvent = { readonly runId: string; readonly observedAt: strin
    * Run is the actor: a title generation is not a Block. */
   | {
       readonly kind: `title-generation-${"started" | Exclude<RunTitleGenerationState, "pending">}`;
-      readonly generationId: string;
     }
 );
 
@@ -236,23 +235,27 @@ function storedLifecycleEvent(event: LifecycleEvent) {
   });
 }
 
-/** A Run generates its title at most once, so its outcome key admits exactly one outcome event. */
-const storedTitleEvent = (
-  event: Extract<TimelineEvent, { readonly generationId: string }>,
-): StoredEvent => ({
+type TitleEvent = Extract<TimelineEvent, { readonly kind: `title-generation-${string}` }>;
+
+const isTitleEvent = (event: TimelineEvent): event is TitleEvent =>
+  event.kind.startsWith("title-generation-");
+
+/** A Run generates its title at most once, so its outcome key admits exactly one outcome event.
+ * It names no cause: the generation's id is its capability and never appears in Run reads. */
+const storedTitleEvent = (event: TitleEvent): StoredEvent => ({
   blockId: null,
   executionId: null,
   sourceKey:
     event.kind === "title-generation-started"
       ? "title-generation-started"
       : "title-generation-outcome",
-  causeId: event.generationId,
+  causeId: null,
 });
 
 function stored(event: Exclude<TimelineEvent, WaitEvent>) {
   return Effect.gen(function* (): Effect.fn.Return<StoredEvent> {
     if ("intentId" in event) return yield* storedDeliveryEvent(event);
-    if ("generationId" in event) return storedTitleEvent(event);
+    if (isTitleEvent(event)) return storedTitleEvent(event);
     if (isLifecycleEvent(event)) return yield* storedLifecycleEvent(event);
     switch (event.kind) {
       case "started":

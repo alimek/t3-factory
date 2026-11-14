@@ -422,8 +422,9 @@ Flow.
 
 - **Launch.** A top-level thread in the Project checkout (`root` strategy, also for a worktree Run) with the provider
   instance, model and options captured at Start, `interactionMode: "default"` and no `runtimeMode`, like a worker. Its
-  title is `Factory title · Run #<n> · <generation id>`, which never matches a worker's
-  `Factory #<n> · <position> <name>`. The request, with its key, is recorded when Start accepts the Run. Just before
+  title is `Factory title · Run #<n> · <Run id>`, which never matches a worker's
+  `Factory #<n> · <position> <name>`; its request key also names the Run. The request, with its key, is recorded
+  when Start accepts the Run. Just before
   dispatch Factory rechecks eligibility, marks the request sent and calls `t3_thread_launch` once. A definitive
   rejection fails the generation; a lost reply leaves it pending with no thread bound.
 - **Launch provenance and recovery.** A sent launch with no bound thread is never sent again, also after a restart.
@@ -433,7 +434,9 @@ Flow.
   deadline is abandoned; a thread T3 created for it stays an orphan in T3.
 - **Prompt.** The first message is the fixed built-in prompt (version 1). It asks for a title in the prompt's language
   of at most 120 code points, treats the Run prompt only as text to title, forbids reading, searching or editing files,
-  running commands and delegating, and carries the generation's opaque `titleGenerationId`. The Run prompt follows as
+  running commands and delegating, and carries the generation's opaque `titleGenerationId`. Factory keeps that
+  capability out of everything other clients and threads can read: Run reads, timeline events and the thread's T3
+  title and request key. The Run prompt follows as
   text with `[Image N: name]` labels; image bytes and attachments are never sent. The prohibitions are instructions,
   not enforcement: the model runs in the Project checkout with the user's T3 permissions.
 - **`factory_set_run_title`.** Possession of the `titleGenerationId` scopes the call to one Run's generation, the same

@@ -274,8 +274,8 @@ it("a pending generation launches one top-level title thread in the Project chec
   expect(launch).toStrictEqual({
     environmentId: fixture.t3.environmentId,
     projectId: fixture.project.projectId,
-    clientRequestId: expect.any(String),
-    title: `Factory title · Run #1 · ${capabilityFromLaunchPrompt(launch)}`,
+    clientRequestId: `factory-title:${started.value.id}`,
+    title: `Factory title · Run #1 · ${started.value.id}`,
     workspaceStrategy: { type: "root" },
     interactionMode: "default",
     modelSelection: {
@@ -286,6 +286,34 @@ it("a pending generation launches one top-level title thread in the Project chec
     message: expect.stringContaining("Improve search\nKeep it accessible."),
   });
   expect(launch.message).toContain("at most 120");
+});
+
+it("the title capability reaches only the title thread's prompt, never a Run read, the thread's T3 title or its request key", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const started = await fixture.f.startRun(fixture.input);
+  assert(started.ok);
+  const launch = await titleGenerationLaunched(fixture.world, started.value.id);
+  const capability = capabilityFromLaunchPrompt(launch);
+  const applied = await fixture.f.runtime.title({
+    arguments: { titleGenerationId: capability, title: "Search ranking" },
+  });
+  expect(applied.code).toBe("TITLE_APPLIED");
+
+  // Act
+  const run = await fixture.f.getRun(started.value.id);
+  const navigation = await fixture.f.listRunNavigation();
+
+  // Assert
+  assert(run.ok);
+  expect(titleEvents(run.value)).toStrictEqual([
+    { kind: "title-generation-started", blockId: null },
+    { kind: "title-generation-applied", blockId: null },
+  ]);
+  expect(JSON.stringify([started, run, navigation])).not.toContain(capability);
+  expect(launch.title).not.toContain(capability);
+  expect(launch.clientRequestId).not.toContain(capability);
 });
 
 it("a title thread's prompt carries image labels as text and its launch attaches no image", async (c) => {

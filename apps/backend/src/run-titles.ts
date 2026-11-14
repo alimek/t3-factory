@@ -266,7 +266,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
             const rows =
               yield* sql`UPDATE run_title_generations SET state='skipped',reason=${reason},ended_at=${time} WHERE id=${generationId} AND state='pending' AND launch_sent_at IS NULL RETURNING id`;
             if (!rows.length) return false;
-            yield* titleEvent(sql, runId, generationId, "skipped", time);
+            yield* titleEvent(sql, runId, "skipped", time);
             yield* recordDiagnostic(sql, runId, reason, time);
             return true;
           }),
@@ -284,7 +284,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
             const rows =
               yield* sql`UPDATE run_title_generations SET state=${state},reason=${reason},ended_at=${time} WHERE id=${generation.id} AND state='pending' RETURNING id`;
             if (!rows.length) return false;
-            yield* titleEvent(sql, generation.run_id, generation.id, state, time);
+            yield* titleEvent(sql, generation.run_id, state, time);
             yield* recordDiagnostic(sql, generation.run_id, reason, time);
             return true;
           }),
@@ -325,8 +325,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
           Effect.gen(function* () {
             const rows =
               yield* sql`UPDATE run_title_generations SET launch_sent_at=${time} WHERE id=${generation.id} AND state='pending' AND launch_sent_at IS NULL RETURNING id`;
-            if (rows.length)
-              yield* titleEvent(sql, generation.run_id, generation.id, "started", time);
+            if (rows.length) yield* titleEvent(sql, generation.run_id, "started", time);
             return rows.length > 0;
           }),
         );
@@ -531,7 +530,7 @@ export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes
             const appliedAt = new Date(time).toISOString();
             yield* sql`UPDATE runs SET title=${title},title_provenance='generated' WHERE id=${generation.run_id}`;
             yield* sql`UPDATE run_title_generations SET state='applied',generated_title=${title},ended_at=${appliedAt} WHERE id=${titleGenerationId}`;
-            yield* titleEvent(sql, generation.run_id, titleGenerationId, "applied", appliedAt);
+            yield* titleEvent(sql, generation.run_id, "applied", appliedAt);
             // An applied title shows the setting works, so an earlier diagnostic is stale.
             yield* sql`UPDATE run_title_settings SET diagnostic_run_id=NULL,diagnostic_message=NULL,diagnostic_at=NULL WHERE singleton=1`;
             return { reply: titleApplied(title), appliedTo: generation.run_id };
@@ -661,16 +660,10 @@ function generatedTitleProblem(title: string) {
 function titleEvent(
   sql: SqlClient.SqlClient,
   runId: string,
-  generationId: string,
   step: "started" | Exclude<RunTitleGeneration["state"], "pending">,
   observedAt: string,
 ) {
-  return appendTimelineEvent(sql, {
-    kind: `title-generation-${step}`,
-    runId,
-    generationId,
-    observedAt,
-  });
+  return appendTimelineEvent(sql, { kind: `title-generation-${step}`, runId, observedAt });
 }
 
 /** The setting's latest diagnostic, naming the Run whose generation was skipped by a failed
@@ -696,12 +689,14 @@ function titlePrompt(generationId: string, promptText: string) {
 
 /**
  * The title thread's launch: top-level in the Project checkout with the captured model, titled
- * so it can never match a worker's `Factory #<n> · <position> <name>`.
+ * so it can never match a worker's `Factory #<n> · <position> <name>`. T3 shows its title and
+ * request key to other clients, so both name the Run; only the prompt carries the capability.
  */
 function titleLaunchPayload(
   generationId: string,
   model: RunTitleModel,
   run: {
+    readonly id: string;
     readonly number: number;
     readonly prompt: StartPrompt;
     readonly project: Pick<FactoryProject, "environmentId" | "projectId">;
@@ -710,8 +705,8 @@ function titleLaunchPayload(
   return {
     environmentId: run.project.environmentId,
     projectId: run.project.projectId,
-    clientRequestId: `factory-title:${generationId}`,
-    title: `Factory title · Run #${run.number} · ${generationId}`,
+    clientRequestId: `factory-title:${run.id}`,
+    title: `Factory title · Run #${run.number} · ${run.id}`,
     workspaceStrategy: { type: "root" },
     interactionMode: "default",
     modelSelection: {
@@ -730,7 +725,7 @@ export function dropTitleGeneration(sql: SqlClient.SqlClient, runId: string) {
     const [dropped] = yield* sql<{
       id: string;
     }>`UPDATE run_title_generations SET state='dropped',reason='The Run was renamed before a generated title arrived.',ended_at=${time} WHERE run_id=${runId} AND state='pending' RETURNING id`;
-    if (dropped) yield* titleEvent(sql, runId, dropped.id, "dropped", time);
+    if (dropped) yield* titleEvent(sql, runId, "dropped", time);
   });
 }
 
@@ -752,11 +747,10 @@ export function cancelTitleGeneration(
 ) {
   return Effect.gen(function* () {
     const [ended] = yield* sql<{
-      id: string;
       state: "timed-out" | "cancelled";
-    }>`UPDATE run_title_generations SET state=CASE WHEN deadline_at<=${time} THEN 'timed-out' ELSE 'cancelled' END,reason=CASE WHEN deadline_at<=${time} THEN ${TIMED_OUT} ELSE ${CANCELLED[cutoff]} END,ended_at=${time} WHERE run_id=${runId} AND state='pending' RETURNING id,state`;
+    }>`UPDATE run_title_generations SET state=CASE WHEN deadline_at<=${time} THEN 'timed-out' ELSE 'cancelled' END,reason=CASE WHEN deadline_at<=${time} THEN ${TIMED_OUT} ELSE ${CANCELLED[cutoff]} END,ended_at=${time} WHERE run_id=${runId} AND state='pending' RETURNING state`;
     if (!ended) return;
-    yield* titleEvent(sql, runId, ended.id, ended.state, time);
+    yield* titleEvent(sql, runId, ended.state, time);
     if (ended.state === "timed-out") yield* recordDiagnostic(sql, runId, TIMED_OUT, time);
   });
 }
@@ -810,7 +804,7 @@ export function recordTitleGeneration(
     const launch = skipped ? null : JSON.stringify(titleLaunchPayload(id, model, run));
     yield* sql`INSERT INTO run_title_generations(id,run_id,state,reason,provider_instance_id,model_id,model_options_json,model_label,prompt_version,deadline_at,automatic_title,launch_payload_json,created_at,ended_at) VALUES(${id},${run.id},${skipped ? "skipped" : "pending"},${skipped?.reason ?? null},${model.providerInstanceId},${model.modelId},${JSON.stringify(model.modelOptions)},${capture.modelLabel},${RUN_TITLE_PROMPT_VERSION},${deadline},${run.title},${launch},${run.time},${skipped ? run.time : null})`;
     if (!skipped) return;
-    yield* titleEvent(sql, run.id, id, "skipped", run.time);
+    yield* titleEvent(sql, run.id, "skipped", run.time);
     if (skipped.diagnostic) yield* recordDiagnostic(sql, run.id, skipped.reason, run.time);
   });
 }
