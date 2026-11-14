@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/alimek/t3-factory/compare/v0.5.0...v0.6.0) (2026-11-14)
+
+
+### Features
+
+* add an optional Revisit instruction to Agent blocks ([#353](https://github.com/alimek/t3-factory/issues/353)) ([afde9a4](https://github.com/alimek/t3-factory/commit/afde9a4d07519353a06defec865981368a605ef8))
+* **backend:** remove Agents and Flows through Factory MCP ([#295](https://github.com/alimek/t3-factory/issues/295)) ([14afe00](https://github.com/alimek/t3-factory/commit/14afe00f89d3b1019e976f074f66ecb92cf932eb))
+* **frontend:** simplify the Run detail screen ([#303](https://github.com/alimek/t3-factory/issues/303)) ([521d507](https://github.com/alimek/t3-factory/commit/521d5079732223ad387a4f70c160383313b49b82))
+* generate Run titles with a cheap T3 model ([#311](https://github.com/alimek/t3-factory/issues/311)) ([79d23bb](https://github.com/alimek/t3-factory/commit/79d23bbd146816656884ea9ad900f2369d3733e1))
+
+
+### Bug Fixes
+
+* **backend:** settle a worker thread after its Continuation's response ([#352](https://github.com/alimek/t3-factory/issues/352)) ([0dddf5c](https://github.com/alimek/t3-factory/commit/0dddf5c7a79dd279177c863aa33a9e842cd8e252))
+
 ## [0.5.0](https://github.com/alimek/t3-factory/compare/v0.4.0...v0.5.0) (2026-11-13)
 
 
