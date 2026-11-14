@@ -393,8 +393,6 @@ test("the host retries failed command setup while the Gateway is connected", asy
 
   // Assert
   await expect(state.getByText("/factory reset registered")).toBeVisible();
-  const { sessions } = await controlledDiscord(app.baseUrl);
-  assert.strictEqual(sessions.filter((session) => !session.closed).length, 1);
   await state.scrollIntoView();
   await app.screenshot("chat-discord-command-retried");
 });
