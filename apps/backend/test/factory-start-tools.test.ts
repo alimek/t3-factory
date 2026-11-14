@@ -1,6 +1,7 @@
 import { assert, expect, it } from "@effect/vitest";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { failure } from "../src/result.ts";
 import { prepared } from "./support/prepared-runner.ts";
 import { factoryMcpClient, toolReply } from "./support/factory-mcp.ts";
 import { enableRunTitles } from "./support/scenarios.ts";
@@ -77,6 +78,27 @@ it("the Project listing tells a conversation that Generate Run titles is on, so 
   // Assert
   expect(result.isError).toBe(false);
   expect(toolReply(result).generateRunTitles).toBe(true);
+});
+
+it("a Project listing that cannot read Generate Run titles reports it unknown with a problem instead of off, so the review still says the title may be replaced", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  await enableRunTitles(fixture.f);
+  const client = await factoryMcpClient(c, {
+    ...fixture.f,
+    getRunTitleSetting: async () =>
+      failure("internal", "Factory could not complete the operation."),
+  });
+
+  // Act
+  const result = await client.callTool({ name: "factory_list_projects", arguments: {} });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const reply = toolReply(result);
+  expect(reply.generateRunTitles).toBeNull();
+  expect(reply.problem).toContain("Generate Run titles");
+  expect(reply.projects).toHaveLength(1);
 });
 
 it("the conversation's repository root identifies its Project while another clone stays distinct", async (c) => {

@@ -7,6 +7,7 @@ import type {
   OperationError,
   Result,
   RunDetail,
+  RunTitleSetting,
 } from "@t3-factory/contracts";
 
 /** What the launch tools call: the Project catalog, the Run title setting and the shared Start operation. */
@@ -20,7 +21,7 @@ export const launchTools: Tool[] = [
   {
     name: "factory_list_projects",
     description:
-      "List Factory's Projects in the current T3 connection and environment after a fresh recheck, with their availability. Pass workspaceRoot, the canonical repository root of this conversation's Project (projectWorkspaceRoot from T3's t3_worktree_status, also in a worktree), to match it exactly; match explains a missing, ambiguous or unavailable Project. Factory never substitutes or registers a Project. generateRunTitles says whether Generate Run titles is on: a Run started now may then have its automatic title replaced by a generated title shortly after Start.",
+      "List Factory's Projects in the current T3 connection and environment after a fresh recheck, with their availability. Pass workspaceRoot, the canonical repository root of this conversation's Project (projectWorkspaceRoot from T3's t3_worktree_status, also in a worktree), to match it exactly; match explains a missing, ambiguous or unavailable Project. Factory never substitutes or registers a Project. generateRunTitles says whether Generate Run titles is on: a Run started now may then have its automatic title replaced by a generated title shortly after Start. It is null when Factory could not read the setting, which problem explains; treat that like on, since the title may still be replaced.",
     inputSchema: {
       type: "object",
       properties: {
@@ -105,6 +106,17 @@ function matchProject(projects: readonly FactoryProject[], workspaceRoot: string
   };
 }
 
+/** An unread setting is unknown, never off: a Run started now may still get a generated title, so
+ * the listing says so in `problem` and leaves `generateRunTitles` null. */
+function runTitlesReply(titles: Result<RunTitleSetting>, startProblem: string | null) {
+  if (titles.ok) return { problem: startProblem, generateRunTitles: titles.value.enabled };
+  const titlesProblem = `Factory could not read Generate Run titles (${titles.error.message}), so a Run started now may still have its title replaced by a generated title.`;
+  return {
+    problem: startProblem === null ? titlesProblem : `${startProblem} ${titlesProblem}`,
+    generateRunTitles: null,
+  };
+}
+
 async function listProjects(factory: LaunchOperations, args: Record<string, unknown>) {
   const { workspaceRoot } = args;
   if (
@@ -137,7 +149,7 @@ async function listProjects(factory: LaunchOperations, args: Record<string, unkn
             project.environmentId === context.environmentId,
         )
       : [];
-  const problem = !ready
+  const startProblem = !ready
     ? "Factory's T3 connection is not ready. Recheck it in Factory before starting a Run."
     : catalog.ok
       ? catalog.value.problem
@@ -149,13 +161,12 @@ async function listProjects(factory: LaunchOperations, args: Record<string, unkn
       workspaceRoot,
       availability,
     })),
-    problem,
-    generateRunTitles: titles.ok && titles.value.enabled,
+    ...runTitlesReply(titles, startProblem),
     ...(typeof workspaceRoot === "string"
       ? {
           match: ready
             ? matchProject(projects, workspaceRoot)
-            : { status: "unavailable", explanation: problem },
+            : { status: "unavailable", explanation: startProblem },
         }
       : {}),
   });
