@@ -444,9 +444,9 @@ function ApplicationReplacementNotice({ application }: { application: string }) 
       Factory operates as application {application}. If the new token belongs to another Discord
       application, Factory treats it as an application replacement when it next connects: the shared
       conversations are cleared, the old bot&apos;s waiting reviews and buttons can never confirm
-      again, even if you switch back, and its earlier messages are no longer updated. Runs that still
-      need reporting get one new card from the new bot. A new token of the same application keeps
-      everything.
+      again, even if you switch back, and its earlier messages are no longer updated. Runs that
+      still need reporting get one new card from the new bot. A new token of the same application
+      keeps everything.
     </Notice>
   );
 }

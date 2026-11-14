@@ -251,7 +251,11 @@ export const makeDiscordGateway = (apiUrl: string) =>
           const { client } = yield* gatewayClient(apiUrl);
           const readiness = yield* ready(client, connection.token);
           if (!readiness.ready)
-            return { outcome: readiness.result.outcome, applicationId: null, message: readiness.result.message };
+            return {
+              outcome: readiness.result.outcome,
+              applicationId: null,
+              message: readiness.result.message,
+            };
           return {
             outcome: "verified",
             applicationId: readiness.applicationId,

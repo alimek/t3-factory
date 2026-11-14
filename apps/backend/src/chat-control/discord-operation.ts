@@ -473,8 +473,7 @@ export const makeDiscordOperation = (
           state: sqliteChatState(sql, Effect.runPromise),
           adapter: (config) => new FactoryDiscordAdapter(config),
         },
-        (session) =>
-          Effect.andThen(adoptApplication(sql, session.applicationId), serve(session)),
+        (session) => Effect.andThen(adoptApplication(sql, session.applicationId), serve(session)),
       );
 
     const supervise = Effect.gen(function* () {
