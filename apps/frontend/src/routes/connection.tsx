@@ -1,14 +1,19 @@
 import { MutationGate } from "@/client-gate";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { T3Connection } from "@t3-factory/contracts";
-import { Hourglass, Info, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
+import { Hourglass, TriangleAlert, Unplug, type LucideIcon } from "lucide-react";
 import { useClientScope } from "../client-scope.ts";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { fieldLabelClass } from "@/components/page";
 import { Notice, NoticeButton } from "@/components/notice";
+import {
+  SettingsDetailRow,
+  SettingsDisclosure,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+} from "@/components/settings-page";
 import { api } from "../api.ts";
 import {
   ConnectionStateBadge,
@@ -116,37 +121,137 @@ export function ConnectionSettingsPanel() {
   const { connection, presentation } = useConnectionState();
   const host = useClientScope() === "host";
   const operation = useConnectionOperation();
+  const authorizable = host && isAuthorizable(connection, presentation);
   return (
-    <div className="grid gap-4" aria-live="polite" aria-busy={operation.busy}>
-      <ConnectionHeading presentation={presentation} />
-      <HostSetupNotice />
-      <StatusNotice host={host} operation={operation} />
-      <OperationFeedback connection={connection} operation={operation} />
-      <ConnectionDetails connection={connection} presentation={presentation} host={host} />
-      {host ? (
-        <HostConnectionControls operation={operation} />
-      ) : (
-        <RemoteConnectionActions
-          presentation={presentation}
-          busy={operation.busy}
-          onRecheck={operation.recheck}
-        />
-      )}
+    <div aria-live="polite" aria-busy={operation.busy}>
+      <SettingsPage
+        title="T3 connection"
+        description="Factory uses the T3 instance on its host to list projects, start Runs and follow their threads."
+        badge={<ConnectionStateBadge presentation={presentation} />}
+        hostManaged={!host}
+        action={
+          <MutationGate>
+            <Button
+              type="button"
+              variant={presentation === "ready" ? "outline" : "default"}
+              disabled={operation.busy}
+              onClick={operation.recheck}
+            >
+              Check again
+            </Button>
+          </MutationGate>
+        }
+      >
+        <StatusNotice host={host} operation={operation} />
+        <OperationFeedback connection={connection} operation={operation} />
+        <ContractProblems connection={connection} />
+        <ConnectionRows host={host} authorizable={authorizable} operation={operation} />
+        <Diagnostics connection={connection} />
+        {(authorizable || !host) && (
+          <p className="text-sm text-muted-foreground">
+            {host
+              ? "Authorizing opens T3’s consent page in a browser on this computer; approve access there."
+              : "When T3 needs approval, this device can open the consent page in the host’s browser."}
+          </p>
+        )}
+      </SettingsPage>
     </div>
   );
 }
 
-/** The state's notice; waiting authorization offers to reopen it on the host instead of a recheck. */
+function isAuthorizable(connection: T3Connection | null, presentation: ConnectionPresentation) {
+  return presentation === "authorization-required" || !!connection?.authorizationContext;
+}
+
+/** Only the host edits the address and authorizes; each action sits on the row it changes. */
+function ConnectionRows({
+  host,
+  authorizable,
+  operation,
+}: {
+  host: boolean;
+  authorizable: boolean;
+  operation: Operation;
+}) {
+  const { connection, presentation } = useConnectionState();
+  const [editing, setEditing] = useState(false);
+  const showEndpointForm = host && (editing || (!!connection && !connection.endpoint));
+  const contract = connection?.contract;
+  return (
+    <SettingsGroup label="Connection">
+      <SettingsDetailRow
+        label="Address"
+        mono={!!connection?.endpoint}
+        value={addressText(connection, host)}
+        action={
+          host &&
+          !showEndpointForm && (
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="Edit address"
+              disabled={operation.busy}
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </Button>
+          )
+        }
+      />
+      {showEndpointForm && (
+        <EndpointForm
+          connection={connection}
+          busy={operation.busy}
+          onSave={(endpoint) =>
+            void operation
+              .act(() => api.configureConnection({ endpoint }))
+              .then((saved) => {
+                if (saved) setEditing(false);
+              })
+          }
+        />
+      )}
+      <SettingsDetailRow
+        label="T3 version"
+        value={contract ? `${contract.serverName} ${contract.serverVersion}` : "—"}
+      />
+      <SettingsDetailRow
+        label="Authorization"
+        value={authorizationText(connection, presentation)}
+        action={
+          authorizable && (
+            <MutationGate>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={operation.busy || !connection?.endpoint}
+                onClick={() => void operation.act(api.authorizeConnection)}
+              >
+                {authorizeLabel(connection)}
+              </Button>
+            </MutationGate>
+          )
+        }
+      />
+      <SettingsDetailRow label="Last checked" value={lastChecked(connection, presentation)} />
+    </SettingsGroup>
+  );
+}
+
+/** The state's notice; waiting authorization offers to reopen it on the host. */
 function StatusNotice({ host, operation }: { host: boolean; operation: Operation }) {
   const { connection, loadError, presentation } = useConnectionState();
   const key = noticeKey(connection, presentation);
+  const notice = notices[key];
+  if (!notice) return null;
   const opens = key === "pending" || (!host && key === "authorization-required");
   return (
-    <ConnectionNotice
-      notice={notices[key]}
-      help={loadError || (host ? undefined : remoteHelp[key])}
+    <Notice
+      tone={notice.tone}
+      icon={notice.icon}
+      title={notice.title}
       action={
-        opens ? (
+        opens && (
           <MutationGate>
             <NoticeButton
               disabled={operation.busy || !connection?.endpoint}
@@ -155,15 +260,11 @@ function StatusNotice({ host, operation }: { host: boolean; operation: Operation
               Open authorization on server
             </NoticeButton>
           </MutationGate>
-        ) : (
-          <MutationGate>
-            <NoticeButton disabled={operation.busy} onClick={operation.recheck}>
-              Check again
-            </NoticeButton>
-          </MutationGate>
         )
       }
-    />
+    >
+      {loadError || (host ? undefined : remoteHelp[key]) || notice.help}
+    </Notice>
   );
 }
 
@@ -191,176 +292,47 @@ function OperationFeedback({
   );
 }
 
-/** Only the host edits the address; a remote client never sees the endpoint form. */
-function HostConnectionControls({ operation }: { operation: Operation }) {
-  const { connection, presentation } = useConnectionState();
-  const [editing, setEditing] = useState(false);
-  const showEndpointForm = editing || (!!connection && !connection.endpoint);
+/** Why T3 failed the connection contract; the incompatible state's explanation points here. */
+function ContractProblems({ connection }: { connection: T3Connection | null }) {
+  const problems = connection?.contract?.problems ?? [];
+  if (problems.length === 0) return null;
   return (
-    <>
-      {showEndpointForm && (
-        <EndpointForm
-          connection={connection}
-          busy={operation.busy}
-          onSave={(endpoint) =>
-            void operation
-              .act(() => api.configureConnection({ endpoint }))
-              .then((saved) => {
-                if (saved) setEditing(false);
-              })
-          }
+    <ul className="list-inside list-disc text-sm text-muted-foreground">
+      {problems.map((problem) => (
+        <li key={problem}>{problem}</li>
+      ))}
+    </ul>
+  );
+}
+
+function Diagnostics({ connection }: { connection: T3Connection | null }) {
+  const contract = connection?.contract;
+  if (!contract) return null;
+  return (
+    <SettingsDisclosure
+      label="Diagnostics"
+      hint={`Environment ID · ${contract.tools.length} tool schemas inspected`}
+    >
+      <div className="divide-y overflow-hidden rounded-lg border bg-background">
+        <SettingsDetailRow
+          label="Environment ID"
+          value={contract.environmentId ?? "—"}
+          mono={!!contract.environmentId}
+          {...(contract.environmentId ? { copy: contract.environmentId } : {})}
         />
-      )}
-      <HostConnectionActions
-        connection={connection}
-        presentation={presentation}
-        busy={operation.busy}
-        onRecheck={operation.recheck}
-        {...(showEndpointForm ? {} : { onEditAddress: () => setEditing(true) })}
-        onAuthorize={() => void operation.act(api.authorizeConnection)}
-      />
-    </>
-  );
-}
-
-/** Approved remote clients see host setup, but only the host changes it. */
-function HostSetupNotice() {
-  if (useClientScope() !== "remote") return null;
-  return (
-    <Notice tone="info" icon={Info} title="Managed on the Factory host">
-      The T3 address and its authorization live on the server computer and are changed there. This
-      device shows their current status; when T3 needs approval it can open authorization in the
-      host’s browser.
-    </Notice>
-  );
-}
-
-function HostConnectionActions({
-  connection,
-  presentation,
-  busy,
-  onRecheck,
-  onEditAddress,
-  onAuthorize,
-}: {
-  connection: T3Connection | null;
-  presentation: ConnectionPresentation;
-  busy: boolean;
-  onRecheck: () => void;
-  onEditAddress?: () => void;
-  onAuthorize: () => void;
-}) {
-  const authorizable =
-    presentation === "authorization-required" || !!connection?.authorizationContext;
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <MutationGate>
-          <Button
-            type="button"
-            variant={presentation === "ready" ? "outline" : "default"}
-            disabled={busy}
-            onClick={onRecheck}
-          >
-            Recheck
-          </Button>
-        </MutationGate>
-        {onEditAddress && (
-          <Button type="button" variant="outline" disabled={busy} onClick={onEditAddress}>
-            Edit address
-          </Button>
-        )}
-        {authorizable && (
-          <MutationGate>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy || !connection?.endpoint}
-              onClick={onAuthorize}
-            >
-              {authorizeLabel(connection)}
-            </Button>
-          </MutationGate>
-        )}
+        <SettingsDetailRow label="Tool schemas" value={`${contract.tools.length} inspected`} />
       </div>
-      <p className="text-2xs tracking-label text-subtle-foreground">
-        Authorize opens a browser on the computer running the backend. Approve access in T3 there;
-        its loopback callback cannot be completed from a different device. Starting a new
-        authorization replaces a pending one. Harness approvals remain in T3, and Factory reconnects
-        automatically.
+      <p>
+        Factory checks Project, Agent settings and structured-report support before Start, without
+        an onboarding workload.
       </p>
-    </>
+    </SettingsDisclosure>
   );
 }
 
 function authorizeLabel(connection: T3Connection | null) {
   if (connection?.authorizationPending) return "Start new authorization";
-  return connection?.authorizationContext
-    ? "Reauthorize on backend host"
-    : "Authorize on backend host";
-}
-
-function RemoteConnectionActions({
-  presentation,
-  busy,
-  onRecheck,
-}: {
-  presentation: ConnectionPresentation;
-  busy: boolean;
-  onRecheck: () => void;
-}) {
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <MutationGate>
-          <Button
-            type="button"
-            variant={presentation === "ready" ? "outline" : "default"}
-            disabled={busy}
-            onClick={onRecheck}
-          >
-            Recheck
-          </Button>
-        </MutationGate>
-      </div>
-      <p className="text-2xs tracking-label text-subtle-foreground">
-        Opening authorization shows T3’s consent page in a browser on the Factory host; approve
-        there. From this device you can’t change the T3 address or replace a working authorization.
-      </p>
-    </>
-  );
-}
-
-function ConnectionHeading({ presentation }: { presentation: ConnectionPresentation }) {
-  return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="text-title font-semibold text-foreground">T3 connection</h2>
-        <ConnectionStateBadge presentation={presentation} />
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Factory talks to the T3 instance on its host to list projects, start Runs and follow their
-        threads. One connection for the whole app — there is no per-project setup.
-      </p>
-    </div>
-  );
-}
-
-function ConnectionNotice({
-  notice,
-  help,
-  action,
-}: {
-  notice: NoticeCopy | undefined;
-  help: string | undefined;
-  action: ReactNode;
-}) {
-  if (!notice) return null;
-  return (
-    <Notice tone={notice.tone} icon={notice.icon} title={notice.title} action={action}>
-      {help || notice.help}
-    </Notice>
-  );
+  return connection?.authorizationContext ? "Reauthorize" : "Authorize on backend host";
 }
 
 function EndpointForm({
@@ -374,37 +346,41 @@ function EndpointForm({
 }) {
   const { endpoint, setEndpoint } = useConnectionEndpoint(connection);
   return (
-    <form
-      className="grid max-w-xl gap-1.5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSave(endpoint);
-      }}
-    >
-      <Label htmlFor="t3-endpoint" className={fieldLabelClass}>
-        T3 MCP endpoint
-      </Label>
-      <div className="flex gap-2">
-        <Input
-          id="t3-endpoint"
-          type="url"
-          required
-          value={endpoint}
-          placeholder="http://127.0.0.1:3773/mcp"
-          className="bg-background font-mono text-xs"
-          onChange={(event) => setEndpoint(event.target.value)}
-        />
-        <MutationGate>
-          <Button type="submit" disabled={busy}>
-            Save endpoint
-          </Button>
-        </MutationGate>
-      </div>
-      <p className="text-2xs tracking-label text-subtle-foreground">
-        Use HTTPS, or HTTP on loopback. Do not include tokens or credentials in the URL.
-      </p>
-    </form>
+    <SettingsRow
+      title="T3 MCP endpoint"
+      description="Use HTTPS, or HTTP on loopback. Do not include tokens or credentials in the URL."
+      control={(text) => (
+        <form
+          className="flex w-96 max-w-full gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave(endpoint);
+          }}
+        >
+          <Input
+            type="url"
+            required
+            value={endpoint}
+            placeholder="http://127.0.0.1:3773/mcp"
+            aria-labelledby={text.title}
+            aria-describedby={text.description}
+            className="bg-background font-mono text-xs"
+            onChange={(event) => setEndpoint(event.target.value)}
+          />
+          <MutationGate>
+            <Button type="submit" disabled={busy}>
+              Save endpoint
+            </Button>
+          </MutationGate>
+        </form>
+      )}
+    />
   );
+}
+
+function addressText(connection: T3Connection | null, host: boolean) {
+  if (connection?.endpoint) return connection.endpoint;
+  return host ? "Not configured" : "Not configured — save the T3 address on the Factory host";
 }
 
 function authorizationText(connection: T3Connection | null, presentation: ConnectionPresentation) {
@@ -420,59 +396,4 @@ function lastChecked(connection: T3Connection | null, presentation: ConnectionPr
   return presentation !== "ready" && connection?.explanation
     ? `${at} — ${connection.explanation}`
     : at;
-}
-
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="col-span-2 grid grid-cols-subgrid border-b py-2.5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-foreground">{children}</dd>
-    </div>
-  );
-}
-
-function ConnectionDetails({
-  connection,
-  presentation,
-  host,
-}: {
-  connection: T3Connection | null;
-  presentation: ConnectionPresentation;
-  host: boolean;
-}) {
-  const contract = connection?.contract;
-  return (
-    <div className="grid gap-2">
-      <dl className="grid grid-cols-[10.5rem_1fr] text-sm">
-        <DetailRow label="Address">
-          {connection?.endpoint ? (
-            <code className="font-mono text-label">{connection.endpoint}</code>
-          ) : host ? (
-            "Not configured"
-          ) : (
-            "Not configured — save the T3 address on the Factory host"
-          )}
-        </DetailRow>
-        <DetailRow label="T3 version">
-          {contract ? `${contract.serverName} ${contract.serverVersion}` : "—"}
-        </DetailRow>
-        <DetailRow label="Authorization">{authorizationText(connection, presentation)}</DetailRow>
-        <DetailRow label="Environment">{contract?.environmentId ?? "—"}</DetailRow>
-        <DetailRow label="Last checked">{lastChecked(connection, presentation)}</DetailRow>
-      </dl>
-      {contract && contract.problems.length > 0 && (
-        <ul className="list-inside list-disc text-sm text-muted-foreground">
-          {contract.problems.map((problem) => (
-            <li key={problem}>{problem}</li>
-          ))}
-        </ul>
-      )}
-      {contract && (
-        <p className="text-2xs tracking-label text-subtle-foreground">
-          {contract.tools.length} live tool schemas inspected. Factory checks Project, Agent
-          settings and structured-report support before Start, without an onboarding workload.
-        </p>
-      )}
-    </div>
-  );
 }
