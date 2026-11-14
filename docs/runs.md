@@ -279,16 +279,18 @@ fixed Human exits their old exits were mapped to.
   **Follow active** and **Auto-arrange** are icon buttons with tooltips; the keyboard button beside them opens the canvas
   shortcuts with their current bindings and a link to the cheat sheet. The Flow editor keeps its labelled controls and
   keyboard hint.
-- One docked **inspector** beside the canvas shows the **Run overview** while no block is selected: attention, started blocks
+- One docked **inspector** beside the canvas shows the **Run overview** until a block is selected or the Run title is
+  inspected: attention, started blocks
   with their current visit or accepted exit, branches and pull requests, the initial prompt and block activations, with project,
   Flow revision, workspace and work periods under a closed **Workspace & observation** section. Selecting a block shows it in the
   same panel: its Needs input or Problem first (answers and Problem actions work here), its current visit and working report,
   the results handed off to an Agent block (**Received**), activations, exits, **Open thread in T3**, and its T3 thread and
-  execution ids under a closed **Technical details** section.
-  **Esc** or the **Overview** breadcrumb clears the selection. Selecting never answers or clears attention, and there is no
-  editing here.
+  execution ids under a closed **Technical details** section. Pressing the Flow input's
+  [Run title](#run-title-generation) line shows the Run title there instead; it selects no block.
+  **Esc** or the **Overview** breadcrumb returns from the block or the Run title to the overview. Selecting never answers
+  or clears attention, and there is no editing here.
 - The inspector toggle in the top bar (default **Mod+.**, see [Keyboard shortcuts](keyboard-shortcuts.md)) shows or hides the
-  panel. The choice is kept per browser profile on this device across block selection, Runs and reload; until chosen, the
+  panel. The choice is kept per browser profile on this device across what is inspected, Runs and reload; until chosen, the
   inspector opens from 1280 px wide. While it is hidden, pending attention shows below the canvas.
 - Block results, including a completed Run's Final result, appear as **result cards** in the inspector and the timeline:
   block, visit, exit, deliveries and acceptance time around the result rendered as Markdown (CommonMark with GitHub tables
