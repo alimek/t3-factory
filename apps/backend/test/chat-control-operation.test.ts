@@ -7,6 +7,7 @@ import {
   discordBot,
   discordConnectionSave,
   discordSettingsWhen,
+  openSessions,
   OTHER_CHANNEL,
   servingAgain,
   statusIs,
@@ -15,8 +16,6 @@ import {
 import { factoryHarness } from "./support/factory.ts";
 
 const COMMANDS = /^\/api\/v10\/applications\/\d+\/commands$/;
-const openSessions = (world: Awaited<ReturnType<typeof chatControlWorld>>) =>
-  world.discord.sessions.filter((session) => !session.closed);
 
 it("Access keeps Discord IDs beyond JavaScript's exact integer range exactly as entered", async (c) => {
   // Arrange
@@ -103,7 +102,11 @@ it("Chat control does not turn On without a complete Language model", async (c) 
   // Assert
   assert(!on.ok);
   expect(on.error.issues).toStrictEqual([
-    { code: "chat_control_incomplete", path: "model.model", message: "Save the Language model name." },
+    {
+      code: "chat_control_incomplete",
+      path: "model.model",
+      message: "Save the Language model name.",
+    },
   ]);
   const read = await factory.getDiscordSettings();
   assert(read.ok);
@@ -160,7 +163,10 @@ it("a token of another application is rejected while On and registers no command
   const { discord, factory } = await chatControlWorld(c);
   discord.addBot({ token: "other-application-token", applicationId: "987654321098765432" });
   const replaced = await factory.updateDiscordConnection(
-    discordConnectionSave({ revision: 1, token: { kind: "replace", value: "other-application-token" } }),
+    discordConnectionSave({
+      revision: 1,
+      token: { kind: "replace", value: "other-application-token" },
+    }),
   );
   assert(replaced.ok);
 
@@ -248,7 +254,7 @@ it("retrying a rejected connection while On reconnects through the same supervis
   // Assert
   assert(retried.ok);
   await world.discord.request("PUT", COMMANDS);
-  expect(openSessions(world)).toHaveLength(1);
+  expect(openSessions(world.discord)).toHaveLength(1);
   expect(await discordSettingsWhen(world.factory, statusIs("connected"))).toMatchObject({
     latestCheck: null,
   });
@@ -316,7 +322,9 @@ it("replacing the bot token of the same application while On reconnects with the
   // Assert
   assert(rotated.ok);
   await world.discord.request("PUT", COMMANDS, 2);
-  expect(openSessions(world).map((session) => session.token)).toStrictEqual(["rotated-bot-token"]);
+  expect(openSessions(world.discord).map((session) => session.token)).toStrictEqual([
+    "rotated-bot-token",
+  ]);
 });
 
 it("removing a required Language model value while On is refused", async (c) => {

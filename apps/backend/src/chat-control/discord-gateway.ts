@@ -205,16 +205,18 @@ const establish = (client: Client, connection: DiscordConnection) =>
 
 /** Logs in and waits at most 30 seconds for a ready Gateway session of the configured application. */
 export const ready = (client: Client, connection: DiscordConnection) =>
-  Effect.map(establish(client, connection).pipe(Effect.timeoutOption(READY_TIMEOUT)), (established) =>
-    Option.getOrElse(established, () =>
-      result(
-        "timed-out",
-        `The Gateway session did not become ready within ${Duration.toSeconds(READY_TIMEOUT)} seconds.`,
+  Effect.map(
+    establish(client, connection).pipe(Effect.timeoutOption(READY_TIMEOUT)),
+    (established) =>
+      Option.getOrElse(established, () =>
+        result(
+          "timed-out",
+          `The Gateway session did not become ready within ${Duration.toSeconds(READY_TIMEOUT)} seconds.`,
+        ),
       ),
-    ),
   );
 
-export type GatewaySession<Adapter extends DiscordAdapter> = Effect.Success<
+type GatewaySession<Adapter extends DiscordAdapter> = Effect.Success<
   ReturnType<typeof gatewaySession<Adapter>>
 >;
 

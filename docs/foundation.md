@@ -53,6 +53,11 @@ and restricted OAuth credentials live outside project repositories.
   Chat control Off and an empty section. No other data changes. Migration `082` adds the Discord connection
   section's row the same way: Application ID, Public Key, revision, save time, the latest connection check's
   revision, time, outcome and message, and the name of its bot token's credential file; it starts empty.
+  Migration `083` adds the Access section (its revision row, allowed users, allowed channels and the
+  Project IDs each grants, without a foreign key so an unknown Project stays visible), the persisted
+  rejection that keeps an On state from reconnecting until Retry, one conversation generation per
+  application and Discord thread, content-free markers of Discord messages and commands already taken,
+  and Chat SDK subscriptions and expiring key-value state. Access starts empty. No other data changes.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

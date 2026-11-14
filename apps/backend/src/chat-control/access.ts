@@ -14,7 +14,8 @@ type GrantRow = { channel_id: string; project_id: string | null; known: number |
 /** The saved Access section with the granted Projects Factory still knows. */
 export const readAccess = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
-    const [row] = yield* sql<AccessRow>`SELECT revision,saved_at FROM chat_access_settings WHERE singleton=1`;
+    const [row] =
+      yield* sql<AccessRow>`SELECT revision,saved_at FROM chat_access_settings WHERE singleton=1`;
     const users = yield* sql<{
       user_id: string;
     }>`SELECT user_id FROM chat_access_users ORDER BY position`;
@@ -45,7 +46,11 @@ export const readAccess = (sql: SqlClient.SqlClient) =>
  * The Factory Projects a parent channel grants to an allowed user right now: empty unless the user
  * and the channel are both listed. A granted Project Factory no longer knows grants nothing.
  */
-export const grantedProjects = (sql: SqlClient.SqlClient, userId: string, parentChannelId: string) =>
+export const grantedProjects = (
+  sql: SqlClient.SqlClient,
+  userId: string,
+  parentChannelId: string,
+) =>
   Effect.map(
     sql<{ project_id: string }>`SELECT g.project_id FROM chat_access_channel_projects g
       JOIN projects p ON p.id=g.project_id
@@ -55,8 +60,7 @@ export const grantedProjects = (sql: SqlClient.SqlClient, userId: string, parent
     (rows) => rows.map((row) => row.project_id),
   );
 
-const STALE_EDIT =
-  "Access changed since these edits began. Review the saved Access and try again.";
+const STALE_EDIT = "Access changed since these edits began. Review the saved Access and try again.";
 
 /**
  * Commits the whole Access section as one revision. Authorization reads the committed rows on every
@@ -66,7 +70,8 @@ const STALE_EDIT =
 export const updateAccess = (sql: SqlClient.SqlClient, input: UpdateDiscordAccessInput) =>
   sql.withTransaction(
     Effect.gen(function* (): Effect.fn.Return<Result<undefined>, unknown> {
-      const [row] = yield* sql<AccessRow>`SELECT revision,saved_at FROM chat_access_settings WHERE singleton=1`;
+      const [row] =
+        yield* sql<AccessRow>`SELECT revision,saved_at FROM chat_access_settings WHERE singleton=1`;
       if (row!.revision !== input.revision) return failure("conflict", STALE_EDIT);
       const before = yield* readAccess(sql);
       const known = new Set(
@@ -77,7 +82,8 @@ export const updateAccess = (sql: SqlClient.SqlClient, input: UpdateDiscordAcces
         channel.projectIds.flatMap((projectId, position) =>
           known.has(projectId) ||
           before.channels.some(
-            (saved) => saved.channelId === channel.channelId && saved.projectIds.includes(projectId),
+            (saved) =>
+              saved.channelId === channel.channelId && saved.projectIds.includes(projectId),
           )
             ? []
             : [
@@ -89,8 +95,7 @@ export const updateAccess = (sql: SqlClient.SqlClient, input: UpdateDiscordAcces
               ],
         ),
       );
-      if (issues.length > 0)
-        return failure("validation", "Choose Projects Factory knows.", issues);
+      if (issues.length > 0) return failure("validation", "Choose Projects Factory knows.", issues);
       const savedAt = yield* now;
       yield* sql`DELETE FROM chat_access_channel_projects`;
       yield* sql`DELETE FROM chat_access_channels`;

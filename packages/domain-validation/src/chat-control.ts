@@ -272,8 +272,8 @@ export function validateCheckDiscordConnection(
   return revision.ok ? { ok: true, value: { revision: revision.value } } : revision;
 }
 
-export const DISCORD_ACCESS_USER_LIMIT = 100;
-export const DISCORD_ACCESS_CHANNEL_LIMIT = 100;
+const DISCORD_ACCESS_USER_LIMIT = 100;
+const DISCORD_ACCESS_CHANNEL_LIMIT = 100;
 const PROJECT_ID_LIMIT = 200;
 
 /** Decimal Discord IDs at `path`; a repeated ID is refused rather than silently merged. */
@@ -332,7 +332,8 @@ function parseChannels(value: unknown): Result<DiscordAccessChannel[]> {
     );
   const channels: DiscordAccessChannel[] = [];
   for (const [index, item] of value.entries()) {
-    const fields = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const fields =
+      typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
     const channelId =
       typeof fields.channelId === "string"
         ? validateDiscordId(

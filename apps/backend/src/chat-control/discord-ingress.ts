@@ -152,7 +152,9 @@ export function makeIngress(
   const stillPermitted = (invocation: Pending) =>
     Effect.gen(function* () {
       if (!session.operating() || !evidence.isCurrent(invocation.evidence)) return false;
-      if (!(yield* permittedProjects(invocation.requesterId, invocation.conversation.parentChannelId)))
+      if (
+        !(yield* permittedProjects(invocation.requesterId, invocation.conversation.parentChannelId))
+      )
         return false;
       return yield* generations.isCurrent(invocation.conversation, invocation.generation);
     });
@@ -187,7 +189,10 @@ export function makeIngress(
     });
 
   /** Whether the requester may act in `thread` now, from the interaction and maintained evidence. */
-  const requesterAccess = (interaction: ChatInputCommandInteraction<"cached" | "raw">, thread: ThreadChannel) =>
+  const requesterAccess = (
+    interaction: ChatInputCommandInteraction<"cached" | "raw">,
+    thread: ThreadChannel,
+  ) =>
     Effect.gen(function* (): Effect.fn.Return<Access, unknown> {
       const userId = interaction.user.id;
       if (!thread.parentId || !(yield* permittedProjects(userId, thread.parentId))) return "denied";
@@ -197,7 +202,9 @@ export function makeIngress(
         return "permitted";
       const token = evidence.token(interaction.guildId);
       const member = yield* Effect.result(
-        Effect.tryPromise(() => thread.members.fetch({ member: userId, force: true, cache: false })),
+        Effect.tryPromise(() =>
+          thread.members.fetch({ member: userId, force: true, cache: false }),
+        ),
       );
       if (member._tag === "Success") {
         if (evidence.isCurrent(token)) evidence.joined(interaction.guildId, thread.id, userId);
@@ -278,7 +285,8 @@ export function makeIngress(
     interaction: (interaction: Interaction) =>
       Effect.gen(function* () {
         if (!session.operating() || !interaction.inGuild()) return;
-        if (!interaction.isChatInputCommand() || interaction.applicationId !== applicationId) return;
+        if (!interaction.isChatInputCommand() || interaction.applicationId !== applicationId)
+          return;
         if (interaction.commandName !== "factory") return;
         if (interaction.options.getSubcommand(false) !== "reset") return;
         yield* gate.withPermits(1)(reset(interaction));

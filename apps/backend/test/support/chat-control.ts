@@ -14,6 +14,8 @@ import {
   messageEvent,
   PARTICIPANT_ID,
   type ControlledDiscord,
+  type DiscordRestRequest,
+  type GatewaySession,
 } from "./controlled-discord.ts";
 import { factoryHarness } from "./factory.ts";
 
@@ -144,11 +146,15 @@ export async function afterEarlierEvents(discord: ControlledDiscord, id: string)
   await discord.request("POST", new RegExp(`/messages/${id}/threads$`));
 }
 
+/** The Gateway sessions Discord still has open. */
+export const openSessions = (discord: ControlledDiscord): GatewaySession[] =>
+  discord.sessions.filter((session) => !session.closed);
+
 /** Requests besides command registration, Gateway discovery and the sentinel invocation's. */
 export const requestsBesides = (discord: ControlledDiscord, sentinelId: string) =>
   discord.requests
     .filter(
-      (request) =>
+      (request: DiscordRestRequest) =>
         !request.path.includes(sentinelId) &&
         !COMMANDS.test(request.path) &&
         request.path !== "/api/v10/gateway/bot",

@@ -1,9 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
-import {
-  messageEvent,
-  PARTICIPANT_ID,
-  resetCommandEvent,
-} from "./support/controlled-discord.ts";
+import { messageEvent, PARTICIPANT_ID, resetCommandEvent } from "./support/controlled-discord.ts";
 import {
   afterEarlierEvents,
   ALLOWED_CHANNEL,
@@ -298,7 +294,9 @@ it("a reset by a user Access does not allow clears nothing and is answered only 
   discord.deliver(reset("600000000000000002", { userId: OUTSIDER }));
 
   // Assert
-  expect(await resetReply(discord)).toBe("Chat control does not accept this command from you here.");
+  expect(await resetReply(discord)).toBe(
+    "Chat control does not accept this command from you here.",
+  );
 });
 
 it("a reset from someone Discord shows cannot view the channel is refused", async (c) => {
@@ -309,7 +307,9 @@ it("a reset from someone Discord shows cannot view the channel is refused", asyn
   discord.deliver(reset("600000000000000003", { permissions: 1n << 11n }));
 
   // Assert
-  expect(await resetReply(discord)).toBe("Chat control does not accept this command from you here.");
+  expect(await resetReply(discord)).toBe(
+    "Chat control does not accept this command from you here.",
+  );
 });
 
 it("a reset outside a thread explains where it works", async (c) => {
@@ -372,7 +372,9 @@ it("a reset in a private thread the requester does not belong to is refused", as
   );
 
   // Assert
-  expect(await resetReply(discord)).toBe("Chat control does not accept this command from you here.");
+  expect(await resetReply(discord)).toBe(
+    "Chat control does not accept this command from you here.",
+  );
 });
 
 it("a reset in a private thread is refused when Discord cannot confirm the membership", async (c) => {

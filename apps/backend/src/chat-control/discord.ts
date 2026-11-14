@@ -195,7 +195,10 @@ export const makeChatDiscord = (
      */
     const savedConnection = (revision: number) =>
       credentials.read(
-        Effect.gen(function* (): Effect.fn.Return<Result<DiscordConnection | "operating">, unknown> {
+        Effect.gen(function* (): Effect.fn.Return<
+          Result<DiscordConnection | "operating">,
+          unknown
+        > {
           const row = yield* readRow(sql);
           if (row.revision !== revision)
             return failure(
@@ -280,7 +283,8 @@ export const makeChatDiscord = (
             Effect.gen(function* (): Effect.fn.Return<Result<boolean>, unknown> {
               const connection = yield* readRow(sql);
               if (connection.chat_control_enabled === 1) return { ok: true, value: false };
-              const [model] = yield* sql<ModelRow>`SELECT provider_kind,base_url,model FROM chat_model_settings WHERE singleton=1`;
+              const [model] =
+                yield* sql<ModelRow>`SELECT provider_kind,base_url,model FROM chat_model_settings WHERE singleton=1`;
               const missing = missingForOn(connection, model!);
               if (missing.length > 0)
                 return failure(

@@ -115,7 +115,8 @@ export interface OperationStatus {
 
 const MAX_BACKOFF_MS = 300_000;
 /** Waits between transient failures: 1 s doubling to five minutes, within Node's timer range. */
-const backoff = (failures: number) => Duration.millis(Math.min(1000 * 2 ** failures, MAX_BACKOFF_MS));
+const backoff = (failures: number) =>
+  Duration.millis(Math.min(1000 * 2 ** failures, MAX_BACKOFF_MS));
 
 const UNEXPECTED_STOP =
   "Chat control's Discord connection stopped unexpectedly. Retry to reconnect.";
@@ -178,15 +179,11 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
     );
 
     /** Serves one verified session until Discord ends it for good. */
-    const serve = (
-      { adapter, chat, client, released }: Session,
-      connection: DiscordConnection,
-    ) =>
+    const serve = ({ adapter, chat, client, released }: Session, connection: DiscordConnection) =>
       Effect.gen(function* () {
         const runPromise = yield* FiberSet.makeRuntimePromise<never>();
         // Handlers belong to the session: releasing it interrupts them, which is not a failure.
-        const run: Run = (effect) =>
-          runPromise(effect).catch(() => undefined as never);
+        const run: Run = (effect) => runPromise(effect).catch(() => undefined as never);
         const evidence = makeRequesterEvidence();
         const ingress = makeIngress(
           {
@@ -250,7 +247,9 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
         const commandSetup = yield* registerCommands(client, connection.applicationId);
         current = { connectionStatus: "connected", connectionProblem: null, commandSetup };
         return yield* Effect.callback<GatewayResult>((resume) => {
-          client.once(Events.ShardDisconnect, ({ code }) => resume(Effect.succeed(closeResult(code))));
+          client.once(Events.ShardDisconnect, ({ code }) =>
+            resume(Effect.succeed(closeResult(code))),
+          );
         });
       });
 
@@ -267,12 +266,14 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
     const attempt = (connection: DiscordConnection) =>
       gateway.operate(
         connection,
-        { state: sqliteChatState(sql, Effect.runPromise), adapter: (config) => new FactoryDiscordAdapter(config) },
+        {
+          state: sqliteChatState(sql, Effect.runPromise),
+          adapter: (config) => new FactoryDiscordAdapter(config),
+        },
         (session) =>
           Effect.gen(function* () {
             const established = yield* ready(session.client, connection);
-            if (established.outcome !== "verified")
-              return { result: established, served: false };
+            if (established.outcome !== "verified") return { result: established, served: false };
             const result = yield* serve(
               { ...session, client: session.client as Client<true> },
               connection,
@@ -282,14 +283,14 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
       );
 
     const supervise = Effect.gen(function* () {
-      for (let failures = 0; ; ) {
+      for (let failures = 0; ;) {
         const connection = yield* savedConnection;
         const ended = connection.ok
           ? yield* attempt(connection.value)
-          : {
+          : ({
               result: { outcome: "failed", message: connection.error.message, transient: false },
               served: false,
-            } satisfies { result: GatewayResult; served: boolean };
+            } satisfies { result: GatewayResult; served: boolean });
         const occurredAt = yield* now;
         const { outcome, message, transient } = ended.result;
         if (!transient) {
@@ -332,20 +333,18 @@ export const makeDiscordOperation = (gateway: DiscordGateway, credentials: ChatC
       /** Stops the supervisor and waits until its Gateway session is released. */
       stop: FiberHandle.clear(supervisor),
       /** The operating connection now, for a persisted On state. */
-      status: Effect.map(
-        readState,
-        (row): OperationStatus =>
-          row.rejected_outcome !== null && row.rejected_message !== null && row.rejected_at !== null
-            ? {
-                connectionStatus: "rejected",
-                connectionProblem: {
-                  outcome: row.rejected_outcome,
-                  message: row.rejected_message,
-                  occurredAt: row.rejected_at,
-                },
-                commandSetup: current.commandSetup,
-              }
-            : current,
+      status: Effect.map(readState, (row): OperationStatus =>
+        row.rejected_outcome !== null && row.rejected_message !== null && row.rejected_at !== null
+          ? {
+              connectionStatus: "rejected",
+              connectionProblem: {
+                outcome: row.rejected_outcome,
+                message: row.rejected_message,
+                occurredAt: row.rejected_at,
+              },
+              commandSetup: current.commandSetup,
+            }
+          : current,
       ),
     };
   });

@@ -102,6 +102,94 @@ revision their edits started from, conflicts keep the page's edits, a lost answe
 reading the current settings, and unsaved edits are guarded as on the Language model page. Factory
 never reads the application's identity from the token itself.
 
+### On and Off
+
+The Discord page holds Chat control's one persisted **On/Off** switch; the Language model has no
+switch of its own. Turning On needs the saved Application ID, Public Key and bot token and the
+Language model's provider, base URL and model. A model key, a passed Test or check and any Access
+entry are not required; empty Access is explained on the page and admits nobody. Turning On uses
+only saved configuration.
+
+On is persisted: after a restart Factory reconnects by itself. While On, Factory runs exactly one
+Gateway connection. It logs in with the saved token, waits for a ready session and compares the
+authenticated application with the Application ID before it attaches any handler or registers its
+command. A transient failure (Discord unreachable, a timeout, HTTP 429 or a 5xx answer) shows the
+connection as **Reconnecting** and is retried after a wait that starts at one second and doubles up
+to five minutes. A failure that needs correction (a rejected token, a token of another application,
+a missing Message Content intent or another refusal) shows **Rejected** with Factory's description
+and stops connecting; the rejection is persisted, so a restart does not retry it. **Retry
+connection** on the page, which replaces the check while On, restarts the same connection; saving
+the connection section while On also reconnects and verifies the newly saved values, which is how
+a same-application token rotation takes effect. Neither opens a second session.
+
+Turning Off stops admitting messages and commands and disconnects; it returns once the Gateway
+session is released. Configuration, Access, conversations and accepted Factory work are kept, and
+Off is not Archive, Settle or a worker interruption.
+
+The page reports the Gateway connection (**Connecting**, **Connected**, **Reconnecting**,
+**Rejected**) separately from command setup: a connected Gateway does not mean the command works.
+While On, the Discord item in the Settings navigation shows an indicator only for a current
+unresolved failure: a reconnecting or rejected connection or a failed command setup. Off shows none,
+and incomplete setup or empty Access is a notice, not an outage. Chat control failures never become
+Run Problems, Needs input, toasts or OS notifications.
+
+### Access
+
+The **Access** section has its own **Save** and **Discard**, independent of the connection and the
+Language model, so revoking access never waits for other unsaved edits. A save is in effect for
+every later Discord event when it returns. It lists:
+
+- allowed Discord user IDs;
+- allowed parent channels, each with the Factory Projects it grants. Threads inherit their parent
+  channel's grant.
+
+IDs are trimmed decimal strings of 17 to 20 digits, never numbers, and a repeated user, channel or
+Project grant is refused rather than merged. Names are not used to match anything. A channel without
+Projects grants nothing. A granted Project Factory no longer knows stays listed as unknown and grants
+nothing. Server membership, roles, administrator status and Factory client approval grant no chat
+authority, and Access grants no Factory UI access or client approval. Factory does not administer
+Discord permissions: everyone who can read an allowed channel or its threads sees what the bot posts
+there, including people Access does not list.
+
+### Invocations
+
+Factory admits only a new message from a human, in a server channel, that mentions the bot or
+replies to one of its messages. Ordinary messages, edits, reactions, direct messages, bots and
+webhooks are ignored. The adapter's own mention handling is not used, because it creates a thread
+before any authorization. Before anything else happens, Factory requires that the author is an
+allowed user, that the channel or the thread's parent channel is allowed and grants at least one
+Project Factory knows, and current evidence of the author's access. Only then does a parent-channel
+invocation get a new public thread started on the invoking message, carrying only that message; an
+invocation inside a thread uses that thread. A denied event creates no thread and sends Discord
+nothing.
+
+Requester evidence comes from Discord itself: posting a message shows the author can see the
+channel, and for a command Discord states the member's permissions in that channel. A private thread
+also needs membership, which Factory remembers from the author's own messages there, from membership
+events and from a targeted lookup. A connection gap forgets all remembered evidence, and membership,
+channel, thread, role or server changes forget what they could affect; stale, absent or ambiguous
+evidence denies. Factory requests no Server Members intent, so it hears about other people leaving a
+private thread only after a gap or when Discord announces it.
+
+Each Discord message or command is taken once: a content-free marker of its ID is kept, so a
+repeated delivery, also after a restart, admits nothing twice. Every admitted invocation belongs to
+one shared conversation per thread of the configured application in this installation, and work on
+it is serialized per conversation. Before Factory publishes anything for an invocation it checks
+again that Chat control is On, the evidence is current, Access still allows the author there and
+the conversation has not been reset. Conversational answers are a later slice: today an admitted
+invocation receives a fixed acknowledgement.
+
+### /factory reset
+
+When the connection is verified, Factory registers `/factory reset` as the application's only
+command, replacing any others; it is available in servers only. An allowed participant can use it
+inside a thread of an allowed channel. Factory acknowledges it at once, privately to the invoker,
+checks access as for invocations (including private-thread membership) and clears the thread's
+shared conversation by starting its next generation; unfinished work admitted before the reset can
+no longer publish. A reset needs no model and no review. It deletes no Discord message and changes
+no accepted Factory work. Used outside a thread, by someone not allowed, or when access cannot be
+confirmed, it clears nothing and says so privately. There is no message-text fallback.
+
 ### Check
 
 While Chat control is Off, **Check saved connection** opens one bounded connection-only Gateway
@@ -110,7 +198,8 @@ become ready, compares the application Discord authenticated with the configured
 and disconnects. It attaches no conversation handler: it answers no message, button or command,
 posts nothing, registers no command and makes no model request; messages arriving meanwhile are not
 serviced. Only one Gateway session exists at a time, so a check while another runs is refused, and
-closing Factory ends a running check's session.
+closing Factory ends a running check's session. While Chat control is On there is no separate check:
+the page reports the running connection and offers **Retry connection** instead.
 
 The result is recorded with the checked revision and its time, using Factory's own description:
 verified, a token of another application, a token Discord rejects, a missing Message Content
@@ -133,7 +222,8 @@ The page explains the setup the owner performs in the Discord Developer Portal:
    Channels, Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read
    Message History, Add Reactions and Attach Files. One application can serve several servers; no
    server (Guild) ID is configured.
-5. Keep the Factory backend running.
+5. Keep the Factory backend running. Factory registers `/factory reset` itself when Chat control
+   turns On.
 
 ## Support limits
 
@@ -145,6 +235,12 @@ model server.
 The pinned Discord packages are `chat` 4.44.0 and `@chat-adapter/discord` 4.44.0, with
 `discord.js` 14.28.1 and `@discordjs/ws` 1.2.3, the versions the adapter resolves. Factory supplies
 its own Gateway shard strategy because `@discordjs/ws` 1.2.3 can leave a session that is destroyed
-before it is ready reconnecting. Controlled tests run the check against a loopback stand-in for
-Discord's REST API and Gateway; real Gateway identity, readiness and intent behavior are not yet
-qualified against Discord.
+before it is ready reconnecting. Chat SDK runs with its `concurrent` strategy because its queue
+merges queued messages and its drop strategy loses admitted ones; Factory serializes each
+conversation itself and discards unfinished work on restart. The Chat SDK state Factory needs, thread
+subscriptions and its expiring key-value entries such as message deduplication, lives in SQLite; the
+SDK's locks, lists and queues are not used. Controlled tests run the check, the operating connection,
+invocations and `/factory reset` against a loopback stand-in for Discord's REST API and Gateway. Real
+Gateway identity, readiness and intent behavior, authorization before thread creation, permission
+evidence and its invalidation (private threads included), command registration, interaction
+acknowledgement and private replies are not yet qualified against Discord.

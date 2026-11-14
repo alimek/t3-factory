@@ -20,16 +20,19 @@ const unused = (what: string) => () =>
  */
 export function sqliteChatState(sql: SqlClient.SqlClient, run: Run): StateAdapter {
   const expiresAt = (ttlMs?: number) => (ttlMs === undefined ? null : Date.now() + ttlMs);
-  const live = () => sql`DELETE FROM chat_sdk_cache WHERE expires_at IS NOT NULL AND expires_at<=${Date.now()}`;
+  const live = () =>
+    sql`DELETE FROM chat_sdk_cache WHERE expires_at IS NOT NULL AND expires_at<=${Date.now()}`;
   return {
     connect: () => Promise.resolve(),
     disconnect: () => Promise.resolve(),
     subscribe: (threadId) =>
-      run(sql`INSERT INTO chat_sdk_subscriptions (thread_id) VALUES (${threadId}) ON CONFLICT DO NOTHING`).then(
+      run(
+        sql`INSERT INTO chat_sdk_subscriptions (thread_id) VALUES (${threadId}) ON CONFLICT DO NOTHING`,
+      ).then(() => undefined),
+    unsubscribe: (threadId) =>
+      run(sql`DELETE FROM chat_sdk_subscriptions WHERE thread_id=${threadId}`).then(
         () => undefined,
       ),
-    unsubscribe: (threadId) =>
-      run(sql`DELETE FROM chat_sdk_subscriptions WHERE thread_id=${threadId}`).then(() => undefined),
     isSubscribed: (threadId) =>
       run(
         Effect.map(
@@ -54,7 +57,8 @@ export function sqliteChatState(sql: SqlClient.SqlClient, run: Run): StateAdapte
             ON CONFLICT(cache_key) DO UPDATE SET value_json=excluded.value_json,expires_at=excluded.expires_at`,
         ),
       ).then(() => undefined),
-    delete: (key) => run(sql`DELETE FROM chat_sdk_cache WHERE cache_key=${key}`).then(() => undefined),
+    delete: (key) =>
+      run(sql`DELETE FROM chat_sdk_cache WHERE cache_key=${key}`).then(() => undefined),
     setIfNotExists: (key, value, ttlMs) =>
       run(
         Effect.andThen(

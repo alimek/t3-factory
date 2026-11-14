@@ -47,7 +47,10 @@ beforeEach(async ({ browser }) => {
   provider = await controlledProvider();
 });
 
-afterEach(async () => {
+afterEach(async ({ app }) => {
+  // Journeys share one fixture; a later journey must start with Chat control Off.
+  const off = await hostCall(app.baseUrl, "PUT", "/api/chat-control/enabled", { enabled: false });
+  assert(off.ok, JSON.stringify(off));
   await provider.close();
 });
 
@@ -201,6 +204,110 @@ test("leaving the Discord page with unsaved connection edits asks before discard
   await app.screenshot("chat-discord-discard-guard");
   await screen.getByRole("button", "Keep editing").tap();
   await expect(connection.getByLabel("Public Key")).toHaveValue("cd".repeat(32));
+});
+
+/** The fixture's first Project, as the Access section lists it. */
+async function firstProject(baseUrl: string | undefined) {
+  const response = await fetch(new URL("/api/projects", baseUrl));
+  const catalog = (await response.json()) as Result<{ projects: { id: string; title: string }[] }>;
+  assert(catalog.ok);
+  return catalog.value.projects[0]!;
+}
+
+async function hostCall(baseUrl: string | undefined, method: string, path: string, body: unknown) {
+  const response = await fetch(new URL(path, baseUrl), {
+    method,
+    headers: { "content-type": "application/json", "x-factory-request": "1" },
+    body: JSON.stringify(body),
+  });
+  return (await response.json()) as Result<DiscordSettings & ChatModelSettings>;
+}
+
+/** A complete saved Discord connection and keyless Language model, saved through the host API. */
+async function completeChatControl(baseUrl: string | undefined) {
+  const { bot } = await controlledDiscord(baseUrl);
+  const discord = await discordSettings(baseUrl);
+  const model = await chatModelSettings(baseUrl);
+  assert(discord.ok && model.ok);
+  const connection = await hostCall(baseUrl, "PUT", "/api/chat-control/discord/connection", {
+    revision: discord.value.configuration.revision,
+    applicationId: bot.applicationId,
+    publicKey: "ab".repeat(32),
+    token: { kind: "replace", value: bot.token },
+    applicationChangeConfirmed: false,
+  });
+  assert(connection.ok, JSON.stringify(connection));
+  const saved = await hostCall(baseUrl, "PUT", "/api/chat-control/model", {
+    revision: model.value.configuration.revision,
+    providerKind: "openai-compatible",
+    baseUrl: provider.baseUrl,
+    model: "ui-model",
+    key: { kind: "remove" },
+  });
+  assert(saved.ok, JSON.stringify(saved));
+}
+
+test("the host saves Access on its own while connection edits stay unsaved", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const project = await firstProject(app.baseUrl);
+  await app.open("/settings/chat-control/discord");
+  await screen
+    .getByRole("region", "Discord connection")
+    .getByLabel("Public Key")
+    .fill("ef".repeat(32));
+  const access = screen.getByRole("region", "Access");
+  await expect(access.getByText("Nobody can use Chat control yet")).toBeVisible();
+  await access.getByLabel("Allowed user IDs").fill("200000000000000001");
+  await access.getByRole("button", "Add channel").tap();
+  const channel = access.getByRole("group", "Allowed channel 1");
+  await channel.getByLabel("Channel ID").fill("400000000000000002");
+  await channel.getByRole("checkbox", project.title).tap();
+
+  // Act
+  await access.getByRole("button", "Save", { exact: true }).tap();
+
+  // Assert
+  await expect(access.getByText(/^Saved .* · revision 1\.$/)).toBeVisible();
+  await expect(
+    screen.getByRole("region", "Discord connection").getByText("Unsaved changes."),
+  ).toBeVisible();
+  const settings = await discordSettings(app.baseUrl);
+  expect(settings).toMatchObject({
+    ok: true,
+    value: {
+      access: {
+        users: ["200000000000000001"],
+        channels: [{ channelId: "400000000000000002", projectIds: [project.id] }],
+      },
+    },
+  });
+  await access.getByText("Allowed user IDs").scrollIntoView();
+  await app.screenshot("chat-discord-access-saved");
+});
+
+test("the host turns Chat control On and sees the Gateway connection and command setup separately", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  await completeChatControl(app.baseUrl);
+  await app.open("/settings/chat-control/discord");
+  const state = screen.getByRole("region", "Chat control state");
+  await expect(state.getByText("Chat control is Off")).toBeVisible();
+
+  // Act
+  await state.getByRole("button", "Turn On").tap();
+
+  // Assert
+  await expect(state.getByText("Chat control is On")).toBeVisible();
+  await expect(state.getByText("Connected", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(state.getByText("/factory reset registered")).toBeVisible();
+  const { sessions } = await controlledDiscord(app.baseUrl);
+  assert.strictEqual(sessions.filter((session) => !session.closed).length, 1);
+  await app.screenshot("chat-discord-on");
 });
 
 test("an approved client's Settings has no Chat control group or search entry", async ({

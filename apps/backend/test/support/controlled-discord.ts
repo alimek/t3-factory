@@ -22,7 +22,7 @@ export interface ControlledDiscordGuild {
 }
 
 /** One REST request as Discord received it; `path` omits the query, `body` is parsed JSON. */
-interface DiscordRestRequest {
+export interface DiscordRestRequest {
   readonly method: string;
   readonly path: string;
   readonly authorization: string | undefined;
@@ -41,7 +41,7 @@ export interface ControlledDiscordThread {
 }
 
 /** One Gateway connection as Discord saw it. */
-interface GatewaySession {
+export interface GatewaySession {
   /** The token its IDENTIFY carried; null until it identified. */
   token: string | null;
   intents: number | null;
@@ -49,7 +49,18 @@ interface GatewaySession {
   closed: boolean;
 }
 
-interface GatewayEvent {
+type Answer = { readonly status: number; readonly body?: unknown };
+type Fields = Record<string, unknown>;
+
+/** A REST request matched to a route, with its parsed body and the bot its token belongs to. */
+interface RouteRequest {
+  readonly match: RegExpExecArray;
+  readonly fields: Fields;
+  readonly body: unknown;
+  readonly bot: ControlledDiscordBot;
+}
+
+export interface GatewayEvent {
   readonly t: string;
   readonly d: unknown;
 }
@@ -83,7 +94,10 @@ const threadPayload = (thread: ControlledDiscordThread) => ({
   },
 });
 
-const guildCreate = (guild: ControlledDiscordGuild, threads: readonly ControlledDiscordThread[]) => ({
+const guildCreate = (
+  guild: ControlledDiscordGuild,
+  threads: readonly ControlledDiscordThread[],
+) => ({
   id: guild.id,
   name: guild.name,
   icon: null,
@@ -172,119 +186,150 @@ export async function startControlledDiscord() {
       if (session.ready && !session.closed) dispatch(socket, event);
   };
 
-  const route = (
-    method: string,
-    path: string,
-    token: string,
-    body: unknown,
-  ): { status: number; body?: unknown } => {
-    const bot = bots.get(token);
-    const fields = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
-    if (method === "GET" && path === "/api/v10/gateway/bot") {
-      if (!bot) return { status: 401, body: { message: "401: Unauthorized", code: 0 } };
-      if (!gatewayAvailable) return { status: 503, body: { message: "Service Unavailable", code: 0 } };
-      return {
+  const unknownChannel: Answer = { status: 404, body: { message: "Unknown Channel", code: 10003 } };
+  const unavailable: Answer = { status: 503, body: { message: "Service Unavailable", code: 0 } };
+  const sentMessage = (channelId: string, author: object, fields: Fields, extra: object = {}) => ({
+    id: mintId(),
+    type: 0,
+    channel_id: channelId,
+    content: fields.content ?? "",
+    author,
+    timestamp: new Date(0).toISOString(),
+    edited_timestamp: null,
+    tts: false,
+    mention_everyone: false,
+    mentions: [],
+    mention_roles: [],
+    attachments: [],
+    embeds: fields.embeds ?? [],
+    pinned: false,
+    ...extra,
+  });
+
+  /** Each bot-authorized REST route Factory uses: method, path and Discord's answer. */
+  const routes: readonly (readonly [string, RegExp, (request: RouteRequest) => Answer])[] = [
+    [
+      "GET",
+      /^\/api\/v10\/gateway\/bot$/,
+      () =>
+        gatewayAvailable
+          ? {
+              status: 200,
+              body: {
+                url: gatewayUrl(),
+                shards: 1,
+                session_start_limit: {
+                  total: 1000,
+                  remaining: 1000,
+                  reset_after: 0,
+                  max_concurrency: 1,
+                },
+              },
+            }
+          : unavailable,
+    ],
+    [
+      "PUT",
+      /^\/api\/v10\/applications\/(\d+)\/commands$/,
+      ({ match, body }) => {
+        commands.set(match[1]!, body);
+        return {
+          status: 200,
+          body: (body as Record<string, unknown>[]).map((command) => ({
+            ...command,
+            id: mintId(),
+            application_id: match[1],
+            version: "1",
+          })),
+        };
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/v10\/channels\/(\d+)\/messages\/(\d+)\/threads$/,
+      ({ match, fields }) => {
+        const guild = parentOf(match[1]!);
+        if (!guild) return unknownChannel;
+        const thread: ControlledDiscordThread = {
+          id: match[2]!,
+          guildId: guild.id,
+          parentId: match[1]!,
+          name: typeof fields.name === "string" ? fields.name : "thread",
+          private: false,
+          members: new Set(),
+        };
+        threads.set(thread.id, thread);
+        deliver({ t: "THREAD_CREATE", d: { ...threadPayload(thread), newly_created: true } });
+        return { status: 201, body: threadPayload(thread) };
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/v10\/channels\/(\d+)\/messages$/,
+      ({ match, fields, bot }) => ({
         status: 200,
-        body: {
-          url: gatewayUrl(),
-          shards: 1,
-          session_start_limit: { total: 1000, remaining: 1000, reset_after: 0, max_concurrency: 1 },
-        },
-      };
-    }
-    let match = /^\/api\/v10\/applications\/(\d+)\/commands$/.exec(path);
-    if (method === "PUT" && match && bot) {
-      commands.set(match[1]!, body);
-      return {
+        body: sentMessage(match[1]!, botUser(bot), fields),
+      }),
+    ],
+    [
+      "GET",
+      /^\/api\/v10\/channels\/(\d+)$/,
+      ({ match }) => {
+        const thread = threads.get(match[1]!);
+        if (thread) return { status: 200, body: threadPayload(thread) };
+        const guild = parentOf(match[1]!);
+        return guild
+          ? { status: 200, body: { id: match[1], type: 0, guild_id: guild.id, name: "channel" } }
+          : unknownChannel;
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/v10\/channels\/(\d+)\/thread-members\/(\d+)$/,
+      ({ match }) => {
+        if (!threadMembersAvailable) return unavailable;
+        if (!threads.get(match[1]!)?.members.has(match[2]!))
+          return { status: 404, body: { message: "Unknown Member", code: 10007 } };
+        const member = { id: match[1], user_id: match[2], flags: 0 };
+        return { status: 200, body: { ...member, join_timestamp: new Date(0).toISOString() } };
+      },
+    ],
+  ];
+
+  /** Interaction responses authenticate with the interaction's token instead of the bot's. */
+  const interactionRoutes: readonly (readonly [
+    string,
+    RegExp,
+    (request: Omit<RouteRequest, "bot">) => Answer,
+  ])[] = [
+    ["POST", /^\/api\/v10\/interactions\/\d+\/[^/]+\/callback$/, () => ({ status: 204 })],
+    [
+      "PATCH",
+      /^\/api\/v10\/webhooks\/(\d+)\/[^/]+\/messages\/(?:@|%40)original$/,
+      ({ match, fields }) => ({
         status: 200,
-        body: (body as Record<string, unknown>[]).map((command) => ({
-          ...command,
-          id: mintId(),
-          application_id: match![1],
-          version: "1",
-        })),
-      };
-    }
-    match = /^\/api\/v10\/channels\/(\d+)\/messages\/(\d+)\/threads$/.exec(path);
-    if (method === "POST" && match && bot) {
-      const guild = parentOf(match[1]!);
-      if (!guild) return { status: 404, body: { message: "Unknown Channel", code: 10003 } };
-      const thread: ControlledDiscordThread = {
-        id: match[2]!,
-        guildId: guild.id,
-        parentId: match[1]!,
-        name: typeof fields.name === "string" ? fields.name : "thread",
-        private: false,
-        members: new Set(),
-      };
-      threads.set(thread.id, thread);
-      deliver({ t: "THREAD_CREATE", d: { ...threadPayload(thread), newly_created: true } });
-      return { status: 201, body: threadPayload(thread) };
-    }
-    match = /^\/api\/v10\/channels\/(\d+)\/messages$/.exec(path);
-    if (method === "POST" && match && bot)
-      return {
-        status: 200,
-        body: {
-          id: mintId(),
-          type: 0,
-          channel_id: match[1],
-          content: fields.content ?? "",
-          author: botUser(bot),
-          timestamp: new Date(0).toISOString(),
-          edited_timestamp: null,
-          tts: false,
-          mention_everyone: false,
-          mentions: [],
-          mention_roles: [],
-          attachments: [],
-          embeds: fields.embeds ?? [],
-          pinned: false,
-        },
-      };
-    match = /^\/api\/v10\/channels\/(\d+)$/.exec(path);
-    if (method === "GET" && match && bot) {
-      const thread = threads.get(match[1]!);
-      if (thread) return { status: 200, body: threadPayload(thread) };
-      const guild = parentOf(match[1]!);
-      if (!guild) return { status: 404, body: { message: "Unknown Channel", code: 10003 } };
-      return { status: 200, body: { id: match[1], type: 0, guild_id: guild.id, name: "channel" } };
-    }
-    match = /^\/api\/v10\/channels\/(\d+)\/thread-members\/(\d+)$/.exec(path);
-    if (method === "GET" && match && bot) {
-      if (!threadMembersAvailable)
-        return { status: 503, body: { message: "Service Unavailable", code: 0 } };
-      if (!threads.get(match[1]!)?.members.has(match[2]!))
-        return { status: 404, body: { message: "Unknown Member", code: 10007 } };
-      return {
-        status: 200,
-        body: { id: match[1], user_id: match[2], join_timestamp: new Date(0).toISOString(), flags: 0 },
-      };
-    }
-    if (method === "POST" && /^\/api\/v10\/interactions\/\d+\/[^/]+\/callback$/.test(path))
-      return { status: 204 };
-    match = /^\/api\/v10\/webhooks\/(\d+)\/[^/]+\/messages\/(?:@|%40)original$/.exec(path);
-    if (method === "PATCH" && match)
-      return {
-        status: 200,
-        body: {
-          id: mintId(),
+        body: sentMessage("0", user(match[1]!, "Factory bot", true), fields, {
           type: 20,
-          channel_id: "0",
-          content: fields.content ?? "",
-          author: user(match[1]!, "Factory bot", true),
-          timestamp: new Date(0).toISOString(),
-          edited_timestamp: null,
-          tts: false,
-          mention_everyone: false,
-          mentions: [],
-          mention_roles: [],
-          attachments: [],
           embeds: [],
-          pinned: false,
           flags: 64,
-        },
-      };
+        }),
+      }),
+    ],
+  ];
+
+  const route = (method: string, path: string, token: string, body: unknown): Answer => {
+    const bot = bots.get(token);
+    const fields = (typeof body === "object" && body !== null ? body : {}) as Fields;
+    for (const [routeMethod, pattern, answer] of interactionRoutes) {
+      const match = routeMethod === method ? pattern.exec(path) : null;
+      if (match) return answer({ match, fields, body });
+    }
+    for (const [routeMethod, pattern, answer] of routes) {
+      const match = routeMethod === method ? pattern.exec(path) : null;
+      if (!match) continue;
+      if (!bot) return { status: 401, body: { message: "401: Unauthorized", code: 0 } };
+      return answer({ match, fields, body, bot });
+    }
     return { status: 404, body: { message: "404: Not Found", code: 0 } };
   };
 
@@ -293,7 +338,8 @@ export async function startControlledDiscord() {
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
       const text = Buffer.concat(chunks).toString("utf8");
-      const body: unknown = text && request.headers["content-type"]?.includes("json") ? JSON.parse(text) : null;
+      const body: unknown =
+        text && request.headers["content-type"]?.includes("json") ? JSON.parse(text) : null;
       const path = (request.url ?? "").split("?")[0]!;
       requests.push({
         method: request.method ?? "",
@@ -473,7 +519,7 @@ export async function startControlledDiscord() {
 export type ControlledDiscord = Awaited<ReturnType<typeof startControlledDiscord>>;
 
 /** A controlled Discord for one test, closed when it finishes. */
-export async function controlledDiscord(context: TestContext) {
+export async function controlledDiscord(context: TestContext): Promise<ControlledDiscord> {
   const discord = await startControlledDiscord();
   context.onTestFinished(() => discord.close());
   return discord;
@@ -544,7 +590,7 @@ export function messageEvent(options: {
 }
 
 /** View Channels, Send Messages and Read Message History. */
-export const MEMBER_PERMISSIONS = (1n << 10n) | (1n << 11n) | (1n << 16n);
+const MEMBER_PERMISSIONS = (1n << 10n) | (1n << 11n) | (1n << 16n);
 
 /** An INTERACTION_CREATE for `/factory reset` used by `userId` in `channel`. */
 export function resetCommandEvent(options: {
