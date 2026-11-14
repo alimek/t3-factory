@@ -141,8 +141,9 @@ their cause; do not add retries or larger per-test timeouts.
 The **Controlled UI journeys** PR check runs the complete existing suite with one
 worker after a frozen install, build and Chromium installation. Browser installation
 and journey execution are separate Actions steps so their durations are distinguishable.
-It runs on PR open, reopen, synchronization and becoming ready for review, including
-drafts and forks, without model or production credentials.
+It runs on PR open, reopen and source synchronization, including drafts and forks,
+without model or production credentials. Becoming ready for review preserves the
+existing journey result rather than cancelling or repeating the same validation.
 
 Selection compares the head commit with its merge base on the event's base commit, including deleted paths and
 both sides of renames. Only an entirely documentation/review-only diff skips:
@@ -199,7 +200,11 @@ Before finishing a test change:
    expectation was redundant or why the test did not protect important behavior.
    Preserve distinct failure, race, recovery and security cases; a failing test
    is not evidence that it is low-value.
-4. Run the affected suite and relevant quality checks. Finish only after every
+4. For implementation work, run the affected suite and relevant quality checks,
+   reusing successful results for unchanged inputs and the final pre-push gate.
+   Source-only review assesses the tests and existing evidence without executing
+   project code; report missing runtime evidence to its implementation or PR
+   completion owner. Finish only after every
    changed test meets this checklist and the checks pass, or report the concrete
    external blocker.
 

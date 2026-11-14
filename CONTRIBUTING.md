@@ -49,7 +49,9 @@ can interact with live T3; ordinary `pnpm dev` is the default contribution envir
 
 ## Verification
 
-Run the same command used by CI and the pre-push hook:
+Use focused tests and static checks while implementing. When pushing, let the
+pre-push hook run the final full local gate; do not repeat it manually immediately
+before pushing the unchanged tree. For standalone validation without a push, use:
 
 ```sh
 pnpm check

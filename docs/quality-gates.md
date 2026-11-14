@@ -24,9 +24,15 @@ The hook first checks attribution in the commits being pushed, then runs
 | 6 | `pnpm test` | Failing backend, desktop and frontend rule tests through Vite+, then repository script tests through `node --test` (see [testing policy](testing.md)) |
 | 7 | `pnpm build` | Compile, declaration and bundling errors in the shippable output; runs last so no earlier step can depend on build output |
 
-During implementation, run the cheap static steps (`pnpm format:check`,
-`pnpm check:scenarios`, `pnpm fallow` and `pnpm lint`) and the affected package's tests before handing
-work back; the full `pnpm check` remains required before push.
+During implementation, use focused tests and cheap static checks for feedback.
+The successful pre-push hook is the final full local gate: do not run `pnpm check`
+or repeat all its constituent commands immediately before pushing the unchanged
+tree. When handing back unpublished implementation work, run the cheap static
+steps (`pnpm format:check`, `pnpm check:scenarios`, `pnpm fallow`, `pnpm lint`)
+and the affected suite. Reuse matching completed results and record which state
+they covered. A source-only reviewer inspects code and existing evidence;
+implementation gates belong to the implementer, and CI observation and operational
+diagnosis belong to the PR completion stage.
 
 The hook checks the working tree, including uncommitted changes, not only the
 pushed commits; commit or discard local changes before pushing so the result
@@ -39,19 +45,29 @@ UI or a user journey; see [testing policy](testing.md#behavior-tests-vs-e2e-jour
 
 `pnpm check` is the working-tree gate command, used by the pre-push hook and
 `.github/workflows/quality.yml`. The **Quality gate** check runs full code checks
-on PR open, edit, reopen and synchronization, and pushes to `main`, with the
-repository's pinned Node and pnpm versions and a frozen lockfile. Edits include
-title/body changes and base-branch retargets. Requiring that check before merge
+on PR open, reopen, source synchronization and base-branch retargets, and pushes
+to `main`, with pinned Node and pnpm versions and a frozen lockfile. Requiring that check before merge
 is a GitHub ruleset setting; adding a workflow alone does not enable that requirement.
 
-Every Quality run reports the same **Quality gate** job name and runs the full
-code gate. Skipping and renaming the job on metadata edits can leave the latest
-run without the required check and block merging even after an earlier run passed.
-Runs share a concurrency group per ref; a newer event cancels an unfinished run
-and starts fresh validation. Title/body edits also rerun **PR title**, **Git
-attribution** and, for frontend PRs, **UI evidence attachments**.
+Every Quality run reports the same **Quality gate** job name. On a title/body-only
+edit, it reads the newest full code validation for the same repository, PR, base
+and HEAD instead of installing dependencies or executing the gate. Its evidence
+is the scoped full-gate step in the original workflow run; a successful metadata
+check cannot certify another metadata check. An in-flight validation is awaited,
+a failed validation remains failed, and missing or unreadable evidence fails
+closed. Rerun the source-triggered Quality workflow when matching validation is
+missing, or retry the metadata check after a bounded wait expires. Earlier
+workflow versions without scoped evidence cannot be reused.
 
-Run `pnpm check` from the repository root for the same sequence locally.
+Metadata checks have a separate concurrency group, so they cannot cancel code
+validation. Source events still replace older source runs. The required job is
+never renamed or skipped as a substitute for code validation. Title/body edits
+also rerun **PR title**, **Git attribution** and, for frontend PRs, **UI evidence
+attachments**. Marking an already-tested draft ready does not repeat code checks
+or UI journeys; external reviewers can still start at publication.
+
+Run `pnpm check` from the repository root for standalone full validation when
+not pushing; an imminent push uses the hook's identical sequence.
 
 The separate **Git attribution** check owns PR squash-input and introduced-commit
 validation on PR open, edit, reopen and synchronization events with checkout
