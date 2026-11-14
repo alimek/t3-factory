@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -37,11 +37,8 @@ function referencedStages(sql: SqlClient.SqlClient) {
 export const makeChatCredentials = (credentialsDirectory: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    // Created with the first staged secret, so installations without one gain no directory.
     const directory = join(credentialsDirectory, "chat-control");
-    yield* Effect.sync(() => {
-      mkdirSync(directory, { recursive: true, mode: 0o700 });
-      chmodSync(directory, 0o700);
-    });
     const path = (stage: string) => join(directory, `${stage}.json`);
     // Staging, committing and pruning serialize, so pruning never removes a stage a save is
     // about to commit and a reader never loses the stage it just resolved.
@@ -51,6 +48,7 @@ export const makeChatCredentials = (credentialsDirectory: string) =>
     const prune = Effect.gen(function* () {
       const referenced = yield* referencedStages(sql);
       yield* Effect.try(() => {
+        if (!existsSync(directory)) return;
         for (const file of readdirSync(directory))
           if (!referenced.has(file.replace(/\.json$/, "")))
             removeCredentialFile(join(directory, file));
@@ -66,6 +64,8 @@ export const makeChatCredentials = (credentialsDirectory: string) =>
       /** Writes the secret durably to a new stage; it has no effect until a commit names it. */
       stage: (purpose: ChatCredentialPurpose, secret: string) =>
         Effect.sync(() => {
+          if (mkdirSync(directory, { recursive: true, mode: 0o700 }) !== undefined)
+            chmodSync(directory, 0o700);
           const stage = `${purpose}-${randomUUID()}`;
           writeCredentialFile(path(stage), { purpose, secret } satisfies StagedCredential);
           return stage;
