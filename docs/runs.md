@@ -50,8 +50,9 @@ levels of evidence. A configuration check alone proves neither execution nor rep
 - **Idempotency.** A draft's id is its Start request key, so one draft yields at most one Run. A confirmed rejection
   records nothing, so the corrected draft is sent again with the same key. Retrying an accepted request returns the same Run,
   even after a lost response or restart, with its original title provenance; reusing the key with changed content,
-  including title, title provenance, creation time or the images' bytes, order, names or positions, conflicts. A legacy
-  request keeps the identity it had before provenance existed, so a pending request saved then still recovers its Run. An unknown response keeps the
+  including title, a change between manual and another title provenance, creation time or the images' bytes, order,
+  names or positions, conflicts. Automatic and legacy requests keep the identity requests had before provenance existed,
+  so a pending request or `factory_start_run` accepted then still recovers its Run with its stored provenance. An unknown response keeps the
   submitted fields and images read-only (previews still open) and offers **Check same request**, which uploads missing
   images again and repeats the same request; only confirmed success clears the prompt and opens the Run. If Factory
   reports an image missing at acceptance, the composer uploads it again and retries once automatically; a further

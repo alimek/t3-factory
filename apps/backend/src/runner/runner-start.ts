@@ -46,8 +46,9 @@ function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments"
 /**
  * The accepted key's content. A text-only prompt keeps the earlier `[project, Flow, input, title,
  * creation time]` form, so a request accepted before images still recovers its Run; images add the
- * ordered segments and every manifest field. Legacy provenance adds nothing, so a request stored
- * before provenance keeps its historical identity; any other provenance is appended.
+ * ordered segments and every manifest field. Only manual provenance, the owner's own title, is
+ * appended: automatic and legacy keep the historical identity, so a request accepted before
+ * provenance existed, such as a `factory_start_run` retried after an upgrade, still recovers its Run.
  */
 function startFingerprint(
   input: Pick<StartRunInput, "projectId" | "flowId" | "title" | "titleProvenance" | "createdAt">,
@@ -56,7 +57,7 @@ function startFingerprint(
   const text = promptText(prompt.segments);
   const content: unknown[] = [input.projectId, input.flowId, text, input.title, input.createdAt];
   if (prompt.images.length) content.push(prompt.segments, prompt.images);
-  if (input.titleProvenance !== "legacy") content.push({ titleProvenance: input.titleProvenance });
+  if (input.titleProvenance === "manual") content.push({ titleProvenance: input.titleProvenance });
   return fingerprint(JSON.stringify(content));
 }
 /**

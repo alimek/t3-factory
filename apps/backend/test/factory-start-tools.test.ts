@@ -210,6 +210,35 @@ it("a Start whose reply was lost returns the same Run with its title provenance 
   expect(fixture.t3.launches.size).toBe(1);
 });
 
+it("a session Start accepted before title provenance existed replays to its Run with legacy provenance when retried after the upgrade", async (c) => {
+  // Arrange
+  const fixture = await prepared(c);
+  const { requestId, projectId, flowId, input } = startArguments(fixture);
+  const accepted = await fixture.f.startRun({
+    requestId,
+    projectId,
+    flowId,
+    input,
+    title: "Improve search",
+    createdAt: "2026-11-07T08:00:00.000Z",
+  });
+  assert(accepted.ok);
+  const client = await factoryMcpClient(c, fixture.f);
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_start_run",
+    arguments: startArguments(fixture),
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  expect(toolReply(result).run.id).toBe(accepted.value.id);
+  const run = await fixture.f.getRun(accepted.value.id);
+  assert(run.ok);
+  expect(run.value.titleProvenance).toBe("legacy");
+});
+
 it("changed content under an accepted request identity is refused as a conflict", async (c) => {
   // Arrange
   const fixture = await prepared(c);

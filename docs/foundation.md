@@ -35,8 +35,8 @@ and restricted OAuth credentials live outside project repositories.
   Run's input keeps the worker-readable text. Migration `071`
   gives every existing Run one text segment and no images.
 - Each Run stores its title with an explicit title provenance (automatic, manual, generated or legacy) taken from
-  the Start request and changed to manual by Rename; it is never derived from the title text. The provenance is part
-  of the Start request identity, except that legacy keeps the identity requests had before provenance existed.
+  the Start request and changed to manual by Rename; it is never derived from the title text. Manual provenance is part
+  of the Start request identity; automatic and legacy keep the identity requests had before provenance existed.
   Migration `079` marks every existing Run legacy and changes no title.
 - The installation-wide **Generate Run titles** setting is one SQLite row holding its on/off state, the chosen T3 model
   and options, a revision and the latest title generation diagnostic. Start acceptance records at most one title generation
