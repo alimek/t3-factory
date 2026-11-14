@@ -539,6 +539,15 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
   "/__fixture/discord/fault": (query) => {
     discord.faultMessages(...(query.getAll("fault") as MessageFault[]));
   },
+  /**
+   * A moderator changes thread `thread`: `state=locked` archives and locks it, `state=unlocked`
+   * unlocks it, leaving it archived.
+   */
+  "/__fixture/discord/thread": (query) => {
+    const thread = query.get("thread")!;
+    if (query.get("state") === "locked") discord.archiveThread(thread, { locked: true });
+    else discord.unlockThread(thread);
+  },
   /** The participant clicks the confirmation button `customId` in thread `thread`. */
   "/__fixture/discord/click": (query) => {
     discordInvocations += 1;

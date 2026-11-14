@@ -163,7 +163,12 @@ export const makeChatDiscord = (
   credentials: ChatCredentials,
   gateway: DiscordGateway,
   operation: DiscordOperation,
-  recovery: { readonly actions: ChatActions; readonly deliveries: ChatDeliveries },
+  recovery: {
+    readonly actions: ChatActions;
+    readonly deliveries: ChatDeliveries;
+    /** Captures every origin's reporting again: a regrant starts from current Run state. */
+    readonly reportingRescan: Effect.Effect<void>;
+  },
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -288,7 +293,9 @@ export const makeChatDiscord = (
         const validated = validateUpdateDiscordAccess(input);
         if (!validated.ok) return validated;
         const saved = yield* updateAccess(sql, validated.value);
-        return saved.ok ? yield* getDiscordSettings() : saved;
+        if (!saved.ok) return saved;
+        yield* recovery.reportingRescan;
+        return yield* getDiscordSettings();
       });
 
     /**

@@ -26,6 +26,8 @@ import { conversationalModel, makeChatModel } from "./chat-control/model.ts";
 import { makeChatActions } from "./chat-control/actions.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
 import { makeChatDeliveries } from "./chat-control/deliveries.ts";
+import { makeReportCapture } from "./chat-control/run-reports.ts";
+import { statusCards } from "./chat-control/status-cards.ts";
 import { startAction } from "./chat-control/start-action.ts";
 import { runTools } from "./chat-control/run-tools.ts";
 import { makeChatDiscord } from "./chat-control/discord.ts";
@@ -141,7 +143,19 @@ export const makeFactoryService = (
       acceptedStart: (requestId) => runner.acceptedStart(requestId),
     });
     const chatDeliveries = yield* makeChatDeliveries(sql);
-    const chatActions = makeChatActions(sql, [chatStart.operation], chatDeliveries);
+    const reportCapture = yield* makeReportCapture(
+      sql,
+      { getRun: (id) => guard(runner.getRun(id)) },
+      [statusCards(sql)],
+      chatDeliveries.wake,
+    );
+    yield* changes.onRunChanged(reportCapture.changed);
+    const chatActions = makeChatActions(
+      sql,
+      [chatStart.operation],
+      chatDeliveries,
+      reportCapture.changed,
+    );
     const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
       model: conversationalModel(sql, chatCredentials),
       tools: [
@@ -159,6 +173,7 @@ export const makeFactoryService = (
     const chatDiscord = yield* makeChatDiscord(chatCredentials, discordGateway, discordOperation, {
       actions: chatActions,
       deliveries: chatDeliveries,
+      reportingRescan: reportCapture.rescan,
     });
     const runtimeReports = createRuntime(
       (publicId, report) => runner.consumeBlockUpdate(publicId, report),
@@ -275,5 +290,7 @@ export const makeFactoryService = (
     yield* runner.initialize();
     // Chat actions interrupted by a stop reconcile their Start identity once the Runner owns Runs.
     yield* chatActions.recover;
+    // Automatic reporting reads Runs through the Runner, so it starts once the Runner owns them.
+    yield* Effect.forkScoped(reportCapture.run);
     return factory;
   });

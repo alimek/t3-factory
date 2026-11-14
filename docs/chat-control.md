@@ -482,10 +482,59 @@ clicked, and otherwise expires so the requester asks again.
 ### Originating thread
 
 A Run accepted from a chat Start records the Discord thread it was requested in as its originating
-thread. It is a reporting destination for later status reports, not ownership: any allowed
+thread. It is the destination of the Run's [status card](#status-cards), not ownership: any allowed
 participant may act on any Run in a permitted Project. Runs started in Factory, through Factory MCP
 or before this release have none, and reading or acting on a Run never adds one. Ordinary Run views
-and approved clients never see it.
+and approved clients never see it. A receipt goes to the thread its action was requested in, and its
+delivery is independent of the Run's card.
+
+### Status cards
+
+Each chat-started Run has one status card in its originating thread, which Factory edits as the Run
+changes: the Run's number, title, Project, Flow and state (Active, Snoozed, Settled or Archived), a
+confirmed Settle still stopping workers, active Blocks, the latest accepted result of each Block with
+its exit, whether its worker finished and where its handoffs went, pending Waits with their deadlines,
+and pending Needs input and Problems. An observation that is stale or not yet made is shown as such,
+never as a Problem. Block starts, results and Wait progress edit the card; they never post a message,
+and the card never carries report bodies or prompts: participants read those with Read Run. Long
+lists are summarized so the card always fits one message. The card mentions nobody. Replying to the
+card points Factory's conversation at its Run: the model receives only the Run's ID and reads the Run
+afresh within the thread's current scope, never the card's text.
+
+Factory captures what each card owes from the Run's committed facts, not from the live updates the
+Factory UI receives: a change to a chat-started Run, every Access save and every backend start bring
+the recorded card text up to date, whether Chat control is On or Off, whether anyone watches and
+whatever the language model's state. Snooze does not mute the card. Delivering the card never delays
+or changes the Run. While Off, during a Discord outage or while the backend is stopped, the owed
+update waits; once a session serves again, Factory edits the card to the Run's current state rather
+than replaying what happened meanwhile. A card the Run owes, because it was never posted or shows an
+older state, stays owed however old it is; a card that already shows a Settled or Archived Run gets
+nothing more.
+
+An Access save that stops the thread's channel granting the Run's Project cancels the card's owed
+update and nothing accrues while it stays revoked. After a regrant, Factory corrects a card it already
+posted to the Run's current state without a new message, and posts a card it never managed to post only
+if the Run is Active or Snoozed or has pending Needs input or Problems. Removing the requester from Access
+does not stop the card: it depends on the channel's grant and the bot's access.
+
+Editing in an archived thread needs it unarchived: when Discord refuses the edit because the thread is
+archived and a fresh read shows it unlocked, Factory unarchives it and edits the card without posting
+anything; a new message, such as a receipt, reopens the thread by itself. Factory never unlocks,
+recreates or relocates a thread. A locked thread, a thread Discord no longer shows the bot, missing
+permissions or Discord's active-thread limit is a failed delivery in Settings with its correction and
+Retry. Only Discord's Unknown Message answer to an edit proves the card deleted; an unknown or deleted
+thread does not. A deleted card is replaced automatically once per Run; if that replacement is deleted
+too, Factory creates the next card only on the host's Retry, one attempt at a time, and restarts,
+reconnects and time never renew the allowance. Card creates follow the receipt rules above: an
+unproven create is unknown and only the warned Retry sends it again, while an edit is safe to repeat
+and is retried with waits. A request already sent when a session is released (Off, a token rotation or a
+stop) is allowed to finish for up to ten seconds, so its answer is recorded.
+
+After a different Discord application is verified and On, the new bot cannot edit the old bot's cards.
+Each Run that is Active or Snoozed or has pending Needs input or Problems gets one new card from the
+new bot, which says once that the previous bot's messages are no longer updated; quiet Settled or
+Archived Runs get none. The old cards stay as they are, and an old create whose outcome is unknown
+stays unknown. Rotating the same application's token keeps editing the same cards.
 
 ## Support limits
 
@@ -512,8 +561,10 @@ the OpenAI-compatible wire format; no live model's tool-calling quality is quali
 the owner's responsibility. Reply-target payloads, mention suppression, multi-part replies and the
 member lookup used after an outage are not yet qualified against Discord.
 
-Reviews, confirmation buttons, their private answers, receipts and delivery failures are tested
-against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a message
-create. Button payloads, ephemeral answers to button clicks, Discord's real error codes for
-archived, locked or deleted threads and message-create deduplication are not yet qualified against
-Discord; Factory uses no nonce deduplication and treats every unproven create as unknown.
+Reviews, confirmation buttons, their private answers, receipts, status cards and delivery failures
+are tested against the same stand-in, which can rate-limit, refuse, lose the answer to or hold a
+message create or edit, and models deleted messages and threads and archived, locked and limited
+threads. Button payloads, ephemeral answers to button clicks, message edits, unarchiving, Discord's
+real error codes for archived, locked or deleted threads and messages, and message-create
+deduplication are not yet qualified against Discord; Factory uses no nonce deduplication, treats every
+unproven create as unknown and does not search for copies an unknown create may have left.

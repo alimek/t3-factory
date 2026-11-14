@@ -38,6 +38,8 @@ export interface ControlledDiscordThread {
   readonly private: boolean;
   /** User IDs Discord lists as thread members. */
   readonly members: Set<string>;
+  archived?: boolean;
+  locked?: boolean;
 }
 
 /** One Gateway connection as Discord saw it. */
@@ -59,18 +61,23 @@ type Answer = {
 };
 
 /**
- * How Discord treats one later message create: `refused` answers 403 Missing Access,
+ * How Discord treats one later message create or edit: `delivered` proceeds normally,
+ * `refused` answers 403 Missing Access,
  * `rate-limited` answers 429, `lost` creates the message and drops the connection before
  * answering, `failed` answers 500 after creating nothing, `held` never answers and creates nothing.
  */
-export type MessageFault = "refused" | "rate-limited" | "lost" | "failed" | "held";
+export type MessageFault = "delivered" | "refused" | "rate-limited" | "lost" | "failed" | "held";
 
-/** A message Discord created, with its components. */
+/** A message Discord created, with its components, as it shows it now. */
 export interface CreatedMessage {
   readonly id: string;
   readonly channelId: string;
-  readonly content: string;
+  /** The current text: edits replace it. */
+  content: string;
   readonly components: unknown;
+  /** The application whose bot authored it. */
+  readonly applicationId: string;
+  deleted: boolean;
 }
 type Fields = Record<string, unknown>;
 
@@ -109,10 +116,10 @@ const threadPayload = (thread: ControlledDiscordThread) => ({
   member_count: thread.members.size,
   message_count: 0,
   thread_metadata: {
-    archived: false,
+    archived: thread.archived === true,
     auto_archive_duration: 1440,
     archive_timestamp: new Date(0).toISOString(),
-    locked: false,
+    locked: thread.locked === true,
   },
 });
 
@@ -207,7 +214,12 @@ export async function startControlledDiscord() {
   const departed = new Set<string>();
   let gatewayAvailable = true;
   const messageFaults: MessageFault[] = [];
+  const editFaults: MessageFault[] = [];
   const created: CreatedMessage[] = [];
+  /** Every edit Discord applied, in order. */
+  const edits: { readonly messageId: string; readonly content: string }[] = [];
+  const deletedThreads = new Set<string>();
+  let activeThreadLimitReached = false;
   let sequence = 0;
   let nextId = 900000000000000000n;
   const mintId = () => String(++nextId);
@@ -229,6 +241,22 @@ export async function startControlledDiscord() {
   };
 
   const unknownChannel: Answer = { status: 404, body: { message: "Unknown Channel", code: 10003 } };
+  const unknownMessage: Answer = { status: 404, body: { message: "Unknown Message", code: 10008 } };
+  const locked: Answer = { status: 403, body: { message: "Thread is locked", code: 160005 } };
+  const archived: Answer = { status: 400, body: { message: "Thread is archived", code: 50083 } };
+  /** A fault's answer, or undefined when the request proceeds. */
+  const faultAnswer = (fault: MessageFault | undefined): Answer | undefined => {
+    if (fault === "refused")
+      return { status: 403, body: { message: "Missing Access", code: 50001 } };
+    if (fault === "rate-limited")
+      return {
+        status: 429,
+        body: { message: "You are being rate limited.", retry_after: 0.01, global: false },
+      };
+    if (fault === "failed") return { status: 500, body: { message: "Internal", code: 0 } };
+    if (fault === "held") return { status: 0, held: true };
+    return undefined;
+  };
   const unavailable: Answer = { status: 503, body: { message: "Service Unavailable", code: 0 } };
   const sentMessage = (channelId: string, author: object, fields: Fields, extra: object = {}) => ({
     id: mintId(),
@@ -310,15 +338,13 @@ export async function startControlledDiscord() {
       /^\/api\/v10\/channels\/(\d+)\/messages$/,
       ({ match, fields, bot }) => {
         const fault = messageFaults.shift();
-        if (fault === "refused")
-          return { status: 403, body: { message: "Missing Access", code: 50001 } };
-        if (fault === "rate-limited")
-          return {
-            status: 429,
-            body: { message: "You are being rate limited.", retry_after: 0.01, global: false },
-          };
-        if (fault === "failed") return { status: 500, body: { message: "Internal", code: 0 } };
-        if (fault === "held") return { status: 0, held: true };
+        const faulted = faultAnswer(fault);
+        if (faulted) return faulted;
+        if (deletedThreads.has(match[1]!)) return unknownChannel;
+        const thread = threads.get(match[1]!);
+        if (thread?.locked) return locked;
+        // Posting in an archived thread that is not locked reopens it.
+        if (thread) thread.archived = false;
         const message = sentMessage(match[1]!, botUser(bot), fields, {
           components: fields.components ?? [],
         });
@@ -327,14 +353,62 @@ export async function startControlledDiscord() {
           channelId: match[1]!,
           content: typeof fields.content === "string" ? fields.content : "",
           components: fields.components ?? [],
+          applicationId: bot.applicationId,
+          deleted: false,
         });
         return { status: 200, body: message, lost: fault === "lost" };
+      },
+    ],
+    [
+      "PATCH",
+      /^\/api\/v10\/channels\/(\d+)\/messages\/(\d+)$/,
+      ({ match, fields, bot }) => {
+        const fault = editFaults.shift();
+        const faulted = faultAnswer(fault);
+        if (faulted) return faulted;
+        if (deletedThreads.has(match[1]!)) return unknownChannel;
+        const message = created.find(
+          (entry) => entry.id === match[2] && entry.channelId === match[1] && !entry.deleted,
+        );
+        if (!message) return unknownMessage;
+        if (message.applicationId !== bot.applicationId)
+          return {
+            status: 403,
+            body: { message: "Cannot edit a message authored by another user", code: 50005 },
+          };
+        const thread = threads.get(match[1]!);
+        if (thread?.locked) return locked;
+        if (thread?.archived) return archived;
+        if (typeof fields.content === "string") message.content = fields.content;
+        edits.push({ messageId: message.id, content: message.content });
+        return {
+          status: 200,
+          body: sentMessage(match[1]!, botUser(bot), fields, { id: message.id }),
+          lost: fault === "lost",
+        };
+      },
+    ],
+    [
+      "PATCH",
+      /^\/api\/v10\/channels\/(\d+)$/,
+      ({ match, fields }) => {
+        const thread = threads.get(match[1]!);
+        if (!thread || deletedThreads.has(thread.id)) return unknownChannel;
+        if (thread.locked) return locked;
+        if (fields.archived === false && thread.archived && activeThreadLimitReached)
+          return {
+            status: 400,
+            body: { message: "Maximum number of active threads reached", code: 160006 },
+          };
+        if (typeof fields.archived === "boolean") thread.archived = fields.archived;
+        return { status: 200, body: threadPayload(thread) };
       },
     ],
     [
       "GET",
       /^\/api\/v10\/channels\/(\d+)$/,
       ({ match }) => {
+        if (deletedThreads.has(match[1]!)) return unknownChannel;
         const thread = threads.get(match[1]!);
         if (thread) return { status: 200, body: threadPayload(thread) };
         const guild = parentOf(match[1]!);
@@ -558,6 +632,46 @@ export async function startControlledDiscord() {
     /** Resolves once Discord created `count` messages in total. */
     createdMessages(count: number) {
       return changed.wait(() => created.length >= count);
+    },
+    /** Resolves once `count` created messages satisfy `matches`. */
+    createdWhere(matches: (message: CreatedMessage) => boolean, count: number) {
+      return changed.wait(() => created.filter(matches).length >= count);
+    },
+    /** Every message edit Discord applied, in order. */
+    edits,
+    /** Later message edits meet these faults in order, one each. */
+    faultEdits(...faults: MessageFault[]) {
+      editFaults.push(...faults);
+    },
+    /** Resolves once `matches` holds for Discord's messages, re-checked after every request. */
+    messagesWhen(matches: (messages: readonly CreatedMessage[]) => boolean) {
+      return changed.wait(() => matches(created));
+    },
+    /** A moderator deletes a message: edits of it answer Unknown Message from now on. */
+    deleteMessage(id: string) {
+      created.find((message) => message.id === id)!.deleted = true;
+    },
+    /** The thread is archived (and locked, if asked), as Discord does after inactivity. */
+    archiveThread(id: string, options: { readonly locked?: boolean } = {}) {
+      const thread = threads.get(id)!;
+      thread.archived = true;
+      thread.locked = options.locked === true;
+    },
+    /** A moderator unlocks the thread; it stays archived until something reopens it. */
+    unlockThread(id: string) {
+      threads.get(id)!.locked = false;
+    },
+    /** Whether Discord shows the thread archived now. */
+    threadArchived(id: string) {
+      return threads.get(id)?.archived === true;
+    },
+    /** The thread is deleted: Discord answers Unknown Channel for it. */
+    deleteThread(id: string) {
+      deletedThreads.add(id);
+    },
+    /** Reopening archived threads fails: the server reached Discord's active thread limit. */
+    setActiveThreadLimitReached(reached: boolean) {
+      activeThreadLimitReached = reached;
     },
     /** Makes Gateway discovery fail as a Discord outage does. */
     setGatewayAvailable(available: boolean) {

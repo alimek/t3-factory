@@ -213,7 +213,7 @@ const HANDOFF_STATES = { acknowledged: "delivered", cancelled: "cancelled" } as 
  * Long texts (prompt, results, working messages, Human contexts, Wait messages) are sections the
  * overview only sizes; lists are cut into overview pages.
  */
-function runOverview(identity: RunIdentity, detail: RunDetail) {
+export function runOverview(identity: RunIdentity, detail: RunDetail) {
   const sections: Sections = new Map();
   const graph = detail.definitions.flow.graph.blocks;
   const definition = (blockId: string) => graph.find((block) => block.id === blockId);

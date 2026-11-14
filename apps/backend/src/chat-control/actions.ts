@@ -235,6 +235,8 @@ export function makeChatActions(
   sql: SqlClient.SqlClient,
   operations: readonly ChatOperation[],
   deliveries: ChatDeliveries,
+  /** Told after a committed origin, so its Run's status card is captured now. */
+  originRecorded: (runId: string) => void,
 ) {
   const byName = new Map(operations.map((operation) => [operation.name, operation]));
   /** Actions this process is performing right now. */
@@ -366,6 +368,8 @@ export function makeChatActions(
           });
         }),
       );
+      if (outcome.kind === "accepted" && outcome.originRunId !== undefined)
+        originRecorded(outcome.originRunId);
       if (outcome.kind === "accepted" || outcome.kind === "rejected") yield* deliveries.wake;
     });
 

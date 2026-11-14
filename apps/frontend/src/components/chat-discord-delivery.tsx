@@ -21,6 +21,7 @@ const STATE_LABELS: Record<ChatDeliveryProblem["state"], string> = {
 
 const PURPOSE_LABELS: Record<ChatDeliveryProblem["purpose"], string> = {
   receipt: "Action receipt",
+  "status-card": "Status card",
 };
 
 /**

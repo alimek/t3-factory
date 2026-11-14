@@ -367,7 +367,9 @@ menu items never opens a row preview.
 
 Authorized [Chat control](chat-control.md#finding-and-reading-runs) participants can also find and read any Run of the
 Projects their Discord channel grants, including Runs started here. Reading in chat changes nothing about the Run, and its
-views here and on approved clients carry no Discord identifiers.
+views here and on approved clients carry no Discord identifiers. A Run started through a chat confirmation also has a
+[status card](chat-control.md#status-cards) in its originating thread, which Factory keeps current from the Run's
+facts; Snooze, Settle and Archive here change only what the card shows.
 
 ### Branches and pull requests
 

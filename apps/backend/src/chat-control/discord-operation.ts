@@ -39,6 +39,7 @@ import { makeIngress, registerCommands, type ReferencedMessage } from "./discord
 import { makeInterpreter, type InterpretationEngine } from "./interpretation.ts";
 import type { ConversationalModelAccess } from "./model.ts";
 import { makeRequesterEvidence } from "./requester-evidence.ts";
+import { publishedRun } from "./status-cards.ts";
 
 type Run = <A>(effect: Effect.Effect<A, unknown>) => Promise<A>;
 
@@ -132,6 +133,33 @@ class FactoryDiscordAdapter extends DiscordAdapter {
       },
     );
     return ((await response.json()) as { id: string }).id;
+  }
+
+  /** Replaces a Factory message's text, mentioning nobody, in a single request. */
+  async edit(threadId: string, messageId: string, text: string) {
+    const { payload } = this.buildMessagePayload({ raw: text });
+    const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
+    await this.discordFetch(
+      `/channels/${discordThreadId ?? channelId}/messages/${messageId}`,
+      "PATCH",
+      { content: payload.content, allowed_mentions: payload.allowed_mentions },
+    );
+  }
+
+  /**
+   * Unarchives the thread if a fresh read shows it archived and not locked. A locked thread is
+   * left as it is: only its moderators may unlock it.
+   */
+  async reopen(threadId: string): Promise<"open" | "reopened" | "locked"> {
+    const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
+    const path = `/channels/${discordThreadId ?? channelId}`;
+    const channel = (await (await this.discordFetch(path, "GET")).json()) as {
+      thread_metadata?: { archived?: boolean; locked?: boolean };
+    };
+    if (!channel.thread_metadata?.archived) return "open";
+    if (channel.thread_metadata.locked) return "locked";
+    await this.discordFetch(path, "PATCH", { archived: false });
+    return "reopened";
   }
 
   listen(client: Client, isShuttingDown: () => boolean) {
@@ -302,6 +330,9 @@ export const makeDiscordOperation = (
           applicationId: connection.applicationId,
           create: (destination, text, button) =>
             adapter.create(encodeThreadId(destination), text, button),
+          edit: (destination, messageId, text) =>
+            adapter.edit(encodeThreadId(destination), messageId, text),
+          reopen: (destination) => adapter.reopen(encodeThreadId(destination)),
         };
         const engine = yield* makeInterpreter({
           sql,
@@ -343,8 +374,7 @@ export const makeDiscordOperation = (
               references.delete(messageId);
               return reference;
             },
-            // No message Factory publishes identifies a Run yet; status cards will resolve theirs.
-            publishedRun: () => Effect.succeed(undefined),
+            publishedRun: publishedRun(sql, connection.applicationId),
           },
           engine,
         );

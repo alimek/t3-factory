@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, test } from "@e2e-dev/web";
-import { expect } from "e2e";
+import { expect, type App, type Screen } from "e2e";
 import type {
   ChatModelSettings,
   DiscordSettings,
@@ -459,10 +459,10 @@ const receipts = (messages: FixtureMessage[]) =>
   messages.filter((message) => message.content.startsWith(RECEIPT));
 
 /**
- * A participant's Start, confirmed with its button, whose receipt create Discord performed but
- * whose answer was lost: Factory owes a receipt it cannot prove either way.
+ * A participant's Start of `prompt`, confirmed with its button after Discord was told to meet the
+ * next message creates with `faults`. Returns the thread and the number of receipts before it.
  */
-async function unknownReceipt(baseUrl: string | undefined) {
+async function confirmedStart(baseUrl: string | undefined, prompt: string, faults: string[]) {
   const project = await firstProject(baseUrl);
   const flows = (await (await fetch(new URL("/api/flows", baseUrl))).json()) as Result<
     { id: string; name: string; readiness: { ready: boolean } }[]
@@ -470,7 +470,6 @@ async function unknownReceipt(baseUrl: string | undefined) {
   assert(flows.ok);
   const flow = flows.value.find((entry) => entry.name === "Demo · Focused change")!;
   await operatingChatControl(baseUrl);
-  const prompt = "UI receipt journey · Tidy the project picker";
   provider.state.toolCall = {
     name: "start_run",
     input: { projectId: project.id, flowId: flow.id, prompt, promptSource: "requester-message" },
@@ -483,19 +482,62 @@ async function unknownReceipt(baseUrl: string | undefined) {
   const messages = await messagesWhen(baseUrl, (created) =>
     created.some((message) => message.channelId === thread && message.customId !== null),
   );
-  const { customId } = messages.find((message) => message.customId !== null)!;
+  const { customId } = messages.find(
+    (message) => message.channelId === thread && message.customId !== null,
+  )!;
   const before = receipts(messages).length;
-  await fetch(new URL("/__fixture/discord/fault?fault=lost", baseUrl), { method: "POST" });
+  for (const fault of faults)
+    await fetch(new URL(`/__fixture/discord/fault?fault=${fault}`, baseUrl), { method: "POST" });
   await fetch(new URL(`/__fixture/discord/click?thread=${thread}&customId=${customId}`, baseUrl), {
     method: "POST",
   });
+  return { thread, before };
+}
+
+/** The Run ID the latest receipt in `thread` names. */
+async function receiptRunId(baseUrl: string | undefined, thread: string) {
+  const messages = await messagesWhen(baseUrl, (created) =>
+    receipts(created).some((message) => message.channelId === thread),
+  );
+  return /Run ID: `([^`]+)`/.exec(
+    receipts(messages)
+      .filter((message) => message.channelId === thread)
+      .at(-1)!.content,
+  )![1]!;
+}
+
+/**
+ * A participant's Start, confirmed with its button, whose receipt create Discord performed but
+ * whose answer was lost: Factory owes a receipt it cannot prove either way.
+ */
+async function unknownReceipt(baseUrl: string | undefined) {
+  const { thread, before } = await confirmedStart(
+    baseUrl,
+    "UI receipt journey · Tidy the project picker",
+    ["lost"],
+  );
   await settingsWhen<DiscordSettings>(baseUrl, "/api/chat-control/discord", (settings) =>
     settings.delivery.problems.some((problem) => problem.state === "unknown"),
   );
-  const runId = /Run ID: `([^`]+)`/.exec(
-    receipts(await messagesWhen(baseUrl, () => true)).at(-1)!.content,
-  )![1]!;
-  return { before, runId };
+  return { before, runId: await receiptRunId(baseUrl, thread) };
+}
+
+/**
+ * Opens Settings → Discord at the delivery problem `label` showing `message`, with the navigation
+ * item marked, and returns the problem's list item.
+ */
+async function deliveryProblem(app: App, screen: Screen, label: string, message: string) {
+  await app.open("/settings/chat-control/discord");
+  const delivery = screen.getByRole("region", "Delivery and actions");
+  const problem = delivery.getByRole("listitem", label);
+  await expect(problem.getByText(message)).toBeVisible();
+  await expect(
+    screen
+      .getByRole("navigation", "Settings sections")
+      .getByRole("link", "Discord, needs attention", { exact: true }),
+  ).toBeVisible();
+  await delivery.scrollIntoView();
+  return problem;
 }
 
 test("the host retries an owed receipt Discord may already show only after a duplicate warning, and the Start is not repeated", async ({
@@ -505,20 +547,12 @@ test("the host retries an owed receipt Discord may already show only after a dup
 }) => {
   // Arrange
   const { before, runId } = await unknownReceipt(app.baseUrl);
-  await app.open("/settings/chat-control/discord");
-  const delivery = screen.getByRole("region", "Delivery and actions");
-  const receipt = delivery.getByRole("listitem", "Action receipt, Unknown");
-  await expect(
-    receipt.getByText(
-      "Factory cannot tell whether Discord created the message. Retrying may post it twice.",
-    ),
-  ).toBeVisible();
-  await expect(
-    screen
-      .getByRole("navigation", "Settings sections")
-      .getByRole("link", "Discord, needs attention", { exact: true }),
-  ).toBeVisible();
-  await delivery.scrollIntoView();
+  const receipt = await deliveryProblem(
+    app,
+    screen,
+    "Action receipt, Unknown",
+    "Factory cannot tell whether Discord created the message. Retrying may post it twice.",
+  );
   await app.screenshot("chat-discord-delivery-unknown");
   await receipt.getByRole("button", "Retry").tap();
   const warning = screen.getByRole("alertdialog", "Retry a message Discord may already show?");
@@ -552,4 +586,57 @@ test("the host retries an owed receipt Discord may already show only after a dup
   await app.screenshot("chat-discord-delivery-retried");
   const archived = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/archive`, undefined);
   assert(archived.ok, JSON.stringify(archived));
+});
+
+const CARD = /^\*\*Run [^\n]+\*\* · /;
+const LOCKED_CORRECTION =
+  "The thread is locked, and Factory never unlocks threads. Unlock it in Discord, then retry.";
+
+test("the host retries a status card Discord refused in a locked thread once a moderator unlocked it", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const { thread } = await confirmedStart(
+    app.baseUrl,
+    "UI card journey · Align the Run header",
+    [],
+  );
+  const runId = await receiptRunId(app.baseUrl, thread);
+  await messagesWhen(app.baseUrl, (created) =>
+    created.some((message) => message.channelId === thread && CARD.test(message.content)),
+  );
+  await fetch(new URL(`/__fixture/discord/thread?thread=${thread}&state=locked`, app.baseUrl), {
+    method: "POST",
+  });
+  // Archiving the Run changes its card, whose edit Discord refuses in the locked thread.
+  const archived = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/archive`, undefined);
+  assert(archived.ok, JSON.stringify(archived));
+  await settingsWhen<DiscordSettings>(app.baseUrl, "/api/chat-control/discord", (settings) =>
+    settings.delivery.problems.some(
+      (problem) => problem.purpose === "status-card" && problem.state === "failed",
+    ),
+  );
+  const card = await deliveryProblem(app, screen, "Status card, Failed", LOCKED_CORRECTION);
+  await app.screenshot("chat-discord-status-card-failed");
+  await fetch(new URL(`/__fixture/discord/thread?thread=${thread}&state=unlocked`, app.baseUrl), {
+    method: "POST",
+  });
+
+  // Act
+  await card.getByRole("button", "Retry").tap();
+
+  // Assert
+  await expect(screen.getByRole("region", "Delivery and actions")).toHaveCount(0);
+  const messages = await messagesWhen(app.baseUrl, (created) =>
+    created.some(
+      (message) =>
+        message.channelId === thread && /^\*\*Run [^\n]+\*\* · Archived\n/.test(message.content),
+    ),
+  );
+  assert.strictEqual(
+    messages.filter((message) => message.channelId === thread && CARD.test(message.content)).length,
+    1,
+  );
+  await app.screenshot("chat-discord-status-card-retried");
 });

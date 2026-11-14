@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_actions
+-- Newest applied migration: chat_status_cards
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -143,17 +143,20 @@ CREATE TABLE chat_conversations (
   PRIMARY KEY (application_id, thread_id)
 );
 
-CREATE TABLE chat_deliveries (
+CREATE TABLE "chat_deliveries" (
   id TEXT PRIMARY KEY,
-  purpose TEXT NOT NULL CHECK (purpose IN ('receipt')),
+  purpose TEXT NOT NULL CHECK (purpose IN ('receipt', 'status-card')),
   action_id TEXT REFERENCES chat_actions(id),
+  -- The Run a status card reports; receipts belong to their action instead.
+  run_id TEXT,
   guild_id TEXT NOT NULL,
   parent_channel_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   -- The Projects the content concerns; the destination channel must still grant them.
   project_ids_json TEXT NOT NULL,
+  -- The text Discord should show: what a create sends, or what an edit brings a card to.
   text TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('owed', 'sending', 'delivered', 'failed', 'unknown', 'cancelled')),
+  state TEXT NOT NULL CHECK (state IN ('owed', 'sending', 'delivered', 'failed', 'unknown', 'cancelled', 'lost', 'retired')),
   attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
   next_attempt_at TEXT,
   problem TEXT,
@@ -161,8 +164,13 @@ CREATE TABLE chat_deliveries (
   message_id TEXT,
   sent_by_application_id TEXT,
   created_at TEXT NOT NULL,
-  CHECK ((problem IS NULL) = (problem_at IS NULL))
+  CHECK ((problem IS NULL) = (problem_at IS NULL)),
+  CHECK ((purpose = 'status-card') = (run_id IS NOT NULL)),
+  CHECK (purpose = 'status-card' OR state NOT IN ('lost', 'retired'))
 );
+
+CREATE INDEX chat_deliveries_message ON chat_deliveries(message_id)
+;
 
 CREATE INDEX chat_deliveries_state ON chat_deliveries(state)
 ;
@@ -280,6 +288,15 @@ CREATE TABLE chat_sdk_cache (
 
 CREATE TABLE chat_sdk_subscriptions (
   thread_id TEXT PRIMARY KEY
+);
+
+CREATE TABLE chat_status_cards (
+  run_id TEXT PRIMARY KEY REFERENCES chat_run_origins(run_id),
+  delivery_id TEXT NOT NULL UNIQUE REFERENCES chat_deliveries(id),
+  reportable INTEGER NOT NULL CHECK (reportable IN (0, 1)),
+  replacement_used INTEGER NOT NULL DEFAULT 0 CHECK (replacement_used IN (0, 1)),
+  replaced_application_id TEXT,
+  final INTEGER NOT NULL DEFAULT 0 CHECK (final IN (0, 1))
 );
 
 CREATE TABLE client_grants (

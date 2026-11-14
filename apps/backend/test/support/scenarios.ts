@@ -424,14 +424,19 @@ const workersLaunched = (run: RunDetail) =>
     ),
   );
 
-/** Starts a Run and observes until every Block it activated has a launched worker; T3 then
- * shows each worker's first turn running. */
-async function startRun(world: ScenarioWorld, input: unknown) {
-  const started = stepResult("start a Run", await world.factory.startRun(input));
-  const run = await observeFor("start a Run", world, started.id, workersLaunched);
+/** Observes until every Block the Run activated has a launched worker; T3 then shows each
+ * worker's first turn running. */
+export async function launchedWorkers(world: ScenarioWorld, runId: string) {
+  const run = await observeFor("launch the workers", world, runId, workersLaunched);
   const workers = run.activations.map((activation) => workerHandle(world, run, activation.blockId));
   for (const worker of workers) await recordLaunchedThread(world.t3, worker.threadId);
   return { run, workers };
+}
+
+/** Starts a Run and observes until every Block it activated has a launched worker. */
+async function startRun(world: ScenarioWorld, input: unknown) {
+  const started = stepResult("start a Run", await world.factory.startRun(input));
+  return launchedWorkers(world, started.id);
 }
 
 type ReportFields = {
