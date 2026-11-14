@@ -96,7 +96,7 @@ override, so any other variant is a new or duplicated Agent. Clicking empty canv
 input port (Flow input first, at least 18 px apart).
 
 An Agent block's panel always shows the optional **Revisit instruction** plain-text field, edited like a Continuation's prompt (up to 120,000 characters; surrounding whitespace is
-dropped on save, and whitespace alone saves as empty). Its helper text says it is sent on every visit to the block after the first, with the incoming message; the Agent prompt still applies;
+dropped on save, and whitespace alone saves as empty). The field never cuts input short: longer text stays in the draft and Save reports the error at the block's field. Its helper text says it is sent on every visit to the block after the first, with the incoming message; the Agent prompt still applies;
 and the instruction decides that visit's scope but never waives the Agent's criteria, a required check or a defect with evidence. Edits are unsaved draft changes like any other. A block with a
 non-empty instruction shows a small neutral **Revisit instruction** tag in its canvas header, never the text and never styled as an execution state. New Agent blocks start empty, and swapping
 the block's Agent or copying the Flow's graph keeps the value. Delivery is described in the [Runner](runner.md#revisit-instructions).

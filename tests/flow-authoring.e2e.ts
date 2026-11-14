@@ -358,6 +358,38 @@ test("choosing another Saved Agent for a block keeps its Revisit instruction and
   await expect(screen.getByRole("article", "Block Reviewer")).toContainText("Revisit instruction");
 });
 
+test("saving a Revisit instruction over 120,000 characters is refused with an error and keeps the whole text in the draft", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1920, height: 1000 });
+  const flowId = await saveSingleAgentFlow(app.baseUrl, "Revisit oversize", "Sample worker", {
+    id: "reviewer",
+    name: "Reviewer",
+    x: 320,
+    y: 180,
+  });
+  await app.open(`/studio/flows/${flowId}`);
+  await screen.getByRole("button", "Agent Reviewer").tap();
+  const field = screen
+    .getByRole("complementary", "Block configuration")
+    .getByRole("textbox", "Revisit instruction optional");
+  const oversize = "x".repeat(120_001);
+  await field.fill(oversize);
+
+  // Act
+  await screen.getByRole("button", "Save Flow").tap();
+
+  // Assert
+  await expect(
+    screen.getByText(/revisitInstruction: Enter a Revisit instruction up to 120,000 characters\./),
+  ).toBeVisible();
+  await expect(screen.getByRole("status", "Flow save status")).not.toContainText("Saved");
+  await expect(field).toHaveValue(oversize);
+});
+
 test("a saved copy of a Flow keeps its Agent block's Revisit instruction and canvas marker", async ({
   app,
   screen,

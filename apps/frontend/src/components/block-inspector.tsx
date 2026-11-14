@@ -166,7 +166,6 @@ function RevisitInstructionField({
         rows={6}
         aria-describedby={`${id}-help`}
         value={block.revisitInstruction}
-        maxLength={120_000}
         onChange={(e) => onEdit({ ...block, revisitInstruction: e.target.value })}
         className="min-h-32 bg-muted text-sm"
       />
