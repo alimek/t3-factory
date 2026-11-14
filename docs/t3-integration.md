@@ -389,7 +389,7 @@ A `waiting` report from an outdated instruction is refused with `WAITING_RETIRED
 Any harness session with Factory MCP registered can author definitions without a Block id or an active Run:
 
 - `factory_list_agents`, `factory_get_agent`, `factory_create_agent` and `factory_save_agent` list, read, create and save Agents.
-- `factory_list_flows`, `factory_get_flow`, `factory_create_flow` and `factory_save_flow` do the same for Flows. Saves replace the whole graph; [Flow creation and layout](studio.md#validation-contract) support a graph and workspace in one creation and optional positions.
+- `factory_list_flows`, `factory_get_flow`, `factory_create_flow` and `factory_save_flow` do the same for Flows. Saves replace the whole graph; [Flow creation and layout](studio.md#validation-contract) support a graph and workspace in one creation and optional positions. Agent blocks read and write their optional `revisitInstruction` under the same [graph shape](studio.md#graph-shape) rules as Studio.
 - `factory_check_flow` checks the latest saved Flow's readiness using the same graph checks as Studio's **Check readiness**. It does not validate an unsaved draft or establish live execution readiness.
 - `factory_remove_agent` and `factory_remove_flow` remove an Agent or a Flow by id, exactly as Studio's [Agent removal](studio.md#agent-definitions) and [Flow removal](studio.md#removing-a-flow).
 - `factory_get_agent_capabilities` reads the live T3 catalog of environments, provider instances, models and model options, including each provider's `reporting.supported` flag and explanation.
@@ -479,7 +479,12 @@ Factory is still confirming the worker's launch. `exits` lists the exits the wor
 `{ id, name, description, messageRequired }`: its captured Agent revision's exits not hidden in the Flow, then the Flow-local
 exits. A Request report message lists the same exits with their descriptions and message requirement. For a
 Continuation the reason is `continuation`, `prompt` is its captured prompt and `exits` is empty: the worker finishes
-it without an exit, with its response as the message.
+it without an exit, with its response as the message. On a visit after the first to an Agent block whose
+[Revisit instruction](runner.md#revisit-instructions) is set, `revisitInstruction` is the captured instruction and
+`revisitRule` the conflict rule its message states, worded in
+[Revisit instructions](runner.md#revisit-instructions). Both are omitted on a first visit or when the instruction is
+empty. A Request report message never includes the instruction: it asks for an assessment of existing
+work, not a new task.
 
 The launch message contains the captured Agent prompt. The worker retrieves the original Run input and incoming Agent result
 through this tool. `inputs.results` identifies the exact report that caused the current visit, with its `reportId`, source

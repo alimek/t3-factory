@@ -77,7 +77,8 @@ interface ReleasedCapture {
   tasks: Value<"listTasks">;
 }
 
-/** A released block as current Factory reads it: its Agent block exits are now Flow-local. */
+/** A released block as current Factory reads it: its Agent block exits are now Flow-local and
+ * it has an empty Revisit instruction. */
 const currentBlock = ({ exits, ...block }: ReleasedBlock): FlowBlock =>
   block.kind === "human"
     ? block
@@ -88,6 +89,7 @@ const currentBlock = ({ exits, ...block }: ReleasedBlock): FlowBlock =>
           ...exit,
           messageRequired: requiresFeedback,
         })),
+        revisitInstruction: "",
       };
 
 /** A released Flow as current Factory reads it: the same revision in the project checkout, its

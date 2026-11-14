@@ -8,6 +8,7 @@ import {
   fanOutWaitFlow,
   finishedReport,
   humanThenWaitFlow,
+  instructedLoopWaitFlow,
   launchBlockId,
   loopWaitFlow,
   nextLaunch,
@@ -666,6 +667,32 @@ it.effect("a loop back through a Wait records each revisit as its own arrival", 
     expect(run.waitArrivals[0]?.deadlineAt).toBe(first.arrival.deadlineAt);
     expect(run.waitArrivals[1]?.origin?.activationId).not.toBe(first.arrival.origin?.activationId);
   }),
+);
+
+it.effect(
+  "a Wait returning to its worker revisits it with the Revisit instruction before the forwarded message",
+  (c) =>
+    Effect.gen(function* () {
+      // Arrange
+      const f = yield* preparedService(c, instructedLoopWaitFlow, scheduledOnly);
+      const worker = yield* Effect.promise(() => workerAtWork(f.world, f.input));
+      yield* Effect.promise(() => resultReported(f.world, worker, { message: "First pass." }));
+      yield* Effect.promise(() => resultReleasedToWait(f.world, worker));
+      const revisitSent = nextSend(f.world);
+
+      // Act
+      yield* TestClock.adjust(WAIT_MINUTES * MINUTE);
+
+      // Assert
+      const revisit = yield* Effect.promise(() => revisitSent);
+      expect(revisit.threadId).toBe(worker.threadId);
+      expect(revisit.message).toContain(
+        "\n\nRevisit instruction for this later visit of your Block. ",
+      );
+      expect(revisit.message).toMatch(
+        /\nVerify the fixes and the newly affected scope\.\n\nIncoming message:\nFirst pass\.$/,
+      );
+    }),
 );
 
 it.effect(

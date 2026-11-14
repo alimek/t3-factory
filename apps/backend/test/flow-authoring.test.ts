@@ -476,3 +476,128 @@ it("local exit IDs matching visible or hidden Agent exits allow saving but block
   expect(started.error.issues).toStrictEqual(saved.value.readiness.issues);
   expect(await f.listRuns(project.id)).toStrictEqual({ ok: true, value: [] });
 });
+
+it("an Agent block's Revisit instruction is saved trimmed and read back after restart", async (context) => {
+  // Arrange
+  const { harness, factory, created, unconnectedGraph } = await flowWithAgent(context);
+  const [coder, human] = unconnectedGraph.blocks;
+  const saved = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph: {
+      ...unconnectedGraph,
+      blocks: [
+        { ...coder!, revisitInstruction: "\n  Verify the fixes and the newly affected scope.  " },
+        human!,
+      ],
+    },
+  });
+  assert(saved.ok);
+  await factory.close();
+
+  // Act
+  const recovered = await readFlowAfterRestart(harness, created.value.id);
+
+  // Assert
+  expect(saved.value.graph.blocks[0]).toMatchObject({
+    kind: "agent",
+    revisitInstruction: "Verify the fixes and the newly affected scope.",
+  });
+  expect(recovered).toStrictEqual(saved);
+});
+
+it("a whitespace-only Revisit instruction is saved empty", async (context) => {
+  // Arrange
+  const { factory, created, unconnectedGraph } = await flowWithAgent(context);
+  const [coder, human] = unconnectedGraph.blocks;
+
+  // Act
+  const saved = await factory.updateFlow(created.value.id, {
+    name: created.value.name,
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph: { ...unconnectedGraph, blocks: [{ ...coder!, revisitInstruction: " \n\t " }, human!] },
+  });
+
+  // Assert
+  assert(saved.ok);
+  expect(saved.value.graph.blocks[0]).toMatchObject({ kind: "agent", revisitInstruction: "" });
+});
+
+it("a Revisit instruction on a Human step is refused at its field path and appends no revision", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [block, { ...humanStep("review", "Review"), revisitInstruction: "Check again." }],
+    connections: [],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["invalid_revisit_instruction", "graph.blocks.1.revisitInstruction"],
+  ]);
+  expect(await factory.getFlow(created.value.id)).toStrictEqual(created);
+});
+
+it("a Revisit instruction over 120,000 characters is refused at its field path", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [{ ...block, revisitInstruction: "x".repeat(120_001) }],
+    connections: [],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues).toStrictEqual([
+    {
+      code: "invalid_revisit_instruction",
+      path: "graph.blocks.0.revisitInstruction",
+      message: "Enter a Revisit instruction up to 120,000 characters.",
+    },
+  ]);
+});
+
+it("a Revisit instruction that is not text is refused at its field path", async (context) => {
+  // Arrange
+  const { factory, created, block } = await validationFlow(context);
+  const graph = {
+    flowInput: flowInput("a"),
+    blocks: [{ ...block, revisitInstruction: 42 }],
+    connections: [],
+  };
+
+  // Act
+  const result = await factory.updateFlow(created.value.id, {
+    name: "Validation",
+    expectedRevision: 1,
+    workspace: created.value.workspace,
+    graph: graph as never,
+  });
+
+  // Assert
+  assert(!result.ok);
+  expect(result.error.issues.map((issue) => [issue.code, issue.path])).toStrictEqual([
+    ["invalid_revisit_instruction", "graph.blocks.0.revisitInstruction"],
+  ]);
+});

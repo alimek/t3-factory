@@ -66,6 +66,7 @@ export const upgradedGraph = (agentId: string, flowInput: FlowGraph["flowInput"]
     position: { x, y: 0 },
     hiddenExitIds: [],
     localExits,
+    revisitInstruction: "",
   });
   return {
     flowInput,

@@ -256,6 +256,91 @@ it("an MCP-created Flow with an eight-day Wait saves with Studio's readiness gap
   expect(assertOk(await factory.getFlow(flow.id))).toStrictEqual(flow);
 });
 
+function revisitGraph(agentId: string, revisitInstruction: string) {
+  return {
+    flowInput: { targetBlockIds: ["review"] },
+    blocks: [
+      {
+        id: "review",
+        kind: "agent" as const,
+        name: "Review",
+        agentId,
+        hiddenExitIds: [],
+        localExits: [],
+        revisitInstruction,
+      },
+    ],
+    connections: [],
+  };
+}
+
+it("factory_create_flow stores an Agent block's trimmed Revisit instruction and factory_get_flow returns it without a readiness issue", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const agent = assertOk(await factory.createAgent(sampleAgentInput("Reviewer")));
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_create_flow",
+    arguments: {
+      name: "Review once",
+      graph: revisitGraph(agent.id, "  Check every finding again.  "),
+    },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const created = toolReply(result);
+  expect(created.graph.blocks[0].revisitInstruction).toBe("Check every finding again.");
+  expect(created.readiness).toStrictEqual({ ready: true, issues: [] });
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_get_flow", arguments: { flowId: created.id } }),
+    ),
+  ).toStrictEqual(created);
+});
+
+it("factory_save_flow replaces an Agent block's Revisit instruction and factory_get_flow returns it without a readiness issue", async (c) => {
+  // Arrange
+  const { factory, client } = await authoringMcpClient(c);
+  const agent = assertOk(await factory.createAgent(sampleAgentInput("Reviewer")));
+  const created = assertOk(
+    await factory.createFlow({
+      name: "Review once",
+      graph: revisitGraph(agent.id, "Check every finding again."),
+    }),
+  );
+
+  // Act
+  const result = await client.callTool({
+    name: "factory_save_flow",
+    arguments: {
+      flowId: created.id,
+      name: created.name,
+      expectedRevision: created.revision,
+      graph: revisitGraph(agent.id, "Verify the fixes and the newly affected scope."),
+    },
+  });
+
+  // Assert
+  expect(result.isError).toBe(false);
+  const saved = toolReply(result);
+  expect(saved.graph.blocks[0].revisitInstruction).toBe(
+    "Verify the fixes and the newly affected scope.",
+  );
+  expect(saved.readiness).toStrictEqual({ ready: true, issues: [] });
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_get_flow", arguments: { flowId: created.id } }),
+    ),
+  ).toStrictEqual(saved);
+  expect(
+    toolReply(
+      await client.callTool({ name: "factory_check_flow", arguments: { flowId: created.id } }),
+    ),
+  ).toStrictEqual({ ready: true, issues: [] });
+});
+
 it("removing an unused Agent replies with its id and the Agent then reads as not found", async (c) => {
   // Arrange
   const { factory, client } = await authoringMcpClient(c);

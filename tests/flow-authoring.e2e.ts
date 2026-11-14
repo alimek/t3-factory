@@ -3,7 +3,12 @@ import type { FlowDraft, Result } from "../packages/contracts/src/index.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { copyAgentDefinition, readAgentDefinition, updateAgentExits } from "./support/agents.ts";
-import { expectFlowBlocked, saveFlowCopy } from "./support/flows.ts";
+import {
+  createStudioFlow,
+  expectFlowBlocked,
+  saveFlowCopy,
+  saveSingleAgentFlow,
+} from "./support/flows.ts";
 
 test("author a loop and fan-out by dragging exit ports, delete stray connections, save an incomplete draft, connect the Flow input to fix readiness, choose a custom worktree base and reconcile a stale save", async ({
   app,
@@ -291,6 +296,130 @@ test("configure inherited and local Block exits, preserve wired hidden exits and
     "data-connection-count",
     "1",
   );
+});
+
+const revisitInstruction =
+  "On a return, verify the corrections and the newly affected scope; keep earlier dispositions.";
+
+test("a saved Agent block's Revisit instruction is shown again after reload and marks the block on the canvas without its text", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await createStudioFlow(app, screen, browser, "Revisit review loop");
+  await screen.getByRole("button", "Add Sample worker").tap();
+  await screen.getByLabel("Block name").fill("Reviewer");
+  const panel = screen.getByRole("complementary", "Block configuration");
+  const field = panel.getByRole("textbox", "Revisit instruction optional");
+  const reviewer = screen.getByRole("article", "Block Reviewer");
+  await expect(field).toHaveValue("");
+  await expect(reviewer).not.toContainText("Revisit instruction");
+  await field.fill(revisitInstruction);
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Unsaved changes");
+
+  // Act
+  await screen.getByRole("button", "Save Flow").tap();
+
+  // Assert
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 2");
+  await browser.reload();
+  await expect(reviewer).toContainText("Revisit instruction");
+  await expect(reviewer).not.toContainText(revisitInstruction);
+  await screen.getByRole("button", "Agent Reviewer").tap();
+  await expect(field).toHaveValue(revisitInstruction);
+  await app.screenshot("revisit-instruction-authoring");
+});
+
+test("choosing another Saved Agent for a block keeps its Revisit instruction and canvas marker", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1920, height: 1000 });
+  const flowId = await saveSingleAgentFlow(app.baseUrl, "Revisit agent swap", "Sample worker", {
+    id: "reviewer",
+    name: "Reviewer",
+    x: 320,
+    y: 180,
+    revisitInstruction,
+  });
+  await app.open(`/studio/flows/${flowId}`);
+  await screen.getByRole("button", "Agent Reviewer").tap();
+  const panel = screen.getByRole("complementary", "Block configuration");
+
+  // Act
+  await panel.getByLabel("Saved Agent").selectOption("Demo · Product engineer");
+
+  // Assert
+  await expect(panel.getByRole("textbox", "Revisit instruction optional")).toHaveValue(
+    revisitInstruction,
+  );
+  await expect(screen.getByRole("article", "Block Reviewer")).toContainText("Revisit instruction");
+});
+
+test("saving a Revisit instruction over 120,000 characters is refused with an error and keeps the whole text in the draft", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1920, height: 1000 });
+  const flowId = await saveSingleAgentFlow(app.baseUrl, "Revisit oversize", "Sample worker", {
+    id: "reviewer",
+    name: "Reviewer",
+    x: 320,
+    y: 180,
+  });
+  await app.open(`/studio/flows/${flowId}`);
+  await screen.getByRole("button", "Agent Reviewer").tap();
+  const field = screen
+    .getByRole("complementary", "Block configuration")
+    .getByRole("textbox", "Revisit instruction optional");
+  const oversize = "x".repeat(120_001);
+  await field.fill(oversize);
+
+  // Act
+  await screen.getByRole("button", "Save Flow").tap();
+
+  // Assert
+  await expect(
+    screen.getByText(/revisitInstruction: Enter a Revisit instruction up to 120,000 characters\./),
+  ).toBeVisible();
+  await expect(screen.getByRole("status", "Flow save status")).not.toContainText("Saved");
+  await expect(field).toHaveValue(oversize);
+});
+
+test("a saved copy of a Flow keeps its Agent block's Revisit instruction and canvas marker", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  await browser.setViewport({ width: 1920, height: 1000 });
+  await saveSingleAgentFlow(app.baseUrl, "Revisit copy source", "Sample worker", {
+    id: "reviewer",
+    name: "Reviewer",
+    x: 320,
+    y: 180,
+    revisitInstruction,
+  });
+  const copyId = await saveFlowCopy(app.baseUrl, "Revisit copy source", "Revisit review copy", {
+    mode: "checkout",
+  });
+
+  // Act
+  await app.open(`/studio/flows/${copyId}`);
+
+  // Assert
+  await expect(screen.getByRole("article", "Block Reviewer")).toContainText("Revisit instruction");
+  await screen.getByRole("button", "Agent Reviewer").tap();
+  await expect(
+    screen
+      .getByRole("complementary", "Block configuration")
+      .getByRole("textbox", "Revisit instruction optional"),
+  ).toHaveValue(revisitInstruction);
 });
 
 test("Agent exit edits persist, renaming keeps Flow wires and removing a wired exit blocks Start", async ({

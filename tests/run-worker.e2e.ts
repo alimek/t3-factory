@@ -663,7 +663,7 @@ test("a keyboard-confirmed Settle that finishes stopping later focuses the Settl
   // Arrange
   const found = await confirmSettleStillStopping(
     { app, screen, browser },
-    "UI worker · Applying your requested changes",
+    "UI worker · Corrections back in review",
   );
 
   // Act

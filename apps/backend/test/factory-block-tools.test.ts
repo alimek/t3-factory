@@ -1,7 +1,8 @@
 import { assert, expect, it } from "@effect/vitest";
 import { prepared } from "./support/prepared-runner.ts";
-import { launchedBlockId } from "./support/run-worker.ts";
+import { launchedBlockId, workerMessage } from "./support/run-worker.ts";
 import {
+  REVISIT_INSTRUCTION,
   blockExit,
   finishedReport,
   handoffFlow,
@@ -214,6 +215,126 @@ it("a revisit message states the same Block id as the launch", async (c) => {
   expect([...fixture.t3.sends.values()][0]?.payload.message).toContain(
     `Factory Block id: ${fixture.blockId}.`,
   );
+});
+
+it("a feedback revisit carries the Revisit instruction under its conflict rule, then the incoming result", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const fixture = { ...setup, ...(await resultReported(setup.world, atWork)) };
+
+  // Act
+  assert((await fixture.f.reconcileRuns()).ok);
+
+  // Assert
+  expect([...fixture.t3.sends.values()][0]?.payload.message).toMatch(
+    workerMessage(
+      "Revisit instruction for this later visit of your Block. It decides the scope of this visit; your Agent's role, criteria, exits and reporting rules still apply. A narrower scope never permits skipping a required check or accepting a defect that has evidence; if you cannot reconcile the two, say so in your report. Your Block's previous finished result is available from factory_get_run.\n" +
+        "Verify the fixes and the newly affected scope.\n\n" +
+        "Incoming message:\n" +
+        "Implemented the requested result.",
+    ),
+  );
+});
+
+it("a revisit with a Revisit instruction shows an empty incoming result as (no message)", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const fixture = { ...setup, ...(await resultReported(setup.world, atWork, { message: "" })) };
+
+  // Act
+  assert((await fixture.f.reconcileRuns()).ok);
+
+  // Assert
+  expect([...fixture.t3.sends.values()][0]?.payload.message).toMatch(
+    /\nVerify the fixes and the newly affected scope\.\n\nIncoming message:\n\(no message\)$/,
+  );
+});
+
+it("a revisit without a Revisit instruction is the incoming result alone, as before", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const fixture = { ...setup, ...(await resultReported(setup.world, atWork)) };
+
+  // Act
+  assert((await fixture.f.reconcileRuns()).ok);
+
+  // Assert
+  expect([...fixture.t3.sends.values()][0]?.payload.message).toMatch(
+    workerMessage("Implemented the requested result."),
+  );
+});
+
+it("the first visit carries the Agent prompt without the Revisit instruction", async (c) => {
+  // Arrange
+  const fixture = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  assert((await fixture.f.startRun(fixture.input)).ok);
+
+  // Act
+  assert((await fixture.f.reconcileRuns()).ok);
+
+  // Assert
+  expect([...fixture.t3.launches.values()][0]?.payload.message).toMatch(
+    workerMessage("Follow repository instructions."),
+  );
+});
+
+it("a later visit's Block read returns the Revisit instruction with its conflict rule", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork);
+  const fixture = { ...setup, ...(await resultReleasedToSameWorker(setup.world, reported)) };
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "BLOCK",
+    visit: 2,
+    revisitInstruction: "Verify the fixes and the newly affected scope.",
+    revisitRule:
+      "It decides the scope of this visit; your Agent's role, criteria, exits and reporting rules still apply. A narrower scope never permits skipping a required check or accepting a defect that has evidence; if you cannot reconcile the two, say so in your report.",
+  });
+});
+
+it("a first visit's Block read omits the Revisit instruction", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const fixture = { ...setup, ...(await workerAtWork(setup.world, setup.input)) };
+
+  // Act
+  const result = await fixture.f.runtime.block({ arguments: { blockId: fixture.blockId } });
+
+  // Assert
+  expect(result).toMatchObject({ code: "BLOCK", visit: 1 });
+  expect(result).not.toHaveProperty("revisitInstruction");
+  expect(result).not.toHaveProperty("revisitRule");
+});
+
+it("the Run read still returns a Block's previous finished result while its later visit is working", async (c) => {
+  // Arrange
+  const setup = await prepared(c, { revisit: true, revisitInstruction: REVISIT_INSTRUCTION });
+  const atWork = await workerAtWork(setup.world, setup.input);
+  const reported = await resultReported(setup.world, atWork, { message: "Found two defects." });
+  const released = await resultReleasedToSameWorker(setup.world, reported);
+  const worker = sentTurnBegins(setup.world, released);
+  const fixture = { ...setup, ...worker };
+  assert(
+    (await report(fixture.world, worker, workingReport("Checking the fixes."))) === "ACCEPTED",
+  );
+
+  // Act
+  const result = await fixture.f.runtime.run({ arguments: { blockId: fixture.blockId } });
+
+  // Assert
+  expect(result).toMatchObject({
+    code: "RUN",
+    blocks: [{ blockId: "worker", state: "working", result: "Found two defects." }],
+  });
 });
 
 it("a revisit's report applies to the Block's current activation", async (c) => {

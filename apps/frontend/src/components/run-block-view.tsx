@@ -201,6 +201,24 @@ function BlockExits({ run, block }: { run: RunDetail; block: FlowBlock }) {
   );
 }
 
+/** The Revisit instruction captured with the Run's Flow revision; the composed turn stays in the
+ * worker thread. */
+function CapturedRevisitInstruction({ block }: { block: FlowBlock }) {
+  if (block.kind !== "agent" || !block.revisitInstruction) return null;
+  return (
+    <InspectorSection title="Revisit instruction" label="Revisit instruction">
+      <div className="flex flex-col gap-1.5 rounded-md border bg-muted px-3 py-2">
+        <p className="text-sm break-words whitespace-pre-wrap text-foreground">
+          {block.revisitInstruction}
+        </p>
+        <p className="text-xs text-subtle-foreground">
+          Captured at Start · sent on every visit after the first
+        </p>
+      </div>
+    </InspectorSection>
+  );
+}
+
 type ContinuationBlock = Extract<FlowBlock, { kind: "continuation" }>;
 
 function sourceName(run: RunDetail, visit: ContinuationVisit) {
@@ -479,6 +497,7 @@ export function RunBlockView({
           <BlockNow run={run} block={block} recorded={recorded} />
         )}
         <BlockResults run={run} block={block} />
+        <CapturedRevisitInstruction block={block} />
         <BlockExits run={run} block={block} />
         <div aria-hidden className="flex-1" />
         <TechnicalDetails
