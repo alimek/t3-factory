@@ -7,13 +7,20 @@ import { invocation, operatingService, THREAD } from "./chat-conversation.ts";
 import { chatWorlds, runConversation } from "./chat-runs.ts";
 import { buttonEvent, type ControlledDiscord, type CreatedMessage } from "./controlled-discord.ts";
 import { preparedService } from "./prepared-runner.ts";
+import {
+  humanReviewFlow,
+  resultReleasedToHumanReview,
+  resultReported,
+  workerAtWork,
+  type ReadyFlowShape,
+} from "./scenarios.ts";
 
 /**
  * An operating Chat control over a Factory that can start Runs (the prepared ready Flow of
  * `runConversation`). `open` reopens the same home against the same external worlds.
  */
-export async function startingWorld(c: TestContext) {
-  const fixture = await runConversation(c);
+export async function startingWorld(c: TestContext, shape?: ReadyFlowShape) {
+  const fixture = await runConversation(c, shape);
   const open = () =>
     fixture.h.open({
       t3: fixture.t3,
@@ -77,17 +84,33 @@ const buttonOf = (message: CreatedMessage) =>
 export const confirmations = (discord: ControlledDiscord) =>
   discord.created.filter((message) => buttonOf(message) !== undefined);
 
+/** The model asks for one mutation tool call. */
+type MutationCall = { readonly toolCalls: readonly { name: string; input: unknown }[] };
+
 /**
  * Delivers a participant invocation asking to start `prompt` (scripted as the model's start_run
  * call), and returns the confirmation button's custom ID once Factory created `messages` messages
  * in total, the last of them the button.
  */
-export async function proposedStart(
+export const proposedStart = (
   world: StartingWorld,
   id: string,
   messages: number,
-  answer: ReturnType<typeof startCall> = startCall(world, START_PROMPT),
+  answer: MutationCall = startCall(world, START_PROMPT),
   content = `start this:\n${START_PROMPT}`,
+) => proposed(world, id, messages, answer, content);
+
+/**
+ * Delivers a participant invocation with `content` whose interpretation is the model's `answer`
+ * call, and returns the confirmation button's custom ID once Factory created `messages` messages
+ * in total, the last of them the button.
+ */
+export async function proposed(
+  world: Pick<StartingWorld, "model" | "discord">,
+  id: string,
+  messages: number,
+  answer: MutationCall,
+  content: string,
 ) {
   world.model.script(answer);
   world.discord.deliver(invocation(id, { content }));
@@ -153,3 +176,62 @@ export const besidesCards = (discord: ControlledDiscord) =>
 /** Resolves once Factory created `count` messages besides status cards. */
 export const createdBesidesCards = (discord: ControlledDiscord, count: number) =>
   discord.createdWhere((message) => !isStatusCard(message), count);
+
+export const HUMAN_CONTEXT = "Review this change.\nCheck the empty state.";
+
+/**
+ * An operating Chat control over a Run started in Factory (Run #1) of the Human review Flow, whose
+ * Review waits on its pending occurrence with the worker's result `context`.
+ */
+export async function answeringWorld(c: TestContext, context = HUMAN_CONTEXT) {
+  const world = await startingWorld(c, humanReviewFlow);
+  const worker = await workerAtWork(world.world, world.input);
+  await resultReported(world.world, worker, { message: context });
+  const review = await resultReleasedToHumanReview(world.world, worker);
+  return { ...world, runId: worker.runId, occurrence: review.occurrence };
+}
+
+/** The model's answer_human call for the world's pending occurrence of Run #1. */
+export const answerCall = (
+  world: { readonly occurrence: { readonly id: string } },
+  input: Record<string, unknown> = {},
+) => ({
+  toolCalls: [
+    {
+      name: "answer_human",
+      input: { run: "#1", occurrenceId: world.occurrence.id, answer: "approve", ...input },
+    },
+  ],
+});
+
+/** The occurrence `id` of the Run as Factory shows it now. */
+export async function occurrenceOf(factory: Pick<Factory, "getRun">, runId: string, id: string) {
+  const run = await factory.getRun(runId);
+  assert(run.ok, JSON.stringify(run));
+  return {
+    occurrence: run.value.humanOccurrences.find((entry) => entry.id === id)!,
+    handoffs: run.value.intents.filter((intent) => intent.occurrenceId === id),
+  };
+}
+
+/**
+ * An operating Chat control over a working Run started in Factory (Run #1 “Improve search”) whose
+ * worker thread is bound, so Archive requests its interruption.
+ */
+export async function archivingWorld(c: TestContext) {
+  const world = await startingWorld(c);
+  const worker = await workerAtWork(world.world, world.input);
+  return { ...world, runId: worker.runId };
+}
+
+/** The model's archive_run call for Run #1. */
+export const archiveCall = (input: Record<string, unknown> = {}) => ({
+  toolCalls: [{ name: "archive_run", input: { run: "#1", ...input } }],
+});
+
+/** The Run's lifecycle as Factory shows it now. */
+export async function lifecycleOf(factory: Pick<Factory, "getRun">, runId: string) {
+  const run = await factory.getRun(runId);
+  assert(run.ok, JSON.stringify(run));
+  return run.value.lifecycle;
+}

@@ -202,10 +202,13 @@ export interface ChatDeliveryProblem {
   readonly nextAttemptAt: string | null;
 }
 
+/** The Factory operations a Chat control action can perform, one shared operation each. */
+export type ChatActionOperation = "start" | "human-answer" | "archive";
+
 /** A confirmed action whose local outcome Factory has not reconciled yet. */
 export interface ChatActionReconciliation {
   readonly id: string;
-  readonly operation: "start";
+  readonly operation: ChatActionOperation;
   readonly startedAt: string;
 }
 

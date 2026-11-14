@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { ChatDeliveryProblem, DiscordSettings } from "@t3-factory/contracts";
+import type {
+  ChatActionOperation,
+  ChatDeliveryProblem,
+  DiscordSettings,
+} from "@t3-factory/contracts";
 import { Button } from "@/components/ui/button";
 import { api } from "../api.ts";
 import { chatControlError } from "./chat-control-form.tsx";
@@ -22,6 +26,12 @@ const STATE_LABELS: Record<ChatDeliveryProblem["state"], string> = {
 const PURPOSE_LABELS: Record<ChatDeliveryProblem["purpose"], string> = {
   receipt: "Action receipt",
   "status-card": "Status card",
+};
+
+const OPERATION_LABELS: Record<ChatActionOperation, string> = {
+  start: "Start",
+  "human-answer": "Human answer",
+  archive: "Archive",
 };
 
 /**
@@ -115,7 +125,7 @@ export function DeliveryDiagnostics({
             className="grid gap-1 rounded-md border p-3 text-sm"
           >
             <p>
-              <span className="font-medium">Start</span>
+              <span className="font-medium">{OPERATION_LABELS[action.operation]}</span>
               {` · Reconciling · confirmed ${dayAndTime(action.startedAt)}`}
             </p>
             <p className="text-muted-foreground">

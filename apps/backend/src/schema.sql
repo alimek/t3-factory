@@ -250,7 +250,7 @@ CREATE TABLE chat_proposals (
   parent_channel_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   requester_id TEXT NOT NULL,
-  operation TEXT NOT NULL CHECK (operation IN ('start')),
+  operation TEXT NOT NULL CHECK (operation IN ('start', 'human-answer', 'archive')),
   parameters_json TEXT NOT NULL,
   -- Requester, context, operation and exact parameters; an identical pending proposal is reused.
   identity TEXT NOT NULL,
@@ -482,9 +482,13 @@ CREATE TABLE human_occurrences (
   appeared_at TEXT NOT NULL,
   settled_at TEXT,
   exit_id TEXT,
-  answer_fingerprint TEXT,
+  answer_fingerprint TEXT, answer_request_id TEXT,
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
+
+CREATE UNIQUE INDEX human_occurrences_answer_request ON human_occurrences(answer_request_id)
+  WHERE answer_request_id IS NOT NULL
+;
 
 CREATE TABLE operation_intents (
   id TEXT PRIMARY KEY,
@@ -903,7 +907,11 @@ CREATE TABLE runs (
   creation_key TEXT NOT NULL DEFAULT '',
   flow_revision_id TEXT NOT NULL REFERENCES flow_revisions(id)
 , settled_at TEXT, archived_at TEXT, block_settlement_enabled INTEGER NOT NULL DEFAULT 0 CHECK(block_settlement_enabled IN (0,1)), prompt_segments_json TEXT, title_provenance TEXT NOT NULL DEFAULT 'legacy'
-  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')));
+  CHECK (title_provenance IN ('automatic', 'manual', 'generated', 'legacy')), archive_request_id TEXT);
+
+CREATE UNIQUE INDEX runs_archive_request ON runs(archive_request_id)
+  WHERE archive_request_id IS NOT NULL
+;
 
 CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL
 ;

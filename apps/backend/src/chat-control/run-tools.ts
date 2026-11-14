@@ -27,7 +27,7 @@ const SECTION_PAGE = 4000;
 const MAX_TEXT = 200;
 const MAX_WORDS = 8;
 
-const NOT_PERMITTED =
+export const NOT_PERMITTED =
   "No Run with this reference is in the Projects this thread permits. It may not exist, or it belongs to a Project this thread does not permit.";
 const EXPIRED =
   "This handle is no longer usable in this conversation (it was reset, cleared, expired or its turn is no longer retained). Search or read the Run again.";
@@ -61,7 +61,7 @@ function pageOf(value: unknown): number | string {
 }
 
 /** An exact Run reference: a Run number (`12` or `#12`) or a Run ID. */
-function referenceOf(value: string): { id: string } | { number: number } {
+export function referenceOf(value: string): { id: string } | { number: number } {
   const number = /^#?(\d{1,15})$/.exec(value.trim())?.[1];
   return number === undefined ? { id: value.trim() } : { number: Number(number) };
 }
@@ -73,7 +73,7 @@ const handleOwner = (scope: ChatToolScope) => ({
 });
 
 /** How a later turn refers to a Run: its number, or its ID when it has none. */
-const runReference = (run: Pick<RunIdentity, "id" | "number">) =>
+export const runReference = (run: Pick<RunIdentity, "id" | "number">) =>
   run.number === null ? run.id : `#${run.number}`;
 
 const unavailable = failed("unavailable", "Factory could not read this Run right now.");

@@ -28,6 +28,8 @@ import { discoveryTools } from "./chat-control/chat-tools.ts";
 import { makeChatDeliveries } from "./chat-control/deliveries.ts";
 import { makeReportCapture } from "./chat-control/run-reports.ts";
 import { statusCards } from "./chat-control/status-cards.ts";
+import { archiveAction } from "./chat-control/archive-action.ts";
+import { humanAnswerAction } from "./chat-control/human-action.ts";
 import { startAction } from "./chat-control/start-action.ts";
 import { runTools } from "./chat-control/run-tools.ts";
 import { makeChatDiscord } from "./chat-control/discord.ts";
@@ -142,6 +144,17 @@ export const makeFactoryService = (
       startTextRun: (input) => guard(runner.startTextRun(input)),
       acceptedStart: (requestId) => runner.acceptedStart(requestId),
     });
+    const chatHumanAnswer = humanAnswerAction(sql, {
+      getRun: (id) => guard(runner.getRun(id)),
+      answerHumanOccurrence: (id, input, requestId) =>
+        guard(runner.answerHumanOccurrence(id, input, requestId)),
+      acceptedHumanAnswer: (requestId) => runner.acceptedHumanAnswer(requestId),
+    });
+    const chatArchive = archiveAction(sql, {
+      getRun: (id) => guard(runner.getRun(id)),
+      archiveRun: (id, requestId) => guard(runner.archiveRun(id, requestId)),
+      acceptedArchive: (requestId) => runner.acceptedArchive(requestId),
+    });
     const chatDeliveries = yield* makeChatDeliveries(sql);
     const reportCapture = yield* makeReportCapture(
       sql,
@@ -152,7 +165,7 @@ export const makeFactoryService = (
     yield* changes.onRunChanged(reportCapture.changed);
     const chatActions = makeChatActions(
       sql,
-      [chatStart.operation],
+      [chatStart.operation, chatHumanAnswer.operation, chatArchive.operation],
       chatDeliveries,
       reportCapture.changed,
     );
@@ -165,6 +178,8 @@ export const makeFactoryService = (
         }),
         ...runTools(sql, { getRun: (id) => guard(runner.getRun(id)) }),
         chatStart.tool,
+        chatHumanAnswer.tool,
+        chatArchive.tool,
       ],
       actions: chatActions,
       deliveries: chatDeliveries,

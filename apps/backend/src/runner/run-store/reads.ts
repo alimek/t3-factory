@@ -26,6 +26,24 @@ export function openRunReads(database: RunnerDatabase) {
           }>`SELECT id,request_fingerprint,created_at FROM runs WHERE request_id=${requestId}`)[0];
         }),
       ),
+    /** The Human occurrence an attributed answer request applied to, if it did. */
+    answeredByRequest: (requestId: string) =>
+      transaction((sql) =>
+        Effect.map(
+          sql<{
+            run_id: string;
+          }>`SELECT run_id FROM human_occurrences WHERE answer_request_id=${requestId}`,
+          (rows) => rows[0],
+        ),
+      ),
+    /** The Run an attributed Archive request archived, if it did. */
+    archivedByRequest: (requestId: string) =>
+      transaction((sql) =>
+        Effect.map(
+          sql<{ id: string }>`SELECT id FROM runs WHERE archive_request_id=${requestId}`,
+          (rows) => rows[0],
+        ),
+      ),
     readBlock: (runId: string, blockId: string) =>
       transaction((sql) =>
         Effect.map(

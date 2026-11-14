@@ -3,7 +3,7 @@ import type { JSONValue } from "ai";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
-import type { ChatActionReconciliation } from "@t3-factory/contracts";
+import type { ChatActionOperation, ChatActionReconciliation } from "@t3-factory/contracts";
 import { newId } from "../ids.ts";
 import { now } from "../time.ts";
 import { grantedProjects } from "./access.ts";
@@ -17,7 +17,7 @@ import {
 } from "./deliveries.ts";
 
 /** The mutation kinds Chat control can propose; each has one shared Factory operation. */
-export type ChatOperationName = "start";
+export type ChatOperationName = ChatActionOperation;
 
 /** A requester's confirmation lasts this long from the first dispatch of its button. */
 const CONSENT_MS = 5 * 60_000;

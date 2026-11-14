@@ -22,6 +22,17 @@ import {
   type MutationTool,
 } from "./chat-tools.ts";
 import { characters, messageParts } from "./interpretation.ts";
+import {
+  clip,
+  CONSENT_LINE,
+  exactTextProblem,
+  MESSAGE_LENGTH,
+  refused,
+  SOURCE_LINES,
+  TEXT_SOURCES,
+  textBlocks,
+  type TextSource,
+} from "./review-text.ts";
 
 /** The Factory operations a chat Start uses: the shared text Start and its reads. */
 export interface StartOperations {
@@ -36,22 +47,13 @@ export interface StartOperations {
   ) => Effect.Effect<Result<RunDetail> | undefined, unknown>;
 }
 
-/** Where the exact prompt text came from. */
-type PromptSource = "requester-message" | "selected-reply" | "composed";
-const PROMPT_SOURCES: readonly PromptSource[] = ["requester-message", "selected-reply", "composed"];
-
 /** A chat Start's exact parameters, immutable once proposed. */
 interface StartParameters {
   readonly projectId: string;
   readonly flowId: string;
   readonly prompt: string;
-  readonly source: PromptSource;
+  readonly source: TextSource;
 }
-
-const PROMPT_CHARACTERS = 8000;
-const PROMPT_BYTES = 16 * 1024;
-const MESSAGE_LENGTH = 2000;
-const FENCE = "```";
 
 const inputSchema: JSONSchema7 = {
   type: "object",
@@ -65,7 +67,7 @@ const inputSchema: JSONSchema7 = {
     },
     promptSource: {
       type: "string",
-      enum: [...PROMPT_SOURCES],
+      enum: [...TEXT_SOURCES],
       description:
         "requester-message or selected-reply when prompt is copied exactly from that text; composed when you wrote it, which Factory labels in the review.",
     },
@@ -92,37 +94,14 @@ function startArguments(input: unknown) {
     return "projectId and flowId must be IDs from list_projects and list_flows.";
   if (typeof prompt !== "string" || prompt.trim() === "")
     return "The task text is missing. Ask the requester for the exact text; never invent it.";
-  if (!PROMPT_SOURCES.includes(promptSource as PromptSource))
+  if (!TEXT_SOURCES.includes(promptSource as TextSource))
     return "promptSource must be requester-message, selected-reply or composed.";
   if (supersedes !== undefined && typeof supersedes !== "string")
     return "supersedes must be a proposal ID.";
   return {
-    parameters: { projectId, flowId, prompt, source: promptSource as PromptSource },
+    parameters: { projectId, flowId, prompt, source: promptSource as TextSource },
     supersedes,
   };
-}
-
-const refused = (error: string, message: string): ChatToolOutcome => ({
-  output: { error, message },
-  fact: { error },
-});
-
-/** Displayable text inside a code block; the stored prompt is never changed. */
-const fenced = (text: string) => `${FENCE}\n${text.replaceAll(FENCE, "``​`")}\n${FENCE}`;
-
-/** Code blocks carrying all of `prompt` in order, each within one Discord message. */
-function promptBlocks(prompt: string) {
-  const room = MESSAGE_LENGTH - 2 * (FENCE.length + 1) - 64;
-  const blocks: string[] = [];
-  let block = "";
-  for (const character of prompt) {
-    if (block.length + character.length > room) {
-      blocks.push(fenced(block));
-      block = "";
-    }
-    block += character;
-  }
-  return [...blocks, fenced(block)];
 }
 
 const workspaceLine = (flow: FlowDraft) =>
@@ -139,24 +118,10 @@ const titlePolicy = (setting: Result<RunTitleSetting>) =>
       ? "Generate Run titles is on: Factory may replace this title with a generated title shortly after Start."
       : "Generate Run titles is off: the Run keeps this title.";
 
-const SOURCE_LINES: Record<PromptSource, string> = {
-  "requester-message": "exactly as written in your message",
-  "selected-reply": "exactly as written in the message you replied to",
-  composed:
-    "**composed by Factory's assistant, not written by you**; read all of it before confirming",
-};
-
 const DISCLOSURE = [
   "When you confirm, Factory resolves the current saved definitions of this Flow and its Agents, including the workspace setting, at that moment: changes saved before then apply without another review. Factory checks the Project, the Flow and T3 again and may still refuse the Start.",
-  "Only the person who asked can confirm, with the button below, within five minutes of it appearing. A reply such as “yes” confirms nothing.",
+  CONSENT_LINE,
 ].join("\n");
-
-const clip = (text: string, limit: number) =>
-  characters(text) <= limit
-    ? text
-    : `${Array.from(text)
-        .slice(0, limit - 1)
-        .join("")}…`;
 
 type AcceptedFacts = {
   runId: string;
@@ -170,25 +135,6 @@ type AcceptedFacts = {
 type RejectedFacts = { message: string; issues: string[] };
 
 const MAX_ISSUES = 5;
-
-/** Why the prompt cannot be proposed: too long, or not exact text from its stated source. */
-function promptProblem(
-  { prompt, source }: StartParameters,
-  scope: ChatToolScope,
-): ChatToolOutcome | undefined {
-  if (characters(prompt) > PROMPT_CHARACTERS || Buffer.byteLength(prompt) > PROMPT_BYTES)
-    return refused(
-      "prompt_too_long",
-      "The task text is longer than Chat control accepts (8,000 characters and 16 KiB). Ask the requester for shorter text or to use Factory; never shorten it yourself.",
-    );
-  if (source === "composed") return undefined;
-  const origin = source === "selected-reply" ? scope.source.selectedReply : scope.source.message;
-  if (origin?.includes(prompt)) return undefined;
-  return refused(
-    "prompt_not_exact",
-    `The prompt is not exact text from the ${source === "selected-reply" ? "selected reply" : "requester's message"}. Copy it character for character, or mark it composed so Factory labels it.`,
-  );
-}
 
 /** The complete review of a Start, as ordered Discord messages. */
 function startReview(
@@ -207,7 +153,7 @@ function startReview(
     titlePolicy(setting),
     `**Prompt** (${characters(prompt).toLocaleString("en-US")} characters), ${SOURCE_LINES[source]}:`,
   ].join("\n");
-  return [...messageParts(header), ...promptBlocks(prompt), DISCLOSURE];
+  return [...messageParts(header), ...textBlocks(prompt), DISCLOSURE];
 }
 
 /** The chat Start: proposal validation and review, and its binding to the shared text Start. */
@@ -337,7 +283,7 @@ export function startAction(operations: StartOperations) {
         const parsed = startArguments(input);
         if (typeof parsed === "string") return invalid(parsed);
         const { parameters, supersedes } = parsed;
-        const inexact = promptProblem(parameters, scope);
+        const inexact = exactTextProblem("prompt", parameters.prompt, parameters.source, scope);
         if (inexact) return inexact;
         const targets = yield* startTargets(parameters, scope);
         if ("output" in targets) return targets;
