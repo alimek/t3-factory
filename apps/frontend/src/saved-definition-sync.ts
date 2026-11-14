@@ -151,7 +151,7 @@ export function createSavedDefinitionSync<D extends Saved>(hooks: SavedSyncHooks
       } else if (presence === "loading") presence = "missing";
       else if (presence === "present") {
         presence = "removed";
-        removedHere = removing;
+        removedHere ||= removing;
         comparing = false;
       }
       reconcile();
@@ -172,13 +172,16 @@ export function createSavedDefinitionSync<D extends Saved>(hooks: SavedSyncHooks
       staleSave = false;
       saveOutcomeUnknown = false;
     },
-    /** The reply's revision becomes the baseline; a removal that arrived meanwhile wins. */
+    /**
+     * The reply's revision becomes the baseline; a removal that arrived meanwhile wins. The
+     * source's copy of the same revision is kept: it may carry newer status fields.
+     */
     saveSucceeded(saved: D) {
       saving = false;
       if (presence === "removed") return;
-      receive(saved);
+      if (!latest || saved.revision > latest.revision) latest = saved;
       presence = "present";
-      take(saved);
+      take(latest.revision === saved.revision ? latest : saved);
       reconcile();
     },
     /** Returns the failure kind; a stale refusal enters the comparison path. */

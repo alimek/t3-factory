@@ -516,3 +516,35 @@ it("changed saved Agents keep an unresolved revision conflict and its refused sa
   // Assert
   expect(draft.getSnapshot()).toMatchObject({ conflict: { status: "detected" }, canSave: false });
 });
+
+it("this editor's removal reply arriving before the source's removal leaves no retained draft", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  await setup.draft.remove();
+
+  // Act
+  deliver(setup, null);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({ presence: "removed", retained: null });
+});
+
+it("a late save reply keeps the readiness Studio's source delivered for the same revision", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  const reply = held(setup.factory.updateFlow);
+  const saving = setup.draft.save();
+  const saved = { ...setup.factory.latest(), name: "Mine", revision: 2 };
+  deliver(setup, { ...saved, readiness: notReady });
+
+  // Act
+  reply.answer({ ...saved, readiness: { ready: true, issues: [] } });
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 2 },
+    readiness: notReady,
+    canStartRun: false,
+  });
+});

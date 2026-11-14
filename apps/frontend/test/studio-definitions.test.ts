@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
+import { OfflineError } from "../src/transport.ts";
 import { held, settled } from "./support/flow-draft.ts";
 import { savedAgent } from "./support/agent-draft.ts";
 import {
@@ -230,4 +231,59 @@ it("a write accepted after its Studio session ends returns its answer and reads 
   await expect(saved).resolves.toStrictEqual(savedAgent({ revision: 4 }));
   expect(factory.listFlows).toHaveBeenCalledTimes(1);
   expect(factory.listAgents).toHaveBeenCalledTimes(1);
+});
+
+it("a create the live source already showed is not kept current after its removal", async () => {
+  // Arrange
+  const { definitions, factory } = liveStudio();
+  const created = { ...savedAgent(), id: "created", name: "Created" };
+  const reply = held(factory.createAgent);
+  const creating = definitions.createAgent(created);
+  definitions.receive({ value: { agents: [created], flows: [] }, synchronized: true, error: null });
+  reply.answer(created);
+  await creating;
+
+  // Act
+  definitions.receive({ value: { agents: [], flows: [] }, synchronized: true, error: null });
+
+  // Assert
+  expect(definitions.view("agents", "created")).toStrictEqual({
+    definition: undefined,
+    synchronized: true,
+  });
+});
+
+it("a write answered after a reconnect changed the source reports an unknown outcome", async () => {
+  // Arrange
+  const { definitions, factory } = liveStudio();
+  const reply = held(factory.updateFlow);
+  const saving = definitions.updateFlow("flow", {
+    name: "Review",
+    expectedRevision: 1,
+    graph: savedFlow("Review").graph,
+  });
+  definitions.setSource("manual");
+
+  // Act
+  reply.answer(savedFlow("Review"));
+
+  // Assert
+  await expect(saving).rejects.toBeInstanceOf(OfflineError);
+});
+
+it("a reconnect to a server without live Studio delivery reads both lists over HTTP", async () => {
+  // Arrange
+  const { definitions, factory } = liveStudio();
+
+  // Act
+  definitions.setSource("manual");
+  await settled();
+
+  // Assert
+  expect(factory.listFlows).toHaveBeenCalledTimes(1);
+  expect(definitions.getSnapshot().flows).toStrictEqual({
+    value: [savedFlow("Review")],
+    synchronized: true,
+    error: null,
+  });
 });

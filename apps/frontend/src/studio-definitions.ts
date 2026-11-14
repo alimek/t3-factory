@@ -5,6 +5,7 @@ import type {
   StudioDefinitions as SavedDefinitions,
 } from "@t3-factory/contracts";
 import { api } from "./api.ts";
+import { OfflineError } from "./transport.ts";
 import type { LiveScopeView } from "./live/owner.ts";
 import type { SavedView } from "./saved-definition-sync.ts";
 
@@ -86,14 +87,19 @@ const liveRead = <V>(
  * The saved Flows and Agents of one Studio session, the one source its lists and editors read.
  * A `live` source shows what live delivery holds and never reads over HTTP; HTTP success never
  * makes it synchronized. A `manual` source reads both lists on opening, on each navigation and
- * retry, and after every accepted write through this module. Create and duplicate replies are
- * acknowledged until the source shows them. Ending the session retires pending reads, and a write
- * completing later still answers its caller but refreshes nothing.
+ * retry, and after every accepted write through this module. A reconnect that renegotiates the
+ * protocol switches the source in place, and a write whose reply arrives after that switch
+ * reports an unknown outcome. Create and duplicate replies are acknowledged until the source
+ * shows them. Ending the session retires pending reads, and a write completing later still
+ * answers its caller but refreshes nothing.
  */
 export function createStudioDefinitions(
   operations: StudioDefinitionsOperations = api,
-  source: StudioSource = "manual",
+  initialSource: StudioSource = "manual",
 ) {
+  let source = initialSource;
+  /** Advances when the source implementation changes; replies from before it are fenced. */
+  let session = 0;
   const flows = savedList(operations.listFlows, publish);
   const agents = savedList(operations.listAgents, publish);
   let live: StudioDefinitionsSnapshot = { flows: unread, agents: unread };
@@ -119,7 +125,9 @@ export function createStudioDefinitions(
   }
   function write<A extends unknown[], R>(operation: (...args: A) => Promise<R>) {
     return async (...args: A) => {
+      const asked = session;
       const result = await operation(...args);
+      if (asked !== session) throw new OfflineError();
       refresh();
       return result;
     };
@@ -130,7 +138,10 @@ export function createStudioDefinitions(
   ) {
     return write(async (...args: A) => {
       const created = await operation(...args);
-      if (!ended) acknowledged.set(created.id, created);
+      const shown = [...(snapshot.flows.value ?? []), ...(snapshot.agents.value ?? [])].some(
+        (definition) => definition.id === created.id,
+      );
+      if (!ended && !shown) acknowledged.set(created.id, created);
       return created;
     });
   }
@@ -138,7 +149,20 @@ export function createStudioDefinitions(
   refresh();
 
   return {
-    source,
+    get source() {
+      return source;
+    },
+    /** The protocol the server declared after a reconnect decides the source. */
+    setSource(next: StudioSource) {
+      if (ended || next === source) return;
+      source = next;
+      session++;
+      live = { flows: unread, agents: unread };
+      flows.retire();
+      agents.retire();
+      if (source === "manual") refresh();
+      else publish();
+    },
     getSnapshot: () => snapshot,
     subscribe(notify: () => void) {
       listeners.add(notify);

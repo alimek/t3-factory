@@ -69,7 +69,8 @@ const emptyContent: FlowContent = {
 const failure = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
 
-const contentOf = (flow: FlowDraft): FlowContent => ({
+/** The part of a saved Flow its editor changes. */
+export const flowContent = (flow: FlowDraft): FlowContent => ({
   name: flow.name,
   workspace: flow.workspace,
   graph: flow.graph,
@@ -98,7 +99,7 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
   const sync = createSavedDefinitionSync<FlowDraft>({
     dirty: () => dirty,
     adopt(flow) {
-      content = contentOf(flow);
+      content = flowContent(flow);
       dirty = false;
       error = "";
       issues = [];

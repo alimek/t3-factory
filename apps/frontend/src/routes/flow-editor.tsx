@@ -3,7 +3,7 @@ import { useDraftGuard, type Retained } from "../draft-guard.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { useComposerNavigation } from "../run-draft.ts";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import type { AgentDefinition, FlowBlock, FlowDraft, FlowGraph } from "@t3-factory/contracts";
+import type { AgentDefinition, FlowBlock, FlowGraph } from "@t3-factory/contracts";
 import { ArrowLeft, Check, CircleDot, ListChecks, Save, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -40,8 +40,8 @@ import {
 } from "../flow-graph.ts";
 import {
   createFlowDraft,
+  flowContent,
   useFlowDraftSnapshot,
-  type FlowContent,
   type FlowDraftModel,
   type FlowDraftSnapshot,
 } from "../flow-draft.ts";
@@ -561,8 +561,11 @@ function DraftProblems({
   onSelect: (blockId: string | null) => void;
 }) {
   const { conflict } = state;
+  // This editor's own removal is about to leave the editor; only a removal elsewhere is announced.
   if (state.presence === "removed")
-    return <RemovedElsewhereNotice noun="Flow" createInput={draft.createInput} />;
+    return state.retained === "removed" ? (
+      <RemovedElsewhereNotice noun="Flow" createInput={draft.createInput} />
+    ) : null;
   return (
     <>
       {state.saveOutcomeUnknown && <SaveOutcomeUnknownNotice noun="Flow" />}
@@ -593,7 +596,7 @@ function DraftProblems({
           local={state.content}
           compared={
             conflict.status === "compared"
-              ? { revision: conflict.latest.revision, content: flowContentOf(conflict.latest) }
+              ? { revision: conflict.latest.revision, content: flowContent(conflict.latest) }
               : null
           }
           takeLabel="Use latest saved Flow"
@@ -607,12 +610,6 @@ function DraftProblems({
     </>
   );
 }
-
-const flowContentOf = (flow: FlowDraft): FlowContent => ({
-  name: flow.name,
-  workspace: flow.workspace,
-  graph: flow.graph,
-});
 
 const PANEL_BADGES: Record<FlowBlock["kind"], string> = {
   agent: "AGENT BLOCK",

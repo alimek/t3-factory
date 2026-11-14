@@ -297,8 +297,11 @@ function AgentReconciliation({
   draft: AgentDraftModel;
   state: AgentDraftSnapshot;
 }) {
+  // This editor's own delete is about to leave the editor; only a removal elsewhere is announced.
   if (state.presence === "removed")
-    return <RemovedElsewhereNotice noun="Agent" createInput={draft.createInput} />;
+    return state.retained === "removed" ? (
+      <RemovedElsewhereNotice noun="Agent" createInput={draft.createInput} />
+    ) : null;
   return (
     <>
       {state.saveOutcomeUnknown && <SaveOutcomeUnknownNotice noun="Agent" />}

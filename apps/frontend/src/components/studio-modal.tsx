@@ -29,10 +29,10 @@ import {
  * ends a moment after Studio closes, so StrictMode's immediate remount keeps the same session.
  */
 function useStudioSession(selection: StudioSelection) {
-  const live = useServerWatchesDefinitions();
-  const [definitions] = useState(() =>
-    createStudioDefinitions(undefined, live ? "live" : "manual"),
-  );
+  const source = useServerWatchesDefinitions() ? "live" : "manual";
+  const [definitions] = useState(() => createStudioDefinitions(undefined, source));
+  // Before paint: a reconnect may renegotiate the protocol while Studio is open.
+  useLayoutEffect(() => definitions.setSource(source), [definitions, source]);
   const ending = useRef<number>(undefined);
   useEffect(() => {
     window.clearTimeout(ending.current);
@@ -55,7 +55,7 @@ function useStudioSession(selection: StudioSelection) {
  * such as Factory MCP, appear at once. An older server cannot deliver them: Studio says so.
  */
 function FollowDefinitions({ definitions }: { definitions: StudioDefinitions }) {
-  return definitions.source === "live" ? (
+  return useServerWatchesDefinitions() ? (
     <FollowLiveDefinitions definitions={definitions} />
   ) : (
     <p
