@@ -108,10 +108,45 @@ export function holdTitleThreadLaunch(t3: ControlledT3) {
   };
   return release;
 }
-/** The title thread's launch request T3 recorded; Flow workers are titled `Factory #<n> · …`. */
-const titleThreadLaunch = (t3: ControlledT3) =>
-  [...t3.launches.values()].find((launch) => launch.payload.title.startsWith("Factory title · "))
-    ?.payload;
+/** The title thread's launch T3 recorded; Flow workers are titled `Factory #<n> · …`. */
+const titleThreadEntry = (t3: ControlledT3) =>
+  [...t3.launches.values()].find((launch) => launch.payload.title.startsWith("Factory title · "));
+const titleThreadLaunch = (t3: ControlledT3) => titleThreadEntry(t3)?.payload;
+/** The title thread T3 launched. */
+export function titleThreadReference(t3: ControlledT3) {
+  const launch = titleThreadEntry(t3);
+  if (!launch) stepFailed("find the title thread", "T3 recorded no title thread launch.");
+  return launch.reference;
+}
+/** T3 accepts the title thread's launch but its reply is lost; Flow worker launches answer. */
+export function loseTitleThreadLaunchReply(t3: ControlledT3) {
+  const launch = t3.launchThread.bind(t3);
+  t3.launchThread = async (target, payload) => {
+    const reference = await launch(target, payload);
+    if (payload.title.startsWith("Factory title · "))
+      throw Error("Lost response after remote acceptance");
+    return reference;
+  };
+}
+/** Resolves with the next Stop request T3 receives for the title thread it launched. */
+export function titleThreadStopRequested(t3: ControlledT3) {
+  const stop = t3.stopThread.bind(t3);
+  return new Promise<{ threadId: string; clientRequestId: string }>((resolve) => {
+    t3.stopThread = async (target, payload) => {
+      await stop(target, payload);
+      if (payload.threadId === titleThreadEntry(t3)?.reference.threadId) resolve(payload);
+    };
+  });
+}
+/** The Stop requests T3 received for the title thread. */
+export const titleThreadStops = (t3: ControlledT3) =>
+  t3.threadStops.filter((stop) => stop.threadId === titleThreadReference(t3).threadId);
+/** The title thread's turn ends without a title: T3 shows it finished. */
+export async function titleThreadEnds(t3: ControlledT3) {
+  const { threadId, runId } = titleThreadReference(t3);
+  await recordLaunchedThread(t3, threadId);
+  endThreadRun(t3, threadId, runId);
+}
 /** Resolves once T3 has recorded the title thread's launch request, also a rejected one. */
 export async function titleThreadLaunchRecorded(t3: ControlledT3) {
   let launch = titleThreadLaunch(t3);

@@ -187,6 +187,11 @@ substituted. Launches omit `runtimeMode`; T3 chooses permissions for the OAuth g
   unknown retention are never assumed safe. Authorization context tracks grant lineage, not authenticated remote identity, and a Block id does not isolate adversarial processes sharing the OS user.
 - Automatic settlement relies on each worker thread as T3 reported it finished, not atomic cross-thread completion, repository quality or agreement on one revision. Native settlement is best effort with no compare-and-set or replay key; a possibly
   issued settlement is not repeated, so a crash can leave a thread active without changing Run semantics.
+- Run title generation launches a T3 thread with the user's T3 permissions in the Project checkout. Its prohibition on
+  reading or editing files, running commands and delegating is a prompt instruction, not enforcement. The 30-second
+  deadline bounds when a title can be written, not the tokens the model spends. Factory's one Stop of a title thread is
+  unconfirmed: an acknowledgement does not prove termination. A title thread launch whose reply was lost and that
+  Factory cannot bind by its provenance before the deadline is abandoned and can leave an orphan T3 thread.
 - Archive closes Factory handoffs and asks T3 once to interrupt each worker thread without confirming termination; a backend crash right after archiving can leave threads running. It does not undo edits or prohibit later direct T3 chats. Backend exit is not Archive. Archived Runs stay archived.
 - No conversation archive, automatic failed-work retry, hosted multi-user service or team accounts. Remote Factory clients need approved, revocable credentials over TLS and the plain HTTP listener accepts only
   loopback peers ([client access](desktop-and-clients.md)).

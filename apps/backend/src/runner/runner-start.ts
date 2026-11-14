@@ -32,7 +32,7 @@ import { catalogProject, fingerprint } from "./runner-utils.ts";
 import { isLocalEndpoint } from "../endpoint-local.ts";
 import { now } from "../time.ts";
 import type { RunImages } from "../run-images.ts";
-import type { StartTitleGeneration } from "../run-titles.ts";
+import type { RunnerTitleGeneration } from "../run-titles.ts";
 /** Request identity and choices; the prompt itself is validated by `validateStartPrompt`. */
 function validStartKeys(input: unknown): input is Omit<StartRunInput, "segments" | "images"> {
   if (!input || typeof input !== "object") return false;
@@ -206,7 +206,8 @@ export function openRunnerStart(
   t3: T3Adapter,
   lifecycle: RunnerLifecycle,
   checkAgent: RunnerOptions["checkAgent"],
-  { planTitleGeneration, dispatchTitleGeneration }: StartTitleGeneration,
+  planTitleGeneration: RunnerTitleGeneration["planTitleGeneration"],
+  followTitleGeneration: (runId: string) => Effect.Effect<void, unknown>,
   images: RunImages,
 ) {
   const { isClosed, drive, getRun } = lifecycle;
@@ -278,7 +279,7 @@ export function openRunnerStart(
       // The title thread launches beside the Flow and never gates its dispatch.
       if (!isClosed()) {
         yield* lifecycle.fork(drive(accepted.value));
-        yield* lifecycle.fork(dispatchTitleGeneration(accepted.value));
+        yield* followTitleGeneration(accepted.value);
       }
       return yield* getRun(accepted.value);
     });

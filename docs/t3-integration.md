@@ -418,7 +418,7 @@ Success is an acceptance receipt: the Run id, number, title, Project and Flow. I
 ## Title threads
 
 [Run title generation](runs.md#run-title-generation) launches one title thread per pending generation, beside the
-Flow. Title thread launches are not enabled in the product yet; this is the contract they follow.
+Flow.
 
 - **Launch.** A top-level thread in the Project checkout (`root` strategy, also for a worktree Run) with the provider
   instance, model and options captured at Start, `interactionMode: "default"` and no `runtimeMode`, like a worker. Its
@@ -426,6 +426,11 @@ Flow. Title thread launches are not enabled in the product yet; this is the cont
   `Factory #<n> · <position> <name>`. The request, with its key, is recorded when Start accepts the Run. Just before
   dispatch Factory rechecks eligibility, marks the request sent and calls `t3_thread_launch` once. A definitive
   rejection fails the generation; a lost reply leaves it pending with no thread bound.
+- **Launch provenance and recovery.** A sent launch with no bound thread is never sent again, also after a restart.
+  Until the deadline, Factory searches the Project for its saved title and binds a thread only under the worker
+  [launch provenance](#launch-provenance) rules: the one thread with that title, top-level, in the Project checkout,
+  with the captured provider, model and options and exactly one matching execution. A launch still unbound at the
+  deadline is abandoned; a thread T3 created for it stays an orphan in T3.
 - **Prompt.** The first message is the fixed built-in prompt (version 1). It asks for a title in the prompt's language
   of at most 120 code points, treats the Run prompt only as text to title, forbids reading, searching or editing files,
   running commands and delegating, and carries the generation's opaque `titleGenerationId`. The Run prompt follows as
@@ -439,12 +444,15 @@ Flow. Title thread launches are not enabled in the product yet; this is the cont
     submission afterwards returns the same success and writes nothing, also after a Rename;
   - `INVALID_TITLE` with the reason; the generation stays pending, so the model can correct and resubmit;
   - `TITLE_ALREADY_APPLIED` for a different title after one was applied;
-  - `TITLE_GENERATION_CLOSED` once the generation was dropped, failed or skipped; the outcome is unchanged;
+  - `TITLE_GENERATION_CLOSED` once the generation was dropped, timed out, cancelled, failed or skipped, and at or
+    after the deadline; the outcome is unchanged;
   - `UNKNOWN_TITLE_GENERATION` for an id Factory never issued, including a Block id, and `TITLE_GENERATION_ID_REQUIRED`
     or `INVALID_ARGUMENT` for malformed calls, each with a static `reason` and `next` step in the Block tools' style.
 
-The title thread has no thread binding, observation, report or attention: Factory never reads or settles it as a
-worker.
+The title thread has no thread binding, observation, report or attention, and is never treated as a worker. Factory
+reads it only to learn whether it finished without a title before the deadline, and, after the outcome, sends at most
+one `t3_thread_interrupt` with `stop: true` while it may still be running and one `t3_thread_organize` settlement once
+it finished ([cleanup](runner.md#run-title-generations)); neither is confirmed.
 
 ## Reporting authority
 

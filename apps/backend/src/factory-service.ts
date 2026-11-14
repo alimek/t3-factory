@@ -118,7 +118,6 @@ export const makeFactoryService = (
         getReportingInstallations: reporting.getReportingInstallations,
       },
       changes,
-      { launchTitleThreads: options.launchTitleThreads === true },
     );
     let runner: Effect.Success<ReturnType<typeof makeRunner>>;
     const runtimeReports = createRuntime(

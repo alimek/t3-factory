@@ -436,6 +436,32 @@ disables its arrival's wake-up; a stale one, one scheduled again at restart, or 
 settlement finds nothing due. Shutdown stops the
 wake-ups; the deadlines stay in the store.
 
+## Run title generations
+
+A [Run title generation](runs.md#run-title-generation) runs beside its Run and is never Run work: it holds no gate,
+settlement, attention or Block state. Every transition is a conditional update of a still-pending generation, so the
+timer, reconcile sweeps, the title thread's submission, Rename, Archive and manual settlement can race and the first
+outcome stays final.
+
+- **Deadline.** The absolute deadline is recorded at Start acceptance. The Runner schedules one wake-up for it on its
+  Effect clock, as for [Wait arrivals](#wait-arrivals), when Start accepts the Run and at startup for every pending
+  generation; the wake-up and every reconcile sweep time out a pending generation whose deadline has passed. A
+  submission at or after the deadline is refused even before the timeout is recorded.
+- **Cancellation.** Archive and confirmed manual settlement cancel a pending generation in the transaction that closes
+  the handoff gate, whether its launch was sent or not; a dispatch that has not marked its launch sent then sends
+  nothing. A generation whose deadline already passed records the timeout instead. Automatic settlement and turning the
+  setting off cancel nothing.
+- **Restart.** Startup and each sweep reconcile every pending generation against its original deadline: an unsent
+  launch is dispatched once, a sent launch without a bound thread is searched for by uniquely verified provenance as
+  an [uncertain worker launch](#ownership-and-restart) is, only until the deadline, and a bound thread is read to see
+  whether it finished without a valid title. Factory never launches a replacement; a launch still unbound at the
+  deadline is abandoned.
+- **Cleanup.** After any outcome with a bound thread, while five minutes have not passed since the outcome and only
+  under the Run's authorization context, Factory reads the title thread under the [completion
+  rule](#worker-thread-completion): an unfinished or unreadable thread gets one Stop with a key derived from the
+  generation, and a finished one gets one T3 thread settlement. Each request is recorded before it is sent and never
+  repeated; Factory neither confirms nor waits for either, also for Archived Runs.
+
 ## Settled Runs
 
 A Run is Active, Settled or [Archived](#archive). Each reconciliation pass tries to
@@ -491,8 +517,8 @@ an object, or any field other than a boolean `stopWorkers`) is a validation erro
 declined Settle.
 With explicit authorization (`stopWorkers`) it is a durable operation:
 
-- **Acceptance.** One transaction in the Run's mutation lane closes the handoff gate, records the
-  settlement with attempt 1 and this backend as the attempt's owner, lists the bound workers as
+- **Acceptance.** One transaction in the Run's mutation lane closes the handoff gate, cancels a pending
+  [Run title generation](#run-title-generations), records the settlement with attempt 1 and this backend as the attempt's owner, lists the bound workers as
   stopping, records `settlement-requested` and advances the generation, before any Stop. The
   closed gate is the cutoff: no launch, send, release, Continuation forwarding, Wait forwarding
   (by its timer or **Continue now**), Human answer or Request report crosses it, and observation,
@@ -558,8 +584,8 @@ work to succeed. Archive stays available during a settlement and its semantics a
 ## Archive
 
 Archive is final and completes in one transaction in the Run's lane: it closes the handoff
-gate, records the Run Archived, cancels pending launches, handoffs, Human occurrences and Wait
-arrivals, clears pending delivery text and every Wait arrival's message (keeping its outcome, deadline and identity), settles pending attention as `archived`, marks activated Blocks
+gate, records the Run Archived, cancels pending launches, handoffs, Human occurrences, Wait
+arrivals and a pending [Run title generation](#run-title-generations), clears pending delivery text and every Wait arrival's message (keeping its outcome, deadline and identity), settles pending attention as `archived`, marks activated Blocks
 that had not finished `stopped` and clears Snooze and Woke. No report, answer, dispatch or
 replay crosses the closed gate, and Archived Runs are never reconciled again: in-flight or
 uncertain operations keep their recorded state.

@@ -11,7 +11,7 @@ import {
 
 /** A started Run whose title thread holds its capability, and the title thread's MCP client. */
 async function titleThreadAtWork(c: Parameters<typeof prepared>[0]) {
-  const fixture = await prepared(c, undefined, { launchTitleThreads: true });
+  const fixture = await prepared(c);
   await enableRunTitles(fixture.f);
   const thread = await titleThreadLaunched(fixture.world, fixture.input);
   return { ...fixture, ...thread, client: await factoryMcpClient(c, fixture.f) };
@@ -215,7 +215,7 @@ it("an unknown title generation id is refused with repair guidance", async (c) =
 
 it("a worker's Block id cannot set its Run's title", async (c) => {
   // Arrange
-  const fixture = await prepared(c, undefined, { launchTitleThreads: true });
+  const fixture = await prepared(c);
   await enableRunTitles(fixture.f);
   const worker = await workerLaunched(fixture.world, fixture.input);
   await titleGenerationLaunched(fixture.world, worker.runId);

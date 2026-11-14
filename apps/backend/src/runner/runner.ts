@@ -26,7 +26,7 @@ import { recoverOperation } from "./runner-effects.ts";
 import { makeWaitTimers } from "./runner-wait-timers.ts";
 import type { LiveChanges } from "../live-changes.ts";
 import type { RunImages } from "../run-images.ts";
-import type { StartTitleGeneration } from "../run-titles.ts";
+import type { RunnerTitleGeneration } from "../run-titles.ts";
 
 /** One scoped Runner owner. Accepted work drains before SQL and ownership are released. */
 export const makeRunner = Effect.fn("Runner.make")(function* (
@@ -37,7 +37,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   checkAgent: RunnerOptions["checkAgent"],
   changes: LiveChanges,
   images: RunImages,
-  titles: StartTitleGeneration,
+  titles: RunnerTitleGeneration,
 ) {
   const scope = yield* Effect.scope;
   const store = yield* openRunStore(owner, changes);
@@ -58,6 +58,17 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
   });
   const lifecycle = { isClosed: () => closed, drive, fork, getRun, serial: drives.serial };
   const waitTimers = makeWaitTimers(scope, (runId) => fork(drive(runId, "dispatch")));
+  const titleDeadlines = makeWaitTimers(scope, (runId) =>
+    fork(titles.reconcileTitleGeneration(runId)),
+  );
+  /** A Run title generation runs beside its Run: its first step now, and a wake-up at its deadline. */
+  const followTitleGeneration = (runId: string) =>
+    Effect.gen(function* () {
+      yield* Effect.forEach(yield* titles.pendingTitleDeadlines(runId), titleDeadlines.schedule, {
+        discard: true,
+      });
+      yield* fork(titles.reconcileTitleGeneration(runId));
+    });
   const { consumeBlockUpdate } = openRunnerReports(store, lifecycle);
   const { observe } = openRunnerObservation(store, t3);
   const { dispatchIntent } = openRunnerDispatch(
@@ -75,14 +86,20 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
     t3,
     lifecycle,
     checkAgent,
-    titles,
+    titles.planTitleGeneration,
+    followTitleGeneration,
     images,
   );
   const { answerHumanOccurrence } = openRunnerHuman(store, lifecycle);
   const { continueWaitArrival } = openRunnerWaits(store, lifecycle, waitTimers.cancel);
-  const { archiveRun } = openRunnerArchive(store, t3, lifecycle, liveContextId);
-  const { settleRun, settleWhenDone, settleFinishedBlockThreads, advanceSettlement } =
-    openRunnerSettle(store, t3, lifecycle, liveContextId);
+  const archive = openRunnerArchive(store, t3, lifecycle, liveContextId);
+  const settle = openRunnerSettle(store, t3, lifecycle, liveContextId);
+  const { settleWhenDone, settleFinishedBlockThreads, advanceSettlement } = settle;
+  // Archive and manual settlement cancel a pending title generation; its cleanup follows.
+  const archiveRun = (id: string) =>
+    Effect.tap(archive.archiveRun(id), () => fork(titles.reconcileTitleGeneration(id)));
+  const settleRun = (id: string, input: unknown) =>
+    Effect.tap(settle.settleRun(id, input), () => fork(titles.reconcileTitleGeneration(id)));
 
   function drive(
     id: string,
@@ -174,6 +191,8 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           yield* Effect.forEach(settling, (run) => advanceSettlement(run.run_id), {
             concurrency: "unbounded",
           });
+          // Title generations run beside their Runs, also Archived ones still owing cleanup.
+          yield* titles.reconcileTitleGenerations();
           // Include dispatches queued by reports while the sweep observed its Runs' workers.
           yield* drives.drain(ids.map((run) => run.id));
           return { ok: true as const, value: undefined };
@@ -189,6 +208,7 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
           closed = true;
           if (timer) yield* Fiber.interrupt(timer);
           yield* waitTimers.close();
+          yield* titleDeadlines.close();
           yield* starts.withPermit(Effect.void);
           yield* sweeps.withPermit(Effect.void);
           yield* Fiber.awaitAll(detached);
@@ -243,6 +263,9 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         yield* store.takeOwnership();
         yield* reconcileRuns();
         yield* Effect.forEach(yield* store.pendingWaits(), waitTimers.schedule, { discard: true });
+        yield* Effect.forEach(yield* titles.pendingTitleDeadlines(), titleDeadlines.schedule, {
+          discard: true,
+        });
         timer = yield* Effect.forkIn(
           Effect.forever(
             Effect.gen(function* () {

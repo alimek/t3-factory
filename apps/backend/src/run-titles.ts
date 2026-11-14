@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type {
@@ -22,6 +23,10 @@ import type { LiveChanges } from "./live-changes.ts";
 import { failure } from "./result.ts";
 import { labelledPromptText } from "./run-images.ts";
 import type { RuntimeReply } from "./runtime-types.ts";
+import { recoverOperation } from "./runner/runner-effects.ts";
+import { verifiedLaunchedThread } from "./runner/runner-block-workers.ts";
+import { fingerprint } from "./runner/runner-utils.ts";
+import { readWorkerThread } from "./runner/worker-thread.ts";
 import { scopedThreadHref } from "./thread-link.ts";
 import { now } from "./time.ts";
 
@@ -31,6 +36,12 @@ const RUN_TITLE_DEADLINE_MS = 30_000;
 const RUN_TITLE_PROMPT_VERSION = 1;
 /** The longest generated title Factory accepts, in Unicode code points. */
 const GENERATED_TITLE_LIMIT = 120;
+/** How long after its outcome Factory still tries to stop and settle a title thread. */
+const CLEANUP_WINDOW_MS = 5 * 60_000;
+
+const TIMED_OUT = "No valid title arrived within 30 seconds of Start.";
+const FINISHED_WITHOUT_TITLE = "The title thread finished without submitting a valid title.";
+const LAUNCH_REJECTED = "T3 rejected the title thread launch.";
 
 type SettingRow = {
   enabled: number;
@@ -132,12 +143,7 @@ type EligibilityOperations = EffectOperations<
   Pick<FactoryOperations, "getConnection" | "getAgentCapabilities" | "getReportingInstallations">
 >;
 
-export const makeRunTitles = (
-  t3: T3Adapter,
-  ops: EligibilityOperations,
-  changes: LiveChanges,
-  { launchTitleThreads }: { readonly launchTitleThreads: boolean },
-) =>
+export const makeRunTitles = (t3: T3Adapter, ops: EligibilityOperations, changes: LiveChanges) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const getRunTitleSetting = () =>
@@ -250,7 +256,7 @@ export const makeRunTitles = (
         const skipped = yield* sql.withTransaction(
           Effect.gen(function* () {
             const rows =
-              yield* sql`UPDATE run_title_generations SET state='skipped',reason=${reason} WHERE id=${generationId} AND state='pending' AND launch_sent_at IS NULL RETURNING id`;
+              yield* sql`UPDATE run_title_generations SET state='skipped',reason=${reason},ended_at=${time} WHERE id=${generationId} AND state='pending' AND launch_sent_at IS NULL RETURNING id`;
             if (rows.length) yield* recordDiagnostic(sql, runId, reason, time);
             return rows.length > 0;
           }),
@@ -258,19 +264,30 @@ export const makeRunTitles = (
         if (skipped) changes.runChanged(runId);
       });
 
-    /**
-     * Launches the Run's pending title thread once, beside its Flow: eligibility is checked again,
-     * the launch is marked sent, then T3 is asked once. A lost reply leaves the generation pending
-     * with its launch sent and no thread; a definitive rejection fails it.
-     */
-    const dispatchTitleGeneration = (runId: string) =>
+    /** Records `state` for a generation still pending; any earlier outcome is final. */
+    const endPending = (generation: ReconcileRow, state: "timed-out" | "failed", reason: string) =>
       Effect.gen(function* () {
-        if (!launchTitleThreads) return;
-        const [generation] =
-          yield* sql<LaunchRow>`SELECT g.id,g.provider_instance_id,g.model_id,g.model_options_json,g.launch_payload_json,c.endpoint,c.environment_id
-          FROM run_title_generations g JOIN runs r ON r.id=g.run_id JOIN t3_authorization_contexts c ON c.id=r.context_id
-          WHERE g.run_id=${runId} AND g.state='pending' AND g.launch_sent_at IS NULL`;
-        if (!generation) return;
+        const ended =
+          yield* sql`UPDATE run_title_generations SET state=${state},reason=${reason},ended_at=${yield* now} WHERE id=${generation.id} AND state='pending' RETURNING id`;
+        if (ended.length) changes.runChanged(generation.run_id);
+      });
+
+    /** Binds the title thread T3 launched, also when the generation ended meanwhile, so the
+     * thread is still cleaned up. */
+    const bindThread = (generation: ReconcileRow, threadId: string) =>
+      Effect.gen(function* () {
+        const bound =
+          yield* sql`UPDATE run_title_generations SET thread_id=${threadId},thread_link=${scopedThreadHref(generation.environment_id, threadId)} WHERE id=${generation.id} AND thread_id IS NULL RETURNING id`;
+        if (bound.length) changes.runChanged(generation.run_id);
+      });
+
+    /**
+     * Launches the pending title thread once, beside the Flow: eligibility is checked again, the
+     * launch is marked sent, then T3 is asked once. A lost reply leaves the launch uncertain; a
+     * definitive rejection fails the generation.
+     */
+    const dispatch = (generation: ReconcileRow) =>
+      Effect.gen(function* () {
         const problem = yield* eligibilityProblem(
           {
             providerInstanceId: generation.provider_instance_id,
@@ -281,13 +298,13 @@ export const makeRunTitles = (
           },
           yield* ops.getAgentCapabilities(),
         );
-        if (problem !== undefined) return yield* skipBeforeLaunch(runId, generation.id, problem);
+        if (problem !== undefined)
+          return yield* skipBeforeLaunch(generation.run_id, generation.id, problem);
         const sent =
           yield* sql`UPDATE run_title_generations SET launch_sent_at=${yield* now} WHERE id=${generation.id} AND state='pending' AND launch_sent_at IS NULL RETURNING id`;
         if (!sent.length) return;
-        const payload = JSON.parse(generation.launch_payload_json) as LaunchPayload;
         const launched = yield* Effect.tryPromise({
-          try: () => t3.launchThread({ endpoint: generation.endpoint }, payload),
+          try: () => t3.launchThread({ endpoint: generation.endpoint }, launchPayload(generation)),
           catch: (error) => error,
         }).pipe(
           Effect.map((reference) => ({ threadId: reference.threadId, rejected: false })),
@@ -295,13 +312,157 @@ export const makeRunTitles = (
             Effect.succeed({ threadId: null, rejected: error instanceof LaunchRejected }),
           ),
         );
-        if (launched.threadId)
-          yield* sql`UPDATE run_title_generations SET thread_id=${launched.threadId},thread_link=${scopedThreadHref(generation.environment_id, launched.threadId)} WHERE id=${generation.id}`;
-        else if (launched.rejected)
-          yield* sql`UPDATE run_title_generations SET state='failed',reason='T3 rejected the title thread launch.' WHERE id=${generation.id} AND state='pending'`;
-        else return;
-        changes.runChanged(runId);
+        if (launched.threadId) yield* bindThread(generation, launched.threadId);
+        else if (launched.rejected) yield* endPending(generation, "failed", LAUNCH_REJECTED);
       });
+
+    /** T3 effects on the title thread happen only under the Run's authorization context. */
+    const contextLive = (generation: ReconcileRow) =>
+      Effect.map(
+        ops.getConnection(),
+        (connection) =>
+          connection.ok &&
+          connection.value.state === "ready" &&
+          connection.value.authorizationContext?.id === generation.context_id,
+      );
+
+    /** The title thread under the worker thread completion rule, read in the Project checkout;
+     * null when T3 cannot show it there. */
+    const readTitleThread = (generation: ReconcileRow, threadId: string) =>
+      recoverOperation(
+        Effect.tryPromise(() =>
+          readWorkerThread(t3, { ...launchScope(generation), workspace: CHECKOUT }, threadId),
+        ),
+        () => Effect.succeed(null),
+      );
+
+    /**
+     * One step for a pending generation, against its absolute deadline: at the deadline it times
+     * out, also with a launch still unbound; before it, an unsent launch is dispatched, an
+     * uncertain one is searched for by verified provenance and never launched again, and a bound
+     * thread that finished without a title fails it.
+     */
+    const advancePending = (generation: ReconcileRow) =>
+      Effect.gen(function* () {
+        if ((yield* Clock.currentTimeMillis) >= Date.parse(generation.deadline_at))
+          return yield* endPending(generation, "timed-out", TIMED_OUT);
+        if (!generation.launch_sent_at) return yield* dispatch(generation);
+        if (!(yield* contextLive(generation))) return;
+        if (!generation.thread_id) {
+          const launched = yield* verifiedLaunchedThread(
+            t3,
+            launchScope(generation),
+            launchPayload(generation),
+          );
+          if (launched) yield* bindThread(generation, launched.threadId);
+          return;
+        }
+        const thread = yield* readTitleThread(generation, generation.thread_id);
+        if (thread?.finished) yield* endPending(generation, "failed", FINISHED_WITHOUT_TITLE);
+      });
+
+    /**
+     * Cleanup after an outcome, while the cleanup window lasts: one keyed Stop while the thread
+     * may still be running, then one T3 thread settlement once it is finished. Each request is
+     * claimed before it is sent and never repeated; neither is confirmed or blocks the Run.
+     */
+    const cleanUp = (generation: ReconcileRow) =>
+      Effect.gen(function* () {
+        const threadId = generation.thread_id;
+        if (
+          generation.state === "pending" ||
+          !threadId ||
+          !generation.ended_at ||
+          generation.settle_requested_at ||
+          (yield* Clock.currentTimeMillis) - Date.parse(generation.ended_at) > CLEANUP_WINDOW_MS ||
+          !(yield* contextLive(generation))
+        )
+          return;
+        const target = { endpoint: generation.endpoint };
+        const thread = yield* readTitleThread(generation, threadId);
+        if (thread?.finished) {
+          const support = yield* Effect.promise(() =>
+            t3.inspectSettleSupport(target).catch(() => null),
+          );
+          if (!support?.supported) return;
+          if (yield* claim(generation, "settle_requested_at"))
+            yield* Effect.promise(() => t3.settleThread(target, { threadId }).catch(() => {}));
+          return;
+        }
+        if (generation.stop_requested_at) return;
+        const support = yield* Effect.promise(() =>
+          t3.inspectStopSupport(target).catch(() => null),
+        );
+        if (!support?.supported) return;
+        if (yield* claim(generation, "stop_requested_at"))
+          yield* Effect.promise(() =>
+            t3
+              .stopThread(target, {
+                threadId,
+                clientRequestId: fingerprint(`${generation.id}:title-stop`),
+              })
+              .catch(() => {}),
+          );
+      });
+
+    /** Records a cleanup request before it is sent; false when it was already claimed. */
+    const claim = (generation: ReconcileRow, column: "stop_requested_at" | "settle_requested_at") =>
+      Effect.gen(function* () {
+        const time = yield* now;
+        const claimed =
+          column === "stop_requested_at"
+            ? yield* sql`UPDATE run_title_generations SET stop_requested_at=${time} WHERE id=${generation.id} AND stop_requested_at IS NULL RETURNING id`
+            : yield* sql`UPDATE run_title_generations SET settle_requested_at=${time} WHERE id=${generation.id} AND settle_requested_at IS NULL RETURNING id`;
+        return claimed.length > 0;
+      });
+
+    const readGeneration = (runId: string) =>
+      Effect.map(
+        sql<ReconcileRow>`SELECT g.id,g.run_id,g.state,g.provider_instance_id,g.model_id,g.model_options_json,g.deadline_at,g.launch_payload_json,g.launch_sent_at,g.thread_id,g.ended_at,g.stop_requested_at,g.settle_requested_at,r.context_id,r.workspace_root,c.endpoint,c.environment_id
+          FROM run_title_generations g JOIN runs r ON r.id=g.run_id JOIN t3_authorization_contexts c ON c.id=r.context_id
+          WHERE g.run_id=${runId} AND g.launch_payload_json IS NOT NULL`,
+        ([row]) => row,
+      );
+
+    /**
+     * Brings the Run's title generation forward: the next step while it is pending, then cleanup
+     * of its thread once it has an outcome. Every transition is conditional, so concurrent or
+     * repeated passes, including after a restart, change nothing twice.
+     */
+    const reconcileTitleGeneration = (runId: string) =>
+      recoverOperation(
+        Effect.gen(function* () {
+          const generation = yield* readGeneration(runId);
+          if (!generation) return;
+          if (generation.state === "pending") yield* advancePending(generation);
+          const current = yield* readGeneration(runId);
+          if (current) yield* cleanUp(current);
+        }),
+        () => Effect.void,
+      );
+
+    /** Every generation that is pending or may still owe its thread's cleanup. */
+    const reconcileTitleGenerations = () =>
+      Effect.gen(function* () {
+        const windowStart = new Date(
+          (yield* Clock.currentTimeMillis) - CLEANUP_WINDOW_MS,
+        ).toISOString();
+        const rows = yield* sql<{
+          run_id: string;
+        }>`SELECT run_id FROM run_title_generations WHERE state='pending' OR (thread_id IS NOT NULL AND settle_requested_at IS NULL AND ended_at>=${windowStart})`;
+        yield* Effect.forEach(rows, (row) => reconcileTitleGeneration(row.run_id), {
+          concurrency: "unbounded",
+          discard: true,
+        });
+      });
+
+    /** The absolute deadline of every pending generation, for the Runner's wake-ups. */
+    const pendingTitleDeadlines = (runId?: string) =>
+      sql<{
+        id: string;
+        runId: string;
+        deadlineAt: string;
+      }>`SELECT id,run_id AS "runId",deadline_at AS "deadlineAt" FROM run_title_generations WHERE state='pending' AND (${runId ?? null} IS NULL OR run_id=${runId ?? null})`;
 
     /**
      * `factory_set_run_title`: the capability names one Run's generation. The first valid title
@@ -321,7 +482,8 @@ export const makeRunTitles = (
               run_id: string;
               state: RunTitleGeneration["state"];
               generated_title: string | null;
-            }>`SELECT run_id,state,generated_title FROM run_title_generations WHERE id=${titleGenerationId}`;
+              deadline_at: string;
+            }>`SELECT run_id,state,generated_title,deadline_at FROM run_title_generations WHERE id=${titleGenerationId}`;
             if (!generation) return { reply: titleRejection("UNKNOWN_TITLE_GENERATION") };
             if (generation.state === "applied")
               return {
@@ -330,13 +492,17 @@ export const makeRunTitles = (
                     ? titleApplied(title)
                     : titleRejection("TITLE_ALREADY_APPLIED"),
               };
-            if (generation.state !== "pending")
+            const time = yield* Clock.currentTimeMillis;
+            // At the deadline the capability is spent, even before its wake-up records timed out.
+            if (generation.state !== "pending" || time >= Date.parse(generation.deadline_at))
               return { reply: titleRejection("TITLE_GENERATION_CLOSED") };
             const problem = generatedTitleProblem(title);
             if (problem) return { reply: { ...titleRejection("INVALID_TITLE"), reason: problem } };
             // A pending generation's Run is still automatic: Rename drops it in the same transaction.
             yield* sql`UPDATE runs SET title=${title},title_provenance='generated' WHERE id=${generation.run_id}`;
-            yield* sql`UPDATE run_title_generations SET state='applied',generated_title=${title} WHERE id=${titleGenerationId}`;
+            yield* sql`UPDATE run_title_generations SET state='applied',generated_title=${title},ended_at=${new Date(time).toISOString()} WHERE id=${titleGenerationId}`;
+            // An applied title shows the setting works, so an earlier eligibility diagnostic is stale.
+            yield* sql`UPDATE run_title_settings SET diagnostic_run_id=NULL,diagnostic_message=NULL,diagnostic_at=NULL WHERE singleton=1`;
             return { reply: titleApplied(title), appliedTo: generation.run_id };
           }),
         );
@@ -348,20 +514,47 @@ export const makeRunTitles = (
       getRunTitleSetting,
       updateRunTitleSetting,
       planTitleGeneration,
-      dispatchTitleGeneration,
+      reconcileTitleGeneration,
+      reconcileTitleGenerations,
+      pendingTitleDeadlines,
       setRunTitle,
     };
   });
 
-type LaunchRow = {
+/** A generation that carries a launch request, with its Run's T3 context. */
+type ReconcileRow = {
   id: string;
+  run_id: string;
+  state: RunTitleGeneration["state"];
   provider_instance_id: string;
   model_id: string;
   model_options_json: string;
+  deadline_at: string;
   launch_payload_json: string;
+  launch_sent_at: string | null;
+  thread_id: string | null;
+  ended_at: string | null;
+  stop_requested_at: string | null;
+  settle_requested_at: string | null;
+  context_id: string;
+  workspace_root: string;
   endpoint: string;
   environment_id: string;
 };
+
+/** The title thread always works in the Project checkout, also for a worktree Run. */
+const CHECKOUT = { mode: "checkout" } as const;
+
+const launchPayload = (generation: ReconcileRow) =>
+  JSON.parse(generation.launch_payload_json) as LaunchPayload;
+
+/** Where the title thread was launched: the Run's T3 environment, project and project root. */
+const launchScope = (generation: ReconcileRow) => ({
+  endpoint: generation.endpoint,
+  environment_id: generation.environment_id,
+  t3_project_id: launchPayload(generation).projectId,
+  workspace_root: generation.workspace_root,
+});
 
 const TITLE_REJECTIONS: Readonly<Record<string, readonly [string, string]>> = {
   INVALID_ARGUMENT: [
@@ -483,13 +676,37 @@ function titleLaunchPayload(
 
 /** A Rename while the title is still pending drops the generation, in the Rename's transaction. */
 export function dropTitleGeneration(sql: SqlClient.SqlClient, runId: string) {
-  return sql`UPDATE run_title_generations SET state='dropped',reason='The Run was renamed before a generated title arrived.' WHERE run_id=${runId} AND state='pending'`;
+  return Effect.gen(function* () {
+    yield* sql`UPDATE run_title_generations SET state='dropped',reason='The Run was renamed before a generated title arrived.',ended_at=${yield* now} WHERE run_id=${runId} AND state='pending'`;
+  });
 }
 
-/** What the Runner uses at Start: the decision before acceptance and the dispatch after it. */
-export type StartTitleGeneration = Pick<
+const CANCELLED = {
+  archive: "The Run was archived before a generated title arrived.",
+  settle: "The Run was settled manually before a generated title arrived.",
+} as const;
+
+/**
+ * Archive and manual settlement end a pending generation in the transaction that closes the Run's
+ * handoff gate, including a launch not sent yet. One whose deadline already passed records the
+ * timeout its wake-up had not recorded yet.
+ */
+export function cancelTitleGeneration(
+  sql: SqlClient.SqlClient,
+  runId: string,
+  time: string,
+  cutoff: keyof typeof CANCELLED,
+) {
+  return sql`UPDATE run_title_generations SET state=CASE WHEN deadline_at<=${time} THEN 'timed-out' ELSE 'cancelled' END,reason=CASE WHEN deadline_at<=${time} THEN ${TIMED_OUT} ELSE ${CANCELLED[cutoff]} END,ended_at=${time} WHERE run_id=${runId} AND state='pending'`;
+}
+
+/** What the Runner uses: the Start decision before acceptance, then each generation's steps. */
+export type RunnerTitleGeneration = Pick<
   Effect.Success<ReturnType<typeof makeRunTitles>>,
-  "planTitleGeneration" | "dispatchTitleGeneration"
+  | "planTitleGeneration"
+  | "reconcileTitleGeneration"
+  | "reconcileTitleGenerations"
+  | "pendingTitleDeadlines"
 >;
 
 /**
@@ -530,7 +747,7 @@ export function recordTitleGeneration(
     const deadline = new Date(Date.parse(run.time) + RUN_TITLE_DEADLINE_MS).toISOString();
     const id = randomUUID();
     const launch = skipped ? null : JSON.stringify(titleLaunchPayload(id, model, run));
-    yield* sql`INSERT INTO run_title_generations(id,run_id,state,reason,provider_instance_id,model_id,model_options_json,model_label,prompt_version,deadline_at,automatic_title,launch_payload_json,created_at) VALUES(${id},${run.id},${skipped ? "skipped" : "pending"},${skipped?.reason ?? null},${model.providerInstanceId},${model.modelId},${JSON.stringify(model.modelOptions)},${capture.modelLabel},${RUN_TITLE_PROMPT_VERSION},${deadline},${run.title},${launch},${run.time})`;
+    yield* sql`INSERT INTO run_title_generations(id,run_id,state,reason,provider_instance_id,model_id,model_options_json,model_label,prompt_version,deadline_at,automatic_title,launch_payload_json,created_at,ended_at) VALUES(${id},${run.id},${skipped ? "skipped" : "pending"},${skipped?.reason ?? null},${model.providerInstanceId},${model.modelId},${JSON.stringify(model.modelOptions)},${capture.modelLabel},${RUN_TITLE_PROMPT_VERSION},${deadline},${run.title},${launch},${run.time},${skipped ? run.time : null})`;
     if (skipped?.diagnostic) yield* recordDiagnostic(sql, run.id, skipped.reason, run.time);
   });
 }

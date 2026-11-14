@@ -98,7 +98,7 @@ export interface RunTitleModel {
   readonly modelId: string;
   readonly modelOptions: readonly AgentModelOptionValue[];
 }
-/** The latest eligibility failure recorded at Start, kept until a later one replaces it. */
+/** The latest eligibility failure, kept until a later one replaces it or a generated title is applied. */
 export interface RunTitleDiagnostic {
   readonly runId: string;
   readonly runNumber: number | null;

@@ -162,8 +162,10 @@ generation is **pending**, or **skipped** when an eligibility check fails (recor
 latest **diagnostic**) or the prompt has no meaningful text. Manual and legacy Runs record none.
 Later setting changes affect only future Runs, and there is no regenerate. A pending generation
 launches one top-level **title thread** in the Project checkout beside the Flow, never gating it,
-after rechecking eligibility; a Rename while it is pending drops it. Title thread launches are
-not enabled in the product yet, so a pending generation stays pending.
+after rechecking eligibility. It ends in exactly one outcome: **applied**, **dropped** by a
+Rename, **timed out** at the deadline, **cancelled** by Archive or manual settlement, or
+**failed** when the launch is rejected or the thread finishes without a title; Factory then
+stops and settles the title thread best effort. A restart never launches it twice.
 
 **Generated title**:
 The Run title a title thread submits through `factory_set_run_title` with its generation's opaque
