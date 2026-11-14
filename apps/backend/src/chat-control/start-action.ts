@@ -236,6 +236,7 @@ export function startAction(operations: StartOperations) {
       }
       return `Factory did not accept it: ${clip((outcome.facts as RejectedFacts).message, 300)}`;
     },
+    target: (parameters) => (parameters as unknown as StartParameters).projectId,
   };
 
   /** The permitted, available Project and the ready saved Flow, or why they cannot be used. */

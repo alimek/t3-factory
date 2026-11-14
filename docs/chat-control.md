@@ -454,8 +454,12 @@ button Discord definitely refused, leaves nothing to confirm and Factory says so
 The consent is bound to the requester, the configured application, the thread, the exact operation
 and parameters and the model's call that proposed it. The button's first dispatch fixes its lifetime
 at five minutes; nothing renews it, including an uncertain delivery or a restart. Asking again for the
-identical action while its review waits points to the existing button instead of posting another; a
-correction names the pending proposal it supersedes, which then ends. A reply such as "yes" is never
+identical action while its review waits points to the existing button instead of posting another. A
+new proposal by the same requester in the same thread for the same operation and primary target (a
+Start's Project, a Human answer's occurrence, an Archive's Run) with different parameters is a
+correction: it ends every earlier pending review of that target as superseded before its own review is
+posted, whether or not the model named one. Proposals for other targets stay independent unless the
+model names the one it supersedes; expired and confirmed proposals are never changed. A reply such as "yes" is never
 consent: the model is told to point to the button, and later turns see each proposal's current state
 (waiting, expired, accepted with the Run's identity, rejected or no longer valid) as a Factory fact,
 so a status question reads it instead of proposing the action again. A waiting confirmation occupies no

@@ -75,6 +75,8 @@ export interface ChatOperation {
   ) => string;
   /** One line for the requester's repeated click: what this decided outcome was. */
   readonly summary: (outcome: Extract<ActionOutcome, { facts: JSONValue }>) => string;
+  /** The primary target whose newer proposal corrects an older one: a Project, occurrence or Run. */
+  readonly target: (parameters: JSONValue) => string;
 }
 
 /** Where and for whom a proposal was made, from the admitted invocation. */
@@ -257,8 +259,10 @@ export function makeChatActions(
 
   /**
    * Records a proposal, or finds the identical one still waiting for this requester here: same
-   * requester, context, operation and exact parameters keep their identity and expiry. A
-   * correction ends the pending proposal it supersedes.
+   * requester, context, operation and exact parameters keep their identity and expiry. Otherwise
+   * it corrects every pending proposal of the same requester, context and operation for the same
+   * primary target, whatever the model said, and the one `supersedes` names: they end as
+   * superseded before the new review is presented. Expired and confirmed proposals stay as they are.
    */
   const open = (proposed: Proposed, context: ProposalContext) =>
     sql.withTransaction(
@@ -276,11 +280,24 @@ export function makeChatActions(
             AND state IN ('presented','accepting') AND expires_at>${at} ORDER BY expires_at DESC LIMIT 1`;
         if (pending) return { kind: "pending", id: pending.id, expiresAt: pending.expires_at };
         const { conversation } = context;
-        if (proposed.supersedes !== undefined)
-          yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded'
-              WHERE id=${proposed.supersedes} AND application_id=${conversation.applicationId}
-                AND thread_id=${conversation.threadId} AND requester_id=${context.requesterId}
-                AND operation=${proposed.operation} AND state IN ('preparing','presented')`;
+        const operation = byName.get(proposed.operation)!;
+        const target = operation.target(proposed.parameters);
+        const live = yield* sql<{
+          id: string;
+          parameters_json: string;
+        }>`SELECT id,parameters_json FROM chat_proposals WHERE application_id=${conversation.applicationId}
+            AND thread_id=${conversation.threadId} AND requester_id=${context.requesterId}
+            AND operation=${proposed.operation} AND identity<>${identity}
+            AND (state='preparing' OR (state='presented' AND expires_at>${at}))`;
+        const corrected = live
+          .filter(
+            (row) =>
+              row.id === proposed.supersedes ||
+              operation.target(JSON.parse(row.parameters_json) as JSONValue) === target,
+          )
+          .map((row) => row.id);
+        if (corrected.length > 0)
+          yield* sql`UPDATE chat_proposals SET state='ended',ended_reason='superseded' WHERE id IN ${sql.in(corrected)}`;
         const id = yield* newId;
         yield* sql`INSERT INTO chat_proposals (id,application_id,guild_id,parent_channel_id,thread_id,requester_id,operation,parameters_json,identity,project_ids_json,generation,message_id,tool_call_id,state,created_at)
             VALUES (${id},${conversation.applicationId},${conversation.guildId},${conversation.parentChannelId},${conversation.threadId},${context.requesterId},

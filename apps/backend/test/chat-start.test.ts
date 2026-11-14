@@ -32,6 +32,7 @@ import {
   toolResults,
   until,
 } from "./support/chat-conversation.ts";
+import { addedProject } from "./support/chat-runs.ts";
 import { PARTICIPANT_ID } from "./support/controlled-discord.ts";
 
 const ANSWERS = {
@@ -164,7 +165,7 @@ it("an identical proposal by the same requester reuses the waiting review and po
   expect(confirmations(world.discord)).toHaveLength(1);
 });
 
-it("a corrected proposal supersedes the earlier review, whose button then starts nothing", async (c) => {
+it("a corrected Start for the same Project supersedes the earlier review without the model naming it, so its button starts nothing", async (c) => {
   // Arrange
   const world = await startingWorld(c);
   const first = await proposedStart(world, "600000000000000001", 4);
@@ -172,9 +173,7 @@ it("a corrected proposal supersedes the earlier review, whose button then starts
     world,
     "600000000000000002",
     8,
-    startCall(world, "Improve search filters", {
-      supersedes: first.slice("factory-confirm:".length),
-    }),
+    startCall(world, "Improve search filters"),
     "no, start: Improve search filters",
   );
 
@@ -184,6 +183,28 @@ it("a corrected proposal supersedes the earlier review, whose button then starts
   // Assert
   expect(answer).toBe(ANSWERS.invalid);
   expect(await runsOf(world.factory)).toStrictEqual([]);
+});
+
+it("a Start proposed for another Project leaves the earlier Start's review confirmable", async (c) => {
+  // Arrange
+  const world = await startingWorld(c);
+  const other = await addedProject(world, "other-clone");
+  await savedAccess(world.factory, [PARTICIPANT_ID, COLLABORATOR_ID], [world.project.id, other.id]);
+  const first = await proposedStart(world, "600000000000000001", 4);
+  await proposedStart(
+    world,
+    "600000000000000002",
+    8,
+    startCall(world, "Improve search filters", { projectId: other.id }),
+    "also start: Improve search filters",
+  );
+
+  // Act
+  const answer = await clicked(world.discord, first, "610000000000000001", 1);
+
+  // Assert
+  expect(answer).toBe(ANSWERS.accepted);
+  expect(await runsOf(world.factory)).toStrictEqual([{ number: 1, title: "Improve search" }]);
 });
 
 it("a prompt that is not exact text from the requester's message gets no review, and the model is told to copy it exactly", async (c) => {
