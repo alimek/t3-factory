@@ -1,6 +1,10 @@
 import { createContext, useContext } from "react";
 import type { AppearanceSource } from "@t3-factory/contracts";
-import { FACTORY_APPEARANCE_PROTOCOL, FACTORY_PROTOCOL } from "@t3-factory/domain-validation";
+import {
+  FACTORY_APPEARANCE_PROTOCOL,
+  FACTORY_FLOW_REVISION_PROTOCOL,
+  FACTORY_PROTOCOL,
+} from "@t3-factory/domain-validation";
 
 /** Provided by the client gate once product screens may mount. */
 export const ScopeContext = createContext<"host" | "remote">("host");
@@ -28,3 +32,7 @@ export const ServerProtocolContext = createContext(FACTORY_PROTOCOL);
 /** Older servers neither publish theme colors nor serve their live subscription. */
 export const useServerInheritsAppearance = () =>
   useContext(ServerProtocolContext) >= FACTORY_APPEARANCE_PROTOCOL;
+
+/** Older servers omit the Flow's current revision from Run detail. */
+export const useServerReportsFlowRevision = () =>
+  useContext(ServerProtocolContext) >= FACTORY_FLOW_REVISION_PROTOCOL;

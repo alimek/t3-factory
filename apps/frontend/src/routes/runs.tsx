@@ -1,4 +1,5 @@
 import { useMutationsAllowed } from "@/client-gate";
+import { useServerReportsFlowRevision } from "../client-scope.ts";
 import { CanvasLayout } from "../components/screen-layout.tsx";
 import { RunConversationAction, RunConversationNotice } from "../components/run-conversation.tsx";
 import { RunSettlementSection } from "../components/settle-run.tsx";
@@ -336,7 +337,8 @@ const canvasBadgeClass =
 
 /** Figma RD15: shown only when the Flow changed after Start; the canvas keeps the captured revision. */
 function RevisionBadge({ run }: { run: RunDetail }) {
-  if (run.currentFlowRevision === run.definitions.flow.revision) return null;
+  const reported = useServerReportsFlowRevision();
+  if (!reported || run.currentFlowRevision === run.definitions.flow.revision) return null;
   return (
     <p role="status" aria-label="Flow revision" className={canvasBadgeClass}>
       <Info aria-hidden strokeWidth={1.75} className="text-attention" />
