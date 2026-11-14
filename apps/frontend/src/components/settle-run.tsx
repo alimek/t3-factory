@@ -61,10 +61,9 @@ export function useSettleRun() {
       outcome = await api.settleRun(id, { stopWorkers: true });
     if (outcome.outcome !== "confirmation-required") return outcome;
     const opener = document.activeElement;
+    // The closing menu's container can own focus too, and leaves before the dialog closes.
     returnFocus.current =
-      opener instanceof HTMLElement &&
-      opener !== document.body &&
-      opener.getAttribute("role") !== "menuitem"
+      opener instanceof HTMLElement && opener !== document.body && !opener.closest('[role="menu"]')
         ? opener
         : document.getElementById(`run-row-${id}`);
     setConfirmation(outcome);
