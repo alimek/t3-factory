@@ -220,6 +220,7 @@ servers; approvals, updater and client-gate checks retain their existing reads o
 stationary Run trace should separate those consumers and compact observation
 metadata from repeated Run data. Controlled public-stream tests establish delivery and
 Runner independence; they do not establish actual Electron or cross-device transport.
+Studio acceptance keeps the editor open while independent public HTTP operations create, save and remove definitions, checks the visible draft and dependency state, and confirms writes through public reads and reload. Its race matrix belongs in the frontend state-model tests. The compatible older-server fixture is the current real backend advertising protocol 11, with its own disposable data and HTTPS listener; it proves declared-protocol fallback and renegotiation, not compatibility with a historical server executable.
 For desktop behavior, use a current desktop build. Report the tested UI/build and transport so browser acceptance is not mistaken for desktop or cross-device evidence.
 
 ## UI verification

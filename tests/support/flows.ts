@@ -41,11 +41,7 @@ export async function saveFlowCopy(
 /** Saves Flow `id` again under `name` with its graph unchanged, creating its next revision. */
 export async function renameFlow(baseUrl: string | undefined, id: string, name: string) {
   const flow = (await flowRequest(baseUrl, `/api/flows/${id}`)) as FlowDraft;
-  await flowRequest(baseUrl, `/api/flows/${id}`, {
-    method: "PUT",
-    headers: mutation,
-    body: JSON.stringify({ name, expectedRevision: flow.revision, graph: flow.graph }),
-  });
+  await saveFlowElsewhere(baseUrl, flow, { name });
 }
 
 /**
@@ -120,4 +116,23 @@ export async function removeFlowElsewhere(baseUrl: string | undefined, id: strin
 /** Reads the saved Flow through Factory's public API. */
 export async function readFlow(baseUrl: string | undefined, id: string) {
   return (await flowRequest(baseUrl, `/api/flows/${id}`)) as FlowDraft;
+}
+
+/** Another client saves a complete Flow revision through the public HTTP boundary. */
+export async function saveFlowElsewhere(
+  baseUrl: string | undefined,
+  flow: FlowDraft,
+  change: Partial<Pick<FlowDraft, "name" | "graph" | "workspace">>,
+) {
+  return (await flowRequest(baseUrl, `/api/flows/${flow.id}`, {
+    method: "PUT",
+    headers: mutation,
+    body: JSON.stringify({
+      name: flow.name,
+      graph: flow.graph,
+      workspace: flow.workspace,
+      expectedRevision: flow.revision,
+      ...change,
+    }),
+  })) as FlowDraft;
 }

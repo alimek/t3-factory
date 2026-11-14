@@ -31,6 +31,8 @@ type CanvasViewportOptions = {
   reservedRight?: number;
   /** Authoring refits on real size changes; a fitted Run keeps its view. */
   resize: "refit" | "preserve";
+  /** A changed source keeps the view when its status UI resizes the canvas. */
+  preserveViewKey?: string | undefined;
   /** Accepted local layout identity, stable across status polls. */
   fitRevision?: object | null;
   onTap: () => void;
@@ -232,6 +234,11 @@ function useCanvasFit(
       stopAnimation();
     };
   }, [surface, scope, resize, fit, stopAnimation]);
+  useLayoutEffect(() => {
+    if (options.preserveViewKey === undefined || scope === null) return;
+    const rect = surface.current?.getBoundingClientRect();
+    if (rect) lastFit.current = { scope, width: rect.width, height: rect.height };
+  }, [options.preserveViewKey, scope, surface]);
   useLayoutEffect(() => {
     if (scope !== null && fitRevision) fit();
   }, [scope, fitRevision, fit]);

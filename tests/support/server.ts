@@ -304,6 +304,16 @@ const olderCompatibleProtocol = {
   minimumPeerProtocol: FACTORY_MINIMUM_PEER_PROTOCOL,
 };
 let olderCompatible = await remoteFactory(olderCompatibleProtocol);
+/** Restarts the compatible fixture on the same home so existing definitions and approvals survive. */
+async function restartCompatibleServer(protocol?: {
+  protocol: number;
+  minimumPeerProtocol: number;
+}) {
+  dropRemoteLiveSockets();
+  await olderCompatible.server.close();
+  olderCompatible = await remoteFactory(protocol, olderCompatible.home);
+  target = olderCompatible;
+}
 // A server a release ahead that no longer accepts this client's protocol.
 const newer = await remoteFactory({
   protocol: FACTORY_PROTOCOL + 1,
@@ -571,11 +581,10 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
    * definitions, now served at the current protocol behind the same address.
    */
   "/__fixture/older-compatible-server/upgrade": async () => {
-    dropRemoteLiveSockets();
-    await olderCompatible.server.close();
-    olderCompatible = await remoteFactory(undefined, olderCompatible.home);
-    target = olderCompatible;
+    await restartCompatibleServer();
   },
+  "/__fixture/older-compatible-server/downgrade": () =>
+    restartCompatibleServer(olderCompatibleProtocol),
   // The owner saved a T3 endpoint on the host; T3 approval happens in the host's browser.
   "/__fixture/t3-endpoint": async () => {
     t3.authorized = false;

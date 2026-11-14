@@ -47,7 +47,7 @@ import {
   type FlowDraftModel,
   type FlowDraftSnapshot,
 } from "../flow-draft.ts";
-import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
+import { useStudioRead, useStudioDelivery, type StudioDefinitions } from "../studio-definitions.ts";
 import { useServerProtocol } from "../client-scope.ts";
 
 /**
@@ -295,6 +295,7 @@ export function FlowDetail({
     created,
   );
   const { agents, agentError } = useLibraryAgents(definitions);
+  const delivery = useStudioDelivery(definitions);
   const [libraryOpen, setLibraryOpen] = useState(true);
   const { saved, error, readiness } = state;
   const { graph, name } = state.content;
@@ -344,7 +345,7 @@ export function FlowDetail({
             selected={selected}
             selectedWire={wire}
             reservedRight={reservedRight}
-            scope={id}
+            scope={{ id, delivery }}
             savedGraph={saved.id === id ? saved.graph : undefined}
             busy={state.busy}
             placementRef={placement}
