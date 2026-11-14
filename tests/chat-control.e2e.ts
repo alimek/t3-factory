@@ -10,13 +10,22 @@ import type {
 } from "../packages/contracts/src/index.ts";
 import { openApproved, remoteFixture } from "./support/remote-access.ts";
 
-/** A chat-completions provider on loopback that records the headers of each request. */
+/**
+ * A chat-completions provider on loopback that records the headers of each request and answers
+ * "OK", or `failure` with an empty body once a journey sets it.
+ */
 async function controlledProvider() {
   const requests: IncomingHttpHeaders[] = [];
+  const state: { failure: number | null } = { failure: null };
   const server = createServer((request, response) => {
     request.resume();
     request.on("end", () => {
       requests.push(request.headers);
+      if (state.failure !== null) {
+        response.writeHead(state.failure, { "content-type": "application/json" });
+        response.end("{}");
+        return;
+      }
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
@@ -36,6 +45,7 @@ async function controlledProvider() {
   return {
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/gateway/v1`,
     requests,
+    state,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
@@ -328,4 +338,75 @@ test("an approved client's Settings has no Chat control group or search entry", 
   await expect(screen.getByText("No settings match “chat control”.")).toBeVisible();
   await expect(sections.getByRole("group", "CHAT CONTROL")).toHaveCount(0);
   await app.screenshot("chat-control-approved-client");
+});
+
+const OBSERVATION_ATTEMPTS = 100;
+
+/** The host settings at `path` once `until` holds, read again after each short pause. */
+async function settingsWhen<Settings>(
+  baseUrl: string | undefined,
+  path: string,
+  until: (settings: Settings) => boolean,
+) {
+  for (let attempt = 0; attempt < OBSERVATION_ATTEMPTS; attempt++) {
+    const response = await fetch(new URL(path, baseUrl));
+    const read = (await response.json()) as Result<Settings>;
+    assert(read.ok, JSON.stringify(read));
+    if (until(read.value)) return read.value;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`${path} did not reach its condition.`);
+}
+
+/** Chat control On and serving, with the participant allowed in the fixture's channel. */
+async function operatingChatControl(baseUrl: string | undefined) {
+  const project = await firstProject(baseUrl);
+  await completeChatControl(baseUrl);
+  const discord = await discordSettings(baseUrl);
+  assert(discord.ok);
+  const access = await hostCall(baseUrl, "PUT", "/api/chat-control/discord/access", {
+    revision: discord.value.access.revision,
+    users: ["200000000000000001"],
+    channels: [{ channelId: "400000000000000002", projectIds: [project.id] }],
+  });
+  assert(access.ok, JSON.stringify(access));
+  const on = await hostCall(baseUrl, "PUT", "/api/chat-control/enabled", { enabled: true });
+  assert(on.ok, JSON.stringify(on));
+  await settingsWhen<DiscordSettings>(
+    baseUrl,
+    "/api/chat-control/discord",
+    (settings) => settings.commandSetup?.outcome === "registered",
+  );
+}
+
+test("an actual conversation failure shows on the Language model page and marks its navigation item", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  provider.state.failure = 500;
+  await operatingChatControl(app.baseUrl);
+  await fetch(new URL("/__fixture/discord/invoke", app.baseUrl), { method: "POST" });
+  await settingsWhen<ChatModelSettings>(
+    app.baseUrl,
+    "/api/chat-control/model",
+    (settings) => settings.runtimeProblem !== null,
+  );
+
+  // Act
+  await app.open("/settings/chat-control/model");
+
+  // Assert
+  const conversations = screen.getByRole("region", "Language model conversations");
+  await expect(
+    conversations.getByText(/^A conversation failed · .* · revision \d+$/),
+  ).toBeVisible();
+  await expect(conversations.getByText(/The provider answered HTTP 500\./)).toBeVisible();
+  await expect(
+    screen
+      .getByRole("navigation", "Settings sections")
+      .getByRole("link", "Language model, needs attention", { exact: true }),
+  ).toBeVisible();
+  await conversations.scrollIntoView();
+  await app.screenshot("chat-model-runtime-problem");
 });

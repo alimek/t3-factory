@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldLabelClass } from "@/components/page";
 import { api } from "../api.ts";
-import { reportDiscordSettings } from "../chat-discord-attention.ts";
+import { reportDiscordSettings } from "../chat-control-attention.ts";
 import { AccessForm, useAccessSection } from "./chat-discord-access.tsx";
 import { dayAndTime } from "./execution-state.tsx";
 import { Notice } from "./notice.tsx";

@@ -40,7 +40,10 @@ import { FACTORY_PROTOCOL } from "../../packages/domain-validation/src/client-ac
 import { startServer } from "../../apps/backend/src/server.ts";
 import { loadConfiguration } from "../../apps/backend/src/config.ts";
 import { ControlledT3 } from "../../apps/backend/test/support/controlled-t3.ts";
-import { startControlledDiscord } from "../../apps/backend/test/support/controlled-discord.ts";
+import {
+  messageEvent,
+  startControlledDiscord,
+} from "../../apps/backend/test/support/controlled-discord.ts";
 import { upstreamPublishedTheme } from "../../apps/backend/test/support/t3-theme-fixture.ts";
 import { PersistentT3 } from "../../scripts/dev/persistent-t3.ts";
 import { seedDevelopment, seedScenarios, settlementUnresolved } from "../../scripts/dev/seed.ts";
@@ -60,6 +63,14 @@ const t3 = new PersistentT3(home, false);
 const discord = await startControlledDiscord();
 const discordBot = { token: "ui-journey-bot-token", applicationId: "112233445566778899" };
 discord.addBot(discordBot);
+// The bot's server, with the channel UI journeys allow in Access.
+const discordGuild = {
+  id: "400000000000000001",
+  name: "Team",
+  channels: [{ id: "400000000000000002", name: "factory" }],
+};
+discord.addGuild(discordGuild);
+let discordInvocations = 0;
 // Use the real pending-approval simulation for remote connection journeys.
 t3.authorize = ControlledT3.prototype.authorize.bind(t3);
 // The desktop server's updater holding a downloaded beta; approved clients' requests are recorded.
@@ -495,6 +506,20 @@ const fixtureRoutes: Record<string, (query: URLSearchParams) => unknown> = {
     bot: discordBot,
     sessions: discord.sessions.map(({ token, ready, closed }) => ({ token, ready, closed })),
   }),
+  /** An allowed participant mentions the bot in the allowed channel: one new invocation. */
+  "/__fixture/discord/invoke": () => {
+    discordInvocations += 1;
+    const id = String(300000000000000000n + BigInt(discordInvocations));
+    discord.deliver(
+      messageEvent({
+        bot: discordBot,
+        guildId: discordGuild.id,
+        channelId: discordGuild.channels[0]!.id,
+        id,
+      }),
+    );
+    return { id };
+  },
   "/__fixture/live/requests/reset": () => {
     browserRequests = [];
   },

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { CircleCheck, CircleX, Info, Power } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CircleAlert, CircleCheck, CircleX, Info, Power } from "lucide-react";
 import type {
   ChatModelKeyChange,
   ChatModelProviderKind,
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ChoiceMenu } from "@/components/choice-menu";
 import { fieldLabelClass } from "@/components/page";
 import { api } from "../api.ts";
+import { reportChatModelSettings } from "../chat-control-attention.ts";
 import { dayAndTime } from "./execution-state.tsx";
 import { Notice } from "./notice.tsx";
 import { SegmentedChoice } from "./segmented-choice.tsx";
@@ -119,6 +120,9 @@ function useChatModelPage() {
     }
   };
   const { settings, draft } = section;
+  useEffect(() => {
+    if (settings) reportChatModelSettings(settings);
+  }, [settings]);
   return {
     ...section,
     dirty: settings !== null && draft !== null && isDirty(draft, settings),
@@ -157,6 +161,7 @@ export function ChatModelSettings() {
             onSave={(input) => void page.save(input)}
             onDiscard={page.discard}
           />
+          <ConversationHealth settings={settings} />
           <ModelTest
             settings={settings}
             dirty={page.dirty}
@@ -389,6 +394,29 @@ function KeyField({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The latest actual conversational failure. Only a later successful conversation clears it; a
+ * Test is separate evidence and never does.
+ */
+function ConversationHealth({ settings }: { settings: ChatModelSettings }) {
+  const { runtimeProblem, configuration } = settings;
+  if (!runtimeProblem) return null;
+  return (
+    <section aria-label="Language model conversations" className="grid gap-3 border-t pt-5">
+      <Notice
+        tone={settings.needsAttention ? "critical" : "neutral"}
+        icon={CircleAlert}
+        title={`A conversation failed · ${dayAndTime(runtimeProblem.occurredAt)} · revision ${runtimeProblem.revision}`}
+      >
+        {runtimeProblem.message} Factory clears this after the next successful conversation; a Test
+        does not clear it.
+        {runtimeProblem.revision !== configuration.revision &&
+          ` It happened with an earlier configuration; revision ${configuration.revision} has not answered a conversation yet.`}
+      </Notice>
+    </section>
   );
 }
 
