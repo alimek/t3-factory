@@ -2,7 +2,8 @@ import { confirmSettlement } from "./support/run-history.ts";
 import { test } from "@e2e-dev/web";
 import assert from "node:assert/strict";
 import { expect, type App, type Screen } from "e2e";
-import { findArchivedRun, findRun } from "./support/run-history.ts";
+import { findArchivedRun, findRun, readHistoryRun } from "./support/run-history.ts";
+import { liveRun } from "./support/live.ts";
 import { prepareScenarios } from "./support/scenarios.ts";
 import {
   openSidebarAction,
@@ -352,10 +353,14 @@ test("a working Run's header shows one Working status naming its active block an
   screen,
 }) => {
   // Arrange
-  const found = await findRun(app.baseUrl, workingTitle);
+  // A restart or T3 outage earlier in the suite correctly leaves seeded Runs stale; this
+  // journey's own worker was just observed.
+  const id = await liveRun(app, "run-header-working");
+  const run = await readHistoryRun(app.baseUrl, id);
+  expect(run.blocks.find((block) => block.blockId === "worker")?.freshness).toBe("fresh");
 
   // Act
-  const status = await openRunStatus(app, screen, found.id);
+  const status = await openRunStatus(app, screen, id);
 
   // Assert
   await expect(status).toHaveText(/^Working · \S/);
