@@ -19,6 +19,8 @@ export function liveHarness() {
   const sessions: FakeSession[] = [];
   const timers = new Set<{ run: () => void; ms: number }>();
   const classified: number[] = [];
+  /** The number of sockets opened when each renegotiation was asked for. */
+  const renegotiated: number[] = [];
   let delivery: LiveDelivery = "current";
   const owner = new LiveOwner({
     open(events) {
@@ -42,6 +44,7 @@ export function liveHarness() {
     },
     random: () => 1,
     classify: () => classified.push(sessions.length),
+    renegotiate: () => renegotiated.push(sessions.length),
     publish(next) {
       delivery = next;
     },
@@ -50,6 +53,7 @@ export function liveHarness() {
     owner,
     sessions,
     classified,
+    renegotiated,
     delivery: () => delivery,
     openSockets: () => sessions.filter((session) => !session.closed).length,
     /** Runs every pending timer once, as if its delay elapsed. */

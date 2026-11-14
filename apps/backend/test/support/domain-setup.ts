@@ -137,7 +137,7 @@ export async function reviewedFlow(context: TestContext) {
       exits,
       expectedRevision: assertOk(await factory.getAgent(reviewer.id)).revision,
     });
-  return { factory, flowId: created.id, review, save, editReviewer };
+  return { factory, flowId: created.id, reviewer, review, save, editReviewer };
 }
 
 export async function projectsHarness(context: TestContext) {

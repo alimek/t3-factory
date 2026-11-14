@@ -28,6 +28,7 @@ export const useAppearanceSource = () => useContext(AppearanceSourceContext);
 
 /** The Factory protocol the connected server declared in its handshake. */
 export const ServerProtocolContext = createContext(FACTORY_PROTOCOL);
+export const useServerProtocol = () => useContext(ServerProtocolContext);
 
 /** Older servers neither publish theme colors nor serve their live subscription. */
 export const useServerInheritsAppearance = () =>

@@ -5,6 +5,7 @@ import {
   type WireSource,
 } from "@t3-factory/flow-layout";
 import {
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -462,6 +463,8 @@ type CanvasSurfaceProps = {
     /** Routes are restored on load only while the graph keeps these saved positions. */
     readonly saved: FlowGraph | undefined;
     readonly commit: (graph: FlowGraph) => void;
+    /** Whether an explicit arrangement is in progress. */
+    readonly onArranging?: (arranging: boolean) => void;
   };
   gesture?: CanvasGesture | null;
   /** Filled with conversions of viewport points to canvas positions. */
@@ -519,10 +522,14 @@ function useSurfaceGraph({
   const arranged = canvasGraph(layout.graph, agents);
   const shown = gestureGraph(arranged, gesture);
   const gesturing = gesture !== null;
-  const { cancel } = layout;
+  const { cancel, pending: arranging } = layout;
   useLayoutEffect(() => {
     if (gesturing) cancel();
   }, [gesturing, cancel]);
+  const onArranging = arrangement?.onArranging;
+  useEffect(() => {
+    onArranging?.(arranging);
+  }, [arranging, onArranging]);
   return {
     layout,
     content,

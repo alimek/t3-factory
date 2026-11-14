@@ -22,12 +22,15 @@ export type LivePart =
   | { readonly kind: "navigation" }
   | { readonly kind: "run"; readonly runId: string }
   | { readonly kind: "launchChoices" }
+  /** Studio's saved Agents and Flows, held while Studio is open. */
+  | { readonly kind: "studio" }
   /** Theme colors: optional presentation that never gates mutations. */
   | { readonly kind: "appearance" };
 
 export type LiveWatch =
   | { readonly rpc: "WatchConnection" }
   | { readonly rpc: "WatchLaunchChoices" }
+  | { readonly rpc: "WatchStudio" }
   | { readonly rpc: "WatchAppearance" }
   | {
       readonly rpc: "WatchRunView";
@@ -81,6 +84,11 @@ export interface LiveEnvironment {
   random(): number;
   /** Repeated open failures: classify through the HTTP handshake (incompatible, unauthorized). */
   classify(): void;
+  /**
+   * A later socket connected: the server may have been replaced by another release, so the
+   * window re-reads the protocol it speaks.
+   */
+  renegotiate(): void;
   publish(delivery: LiveDelivery): void;
 }
 
@@ -127,10 +135,16 @@ type Entry = {
 
 /**
  * The connection status subscription, the one view subscription for navigation and Runs, the
- * composer's launch choices and theme colors.
+ * composer's launch choices, Studio's saved definitions and theme colors.
  */
-type Channel = "connection" | "view" | "launchChoices" | "appearance";
-const channels: readonly Channel[] = ["connection", "view", "launchChoices", "appearance"];
+type Channel = "connection" | "view" | "launchChoices" | "studio" | "appearance";
+const channels: readonly Channel[] = [
+  "connection",
+  "view",
+  "launchChoices",
+  "studio",
+  "appearance",
+];
 
 type Subscription = {
   /** Fences events: only the subscription holding the current token may write. */
@@ -165,12 +179,15 @@ export class LiveOwner {
     connection: idleSubscription(),
     view: idleSubscription(),
     launchChoices: idleSubscription(),
+    studio: idleSubscription(),
     appearance: idleSubscription(),
   };
   private session: Session | null = null;
   private retry: (() => void) | undefined;
   private attempts = 0;
   private openFailures = 0;
+  /** Sockets that connected in this window's lifetime. */
+  private connections = 0;
   private visible = true;
   private blocked = false;
   private readonly environment: LiveEnvironment;
@@ -253,6 +270,7 @@ export class LiveOwner {
         if (this.session !== session) return;
         session.connected = true;
         this.openFailures = 0;
+        if (this.connections++ > 0) this.environment.renegotiate();
         this.changed();
       },
       disconnected: () => this.lost(session),
@@ -285,6 +303,7 @@ export class LiveOwner {
     if (entries.length === 0) return undefined;
     if (channel === "connection") return { rpc: "WatchConnection" };
     if (channel === "launchChoices") return { rpc: "WatchLaunchChoices" };
+    if (channel === "studio") return { rpc: "WatchStudio" };
     if (channel === "appearance") return { rpc: "WatchAppearance" };
     const runIds = this.viewRuns()
       .served.flatMap(({ scope: { part } }) => (part.kind === "run" ? [part.runId] : []))

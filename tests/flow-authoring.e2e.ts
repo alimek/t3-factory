@@ -3,9 +3,9 @@ import type { FlowDraft, Result } from "../packages/contracts/src/index.ts";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 import { copyAgentDefinition, readAgentDefinition, updateAgentExits } from "./support/agents.ts";
-import { expectFlowBlocked, saveFlowCopy } from "./support/flows.ts";
+import { expectFlowBlocked, renameFlow, saveFlowCopy } from "./support/flows.ts";
 
-test("author a loop and fan-out by dragging exit ports, delete stray connections, save an incomplete draft, connect the Flow input to fix readiness, choose a custom worktree base and reconcile a stale save", async ({
+test("author a loop and fan-out by dragging exit ports, delete stray connections, save an incomplete draft, connect the Flow input to fix readiness, choose a custom worktree base and reconcile revisions saved elsewhere", async ({
   app,
   screen,
   browser,
@@ -135,21 +135,13 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
     position: { x: 40, y: 200 },
     targetBlockIds: [saved.graph.blocks[0]!.id],
   });
-  // A second author uses the same public backend, while this editor retains revision 3.
-  const concurrent = await fetch(endpoint, {
-    method: "PUT",
-    headers: { "content-type": "application/json", "X-Factory-Request": "1" },
-    body: JSON.stringify({
-      name: "Another editor",
-      graph: saved.graph,
-      expectedRevision: saved.revision,
-    }),
-  });
-  expect(concurrent.status).toBe(200);
+  // A second author saves through the same public backend while this draft has unsaved edits.
   await screen.getByLabel("Flow name").fill("My preserved draft");
-  await screen.getByRole("button", "Save Flow").tap();
-  await expect(screen.getByRole("alert")).toContainText("newer revision");
+  await renameFlow(app.baseUrl, saved.id, "Another editor");
+  const reconcile = screen.getByRole("region", "Reconcile Flow");
+  await expect(reconcile).toContainText("Revision 4 was saved elsewhere");
   await expect(screen.getByLabel("Flow name")).toHaveValue("My preserved draft");
+  await expect(screen.getByRole("button", "Save Flow")).toBeDisabled();
   await screen.getByRole("button", "Compare latest revision").tap();
   await expect(screen.getByRole("heading", "Saved revision 4")).toBeVisible();
   await screen.getByRole("button", "Keep local draft against revision 4").tap();
@@ -159,6 +151,11 @@ test("author a loop and fan-out by dragging exit ports, delete stray connections
   await expect(screen.getByLabel("Flow name")).toHaveValue("My preserved draft");
   await expect(screen.getByRole("button", "Workspace: New worktree · develop")).toBeVisible();
   await expect(screen.getByText("Graph ready")).toBeVisible();
+  // With no unsaved edits, the editor switches to a revision saved elsewhere.
+  await renameFlow(app.baseUrl, saved.id, "Renamed elsewhere");
+  await expect(screen.getByText("Updated to revision 6")).toBeVisible();
+  await expect(screen.getByLabel("Flow name")).toHaveValue("Renamed elsewhere");
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 6");
 });
 
 test("configure inherited and local Block exits, preserve wired hidden exits and block Start on a name conflict", async ({

@@ -9,7 +9,15 @@ Studio is an almost full-window dialog with a Settings-style header (**Studio / 
 it for native window controls and 16 px elsewhere; browsers use 16 px margins (8 px when narrow). The 192 px sidebar (144 px narrow) has an **AUTHOR** group with **Flows** and **Agents**, each with its
 definition count. Studio and Settings share a short opacity-only transition that reduced motion disables; the underlying sidebar title area stays mounted.
 
-The current Flow draft survives navigation to the lists and Agents; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
+While Studio is open on a protocol 12 server, its Flow and Agent lists, the Agents' runtime summaries
+and saved-Flow usage counts, the sidebar counts and the Flow editor's Agent library follow every
+committed create, save, duplicate and removal live, whichever client or Factory MCP made it, with
+no navigation or retry. On a protocol 9–11 server Studio keeps re-reading these lists after its
+own accepted writes, on navigation and on retry, and shows **Live Studio refresh requires a server
+update.** under its header. Both editors read their definition from these lists and follow its
+saved revisions ([Agent definitions](#agent-definitions), [Saving and readiness](#saving-and-readiness)).
+
+The current Flow draft survives navigation to the lists and Agents and keeps following its saved revisions while hidden; closing Studio or opening another Flow with unsaved changes asks to **Keep editing** or **Discard changes** (browser Back follows the same
 rule; reload uses the browser's leave warning). Agent edits are guarded independently of a retained Flow draft.
 
 | Destination | Browser URL |
@@ -65,14 +73,47 @@ The list and editor also show the provider's [reporting installation status](t3-
 The editor follows the current provider choice, explains installation problems and links to **Settings → Agent reporting**.
 Installed configuration does not establish full execution readiness or live report visibility; Start still checks those gates.
 
-**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt, settings and exits, and Studio shows the latest; a stale or invalid save returns an error,
+**Saving.** Each accepted create or save appends one immutable Agent revision holding the name, prompt, settings and exits; a stale or invalid save returns an error,
 appends nothing and keeps local edits. Duplicate creates a variant with a new identity from the saved revision, so save edits first.
 A save response arriving after leaving refreshes the list without reopening the editor. Mention skills directly in the prompt (for example `$review-code`); there is no skill field or interpolation.
+
+**Revisions saved elsewhere.** An open Agent editor reads its Agent from Studio's saved definitions instead of loading it once. When another client, tab or Factory MCP saves a newer
+revision, an editor without unsaved changes switches to it and briefly shows **Updated to revision N**. An editor with unsaved changes keeps them and the revision they are based on,
+and shows **Revision N was saved elsewhere** until resolved; a later revision replaces N. **Compare latest revision** shows the local draft and saved revision N side by side as two
+read-only blocks (name, worker settings, exits and prompt). **Load latest revision** asks for confirmation, then discards the edits for revision N. **Keep my edits against revision N**
+keeps the draft unsaved against N and sends nothing; the next explicit **Save** writes it as N+1. Save stays disabled until one is chosen. A stale save opens the same comparison
+(on a protocol 9–11 server Studio first re-reads its lists to find the newer revision). There is no merge or field-level diff. The comparison and its confirmation always name the
+revision they show: when N+1 arrives an open confirmation closes and the comparison moves to N+1, an action for an older revision does nothing, and a removal dismisses both.
+
+The editor's own saves never raise **saved elsewhere**, whether the save's reply or its delivery arrives first; deliveries during a pending save wait for its reply, and a higher
+revision than the reply's is then treated as saved elsewhere. A save that a rejection ends shows any newer revision beside its error without rebinding the draft. Offline, Factory
+reports that nothing was sent; a lost reply shows **Save outcome unknown**. Either way the draft is kept and nothing is retried; an unknown save whose content later arrives as
+a new revision is recognised as this editor's own. After an unknown **Create Agent**, which would create a second Agent if repeated, Create stays disabled until **I checked the
+Agent list** is pressed. The new-Agent form ignores other Agents' changes; after its Create, or after **Duplicate…**, the opened Agent follows these rules even before Studio
+has delivered it.
 
 **Removing.** **Delete** confirms by name and removes the Agent from Studio, Flow references and Start selection with no restore; its saved revisions are kept and later saves to it are rejected. It
 rejects Agents placed in the latest revision of any current Flow; the backend checks those blocks at removal time even if the usage count is stale, while removed Flows and Runs never block
 removal. An unsaved Flow draft may still reference a removed Agent and needs repair before running. Runs keep the Agent revision they started with, and removing an absent or removed Agent succeeds.
-Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; an open Studio view shows it after navigation or retry.
+Factory MCP's [`factory_remove_agent`](t3-integration.md#authoring-tools) performs the same removal; open Studio lists drop it at once on protocol 12 servers and after navigation or retry on older ones.
+
+
+**Removed elsewhere.** If an Agent already open in Studio is removed by another client, its URL and
+editable draft stay open, even when the draft was clean. A persistent **This Agent was removed
+elsewhere. Your draft is kept.** notice replaces revision notices. Save, Duplicate and Delete are
+disabled with an explanation, and their handlers refuse further writes. An unsubmitted Delete
+confirmation closes; an already submitted Delete completes normally through the idempotent removal
+and returns to the list without another discard prompt. Saves that reach a removed Agent are still
+rejected by the backend and never recreate it.
+
+**Copy as JSON** recovers the current name, prompt, execution settings and exits, including unfinished
+edits, in the create API's shape without identity, revision or status fields. Studio confirms a
+successful clipboard write; if clipboard access fails, a read-only selectable JSON box remains
+available. Leaving or closing Studio asks **This Agent was removed elsewhere. Discard the retained
+draft?** with **Keep editing** and **Discard**, even for a clean draft. A hidden Flow draft keeps its
+independent guard, and a decision discarding both drafts names both. Ordinary unsaved-change prompts
+stay unchanged; browser close and reload use only the browser's standard warning. A fresh link to
+an absent Agent shows **Agent not found** and **Back to list**; a failed read instead offers Retry.
 
 See [T3 integration](t3-integration.md) for authorization and capability reads.
 
@@ -112,8 +153,10 @@ connection selected, Delete/Backspace (outside form controls) or the **Delete co
 Flow-local exits are stored with the Flow revision. **Exits from Agent** shows read-only names, descriptions and message requirements, with **Hide in this Flow** / **Show in this Flow**.
 Hidden rows remain visible in the panel but are absent from worker choices and cannot start new connections; they still reserve their names and IDs against local exits. Hiding a wired exit preserves its connection and reports a readiness issue until the exit is shown or the wire removed.
 Wired hidden or removed exits keep a separate, unavailable canvas endpoint marked **Agent · hidden** or **Agent · removed**, so their wires never appear to leave a usable exit.
+Agent blocks resolve against Studio's saved Agents as they arrive: an Agent saved or removed elsewhere updates block Agent names, exit ports and the missing-Agent state at once, without
+changing the draft or its unsaved state, block positions or the view. A wire from an exit the Agent no longer has stays as such a broken wire; Studio never repairs the graph or deletes a connection.
 **Local exits · only in this Flow** offers editable name, description and message-required cards and **Add local exit**. Removing a local exit removes its connections.
-Changes to the saved Agent appear on the next Flow read; Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
+Flows upgraded from per-block exits show those exits as local. A Human step has the fixed, locked
 exits **Approve** (message optional) and **Request changes** (message required). An unconnected exit ends that branch.
 
 **Wait.** A Wait holds each arrival for a fixed duration, then passes its message on unchanged. Its panel sets the
@@ -130,8 +173,9 @@ on load only when the saved positions can be preserved, so blocks never move on 
 
 The canvas shares its view controls with the Run canvas: scale 20%–200%; **+**/**−** zoom around the viewport center and **0** fits (bare keys leave browser zoom alone; bindings in
 [Keyboard shortcuts](keyboard-shortcuts.md)); pinch or **Mod**+wheel (Command on macOS, Control elsewhere) zooms at the pointer, including Safari pinch; plain scroll, arrow keys and dragging
-empty canvas pan. Drag, drop and wire gestures follow the zoom level. The view fits on load and container resize but is preserved across edits and selection; explicit Fit reserves space for an open
-inspector. Zoom and pan never change saved positions.
+empty canvas pan. Drag, drop and wire gestures follow the zoom level. The view fits on load and container resize but is preserved across edits, selection and a switch to a revision saved
+elsewhere; explicit Fit reserves space for an open inspector. Zoom and pan never change saved positions. Such a switch closes a selection or **Block configuration** only when its block or wire
+no longer exists.
 
 ### Workspace setting
 
@@ -144,21 +188,34 @@ are global; Start resolves it against the selected Project ([Runs](runs.md#start
 ### Saving and readiness
 
 **Save Flow** accepts structurally valid incomplete graphs, increments the revision and shows **Saved** separately from readiness. There is no autosave or undo/redo. **Check readiness**
-validates the draft through the backend without saving and is cleared by any change. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
+validates the draft through the backend without saving and is cleared by any change, by a newer saved revision, by a change to an Agent the draft places, by the Flow's removal and while
+Studio's saved definitions are not synchronized, also while a switch to a newer revision waits; **Start Run** stays disabled while readiness is unknown. A check result applies only to the
+content, baseline revision and placed Agent revisions it was requested for: an answer arriving after any of them changed, or resolved against Agent revisions Studio does not show yet, is
+discarded. A clean draft shows the readiness Studio received with its saved revision and the Agents shown, also after a placed Agent changes. A draft with unsaved changes then shows
+**Agents changed — check readiness again** and is not checked automatically. **Start Run** is enabled only by readiness for the graph and Agent revisions on screen. The summary sits at the canvas's top-left and its issue list can cover the Flow input until collapsed. Actionable
 issues: a Flow input connected to no Agent, a missing Agent reference, block and local exit names, a block without exits, a local exit sharing a name or ID with any current Agent exit, including hidden exits (also when
 the Agent adds that exit later), a wire from an exit hidden in this Flow or no longer on the Agent, a Continuation without a prompt and unreachable blocks. Each names the block, the exit and the problem, and selecting one
 inspects its block. These issues disable **Start Run**, never a save. **Graph ready** covers graph requirements only; live connection, Agent settings availability, project and reporting installation
 are separate Start gates ([Runs](runs.md)).
 
-A stale save returns a conflict and keeps local work. **Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against
-revision N** (another explicit save, which can conflict again). There is no automatic merge or silent overwrite.
+When another client, tab or Factory MCP saves the open Flow, the editor follows it, also when the draft is hidden while Agents are shown. A clean draft switches to the newer revision
+and briefly shows **Updated to revision N**; that switch waits while a block or library item is dragged, a wire is drawn, Auto-arrange runs or a draft field has focus or text composition,
+and happens afterwards only if the draft is still clean. A draft with unsaved changes keeps them and its baseline revision and shows **Revision N was saved elsewhere**, naming the newest
+revision, with **Compare latest revision**; **Save Flow** stays disabled until it is resolved. A stale save that Studio had not yet seen returns a conflict and keeps local work the same way.
+**Compare latest revision** shows both drafts: choose the latest saved Flow to discard local changes, or reconcile and **Keep local draft against revision N** (another explicit save, which can
+conflict again). Both act only on the revision shown: a newer revision moves the comparison to it, and a removal dismisses it. There is no automatic merge or silent overwrite.
+
+The editor's own save never shows as saved elsewhere, whether its answer or the live update arrives first; a newer revision saved meanwhile is followed once the save answers, and a removal
+that arrived meanwhile wins over a late success. A rejected save keeps the draft and baseline and shows its error beside any newer-revision notice. When the connection is lost before the
+answer, or the server's protocol changes meanwhile, the editor shows **Save outcome unknown**, keeps the draft and never retries; the saved revision is recognised as its own when it
+arrives. A save refused before sending because Factory is offline says that nothing was sent. On protocol 9–11 servers the comparison re-reads Studio's saved Flows.
 
 ### Removing a Flow
 
 **Remove** in Flow details removes the editable definition from Studio and the Run composer after a confirmation that names the Flow, says existing Runs remain and warns about unsaved changes. Success returns to
 the Flow list, also when another view already removed it: removing an absent or removed Flow succeeds. Runs, their captured revisions, shared Agents and T3 threads are unaffected: active Runs continue, Run canvases show the revision each Run started with, and
 removal is not Archive. Its saved revisions are kept, but there is no restore. Removal needs no revision match; a save that reaches a removed Flow errors, keeps the local draft visible for copying and never recreates it. New Runs cannot select a removed
-Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; an open Studio view shows it after navigation or retry.
+Flow. Factory MCP's [`factory_remove_flow`](t3-integration.md#authoring-tools) performs the same removal; open Studio lists drop it at once on protocol 12 servers and after navigation or retry on older ones.
 
 ## Validation contract
 
@@ -194,6 +251,10 @@ Readiness reports these gaps (`flow_input_required`: connect the Flow input to a
 without a duration (`wait_duration_required`) or outside 1 minute to 7 days inclusive after converting its unit, including a zero or negative amount (`wait_duration_range`), a Wait Flow input target, missing saved
 Agents and blocks unreachable from the Flow input, resolving each block against the current saved Agents. Hide entries for exits the Agent no longer has are ignored. A
 terminal exit needs no edge; cycles, self-loops and independent fan-out are allowed. Graph readiness does not claim T3 capability or live execution readiness.
+
+Readiness depends only on the graph and the saved revisions of the Agents it places, because an Agent's exits and former exit names are fixed per revision. Validating unsaved content
+(`POST /api/flows/validate`, Studio's **Check readiness**) therefore also answers `agentRevisions`: the saved revision of each placed Agent by id, `null` for a missing one, against which that
+readiness was resolved, so a client can compare it with the Agents it shows. Servers older than protocol 12 omit it; toward them Studio discards an answer only by its request.
 
 ### Revisions
 

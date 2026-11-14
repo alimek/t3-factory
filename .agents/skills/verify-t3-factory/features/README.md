@@ -30,6 +30,10 @@ use older/newer peers owned and cleaned up by the same fixture process.
 | Report diagnostics | `tests/report-diagnostics.e2e.ts` | Rejection reason alongside the missing accepted result; one explicit assessment request retained after reload |
 | Remote access | `tests/remote-access.e2e.ts` | Approval, revocation, offline state, compatibility and the client + server upgrade review |
 | Remote connection | `tests/remote-connection.e2e.ts` | Host authorization and automatic connection status |
+| Studio live refresh | `tests/studio-live.e2e.ts` | Flow and Agent lists, sidebar counts, Agent usage and the Flow editor's Agent library following definitions saved through the public API while Studio stays open, without list reads; an approved client of a compatible protocol 9–11 server showing **Live Studio refresh requires a server update.** and re-reading after its own write; that server upgraded in place turning live refresh on while the unsaved Flow draft stays |
+| Agent editor revisions | `tests/studio-agent-editor.e2e.ts` | An open Agent editor following revisions saved through the public API: a clean draft adopting the revision with **Updated to revision N**; a dirty draft keeping its edits, **Revision N was saved elsewhere** with Save disabled, **Compare latest revision** showing both sides, **Keep my edits against revision N** saving only on Save (confirmed by public read and reload), and **Load latest revision** after confirmation; stale-save and own-save races are covered by the frontend state tests |
+
+| Agent removal recovery | `tests/studio-agent-removal.e2e.ts` | Retained editable clean and dirty drafts after external removal, disabled actions, Delete confirmation closing, JSON clipboard feedback and selectable fallback, clean retained-draft guard and a simultaneous hidden Flow draft, missing deep links, and own Delete navigation without a discard prompt |
 
 Use `pnpm exec e2e run <spec> --trace on --video on --output .e2e/proof/<change>`.
 Live MCP sessions use the same fixture, including seeded Run attention and Human answers.

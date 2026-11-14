@@ -100,13 +100,22 @@ by host and approved clients, with explicit [host-only boundaries](desktop-and-c
 
 ## Live delivery
 
-Run detail, sidebar navigation, shared T3 connection status, [theme colors](t3-integration.md#theme-colors)
-and the Run composer's launch choices use typed Effect RPC streams over WebSocket at `/api/live`;
+Run detail, sidebar navigation, shared T3 connection status, [theme colors](t3-integration.md#theme-colors),
+the Run composer's launch choices and Studio's saved definitions use typed Effect RPC streams over WebSocket at `/api/live`;
 commands and other reads remain HTTP operations. A window holds one connection-status subscription,
 one theme-color subscription (only toward protocol 10 servers; it never disables mutations or shows
 synchronizing), one view
 subscription carrying navigation and its open Runs, and, while the composer is shown, one
-launch-choices subscription carrying the Project catalog and Flows with their readiness. Each read of a view covers navigation and those Runs in one
+launch-choices subscription carrying the Project catalog and Flows with their readiness.
+Protocol 12 servers also serve a Studio subscription carrying every current Agent with its
+settings status and every current Flow with its readiness; Agent usage is derived from those
+Flows. A window holds it only while Studio is open and releases it when Studio closes. Like
+every held scope it gates the window's mutations, so Studio writes, and other product writes,
+wait while it is unsynchronized; drafts stay editable. Toward protocol 9–11 servers Studio
+holds no subscription and re-reads its lists over HTTP instead (see
+[Studio](studio.md#shell)), so that unsupported scope never disables mutations; a server that
+declares protocol 12 and refuses or fails the subscription stays synchronizing, with no HTTP
+fallback, and HTTP answers never mark the scope synchronized. Each read of a view covers navigation and those Runs in one
 read transaction, and its changes travel in one delivery that the window applies at once,
 so one commit's lifecycle, attention and report changes appear together in Run detail and
 the sidebar. Opening or leaving a Run resubscribes the view with a fresh joint snapshot.
@@ -118,6 +127,11 @@ changes. Flow and Agent writes, project observation and selection, discovery pro
 connection transitions mark launch choices; Run changes do not. Each read of launch choices
 covers the catalog and Flows in one read transaction and does not wait for a running
 project reconcile, whose own publications would otherwise leave that read not current.
+Committed Flow and Agent creates, saves, duplicates and removals mark Studio through the same
+definition-change hook; refused writes change nothing. Each read of Studio covers both lists in
+one read transaction, so every Flow's readiness was resolved against exactly the Agents delivered
+with it. Settings status reflects the T3 capabilities loaded for that read; capability and
+connection changes alone do not mark Studio.
 Subscription registration precedes the snapshot read. A relevant hint during that read
 triggers a fresh read, up to three reads. A delivery is current only when no relevant
 change arrived while it was read and no later read failed; a scope counts as synchronized,
@@ -128,7 +142,11 @@ Run is final for that Run only, as is a Run beyond the view's capacity of 20 Run
 any other refused subscription is retried with backoff and keeps mutations disabled.
 
 Delivery replaces changed entities or logical sections by stable identity, sends navigation
-upserts/removals and appends timeline entries by sequence. Worker executions use the pair
+upserts/removals and appends timeline entries by sequence. Studio changes are whole Agent and
+Flow upserts and removals by id: an Agent change also delivers each Flow whose readiness it
+changed, although that Flow's revision is unchanged. Clients order Agents by `updatedAt`
+descending and Flows by `createdAt` descending, each then by ascending id, which reproduces the
+backend's list order. Worker executions use the pair
 of binding id and execution id, including observation metadata, so later turns preserve
 earlier executions. Observation-only timestamps of Runs and projects
 travel as compact metadata rather than repeated Run or catalog data. Changes may coalesce into the
@@ -143,6 +161,10 @@ this is not a fixed byte limit on a Run or a durable delivery log.
 
 Every reconnect or visibility gap starts fresh snapshots for active scopes. There is no
 replay cursor or polling fallback for these consumers, and reconnect never replays commands.
+Each later socket connection also repeats the protocol handshake, because a server upgraded or
+downgraded behind the same address may now declare another protocol. Product screens follow the
+renegotiated protocol without remounting: Studio retires its live subscription or its HTTP
+refresh and starts the other, keeping its shown lists, drafts, selection and canvas view.
 Obsolete subscriptions cannot replace the current view. Runner observation, dispatch,
 recovery and handoff scheduling belong to the server: zero subscribers stop no execution,
 and additional subscribers create no additional Runner schedules. See [Run viewing](runs.md#live-viewing)

@@ -15,9 +15,11 @@ import type {
   FlowGraph,
   FlowGraphInput,
   Result,
+  StudioDefinitions,
 } from "@t3-factory/contracts";
 import {
   CANVAS_COORD_MESSAGE,
+  flowAgentRevisions,
   flowReadiness,
   type ReadinessAgent,
   validateCreateAgent,
@@ -88,8 +90,9 @@ export const makeDefinitions = (
     const readinessAgents = Effect.gen(function* () {
       const agents = yield* readCurrentAgents(sql);
       const formerExitNames = yield* readFormerExitNames(sql);
-      return agents.map((agent): ReadinessAgent => ({
+      return agents.map((agent): ReadinessAgent & Pick<AgentRevision, "revision"> => ({
         id: agent.id,
+        revision: agent.revision,
         exits: agent.exits,
         formerExitNames: formerExitNames.get(agent.id) ?? new Map(),
       }));
@@ -282,9 +285,14 @@ export const makeDefinitions = (
         if (!validated.ok) return Effect.succeed(validated);
         return provideSql(
           Effect.gen(function* () {
+            const agents = yield* readinessAgents;
+            const { graph } = validated.value;
             return {
               ok: true as const,
-              value: flowReadiness(validated.value.graph, yield* readinessAgents),
+              value: {
+                ...flowReadiness(graph, agents),
+                agentRevisions: flowAgentRevisions(graph, agents),
+              },
             };
           }),
         );
@@ -474,7 +482,27 @@ export const makeDefinitions = (
         );
       },
     };
+    /**
+     * Both lists from one read transaction, so every Flow's readiness matches the Agents read
+     * with it. Capabilities load first, outside the transaction, as for the Agent list.
+     */
+    const readStudio = (): Effect.Effect<Result<StudioDefinitions>, unknown> =>
+      agentOperation((sql, capabilities) =>
+        Effect.gen(function* () {
+          const agents = yield* readCurrentAgents(sql);
+          const flows = yield* readCurrentFlows(sql);
+          const readiness = yield* readinessAgents;
+          return {
+            ok: true as const,
+            value: {
+              agents: agents.map((agent) => toAgent(agent, capabilities)),
+              flows: flows.map((flow) => toDraft(flow, readiness)),
+            },
+          };
+        }),
+      ).pipe(Effect.withSpan("Definitions.readStudio"));
     return {
+      readStudio,
       createFlow: (...args: Parameters<typeof operations.createFlow>) =>
         Effect.suspend(() => operations.createFlow(...args)).pipe(
           publishOnSuccess,

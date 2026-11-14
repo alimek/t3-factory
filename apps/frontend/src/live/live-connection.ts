@@ -42,7 +42,7 @@ const gateOwnsWindow = () => {
 let owner: LiveOwner | undefined;
 
 /** Created on first use and kept for the window's lifetime, so its listeners never accumulate. */
-function liveOwner(): LiveOwner {
+export function liveOwner(): LiveOwner {
   if (owner) return owner;
   const created = new LiveOwner({
     open: sessions(),
@@ -52,6 +52,7 @@ function liveOwner(): LiveOwner {
     },
     random: Math.random,
     classify: () => void recheckAccess(),
+    renegotiate: () => void recheckAccess(),
     publish: (delivery) => transport.setLiveDelivery(delivery),
   });
   created.setVisible(windowVisible());

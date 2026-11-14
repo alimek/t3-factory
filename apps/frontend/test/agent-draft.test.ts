@@ -1,13 +1,20 @@
-import { held } from "./support/flow-draft.ts";
+import { held, settled } from "./support/flow-draft.ts";
 import { expect, it, vi } from "vite-plus/test";
 import { ApiError } from "../src/api.ts";
+import { OfflineError } from "../src/transport.ts";
+import { capabilities, savedAgent } from "./support/agent-draft.ts";
 import {
   agentDraft,
-  capabilities,
-  savedAgent,
+  comparedAgent,
+  createdAgent,
+  deliver,
+  echoed,
   editedAgent,
   failedDelete,
-} from "./support/agent-draft.ts";
+  pendingSave,
+  removedElsewhere,
+  savedElsewhere,
+} from "./support/agent-editor.ts";
 
 it("a new Agent starts with one optional-message exit and the first reporting provider's first model and defaults", () => {
   // Arrange
@@ -282,20 +289,14 @@ it("an accepted create adopts the new Agent identity and revision", async () => 
     expect.objectContaining({ name: "New reviewer" }),
   );
   expect(factory.updateAgent).not.toHaveBeenCalled();
-  expect(saved).toMatchObject({ id: "agent", revision: 1 });
+  expect(saved).toMatchObject({ id: "created", revision: 1 });
   expect(draft.getSnapshot()).toMatchObject({ saved, dirty: false });
 });
 
-it("a stale save keeps edits unsaved and shows a notice identified by Factory's conflict code", async () => {
+it("a stale save keeps edits unsaved and blocks saving until the newer revision is resolved", async () => {
   // Arrange
   const { draft, factory } = editedAgent();
-  factory.updateAgent.mockRejectedValueOnce(
-    new ApiError({
-      code: "conflict",
-      message: "Saved elsewhere.",
-      issues: [],
-    }),
-  );
+  factory.saveElsewhere({ name: "Saved elsewhere" });
 
   // Act
   await draft.save();
@@ -306,7 +307,8 @@ it("a stale save keeps edits unsaved and shows a notice identified by Factory's 
     content: { name: "Edited" },
     dirty: true,
     error: "Saved elsewhere.",
-    conflict: "Saved elsewhere.",
+    stale: true,
+    canSave: false,
     saving: false,
   });
 });
@@ -323,7 +325,7 @@ it("a failure mentioning a newer revision without a conflict code does not raise
   expect(draft.getSnapshot()).toMatchObject({
     dirty: true,
     error: "Could not read a newer revision.",
-    conflict: "",
+    stale: false,
   });
 });
 
@@ -406,4 +408,617 @@ it("a save completing after disposal cannot notify the former guard", async () =
   // Assert
   expect(guard).not.toHaveBeenCalled();
   expect(draft.getSnapshot()).toMatchObject({ dirty: false, saved: { revision: 4 } });
+});
+
+it("a clean editor adopts a revision saved elsewhere and says which revision it was updated to", () => {
+  // Arrange
+  const setup = agentDraft();
+
+  // Act
+  savedElsewhere(setup, { name: "Saved elsewhere" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 4, name: "Saved elsewhere" },
+    content: { name: "Saved elsewhere" },
+    dirty: false,
+    updatedTo: 4,
+    newer: null,
+  });
+});
+
+it("a dirty editor keeps its draft and baseline and names the revision saved elsewhere", () => {
+  // Arrange
+  const setup = editedAgent();
+
+  // Act
+  savedElsewhere(setup, { name: "Saved elsewhere" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3 },
+    content: { name: "Edited" },
+    dirty: true,
+    newer: { revision: 4, name: "Saved elsewhere" },
+    updatedTo: null,
+    canSave: false,
+  });
+});
+
+it("a newer revision saved elsewhere replaces the revision a dirty editor names", () => {
+  // Arrange
+  const setup = editedAgent();
+  savedElsewhere(setup, { name: "Revision 4" });
+
+  // Act
+  savedElsewhere(setup, { name: "Revision 5" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3 },
+    newer: { revision: 5, name: "Revision 5" },
+  });
+});
+
+it("a delivery of the saved revision with new settings status keeps the draft and names no revision", () => {
+  // Arrange
+  const setup = editedAgent();
+  const unavailable = savedAgent({
+    settingsStatus: { ...savedAgent().settingsStatus, provider: { state: "unavailable" } },
+  });
+
+  // Act
+  deliver(setup, [unavailable]);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: unavailable,
+    content: { name: "Edited" },
+    dirty: true,
+    newer: null,
+    updatedTo: null,
+  });
+});
+
+it("a stale save is compared with the newer revision once Studio delivers it", async () => {
+  // Arrange
+  const setup = editedAgent();
+  setup.factory.saveElsewhere({ name: "Saved elsewhere" });
+  await setup.draft.save();
+  setup.draft.compare();
+
+  // Act
+  echoed(setup);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    content: { name: "Edited" },
+    stale: true,
+    comparing: true,
+    newer: { revision: 4, name: "Saved elsewhere" },
+    error: "Saved elsewhere.",
+  });
+});
+
+it("a stale save on an older server reads Studio's lists again to find the newer revision", async () => {
+  // Arrange
+  const setup = editedAgent("refreshed");
+  await settled();
+  setup.factory.saveElsewhere({ name: "Saved elsewhere" });
+
+  // Act
+  await setup.draft.save();
+
+  // Assert
+  await settled();
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    content: { name: "Edited" },
+    stale: true,
+    newer: { revision: 4, name: "Saved elsewhere" },
+  });
+});
+
+it("loading the latest revision after confirmation leaves a clean draft of that revision", () => {
+  // Arrange
+  const { draft } = comparedAgent();
+  draft.requestLoadLatest(4);
+
+  // Act
+  draft.loadLatest(4);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 4, name: "Saved elsewhere" },
+    content: { name: "Saved elsewhere" },
+    dirty: false,
+    newer: null,
+    comparing: false,
+    confirmingLoad: null,
+    canSave: true,
+  });
+});
+
+it("loading the latest revision without confirmation keeps the draft", () => {
+  // Arrange
+  const { draft } = comparedAgent();
+
+  // Act
+  draft.loadLatest(4);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    content: { name: "Edited" },
+    newer: { revision: 4 },
+  });
+});
+
+it("keeping the edits against the newer revision rebinds the baseline, stays dirty and sends no save", () => {
+  // Arrange
+  const { draft, factory } = comparedAgent();
+
+  // Act
+  draft.keepEdits(4);
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 4, name: "Saved elsewhere" },
+    content: { name: "Edited" },
+    dirty: true,
+    newer: null,
+    comparing: false,
+    canSave: true,
+  });
+  expect(factory.updateAgent).not.toHaveBeenCalled();
+});
+
+it("a stale save kept against the newer revision saves against that revision", async () => {
+  // Arrange
+  const setup = editedAgent();
+  setup.factory.saveElsewhere({ name: "Saved elsewhere" });
+  await setup.draft.save();
+  echoed(setup);
+  setup.draft.keepEdits(4);
+
+  // Act
+  await setup.draft.save();
+
+  // Assert
+  expect(setup.factory.updateAgent).toHaveBeenLastCalledWith(
+    "agent",
+    expect.objectContaining({ name: "Edited", expectedRevision: 4 }),
+  );
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 5, name: "Edited" },
+    dirty: false,
+    stale: false,
+    error: "",
+  });
+});
+
+it("a revision arriving during the Load latest confirmation closes it and moves the comparison to that revision", () => {
+  // Arrange
+  const setup = comparedAgent();
+  setup.draft.requestLoadLatest(4);
+
+  // Act
+  savedElsewhere(setup, { name: "Revision 5" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    comparing: true,
+    confirmingLoad: null,
+    newer: { revision: 5, name: "Revision 5" },
+    content: { name: "Edited" },
+  });
+});
+
+it("confirming Load latest for a revision that is no longer the newest changes nothing", () => {
+  // Arrange
+  const setup = comparedAgent();
+  setup.draft.requestLoadLatest(4);
+  savedElsewhere(setup, { name: "Revision 5" });
+
+  // Act
+  setup.draft.loadLatest(4);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3 },
+    content: { name: "Edited" },
+    newer: { revision: 5 },
+  });
+});
+
+it("keeping the edits against a revision that is no longer the newest changes nothing", () => {
+  // Arrange
+  const setup = comparedAgent();
+  savedElsewhere(setup, { name: "Revision 5" });
+
+  // Act
+  setup.draft.keepEdits(4);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3 },
+    newer: { revision: 5 },
+    comparing: true,
+  });
+});
+
+it("a removal elsewhere dismisses the comparison and its confirmation and keeps the draft", () => {
+  // Arrange
+  const setup = comparedAgent();
+  setup.draft.requestLoadLatest(4);
+
+  // Act
+  removedElsewhere(setup);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    removed: true,
+    newer: null,
+    stale: false,
+    comparing: false,
+    confirmingLoad: null,
+    content: { name: "Edited" },
+    dirty: true,
+  });
+});
+
+it("an own save delivered before its reply is acknowledged without a saved-elsewhere notice", async () => {
+  // Arrange
+  const setup = editedAgent();
+  const { reply, saving } = pendingSave(setup);
+  const own = savedAgent({ name: "Edited", revision: 4 });
+  deliver(setup, [own]);
+
+  // Act
+  reply.answer(own);
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 4, name: "Edited" },
+    dirty: false,
+    newer: null,
+    updatedTo: null,
+    saveOutcome: "succeeded",
+  });
+});
+
+it("an own save delivered after its reply is acknowledged without a saved-elsewhere notice", async () => {
+  // Arrange
+  const setup = editedAgent();
+  await setup.draft.save();
+
+  // Act
+  echoed(setup);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: setup.factory.latest(),
+    dirty: false,
+    newer: null,
+    updatedTo: null,
+  });
+});
+
+it("a revision saved elsewhere while a save is pending is not announced before the reply", () => {
+  // Arrange
+  const setup = editedAgent();
+  pendingSave(setup);
+
+  // Act
+  deliver(setup, [savedAgent({ name: "Saved elsewhere", revision: 4 })]);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saving: true,
+    saved: { revision: 3 },
+    content: { name: "Edited" },
+    newer: null,
+    updatedTo: null,
+  });
+});
+
+it("a higher revision saved elsewhere during a save is adopted after the save's reply", async () => {
+  // Arrange
+  const setup = editedAgent();
+  const { reply, saving } = pendingSave(setup);
+  deliver(setup, [savedAgent({ name: "Saved elsewhere", revision: 5 })]);
+
+  // Act
+  reply.answer(savedAgent({ name: "Edited", revision: 4 }));
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 5, name: "Saved elsewhere" },
+    content: { name: "Saved elsewhere" },
+    dirty: false,
+    updatedTo: 5,
+  });
+});
+
+it("a removal elsewhere before a late save success keeps the Agent removed", async () => {
+  // Arrange
+  const setup = editedAgent();
+  const { reply, saving } = pendingSave(setup);
+  removedElsewhere(setup);
+
+  // Act
+  reply.answer(savedAgent({ name: "Edited", revision: 4 }));
+  const saved = await saving;
+
+  // Assert
+  expect(saved).toBeUndefined();
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    removed: true,
+    saved: { revision: 3 },
+    content: { name: "Edited" },
+    saving: false,
+  });
+});
+
+it("a rejected save shows a newer revision's notice beside the error and keeps the baseline", async () => {
+  // Arrange
+  const setup = editedAgent();
+  const { reply, saving } = pendingSave(setup);
+  deliver(setup, [savedAgent({ name: "Saved elsewhere", revision: 4 })]);
+
+  // Act
+  reply.fail(new ApiError({ code: "validation", message: "Prompt is too long.", issues: [] }));
+  await saving;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 3 },
+    content: { name: "Edited" },
+    dirty: true,
+    error: "Prompt is too long.",
+    saveOutcome: "rejected",
+    newer: { revision: 4, name: "Saved elsewhere" },
+    saving: false,
+  });
+});
+
+it("a save the offline window did not send keeps the draft and says nothing was sent", async () => {
+  // Arrange
+  const { draft, factory } = editedAgent();
+  factory.updateAgent.mockRejectedValueOnce(new OfflineError("not-sent"));
+
+  // Act
+  await draft.save();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    content: { name: "Edited" },
+    dirty: true,
+    saving: false,
+    saveOutcome: "not-sent",
+    error: "Factory is offline. Nothing was sent; reconnect and check the current state first.",
+  });
+  expect(factory.updateAgent).toHaveBeenCalledTimes(1);
+});
+
+it("a save whose reply is lost reports an unknown outcome, keeps the draft and is not retried", async () => {
+  // Arrange
+  const { draft, factory } = editedAgent();
+  factory.updateAgent.mockRejectedValueOnce(new OfflineError("unknown"));
+
+  // Act
+  await draft.save();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    content: { name: "Edited" },
+    dirty: true,
+    saving: false,
+    saveOutcome: "unknown",
+    error: expect.stringMatching(/^Save outcome unknown\./),
+  });
+  expect(factory.updateAgent).toHaveBeenCalledTimes(1);
+});
+
+it("a delivered revision holding an unknown save's content is recognised as that save", async () => {
+  // Arrange
+  const setup = editedAgent();
+  setup.factory.updateAgent.mockRejectedValueOnce(new OfflineError("unknown"));
+  await setup.draft.save();
+
+  // Act
+  deliver(setup, [savedAgent({ name: "Edited", revision: 4 })]);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { revision: 4, name: "Edited" },
+    dirty: false,
+    newer: null,
+    saveOutcome: "succeeded",
+    error: "",
+  });
+});
+
+it("the new-Agent form is unaffected by Agents saved or removed elsewhere", () => {
+  // Arrange
+  const setup = agentDraft(null);
+  setup.draft.edit({ name: "Unfinished" });
+
+  // Act
+  deliver(setup, [savedAgent({ id: "other", revision: 2 })], ["agent"]);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: null,
+    content: { name: "Unfinished" },
+    dirty: true,
+    newer: null,
+    removed: false,
+    canSave: true,
+  });
+});
+
+it("a created Agent that Studio has not delivered yet is not treated as removed", async () => {
+  // Arrange
+  const setup = await createdAgent();
+
+  // Act
+  deliver(setup, [savedAgent({ id: "other" })]);
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { id: "created", revision: 1 },
+    removed: false,
+  });
+});
+
+it("a created Agent follows a revision saved elsewhere once Studio holds it", async () => {
+  // Arrange
+  const setup = await createdAgent();
+  echoed(setup);
+
+  // Act
+  savedElsewhere(setup, { name: "Renamed elsewhere" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    saved: { id: "created", revision: 2, name: "Renamed elsewhere" },
+    dirty: false,
+    updatedTo: 2,
+  });
+});
+
+it("a Create whose reply is lost blocks another Create until the Agent list has been checked", async () => {
+  // Arrange
+  const { draft, factory } = agentDraft(null);
+  draft.edit({ name: "New reviewer", prompt: "Review the change." });
+  factory.createAgent.mockRejectedValueOnce(new OfflineError("unknown"));
+
+  // Act
+  await draft.save();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: null,
+    content: { name: "New reviewer" },
+    saveOutcome: "unknown",
+    canSave: false,
+    error: expect.stringContaining("check the Agent list before creating it again"),
+  });
+});
+
+it("confirming the Agent list was checked after a lost Create allows Create again", async () => {
+  // Arrange
+  const { draft, factory } = agentDraft(null);
+  draft.edit({ name: "New reviewer", prompt: "Review the change." });
+  factory.createAgent.mockRejectedValueOnce(new OfflineError("unknown"));
+  await draft.save();
+
+  // Act
+  draft.allowCreateAgain();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({ canSave: true, error: "", saveOutcome: null });
+});
+
+it("an own delete delivered before its reply is not a removal elsewhere", async () => {
+  // Arrange
+  const setup = agentDraft();
+  const reply = held(setup.factory.removeAgent);
+  const deleting = setup.draft.delete();
+  removedElsewhere(setup);
+
+  // Act
+  reply.answer(undefined);
+  await deleting;
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    removed: false,
+    dirty: false,
+    deleting: false,
+  });
+});
+
+it("a clean Agent removed elsewhere retains a draft and refuses Save", async () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+
+  // Act
+  const result = await setup.draft.save();
+
+  // Assert
+  expect(result).toBeUndefined();
+  expect(setup.factory.updateAgent).not.toHaveBeenCalled();
+  expect(setup.draft.getSnapshot()).toMatchObject({ removed: true, dirty: false, canSave: false });
+});
+
+it("an Agent removed elsewhere refuses another Delete", async () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+
+  // Act
+  const deleted = await setup.draft.delete();
+
+  // Assert
+  expect(deleted).toBe(false);
+  expect(setup.factory.removeAgent).not.toHaveBeenCalled();
+});
+
+it("an Agent removed elsewhere refuses Duplicate", async () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+
+  // Act
+  const copy = await setup.draft.duplicate();
+
+  // Assert
+  expect(copy).toBeUndefined();
+  expect(setup.factory.duplicateAgent).not.toHaveBeenCalled();
+});
+
+it("Copy as JSON recovers unfinished edits in the create shape after removal", () => {
+  // Arrange
+  const setup = agentDraft();
+  removedElsewhere(setup);
+  setup.draft.edit({ name: "", prompt: "Unfinished recovery" });
+
+  // Act
+  const recovered = JSON.parse(setup.draft.exportJson());
+
+  // Assert
+  expect(recovered).toEqual({
+    name: "",
+    prompt: "Unfinished recovery",
+    execution: {
+      environmentId: "local",
+      providerInstanceId: "primary",
+      modelId: "first",
+      modelOptions: [
+        { id: "effort", value: "low" },
+        { id: "old", value: true },
+      ],
+    },
+    exits: [{ id: "done", name: "done", description: "", messageRequired: false }],
+  });
+});
+
+it("a retained Agent stays editable while a superseded save reply is pending", () => {
+  // Arrange
+  const setup = editedAgent();
+  pendingSave(setup);
+  removedElsewhere(setup);
+
+  // Act
+  setup.draft.edit({ prompt: "Recover while the save reply is pending" });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({
+    removed: true,
+    content: { prompt: "Recover while the save reply is pending" },
+    canSave: false,
+  });
 });
