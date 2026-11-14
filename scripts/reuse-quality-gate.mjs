@@ -2,20 +2,25 @@ import { readFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 
-function codeGateState(run, jobs, marker) {
+function codeGateState(run, jobs, marker, acceptUnidentified) {
   const job = jobs.find((entry) => entry.name === "Quality gate");
   const gate = job?.steps?.find((step) => step.name === marker);
   const reuse = job?.steps?.find((step) => step.name === "Reuse existing code validation");
+  // Later runs may replace a cancelled source attempt. Require positive proof
+  // of their code role so two metadata checks cannot wait for one another.
+  if (
+    !acceptUnidentified &&
+    (!gate || reuse?.conclusion !== "skipped" || gate.conclusion === "skipped")
+  )
+    return null;
   // A metadata check is evidence consumption, never another full-code receipt.
   if (reuse?.conclusion && reuse.conclusion !== "skipped") return null;
   // Queued jobs may have no steps yet. An unknown newer attempt must not expose
   // an older success while it is pending or has failed before recording scope.
-  if (!gate) {
-    if (job?.steps?.some((step) => step.name.startsWith("Full code gate for PR "))) return null;
-    if (run.status !== "completed") return "pending";
-    return run.conclusion === "success" ? null : "failure";
-  }
-  if (run.status !== "completed") return "pending";
+  if (!gate && job?.steps?.some((step) => step.name.startsWith("Full code gate for PR ")))
+    return null;
+  if (run.status !== "completed" || run.conclusion === "cancelled") return "pending";
+  if (!gate) return run.conclusion === "success" ? null : "failure";
   return run.conclusion === "success" &&
     job.conclusion === "success" &&
     gate.conclusion === "success"
@@ -47,7 +52,7 @@ export async function readQualityGate({ read, repository, runId, event }) {
   );
   for (const run of candidates) {
     if (
-      run.id >= current.id ||
+      run.id === current.id ||
       run.head_sha !== pr.head.sha ||
       run.head_branch !== pr.head.ref ||
       run.head_repository?.id !== pr.head.repo.id
@@ -55,7 +60,7 @@ export async function readQualityGate({ read, repository, runId, event }) {
       continue;
     }
     const { jobs } = await read(`${prefix}/runs/${run.id}/jobs?filter=latest&per_page=100`);
-    const state = codeGateState(run, jobs, marker);
+    const state = codeGateState(run, jobs, marker, run.id < current.id);
     if (state) return { state, url: run.html_url };
   }
   return { state: "missing" };

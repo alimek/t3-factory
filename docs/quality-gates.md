@@ -53,8 +53,11 @@ Every Quality run reports the same **Quality gate** job name. On a title/body-on
 edit, it reads the newest full code validation for the same repository, PR, base
 and HEAD instead of installing dependencies or executing the gate. Its evidence
 is the scoped full-gate step in the original workflow run; a successful metadata
-check cannot certify another metadata check. An in-flight validation is awaited,
-a failed validation remains failed, and missing or unreadable evidence fails
+check cannot certify another metadata check. An in-flight validation is awaited;
+a cancelled attempt stays unproven while the check waits for its retry or a
+replacement code run, even one created after the metadata edit. Later candidates
+must prove their code role so metadata checks cannot wait on each other.
+A failed validation remains failed, and missing or unreadable evidence fails
 closed. Rerun the source-triggered Quality workflow when matching validation is
 missing, or retry the metadata check after a bounded wait expires. Earlier
 workflow versions without scoped evidence cannot be reused.

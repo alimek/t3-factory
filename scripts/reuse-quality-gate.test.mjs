@@ -15,6 +15,7 @@ function scenario({
   emptySteps = false,
   olderRerun = false,
   startedAt = "2026-01-01T10:00:00Z",
+  currentRunId = 11,
 } = {}) {
   const run = {
     id: 10,
@@ -36,7 +37,7 @@ function scenario({
         : [
             {
               name: "Reuse existing code validation",
-              conclusion: metadata ? "success" : "skipped",
+              conclusion: metadata ? (status === "completed" ? "success" : null) : "skipped",
             },
             { name: stepName, conclusion: metadata ? "skipped" : conclusion },
           ],
@@ -53,7 +54,7 @@ function scenario({
   };
   const prefix = "/repos/example/repo/actions";
   const responses = new Map([
-    [`${prefix}/runs/11`, { id: 11, workflow_id: 7 }],
+    [`${prefix}/runs/${currentRunId}`, { id: currentRunId, workflow_id: 7 }],
     [
       `${prefix}/workflows/7/runs?event=pull_request&head_sha=${head}&per_page=100&page=1`,
       { workflow_runs: previous ? [run, older] : [run] },
@@ -66,7 +67,10 @@ function scenario({
           {
             name: "Quality gate",
             conclusion: olderConclusion,
-            steps: [{ name: marker, conclusion: olderConclusion }],
+            steps: [
+              { name: "Reuse existing code validation", conclusion: "skipped" },
+              { name: marker, conclusion: olderConclusion },
+            ],
           },
         ],
       },
@@ -74,7 +78,7 @@ function scenario({
   ]);
   return {
     repository: "example/repo",
-    runId: "11",
+    runId: String(currentRunId),
     event: {
       number: 42,
       pull_request: { base: { sha: base }, head: { sha: head, ref: "feature", repo: { id: 1 } } },
@@ -186,6 +190,46 @@ await test("a failed validation scoped to another PR does not hide this PR's val
   const input = scenario({
     stepName: `Full code gate for PR 43: ${base}..${head}`,
     conclusion: "failure",
+    previous: true,
+  });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "success");
+  assert.match(result.url, /\/runs\/9$/);
+});
+
+await test("a cancelled latest source attempt stays pending instead of falling back to older success", async () => {
+  // Arrange
+  const input = scenario({ conclusion: "cancelled", previous: true });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "pending");
+});
+
+await test("a replacement code gate created after the metadata run can satisfy its evidence requirement", async () => {
+  // Arrange
+  const input = scenario({ currentRunId: 8 });
+
+  // Act
+  const result = await readQualityGate(input);
+
+  // Assert
+  assert.equal(result.state, "success");
+});
+
+await test("a newer pending metadata run cannot create a mutual wait between metadata checks", async () => {
+  // Arrange
+  const input = scenario({
+    currentRunId: 8,
+    metadata: true,
+    status: "in_progress",
+    conclusion: null,
     previous: true,
   });
 
