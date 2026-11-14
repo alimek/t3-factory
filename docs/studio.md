@@ -174,7 +174,9 @@ issues use `workspace.*` paths. A save that omits `workspace` keeps the saved se
 
 Blocks have stable IDs, position and name. On create or save, positions are optional for every block and the Flow input. If any position is omitted, the backend arranges the whole graph with the same ELK layout as [Auto-arrange](#automatic-layout-and-canvas-view), replacing even the supplied positions. Fully positioned graphs are saved as given. Saved graphs always include all positions; Studio sends them all, so its saves preserve the draft's layout.
 
-An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides) and `localExits`; a Human block has
+An Agent block adds `agentId`, `hiddenExitIds` (inherited exit IDs it hides), `localExits` and `revisitInstruction`, its
+[Revisit instruction](../GLOSSARY.md#revisit-instruction): plain text up to 120,000 characters, optional on create and save, stored trimmed,
+and empty when omitted or whitespace-only. Readiness never requires it or warns about it, even on a block that cannot be revisited. A Human block has
 no exit fields. A Wait block adds `duration`: `{amount, unit}` with any finite number as `amount` and `unit` `minutes`,
 `hours` or `days`, or `null` while the draft has none; a Continuation adds `prompt` (stored trimmed, up to 120,000 characters, empty only in a draft). Each has one fixed, unnamed exit with ID `output`. An exit is `{id, name, description, messageRequired}`, with IDs scoped to their block; runtime consumers enforce a non-empty message when
 `messageRequired` is true. Connections identify source block, exit ID and target block: a Human block's exit is `approve` or `request-changes`, a Wait's or Continuation's is `output`, and an Agent block's
@@ -187,7 +189,7 @@ Every graph carries exactly one `flowInput`: a canvas `position` and the `target
 ### Validation
 
 Structural failures return `Result` errors with `code`, `path` and `message`: invalid or duplicate IDs and names,
-positions, Flow input targets, dangling or duplicate edges, a Human or Wait connection from another exit, malformed exits, hide entries or Wait durations (an amount that is not a finite number, an unknown unit) and unknown block, exit, graph or Flow input fields, including Agent fields on a Wait. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
+positions, Flow input targets, dangling or duplicate edges, a Human or Wait connection from another exit, malformed exits, hide entries or Wait durations (an amount that is not a finite number, an unknown unit) and unknown block, exit, graph or Flow input fields, including Agent fields on a Wait. A `revisitInstruction` that is not a string, is longer than 120,000 characters after trimming, or is on a block other than an Agent block is refused at that block's `revisitInstruction` path. Limits: 500 blocks, 100 local exits and 100 hide entries per block, 100 exits per Agent, 5000 connections, coordinates −10000 to 10000, bodies up to 2 MB.
 
 Unfinished names, unset Agents, an unconnected Flow input, blocks without exits, local exit name or ID collisions and wires from hidden or removed exits can be saved.
 Readiness reports these gaps (`flow_input_required`: connect the Flow input to at least one Agent; `continuation_prompt_required`; `exit_name_conflict`, `exit_id_conflict`, `exit_hidden`, `exit_missing`), a Wait

@@ -261,6 +261,7 @@ export const agentBlock = (
   position: Position = { x: 0, y: 0 },
   hiddenExitIds: readonly string[] = [],
   localExits: readonly BlockExit[] = [],
+  revisitInstruction = "",
 ): ScenarioAgentBlock => ({
   id,
   name,
@@ -269,6 +270,7 @@ export const agentBlock = (
   position,
   hiddenExitIds,
   localExits,
+  revisitInstruction,
 });
 export const humanStep = (
   id: string,
@@ -503,6 +505,7 @@ export interface SingleWorkerVariant {
   readonly localExits?: readonly BlockExit[];
   readonly workspace?: FlowWorkspace;
   readonly revisit?: boolean;
+  readonly revisitInstruction?: string;
 }
 
 const workerAgent = (
@@ -553,6 +556,7 @@ export async function singleWorkerFlow(world: ScenarioWorld, variant: SingleWork
           undefined,
           variant.hiddenExitIds,
           variant.localExits,
+          variant.revisitInstruction,
         ),
       ],
       connections: variant.revisit ? [connection("worker", "done", "worker")] : [],

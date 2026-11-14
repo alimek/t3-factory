@@ -50,7 +50,14 @@ export function newBlock(
     },
   };
   if (kind === "agent")
-    return { ...base, kind, agentId: agent?.id ?? null, hiddenExitIds: [], localExits: [] };
+    return {
+      ...base,
+      kind,
+      agentId: agent?.id ?? null,
+      hiddenExitIds: [],
+      localExits: [],
+      revisitInstruction: "",
+    };
   if (kind === "wait") return { ...base, kind, duration: null };
   return kind === "continuation" ? { ...base, kind, prompt: "" } : { ...base, kind };
 }

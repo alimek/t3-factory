@@ -6,7 +6,7 @@ import {
   releasedUpgradeData,
 } from "./support/released-upgrade.ts";
 
-it("upgrading v0.2.0 keeps clients and definitions in the project checkout, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run and leaves Generate Run titles off", async (c) => {
+it("upgrading v0.2.0 keeps clients and definitions in the project checkout, with an empty Revisit instruction on every Agent block, settles Finished, archives Stopped and pending Stop with their history and titles as legacy without title generation, removes the open Run and leaves Generate Run titles off", async (c) => {
   // Arrange
   const fixture = await releasedUpgradeData(c);
   expect(fixture.pendingStop.closedAt).toBeNull();
