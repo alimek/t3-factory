@@ -439,7 +439,10 @@ test("replacing the bot token after Chat control operated warns that another app
     connection.getByText("A token of another application replaces the bot"),
   ).toBeVisible();
   await expect(connection.getByLabel("Replacement token")).toBeVisible();
-  await connection.getByText("A token of another application replaces the bot").scrollIntoView();
+  // The notice's last sentence brings the whole notice into the evidence frame.
+  await connection
+    .getByText("A new token of the same application keeps everything", { exact: false })
+    .scrollIntoView();
   await app.screenshot("chat-discord-token-replacement");
 });
 
