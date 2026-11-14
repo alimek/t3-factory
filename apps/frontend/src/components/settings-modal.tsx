@@ -24,7 +24,7 @@ import { StudioLink } from "./app-link.tsx";
 import { useClientScope } from "../client-scope.ts";
 import { desktopBridge } from "../desktop-bridge.ts";
 import { RuntimeSettings } from "../routes/runtime.tsx";
-import { reportingSummary, useReportingState } from "../reporting-state.tsx";
+import { reportingTargetsMarker, useReportingState } from "../reporting-state.tsx";
 import { SettingsPanel } from "./screen-layout.tsx";
 import { ConnectionSettingsPanel } from "../routes/connection.tsx";
 import {
@@ -259,13 +259,13 @@ function SettingsNavItem({ section, active }: { section: SettingsSection; active
   const options = useSettingsOptions({ tab: section.tab });
   const { presentation } = useConnectionState();
   const status = connectionStatusLabel(presentation);
-  const reporting = reportingSummary(useReportingState());
+  const reportingMarker = reportingTargetsMarker(useReportingState());
   const scope = useClientScope();
   const locked = section.managedOnHost === true && scope === "remote";
-  const reportingAttention = section.tab === "agent-reporting" && reporting.state === "attention";
+  const reportingAttention = section.tab === "agent-reporting" && reportingMarker !== undefined;
   let marker: string | undefined;
   if (section.tab === "connection") marker = status;
-  else if (reportingAttention) marker = reporting.label;
+  else if (reportingAttention) marker = reportingMarker;
   else if (locked) marker = "Managed on the Factory host";
   const Icon = section.icon;
   return (

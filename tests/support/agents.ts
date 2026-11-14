@@ -23,11 +23,7 @@ export async function readAgentDefinition(
 
 /** Repair the disposable Codex target through the same Settings action as a user. */
 export async function repairCodexReporting(screen: Screen) {
-  await screen
-    .getByRole("article")
-    .filter({ has: screen.getByRole("heading", "Codex", { exact: true }) })
-    .getByRole("button", "Repair installation", { exact: true })
-    .tap();
+  await screen.getByRole("button", "Repair Codex", { exact: true }).tap();
   await screen.getByRole("button", "Close", { exact: true }).tap();
 }
 
