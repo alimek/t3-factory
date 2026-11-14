@@ -91,6 +91,22 @@ export async function recheckAccess() {
 
 const recheckMs = 2000;
 
+/**
+ * A live socket that reconnects may reach a server that changed its protocol without any HTTP
+ * request failing meanwhile; handshaking again republishes the protocol it now declares.
+ */
+function useRenegotiateAfterReconnect(check: () => Promise<void>) {
+  const delivery = useLiveDelivery();
+  const [lost, setLost] = useState(false);
+  if (delivery === "offline" && !lost) setLost(true);
+  const reconnected = lost && delivery !== "offline";
+  useEffect(() => {
+    if (!reconnected) return;
+    setLost(false);
+    void check();
+  }, [reconnected, check]);
+}
+
 export function ClientGate({ children }: { children: ReactNode }) {
   const [gate, setGate] = useState<Gate>({ kind: "checking" });
   const current = useTransport();
@@ -108,6 +124,7 @@ export function ClientGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (current.kind === "access-lost" || current.kind === "incompatible") void check();
   }, [current.kind, check]);
+  useRenegotiateAfterReconnect(check);
   // A client without approved access keeps no theme colors of an earlier approval.
   const unapproved = gate.kind === "request" || gate.kind === "pending";
   useEffect(() => {

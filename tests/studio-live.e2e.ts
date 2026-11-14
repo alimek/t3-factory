@@ -130,3 +130,30 @@ test("a fresh link to an absent Agent says it was not found and leads back to th
   await screen.getByRole("button", "Back to list").tap();
   await expect(screen.getByRole("heading", "Agents", { exact: true })).toBeVisible();
 });
+
+test("a revision saved elsewhere during a drag waits, and the drop keeps its move against the old revision", async ({
+  app,
+  screen,
+  browser,
+}) => {
+  // Arrange
+  const flowId = await createFlowElsewhere(app.baseUrl, "Deferred Studio Flow");
+  await app.open(`/studio/flows/${flowId}`);
+  await expect(screen.getByRole("status", "Flow save status")).toContainText("Saved · Revision 1");
+  const handle = (await screen.getByRole("button", "Flow input", { exact: true }).boundingBox())!;
+  await browser.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await browser.mouse.down();
+  await browser.mouse.move(handle.x + handle.width / 2 + 120, handle.y + handle.height / 2 + 80);
+  await renameFlow(app.baseUrl, flowId, "Deferred Studio Flow renamed");
+  await expect(screen.getByText("Revision 2 was saved elsewhere.", { exact: false })).toBeVisible();
+
+  // Act
+  await browser.mouse.up();
+
+  // Assert
+  await expect(screen.getByRole("status", "Flow save status")).toContainText(
+    "Unsaved changes · Revision 1",
+  );
+  await expect(screen.getByText("Revision 2 was saved elsewhere.", { exact: false })).toBeVisible();
+  await expect(screen.getByLabel("Flow name")).toHaveValue("Deferred Studio Flow");
+});

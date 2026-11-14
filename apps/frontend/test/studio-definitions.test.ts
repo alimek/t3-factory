@@ -287,3 +287,23 @@ it("a reconnect to a server without live Studio delivery reads both lists over H
     error: null,
   });
 });
+
+it("a create reply arriving after live delivery showed and then removed the definition is not kept current", async () => {
+  // Arrange
+  const { definitions, factory } = liveStudio();
+  const created = { ...savedAgent(), id: "created", name: "Created" };
+  const reply = held(factory.createAgent);
+  const creating = definitions.createAgent(created);
+  definitions.receive({ value: { agents: [created], flows: [] }, synchronized: true, error: null });
+  definitions.receive({ value: { agents: [], flows: [] }, synchronized: true, error: null });
+
+  // Act
+  reply.answer(created);
+  await creating;
+
+  // Assert
+  expect(definitions.view("agents", "created")).toStrictEqual({
+    definition: undefined,
+    synchronized: true,
+  });
+});

@@ -27,6 +27,11 @@ export interface SavedSyncState<D> {
   readonly baseline: D | null;
   /** The newest saved revision the source delivered. */
   readonly latest: D | null;
+  /**
+   * The baseline is the copy Studio's source delivered, not only a save or create reply: its
+   * status fields describe the same committed state as the rest of the source.
+   */
+  readonly confirmed: boolean;
   /** A newer revision the draft has not adopted because it holds unsaved changes. */
   readonly savedElsewhere: number | null;
   /** The comparison shows this revision beside the draft; it follows newer revisions. */
@@ -82,6 +87,8 @@ export function createSavedDefinitionSync<D extends Saved>(hooks: SavedSyncHooks
   let presence: Presence = "loading";
   let baseline: D | null = null;
   let latest: D | null = null;
+  /** The last definition the source itself delivered. */
+  let delivered: D | null = null;
   let comparing = false;
   let staleSave = false;
   let saving = false;
@@ -124,11 +131,13 @@ export function createSavedDefinitionSync<D extends Saved>(hooks: SavedSyncHooks
 
   return {
     state(): SavedSyncState<D> {
-      const savedElsewhere = newer();
+      // A pending save's own revision may arrive first; its notices wait for the reply.
+      const savedElsewhere = saving ? null : newer();
       return {
         presence,
         baseline,
         latest,
+        confirmed: baseline !== null && baseline === delivered,
         savedElsewhere,
         compared: comparing && savedElsewhere !== null ? latest : null,
         comparing,
@@ -146,6 +155,7 @@ export function createSavedDefinitionSync<D extends Saved>(hooks: SavedSyncHooks
     observe(view: SavedView<D>) {
       if (!view.synchronized || presence === "removed") return;
       if (view.definition) {
+        delivered = view.definition;
         receive(view.definition);
         if (presence !== "present") presence = "present";
       } else if (presence === "loading") presence = "missing";

@@ -93,7 +93,12 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
   let synchronized = false;
   let agentGeneration: string | null = null;
   let agentsChanged = false;
-  let checked: { readonly key: string; readonly readiness: FlowReadiness } | null = null;
+  /** The last check: the content and revision it validated and the saved Agents it used. */
+  let checked: {
+    readonly key: string;
+    readonly generation: string | null;
+    readonly readiness: FlowReadiness;
+  } | null = null;
   const listeners = new Set<() => void>();
 
   const sync = createSavedDefinitionSync<FlowDraft>({
@@ -116,16 +121,22 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
   });
   let snapshot: FlowDraftSnapshot = current();
 
-  /** What a readiness result describes: the content, its saved revision and the saved Agents. */
-  function readinessKey() {
-    return JSON.stringify([content, sync.state().baseline?.revision ?? null, agentGeneration]);
+  /** The content and saved revision a readiness result describes. */
+  function contentKey() {
+    return JSON.stringify([content, sync.state().baseline?.revision ?? null]);
   }
 
+  /**
+   * A clean draft shows the readiness its source delivered with the shown Agents, never a save
+   * reply's; an unsaved draft shows its check only while the Agents it used are the ones shown.
+   */
   function shownReadiness(): FlowReadiness | null {
     const state = sync.state();
     if (!synchronized || state.presence !== "present" || state.savedElsewhere !== null) return null;
-    if (!dirty) return state.baseline?.readiness ?? null;
-    return checked?.key === readinessKey() ? checked.readiness : null;
+    if (!dirty) return state.confirmed ? (state.baseline?.readiness ?? null) : null;
+    return checked?.key === contentKey() && checked.generation === agentGeneration
+      ? checked.readiness
+      : null;
   }
 
   function current(): FlowDraftSnapshot {
@@ -249,17 +260,19 @@ export function createFlowDraft(id: string, operations: FlowDraftOperations = ap
       busy = true;
       error = "";
       issues = [];
-      const key = readinessKey();
+      const key = contentKey();
+      const asked = agentGeneration;
       publish();
       try {
-        const readiness = await operations.validateFlow({
+        const { agentGeneration: used, ...readiness } = await operations.validateFlow({
           ...content,
           expectedRevision: against.revision,
         });
-        checked = { key, readiness };
-        if (key === readinessKey()) agentsChanged = false;
+        // Servers before protocol 12 do not say which Agents they used.
+        checked = { key, generation: used ?? asked, readiness };
+        if (checked.generation === agentGeneration) agentsChanged = false;
       } catch (cause) {
-        if (key === readinessKey()) reject(cause, "Could not check Flow.");
+        if (key === contentKey()) reject(cause, "Could not check Flow.");
       } finally {
         busy = false;
         publish();

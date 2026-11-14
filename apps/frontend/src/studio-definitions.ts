@@ -104,6 +104,8 @@ export function createStudioDefinitions(
   const agents = savedList(operations.listAgents, publish);
   let live: StudioDefinitionsSnapshot = { flows: unread, agents: unread };
   const acknowledged = new Map<string, FlowDraft | AgentDefinition>();
+  /** Every id the source has shown, so a late create reply never outlives a known removal. */
+  const shown = new Set<string>();
   let snapshot: StudioDefinitionsSnapshot = current();
   let ended = false;
   const listeners = new Set<() => void>();
@@ -114,7 +116,10 @@ export function createStudioDefinitions(
   function publish() {
     snapshot = current();
     for (const list of [snapshot.flows.value, snapshot.agents.value])
-      for (const definition of list ?? []) acknowledged.delete(definition.id);
+      for (const definition of list ?? []) {
+        shown.add(definition.id);
+        acknowledged.delete(definition.id);
+      }
     listeners.forEach((notify) => notify());
   }
   function refresh() {
@@ -138,10 +143,7 @@ export function createStudioDefinitions(
   ) {
     return write(async (...args: A) => {
       const created = await operation(...args);
-      const shown = [...(snapshot.flows.value ?? []), ...(snapshot.agents.value ?? [])].some(
-        (definition) => definition.id === created.id,
-      );
-      if (!ended && !shown) acknowledged.set(created.id, created);
+      if (!ended && !shown.has(created.id)) acknowledged.set(created.id, created);
       return created;
     });
   }

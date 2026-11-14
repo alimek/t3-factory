@@ -104,6 +104,12 @@ export interface FlowReadiness {
   readonly issues: readonly ValidationIssue[];
 }
 
+/** A draft's readiness from `POST /api/flows/validate` and the saved Agents it was checked against. */
+export interface FlowValidation extends FlowReadiness {
+  /** The checked Agents as `agentGeneration` writes them; servers before protocol 12 omit it. */
+  readonly agentGeneration?: string;
+}
+
 export interface FlowDraft {
   readonly id: string;
   readonly name: string;
@@ -123,7 +129,7 @@ export const flowOperations = {
     path: "/api/flows",
     body: "json",
   }),
-  validateFlow: operation<UpdateFlowInput, FlowReadiness>()({
+  validateFlow: operation<UpdateFlowInput, FlowValidation>()({
     method: "POST",
     path: "/api/flows/validate",
     body: "json",

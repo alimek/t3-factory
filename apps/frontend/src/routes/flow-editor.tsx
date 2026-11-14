@@ -45,6 +45,7 @@ import {
   type FlowDraftModel,
   type FlowDraftSnapshot,
 } from "../flow-draft.ts";
+import { agentGeneration } from "@t3-factory/domain-validation";
 import { useStudioRead, type StudioDefinitions } from "../studio-definitions.ts";
 import {
   DefinitionUnavailable,
@@ -53,10 +54,6 @@ import {
   SaveOutcomeUnknownNotice,
   UpdatedToNotice,
 } from "../components/definition-reconciliation.tsx";
-
-/** The saved Agents' identity and revisions, which Flow readiness depends on. */
-const agentGeneration = (agents: readonly AgentDefinition[]) =>
-  agents.map((agent) => `${agent.id}:${agent.revision}`).join(",");
 
 /**
  * This editor's Flow draft, saved and removed through Studio's definitions and fed by its
@@ -107,7 +104,8 @@ function useInteractionDeferral(draft: FlowDraftModel) {
         const end = () => {
           window.removeEventListener("pointerup", end, true);
           window.removeEventListener("pointercancel", end, true);
-          draft.endInteraction();
+          // After the release's own handlers: a drop edits the draft before adoption is reconsidered.
+          window.setTimeout(draft.endInteraction, 0);
         };
         window.addEventListener("pointerup", end, true);
         window.addEventListener("pointercancel", end, true);

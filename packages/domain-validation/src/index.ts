@@ -966,6 +966,19 @@ export function continuationSources(graph: FlowGraphInput, blockId: string): str
  * Graph readiness against the given saved Agents; live T3, project and provisioning gates remain
  * separate. Issues block Start, never a save.
  */
+/**
+ * The saved Agents Flow readiness depends on, as one comparable value: each `id:revision`,
+ * ordered by id and joined by commas.
+ */
+export function agentGeneration(
+  agents: readonly { readonly id: string; readonly revision: number }[],
+): string {
+  return agents
+    .map(({ id, revision }) => `${id}:${revision}`)
+    .sort()
+    .join(",");
+}
+
 export function flowReadiness(
   graph: FlowGraphInput,
   agents: readonly ReadinessAgent[],

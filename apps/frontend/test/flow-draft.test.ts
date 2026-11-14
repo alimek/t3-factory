@@ -548,3 +548,65 @@ it("a late save reply keeps the readiness Studio's source delivered for the same
     canStartRun: false,
   });
 });
+
+it("this editor's pending save shows no saved-elsewhere notice when its own revision arrives first", async () => {
+  // Arrange
+  const setup = await editedFlow("Mine");
+  held(setup.factory.updateFlow);
+  void setup.draft.save();
+
+  // Act
+  deliver(setup, { ...setup.factory.latest(), name: "Mine", revision: 2 });
+
+  // Assert
+  expect(setup.draft.getSnapshot()).toMatchObject({ busy: true, conflict: { status: "none" } });
+});
+
+it("a clean Flow shows no readiness from its save reply until Studio's source delivers that revision", async () => {
+  // Arrange
+  const { draft } = await editedFlow("Mine");
+
+  // Act
+  await draft.save();
+
+  // Assert
+  expect(draft.getSnapshot()).toMatchObject({
+    saved: { revision: 2 },
+    dirty: false,
+    readiness: null,
+    canStartRun: false,
+  });
+});
+
+it("a check the server ran against newer saved Agents than those shown is not shown", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow();
+  factory.validateFlow.mockResolvedValueOnce({
+    ready: true,
+    issues: [],
+    agentGeneration: agentsAfter,
+  });
+
+  // Act
+  await draft.check();
+
+  // Assert
+  expect(draft.getSnapshot().readiness).toBeNull();
+});
+
+it("a check against newer saved Agents is shown once Studio's source shows those Agents", async () => {
+  // Arrange
+  const { draft, factory } = await editedFlow();
+  factory.validateFlow.mockResolvedValueOnce({
+    ready: true,
+    issues: [],
+    agentGeneration: agentsAfter,
+  });
+  await draft.check();
+
+  // Act
+  draft.observeAgents(agentsAfter);
+
+  // Assert
+  expect(draft.getSnapshot().readiness).toStrictEqual({ ready: true, issues: [] });
+});
