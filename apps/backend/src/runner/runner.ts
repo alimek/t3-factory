@@ -243,6 +243,13 @@ export const makeRunner = Effect.fn("Runner.make")(function* (
         const accepted = yield* store.acceptedStart(requestId);
         return accepted ? yield* getRun(accepted.id) : undefined;
       }),
+    /** The Run whose Human occurrence an attributed answer request answered; undefined when it
+     * never applied. Another caller's answer to the same occurrence is not this request's. */
+    acceptedHumanAnswer: (requestId: string) =>
+      Effect.gen(function* () {
+        const answered = yield* store.answeredByRequest(requestId);
+        return answered ? yield* getRun(answered.run_id) : undefined;
+      }),
     listRuns: (projectId: string) =>
       Effect.gen(function* () {
         const list = yield* listTasks(projectId);

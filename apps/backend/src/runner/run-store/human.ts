@@ -14,8 +14,34 @@ import { readRunRow, type RunnerDatabase } from "./database.ts";
 import { writeBlockState } from "./blocks.ts";
 import { advanceGeneration, appendTimelineEvent } from "./steps.ts";
 
-/** An answer as the public operation validated its shape. */
-type HumanAnswer = { readonly exitId: string | undefined; readonly message: string | undefined };
+/** An answer as the public operation validated its shape, and the request it is attributed to. */
+type HumanAnswer = {
+  readonly exitId: string | undefined;
+  readonly message: string | undefined;
+  readonly requestId: string | undefined;
+};
+
+/**
+ * The answer to an occurrence already settled: a repeat of the same answer is acknowledged without
+ * change, anything else conflicts. An attributed answer repeats only the request that applied it.
+ */
+function settledAnswer(
+  occurrence: HumanRow,
+  runId: string,
+  { content, requestId }: { readonly content: string; readonly requestId: string | undefined },
+): Result<{ readonly runId: string }> {
+  const repeated =
+    requestId === undefined
+      ? occurrence.answer_fingerprint === content
+      : occurrence.answer_request_id === requestId;
+  if (occurrence.state === "answered" && repeated) return { ok: true, value: { runId } };
+  return failure(
+    "conflict",
+    requestId === undefined
+      ? "This occurrence has already been settled with a different answer or reason."
+      : "This occurrence was already answered or cancelled elsewhere.",
+  );
+}
 
 export function openRunHuman(database: RunnerDatabase) {
   const ownerToken = database.owner.token;
@@ -24,12 +50,13 @@ export function openRunHuman(database: RunnerDatabase) {
    * (otherwise the Run accepts no answers during manual settlement or after Archive). The exit and its
    * required message are validated next, because the answer's fingerprint needs them; only then
    * is an occurrence already answered with the same answer acknowledged without change, and any
-   * other settlement a conflict. An answer settles the occurrence and its attention, sets the
-   * Human step waiting while another occurrence is pending and finished otherwise, creates its
-   * Handoffs and advances the generation once. Only an applied or repeated answer is published. */
+   * other settlement a conflict. An attributed answer (`requestId`) is acknowledged only when that
+   * request applied it: another caller's identical answer is a conflict for it. An answer settles
+   * the occurrence and its attention, sets the Human step waiting while another occurrence is
+   * pending and finished otherwise, creates its Handoffs and advances the generation once. Only an applied or repeated answer is published. */
   function answerHumanOccurrence(
     id: string,
-    { exitId, message }: HumanAnswer,
+    { exitId, message, requestId }: HumanAnswer,
   ): Effect.Effect<Result<{ readonly runId: string }>, unknown> {
     return Effect.gen(function* () {
       const [found] = yield* database.transaction(
@@ -61,12 +88,7 @@ export function openRunHuman(database: RunnerDatabase) {
               return failure("validation", `${exit.name} requires a message.`);
             const content = fingerprint(JSON.stringify([exit.id, message ?? ""]));
             if (occurrence.state !== "pending")
-              return occurrence.state === "answered" && occurrence.answer_fingerprint === content
-                ? { ok: true as const, value: { runId } }
-                : failure(
-                    "conflict",
-                    "This occurrence has already been settled with a different answer or reason.",
-                  );
+              return settledAnswer(occurrence, runId, { content, requestId });
             const time = yield* now;
             const graph = runRow.definitions.flow.graph;
             const recipients = [
@@ -78,7 +100,7 @@ export function openRunHuman(database: RunnerDatabase) {
                   .map((edge) => edge.targetBlockId),
               ),
             ];
-            yield* sql`UPDATE human_occurrences SET state='answered',pending_context=NULL,settled_at=${time},exit_id=${exit.id},answer_fingerprint=${content} WHERE id=${id} AND state='pending'`;
+            yield* sql`UPDATE human_occurrences SET state='answered',pending_context=NULL,settled_at=${time},exit_id=${exit.id},answer_fingerprint=${content},answer_request_id=${requestId ?? null} WHERE id=${id} AND state='pending'`;
             yield* createHandoffs(sql, runRow, {
               kind: "human",
               id,

@@ -26,6 +26,7 @@ import { conversationalModel, makeChatModel } from "./chat-control/model.ts";
 import { makeChatActions } from "./chat-control/actions.ts";
 import { discoveryTools } from "./chat-control/chat-tools.ts";
 import { makeChatDeliveries } from "./chat-control/deliveries.ts";
+import { humanAnswerAction } from "./chat-control/human-action.ts";
 import { startAction } from "./chat-control/start-action.ts";
 import { runTools } from "./chat-control/run-tools.ts";
 import { makeChatDiscord } from "./chat-control/discord.ts";
@@ -140,8 +141,18 @@ export const makeFactoryService = (
       startTextRun: (input) => guard(runner.startTextRun(input)),
       acceptedStart: (requestId) => runner.acceptedStart(requestId),
     });
+    const chatHumanAnswer = humanAnswerAction(sql, {
+      getRun: (id) => guard(runner.getRun(id)),
+      answerHumanOccurrence: (id, input, requestId) =>
+        guard(runner.answerHumanOccurrence(id, input, requestId)),
+      acceptedHumanAnswer: (requestId) => runner.acceptedHumanAnswer(requestId),
+    });
     const chatDeliveries = yield* makeChatDeliveries(sql);
-    const chatActions = makeChatActions(sql, [chatStart.operation], chatDeliveries);
+    const chatActions = makeChatActions(
+      sql,
+      [chatStart.operation, chatHumanAnswer.operation],
+      chatDeliveries,
+    );
     const discordOperation = yield* makeDiscordOperation(discordGateway, chatCredentials, {
       model: conversationalModel(sql, chatCredentials),
       tools: [
@@ -151,6 +162,7 @@ export const makeFactoryService = (
         }),
         ...runTools(sql, { getRun: (id) => guard(runner.getRun(id)) }),
         chatStart.tool,
+        chatHumanAnswer.tool,
       ],
       actions: chatActions,
       deliveries: chatDeliveries,

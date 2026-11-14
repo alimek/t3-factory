@@ -70,7 +70,9 @@ and restricted OAuth credentials live outside project repositories.
   identity, with their accepted or rejected facts, the backend-private originating thread of each
   chat-started Run and owed Discord deliveries with their persisted intent and outcome. None depend on
   conversation turns, so clearing a conversation keeps them. Existing Runs get no originating thread and
-  no other data changes.
+  no other data changes. Migration `087` records, on a Human occurrence, the request an attributed answer
+  was applied under, so a chat action proves its own answer; existing answers have none. It also allows
+  Human answer proposals and keeps existing proposals.
 - Each Start creates a new Task, Run and threads. An automatically Settled Run returns to
   Active when one of its Blocks reports; manually settled and Archived Runs are never reopened.
 - A Block reuses its worker conversation across visits. Exact execution identity, report

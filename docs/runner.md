@@ -404,7 +404,9 @@ names the new exit and so conflicts instead of repeating.
 Answering atomically records the answer, settles only that occurrence and creates every
 outgoing handoff, which carries the answer and the [worker provenance](#worker-provenance) of the occurrence's own incoming
 delivery. Identical retries return current detail; changed or competing answers
-conflict. Pending context is cleared after settlement. A Human Block stays waiting while
+conflict. An answer attributed to a request (Chat control's action identity) records that request
+in the same transaction; only a retry of that request is acknowledged, and an occurrence settled by
+anyone else, even with the same answer, conflicts for it. Pending context is cleared after settlement. A Human Block stays waiting while
 any occurrence is pending; it never settles the Run by itself. Archive cancels occurrences
 without inventing answers.
 

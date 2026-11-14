@@ -5,9 +5,11 @@ import type { RunStore } from "./run-store/run-store.ts";
 import type { RunnerLifecycle } from "./runner-types.ts";
 export function openRunnerHuman(store: RunStore, lifecycle: RunnerLifecycle) {
   const { isClosed, drive, getRun } = lifecycle;
+  /** `requestId`, when a caller supplies one, attributes the applied answer to that request. */
   function answerHumanOccurrence(
     id: string,
     input: unknown,
+    requestId?: string,
   ): Effect.Effect<Result<RunDetail>, unknown> {
     return Effect.gen(function* () {
       if (isClosed()) return failure("conflict", "Factory is shutting down.");
@@ -22,7 +24,7 @@ export function openRunnerHuman(store: RunStore, lifecycle: RunnerLifecycle) {
         (message !== undefined && (typeof message !== "string" || message.length > 100000))
       )
         return failure("validation", "Choose an exit and use text up to 100,000 characters.");
-      const answered = yield* store.answerHumanOccurrence(id, { exitId, message });
+      const answered = yield* store.answerHumanOccurrence(id, { exitId, message, requestId });
       if (!answered.ok) return answered;
       const detail = yield* getRun(answered.value.runId);
       if (!isClosed()) yield* lifecycle.fork(drive(answered.value.runId, "dispatch"));

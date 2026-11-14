@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: chat_actions
+-- Newest applied migration: chat_human_answers
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -242,7 +242,7 @@ CREATE TABLE chat_proposals (
   parent_channel_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
   requester_id TEXT NOT NULL,
-  operation TEXT NOT NULL CHECK (operation IN ('start')),
+  operation TEXT NOT NULL CHECK (operation IN ('start', 'human-answer')),
   parameters_json TEXT NOT NULL,
   -- Requester, context, operation and exact parameters; an identical pending proposal is reused.
   identity TEXT NOT NULL,
@@ -465,9 +465,13 @@ CREATE TABLE human_occurrences (
   appeared_at TEXT NOT NULL,
   settled_at TEXT,
   exit_id TEXT,
-  answer_fingerprint TEXT,
+  answer_fingerprint TEXT, answer_request_id TEXT,
   FOREIGN KEY(run_id,block_id) REFERENCES run_blocks(run_id,block_id)
 );
+
+CREATE UNIQUE INDEX human_occurrences_answer_request ON human_occurrences(answer_request_id)
+  WHERE answer_request_id IS NOT NULL
+;
 
 CREATE TABLE operation_intents (
   id TEXT PRIMARY KEY,

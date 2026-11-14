@@ -401,7 +401,7 @@ it("a request over the 64 KiB model request budget leaves out the oldest whole t
 
   // Act
   const replies = await answered(discord, "300000000000000130", 3, {
-    content: "\u0001".repeat(6900),
+    content: "\u0001".repeat(6000),
   });
 
   // Assert
