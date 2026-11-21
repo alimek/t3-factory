@@ -959,3 +959,45 @@ test("the host retries the status card Discord refused in a locked thread once a
   );
   await app.screenshot("chat-discord-status-card-retried");
 });
+
+test("the host retries a completion notice after unlocking its Discord thread", async ({
+  app,
+  screen,
+}) => {
+  // Arrange
+  const { thread } = await confirmedStart(
+    app.baseUrl,
+    "UI completion journey · Align the header",
+    [],
+  );
+  const runId = await cardRunId(app.baseUrl, thread);
+  await discord(app.baseUrl).thread({ thread, state: "locked" });
+  const settled = await hostCall(app.baseUrl, "POST", `/api/runs/${runId}/settle`, {
+    stopWorkers: true,
+  });
+  assert(settled.ok, JSON.stringify(settled));
+  await settingsWhen<DiscordSettings>(app.baseUrl, "/api/chat-control/discord", (settings) =>
+    settings.delivery.problems.some(
+      (problem) => problem.purpose === "completion" && problem.state === "failed",
+    ),
+  );
+  await app.open("/settings/chat-control/discord");
+  const delivery = screen.getByRole("region", "Delivery");
+  const retry = delivery.getByRole("button", "Retry the completion notice");
+  await expect(delivery.getByText("Completion notice", { exact: true })).toBeVisible();
+  await app.screenshot("chat-discord-completion-failed");
+  await discord(app.baseUrl).thread({ thread, state: "unlocked" });
+
+  // Act
+  await retry.tap();
+
+  // Assert
+  await expect(retry).toHaveCount(0);
+  await messagesWhen(app.baseUrl, (messages) =>
+    messages.some(
+      (message) =>
+        message.channelId === thread &&
+        message.content.endsWith("Reply here to inspect the result or choose what to do next."),
+    ),
+  );
+});

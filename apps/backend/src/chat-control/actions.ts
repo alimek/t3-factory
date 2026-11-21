@@ -404,7 +404,10 @@ export function makeChatActions(
   ) =>
     Effect.gen(function* (): Effect.fn.Return<"presented" | "failed" | "withdrawn", unknown> {
       const create = (text: string, nonce: string, button?: ConfirmationButton) =>
-        createDeduplicated(sender, destination, text, nonceOf("review", id, nonce), button);
+        createDeduplicated(sender, destination, text, {
+          nonce: nonceOf("review", id, nonce),
+          ...(button === undefined ? {} : { button }),
+        });
       const failed = Effect.gen(function* () {
         yield* fail(id);
         yield* create(PREPARATION_FAILED, "failed");

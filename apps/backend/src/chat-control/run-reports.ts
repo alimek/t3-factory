@@ -1,6 +1,13 @@
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
+import {
+  attentionPresentation,
+  awaitsReviewInT3,
+  type FlowGraph,
+  type RunAttention,
+  type RunDetail,
+} from "@t3-factory/contracts";
 import { channelGrants, type Destination } from "./deliveries.ts";
 import { runSearch, type RunIdentity } from "./run-search.ts";
 import { runOverview, type RunReadOperations } from "./run-tools.ts";
@@ -15,6 +22,16 @@ export interface ReportOrigin {
 
 type Overview = ReturnType<typeof runOverview>;
 
+interface ReportBlock {
+  readonly name: string;
+  readonly kind: FlowGraph["blocks"][number]["kind"];
+  readonly state: RunDetail["blocks"][number]["state"];
+  readonly observation: RunDetail["blocks"][number]["freshness"];
+  readonly needsInput: "T3" | "Human" | null;
+  readonly problem: RunAttention["kind"] | null;
+  readonly wait: { readonly deadlineAt: string; readonly count: number } | null;
+}
+
 /**
  * What Factory reports about a Run, from its committed facts and the definitions it captured:
  * identity and lifecycle, Blocks, pending Waits with deadlines, and pending attention matters
@@ -26,13 +43,90 @@ export interface RunReport {
   readonly run: RunIdentity;
   /** A confirmed manual settlement still in progress; the Run is Active meanwhile. */
   readonly settlement: Overview["run"]["settlement"];
-  readonly blocks: readonly Pick<
-    Overview["lists"]["blocks"][number],
-    "blockId" | "name" | "state" | "observation"
-  >[];
-  readonly pendingWaits: readonly Omit<Overview["lists"]["pendingWaits"][number], "message">[];
+  readonly blocks: readonly ReportBlock[];
   readonly needsInput: Overview["lists"]["needsInput"];
   readonly problems: readonly Omit<Overview["lists"]["problems"][number], "detail">[];
+}
+
+function groupBy<T, Key>(items: readonly T[], keyOf: (item: T) => Key) {
+  const groups = new Map<Key, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return groups;
+}
+
+function orderedBlocks(graph: FlowGraph) {
+  const remaining = new Map(graph.blocks.map((block) => [block.id, block]));
+  const connections = groupBy(graph.connections, (connection) => connection.sourceBlockId);
+  const queue = [...graph.flowInput.targetBlockIds];
+  const ordered: FlowGraph["blocks"][number][] = [];
+  for (let index = 0; index < queue.length; index++) {
+    const id = queue[index]!;
+    const block = remaining.get(id);
+    if (!block) continue;
+    remaining.delete(id);
+    ordered.push(block);
+    for (const connection of connections.get(id) ?? []) queue.push(connection.targetBlockId);
+  }
+  return ordered.concat(
+    [...remaining.values()].sort((a, b) => {
+      const position = a.position.x - b.position.x || a.position.y - b.position.y;
+      if (position !== 0) return position;
+      if (a.id === b.id) return 0;
+      return a.id < b.id ? -1 : 1;
+    }),
+  );
+}
+
+function reportBlocks(detail: RunDetail): ReportBlock[] {
+  const recorded = new Map(detail.blocks.map((block) => [block.blockId, block]));
+  const attention = groupBy(
+    detail.attention.filter((matter) => matter.settledAt === null),
+    (matter) => matter.blockId,
+  );
+  const waits = groupBy(
+    detail.waitArrivals.filter((arrival) => arrival.state === "pending"),
+    (arrival) => arrival.blockId,
+  );
+  return orderedBlocks(detail.definitions.flow.graph).map(({ id, name, kind }) => {
+    const block = recorded.get(id);
+    const pending = attention.get(id) ?? [];
+    const problem = pending.find((matter) => attentionPresentation(matter.kind) === "problem");
+    const needsInput = pending.filter(
+      (matter) => attentionPresentation(matter.kind) === "needs-input",
+    );
+    const reviewInT3 = block !== undefined && awaitsReviewInT3(block);
+    const wait = waits.get(id);
+    return {
+      name,
+      kind,
+      state: block?.state ?? "not-started",
+      observation: block?.freshness ?? "unknown",
+      problem: problem?.kind ?? null,
+      needsInput:
+        detail.settlement !== null
+          ? null
+          : reviewInT3 || needsInput.some((matter) => matter.kind === "native-request")
+            ? "T3"
+            : needsInput.length > 0
+              ? "Human"
+              : null,
+      wait: wait
+        ? {
+            deadlineAt: wait.reduce(
+              (earliest, arrival) =>
+                arrival.deadlineAt < earliest ? arrival.deadlineAt : earliest,
+              wait[0]!.deadlineAt,
+            ),
+            count: wait.length,
+          }
+        : null,
+    };
+  });
 }
 
 /** A Run's report from its identity and current detail, as Read Run describes the same facts. */
@@ -41,13 +135,7 @@ function runReport(identity: RunIdentity, detail: Parameters<typeof runOverview>
   return {
     run: identity,
     settlement: run.settlement,
-    blocks: lists.blocks.map(({ blockId, name, state, observation }) => ({
-      blockId,
-      name,
-      state,
-      observation,
-    })),
-    pendingWaits: lists.pendingWaits.map(({ message: _message, ...rest }) => rest),
+    blocks: reportBlocks(detail),
     needsInput: lists.needsInput,
     problems: lists.problems.map(({ detail: _detail, ...rest }) => rest),
   };

@@ -10,7 +10,7 @@ export function schemaSnapshot(databasePath: string) {
     const declarations = db
       .prepare(
         `SELECT sql FROM sqlite_master
-         WHERE type IN ('table', 'index', 'trigger')
+         WHERE type IN ('table', 'index', 'trigger', 'view')
            AND name NOT GLOB 'sqlite_*' AND sql IS NOT NULL
          ORDER BY tbl_name, CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name`,
       )

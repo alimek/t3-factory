@@ -1,6 +1,6 @@
 -- Generated current-schema snapshot. Do not edit by hand.
 -- Regenerate: pnpm --filter @t3-factory/backend schema:update
--- Newest applied migration: worker_title_dispatch
+-- Newest applied migration: chat_completion_notices
 
 CREATE TABLE "activation_messages" (
   activation_id TEXT PRIMARY KEY REFERENCES run_activations(id),
@@ -184,16 +184,13 @@ CREATE TABLE chat_conversations (
 
 CREATE TABLE chat_deliveries (
   id TEXT PRIMARY KEY,
-  purpose TEXT NOT NULL CHECK (purpose IN ('receipt', 'status-card', 'attention', 'lifecycle', 'catch-up')),
+  purpose TEXT NOT NULL CHECK (purpose IN ('receipt', 'status-card', 'attention', 'lifecycle', 'catch-up', 'completion')),
   action_id TEXT REFERENCES chat_actions(id),
-  -- The Run a status card or notice reports; receipts belong to their action instead.
   run_id TEXT,
   guild_id TEXT NOT NULL,
   parent_channel_id TEXT NOT NULL,
   thread_id TEXT NOT NULL,
-  -- The Projects the content concerns; the destination channel must still grant them.
   project_ids_json TEXT NOT NULL,
-  -- The text Discord should show: what a create sends, or what an edit brings a message to.
   text TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('owed', 'sending', 'delivered', 'failed', 'unknown', 'cancelled', 'lost', 'retired')),
   attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
@@ -209,6 +206,10 @@ CREATE TABLE chat_deliveries (
 );
 
 CREATE INDEX chat_deliveries_message ON chat_deliveries(message_id)
+;
+
+CREATE INDEX chat_deliveries_pending_completion ON chat_deliveries(run_id)
+WHERE purpose='completion' AND message_id IS NULL AND state IN ('owed','sending','failed','unknown')
 ;
 
 CREATE INDEX chat_deliveries_state ON chat_deliveries(state)
@@ -358,7 +359,7 @@ CREATE TABLE chat_run_reporting (
   reference TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL DEFAULT '',
   final INTEGER NOT NULL DEFAULT 0 CHECK (final IN (0, 1))
-, baseline INTEGER NOT NULL DEFAULT 0 CHECK (baseline IN (0, 1)));
+, baseline INTEGER NOT NULL DEFAULT 0 CHECK (baseline IN (0, 1)), completion_sequence INTEGER);
 
 CREATE TABLE chat_sdk_cache (
   cache_key TEXT PRIMARY KEY,
@@ -369,6 +370,13 @@ CREATE TABLE chat_sdk_cache (
 CREATE TABLE chat_sdk_subscriptions (
   thread_id TEXT PRIMARY KEY
 );
+
+CREATE VIEW chat_settled_cycles AS
+SELECT r.id AS run_id, settled.sequence
+FROM runs r JOIN run_events settled ON settled.sequence=(
+  SELECT MAX(e.sequence) FROM run_events e WHERE e.run_id=r.id AND e.kind='run-settled'
+)
+WHERE r.settled_at IS NOT NULL AND r.archived_at IS NULL;
 
 CREATE TABLE chat_status_cards (
   run_id TEXT PRIMARY KEY REFERENCES chat_run_origins(run_id),
@@ -929,6 +937,10 @@ CREATE INDEX run_activity_by_run ON run_events(run_id, observed_at DESC)
 WHERE kind IN ('execution-observed','report-accepted','working-reported','human-answered','attention-appeared','handoff-released','continuation-passed','run-settled','run-activated')
 ;
 
+CREATE INDEX run_events_settled ON run_events(run_id,sequence)
+WHERE kind='run-settled'
+;
+
 CREATE TABLE "run_executions" (
   run_id TEXT NOT NULL,
   block_id TEXT NOT NULL,
@@ -1249,6 +1261,16 @@ CREATE UNIQUE INDEX runs_archive_request ON runs(archive_request_id)
 
 CREATE UNIQUE INDEX runs_number_unique ON runs(number) WHERE number IS NOT NULL
 ;
+
+CREATE TRIGGER chat_retire_completion
+AFTER UPDATE OF settled_at, archived_at ON runs
+WHEN OLD.settled_at IS NOT NULL AND OLD.archived_at IS NULL
+  AND (NEW.settled_at IS NULL OR NEW.archived_at IS NOT NULL)
+BEGIN
+  UPDATE chat_deliveries SET state='retired',next_attempt_at=NULL,problem=NULL,problem_at=NULL
+  WHERE run_id=NEW.id AND purpose='completion' AND message_id IS NULL
+    AND state IN ('owed','sending','failed','unknown');
+END;
 
 CREATE TRIGGER immutable_run_flow_revision BEFORE UPDATE OF flow_revision_id ON runs
 BEGIN SELECT RAISE(ABORT, 'Run definition revisions are immutable'); END;

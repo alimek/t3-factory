@@ -46,7 +46,8 @@ export const applyAccessRevocation = (
       id: string;
       parent_channel_id: string;
       project_ids_json: string;
-    }>`SELECT id,parent_channel_id,project_ids_json FROM chat_deliveries WHERE state IN ('owed','failed','unknown')`;
+    }>`SELECT id,parent_channel_id,project_ids_json FROM chat_deliveries
+        WHERE state IN ('owed','failed','unknown') OR (purpose='completion' AND state='sending')`;
     const cancelled = owed.filter((row) =>
       ungranted(access.channels, row.parent_channel_id, row.project_ids_json),
     );
@@ -58,7 +59,11 @@ export const applyAccessRevocation = (
       run_id: string;
       parent_channel_id: string;
       project_id: string;
-    }>`SELECT o.run_id,o.parent_channel_id,t.project_id FROM chat_run_origins o
+      granted: number;
+    }>`SELECT o.run_id,o.parent_channel_id,t.project_id,
+        EXISTS(SELECT 1 FROM chat_access_channel_projects g
+          WHERE g.channel_id=o.parent_channel_id AND g.project_id=t.project_id) AS granted
+      FROM chat_run_origins o
       JOIN runs r ON r.id=o.run_id JOIN tasks t ON t.id=r.task_id`;
     const revoked = origins.filter((row) =>
       ungranted(access.channels, row.parent_channel_id, JSON.stringify([row.project_id])),
@@ -67,6 +72,15 @@ export const applyAccessRevocation = (
       yield* sql`INSERT INTO chat_run_reporting (run_id,baseline) VALUES ${sql.csv(
         revoked.map((row) => sql`(${row.run_id},1)`),
       )} ON CONFLICT(run_id) DO UPDATE SET baseline=1,final=0`;
+    const regranted = origins.filter(
+      (row) =>
+        row.granted === 0 &&
+        !ungranted(access.channels, row.parent_channel_id, JSON.stringify([row.project_id])),
+    );
+    if (regranted.length > 0)
+      yield* sql`UPDATE chat_run_reporting SET completion_sequence=(
+          SELECT c.sequence FROM chat_settled_cycles c WHERE c.run_id=chat_run_reporting.run_id
+        ) WHERE run_id IN ${sql.in(regranted.map((row) => row.run_id))}`;
     return voided.map((row) => row.id);
   });
 

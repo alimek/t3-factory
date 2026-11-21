@@ -1339,6 +1339,42 @@ export const fanOutFlow: ReadyFlowShape = (world) =>
     connections: [connection("worker", "done", "follow-up")],
   }));
 
+export const statusCardFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Status card Flow", (agentId) => ({
+    flowInput: flowInput("worker", "second"),
+    blocks: [
+      agentBlock("last", "Last Block", agentId, { x: 0, y: 0 }),
+      followUp(agentId),
+      agentBlock("second", "Second @here", agentId),
+      entryWorker(agentId),
+    ],
+    connections: [
+      connection("follow-up", "done", "last"),
+      connection("worker", "done", "follow-up"),
+      connection("last", "done", "worker"),
+    ],
+  }));
+
+export const largeStatusCardFlow: ReadyFlowShape = (world) =>
+  workerShape(world, "Large status card Flow", (agentId) => {
+    const waits = Array.from({ length: 24 }, (_, index) =>
+      coolDown(`wait-${index}`, `Wait branch ${index} ${"🧱".repeat(33)}`),
+    );
+    return {
+      flowInput: flowInput("worker", "second"),
+      blocks: [
+        entryWorker(agentId),
+        agentBlock("second", "Second entry", agentId),
+        ...waits,
+        followUp(agentId),
+      ],
+      connections: [
+        ...waits.map(({ id }) => connection("worker", "done", id)),
+        connection("second", "done", "follow-up"),
+      ],
+    };
+  });
+
 export const manyEntryWorkers: ReadyFlowShape = (world) =>
   workerShape(world, "Many entry workers", (agentId) => {
     const blocks = Array.from({ length: 12 }, (_, n) =>

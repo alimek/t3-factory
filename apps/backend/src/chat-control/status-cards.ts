@@ -7,8 +7,6 @@ import { runReference } from "./run-tools.ts";
 
 /** Discord's message length; a card or notice always fits one message. */
 export const MESSAGE_LIMIT = 2000;
-/** Entries each card list shows before summarizing the rest, shrunk until the card fits. */
-const LIST_LIMITS = [8, 4, 2, 1, 0] as const;
 const NAME_LIMIT = 100;
 const TITLE_LIMIT = 200;
 
@@ -44,22 +42,9 @@ export const LIFECYCLE: Record<RunReport["run"]["state"], string> = {
   settled: "✅ Settled",
   archived: "🗄️ Archived",
 };
-const ACTIVE_BLOCKS = new Set(["working", "waiting", "sent"]);
-const BLOCK_STATES: Record<string, string> = {
-  working: "⚙️ {block} — working",
-  waiting: "⏳ {block} — waiting",
-  sent: "⚙️ {block} — Continuation sent",
-};
-const OBSERVATIONS: Record<string, string> = {
-  stale: " · observation stale",
-  unknown: " · not observed yet",
-};
-const NEEDS_INPUT: Record<string, string> = {
-  human: "Human step",
-  "native-request": "T3 request (answer it in T3)",
-  "conversation-waiting": "Agent question",
-};
-const PROBLEMS: Record<string, string> = {
+type Block = RunReport["blocks"][number];
+
+const PROBLEMS: Partial<Record<NonNullable<Block["problem"]>, string>> = {
   "missing-report": "report missing",
   "execution-failed": "execution failed",
   "report-problem": "report problem",
@@ -67,69 +52,121 @@ const PROBLEMS: Record<string, string> = {
   "settlement-unresolved": "Settle could not stop workers",
 };
 
-/** At most `limit` lines of one kind, summarizing the rest as `what`; nothing when empty. */
-function section(what: string, lines: readonly string[], limit: number) {
-  const shown = lines.slice(0, limit);
-  const rest = lines.length - shown.length;
-  return [...shown, ...(rest > 0 ? [`… and ${rest} more ${what}`] : [])];
+const STOPPING = "⏹️ Settle confirmed: Factory is stopping this Run's workers.";
+const UNRESOLVED = "⚠️ Settle confirmed, but some workers could not be confirmed stopped.";
+const oneLine = (text: string) => text.replace(/[\r\n\u2028\u2029]+/g, " ");
+
+function blockStatus(block: Block) {
+  const label = name(oneLine(block.name));
+  if (block.problem !== null) return `⚠️ **${label}** — ${PROBLEMS[block.problem] ?? "problem"}`;
+  if (block.needsInput !== null)
+    return `🙋 **${label}** — needs input${block.needsInput === "T3" ? " (answer in T3)" : ""}`;
+  if (block.wait)
+    return `⏰ ${label} — waits until ${at(block.wait.deadlineAt)}${block.wait.count > 1 ? ` · ${block.wait.count} waiting` : ""}`;
+  switch (block.state) {
+    case "working":
+      return `⚙️ **${label}** — working`;
+    case "sent":
+      return `⚙️ **${label}** — Continuation sent`;
+    case "waiting":
+      return `⏳ ${label} — waiting`;
+    case "stopped":
+      return `⏹️ ${label} — stopped`;
+    case "finished":
+    case "pass-through":
+      return `✅ ${label} — finished`;
+    case "error":
+      return `⚠️ **${label}** — problem`;
+    case "not-started":
+      return `○ ${label} — not started`;
+  }
 }
 
-/**
- * A Run's status card: identity, lifecycle and Flow, then only what is happening now: active
- * Blocks, pending Waits with deadlines, Needs input and Problems, from Factory's own facts. It never
- * carries results, report bodies or prompts, and always fits one Discord message: long lists are
- * summarized.
- */
+function observation(block: Block) {
+  if (block.observation === "stale") return " · observation stale";
+  if (
+    block.observation === "unknown" &&
+    (block.state === "working" ||
+      block.state === "sent" ||
+      block.needsInput === "T3" ||
+      (block.problem !== null && (block.kind === "agent" || block.kind === "continuation")))
+  )
+    return " · not observed yet";
+  return "";
+}
+
+function collapseRows(rows: string[], icon: string, state: string) {
+  const grouped = rows.filter((row) => row.startsWith(`${icon} `));
+  const remaining = rows.filter((row) => !row.startsWith(`${icon} `));
+  const summary = new RegExp(`^${icon} \\d+ Blocks? ${state}$`);
+  const count = grouped.length;
+  return {
+    remaining,
+    summary: count
+      ? [
+          grouped.find((row) => summary.test(row)) ??
+            `${icon} ${count} Block${count === 1 ? "" : "s"} ${state}`,
+        ]
+      : [],
+  };
+}
+
+function fitRemainingRows(head: string[], rows: string[], tail: string[]) {
+  const priorOmission = /^… and (\d+) more Blocks$/.exec(rows.at(-1) ?? "");
+  const alreadyOmitted = priorOmission ? Number(priorOmission[1]) : 0;
+  const shown = priorOmission ? rows.slice(0, -1) : rows;
+  let length = [...head, ...tail].join("\n").length;
+  for (const [index, row] of shown.entries()) {
+    length += row.length + 1;
+    const omitted = shown.length - index + alreadyOmitted;
+    const overflow = `… and ${omitted} more Blocks`;
+    const reserve = omitted > 1 ? overflow.length + 1 : 0;
+    if (length + reserve > MESSAGE_LIMIT)
+      return [...head, ...shown.slice(0, index), overflow, ...tail].join("\n");
+  }
+  return [
+    ...head,
+    ...shown,
+    ...(alreadyOmitted > 0 ? [`… and ${alreadyOmitted} more Blocks`] : []),
+    ...tail,
+  ].join("\n");
+}
+
+function fitCard(head: string[], rows: string[]) {
+  const full = [...head, ...rows].join("\n");
+  if (full.length <= MESSAGE_LIMIT) return full;
+
+  const notStarted = collapseRows(rows, "○", "not started");
+  const compact = [...head, ...notStarted.remaining, ...notStarted.summary].join("\n");
+  if (compact.length <= MESSAGE_LIMIT) return compact;
+
+  const finished = collapseRows(notStarted.remaining, "✅", "finished");
+  return fitRemainingRows([...head, ...finished.summary], finished.remaining, notStarted.summary);
+}
+
 function statusCardText(report: RunReport, replacedApplication: boolean) {
   const { run } = report;
   const head = [
     ...(replacedApplication ? [`_${APPLICATION_NOTICE}_`, ""] : []),
-    `${runHeading(runReference(run), run.title)} · ${LIFECYCLE[run.state]} · 🔀 ${name(run.flow)}`,
+    `${runHeading(runReference(run), oneLine(run.title))} · ${LIFECYCLE[run.state]} · 🔀 ${name(oneLine(run.flow))}`,
     ...(report.settlement === null
       ? []
-      : [
-          report.settlement === "stopping"
-            ? "⏹️ Settle confirmed: Factory is stopping this Run's workers."
-            : "⚠️ Settle confirmed, but some workers could not be confirmed stopped.",
-        ]),
+      : [report.settlement === "stopping" ? STOPPING : UNRESOLVED]),
   ];
-  const blocks = report.blocks
-    .filter((block) => ACTIVE_BLOCKS.has(block.state))
-    .map(
-      (block) =>
-        `${BLOCK_STATES[block.state]!.replace("{block}", name(block.name))}${OBSERVATIONS[block.observation] ?? ""}`,
-    );
-  const waits = report.pendingWaits.map(
-    (wait) => `⏰ ${name(wait.block)} — waits until ${at(wait.deadlineAt)}`,
+  return fitCard(
+    head,
+    report.blocks.map((block) => `${blockStatus(block)}${observation(block)}`),
   );
-  const needsInput = report.needsInput.map(
-    (matter) =>
-      `🙋 ${NEEDS_INPUT[matter.kind]} in ${name(matter.block)}${OBSERVATIONS[matter.observation] ?? ""}`,
-  );
-  const problems = report.problems.map(
-    (matter) =>
-      `⚠️ ${matter.block === null ? "" : `${name(matter.block)} — `}${PROBLEMS[matter.kind]}${
-        OBSERVATIONS[matter.observation] ?? ""
-      }`,
-  );
-  const render = (limit: number) =>
-    [
-      ...head,
-      ...section("active Blocks", blocks, limit),
-      ...section("Waits", waits, limit),
-      ...section("Needs input", needsInput, limit),
-      ...section("Problems", problems, limit),
-    ].join("\n");
-  for (const limit of LIST_LIMITS) {
-    const text = render(limit);
-    if (text.length <= MESSAGE_LIMIT) return text;
-  }
-  return clip(render(0), MESSAGE_LIMIT);
 }
 
 /** A card that replaces another application's card carries the notice once, as its first line. */
-export const withApplicationNotice = (text: string) =>
-  text.startsWith(`_${APPLICATION_NOTICE}_`) ? text : `_${APPLICATION_NOTICE}_\n\n${text}`;
+export function withApplicationNotice(text: string) {
+  if (text.startsWith(`_${APPLICATION_NOTICE}_`)) return text;
+  const [heading, ...rows] = text.split("\n");
+  const head = [`_${APPLICATION_NOTICE}_`, "", heading!];
+  if (rows[0] === STOPPING || rows[0] === UNRESOLVED) head.push(rows.shift()!);
+  return fitCard(head, rows);
+}
 
 type CardRow = {
   delivery_id: string;
@@ -211,7 +248,7 @@ export const statusCards = (sql: SqlClient.SqlClient): ReportConsumer => {
   ) =>
     Effect.gen(function* () {
       if (!reportableNow(report)) return current.state;
-      const id = yield* insertCard(origin, report, withApplicationNotice(text));
+      const id = yield* insertCard(origin, report, text);
       yield* sql`UPDATE chat_status_cards SET delivery_id=${id},replaced_application_id=${current.sent_by_application_id} WHERE run_id=${origin.runId}`;
       return "owed" as const;
     });
@@ -223,10 +260,13 @@ export const statusCards = (sql: SqlClient.SqlClient): ReportConsumer => {
         const [card] =
           yield* sql<CardRow>`SELECT delivery_id,replaced_application_id FROM chat_status_cards WHERE run_id=${origin.runId}`;
         if (!card) return yield* firstCard(origin, report);
-        const text = statusCardText(report, card.replaced_application_id !== null);
         const [current] =
           yield* sql<CardDeliveryRow>`SELECT id,state,text,message_id,sent_by_application_id FROM chat_deliveries WHERE id=${card.delivery_id}`;
         const reportable = reportableNow(report);
+        const text = statusCardText(
+          report,
+          current!.state === "retired" || card.replaced_application_id !== null,
+        );
         const state =
           current!.state === "retired"
             ? yield* renewRetired(origin, report, current!, text)
@@ -236,15 +276,3 @@ export const statusCards = (sql: SqlClient.SqlClient): ReportConsumer => {
       }),
   };
 };
-
-/**
- * The Run a message identifies: a status card this application posted in this thread. Only the
- * Run ID is returned; the card's content is never read back.
- */
-export const publishedRun =
-  (sql: SqlClient.SqlClient, applicationId: string) => (threadId: string, messageId: string) =>
-    Effect.map(
-      sql<{ run_id: string }>`SELECT run_id FROM chat_deliveries WHERE purpose='status-card'
-        AND thread_id=${threadId} AND message_id=${messageId} AND sent_by_application_id=${applicationId}`,
-      ([row]) => row?.run_id,
-    );

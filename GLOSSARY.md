@@ -408,17 +408,21 @@ started any other way have none, and reading or acting on a Run never adds one. 
 _Avoid_: Run owner; assigning an originating thread to a Run read or acted on from chat; Run origin, which records a Trigger Start.
 
 **Status card**:
-The one Discord message Factory maintains in a chat-started Run's originating thread and edits from the
-Run's committed facts: identity, state, Flow, active Blocks, pending Waits, Needs input and Problems.
-It is an accepted chat Start's only message, and Block activity and lifecycle changes edit it rather than
-posting; it never carries results, report bodies or prompts. See
+The one maintained Discord message Factory posts in a chat-started Run's originating thread.
+It shows the Run's identity, lifecycle and Flow, then the captured Flow's Blocks in graph order
+with their current or final state on each row. Large Flows summarize not-started Blocks first
+and then finished Blocks to fit one message. Factory edits the card as Blocks and the Run change.
+The card mentions nobody and omits results, report bodies and prompts. See
 [Chat control](docs/chat-control.md#status-cards).
 _Avoid_: Progress feed or per-event notification; treating the card's text as conversation input.
 
 **Run notice**:
-A new Discord message in a chat-started Run's originating thread only when the Run needs someone: an
-attention notice for new Needs input or Problem matters, or one catch-up per Run for such matters that
-accrued while Factory could not post. Resolving a matter edits the notice that announced it; notices
-mention nobody. See [Chat control](docs/chat-control.md#attention-notices).
-_Avoid_: Notices for Block transitions or lifecycle changes; replaying matters that opened and resolved
-while Factory could not post; answer buttons on a notice.
+A new Discord message in a chat-started Run's originating thread. An attention notice reports new
+Needs input or Problem matters. A catch-up reports such matters that accrued while Factory could
+not post. A completion notice says a Run became Settled and invites a reply, once per Settled cycle.
+On create, a Run notice pings the Run's requester while saved Access allows that user. Resolving
+a matter edits its attention notice or catch-up in place and removes the mention. A reply to a
+notice from the operating application identifies the Run for a fresh scoped read. See
+[Chat control](docs/chat-control.md#attention-notices).
+_Avoid_: Notices for ordinary Block transitions or Archive, replaying matters that opened and resolved
+while Factory could not post, answer buttons on a notice.

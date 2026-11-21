@@ -31,14 +31,18 @@ import {
 } from "./discord-gateway.ts";
 import type { ChatActions } from "./actions.ts";
 import type { ChatTool } from "./chat-tools.ts";
-import { buttonRow, type ConfirmationButton, type DisabledButton } from "./confirmation-buttons.ts";
-import type { ChatDeliveries, DiscordSender } from "./deliveries.ts";
+import { buttonRow, type DisabledButton } from "./confirmation-buttons.ts";
+import {
+  publishedRun,
+  type ChatDeliveries,
+  type CreateMessageOptions,
+  type DiscordSender,
+} from "./deliveries.ts";
 import { makeIngress, registerCommands, type ReferencedMessage } from "./discord-ingress.ts";
 import { makeInterpreter, type InterpretationEngine } from "./interpretation.ts";
 import type { ConversationalModelAccess } from "./model.ts";
 import { makeRequesterEvidence } from "./requester-evidence.ts";
 import { retireApplicationProposals } from "./revocation.ts";
-import { publishedRun } from "./status-cards.ts";
 
 type Run = <A>(effect: Effect.Effect<A, unknown>) => Promise<A>;
 
@@ -66,10 +70,6 @@ class FactoryDiscordAdapter extends DiscordAdapter {
 
   protected override async handleGatewayReaction() {}
 
-  /**
-   * Every message Factory posts mentions nobody, whatever its text contains, and Factory's own
-   * raw text goes out exactly as given: the adapter would rewrite `@name` into mentions.
-   */
   protected override buildMessagePayload(
     ...args: Parameters<DiscordAdapter["buildMessagePayload"]>
   ) {
@@ -105,14 +105,22 @@ class FactoryDiscordAdapter extends DiscordAdapter {
    * one's nonce returns that message instead of creating another. Failures keep the adapter's
    * error, whose status tells a definite refusal from an unproven outcome.
    */
-  async create(threadId: string, text: string, nonce: string, button?: ConfirmationButton) {
-    const { payload } = this.buildMessagePayload({ raw: text });
+  async create(
+    threadId: string,
+    text: string,
+    { nonce, button, requesterId }: CreateMessageOptions,
+  ) {
+    const raw = requesterId === undefined ? text : text.replace(" ", ` <@${requesterId}> `);
+    const { payload } = this.buildMessagePayload({ raw });
     const { channelId, threadId: discordThreadId } = this.decodeThreadId(threadId);
     const response = await this.discordFetch(
       `/channels/${discordThreadId ?? channelId}/messages`,
       "POST",
       {
         ...payload,
+        ...(requesterId === undefined
+          ? {}
+          : { allowed_mentions: { parse: [], users: [requesterId] } }),
         nonce,
         enforce_nonce: true,
         ...(button ? { components: buttonRow(button.customId, { label: button.label }) } : {}),
@@ -357,8 +365,8 @@ export const makeDiscordOperation = (
           adapter.post(encodeThreadId(key), text);
         const sender: DiscordSender = {
           applicationId,
-          create: (destination, text, { nonce, button }) =>
-            adapter.create(encodeThreadId(destination), text, nonce, button),
+          create: (destination, text, options) =>
+            adapter.create(encodeThreadId(destination), text, options),
           edit: (destination, messageId, text) =>
             adapter.edit(encodeThreadId(destination), messageId, text),
           disable: (destination, messageId, customId, state) =>

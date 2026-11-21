@@ -226,7 +226,7 @@ export interface ChatDeliveryProblem {
    * chat-started Run's maintained card in its originating thread; an attention notice announces
    * new Needs input or Problems there; a catch-up combines what accrued while Factory could not post.
    */
-  readonly purpose: "receipt" | "status-card" | "attention" | "catch-up";
+  readonly purpose: "receipt" | "status-card" | "attention" | "catch-up" | "completion";
   readonly state: "retrying" | "failed" | "unknown";
   /** The destination thread and its parent channel, as decimal Discord IDs. */
   readonly guildId: string;
