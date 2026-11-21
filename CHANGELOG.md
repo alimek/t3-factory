@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/alimek/t3-factory/compare/v0.9.0...v0.10.0) (2026-11-21)
+
+
+### Features
+
+* **runs:** copy the Run number and Run ID from Run menus ([#660](https://github.com/alimek/t3-factory/issues/660)) ([4368383](https://github.com/alimek/t3-factory/commit/436838374f669ba1d43c4f76bca72b4590511ce0))
+
+
+### Bug Fixes
+
+* **desktop:** restore the window's last size and position ([#655](https://github.com/alimek/t3-factory/issues/655)) ([7a9de93](https://github.com/alimek/t3-factory/commit/7a9de93e28deac8462a9428360b20bb2b83f5c45))
+
 ## [0.9.0](https://github.com/alimek/t3-factory/compare/v0.8.0...v0.9.0) (2026-11-21)
 
 
